@@ -4,6 +4,21 @@ import { generateSchedule } from '../services/schedule.js';
 import { sendForSignature, downloadSignedPdf, zohoConfigured } from '../services/zoho.js';
 import { uploadFile } from '../services/drive.js';
 import { renderContractPdf } from '../services/contractPdf.js';
+import { fillAgreementPdf, agreementTemplateExists } from '../services/agreementPdf.js';
+
+// Renders the contract document: the official Customer Agreement template
+// filled with contract data when available, otherwise the generated fallback.
+function buildContractPdf(contract, signedDate) {
+  const parts = {
+    contract,
+    customer: contract.customer,
+    unit: contract.unit,
+    unitType: contract.unit.unitType,
+  };
+  return agreementTemplateExists()
+    ? fillAgreementPdf({ ...parts, signedDate })
+    : renderContractPdf(parts);
+}
 
 const router = Router();
 
@@ -64,12 +79,7 @@ router.post('/:id/send-signature', async (req, res) => {
     return res.status(400).json({ error: 'Customer has no email address for the signature request' });
   }
 
-  const pdfBuffer = await renderContractPdf({
-    contract,
-    customer: contract.customer,
-    unit: contract.unit,
-    unitType: contract.unit.unitType,
-  });
+  const pdfBuffer = await buildContractPdf(contract);
 
   try {
     const result = await sendForSignature({
@@ -102,12 +112,7 @@ async function markSigned(contractId) {
     pdfBuffer = await downloadSignedPdf(contract.zohoRequestId);
   }
   if (!pdfBuffer) {
-    pdfBuffer = await renderContractPdf({
-      contract,
-      customer: contract.customer,
-      unit: contract.unit,
-      unitType: contract.unit.unitType,
-    });
+    pdfBuffer = await buildContractPdf(contract, new Date());
   }
   const stored = await uploadFile({
     buffer: pdfBuffer,
@@ -182,12 +187,7 @@ router.post('/:id/cancel', (req, res) => closeContract(req, res, 'cancelled'));
 router.get('/:id/pdf', async (req, res) => {
   const contract = await populateAll(Contract.findById(req.params.id));
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
-  const pdf = await renderContractPdf({
-    contract,
-    customer: contract.customer,
-    unit: contract.unit,
-    unitType: contract.unit.unitType,
-  });
+  const pdf = await buildContractPdf(contract);
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="${contract.contractNo}.pdf"`);
   res.send(pdf);

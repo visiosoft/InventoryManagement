@@ -41,6 +41,7 @@ const customerSchema = new Schema(
     fullName: { type: String, required: true },
     email: { type: String, default: '' },
     phone: { type: String, default: '' },
+    emergencyNumber: { type: String, default: '' },
     address: { type: String, default: '' },
     company: { type: String, default: '' },
     notes: { type: String, default: '' },

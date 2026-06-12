@@ -54,6 +54,7 @@ export default function CustomerDetail() {
           <CardBody className="space-y-3 text-sm">
             <div><div className="text-xs text-muted-foreground">Email</div>{customer.email || '—'}</div>
             <div><div className="text-xs text-muted-foreground">Phone</div>{customer.phone || '—'}</div>
+            <div><div className="text-xs text-muted-foreground">Emergency number</div>{customer.emergencyNumber || '—'}</div>
             <div><div className="text-xs text-muted-foreground">Address</div>{customer.address || '—'}</div>
             {customer.notes && <div><div className="text-xs text-muted-foreground">Notes</div>{customer.notes}</div>}
           </CardBody>

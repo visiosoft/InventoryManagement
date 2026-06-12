@@ -21,6 +21,7 @@ export interface Customer {
   fullName: string
   email?: string
   phone?: string
+  emergencyNumber?: string
   address?: string
   company?: string
   notes?: string

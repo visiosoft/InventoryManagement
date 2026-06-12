@@ -15,6 +15,7 @@ export function CustomerForm({ initial, onSubmit, busy, error }: { initial?: Par
       fullName: String(f.get('fullName')),
       email: String(f.get('email') || ''),
       phone: String(f.get('phone') || ''),
+      emergencyNumber: String(f.get('emergencyNumber') || ''),
       company: String(f.get('company') || ''),
       address: String(f.get('address') || ''),
       notes: String(f.get('notes') || ''),
@@ -27,7 +28,10 @@ export function CustomerForm({ initial, onSubmit, busy, error }: { initial?: Par
         <Field label="Email"><Input name="email" type="email" defaultValue={initial?.email} /></Field>
         <Field label="Phone"><Input name="phone" defaultValue={initial?.phone} /></Field>
       </div>
-      <Field label="Company (optional)"><Input name="company" defaultValue={initial?.company} /></Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Emergency number"><Input name="emergencyNumber" defaultValue={initial?.emergencyNumber} /></Field>
+        <Field label="Company (optional)"><Input name="company" defaultValue={initial?.company} /></Field>
+      </div>
       <Field label="Address"><Textarea name="address" defaultValue={initial?.address} /></Field>
       <Field label="Notes"><Textarea name="notes" defaultValue={initial?.notes} /></Field>
       {error && <p className="text-xs text-destructive">{error}</p>}
