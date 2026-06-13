@@ -1,4 +1,13 @@
-import { forwardRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
+import {
+  forwardRef,
+  type ButtonHTMLAttributes,
+  type InputHTMLAttributes,
+  type ReactNode,
+  type SelectHTMLAttributes,
+  type TdHTMLAttributes,
+  type TextareaHTMLAttributes,
+  type ThHTMLAttributes,
+} from 'react'
 import { X } from 'lucide-react'
 import { cn } from '../lib/utils'
 
@@ -185,12 +194,20 @@ export function Table({ children, className }: { children: ReactNode; className?
   )
 }
 
-export function Th({ children, className }: { children?: ReactNode; className?: string }) {
-  return <th className={cn('text-left text-xs font-medium text-muted-foreground px-4 py-2.5 border-b', className)}>{children}</th>
+export function Th({ children, className, ...props }: ThHTMLAttributes<HTMLTableCellElement>) {
+  return (
+    <th className={cn('text-left text-xs font-medium text-muted-foreground px-4 py-2.5 border-b', className)} {...props}>
+      {children}
+    </th>
+  )
 }
 
-export function Td({ children, className }: { children?: ReactNode; className?: string }) {
-  return <td className={cn('px-4 py-2.5 border-b border-border/60', className)}>{children}</td>
+export function Td({ children, className, ...props }: TdHTMLAttributes<HTMLTableCellElement>) {
+  return (
+    <td className={cn('px-4 py-2.5 border-b border-border/60', className)} {...props}>
+      {children}
+    </td>
+  )
 }
 
 /* ---------- Corner Ribbon ---------- */

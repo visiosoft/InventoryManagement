@@ -8,7 +8,7 @@ import {
 import { apiError, vendorApi, purchaseApi, expenseApi, type VendorSummary } from '../lib/api'
 import type { Purchase, Expense, PurchasePaymentEntry, PurchaseStatus, Vendor, VendorAddress } from '../lib/types'
 import {
-    Badge, Button, Card, CardBody, CardHeader, CornerRibbon,
+    Badge, Button, CornerRibbon,
     EmptyState, Field, Input, Modal, Select, Spinner,
     Table, Td, Th, statusLabel,
 } from '../components/ui'
@@ -462,11 +462,10 @@ function TransactionsTab({
                     <button
                         key={key}
                         onClick={() => setView(key)}
-                        className={`px-5 py-2.5 text-sm font-medium transition-colors cursor-pointer ${
-                            view === key
+                        className={`px-5 py-2.5 text-sm font-medium transition-colors cursor-pointer ${view === key
                                 ? 'border-b-2 border-primary text-primary'
                                 : 'text-muted-foreground hover:text-foreground'
-                        }`}
+                            }`}
                     >
                         {label}
                         <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium">{count}</span>
@@ -1039,11 +1038,10 @@ export default function VendorDetail() {
                     <button
                         key={key}
                         onClick={() => setTab(key)}
-                        className={`px-5 py-2.5 text-sm font-medium transition-colors cursor-pointer ${
-                            tab === key
+                        className={`px-5 py-2.5 text-sm font-medium transition-colors cursor-pointer ${tab === key
                                 ? 'border-b-2 border-primary text-primary'
                                 : 'text-muted-foreground hover:text-foreground'
-                        }`}
+                            }`}
                     >
                         {label}
                     </button>

@@ -1,6 +1,5 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { apiError, integrationApi, unitTypeApi } from '../lib/api'
 import type { IntegrationStatus, UnitType } from '../lib/types'
