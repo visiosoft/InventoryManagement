@@ -4,7 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import { CheckCircle2, Download, PenLine, Upload, XCircle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import type { AppDocument, Contract, Payment } from '../lib/types'
-import { Badge, Button, Card, CardBody, CardHeader, EmptyState, Field, Modal, PageHeader, Select, Spinner, Table, Td, Th, contractStatusTone, paymentStatusTone, statusLabel } from '../components/ui'
+import { Badge, Button, Card, CardBody, CardHeader, EmptyState, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, Th, contractStatusTone, paymentStatusTone, statusLabel } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
 import { UploadDocumentForm } from './Documents'
 
@@ -13,6 +13,7 @@ export default function ContractDetail() {
   const qc = useQueryClient()
   const [error, setError] = useState('')
   const [recordingPayment, setRecordingPayment] = useState<Payment | null>(null)
+  const [editingPayment, setEditingPayment] = useState<Payment | null>(null)
   const [uploading, setUploading] = useState(false)
   const [downloadingPdf, setDownloadingPdf] = useState(false)
 
@@ -38,6 +39,25 @@ export default function ContractDetail() {
     mutationFn: ({ paymentId, method }: { paymentId: string; method: string }) =>
       api.post(`/payments/${paymentId}/record`, { method }),
     onSuccess: () => { invalidate(); setRecordingPayment(null) },
+    onError: (e) => setError(apiError(e)),
+  })
+
+  const editPayment = useMutation({
+    mutationFn: ({ paymentId, body }: { paymentId: string; body: Record<string, unknown> }) =>
+      api.put(`/payments/${paymentId}`, body),
+    onSuccess: () => { invalidate(); setEditingPayment(null) },
+    onError: (e) => setError(apiError(e)),
+  })
+
+  const unrecordPayment = useMutation({
+    mutationFn: (paymentId: string) => api.post(`/payments/${paymentId}/unrecord`),
+    onSuccess: () => invalidate(),
+    onError: (e) => setError(apiError(e)),
+  })
+
+  const deletePayment = useMutation({
+    mutationFn: (paymentId: string) => api.delete(`/payments/${paymentId}`),
+    onSuccess: () => invalidate(),
     onError: (e) => setError(apiError(e)),
   })
 
@@ -153,9 +173,26 @@ export default function ContractDetail() {
                     <Td>{formatDate(p.paidDate)}</Td>
                     <Td className="capitalize">{(p.method || '—').replace('_', ' ')}</Td>
                     <Td>
-                      {p.status !== 'paid' && (
-                        <Button size="sm" variant="outline" onClick={() => setRecordingPayment(p)}>Record payment</Button>
-                      )}
+                      <div className="flex items-center gap-2 text-xs">
+                        {p.status !== 'paid' && (
+                          <Button size="sm" variant="outline" onClick={() => setRecordingPayment(p)}>Record</Button>
+                        )}
+                        <button className="text-primary hover:underline cursor-pointer" onClick={() => setEditingPayment(p)}>Edit</button>
+                        {p.status === 'paid' && (
+                          <button
+                            className="text-amber-600 hover:underline cursor-pointer"
+                            onClick={() => { if (confirm('Unrecord this payment?')) unrecordPayment.mutate(p._id) }}
+                          >
+                            Unrecord
+                          </button>
+                        )}
+                        <button
+                          className="text-destructive hover:underline cursor-pointer"
+                          onClick={() => { if (confirm('Delete this payment entry?')) deletePayment.mutate(p._id) }}
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </Td>
                   </tr>
                 ))}
@@ -200,6 +237,16 @@ export default function ContractDetail() {
         )}
       </Modal>
 
+      <Modal open={!!editingPayment} onClose={() => setEditingPayment(null)} title="Edit payment">
+        {editingPayment && (
+          <EditPaymentForm
+            payment={editingPayment}
+            busy={editPayment.isPending}
+            onSubmit={(body) => editPayment.mutate({ paymentId: editingPayment._id, body })}
+          />
+        )}
+      </Modal>
+
       <Modal open={uploading} onClose={() => setUploading(false)} title="Upload document">
         <UploadDocumentForm contractId={c._id} customerId={c.customer?._id} onDone={() => { invalidate(); setUploading(false) }} />
       </Modal>
@@ -224,5 +271,66 @@ function RecordPaymentForm({ payment, busy, onSubmit }: { payment: Payment; busy
       </Field>
       <Button className="w-full" disabled={busy} onClick={() => onSubmit(method)}>Record payment</Button>
     </div>
+  )
+}
+
+function EditPaymentForm({
+  payment,
+  busy,
+  onSubmit,
+}: {
+  payment: Payment
+  busy: boolean
+  onSubmit: (body: Record<string, unknown>) => void
+}) {
+  function toInput(d?: string) {
+    if (!d) return ''
+    const dt = new Date(d)
+    return Number.isNaN(dt.getTime()) ? '' : dt.toISOString().slice(0, 10)
+  }
+
+  const [amount, setAmount] = useState(String(payment.amount))
+  const [dueDate, setDueDate] = useState(toInput(payment.dueDate))
+  const [paidDate, setPaidDate] = useState(toInput(payment.paidDate))
+  const [method, setMethod] = useState(payment.method || 'cash')
+  const [notes, setNotes] = useState(payment.notes || '')
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    const body: Record<string, unknown> = { amount: Number(amount), dueDate, notes }
+    if (payment.status === 'paid') { body.paidDate = paidDate; body.method = method }
+    onSubmit(body)
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Amount (AED)">
+          <Input type="number" min={0.01} step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} required />
+        </Field>
+        <Field label="Due date">
+          <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} required />
+        </Field>
+      </div>
+      {payment.status === 'paid' && (
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Paid on">
+            <Input type="date" value={paidDate} onChange={(e) => setPaidDate(e.target.value)} />
+          </Field>
+          <Field label="Method">
+            <Select value={method} onChange={(e) => setMethod(e.target.value)}>
+              <option value="cash">Cash</option>
+              <option value="bank_transfer">Bank transfer</option>
+              <option value="card">Card</option>
+              <option value="other">Other</option>
+            </Select>
+          </Field>
+        </div>
+      )}
+      <Field label="Notes (optional)">
+        <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional note" />
+      </Field>
+      <Button type="submit" className="w-full" disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</Button>
+    </form>
   )
 }

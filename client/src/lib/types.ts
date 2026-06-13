@@ -1,3 +1,13 @@
+export interface UnitType {
+  _id: string
+  sizeSqf: number
+  label?: string
+  monthlyRate: number
+  weeklyRate: number
+  discountPct: number
+  createdAt?: string
+}
+
 export type UnitStatus = 'available' | 'occupied' | 'reserved' | 'maintenance'
 
 export interface Unit {
@@ -137,6 +147,18 @@ export interface Invoice {
 
 export type VendorStatus = 'active' | 'inactive'
 
+export interface VendorAddress {
+  attention?: string
+  address?: string
+  street2?: string
+  city?: string
+  state?: string
+  country?: string
+  code?: string
+  phone?: string
+  fax?: string
+}
+
 export interface Vendor {
   _id: string
   contactId: string
@@ -156,6 +178,8 @@ export interface Vendor {
   ownerName?: string
   source?: string
   categories?: string[]
+  billingAddress?: VendorAddress
+  shippingAddress?: VendorAddress
   createdAt?: string
 }
 

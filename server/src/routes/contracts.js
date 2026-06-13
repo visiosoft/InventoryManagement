@@ -78,7 +78,7 @@ router.get('/:id', async (req, res) => {
 
 // Create a contract (draft). Generates the payment schedule and reserves the unit.
 router.post('/', async (req, res) => {
-  const { customer, unit, billingPeriod, rate, deposit, startDate, endDate, autoRenew, notes } = req.body;
+  const { customer, unit, billingPeriod, rate, deposit, startDate, endDate, autoRenew, notes, firstMonthDiscountPct } = req.body;
 
   const unitDoc = await Unit.findById(unit);
   if (!unitDoc) return res.status(404).json({ error: 'Unit not found' });
@@ -104,7 +104,9 @@ router.post('/', async (req, res) => {
     status: 'draft',
   });
 
-  const schedule = generateSchedule({ startDate, endDate, billingPeriod, rate });
+  const discountPct = (billingPeriod === 'monthly' && Number(firstMonthDiscountPct) > 0)
+    ? Number(firstMonthDiscountPct) : 0;
+  const schedule = generateSchedule({ startDate, endDate, billingPeriod, rate, firstPaymentDiscountPct: discountPct });
   await Payment.insertMany(schedule.map((p) => ({ ...p, contract: contract._id })));
 
   await syncUnitStatus(unitDoc._id);

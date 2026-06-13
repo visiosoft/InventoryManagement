@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { Expense, IntegrationStatus, Invoice, Lead, Purchase, Quote, Vendor } from './types'
+import type { Expense, IntegrationStatus, Invoice, Lead, Purchase, Quote, UnitType, Vendor } from './types'
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || '/api'
 
@@ -35,6 +35,13 @@ export type LeadQuery = {
   owner?: string
   from?: string
   to?: string
+}
+
+export const unitTypeApi = {
+  list: () => api.get<UnitType[]>('/unit-types').then((r) => r.data),
+  create: (body: Partial<UnitType>) => api.post<UnitType>('/unit-types', body).then((r) => r.data),
+  update: (id: string, body: Partial<UnitType>) => api.put<UnitType>(`/unit-types/${id}`, body).then((r) => r.data),
+  remove: (id: string) => api.delete<{ ok: true }>(`/unit-types/${id}`).then((r) => r.data),
 }
 
 export const leadApi = {

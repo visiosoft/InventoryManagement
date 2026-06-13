@@ -46,4 +46,28 @@ router.post('/:id/unrecord', async (req, res) => {
   res.json(await populateAll(Payment.findById(payment._id)));
 });
 
+router.put('/:id', async (req, res) => {
+  const payment = await Payment.findById(req.params.id);
+  if (!payment) return res.status(404).json({ error: 'Payment not found' });
+
+  if (req.body.amount !== undefined) {
+    const n = Number(req.body.amount);
+    if (!Number.isFinite(n) || n <= 0) return res.status(400).json({ error: 'Amount must be positive' });
+    payment.amount = n;
+  }
+  if (req.body.dueDate) payment.dueDate = new Date(req.body.dueDate);
+  if (req.body.paidDate) payment.paidDate = new Date(req.body.paidDate);
+  if (req.body.method !== undefined) payment.method = req.body.method || '';
+  if (req.body.notes !== undefined) payment.notes = req.body.notes;
+
+  await payment.save();
+  res.json(await populateAll(Payment.findById(payment._id)));
+});
+
+router.delete('/:id', async (req, res) => {
+  const payment = await Payment.findByIdAndDelete(req.params.id);
+  if (!payment) return res.status(404).json({ error: 'Payment not found' });
+  res.json({ ok: true });
+});
+
 export default router;

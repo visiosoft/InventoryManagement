@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { api, apiError } from '../lib/api'
-import type { Contract, Customer, Unit } from '../lib/types'
+import { api, apiError, unitTypeApi } from '../lib/api'
+import type { Contract, Customer, Unit, UnitType } from '../lib/types'
 import { Badge, Button, Card, CardBody, Field, Input, PageHeader, Select, Spinner, Textarea } from '../components/ui'
 import { cn, formatMoney } from '../lib/utils'
 
@@ -36,6 +36,7 @@ export default function NewContract() {
   const [rate, setRate] = useState<number | ''>('')
   const [deposit, setDeposit] = useState<number | ''>('')
   const [autoRenew, setAutoRenew] = useState(false)
+  const [firstMonthDiscount, setFirstMonthDiscount] = useState(false)
   const [notes, setNotes] = useState('')
 
   const { data: customers } = useQuery<Customer[]>({
@@ -49,6 +50,10 @@ export default function NewContract() {
   const { data: contracts } = useQuery<Contract[]>({
     queryKey: ['contracts'],
     queryFn: () => api.get('/contracts').then((r) => r.data),
+  })
+  const { data: unitTypes } = useQuery<UnitType[]>({
+    queryKey: ['unit-types'],
+    queryFn: () => unitTypeApi.list(),
   })
 
   const availableUnits = useMemo(
@@ -68,10 +73,22 @@ export default function NewContract() {
     )
   }, [contracts, unitId, startDate, endDate])
 
-  // Monthly price comes from the unit; weekly = monthly / 4 (agreement defines a month as 4 weeks).
-  const monthlyPrice = selectedUnit?.price ?? 0
-  const defaultRate = billing === 'weekly' ? Math.round((monthlyPrice / 4) * 100) / 100 : monthlyPrice
+  // Rate: prefer pricing tier matched by unit size, fall back to unit.price
+  const matchingTier = useMemo(
+    () => (unitTypes ?? []).find((t) => t.sizeSqf === selectedUnit?.sizeSqf),
+    [unitTypes, selectedUnit]
+  )
+  const tierMonthly = matchingTier?.monthlyRate ?? selectedUnit?.price ?? 0
+  const tierWeekly = matchingTier?.weeklyRate ?? Math.round((tierMonthly / 4) * 100) / 100
+  const defaultRate = billing === 'weekly' ? tierWeekly : tierMonthly
   const effectiveRate = rate === '' ? defaultRate : rate
+  const discountPct = matchingTier?.discountPct ?? 20
+  const firstPaymentAmount = (firstMonthDiscount && billing === 'monthly' && Number(effectiveRate) > 0)
+    ? Math.round(Number(effectiveRate) * (1 - discountPct / 100) * 100) / 100
+    : Number(effectiveRate)
+  const totalValue = periods > 0
+    ? firstPaymentAmount + Number(effectiveRate) * (periods - 1)
+    : 0
 
   const create = useMutation({
     mutationFn: () =>
@@ -85,6 +102,7 @@ export default function NewContract() {
         endDate,
         autoRenew,
         notes,
+        firstMonthDiscountPct: firstMonthDiscount && billing === 'monthly' ? discountPct : 0,
       }),
     onSuccess: (res) => navigate(`/contracts/${res.data._id}`),
     onError: (e) => {
@@ -144,7 +162,7 @@ export default function NewContract() {
           {step === 1 && (
             <>
               <Field label={`Bookable unit (${availableUnits.length})`}>
-                <Select value={unitId} onChange={(e) => setUnitId(e.target.value)}>
+                <Select value={unitId} onChange={(e) => { setUnitId(e.target.value); setRate(''); setFirstMonthDiscount(false) }}>
                   <option value="">Select a unit…</option>
                   {availableUnits.map((u) => (
                     <option key={u._id} value={u._id}>
@@ -163,7 +181,7 @@ export default function NewContract() {
             <>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Billing period">
-                  <Select value={billing} onChange={(e) => { setBilling(e.target.value as 'weekly' | 'monthly'); setRate('') }}>
+                  <Select value={billing} onChange={(e) => { setBilling(e.target.value as 'weekly' | 'monthly'); setRate(''); setFirstMonthDiscount(false) }}>
                     <option value="weekly">Weekly</option>
                     <option value="monthly">Monthly</option>
                   </Select>
@@ -179,11 +197,32 @@ export default function NewContract() {
                 </Field>
                 <Field label={`Rate per ${billing === 'weekly' ? 'week' : 'month'}`}>
                   <Input type="number" min={0} step="0.01" value={rate} placeholder={String(defaultRate)} onChange={(e) => setRate(e.target.value === '' ? '' : Number(e.target.value))} />
+                  {matchingTier && (
+                    <p className="mt-1 text-[11px] text-emerald-600">
+                      Pricing tier: {formatMoney(billing === 'weekly' ? matchingTier.weeklyRate : matchingTier.monthlyRate)} / {billing === 'weekly' ? 'wk' : 'mo'} for {matchingTier.sizeSqf} Sq Ft
+                    </p>
+                  )}
                 </Field>
                 <Field label="Security deposit">
                   <Input type="number" min={0} step="0.01" value={deposit} placeholder="0.00" onChange={(e) => setDeposit(e.target.value === '' ? '' : Number(e.target.value))} />
                 </Field>
               </div>
+              {billing === 'monthly' && defaultRate > 0 && discountPct > 0 && (
+                <label className="flex items-center gap-2 text-sm cursor-pointer rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-800/40 dark:bg-amber-900/20">
+                  <input
+                    type="checkbox"
+                    checked={firstMonthDiscount}
+                    onChange={(e) => setFirstMonthDiscount(e.target.checked)}
+                    className="accent-amber-500"
+                  />
+                  <span>
+                    Apply first-month {discountPct}% discount
+                    <span className="ml-1.5 text-muted-foreground text-xs">
+                      (1st payment: <strong className="text-amber-600">{formatMoney(firstPaymentAmount)}</strong> instead of {formatMoney(Number(effectiveRate))})
+                    </span>
+                  </span>
+                </label>
+              )}
               <label className="flex items-center gap-2 text-sm cursor-pointer">
                 <input type="checkbox" checked={autoRenew} onChange={(e) => setAutoRenew(e.target.checked)} className="accent-(--primary)" />
                 Auto-renew at end of term
@@ -208,9 +247,16 @@ export default function NewContract() {
                 <div><div className="text-xs text-muted-foreground">Rate</div>{formatMoney(Number(effectiveRate))} / {billing === 'weekly' ? 'week' : 'month'}</div>
                 <div><div className="text-xs text-muted-foreground">Deposit</div>{formatMoney(Number(deposit || 0))}</div>
               </div>
-              <div className="rounded-lg bg-accent px-3 py-2 text-accent-foreground text-xs">
-                Total contract value: <strong>{formatMoney(Number(effectiveRate) * periods)}</strong> · {periods} payments will be scheduled.
-                {autoRenew && <Badge tone="purple" className="ml-2">Auto-renew</Badge>}
+              <div className="rounded-lg bg-accent px-3 py-2 text-accent-foreground text-xs space-y-0.5">
+                <div>
+                  Total contract value: <strong>{formatMoney(totalValue)}</strong> · {periods} payments will be scheduled.
+                  {autoRenew && <Badge tone="purple" className="ml-2">Auto-renew</Badge>}
+                </div>
+                {firstMonthDiscount && billing === 'monthly' && (
+                  <div className="text-amber-600">
+                    First payment: {formatMoney(firstPaymentAmount)} ({discountPct}% off) · Remaining {periods - 1} × {formatMoney(Number(effectiveRate))}
+                  </div>
+                )}
               </div>
               {overlappingContract && (
                 <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">

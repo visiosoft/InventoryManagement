@@ -18,6 +18,7 @@ const unitTypeSchema = new Schema(
     label: { type: String },
     weeklyRate: { type: Number, required: true, default: 0 },
     monthlyRate: { type: Number, required: true, default: 0 },
+    discountPct: { type: Number, default: 20 },
   },
   { timestamps: true }
 );

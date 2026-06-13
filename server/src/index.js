@@ -19,6 +19,7 @@ import invoiceRoutes from './routes/invoices.js';
 import vendorRoutes from './routes/vendors.js';
 import purchaseRoutes from './routes/purchases.js';
 import expenseRoutes from './routes/expenses.js';
+import unitTypeRoutes, { seedUnitTypes } from './routes/unitTypes.js';
 
 const app = express();
 app.use(cors({ origin: '*' }));
@@ -48,6 +49,7 @@ app.use('/api/invoices', requireAuth, invoiceRoutes);
 app.use('/api/vendors', requireAuth, vendorRoutes);
 app.use('/api/purchases', requireAuth, purchaseRoutes);
 app.use('/api/expenses', requireAuth, expenseRoutes);
+app.use('/api/unit-types', requireAuth, unitTypeRoutes);
 app.use(
   '/api/integrations',
   (req, res, next) =>
@@ -65,6 +67,7 @@ const PORT = process.env.PORT || 5010;
 
 async function start() {
   await connectDb();
+  await seedUnitTypes();
   console.log(`Connected to MongoDB (db: ${process.env.DB_NAME})`);
   app.listen(PORT, () => console.log(`PurpleBox API listening on http://localhost:${PORT}`));
 }

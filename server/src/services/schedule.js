@@ -17,14 +17,17 @@ function addMonths(date, months) {
   return d;
 }
 
-export function generateSchedule({ startDate, endDate, billingPeriod, rate }) {
+export function generateSchedule({ startDate, endDate, billingPeriod, rate, firstPaymentDiscountPct = 0 }) {
   const start = new Date(startDate);
   const end = new Date(endDate);
   const payments = [];
   let due = new Date(start);
   let i = 0;
   while (due < end && i < 520) {
-    payments.push({ amount: rate, dueDate: new Date(due), status: 'pending' });
+    const amount = (i === 0 && firstPaymentDiscountPct > 0)
+      ? Math.round(rate * (1 - firstPaymentDiscountPct / 100) * 100) / 100
+      : rate;
+    payments.push({ amount, dueDate: new Date(due), status: 'pending' });
     i += 1;
     due = billingPeriod === 'weekly' ? addDays(start, 7 * i) : addMonths(start, i);
   }
