@@ -120,6 +120,7 @@ export interface Invoice {
   customerNotes?: string
   subTotal: number
   total: number
+  paymentMade?: number
   termsAndConditions?: string
   attachments: InvoiceAttachment[]
   status: InvoiceStatus

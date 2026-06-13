@@ -52,6 +52,7 @@ function normalizeBody(body) {
         customerNotes: String(body.customerNotes || ''),
         subTotal,
         total,
+        paymentMade: toNumber(body.paymentMade, 0),
         termsAndConditions: String(body.termsAndConditions || ''),
         status: String(body.status || 'draft'),
     };

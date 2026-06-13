@@ -79,6 +79,7 @@ function InvoiceForm({
             customerNotes: f.get('customerNotes'),
             subTotal,
             total: subTotal,
+            paymentMade: Number(f.get('paymentMade') || 0),
             termsAndConditions: f.get('termsAndConditions'),
             status: f.get('status') || 'draft',
         })
@@ -146,9 +147,10 @@ function InvoiceForm({
                 </div>
             </Card>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
                 <Field label="Sub Total"><Input value={subTotal.toFixed(2)} readOnly /></Field>
                 <Field label="Total (AED)"><Input value={subTotal.toFixed(2)} readOnly /></Field>
+                <Field label="Payment Made"><Input type="number" name="paymentMade" min={0} step="0.01" defaultValue={initial?.paymentMade ?? 0} /></Field>
             </div>
 
             <Field label="Customer Notes"><Textarea name="customerNotes" defaultValue={initial?.customerNotes || ''} placeholder="Will be displayed on the invoice" /></Field>

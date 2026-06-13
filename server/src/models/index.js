@@ -196,6 +196,7 @@ const invoiceSchema = new Schema(
     customerNotes: { type: String, default: '' },
     subTotal: { type: Number, default: 0, min: 0 },
     total: { type: Number, default: 0 },
+    paymentMade: { type: Number, default: 0 },
     termsAndConditions: { type: String, default: '' },
     attachments: { type: [invoiceAttachmentSchema], default: [] },
     status: { type: String, enum: ['draft', 'sent', 'paid', 'overdue', 'cancelled'], default: 'draft' },
