@@ -8,6 +8,7 @@
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
     "seed": "node src/seed.js",
+    "google-contacts:oauth": "node src/googleContactsOAuthSetup.js",
     "import:inventory": "node src/importInventory.js",
     "import:vendors": "node src/importVendors.js",
     "import:expenses": "node src/importExpenses.js",

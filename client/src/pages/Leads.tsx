@@ -1,6 +1,6 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search } from 'lucide-react'
+import { Plus, Search, Upload } from 'lucide-react'
 import { api, apiError, leadApi } from '../lib/api'
 import type { Lead, LeadSource, LeadStatus } from '../lib/types'
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, Th, Textarea, leadStatusTone, statusLabel } from '../components/ui'
@@ -144,6 +144,53 @@ function LeadForm({
     )
 }
 
+type ImportResult = { created: number; skipped: number; errors: number; total: number }
+type ContactRow = { firstName: string; lastName: string; phone: string; email: string; organization: string }
+
+function parseCsvLine(line: string): string[] {
+    const result: string[] = []
+    let field = ''
+    let inQuotes = false
+    for (let i = 0; i < line.length; i++) {
+        const ch = line[i]
+        if (ch === '"') {
+            if (inQuotes && line[i + 1] === '"') { field += '"'; i++ }
+            else inQuotes = !inQuotes
+        } else if (ch === ',' && !inQuotes) {
+            result.push(field); field = ''
+        } else {
+            field += ch
+        }
+    }
+    result.push(field)
+    return result
+}
+
+function parseGoogleContactsCsv(text: string): ContactRow[] {
+    const lines = text.split(/\r?\n/).filter(l => l.trim())
+    if (lines.length < 2) return []
+    const header = parseCsvLine(lines[0]).map(h => h.toLowerCase().trim())
+    const firstNameIdx = header.findIndex(h => h === 'first name')
+    const lastNameIdx = header.findIndex(h => h === 'last name')
+    const orgIdx = header.findIndex(h => h === 'organization name')
+    const phoneIdxs = header.reduce<number[]>((acc, h, i) => { if (h.includes('phone') && h.includes('value')) acc.push(i); return acc }, [])
+    const emailIdxs = header.reduce<number[]>((acc, h, i) => { if ((h.includes('e-mail') || h.includes('email')) && h.includes('value')) acc.push(i); return acc }, [])
+    const contacts: ContactRow[] = []
+    for (let i = 1; i < lines.length; i++) {
+        const row = parseCsvLine(lines[i])
+        const phone = phoneIdxs.map(idx => row[idx]?.trim()).find(p => p) || ''
+        if (!phone) continue
+        contacts.push({
+            firstName: firstNameIdx >= 0 ? (row[firstNameIdx]?.trim() || '') : '',
+            lastName: lastNameIdx >= 0 ? (row[lastNameIdx]?.trim() || '') : '',
+            phone,
+            email: emailIdxs.map(idx => row[idx]?.trim()).find(e => e) || '',
+            organization: orgIdx >= 0 ? (row[orgIdx]?.trim() || '') : '',
+        })
+    }
+    return contacts
+}
+
 export default function Leads() {
     const qc = useQueryClient()
 
@@ -157,6 +204,8 @@ export default function Leads() {
     const [adding, setAdding] = useState(false)
     const [editing, setEditing] = useState<Lead | null>(null)
     const [error, setError] = useState('')
+    const [importResult, setImportResult] = useState<ImportResult | null>(null)
+    const fileInputRef = useRef<HTMLInputElement>(null)
 
     const { data: users } = useQuery<{ _id: string; name: string; email: string }[]>({
         queryKey: ['lead-owners'],
@@ -214,15 +263,44 @@ export default function Leads() {
         onSuccess: () => qc.invalidateQueries({ queryKey: ['leads'] }),
     })
 
+    const importContacts = useMutation({
+        mutationFn: (contacts: ContactRow[]) =>
+            api.post<ImportResult>('/leads/import/bulk', { contacts }).then(r => r.data),
+        onSuccess: (data) => {
+            qc.invalidateQueries({ queryKey: ['leads'] })
+            setImportResult(data)
+        },
+        onError: (e) => setError(apiError(e)),
+    })
+
+    function handleCsvFile(e: React.ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0]
+        if (!file) return
+        const reader = new FileReader()
+        reader.onload = (ev) => {
+            const contacts = parseGoogleContactsCsv(ev.target?.result as string)
+            importContacts.mutate(contacts)
+        }
+        reader.readAsText(file)
+        e.target.value = ''
+    }
+
     return (
         <div>
             <PageHeader
                 title="Leads"
                 subtitle={`${leads?.length ?? 0} leads in pipeline`}
                 action={
-                    <Button onClick={() => setAdding(true)}>
-                        <Plus size={15} /> Add lead
-                    </Button>
+                    <div className="flex gap-2">
+                        <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleCsvFile} />
+                        <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importContacts.isPending}>
+                            <Upload size={15} />
+                            {importContacts.isPending ? 'Importing…' : 'Import CSV'}
+                        </Button>
+                        <Button onClick={() => setAdding(true)}>
+                            <Plus size={15} /> Add lead
+                        </Button>
+                    </div>
                 }
             />
 
@@ -352,6 +430,30 @@ export default function Leads() {
                         error={error}
                         onSubmit={(body) => updateLead.mutate({ id: editing._id, body })}
                     />
+                )}
+            </Modal>
+
+            <Modal open={!!importResult} onClose={() => setImportResult(null)} title="Import complete">
+                {importResult && (
+                    <div className="space-y-3 text-sm">
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800/40 px-4 py-3 text-center">
+                                <div className="text-2xl font-bold text-emerald-700 dark:text-emerald-400">{importResult.created}</div>
+                                <div className="text-xs text-emerald-600 dark:text-emerald-500 mt-0.5">New leads added</div>
+                            </div>
+                            <div className="rounded-lg bg-muted px-4 py-3 text-center">
+                                <div className="text-2xl font-bold">{importResult.skipped}</div>
+                                <div className="text-xs text-muted-foreground mt-0.5">Already in system</div>
+                            </div>
+                        </div>
+                        {importResult.errors > 0 && (
+                            <p className="text-xs text-amber-600 dark:text-amber-400">
+                                {importResult.errors} contact{importResult.errors !== 1 ? 's' : ''} skipped — invalid or missing phone number.
+                            </p>
+                        )}
+                        <p className="text-xs text-muted-foreground">{importResult.total} total rows processed from CSV.</p>
+                        <Button className="w-full" onClick={() => setImportResult(null)}>Done</Button>
+                    </div>
                 )}
             </Modal>
         </div>

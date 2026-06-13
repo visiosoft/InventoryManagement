@@ -173,6 +173,89 @@ router.delete('/:id', async (req, res) => {
     res.json({ ok: true });
 });
 
+router.post('/import/bulk', async (req, res) => {
+    const contacts = req.body?.contacts;
+    if (!Array.isArray(contacts) || contacts.length === 0) {
+        return res.status(400).json({ error: 'contacts array is required' });
+    }
+
+    const ownerId = req.user.id || req.user._id;
+    const owner = await User.findById(ownerId).select('_id');
+    if (!owner) return res.status(400).json({ error: 'Owner not found' });
+
+    // Normalize and clean all contacts, skipping invalid phones
+    const valid = [];
+    let parseErrors = 0;
+
+    for (const c of contacts) {
+        const phone = String(c.phone || '').trim();
+        const phoneNormalized = normalizePhone(phone);
+        if (!phoneNormalized || phoneNormalized.length < 7) { parseErrors++; continue; }
+
+        let fullName = [String(c.firstName || ''), String(c.lastName || '')].join(' ').trim();
+        // Fall back to "Contact XXXX" if name has no real alphanumeric chars
+        if (!fullName || fullName.replace(/[^a-zA-Z0-9؀-ۿ]/g, '').length < 2) {
+            fullName = `Contact ${phoneNormalized.slice(-4)}`;
+        }
+
+        valid.push({
+            phoneNormalized,
+            fullName,
+            phone,
+            email: String(c.email || '').trim(),
+            notes: c.organization ? `Organization: ${c.organization}` : '',
+        });
+    }
+
+    // Check which phones already exist in one query
+    const allNormalized = [...new Set(valid.map(c => c.phoneNormalized))];
+    const existing = await Lead.find({ phoneNormalized: { $in: allNormalized } }).select('phoneNormalized');
+    const existingSet = new Set(existing.map(l => l.phoneNormalized));
+
+    const toCreate = valid.filter(c => !existingSet.has(c.phoneNormalized));
+    const skippedDuplicates = valid.length - toCreate.length;
+
+    let created = 0;
+    let insertErrors = 0;
+
+    if (toCreate.length > 0) {
+        const docs = toCreate.map(c => ({
+            fullName: c.fullName,
+            email: c.email,
+            phone: c.phone,
+            phoneNormalized: c.phoneNormalized,
+            owner: owner._id,
+            status: 'new',
+            source: 'other',
+            leadDateTime: new Date(),
+            storageSizeValue: 0,
+            storageSizeUnit: 'sqft',
+            durationValue: 1,
+            durationUnit: 'month',
+            unitsNeeded: 1,
+            notes: c.notes,
+            timeline: [{ type: 'created', text: 'Imported from contacts CSV' }],
+        }));
+
+        try {
+            const result = await Lead.insertMany(docs, { ordered: false });
+            created = result.length;
+        } catch (err) {
+            created = err.insertedDocs?.length ?? 0;
+            const dupCount = (err.writeErrors || []).filter(e => e.code === 11000).length;
+            insertErrors = (err.writeErrors || []).length - dupCount;
+        }
+    }
+
+    res.json({
+        ok: true,
+        created,
+        skipped: skippedDuplicates,
+        errors: parseErrors + insertErrors,
+        total: contacts.length,
+    });
+});
+
 export function normalizeLeadPhone(input) {
     return normalizePhone(input);
 }

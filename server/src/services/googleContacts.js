@@ -1,7 +1,7 @@
 import fs from 'fs';
 import { google } from 'googleapis';
 
-export function googleContactsConfigured() {
+function hasServiceAccountConfig() {
     return Boolean(
         process.env.GOOGLE_CONTACTS_SERVICE_ACCOUNT_FILE &&
         fs.existsSync(process.env.GOOGLE_CONTACTS_SERVICE_ACCOUNT_FILE) &&
@@ -9,25 +9,75 @@ export function googleContactsConfigured() {
     );
 }
 
+function hasOAuthConfig() {
+    return Boolean(
+        process.env.GOOGLE_CONTACTS_CLIENT_ID &&
+        process.env.GOOGLE_CONTACTS_CLIENT_SECRET &&
+        process.env.GOOGLE_CONTACTS_REFRESH_TOKEN
+    );
+}
+
+export function googleContactsConfigured() {
+    return hasServiceAccountConfig() || hasOAuthConfig();
+}
+
 export function googleContactsMissing() {
     const missing = [];
-    if (!process.env.GOOGLE_CONTACTS_SERVICE_ACCOUNT_FILE) missing.push('GOOGLE_CONTACTS_SERVICE_ACCOUNT_FILE');
-    if (
-        process.env.GOOGLE_CONTACTS_SERVICE_ACCOUNT_FILE &&
-        !fs.existsSync(process.env.GOOGLE_CONTACTS_SERVICE_ACCOUNT_FILE)
-    ) {
-        missing.push('GOOGLE_CONTACTS_SERVICE_ACCOUNT_FILE(file_not_found)');
+
+    if (googleContactsConfigured()) return missing;
+
+    const serviceModeTouched = Boolean(
+        process.env.GOOGLE_CONTACTS_SERVICE_ACCOUNT_FILE || process.env.GOOGLE_CONTACTS_DELEGATED_USER_EMAIL
+    );
+    const oauthModeTouched = Boolean(
+        process.env.GOOGLE_CONTACTS_CLIENT_ID ||
+        process.env.GOOGLE_CONTACTS_CLIENT_SECRET ||
+        process.env.GOOGLE_CONTACTS_REFRESH_TOKEN
+    );
+
+    if (serviceModeTouched) {
+        if (!process.env.GOOGLE_CONTACTS_SERVICE_ACCOUNT_FILE) missing.push('GOOGLE_CONTACTS_SERVICE_ACCOUNT_FILE');
+        if (
+            process.env.GOOGLE_CONTACTS_SERVICE_ACCOUNT_FILE &&
+            !fs.existsSync(process.env.GOOGLE_CONTACTS_SERVICE_ACCOUNT_FILE)
+        ) {
+            missing.push('GOOGLE_CONTACTS_SERVICE_ACCOUNT_FILE(file_not_found)');
+        }
+        if (!process.env.GOOGLE_CONTACTS_DELEGATED_USER_EMAIL) missing.push('GOOGLE_CONTACTS_DELEGATED_USER_EMAIL');
+        return missing;
     }
-    if (!process.env.GOOGLE_CONTACTS_DELEGATED_USER_EMAIL) missing.push('GOOGLE_CONTACTS_DELEGATED_USER_EMAIL');
+
+    if (oauthModeTouched) {
+        if (!process.env.GOOGLE_CONTACTS_CLIENT_ID) missing.push('GOOGLE_CONTACTS_CLIENT_ID');
+        if (!process.env.GOOGLE_CONTACTS_CLIENT_SECRET) missing.push('GOOGLE_CONTACTS_CLIENT_SECRET');
+        if (!process.env.GOOGLE_CONTACTS_REFRESH_TOKEN) missing.push('GOOGLE_CONTACTS_REFRESH_TOKEN');
+        return missing;
+    }
+
+    missing.push('GOOGLE_CONTACTS_SERVICE_ACCOUNT_FILE_or_GOOGLE_CONTACTS_CLIENT_ID');
+    missing.push('GOOGLE_CONTACTS_DELEGATED_USER_EMAIL_or_GOOGLE_CONTACTS_CLIENT_SECRET');
+    missing.push('GOOGLE_CONTACTS_REFRESH_TOKEN(oauth_only)');
     return missing;
 }
 
 function peopleClient() {
-    const auth = new google.auth.GoogleAuth({
-        keyFile: process.env.GOOGLE_CONTACTS_SERVICE_ACCOUNT_FILE,
-        scopes: ['https://www.googleapis.com/auth/contacts.readonly'],
-        clientOptions: { subject: process.env.GOOGLE_CONTACTS_DELEGATED_USER_EMAIL },
-    });
+    let auth;
+
+    if (hasServiceAccountConfig()) {
+        auth = new google.auth.GoogleAuth({
+            keyFile: process.env.GOOGLE_CONTACTS_SERVICE_ACCOUNT_FILE,
+            scopes: ['https://www.googleapis.com/auth/contacts.readonly'],
+            clientOptions: { subject: process.env.GOOGLE_CONTACTS_DELEGATED_USER_EMAIL },
+        });
+    } else {
+        const oauth2Client = new google.auth.OAuth2(
+            process.env.GOOGLE_CONTACTS_CLIENT_ID,
+            process.env.GOOGLE_CONTACTS_CLIENT_SECRET
+        );
+        oauth2Client.setCredentials({ refresh_token: process.env.GOOGLE_CONTACTS_REFRESH_TOKEN });
+        auth = oauth2Client;
+    }
+
     return google.people({ version: 'v1', auth });
 }
 

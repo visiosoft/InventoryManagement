@@ -80,6 +80,10 @@ Without credentials, "Send for signature" simulates the flow and a **Simulate si
 
 Without credentials, files are stored under `server/uploads/` and served at `/uploads/...`.
 
+Use either service-account mode or OAuth mode.
+
+Service-account mode:
+
 1. In Google Cloud Console: create a project, enable the **Google Drive API**, create a **service account**, and download its JSON key.
 2. Create a Drive folder and **share it with the service account's email** (Editor).
 3. Fill in `server/.env`:
@@ -87,6 +91,20 @@ Without credentials, files are stored under `server/uploads/` and served at `/up
    GOOGLE_SERVICE_ACCOUNT_FILE=C:\path\to\service-account.json
    GOOGLE_DRIVE_FOLDER_ID=<the folder id from its URL>
    ```
+
+OAuth mode (recommended when org policy blocks service-account key creation):
+
+1. Create OAuth client in Google Cloud, enable Drive API, and get client ID/secret.
+2. Generate a refresh token (you can use `npm run google-contacts:oauth` in `server/` and grant Drive + Contacts scopes if needed).
+3. Fill in `server/.env`:
+   ```
+   GOOGLE_DRIVE_FOLDER_ID=<the folder id from its URL>
+   GOOGLE_DRIVE_CLIENT_ID=<oauth-client-id>
+   GOOGLE_DRIVE_CLIENT_SECRET=<oauth-client-secret>
+   GOOGLE_DRIVE_REFRESH_TOKEN=<oauth-refresh-token>
+   ```
+
+Note: if `GOOGLE_DRIVE_*` OAuth values are empty, backend falls back to `GOOGLE_CONTACTS_CLIENT_ID`, `GOOGLE_CONTACTS_CLIENT_SECRET`, and `GOOGLE_CONTACTS_REFRESH_TOKEN`.
 
 ## WhatsApp setup (v1: setup verification only)
 
@@ -113,12 +131,26 @@ GET/POST https://<your-host>/api/integrations/whatsapp/webhook
 Any number imported from Google Contacts is treated as a lead.
 Sync behavior is auto create/update by normalized phone number.
 
-Fill in `server/.env`:
+You can configure **either** service-account mode (Workspace domain-wide delegation) **or** OAuth mode (Google Cloud OAuth client + refresh token).
+
+Service-account mode in `server/.env`:
 
 ```
 GOOGLE_CONTACTS_SERVICE_ACCOUNT_FILE=C:\path\to\service-account.json
 GOOGLE_CONTACTS_DELEGATED_USER_EMAIL=<workspace-user@yourdomain.com>
 ```
+
+OAuth mode in `server/.env`:
+
+```
+GOOGLE_CONTACTS_CLIENT_ID=<google-oauth-client-id>
+GOOGLE_CONTACTS_CLIENT_SECRET=<google-oauth-client-secret>
+GOOGLE_CONTACTS_REFRESH_TOKEN=<offline-refresh-token>
+```
+
+Notes:
+- The sync endpoint fetches all pages from Google People API and imports all contacts that have a phone number.
+- Existing leads are matched by normalized phone and updated; new numbers create new leads.
 
 Use **Settings → Google Contacts → Sync now** to run a manual sync.
 

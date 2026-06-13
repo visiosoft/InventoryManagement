@@ -10,19 +10,42 @@ import { Readable } from 'stream';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const UPLOADS_DIR = path.resolve(__dirname, '../../uploads');
 
-export function driveConfigured() {
+function hasServiceAccountConfig() {
   return Boolean(
     process.env.GOOGLE_SERVICE_ACCOUNT_FILE &&
-      fs.existsSync(process.env.GOOGLE_SERVICE_ACCOUNT_FILE) &&
-      process.env.GOOGLE_DRIVE_FOLDER_ID
+    fs.existsSync(process.env.GOOGLE_SERVICE_ACCOUNT_FILE) &&
+    process.env.GOOGLE_DRIVE_FOLDER_ID
   );
 }
 
+function hasOAuthConfig() {
+  const clientId = process.env.GOOGLE_DRIVE_CLIENT_ID || process.env.GOOGLE_CONTACTS_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_DRIVE_CLIENT_SECRET || process.env.GOOGLE_CONTACTS_CLIENT_SECRET;
+  const refreshToken = process.env.GOOGLE_DRIVE_REFRESH_TOKEN || process.env.GOOGLE_CONTACTS_REFRESH_TOKEN;
+  return Boolean(clientId && clientSecret && refreshToken && process.env.GOOGLE_DRIVE_FOLDER_ID);
+}
+
+export function driveConfigured() {
+  return hasServiceAccountConfig() || hasOAuthConfig();
+}
+
 function driveClient() {
-  const auth = new google.auth.GoogleAuth({
-    keyFile: process.env.GOOGLE_SERVICE_ACCOUNT_FILE,
-    scopes: ['https://www.googleapis.com/auth/drive'],
-  });
+  let auth;
+
+  if (hasServiceAccountConfig()) {
+    auth = new google.auth.GoogleAuth({
+      keyFile: process.env.GOOGLE_SERVICE_ACCOUNT_FILE,
+      scopes: ['https://www.googleapis.com/auth/drive'],
+    });
+  } else {
+    const clientId = process.env.GOOGLE_DRIVE_CLIENT_ID || process.env.GOOGLE_CONTACTS_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_DRIVE_CLIENT_SECRET || process.env.GOOGLE_CONTACTS_CLIENT_SECRET;
+    const refreshToken = process.env.GOOGLE_DRIVE_REFRESH_TOKEN || process.env.GOOGLE_CONTACTS_REFRESH_TOKEN;
+    const oauth2Client = new google.auth.OAuth2(clientId, clientSecret);
+    oauth2Client.setCredentials({ refresh_token: refreshToken });
+    auth = oauth2Client;
+  }
+
   return google.drive({ version: 'v3', auth });
 }
 
