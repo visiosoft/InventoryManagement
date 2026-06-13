@@ -71,7 +71,7 @@ export default function CustomerDetail() {
                 {contracts.map((c) => (
                   <tr key={c._id} className="hover:bg-muted/50">
                     <Td><Link to={`/contracts/${c._id}`} className="font-medium text-primary hover:underline">{c.contractNo}</Link></Td>
-                    <Td>{c.unit?.unitNumber} ({c.unit?.unitType?.sizeSqf} sqf)</Td>
+                    <Td>{c.unit?.unitNumber} ({c.unit?.sizeSqf ?? '—'} sqf)</Td>
                     <Td className="capitalize">{c.billingPeriod}</Td>
                     <Td>{formatMoney(c.rate)}</Td>
                     <Td>{formatDate(c.startDate)} → {formatDate(c.endDate)}</Td>

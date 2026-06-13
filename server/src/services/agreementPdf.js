@@ -19,7 +19,7 @@ export function agreementTemplateExists() {
 const fmtDate = (d) =>
   new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
-export async function fillAgreementPdf({ contract, customer, unit, unitType, signedDate }) {
+export async function fillAgreementPdf({ contract, customer, unit, signedDate }) {
   const bytes = fs.readFileSync(TEMPLATE_PATH);
   const doc = await PDFDocument.load(bytes);
   const font = await doc.embedFont(StandardFonts.Helvetica);
@@ -42,7 +42,7 @@ export async function fillAgreementPdf({ contract, customer, unit, unitType, sig
   draw(page1, fmtDate(contract.endDate), 755, 694);               // Move Out Date
   draw(
     page1,
-    `${unitType.sizeSqf} sq ft — Unit ${unit.unitNumber} (${contract.billingPeriod} @ ${Number(contract.rate).toFixed(2)})`,
+    `${unit.sizeSqf ?? '—'} sq ft — Unit ${unit.unitNumber} (${contract.billingPeriod} @ ${Number(contract.rate).toFixed(2)})`,
     240,
     630
   );                                                              // App. Unit Size

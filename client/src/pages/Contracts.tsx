@@ -42,7 +42,7 @@ export default function Contracts() {
                 <tr key={c._id} className="hover:bg-muted/50">
                   <Td><Link to={`/contracts/${c._id}`} className="font-medium text-primary hover:underline">{c.contractNo}</Link></Td>
                   <Td>{c.customer?.fullName}</Td>
-                  <Td>{c.unit?.unitNumber} <span className="text-muted-foreground text-xs">({c.unit?.unitType?.sizeSqf} sqf)</span></Td>
+                  <Td>{c.unit?.unitNumber} <span className="text-muted-foreground text-xs">({c.unit?.sizeSqf ?? '—'} sqf)</span></Td>
                   <Td className="capitalize">{c.billingPeriod}</Td>
                   <Td>{formatMoney(c.rate)}</Td>
                   <Td>{formatDate(c.startDate)}</Td>

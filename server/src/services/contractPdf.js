@@ -1,7 +1,7 @@
 import PDFDocument from 'pdfkit';
 
 // Renders a simple rental contract PDF and resolves with a Buffer.
-export function renderContractPdf({ contract, customer, unit, unitType }) {
+export function renderContractPdf({ contract, customer, unit }) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 56 });
     const chunks = [];
@@ -34,7 +34,7 @@ export function renderContractPdf({ contract, customer, unit, unitType }) {
     doc.fontSize(13).font('Helvetica-Bold').text('2. Rented Unit');
     doc.moveDown(0.5);
     row('Unit Number:', unit.unitNumber);
-    row('Size:', `${unitType.sizeSqf} sq ft`);
+    row('Size:', `${unit.sizeSqf ?? '—'} sq ft`);
     doc.moveDown(0.6);
 
     doc.fontSize(13).font('Helvetica-Bold').text('3. Terms');

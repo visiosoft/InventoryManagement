@@ -14,6 +14,7 @@ export default function ContractDetail() {
   const [error, setError] = useState('')
   const [recordingPayment, setRecordingPayment] = useState<Payment | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [downloadingPdf, setDownloadingPdf] = useState(false)
 
   const { data, isLoading } = useQuery<{ contract: Contract; payments: Payment[]; documents: AppDocument[] }>({
     queryKey: ['contract', id],
@@ -40,6 +41,23 @@ export default function ContractDetail() {
     onError: (e) => setError(apiError(e)),
   })
 
+  const downloadContractPdf = async () => {
+    if (!c?._id) return
+    try {
+      setDownloadingPdf(true)
+      setError('')
+      const response = await api.get(`/contracts/${c._id}/pdf`, { responseType: 'blob' })
+      const blob = new Blob([response.data], { type: 'application/pdf' })
+      const url = window.URL.createObjectURL(blob)
+      window.open(url, '_blank', 'noopener,noreferrer')
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 60_000)
+    } catch (e) {
+      setError(apiError(e))
+    } finally {
+      setDownloadingPdf(false)
+    }
+  }
+
   if (isLoading || !data) return <Spinner />
   const { contract: c, payments, documents } = data
 
@@ -52,12 +70,12 @@ export default function ContractDetail() {
     <div>
       <PageHeader
         title={c.contractNo}
-        subtitle={`${c.customer?.fullName} · Unit ${c.unit?.unitNumber} (${c.unit?.unitType?.sizeSqf} sq ft)`}
+        subtitle={`${c.customer?.fullName} · Unit ${c.unit?.unitNumber} (${c.unit?.sizeSqf ?? '—'} sq ft)`}
         action={
           <div className="flex flex-wrap gap-2">
-            <a href={`/api/contracts/${c._id}/pdf`} target="_blank" rel="noreferrer">
-              <Button variant="outline" size="sm"><Download size={14} /> Contract PDF</Button>
-            </a>
+            <Button variant="outline" size="sm" onClick={downloadContractPdf} disabled={downloadingPdf}>
+              <Download size={14} /> {downloadingPdf ? 'Opening PDF...' : 'Contract PDF'}
+            </Button>
             {c.status === 'draft' && (
               <>
                 <Button size="sm" onClick={() => action.mutate('send-signature')} disabled={action.isPending}>

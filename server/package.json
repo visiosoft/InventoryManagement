@@ -7,7 +7,11 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
-    "seed": "node src/seed.js"
+    "seed": "node src/seed.js",
+    "import:inventory": "node src/importInventory.js",
+    "import:vendors": "node src/importVendors.js",
+    "import:expenses": "node src/importExpenses.js",
+    "import:contracts": "node src/importContractsFromBackup.js"
   },
   "dependencies": {
     "axios": "^1.7.9",

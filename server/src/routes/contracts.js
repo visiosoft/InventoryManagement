@@ -13,7 +13,6 @@ function buildContractPdf(contract, signedDate) {
     contract,
     customer: contract.customer,
     unit: contract.unit,
-    unitType: contract.unit.unitType,
   };
   return agreementTemplateExists()
     ? fillAgreementPdf({ ...parts, signedDate })
@@ -22,8 +21,44 @@ function buildContractPdf(contract, signedDate) {
 
 const router = Router();
 
-const populateAll = (q) =>
-  q.populate('customer').populate({ path: 'unit', populate: 'unitType' });
+const populateAll = (q) => q.populate('customer').populate('unit');
+
+const OPEN_STATUSES = ['draft', 'pending_signature', 'active'];
+
+function hasDateOverlap(aStart, aEnd, bStart, bEnd) {
+  return aStart < bEnd && aEnd > bStart;
+}
+
+async function findOverlappingUnitContract({ unit, startDate, endDate, excludeId }) {
+  const openContracts = await Contract.find({
+    unit,
+    status: { $in: OPEN_STATUSES },
+    ...(excludeId ? { _id: { $ne: excludeId } } : {}),
+  }).select('contractNo startDate endDate status');
+
+  return openContracts.find((c) =>
+    hasDateOverlap(new Date(startDate), new Date(endDate), new Date(c.startDate), new Date(c.endDate))
+  );
+}
+
+async function syncUnitStatus(unitId) {
+  const active = await Contract.findOne({ unit: unitId, status: 'active' }).select('_id');
+  if (active) {
+    await Unit.findByIdAndUpdate(unitId, { status: 'occupied' });
+    return;
+  }
+  const upcoming = await Contract.findOne({
+    unit: unitId,
+    status: { $in: ['draft', 'pending_signature'] },
+  })
+    .sort({ startDate: 1 })
+    .select('_id startDate');
+  if (upcoming) {
+    await Unit.findByIdAndUpdate(unitId, { status: 'reserved' });
+    return;
+  }
+  await Unit.findByIdAndUpdate(unitId, { status: 'available' });
+}
 
 router.get('/', async (req, res) => {
   const filter = {};
@@ -47,10 +82,20 @@ router.post('/', async (req, res) => {
 
   const unitDoc = await Unit.findById(unit);
   if (!unitDoc) return res.status(404).json({ error: 'Unit not found' });
-  const open = await Contract.exists({ unit, status: { $in: ['draft', 'pending_signature', 'active'] } });
-  if (open) return res.status(409).json({ error: `Unit ${unitDoc.unitNumber} already has an open contract` });
-  if (new Date(endDate) <= new Date(startDate)) {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return res.status(400).json({ error: 'Invalid contract dates' });
+  }
+  if (end <= start) {
     return res.status(400).json({ error: 'End date must be after start date' });
+  }
+
+  const overlap = await findOverlappingUnitContract({ unit, startDate: start, endDate: end });
+  if (overlap) {
+    return res.status(409).json({
+      error: `Unit ${unitDoc.unitNumber} is already booked for this period (${overlap.contractNo})`,
+    });
   }
 
   const contract = await Contract.create({
@@ -62,8 +107,7 @@ router.post('/', async (req, res) => {
   const schedule = generateSchedule({ startDate, endDate, billingPeriod, rate });
   await Payment.insertMany(schedule.map((p) => ({ ...p, contract: contract._id })));
 
-  unitDoc.status = 'reserved';
-  await unitDoc.save();
+  await syncUnitStatus(unitDoc._id);
 
   res.status(201).json(await populateAll(Contract.findById(contract._id)));
 });
@@ -106,6 +150,16 @@ async function markSigned(contractId) {
     throw new Error(`Contract is ${contract.status}`);
   }
 
+  const overlap = await findOverlappingUnitContract({
+    unit: contract.unit._id,
+    startDate: contract.startDate,
+    endDate: contract.endDate,
+    excludeId: contract._id,
+  });
+  if (overlap) {
+    throw new Error(`Unit ${contract.unit.unitNumber} is already booked for this period (${overlap.contractNo})`);
+  }
+
   // Archive the signed PDF (real Zoho download, or regenerate locally in mock mode).
   let pdfBuffer = null;
   if (zohoConfigured() && contract.zohoRequestId && !contract.zohoRequestId.startsWith('MOCK-')) {
@@ -130,7 +184,7 @@ async function markSigned(contractId) {
   contract.status = 'active';
   contract.signedDocUrl = stored.url;
   await contract.save();
-  await Unit.findByIdAndUpdate(contract.unit._id, { status: 'occupied' });
+  await syncUnitStatus(contract.unit._id);
   return contract;
 }
 
@@ -148,7 +202,7 @@ router.post('/zoho-webhook', async (req, res) => {
   const status = req.body?.requests?.request_status;
   if (requestId && status === 'completed') {
     const contract = await Contract.findOne({ zohoRequestId: requestId });
-    if (contract) await markSigned(contract._id).catch(() => {});
+    if (contract) await markSigned(contract._id).catch(() => { });
   }
   res.json({ ok: true });
 });
@@ -160,9 +214,20 @@ router.post('/:id/activate', async (req, res) => {
   if (!['draft', 'pending_signature'].includes(contract.status)) {
     return res.status(409).json({ error: `Cannot activate a ${contract.status} contract` });
   }
+
+  const overlap = await findOverlappingUnitContract({
+    unit: contract.unit,
+    startDate: contract.startDate,
+    endDate: contract.endDate,
+    excludeId: contract._id,
+  });
+  if (overlap) {
+    return res.status(409).json({ error: `Unit is already booked for this period (${overlap.contractNo})` });
+  }
+
   contract.status = 'active';
   await contract.save();
-  await Unit.findByIdAndUpdate(contract.unit, { status: 'occupied' });
+  await syncUnitStatus(contract.unit);
   res.json(await populateAll(Contract.findById(contract._id)));
 });
 
@@ -175,8 +240,21 @@ async function closeContract(req, res, status) {
   }
   contract.status = status;
   await contract.save();
-  await Unit.findByIdAndUpdate(contract.unit, { status: 'available' });
   await Payment.deleteMany({ contract: contract._id, status: 'pending', dueDate: { $gt: new Date() } });
+
+  const nextContract = await Contract.findOne({
+    unit: contract.unit,
+    status: { $in: ['draft', 'pending_signature'] },
+  })
+    .sort({ startDate: 1, createdAt: 1 })
+    .select('_id startDate status');
+
+  if (nextContract && new Date(nextContract.startDate) <= new Date()) {
+    nextContract.status = 'active';
+    await nextContract.save();
+  }
+
+  await syncUnitStatus(contract.unit);
   res.json(await populateAll(Contract.findById(contract._id)));
 }
 

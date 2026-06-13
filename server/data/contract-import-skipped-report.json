@@ -1,0 +1,71 @@
+{
+  "generatedAt": "2026-06-13T01:25:55.830Z",
+  "totalSkipped": 5,
+  "items": [
+    {
+      "contract_id": "28",
+      "tenant_id": "29",
+      "status": "active",
+      "move_in_date": "2026-06-01",
+      "move_out_date": "2026-10-24",
+      "unit_ids": [
+        "109"
+      ],
+      "mapped_unit_numbers": [],
+      "matched_local_units": [],
+      "reason": "unit_ids do not resolve to backup unit_number"
+    },
+    {
+      "contract_id": "34",
+      "tenant_id": "33",
+      "status": "active",
+      "move_in_date": "2026-05-25",
+      "move_out_date": "2026-06-23",
+      "unit_ids": [
+        "178"
+      ],
+      "mapped_unit_numbers": [],
+      "matched_local_units": [],
+      "reason": "unit_ids do not resolve to backup unit_number"
+    },
+    {
+      "contract_id": "39",
+      "tenant_id": "37",
+      "status": "ended",
+      "move_in_date": "2026-05-26",
+      "move_out_date": "2026-06-25",
+      "unit_ids": [
+        "98"
+      ],
+      "mapped_unit_numbers": [],
+      "matched_local_units": [],
+      "reason": "unit_ids do not resolve to backup unit_number"
+    },
+    {
+      "contract_id": "48",
+      "tenant_id": "45",
+      "status": "active",
+      "move_in_date": "2026-05-19",
+      "move_out_date": "2026-05-19",
+      "unit_ids": [
+        "79"
+      ],
+      "mapped_unit_numbers": [],
+      "matched_local_units": [],
+      "reason": "unit_ids do not resolve to backup unit_number"
+    },
+    {
+      "contract_id": "79",
+      "tenant_id": "71",
+      "status": "active",
+      "move_in_date": "2026-06-07",
+      "move_out_date": "2026-07-05",
+      "unit_ids": [
+        "23"
+      ],
+      "mapped_unit_numbers": [],
+      "matched_local_units": [],
+      "reason": "unit_ids do not resolve to backup unit_number"
+    }
+  ]
+}

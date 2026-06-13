@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api, apiError } from '../lib/api'
-import type { Customer, Unit } from '../lib/types'
+import type { Contract, Customer, Unit } from '../lib/types'
 import { Badge, Button, Card, CardBody, Field, Input, PageHeader, Select, Spinner, Textarea } from '../components/ui'
 import { cn, formatMoney } from '../lib/utils'
 
@@ -11,6 +11,15 @@ function addToDate(date: string, billing: 'weekly' | 'monthly', n: number) {
   if (billing === 'weekly') d.setDate(d.getDate() + 7 * n)
   else d.setMonth(d.getMonth() + n)
   return d.toISOString().slice(0, 10)
+}
+
+function hasDateOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string) {
+  const aS = new Date(aStart)
+  const aE = new Date(aEnd)
+  const bS = new Date(bStart)
+  const bE = new Date(bEnd)
+  if ([aS, aE, bS, bE].some((d) => Number.isNaN(d.getTime()))) return false
+  return aS < bE && aE > bS
 }
 
 export default function NewContract() {
@@ -37,13 +46,31 @@ export default function NewContract() {
     queryKey: ['units'],
     queryFn: () => api.get('/units').then((r) => r.data),
   })
+  const { data: contracts } = useQuery<Contract[]>({
+    queryKey: ['contracts'],
+    queryFn: () => api.get('/contracts').then((r) => r.data),
+  })
 
-  const availableUnits = useMemo(() => (units || []).filter((u) => u.status === 'available' || u._id === unitId), [units, unitId])
+  const availableUnits = useMemo(
+    () => (units || []).filter((u) => u.status !== 'maintenance' || u._id === unitId),
+    [units, unitId]
+  )
   const selectedUnit = useMemo(() => (units || []).find((u) => u._id === unitId), [units, unitId])
   const selectedCustomer = useMemo(() => (customers || []).find((c) => c._id === customerId), [customers, customerId])
   const endDate = useMemo(() => addToDate(startDate, billing, periods), [startDate, billing, periods])
+  const overlappingContract = useMemo(() => {
+    if (!unitId || !startDate || !endDate) return null
+    return (contracts || []).find(
+      (c) =>
+        c.unit?._id === unitId &&
+        ['draft', 'pending_signature', 'active'].includes(c.status) &&
+        hasDateOverlap(startDate, endDate, c.startDate, c.endDate)
+    )
+  }, [contracts, unitId, startDate, endDate])
 
-  const defaultRate = selectedUnit ? (billing === 'weekly' ? selectedUnit.unitType?.weeklyRate : selectedUnit.unitType?.monthlyRate) : 0
+  // Monthly price comes from the unit; weekly = monthly / 4 (agreement defines a month as 4 weeks).
+  const monthlyPrice = selectedUnit?.price ?? 0
+  const defaultRate = billing === 'weekly' ? Math.round((monthlyPrice / 4) * 100) / 100 : monthlyPrice
   const effectiveRate = rate === '' ? defaultRate : rate
 
   const create = useMutation({
@@ -60,11 +87,20 @@ export default function NewContract() {
         notes,
       }),
     onSuccess: (res) => navigate(`/contracts/${res.data._id}`),
-    onError: (e) => setError(apiError(e)),
+    onError: (e) => {
+      const message = apiError(e)
+      setError(message)
+      if (message.includes('already booked for this period')) setStep(2)
+    },
   })
 
   const steps = ['Customer', 'Unit', 'Terms', 'Review']
-  const canNext = [Boolean(customerId), Boolean(unitId), Boolean(startDate && periods > 0 && effectiveRate > 0), true][step]
+  const canNext = [
+    Boolean(customerId),
+    Boolean(unitId),
+    Boolean(startDate && periods > 0 && effectiveRate > 0 && !overlappingContract),
+    true,
+  ][step]
 
   if (unitsLoading) return <Spinner />
 
@@ -106,16 +142,21 @@ export default function NewContract() {
           )}
 
           {step === 1 && (
-            <Field label={`Available unit (${availableUnits.length})`}>
-              <Select value={unitId} onChange={(e) => setUnitId(e.target.value)}>
-                <option value="">Select a unit…</option>
-                {availableUnits.map((u) => (
-                  <option key={u._id} value={u._id}>
-                    {u.unitNumber} — {u.unitType?.sizeSqf} sq ft ({formatMoney(u.unitType?.weeklyRate ?? 0)}/wk, {formatMoney(u.unitType?.monthlyRate ?? 0)}/mo)
-                  </option>
-                ))}
-              </Select>
-            </Field>
+            <>
+              <Field label={`Bookable unit (${availableUnits.length})`}>
+                <Select value={unitId} onChange={(e) => setUnitId(e.target.value)}>
+                  <option value="">Select a unit…</option>
+                  {availableUnits.map((u) => (
+                    <option key={u._id} value={u._id}>
+                      {u.unitNumber} — {u.sizeSqf != null ? `${u.sizeSqf} sq ft` : 'size n/a'}{u.price != null ? ` (${formatMoney(u.price)}/mo)` : ''} [{u.status}]
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <p className="text-xs text-muted-foreground">
+                You can pre-book units that are currently occupied or reserved, as long as contract dates do not overlap.
+              </p>
+            </>
           )}
 
           {step === 2 && (
@@ -148,6 +189,12 @@ export default function NewContract() {
                 Auto-renew at end of term
               </label>
               <Field label="Notes"><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
+              {overlappingContract && (
+                <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                  This unit is already booked for the selected dates under {overlappingContract.contractNo} ({overlappingContract.startDate.slice(0, 10)} to {overlappingContract.endDate.slice(0, 10)}).
+                  Choose a different date range or unit.
+                </div>
+              )}
             </>
           )}
 
@@ -155,7 +202,7 @@ export default function NewContract() {
             <div className="space-y-3 text-sm">
               <div className="grid grid-cols-2 gap-3">
                 <div><div className="text-xs text-muted-foreground">Customer</div>{selectedCustomer?.fullName}</div>
-                <div><div className="text-xs text-muted-foreground">Unit</div>{selectedUnit?.unitNumber} — {selectedUnit?.unitType?.sizeSqf} sq ft</div>
+                <div><div className="text-xs text-muted-foreground">Unit</div>{selectedUnit?.unitNumber} — {selectedUnit?.sizeSqf ?? '—'} sq ft</div>
                 <div><div className="text-xs text-muted-foreground">Billing</div><span className="capitalize">{billing}</span> · {periods} {billing === 'weekly' ? 'weeks' : 'months'}</div>
                 <div><div className="text-xs text-muted-foreground">Term</div>{startDate} → {endDate}</div>
                 <div><div className="text-xs text-muted-foreground">Rate</div>{formatMoney(Number(effectiveRate))} / {billing === 'weekly' ? 'week' : 'month'}</div>
@@ -165,6 +212,11 @@ export default function NewContract() {
                 Total contract value: <strong>{formatMoney(Number(effectiveRate) * periods)}</strong> · {periods} payments will be scheduled.
                 {autoRenew && <Badge tone="purple" className="ml-2">Auto-renew</Badge>}
               </div>
+              {overlappingContract && (
+                <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                  Cannot create: selected term overlaps with {overlappingContract.contractNo} ({overlappingContract.startDate.slice(0, 10)} to {overlappingContract.endDate.slice(0, 10)}).
+                </div>
+              )}
             </div>
           )}
 
@@ -177,7 +229,7 @@ export default function NewContract() {
             {step < 3 ? (
               <Button disabled={!canNext} onClick={() => setStep(step + 1)}>Continue</Button>
             ) : (
-              <Button disabled={create.isPending} onClick={() => create.mutate()}>
+              <Button disabled={create.isPending || !!overlappingContract} onClick={() => create.mutate()}>
                 {create.isPending ? 'Creating…' : 'Create contract'}
               </Button>
             )}

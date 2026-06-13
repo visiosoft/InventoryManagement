@@ -1,16 +1,43 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Box, Users, FileText, CreditCard, BarChart3, FolderOpen, Settings, LogOut, Moon, Sun, Package } from 'lucide-react'
+import { LayoutDashboard, Box, Users, FileText, CreditCard, BarChart3, FolderOpen, Settings, LogOut, Moon, Sun, Package, UserPlus, ReceiptText, FileSpreadsheet, Truck, ShoppingCart, Wallet } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { cn } from '../lib/utils'
 
-const nav = [
+const navTop = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/units', label: 'Units', icon: Box },
-  { to: '/customers', label: 'Customers', icon: Users },
-  { to: '/contracts', label: 'Contracts', icon: FileText },
+]
+
+const navGroups = [
+  {
+    title: 'Inventory',
+    items: [
+      { to: '/units', label: 'Units', icon: Box },
+      { to: '/contracts', label: 'Contracts', icon: FileText },
+      { to: '/documents', label: 'Documents', icon: FolderOpen },
+    ],
+  },
+  {
+    title: 'Sales',
+    items: [
+      { to: '/customers', label: 'Customers', icon: Users },
+      { to: '/quotes', label: 'Quotes', icon: FileSpreadsheet },
+      { to: '/invoices', label: 'Invoices', icon: ReceiptText },
+    ],
+  },
+  {
+    title: 'Purchases',
+    items: [
+      { to: '/vendors', label: 'Vendors', icon: Truck },
+      { to: '/expenses', label: 'Expenses', icon: Wallet },
+    ],
+  },
+]
+
+const navBottom = [
+  { to: '/leads', label: 'Leads', icon: UserPlus },
+  { to: '/purchases', label: 'Purchases', icon: ShoppingCart },
   { to: '/payments', label: 'Payments', icon: CreditCard },
-  { to: '/documents', label: 'Documents', icon: FolderOpen },
   { to: '/reports', label: 'Reports', icon: BarChart3 },
   { to: '/settings', label: 'Settings', icon: Settings },
 ]
@@ -38,11 +65,48 @@ export default function Layout() {
           </div>
         </div>
         <nav className="flex-1 px-3 py-2 space-y-0.5">
-          {nav.map(({ to, label, icon: Icon }) => (
+          {navTop.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
               to={to}
               end={to === '/'}
+              className={({ isActive }) =>
+                cn(
+                  'flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors',
+                  isActive ? 'bg-sidebar-active text-white' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/5'
+                )
+              }
+            >
+              <Icon size={16} />
+              {label}
+            </NavLink>
+          ))}
+
+          {navGroups.map((group) => (
+            <div key={group.title} className="pt-2">
+              <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-muted/80">{group.title}</div>
+              {group.items.map(({ to, label, icon: Icon }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  className={({ isActive }) =>
+                    cn(
+                      'flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors',
+                      isActive ? 'bg-sidebar-active text-white' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/5'
+                    )
+                  }
+                >
+                  <Icon size={16} />
+                  {label}
+                </NavLink>
+              ))}
+            </div>
+          ))}
+
+          {navBottom.map(({ to, label, icon: Icon }) => (
+            <NavLink
+              key={to}
+              to={to}
               className={({ isActive }) =>
                 cn(
                   'flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors',

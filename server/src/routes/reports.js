@@ -1,25 +1,43 @@
 import { Router } from 'express';
-import { Unit, UnitType, Contract, Payment } from '../models/index.js';
+import { Unit, Contract, Payment } from '../models/index.js';
 
 const router = Router();
 
+const SIZE_BUCKETS = [
+  { label: '≤ 25', min: 0, max: 25 },
+  { label: '26–50', min: 26, max: 50 },
+  { label: '51–80', min: 51, max: 80 },
+  { label: '81–120', min: 81, max: 120 },
+  { label: '121–160', min: 121, max: 160 },
+  { label: '160+', min: 161, max: Infinity },
+];
+
 // Dashboard summary: occupancy, revenue this month, expiring soon, overdue.
 router.get('/summary', async (_req, res) => {
-  const [units, types] = await Promise.all([
-    Unit.find().populate('unitType'),
-    UnitType.find().sort({ sizeSqf: 1 }),
-  ]);
+  const units = await Unit.find();
 
   const byStatus = { available: 0, occupied: 0, reserved: 0, maintenance: 0 };
   for (const u of units) byStatus[u.status] += 1;
 
-  const bySize = types.map((t) => {
-    const ofType = units.filter((u) => u.unitType && String(u.unitType._id) === String(t._id));
+  const bySize = SIZE_BUCKETS.map((b) => {
+    const inBucket = units.filter((u) => u.sizeSqf != null && u.sizeSqf >= b.min && u.sizeSqf <= b.max);
     return {
-      sizeSqf: t.sizeSqf,
-      total: ofType.length,
-      available: ofType.filter((u) => u.status === 'available').length,
-      occupied: ofType.filter((u) => u.status === 'occupied').length,
+      sizeSqf: b.label,
+      total: inBucket.length,
+      available: inBucket.filter((u) => u.status === 'available').length,
+      occupied: inBucket.filter((u) => u.status === 'occupied').length,
+      maintenance: inBucket.filter((u) => u.status === 'maintenance').length,
+    };
+  });
+
+  const byFloor = ['F1', 'F2'].map((f) => {
+    const onFloor = units.filter((u) => u.floor === f);
+    return {
+      floor: f,
+      total: onFloor.length,
+      available: onFloor.filter((u) => u.status === 'available').length,
+      occupied: onFloor.filter((u) => u.status === 'occupied').length,
+      maintenance: onFloor.filter((u) => u.status === 'maintenance').length,
     };
   });
 
@@ -53,12 +71,14 @@ router.get('/summary', async (_req, res) => {
     Contract.countDocuments({ status: 'active' }),
   ]);
 
-  const totalUnits = units.length;
+  // Rentable = not under construction / in-house use.
+  const rentable = byStatus.available + byStatus.occupied + byStatus.reserved;
   res.json({
-    totalUnits,
+    totalUnits: units.length,
     byStatus,
     bySize,
-    occupancyPct: totalUnits ? Math.round(((byStatus.occupied + byStatus.reserved) / totalUnits) * 100) : 0,
+    byFloor,
+    occupancyPct: rentable ? Math.round(((byStatus.occupied + byStatus.reserved) / rentable) * 100) : 0,
     activeContracts,
     revenueThisMonth: revenueAgg[0]?.total || 0,
     expectedThisMonth: (revenueAgg[0]?.total || 0) + (dueAgg[0]?.total || 0),
@@ -101,18 +121,16 @@ router.get('/revenue', async (req, res) => {
   res.json(out);
 });
 
-// Availability search: which units of a size are free now / for a date range.
+// Availability search: free units, optionally by minimum size and date range.
 router.get('/availability', async (req, res) => {
-  const { sizeSqf, from, to } = req.query;
-  const typeFilter = {};
-  if (sizeSqf) {
-    const type = await UnitType.findOne({ sizeSqf: Number(sizeSqf) });
-    if (!type) return res.json([]);
-    typeFilter.unitType = type._id;
-  }
-  const units = await Unit.find({ ...typeFilter, status: { $ne: 'maintenance' } }).populate('unitType');
+  const { minSize, maxSize, from, to } = req.query;
+  const filter = { status: { $nin: ['maintenance'] } };
+  if (minSize) filter.sizeSqf = { ...filter.sizeSqf, $gte: Number(minSize) };
+  if (maxSize) filter.sizeSqf = { ...filter.sizeSqf, $lte: Number(maxSize) };
+  const units = await Unit.find(filter).sort({ sizeSqf: 1, unitNumber: 1 });
 
-  // A unit is unavailable for the range if an open contract overlaps it.
+  // A unit is unavailable for the range if an open contract overlaps it,
+  // or it is in in-house use (occupied without a contract).
   const fromD = from ? new Date(from) : new Date();
   const toD = to ? new Date(to) : fromD;
   const busy = await Contract.find({
@@ -121,8 +139,18 @@ router.get('/availability', async (req, res) => {
     endDate: { $gte: fromD },
   }).select('unit');
   const busyIds = new Set(busy.map((c) => String(c.unit)));
+  const contractedUnitIds = new Set(
+    (await Contract.find({ status: { $in: ['draft', 'pending_signature', 'active'] } }).select('unit')).map((c) => String(c.unit))
+  );
 
-  res.json(units.filter((u) => !busyIds.has(String(u._id))));
+  res.json(
+    units.filter((u) => {
+      if (busyIds.has(String(u._id))) return false;
+      // occupied/reserved without any open contract = in-house use, not rentable
+      if (['occupied', 'reserved'].includes(u.status) && !contractedUnitIds.has(String(u._id))) return false;
+      return true;
+    })
+  );
 });
 
 // Upcoming vacancies: active contracts ending within N days.
@@ -132,7 +160,7 @@ router.get('/vacancies', async (req, res) => {
   const until = new Date(now.getTime() + days * 86400000);
   const contracts = await Contract.find({ status: 'active', endDate: { $gte: now, $lte: until } })
     .populate('customer', 'fullName')
-    .populate({ path: 'unit', populate: 'unitType' })
+    .populate('unit')
     .sort({ endDate: 1 });
   res.json(contracts);
 });

@@ -1,0 +1,6 @@
+contract_id,tenant_id,status,move_in_date,move_out_date,unit_ids,mapped_unit_numbers,reason
+28,29,active,2026-06-01,2026-10-24,"[""109""]",[],unit_ids do not resolve to backup unit_number
+34,33,active,2026-05-25,2026-06-23,"[""178""]",[],unit_ids do not resolve to backup unit_number
+39,37,ended,2026-05-26,2026-06-25,"[""98""]",[],unit_ids do not resolve to backup unit_number
+48,45,active,2026-05-19,2026-05-19,"[""79""]",[],unit_ids do not resolve to backup unit_number
+79,71,active,2026-06-07,2026-07-05,"[""23""]",[],unit_ids do not resolve to backup unit_number

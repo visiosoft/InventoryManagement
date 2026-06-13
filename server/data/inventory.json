@@ -1,0 +1,1552 @@
+[
+ {
+  "unitNumber": "F1-01",
+  "floor": "F1",
+  "sizeSqf": 154,
+  "price": 2880.0,
+  "lengthFt": 14.0,
+  "widthFt": 11.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-02",
+  "floor": "F1",
+  "sizeSqf": 154,
+  "price": 2880.0,
+  "lengthFt": 14.0,
+  "widthFt": 11.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-03",
+  "floor": "F1",
+  "sizeSqf": 154,
+  "price": 2880.0,
+  "lengthFt": 14.0,
+  "widthFt": 11.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-04",
+  "floor": "F1",
+  "sizeSqf": 154,
+  "price": 2880.0,
+  "lengthFt": 14.0,
+  "widthFt": 11.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-05",
+  "floor": "F1",
+  "sizeSqf": 154,
+  "price": 2880.0,
+  "lengthFt": 14.0,
+  "widthFt": 11.0,
+  "status": "available",
+  "notes": "done ( cancel the electrical outlet and paint )"
+ },
+ {
+  "unitNumber": "F1-06",
+  "floor": "F1",
+  "sizeSqf": 154,
+  "price": 2880.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "occupied",
+  "notes": "used"
+ },
+ {
+  "unitNumber": "F1-07",
+  "floor": "F1",
+  "sizeSqf": 25,
+  "price": 750.0,
+  "lengthFt": 5.0,
+  "widthFt": 5.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-08",
+  "floor": "F1",
+  "sizeSqf": 25,
+  "price": 750.0,
+  "lengthFt": 5.0,
+  "widthFt": 5.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-09",
+  "floor": "F1",
+  "sizeSqf": 42,
+  "price": null,
+  "lengthFt": 6.0,
+  "widthFt": 7.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-10",
+  "floor": "F1",
+  "sizeSqf": 78,
+  "price": 1200.0,
+  "lengthFt": 6.0,
+  "widthFt": 13.0,
+  "status": "occupied",
+  "notes": "used"
+ },
+ {
+  "unitNumber": "F1-11",
+  "floor": "F1",
+  "sizeSqf": null,
+  "price": null,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": "still not build yet"
+ },
+ {
+  "unitNumber": "F1-12",
+  "floor": "F1",
+  "sizeSqf": 110,
+  "price": 1600.0,
+  "lengthFt": 11.0,
+  "widthFt": 10.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-13",
+  "floor": "F1",
+  "sizeSqf": 110,
+  "price": 1600.0,
+  "lengthFt": 11.0,
+  "widthFt": 10.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-14",
+  "floor": "F1",
+  "sizeSqf": 190,
+  "price": 2800.0,
+  "lengthFt": 19.0,
+  "widthFt": 10.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-15",
+  "floor": "F1",
+  "sizeSqf": 190,
+  "price": 2800.0,
+  "lengthFt": 19.0,
+  "widthFt": 10.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-16",
+  "floor": "F1",
+  "sizeSqf": 190,
+  "price": 3360.0,
+  "lengthFt": 19.0,
+  "widthFt": 10.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-17",
+  "floor": "F1",
+  "sizeSqf": 50,
+  "price": 1080.0,
+  "lengthFt": 5.0,
+  "widthFt": 10.0,
+  "status": "occupied",
+  "notes": "pending epoxy paint ( fire alarm store)"
+ },
+ {
+  "unitNumber": "F1-18",
+  "floor": "F1",
+  "sizeSqf": 140,
+  "price": 2880.0,
+  "lengthFt": 14.0,
+  "widthFt": 10.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-19",
+  "floor": "F1",
+  "sizeSqf": 154,
+  "price": 2880.0,
+  "lengthFt": 14.0,
+  "widthFt": 11.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-20",
+  "floor": "F1",
+  "sizeSqf": 154,
+  "price": 2880.0,
+  "lengthFt": 14.0,
+  "widthFt": 11.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-21",
+  "floor": "F1",
+  "sizeSqf": 154,
+  "price": 2880.0,
+  "lengthFt": 14.0,
+  "widthFt": 11.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-22",
+  "floor": "F1",
+  "sizeSqf": 78,
+  "price": 1440.0,
+  "lengthFt": 6.0,
+  "widthFt": 13.0,
+  "status": "occupied",
+  "notes": "done ( used store)"
+ },
+ {
+  "unitNumber": "F1-23",
+  "floor": "F1",
+  "sizeSqf": 154,
+  "price": 2880.0,
+  "lengthFt": 14.0,
+  "widthFt": 11.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-24",
+  "floor": "F1",
+  "sizeSqf": 154,
+  "price": 2880.0,
+  "lengthFt": 14.0,
+  "widthFt": 11.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-25",
+  "floor": "F1",
+  "sizeSqf": 154,
+  "price": 2880.0,
+  "lengthFt": 14.0,
+  "widthFt": 11.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-26",
+  "floor": "F1",
+  "sizeSqf": 154,
+  "price": 2880.0,
+  "lengthFt": 14.0,
+  "widthFt": 11.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-27",
+  "floor": "F1",
+  "sizeSqf": 154,
+  "price": 2880.0,
+  "lengthFt": 14.0,
+  "widthFt": 11.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-28",
+  "floor": "F1",
+  "sizeSqf": 70,
+  "price": 1440.0,
+  "lengthFt": 14.0,
+  "widthFt": 5.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-29",
+  "floor": "F1",
+  "sizeSqf": 40,
+  "price": 1080.0,
+  "lengthFt": 5.0,
+  "widthFt": 8.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-30",
+  "floor": "F1",
+  "sizeSqf": 55,
+  "price": 1080.0,
+  "lengthFt": 5.0,
+  "widthFt": 5.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-31",
+  "floor": "F1",
+  "sizeSqf": 84,
+  "price": 1200.0,
+  "lengthFt": 6.0,
+  "widthFt": 14.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-32",
+  "floor": "F1",
+  "sizeSqf": 150,
+  "price": 2880.0,
+  "lengthFt": 15.0,
+  "widthFt": 10.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-33",
+  "floor": "F1",
+  "sizeSqf": 190,
+  "price": 2880.0,
+  "lengthFt": 10.0,
+  "widthFt": 15.0,
+  "status": "available",
+  "notes": "done ( Fire hose reel )"
+ },
+ {
+  "unitNumber": "F1-34",
+  "floor": "F1",
+  "sizeSqf": 190,
+  "price": 3360.0,
+  "lengthFt": 19.0,
+  "widthFt": 10.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-35",
+  "floor": "F1",
+  "sizeSqf": 190,
+  "price": 3360.0,
+  "lengthFt": 19.0,
+  "widthFt": 10.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-36",
+  "floor": "F1",
+  "sizeSqf": 190,
+  "price": 3360.0,
+  "lengthFt": 19.0,
+  "widthFt": 10.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-37",
+  "floor": "F1",
+  "sizeSqf": 190,
+  "price": 3360.0,
+  "lengthFt": 19.0,
+  "widthFt": 10.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-38",
+  "floor": "F1",
+  "sizeSqf": 190,
+  "price": 3360.0,
+  "lengthFt": 19.0,
+  "widthFt": 10.0,
+  "status": "available",
+  "notes": "done ( pending cancel the fire alarm) building"
+ },
+ {
+  "unitNumber": "F1-39",
+  "floor": "F1",
+  "sizeSqf": 77,
+  "price": 1440.0,
+  "lengthFt": 11.0,
+  "widthFt": 7.0,
+  "status": "occupied",
+  "notes": "store ( pending epoxy paint )"
+ },
+ {
+  "unitNumber": "F1-40",
+  "floor": "F1",
+  "sizeSqf": 156,
+  "price": 2880.0,
+  "lengthFt": 13.0,
+  "widthFt": 12.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-41",
+  "floor": "F1",
+  "sizeSqf": 190,
+  "price": 3360.0,
+  "lengthFt": 19.0,
+  "widthFt": 10.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-42",
+  "floor": "F1",
+  "sizeSqf": 190,
+  "price": 3360.0,
+  "lengthFt": 19.0,
+  "widthFt": 10.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-43",
+  "floor": "F1",
+  "sizeSqf": 190,
+  "price": 3360.0,
+  "lengthFt": 19.0,
+  "widthFt": 10.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F1-44",
+  "floor": "F1",
+  "sizeSqf": 190,
+  "price": 3360.0,
+  "lengthFt": 19.0,
+  "widthFt": 10.0,
+  "status": "available",
+  "notes": "done"
+ },
+ {
+  "unitNumber": "F2-01",
+  "floor": "F2",
+  "sizeSqf": 49,
+  "price": 990.0,
+  "lengthFt": 5.0,
+  "widthFt": 9.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-02",
+  "floor": "F2",
+  "sizeSqf": 49,
+  "price": 990.0,
+  "lengthFt": 5.0,
+  "widthFt": 9.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-03",
+  "floor": "F2",
+  "sizeSqf": 25,
+  "price": 687.0,
+  "lengthFt": 5.0,
+  "widthFt": 4.5,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-04",
+  "floor": "F2",
+  "sizeSqf": 36,
+  "price": 770.0,
+  "lengthFt": 5.0,
+  "widthFt": 6.6,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-05",
+  "floor": "F2",
+  "sizeSqf": 50,
+  "price": 990.0,
+  "lengthFt": 5.0,
+  "widthFt": 9.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-06",
+  "floor": "F2",
+  "sizeSqf": 24,
+  "price": 687.0,
+  "lengthFt": 5.0,
+  "widthFt": 5.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-07",
+  "floor": "F2",
+  "sizeSqf": 24,
+  "price": 687.0,
+  "lengthFt": 5.0,
+  "widthFt": 5.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-08",
+  "floor": "F2",
+  "sizeSqf": 24,
+  "price": 687.0,
+  "lengthFt": 5.0,
+  "widthFt": 5.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-09",
+  "floor": "F2",
+  "sizeSqf": 24,
+  "price": 687.0,
+  "lengthFt": 5.0,
+  "widthFt": 5.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-10",
+  "floor": "F2",
+  "sizeSqf": 24,
+  "price": 687.0,
+  "lengthFt": 5.0,
+  "widthFt": 5.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-11",
+  "floor": "F2",
+  "sizeSqf": 24,
+  "price": 687.0,
+  "lengthFt": 5.0,
+  "widthFt": 5.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-12",
+  "floor": "F2",
+  "sizeSqf": 25,
+  "price": 687.0,
+  "lengthFt": 5.0,
+  "widthFt": 5.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-13",
+  "floor": "F2",
+  "sizeSqf": 25,
+  "price": 687.0,
+  "lengthFt": 5.0,
+  "widthFt": 5.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-14",
+  "floor": "F2",
+  "sizeSqf": 34,
+  "price": 770.0,
+  "lengthFt": 5.0,
+  "widthFt": 7.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-15",
+  "floor": "F2",
+  "sizeSqf": 34,
+  "price": 770.0,
+  "lengthFt": 5.0,
+  "widthFt": 7.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-16",
+  "floor": "F2",
+  "sizeSqf": 34,
+  "price": 770.0,
+  "lengthFt": 5.0,
+  "widthFt": 7.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-17",
+  "floor": "F2",
+  "sizeSqf": 47,
+  "price": 990.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": "not yet installed"
+ },
+ {
+  "unitNumber": "F2-18",
+  "floor": "F2",
+  "sizeSqf": 35,
+  "price": 770.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": "not yet installed"
+ },
+ {
+  "unitNumber": "F2-19",
+  "floor": "F2",
+  "sizeSqf": 47,
+  "price": 990.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": "not yet installed"
+ },
+ {
+  "unitNumber": "F2-20",
+  "floor": "F2",
+  "sizeSqf": null,
+  "price": null,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": "not yet installed"
+ },
+ {
+  "unitNumber": "F2-21",
+  "floor": "F2",
+  "sizeSqf": null,
+  "price": null,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": "not yet installed"
+ },
+ {
+  "unitNumber": "F2-22",
+  "floor": "F2",
+  "sizeSqf": 35,
+  "price": 770.0,
+  "lengthFt": 7.0,
+  "widthFt": 4.9,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-23",
+  "floor": "F2",
+  "sizeSqf": 34,
+  "price": 770.0,
+  "lengthFt": 4.5,
+  "widthFt": 7.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-24",
+  "floor": "F2",
+  "sizeSqf": 85,
+  "price": 1320.0,
+  "lengthFt": 9.0,
+  "widthFt": 9.5,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-25",
+  "floor": "F2",
+  "sizeSqf": 85,
+  "price": 1320.0,
+  "lengthFt": 9.0,
+  "widthFt": 10.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-26",
+  "floor": "F2",
+  "sizeSqf": 85,
+  "price": 1320.0,
+  "lengthFt": 9.0,
+  "widthFt": 10.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-27",
+  "floor": "F2",
+  "sizeSqf": 32,
+  "price": 770.0,
+  "lengthFt": 5.5,
+  "widthFt": 5.5,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-28",
+  "floor": "F2",
+  "sizeSqf": 32,
+  "price": 770.0,
+  "lengthFt": 5.5,
+  "widthFt": 5.5,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-29",
+  "floor": "F2",
+  "sizeSqf": 32,
+  "price": 770.0,
+  "lengthFt": 5.5,
+  "widthFt": 5.5,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-30",
+  "floor": "F2",
+  "sizeSqf": 32,
+  "price": 770.0,
+  "lengthFt": 5.5,
+  "widthFt": 5.5,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-31",
+  "floor": "F2",
+  "sizeSqf": 32,
+  "price": 770.0,
+  "lengthFt": 5.5,
+  "widthFt": 5.5,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-32",
+  "floor": "F2",
+  "sizeSqf": 45,
+  "price": 990.0,
+  "lengthFt": 5.5,
+  "widthFt": 8.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-33",
+  "floor": "F2",
+  "sizeSqf": 45,
+  "price": 990.0,
+  "lengthFt": 5.5,
+  "widthFt": 8.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-34",
+  "floor": "F2",
+  "sizeSqf": 45,
+  "price": 990.0,
+  "lengthFt": 5.5,
+  "widthFt": 8.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-35",
+  "floor": "F2",
+  "sizeSqf": 35,
+  "price": 770.0,
+  "lengthFt": 6.0,
+  "widthFt": 5.8,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-36",
+  "floor": "F2",
+  "sizeSqf": 27,
+  "price": 687.0,
+  "lengthFt": 6.0,
+  "widthFt": 4.5,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-37",
+  "floor": "F2",
+  "sizeSqf": 27,
+  "price": 687.0,
+  "lengthFt": 6.0,
+  "widthFt": 4.5,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-38",
+  "floor": "F2",
+  "sizeSqf": 98,
+  "price": 1760.0,
+  "lengthFt": 9.0,
+  "widthFt": 8.8,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-39",
+  "floor": "F2",
+  "sizeSqf": 69,
+  "price": 1320.0,
+  "lengthFt": 9.0,
+  "widthFt": 10.7,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-40",
+  "floor": "F2",
+  "sizeSqf": 98,
+  "price": 1760.0,
+  "lengthFt": 9.0,
+  "widthFt": 10.7,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-41",
+  "floor": "F2",
+  "sizeSqf": 98,
+  "price": 1760.0,
+  "lengthFt": 9.0,
+  "widthFt": 10.7,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-42",
+  "floor": "F2",
+  "sizeSqf": 98,
+  "price": 1760.0,
+  "lengthFt": 9.0,
+  "widthFt": 10.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler"
+ },
+ {
+  "unitNumber": "F2-43",
+  "floor": "F2",
+  "sizeSqf": 145,
+  "price": 2640.0,
+  "lengthFt": 13.0,
+  "widthFt": 11.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler and epoxy paint"
+ },
+ {
+  "unitNumber": "F2-44",
+  "floor": "F2",
+  "sizeSqf": 145,
+  "price": 2640.0,
+  "lengthFt": 13.0,
+  "widthFt": 11.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler and epoxy paint"
+ },
+ {
+  "unitNumber": "F2-45",
+  "floor": "F2",
+  "sizeSqf": 145,
+  "price": 2640.0,
+  "lengthFt": 13.0,
+  "widthFt": 11.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler and epoxy paint"
+ },
+ {
+  "unitNumber": "F2-46",
+  "floor": "F2",
+  "sizeSqf": 145,
+  "price": 2640.0,
+  "lengthFt": 13.0,
+  "widthFt": 11.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler and epoxy paint"
+ },
+ {
+  "unitNumber": "F2-47",
+  "floor": "F2",
+  "sizeSqf": 11,
+  "price": 440.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": "not yet installed"
+ },
+ {
+  "unitNumber": "F2-48",
+  "floor": "F2",
+  "sizeSqf": 11,
+  "price": 440.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": "not yet installed"
+ },
+ {
+  "unitNumber": "F2-49",
+  "floor": "F2",
+  "sizeSqf": 11,
+  "price": 440.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": "not yet installed"
+ },
+ {
+  "unitNumber": "F2-50",
+  "floor": "F2",
+  "sizeSqf": 11,
+  "price": 440.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": "not yet installed"
+ },
+ {
+  "unitNumber": "F2-51",
+  "floor": "F2",
+  "sizeSqf": 11,
+  "price": 440.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": "not yet installed"
+ },
+ {
+  "unitNumber": "F2-52",
+  "floor": "F2",
+  "sizeSqf": 11,
+  "price": 440.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": "not yet installed"
+ },
+ {
+  "unitNumber": "F2-53",
+  "floor": "F2",
+  "sizeSqf": 11,
+  "price": 440.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": "not yet installed"
+ },
+ {
+  "unitNumber": "F2-54",
+  "floor": "F2",
+  "sizeSqf": 11,
+  "price": 440.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": "not yet installed"
+ },
+ {
+  "unitNumber": "F2-55",
+  "floor": "F2",
+  "sizeSqf": 11,
+  "price": 440.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": "not yet installed"
+ },
+ {
+  "unitNumber": "F2-56",
+  "floor": "F2",
+  "sizeSqf": 11,
+  "price": 440.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": "not yet installed"
+ },
+ {
+  "unitNumber": "F2-57",
+  "floor": "F2",
+  "sizeSqf": 45,
+  "price": 990.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": "not yet installed"
+ },
+ {
+  "unitNumber": "F2-58",
+  "floor": "F2",
+  "sizeSqf": 31,
+  "price": 770.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": "not yet installed"
+ },
+ {
+  "unitNumber": "F2-59",
+  "floor": "F2",
+  "sizeSqf": 45,
+  "price": 990.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": "not yet installed"
+ },
+ {
+  "unitNumber": "F2-60",
+  "floor": "F2",
+  "sizeSqf": 45,
+  "price": 990.0,
+  "lengthFt": 5.0,
+  "widthFt": 10.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler and epoxy paint"
+ },
+ {
+  "unitNumber": "F2-61",
+  "floor": "F2",
+  "sizeSqf": 49,
+  "price": 990.0,
+  "lengthFt": 5.0,
+  "widthFt": 10.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler and epoxy paint"
+ },
+ {
+  "unitNumber": "F2-62",
+  "floor": "F2",
+  "sizeSqf": 49,
+  "price": 990.0,
+  "lengthFt": 5.0,
+  "widthFt": 10.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler and epoxy paint"
+ },
+ {
+  "unitNumber": "F2-63",
+  "floor": "F2",
+  "sizeSqf": 49,
+  "price": 990.0,
+  "lengthFt": 5.0,
+  "widthFt": 10.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler and epoxy paint"
+ },
+ {
+  "unitNumber": "F2-64",
+  "floor": "F2",
+  "sizeSqf": 49,
+  "price": 990.0,
+  "lengthFt": 5.0,
+  "widthFt": 10.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler and epoxy paint"
+ },
+ {
+  "unitNumber": "F2-65",
+  "floor": "F2",
+  "sizeSqf": 49,
+  "price": 990.0,
+  "lengthFt": 5.0,
+  "widthFt": 10.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler and epoxy paint"
+ },
+ {
+  "unitNumber": "F2-66",
+  "floor": "F2",
+  "sizeSqf": 50,
+  "price": 990.0,
+  "lengthFt": 9.0,
+  "widthFt": 6.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler and epoxy paint"
+ },
+ {
+  "unitNumber": "F2-67",
+  "floor": "F2",
+  "sizeSqf": 42,
+  "price": 990.0,
+  "lengthFt": 7.0,
+  "widthFt": 6.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler and epoxy paint"
+ },
+ {
+  "unitNumber": "F2-68",
+  "floor": "F2",
+  "sizeSqf": 46,
+  "price": 990.0,
+  "lengthFt": 8.0,
+  "widthFt": 6.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler and epoxy paint"
+ },
+ {
+  "unitNumber": "F2-69",
+  "floor": "F2",
+  "sizeSqf": 96,
+  "price": 1760.0,
+  "lengthFt": 9.0,
+  "widthFt": 10.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler and epoxy paint"
+ },
+ {
+  "unitNumber": "F2-70",
+  "floor": "F2",
+  "sizeSqf": 47,
+  "price": 990.0,
+  "lengthFt": 5.0,
+  "widthFt": 10.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler and epoxy paint"
+ },
+ {
+  "unitNumber": "F2-71",
+  "floor": "F2",
+  "sizeSqf": 47,
+  "price": 990.0,
+  "lengthFt": 5.0,
+  "widthFt": 10.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler and epoxy paint"
+ },
+ {
+  "unitNumber": "F2-72",
+  "floor": "F2",
+  "sizeSqf": 34,
+  "price": 770.0,
+  "lengthFt": 5.0,
+  "widthFt": 10.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler and epoxy paint"
+ },
+ {
+  "unitNumber": "F2-73",
+  "floor": "F2",
+  "sizeSqf": 34,
+  "price": 770.0,
+  "lengthFt": 5.0,
+  "widthFt": 7.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler and epoxy paint"
+ },
+ {
+  "unitNumber": "F2-74",
+  "floor": "F2",
+  "sizeSqf": 98,
+  "price": 1760.0,
+  "lengthFt": 9.0,
+  "widthFt": 10.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler and epoxy paint"
+ },
+ {
+  "unitNumber": "F2-75",
+  "floor": "F2",
+  "sizeSqf": 35,
+  "price": 770.0,
+  "lengthFt": 5.0,
+  "widthFt": 7.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler and epoxy paint"
+ },
+ {
+  "unitNumber": "F2-76",
+  "floor": "F2",
+  "sizeSqf": 35,
+  "price": 770.0,
+  "lengthFt": 5.0,
+  "widthFt": 7.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler and epoxy paint"
+ },
+ {
+  "unitNumber": "F2-77",
+  "floor": "F2",
+  "sizeSqf": 50,
+  "price": 990.0,
+  "lengthFt": 5.0,
+  "widthFt": 10.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler and epoxy paint"
+ },
+ {
+  "unitNumber": "F2-78",
+  "floor": "F2",
+  "sizeSqf": 50,
+  "price": 990.0,
+  "lengthFt": 5.0,
+  "widthFt": 10.0,
+  "status": "maintenance",
+  "notes": "missing ceiling and sprinkler and epoxy paint"
+ },
+ {
+  "unitNumber": "F2-79",
+  "floor": "F2",
+  "sizeSqf": 36,
+  "price": 770.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-80",
+  "floor": "F2",
+  "sizeSqf": 36,
+  "price": 770.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-81",
+  "floor": "F2",
+  "sizeSqf": 36,
+  "price": 770.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-82",
+  "floor": "F2",
+  "sizeSqf": 36,
+  "price": 770.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-83",
+  "floor": "F2",
+  "sizeSqf": 36,
+  "price": 770.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-84",
+  "floor": "F2",
+  "sizeSqf": 36,
+  "price": 770.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-85",
+  "floor": "F2",
+  "sizeSqf": 36,
+  "price": 770.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-86",
+  "floor": "F2",
+  "sizeSqf": 36,
+  "price": 770.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-87",
+  "floor": "F2",
+  "sizeSqf": 25,
+  "price": 687.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-88",
+  "floor": "F2",
+  "sizeSqf": 46,
+  "price": 990.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-89",
+  "floor": "F2",
+  "sizeSqf": 67,
+  "price": 1320.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-90",
+  "floor": "F2",
+  "sizeSqf": 44,
+  "price": 990.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-91",
+  "floor": "F2",
+  "sizeSqf": 33,
+  "price": 770.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-92",
+  "floor": "F2",
+  "sizeSqf": 49,
+  "price": 990.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-93",
+  "floor": "F2",
+  "sizeSqf": 94,
+  "price": 1760.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-94",
+  "floor": "F2",
+  "sizeSqf": 94,
+  "price": 1760.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-95",
+  "floor": "F2",
+  "sizeSqf": 94,
+  "price": 1760.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-96",
+  "floor": "F2",
+  "sizeSqf": 94,
+  "price": 1760.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-97",
+  "floor": "F2",
+  "sizeSqf": 94,
+  "price": 1760.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-98",
+  "floor": "F2",
+  "sizeSqf": 76,
+  "price": 1320.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-99",
+  "floor": "F2",
+  "sizeSqf": 76,
+  "price": 1320.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-100",
+  "floor": "F2",
+  "sizeSqf": 76,
+  "price": 1320.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-101",
+  "floor": "F2",
+  "sizeSqf": 76,
+  "price": 1320.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-102",
+  "floor": "F2",
+  "sizeSqf": 76,
+  "price": 1320.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-103",
+  "floor": "F2",
+  "sizeSqf": 76,
+  "price": 1320.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-104",
+  "floor": "F2",
+  "sizeSqf": 38,
+  "price": 770.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-105",
+  "floor": "F2",
+  "sizeSqf": 35,
+  "price": 770.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-106",
+  "floor": "F2",
+  "sizeSqf": 75,
+  "price": 1320.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-107",
+  "floor": "F2",
+  "sizeSqf": 100,
+  "price": 1760.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-108",
+  "floor": "F2",
+  "sizeSqf": 100,
+  "price": 1760.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-109",
+  "floor": "F2",
+  "sizeSqf": 100,
+  "price": 1760.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-110",
+  "floor": "F2",
+  "sizeSqf": 60,
+  "price": 990.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ },
+ {
+  "unitNumber": "F2-111",
+  "floor": "F2",
+  "sizeSqf": 37,
+  "price": 770.0,
+  "lengthFt": null,
+  "widthFt": null,
+  "status": "maintenance",
+  "notes": ""
+ }
+]

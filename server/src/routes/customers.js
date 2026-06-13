@@ -17,7 +17,7 @@ router.get('/:id', async (req, res) => {
   const customer = await Customer.findById(req.params.id);
   if (!customer) return res.status(404).json({ error: 'Customer not found' });
   const contracts = await Contract.find({ customer: customer._id })
-    .populate({ path: 'unit', populate: 'unitType' })
+    .populate('unit')
     .sort({ createdAt: -1 });
   const documents = await Document.find({ customer: customer._id }).sort({ createdAt: -1 });
   res.json({ customer, contracts, documents });

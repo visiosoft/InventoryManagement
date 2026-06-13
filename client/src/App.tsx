@@ -13,6 +13,12 @@ import Payments from './pages/Payments'
 import Documents from './pages/Documents'
 import Reports from './pages/Reports'
 import Settings from './pages/Settings'
+import Leads from './pages/Leads'
+import Quotes from './pages/Quotes'
+import Invoices from './pages/Invoices'
+import Vendors from './pages/Vendors'
+import Purchases from './pages/Purchases'
+import Expenses from './pages/Expenses'
 
 export default function App() {
   const { user } = useAuth()
@@ -34,6 +40,12 @@ export default function App() {
         <Route path="/units" element={<Units />} />
         <Route path="/customers" element={<Customers />} />
         <Route path="/customers/:id" element={<CustomerDetail />} />
+        <Route path="/leads" element={<Leads />} />
+        <Route path="/quotes" element={<Quotes />} />
+        <Route path="/invoices" element={<Invoices />} />
+        <Route path="/vendors" element={<Vendors />} />
+        <Route path="/purchases" element={<Purchases />} />
+        <Route path="/expenses" element={<Expenses />} />
         <Route path="/contracts" element={<Contracts />} />
         <Route path="/contracts/new" element={<NewContract />} />
         <Route path="/contracts/:id" element={<ContractDetail />} />

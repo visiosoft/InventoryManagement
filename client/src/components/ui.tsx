@@ -132,6 +132,15 @@ export const paymentStatusTone: Record<string, string> = {
   overdue: 'red',
 }
 
+export const leadStatusTone: Record<string, string> = {
+  new: 'blue',
+  contacted: 'amber',
+  qualified: 'purple',
+  proposal_sent: 'gray',
+  won: 'green',
+  lost: 'red',
+}
+
 export function statusLabel(s: string) {
   return s.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
 }

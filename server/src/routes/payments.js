@@ -4,7 +4,7 @@ import { Payment } from '../models/index.js';
 const router = Router();
 
 const populateAll = (q) =>
-  q.populate({ path: 'contract', populate: [{ path: 'customer' }, { path: 'unit', populate: 'unitType' }] });
+  q.populate({ path: 'contract', populate: [{ path: 'customer' }, { path: 'unit' }] });
 
 // Lazily flag overdue payments whenever they're listed.
 async function refreshOverdue() {

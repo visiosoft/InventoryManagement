@@ -5,7 +5,7 @@ import { Download } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { api } from '../lib/api'
 import type { Contract, Summary, Unit } from '../lib/types'
-import { Button, Card, CardBody, CardHeader, EmptyState, Field, Input, PageHeader, Select, Spinner, Table, Td, Th } from '../components/ui'
+import { Button, Card, CardBody, CardHeader, EmptyState, Field, Input, PageHeader, Spinner, Table, Td, Th } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
 
 function downloadCsv(filename: string, rows: (string | number)[][]) {
@@ -19,7 +19,7 @@ function downloadCsv(filename: string, rows: (string | number)[][]) {
 }
 
 export default function Reports() {
-  const [sizeSqf, setSizeSqf] = useState('')
+  const [minSize, setMinSize] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
 
@@ -32,8 +32,8 @@ export default function Reports() {
     queryFn: () => api.get('/reports/revenue', { params: { months: 6 } }).then((r) => r.data),
   })
   const { data: availability } = useQuery<Unit[]>({
-    queryKey: ['availability', sizeSqf, from, to],
-    queryFn: () => api.get('/reports/availability', { params: { sizeSqf: sizeSqf || undefined, from: from || undefined, to: to || undefined } }).then((r) => r.data),
+    queryKey: ['availability', minSize, from, to],
+    queryFn: () => api.get('/reports/availability', { params: { minSize: minSize || undefined, from: from || undefined, to: to || undefined } }).then((r) => r.data),
   })
   const { data: vacancies } = useQuery<Contract[]>({
     queryKey: ['vacancies'],
@@ -76,30 +76,35 @@ export default function Reports() {
           <CardHeader
             title="Occupancy by size"
             action={
-              <Button size="sm" variant="outline" onClick={() => summary && downloadCsv('occupancy.csv', [['Size (sqf)', 'Total', 'Available', 'Occupied'], ...summary.bySize.map((s) => [s.sizeSqf, s.total, s.available, s.occupied])])}>
+              <Button size="sm" variant="outline" onClick={() => summary && downloadCsv('occupancy.csv', [['Size (sqf)', 'Total', 'Available', 'Occupied', 'Maintenance'], ...summary.bySize.map((s) => [s.sizeSqf, s.total, s.available, s.occupied, s.maintenance])])}>
                 <Download size={13} /> CSV
               </Button>
             }
           />
           <Table>
-            <thead><tr><Th>Size</Th><Th>Total units</Th><Th>Available</Th><Th>Occupied</Th><Th>Occupancy</Th></tr></thead>
+            <thead><tr><Th>Size</Th><Th>Total units</Th><Th>Available</Th><Th>Occupied</Th><Th>Maintenance</Th><Th>Occupancy</Th></tr></thead>
             <tbody>
-              {(summary?.bySize || []).map((s) => (
-                <tr key={s.sizeSqf} className="hover:bg-muted/50">
-                  <Td className="font-medium">{s.sizeSqf} sq ft</Td>
-                  <Td>{s.total}</Td>
-                  <Td>{s.available}</Td>
-                  <Td>{s.occupied}</Td>
-                  <Td>
-                    <div className="flex items-center gap-2">
-                      <div className="h-1.5 w-24 rounded-full bg-muted overflow-hidden">
-                        <div className="h-full rounded-full bg-violet-500" style={{ width: `${s.total ? Math.round((s.occupied / s.total) * 100) : 0}%` }} />
+              {(summary?.bySize || []).map((s) => {
+                const rentable = s.total - s.maintenance
+                const pct = rentable ? Math.round((s.occupied / rentable) * 100) : 0
+                return (
+                  <tr key={s.sizeSqf} className="hover:bg-muted/50">
+                    <Td className="font-medium">{s.sizeSqf} sq ft</Td>
+                    <Td>{s.total}</Td>
+                    <Td>{s.available}</Td>
+                    <Td>{s.occupied}</Td>
+                    <Td>{s.maintenance}</Td>
+                    <Td>
+                      <div className="flex items-center gap-2">
+                        <div className="h-1.5 w-24 rounded-full bg-muted overflow-hidden">
+                          <div className="h-full rounded-full bg-violet-500" style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="text-xs text-muted-foreground">{pct}%</span>
                       </div>
-                      <span className="text-xs text-muted-foreground">{s.total ? Math.round((s.occupied / s.total) * 100) : 0}%</span>
-                    </div>
-                  </Td>
-                </tr>
-              ))}
+                    </Td>
+                  </tr>
+                )
+              })}
             </tbody>
           </Table>
         </Card>
@@ -109,11 +114,8 @@ export default function Reports() {
         <CardHeader title="Availability search" subtitle="Find free units by size and date range" />
         <CardBody>
           <div className="mb-4 flex flex-wrap items-end gap-3">
-            <Field label="Size">
-              <Select value={sizeSqf} onChange={(e) => setSizeSqf(e.target.value)} className="w-36">
-                <option value="">Any size</option>
-                {[10, 25, 35, 50, 75, 100, 150, 200].map((s) => <option key={s} value={s}>{s} sq ft</option>)}
-              </Select>
+            <Field label="Minimum size (sq ft)">
+              <Input type="number" min={0} value={minSize} onChange={(e) => setMinSize(e.target.value)} placeholder="Any" className="w-36" />
             </Field>
             <Field label="From"><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-40" /></Field>
             <Field label="To"><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-40" /></Field>
@@ -126,7 +128,7 @@ export default function Reports() {
               {(availability || []).map((u) => (
                 <div key={u._id} className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2 py-2.5 text-center">
                   <div className="text-xs font-bold text-emerald-700 dark:text-emerald-400">{u.unitNumber}</div>
-                  <div className="text-[10px] text-muted-foreground">{u.unitType?.sizeSqf} sqf · {formatMoney(u.unitType?.monthlyRate ?? 0)}/mo</div>
+                  <div className="text-[10px] text-muted-foreground">{u.sizeSqf ?? '—'} sqf{u.price != null ? ` · ${formatMoney(u.price)}/mo` : ''}</div>
                 </div>
               ))}
             </div>
@@ -147,7 +149,7 @@ export default function Reports() {
                   <Td><Link to={`/contracts/${c._id}`} className="font-medium text-primary hover:underline">{c.contractNo}</Link></Td>
                   <Td>{c.customer?.fullName}</Td>
                   <Td>{c.unit?.unitNumber}</Td>
-                  <Td>{c.unit?.unitType?.sizeSqf} sq ft</Td>
+                  <Td>{c.unit?.sizeSqf ?? '—'} sq ft</Td>
                   <Td>{formatDate(c.endDate)}</Td>
                   <Td>{c.autoRenew ? 'Yes' : 'No'}</Td>
                 </tr>

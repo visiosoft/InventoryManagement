@@ -1,85 +1,34 @@
-import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, apiError } from '../lib/api'
-import type { UnitType } from '../lib/types'
-import { Button, Card, CardBody, CardHeader, Input, PageHeader, Spinner, Table, Td, Th } from '../components/ui'
+import { Link } from 'react-router-dom'
+import { apiError, integrationApi } from '../lib/api'
+import type { IntegrationStatus } from '../lib/types'
+import { Button, Card, CardBody, CardHeader, PageHeader } from '../components/ui'
+import { useAuth } from '../lib/auth'
 
 export default function Settings() {
+  const { user } = useAuth()
   const qc = useQueryClient()
-  const [edits, setEdits] = useState<Record<string, { weeklyRate?: number; monthlyRate?: number }>>({})
-  const [error, setError] = useState('')
-  const [saved, setSaved] = useState(false)
-
-  const { data: types, isLoading } = useQuery<UnitType[]>({
-    queryKey: ['unit-types'],
-    queryFn: () => api.get('/unit-types').then((r) => r.data),
+  const { data: integrations } = useQuery<IntegrationStatus>({
+    queryKey: ['integrations-status'],
+    queryFn: () => integrationApi.status(),
   })
-  const { data: storage } = useQuery<{ driveConfigured: boolean }>({
-    queryKey: ['storage-status'],
-    queryFn: () => api.get('/documents/storage-status').then((r) => r.data),
+  const syncContacts = useMutation({
+    mutationFn: () => integrationApi.syncGoogleContacts(user?.id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['leads'] }),
   })
-
-  const save = useMutation({
-    mutationFn: async () => {
-      for (const [id, body] of Object.entries(edits)) {
-        await api.put(`/unit-types/${id}`, body)
-      }
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['unit-types'] })
-      setEdits({})
-      setError('')
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2500)
-    },
-    onError: (e) => setError(apiError(e)),
-  })
-
-  if (isLoading) return <Spinner />
 
   return (
     <div className="max-w-3xl">
-      <PageHeader title="Settings" subtitle="Rates and integrations" />
+      <PageHeader title="Settings" subtitle="Pricing and integrations" />
 
       <Card>
-        <CardHeader
-          title="Unit sizes & rates"
-          subtitle="Default rates applied to new contracts (existing contracts keep their agreed rate)"
-          action={
-            <div className="flex items-center gap-2">
-              {saved && <span className="text-xs text-emerald-600">Saved ✓</span>}
-              <Button size="sm" disabled={Object.keys(edits).length === 0 || save.isPending} onClick={() => save.mutate()}>
-                Save changes
-              </Button>
-            </div>
-          }
-        />
-        <Table>
-          <thead><tr><Th>Size</Th><Th>Label</Th><Th>Weekly rate</Th><Th>Monthly rate</Th></tr></thead>
-          <tbody>
-            {(types || []).map((t) => (
-              <tr key={t._id}>
-                <Td className="font-medium">{t.sizeSqf} sq ft</Td>
-                <Td>{t.label}</Td>
-                <Td>
-                  <Input
-                    type="number" step="0.01" className="w-28"
-                    defaultValue={t.weeklyRate}
-                    onChange={(e) => setEdits((p) => ({ ...p, [t._id]: { ...p[t._id], weeklyRate: Number(e.target.value) } }))}
-                  />
-                </Td>
-                <Td>
-                  <Input
-                    type="number" step="0.01" className="w-28"
-                    defaultValue={t.monthlyRate}
-                    onChange={(e) => setEdits((p) => ({ ...p, [t._id]: { ...p[t._id], monthlyRate: Number(e.target.value) } }))}
-                  />
-                </Td>
-              </tr>
-            ))}
-          </tbody>
-        </Table>
-        {error && <CardBody><p className="text-xs text-destructive">{error}</p></CardBody>}
+        <CardHeader title="Unit pricing" />
+        <CardBody className="text-sm text-muted-foreground">
+          Each unit has its own monthly price (AED), imported from the facility inventory sheet.
+          Edit a unit's price from the <Link to="/units" className="text-primary hover:underline">Units</Link> page —
+          click a unit and update its details. Weekly contracts default to the monthly price ÷ 4
+          (the agreement defines a month as four weeks).
+        </CardBody>
       </Card>
 
       <Card className="mt-4">
@@ -90,19 +39,58 @@ export default function Settings() {
               <div className="font-medium">Zoho Sign</div>
               <div className="text-xs text-muted-foreground">E-signature for rental contracts</div>
             </div>
-            <span className="text-xs text-muted-foreground">Configured via <code>server/.env</code> (ZOHO_*)</span>
+            <span className={integrations?.zoho?.configured ? 'text-xs text-emerald-600 font-medium' : 'text-xs text-amber-600 font-medium'}>
+              {integrations?.zoho?.configured ? 'Connected' : 'Not configured'}
+            </span>
           </div>
           <div className="flex items-center justify-between rounded-lg border px-4 py-3">
             <div>
               <div className="font-medium">Google Drive</div>
               <div className="text-xs text-muted-foreground">Document storage</div>
             </div>
-            <span className={storage?.driveConfigured ? 'text-xs text-emerald-600 font-medium' : 'text-xs text-amber-600 font-medium'}>
-              {storage?.driveConfigured ? 'Connected' : 'Not configured — using local storage'}
+            <span className={integrations?.drive?.configured ? 'text-xs text-emerald-600 font-medium' : 'text-xs text-amber-600 font-medium'}>
+              {integrations?.drive?.configured ? 'Connected' : 'Not configured — using local storage'}
             </span>
           </div>
+          <div className="flex items-center justify-between rounded-lg border px-4 py-3">
+            <div>
+              <div className="font-medium">WhatsApp (Meta Cloud API)</div>
+              <div className="text-xs text-muted-foreground">Webhook verification and setup readiness</div>
+            </div>
+            <span className={integrations?.whatsapp?.configured ? 'text-xs text-emerald-600 font-medium' : 'text-xs text-amber-600 font-medium'}>
+              {integrations?.whatsapp?.configured ? 'Connected' : `Missing: ${(integrations?.whatsapp?.missing || []).join(', ') || 'keys'}`}
+            </span>
+          </div>
+          <div className="flex items-center justify-between rounded-lg border px-4 py-3">
+            <div>
+              <div className="font-medium">Google Contacts</div>
+              <div className="text-xs text-muted-foreground">Import contacts into leads (auto create/update by phone)</div>
+            </div>
+            <span className={integrations?.googleContacts?.configured ? 'text-xs text-emerald-600 font-medium' : 'text-xs text-amber-600 font-medium'}>
+              {integrations?.googleContacts?.configured ? 'Connected' : `Missing: ${(integrations?.googleContacts?.missing || []).join(', ') || 'keys'}`}
+            </span>
+          </div>
+          <div className="rounded-lg border px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="font-medium text-sm">Google Contacts sync</div>
+                <div className="text-xs text-muted-foreground">Manually trigger sync to create/update leads</div>
+              </div>
+              <Button onClick={() => syncContacts.mutate()} disabled={syncContacts.isPending}>
+                {syncContacts.isPending ? 'Syncing…' : 'Sync now'}
+              </Button>
+            </div>
+            {syncContacts.isSuccess && (
+              <p className="mt-2 text-xs text-emerald-700 dark:text-emerald-400">
+                Sync finished. Created {syncContacts.data.summary.created}, updated {syncContacts.data.summary.updated}, skipped {syncContacts.data.summary.skipped}, errors {syncContacts.data.summary.errors}.
+              </p>
+            )}
+            {syncContacts.isError && (
+              <p className="mt-2 text-xs text-destructive">{apiError(syncContacts.error)}</p>
+            )}
+          </div>
           <p className="text-xs text-muted-foreground">
-            Setup instructions for both integrations are in <code>README.md</code>.
+            Setup instructions are in <code>README.md</code>. WhatsApp v1 currently validates webhook setup only.
           </p>
         </CardBody>
       </Card>

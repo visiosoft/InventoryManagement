@@ -6,13 +6,15 @@ const router = Router();
 router.get('/', async (req, res) => {
   const filter = {};
   if (req.query.status) filter.status = req.query.status;
-  if (req.query.unitType) filter.unitType = req.query.unitType;
-  const units = await Unit.find(filter).populate('unitType').sort({ unitNumber: 1 });
+  if (req.query.floor) filter.floor = req.query.floor;
+  if (req.query.minSize) filter.sizeSqf = { ...filter.sizeSqf, $gte: Number(req.query.minSize) };
+  if (req.query.maxSize) filter.sizeSqf = { ...filter.sizeSqf, $lte: Number(req.query.maxSize) };
+  const units = await Unit.find(filter).sort({ floor: 1, unitNumber: 1 });
   res.json(units);
 });
 
 router.get('/:id', async (req, res) => {
-  const unit = await Unit.findById(req.params.id).populate('unitType');
+  const unit = await Unit.findById(req.params.id);
   if (!unit) return res.status(404).json({ error: 'Unit not found' });
   const contracts = await Contract.find({ unit: unit._id })
     .populate('customer')
@@ -22,15 +24,15 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { unitNumber, unitType, status, notes } = req.body;
+  const { unitNumber, floor, sizeSqf, price, lengthFt, widthFt, status, notes } = req.body;
   const exists = await Unit.exists({ unitNumber });
   if (exists) return res.status(409).json({ error: `Unit ${unitNumber} already exists` });
-  const unit = await Unit.create({ unitNumber, unitType, status, notes });
-  res.status(201).json(await unit.populate('unitType'));
+  const unit = await Unit.create({ unitNumber, floor, sizeSqf, price, lengthFt, widthFt, status, notes });
+  res.status(201).json(unit);
 });
 
 router.put('/:id', async (req, res) => {
-  const unit = await Unit.findByIdAndUpdate(req.params.id, req.body, { new: true }).populate('unitType');
+  const unit = await Unit.findByIdAndUpdate(req.params.id, req.body, { new: true });
   if (!unit) return res.status(404).json({ error: 'Unit not found' });
   res.json(unit);
 });
