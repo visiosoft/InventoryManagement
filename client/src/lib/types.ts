@@ -159,6 +159,13 @@ export interface Vendor {
   createdAt?: string
 }
 
+export interface PurchasePaymentEntry {
+  date: string
+  amount: number
+  method: string
+  notes?: string
+}
+
 export type PurchaseStatus = 'draft' | 'sent' | 'received' | 'partial' | 'cancelled'
 export type ExpenseStatus = 'recorded' | 'approved' | 'paid' | 'reimbursed' | 'cancelled'
 
@@ -195,6 +202,8 @@ export interface Purchase {
   vendorNotes?: string
   subTotal: number
   total: number
+  paymentMade?: number
+  paymentHistory?: PurchasePaymentEntry[]
   termsAndConditions?: string
   attachments: PurchaseAttachment[]
   status: PurchaseStatus

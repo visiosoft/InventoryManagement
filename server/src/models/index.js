@@ -307,6 +307,8 @@ const purchaseSchema = new Schema(
     total: { type: Number, default: 0 },
     termsAndConditions: { type: String, default: '' },
     attachments: { type: [purchaseAttachmentSchema], default: [] },
+    paymentMade: { type: Number, default: 0 },
+    paymentHistory: { type: [invoicePaymentEntrySchema], default: [] },
     status: { type: String, enum: ['draft', 'sent', 'received', 'partial', 'cancelled'], default: 'draft' },
   },
   { timestamps: true }

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { FileUp, Plus, Search } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { apiError, vendorApi } from '../lib/api'
 import type { Vendor } from '../lib/types'
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, Th } from '../components/ui'
@@ -193,7 +194,7 @@ export default function Vendors() {
                             {(vendors || []).map((v) => (
                                 <tr key={v._id} className="hover:bg-muted/50">
                                     <Td>
-                                        <div className="font-medium">{v.contactName}</div>
+                                        <Link to={`/vendors/${v._id}`} className="font-medium text-primary hover:underline">{v.contactName}</Link>
                                         <div className="text-xs text-muted-foreground">{v.contactId}</div>
                                     </Td>
                                     <Td>{v.companyName || '—'}</Td>

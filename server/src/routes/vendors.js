@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { Vendor } from '../models/index.js';
+import { Vendor, Purchase, Expense } from '../models/index.js';
 import { parseCsv } from '../services/csv.js';
 
 const router = Router();
@@ -181,6 +181,58 @@ router.post('/import/csv', upload.single('file'), async (req, res) => {
     }
 
     res.json({ ok: true, summary: { created, updated, skipped, errors, total: rows.length } });
+});
+
+router.get('/:id/summary', async (req, res) => {
+    const vendor = await Vendor.findById(req.params.id);
+    if (!vendor) return res.status(404).json({ error: 'Vendor not found' });
+
+    const [purchases, expenses] = await Promise.all([
+        Purchase.find({ vendor: req.params.id }),
+        Expense.find({ vendor: req.params.id }),
+    ]);
+
+    const totalBills = purchases.reduce((s, p) => s + p.total, 0);
+    const totalPaid = purchases.reduce((s, p) => s + (p.paymentMade || 0), 0);
+    const now = new Date();
+    const overdueBills = purchases.filter((p) =>
+        !['received', 'cancelled'].includes(p.status) &&
+        p.dueDate && new Date(p.dueDate) < now &&
+        (p.paymentMade || 0) < p.total
+    ).length;
+    const totalExpenses = expenses.reduce((s, e) => s + (e.total || 0), 0);
+
+    // Last 6 months
+    const months = [];
+    for (let i = 5; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(1);
+        d.setMonth(d.getMonth() - i);
+        months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    }
+    const mBills = Object.fromEntries(months.map((m) => [m, 0]));
+    const mPaid = Object.fromEntries(months.map((m) => [m, 0]));
+    for (const p of purchases) {
+        const k = `${new Date(p.purchaseDate).getFullYear()}-${String(new Date(p.purchaseDate).getMonth() + 1).padStart(2, '0')}`;
+        if (k in mBills) { mBills[k] += p.total; mPaid[k] += (p.paymentMade || 0); }
+    }
+
+    res.json({
+        stats: {
+            totalBills: Number(totalBills.toFixed(2)),
+            totalPaid: Number(totalPaid.toFixed(2)),
+            outstanding: Number((totalBills - totalPaid).toFixed(2)),
+            overdueBills,
+            totalExpenses: Number(totalExpenses.toFixed(2)),
+            billCount: purchases.length,
+            expenseCount: expenses.length,
+        },
+        monthlyData: months.map((m) => ({
+            month: m,
+            bills: Number(mBills[m].toFixed(2)),
+            paid: Number(mPaid[m].toFixed(2)),
+        })),
+    });
 });
 
 export default router;

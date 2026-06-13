@@ -160,4 +160,51 @@ router.delete('/:id/attachments/:index', async (req, res) => {
     res.json(purchase);
 });
 
+// Record payment against a purchase bill
+router.post('/:id/record-payment', async (req, res) => {
+    const { amount, method, date, notes } = req.body;
+    const n = toNumber(amount);
+    if (n <= 0) return res.status(400).json({ error: 'Amount must be greater than zero' });
+
+    const purchase = await Purchase.findById(req.params.id).populate('vendor', 'contactName companyName email phone');
+    if (!purchase) return res.status(404).json({ error: 'Purchase not found' });
+    if (purchase.status === 'cancelled') {
+        return res.status(409).json({ error: 'Cannot record payment for a cancelled bill' });
+    }
+
+    purchase.paymentHistory.push({
+        date: date ? new Date(date) : new Date(),
+        amount: n,
+        method: method || 'cash',
+        notes: notes || '',
+    });
+    purchase.paymentMade = Number(purchase.paymentHistory.reduce((s, p) => s + p.amount, 0).toFixed(2));
+    if (purchase.paymentMade >= purchase.total && purchase.status !== 'received') {
+        purchase.status = 'received';
+    }
+
+    await purchase.save();
+    res.json(purchase);
+});
+
+// Remove a payment entry by index
+router.delete('/:id/payments/:idx', async (req, res) => {
+    const purchase = await Purchase.findById(req.params.id).populate('vendor', 'contactName companyName email phone');
+    if (!purchase) return res.status(404).json({ error: 'Purchase not found' });
+
+    const idx = Number(req.params.idx);
+    if (!Number.isInteger(idx) || idx < 0 || idx >= (purchase.paymentHistory?.length || 0)) {
+        return res.status(400).json({ error: 'Invalid payment index' });
+    }
+
+    purchase.paymentHistory.splice(idx, 1);
+    purchase.paymentMade = Number(purchase.paymentHistory.reduce((s, p) => s + p.amount, 0).toFixed(2));
+    if (purchase.paymentMade < purchase.total && purchase.status === 'received') {
+        purchase.status = 'partial';
+    }
+
+    await purchase.save();
+    res.json(purchase);
+});
+
 export default router;

@@ -83,6 +83,19 @@ export const invoiceApi = {
   deletePayment: (id: string, idx: number) => api.delete<Invoice>(`/invoices/${id}/payments/${idx}`).then((r) => r.data),
 }
 
+export interface VendorSummary {
+  stats: {
+    totalBills: number
+    totalPaid: number
+    outstanding: number
+    overdueBills: number
+    totalExpenses: number
+    billCount: number
+    expenseCount: number
+  }
+  monthlyData: { month: string; bills: number; paid: number }[]
+}
+
 export type VendorQuery = { search?: string; status?: string; category?: string }
 export type PurchaseQuery = { search?: string; status?: string; vendor?: string }
 export type ExpenseQuery = {
@@ -108,6 +121,8 @@ export const vendorApi = {
         { headers: { 'Content-Type': 'multipart/form-data' } }
       )
       .then((r) => r.data),
+  summary: (id: string) =>
+    api.get<VendorSummary>(`/vendors/${id}/summary`).then((r) => r.data),
 }
 
 export const purchaseApi = {
@@ -120,6 +135,10 @@ export const purchaseApi = {
   uploadAttachments: (id: string, form: FormData) =>
     api.post<Purchase>(`/purchases/${id}/attachments`, form, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
   removeAttachment: (id: string, index: number) => api.delete<Purchase>(`/purchases/${id}/attachments/${index}`).then((r) => r.data),
+  recordPayment: (id: string, body: { amount: number; method: string; date: string; notes?: string }) =>
+    api.post<Purchase>(`/purchases/${id}/record-payment`, body).then((r) => r.data),
+  deletePayment: (id: string, idx: number) =>
+    api.delete<Purchase>(`/purchases/${id}/payments/${idx}`).then((r) => r.data),
 }
 
 export const expenseApi = {
