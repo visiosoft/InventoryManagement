@@ -1,6 +1,5 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Package } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { apiError } from '../lib/api'
 import { Button, Input, Field } from '../components/ui'
@@ -31,9 +30,7 @@ export default function Login() {
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <Package size={24} />
-          </div>
+          <img src="/Invoicelogo_Logo.png" alt="PurpleBox" className="mx-auto mb-3 h-14 w-14 rounded-xl object-contain bg-card p-1" />
           <h1 className="text-xl font-bold">PurpleBox</h1>
           <p className="text-sm text-muted-foreground">Box Unit Rental Management</p>
         </div>

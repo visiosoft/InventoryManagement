@@ -1,4 +1,5 @@
 import PDFDocument from 'pdfkit';
+import { drawCompanyLogo } from './pdfLogo.js';
 
 // ── Company constants ───────────────────────────────────────────────────────
 const CO = {
@@ -22,7 +23,6 @@ const DEFAULT_TC =
   '7. Access - Access is allowed only during official working hours.';
 
 // ── Palette ─────────────────────────────────────────────────────────────────
-const PURPLE    = '#5B2D8E';
 const DARK      = '#1F2937';
 const GRAY      = '#6B7280';
 const LGRAY     = '#9CA3AF';
@@ -114,10 +114,8 @@ export function renderInvoicePdf({ invoice }) {
     // ── RIGHT COLUMN ──────────────────────────────────────────────────────
     let ry = 132;
 
-    // Purple box logo (PB initials)
-    doc.roundedRect(RX, ry, 44, 44, 6).fill(PURPLE);
-    doc.font('Helvetica-Bold').fontSize(17).fillColor(WHITE)
-       .text('PB', RX, ry + 13, { width: 44, align: 'center' });
+    // Company logo
+    drawCompanyLogo(doc, RX, ry, 44);
     ry += 52;
 
     doc.font('Helvetica-Bold').fontSize(11).fillColor(BLACK)

@@ -1,7 +1,9 @@
 import axios from 'axios'
 import type { Expense, IntegrationStatus, Invoice, Lead, Purchase, Quote, Vendor } from './types'
 
-export const api = axios.create({ baseURL: '/api' })
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || '/api'
+
+export const api = axios.create({ baseURL: apiBaseUrl })
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('pb_token')
@@ -76,6 +78,9 @@ export const invoiceApi = {
   uploadAttachments: (id: string, form: FormData) =>
     api.post<Invoice>(`/invoices/${id}/attachments`, form, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
   removeAttachment: (id: string, index: number) => api.delete<Invoice>(`/invoices/${id}/attachments/${index}`).then((r) => r.data),
+  recordPayment: (id: string, body: { amount: number; method: string; date: string; notes?: string }) =>
+    api.post<Invoice>(`/invoices/${id}/record-payment`, body).then((r) => r.data),
+  deletePayment: (id: string, idx: number) => api.delete<Invoice>(`/invoices/${id}/payments/${idx}`).then((r) => r.data),
 }
 
 export type VendorQuery = { search?: string; status?: string; category?: string }

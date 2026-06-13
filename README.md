@@ -30,6 +30,17 @@ npm run dev        # app on http://localhost:5173 (proxies /api to :5010)
 
 Configuration lives in [server/.env](server/.env) (Mongo URI, JWT secret, integration credentials). The Vite dev server proxies `/api` and `/uploads` to the backend, so no client-side env is needed.
 
+## Netlify deployment notes
+
+This project has a separate frontend and backend. Netlify hosts only the frontend.
+
+1. Deploy the backend API separately (for example: Render, Railway, Fly.io, Azure App Service).
+2. In Netlify site settings, add environment variable:
+   - `VITE_API_BASE_URL=https://<your-backend-host>/api`
+3. Redeploy the Netlify site.
+
+Without `VITE_API_BASE_URL`, the app uses `/api` on the same host, which causes `404` on Netlify for routes like `/api/auth/login`.
+
 ## Features
 
 - **Dashboard** — occupancy %, available units, revenue this month, expiring contracts (14 days), overdue payments

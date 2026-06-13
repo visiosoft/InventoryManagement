@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Box, Users, FileText, CreditCard, BarChart3, FolderOpen, Settings, LogOut, Moon, Sun, Package, UserPlus, ReceiptText, FileSpreadsheet, Truck, ShoppingCart, Wallet } from 'lucide-react'
+import { LayoutDashboard, Box, Users, FileText, CreditCard, BarChart3, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, FileSpreadsheet, Truck, ShoppingCart, Wallet } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { cn } from '../lib/utils'
@@ -56,9 +56,7 @@ export default function Layout() {
     <div className="flex min-h-screen">
       <aside className="fixed inset-y-0 left-0 w-56 bg-sidebar text-sidebar-foreground flex flex-col">
         <div className="flex items-center gap-2.5 px-5 h-16">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Package size={17} />
-          </div>
+          <img src="/Invoicelogo_Logo.png" alt="PurpleBox" className="h-9 w-9 rounded-lg object-contain bg-white p-1" />
           <div>
             <div className="font-bold text-sm leading-tight">PurpleBox</div>
             <div className="text-[10px] text-sidebar-muted leading-tight">Unit Rental Manager</div>

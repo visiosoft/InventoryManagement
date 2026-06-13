@@ -7,6 +7,11 @@ import { uploadFile } from '../services/drive.js';
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
+const DEFAULT_BANK_INFORMATION =
+    'Account Number: 019101745789\n' +
+    'IBAN Number: AE500330000019101745789\n' +
+    'Address: Unit 12, ABA Avenue Al Quoz 2, Dubai';
+
 function toNumber(v, d = 0) {
     const n = Number(v);
     return Number.isFinite(n) ? n : d;
@@ -45,7 +50,7 @@ function normalizeBody(body) {
         terms: String(body.terms || ''),
         dueDate: body.dueDate ? new Date(body.dueDate) : null,
         salesperson: String(body.salesperson || ''),
-        bankInformation: String(body.bankInformation || ''),
+        bankInformation: String(body.bankInformation || DEFAULT_BANK_INFORMATION),
         subject: String(body.subject || ''),
         customer: String(body.customer || ''),
         items,
@@ -158,6 +163,53 @@ router.delete('/:id/attachments/:index', async (req, res) => {
         return res.status(400).json({ error: 'Invalid attachment index' });
     }
     invoice.attachments.splice(idx, 1);
+    await invoice.save();
+    res.json(invoice);
+});
+
+// Record a payment against an invoice.
+router.post('/:id/record-payment', async (req, res) => {
+    const { amount, method, date, notes } = req.body;
+    const n = toNumber(amount);
+    if (n <= 0) return res.status(400).json({ error: 'Amount must be greater than zero' });
+
+    const invoice = await Invoice.findById(req.params.id).populate('customer', 'fullName email phone address');
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+    if (invoice.status === 'cancelled') {
+        return res.status(409).json({ error: 'Cannot record payment for a cancelled invoice' });
+    }
+
+    invoice.paymentHistory.push({
+        date: date ? new Date(date) : new Date(),
+        amount: n,
+        method: method || 'cash',
+        notes: notes || '',
+    });
+    invoice.paymentMade = Number(invoice.paymentHistory.reduce((s, p) => s + p.amount, 0).toFixed(2));
+    if (invoice.paymentMade >= invoice.total && invoice.status !== 'paid') {
+        invoice.status = 'paid';
+    }
+
+    await invoice.save();
+    res.json(invoice);
+});
+
+// Remove a payment entry by index.
+router.delete('/:id/payments/:idx', async (req, res) => {
+    const invoice = await Invoice.findById(req.params.id).populate('customer', 'fullName email');
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+
+    const idx = Number(req.params.idx);
+    if (!Number.isInteger(idx) || idx < 0 || idx >= (invoice.paymentHistory?.length || 0)) {
+        return res.status(400).json({ error: 'Invalid payment index' });
+    }
+
+    invoice.paymentHistory.splice(idx, 1);
+    invoice.paymentMade = Number(invoice.paymentHistory.reduce((s, p) => s + p.amount, 0).toFixed(2));
+    if (invoice.paymentMade < invoice.total && invoice.status === 'paid') {
+        invoice.status = 'sent';
+    }
+
     await invoice.save();
     res.json(invoice);
 });

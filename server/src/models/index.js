@@ -169,6 +169,16 @@ const invoiceItemSchema = new Schema(
   { _id: false }
 );
 
+const invoicePaymentEntrySchema = new Schema(
+  {
+    date: { type: Date, default: Date.now },
+    amount: { type: Number, required: true, min: 0.01 },
+    method: { type: String, enum: ['cash', 'bank_transfer', 'card', 'cheque', 'other'], default: 'cash' },
+    notes: { type: String, default: '' },
+  },
+  { _id: false }
+);
+
 const invoiceAttachmentSchema = new Schema(
   {
     name: { type: String, required: true },
@@ -197,6 +207,7 @@ const invoiceSchema = new Schema(
     subTotal: { type: Number, default: 0, min: 0 },
     total: { type: Number, default: 0 },
     paymentMade: { type: Number, default: 0 },
+    paymentHistory: { type: [invoicePaymentEntrySchema], default: [] },
     termsAndConditions: { type: String, default: '' },
     attachments: { type: [invoiceAttachmentSchema], default: [] },
     status: { type: String, enum: ['draft', 'sent', 'paid', 'overdue', 'cancelled'], default: 'draft' },

@@ -1,12 +1,18 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { Download, Plus, Upload } from 'lucide-react'
 import { api, apiError, invoiceApi } from '../lib/api'
-import type { Customer, Invoice, InvoiceAttachment, InvoiceItem, InvoiceStatus } from '../lib/types'
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, Textarea, Th, statusLabel } from '../components/ui'
+import type { Customer, Invoice, InvoiceAttachment, InvoiceItem, InvoicePaymentEntry, InvoiceStatus } from '../lib/types'
+import { Badge, Button, Card, CornerRibbon, EmptyState, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, Textarea, Th, statusLabel } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
 
 const INVOICE_STATUSES: InvoiceStatus[] = ['draft', 'sent', 'paid', 'overdue', 'cancelled']
+
+const DEFAULT_BANK_INFORMATION =
+    'Account Number: 019101745789\n' +
+    'IBAN Number: AE500330000019101745789\n' +
+    'Address: Unit 12, ABA Avenue Al Quoz 2, Dubai'
 
 const invoiceStatusTone: Record<InvoiceStatus, string> = {
     draft: 'gray',
@@ -115,7 +121,7 @@ function InvoiceForm({
                 </Field>
             </div>
 
-            <Field label="Bank Information"><Textarea name="bankInformation" defaultValue={initial?.bankInformation || ''} /></Field>
+            <Field label="Bank Information"><Textarea name="bankInformation" defaultValue={initial?.bankInformation || DEFAULT_BANK_INFORMATION} /></Field>
             <Field label="Subject"><Input name="subject" defaultValue={initial?.subject || ''} /></Field>
 
             <Card>
@@ -228,12 +234,149 @@ function AttachmentManager({ invoice }: { invoice: Invoice }) {
     )
 }
 
+function RecordPaymentModal({ invoice, onClose }: { invoice: Invoice; onClose: () => void }) {
+    const qc = useQueryClient()
+    const [amount, setAmount] = useState<string>('')
+    const [method, setMethod] = useState('cash')
+    const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
+    const [notes, setNotes] = useState('')
+    const [err, setErr] = useState('')
+
+    const record = useMutation({
+        mutationFn: (body: { amount: number; method: string; date: string; notes?: string }) =>
+            invoiceApi.recordPayment(invoice._id, body),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['invoices'] })
+            setAmount('')
+            setNotes('')
+            setErr('')
+        },
+        onError: (e) => setErr(apiError(e)),
+    })
+
+    const deletePayment = useMutation({
+        mutationFn: (idx: number) => invoiceApi.deletePayment(invoice._id, idx),
+        onSuccess: () => qc.invalidateQueries({ queryKey: ['invoices'] }),
+        onError: (e) => setErr(apiError(e)),
+    })
+
+    // Use the freshest version of the invoice from the query cache
+    const fresh = (qc.getQueryData<Invoice[]>(['invoices', '', '']) ?? []).find((i) => i._id === invoice._id) ?? invoice
+    const history: InvoicePaymentEntry[] = fresh.paymentHistory ?? []
+    const freshPaid = fresh.paymentMade ?? 0
+    const freshBalance = Math.max(0, fresh.total - freshPaid)
+
+    function submit(e: FormEvent) {
+        e.preventDefault()
+        const n = Number(amount)
+        if (!n || n <= 0) { setErr('Enter a valid amount'); return }
+        record.mutate({ amount: n, method, date, notes: notes || undefined })
+    }
+
+    return (
+        <div className="space-y-5">
+            {/* Summary */}
+            <div className="grid grid-cols-3 gap-3 rounded-lg bg-muted/50 px-4 py-3 text-sm">
+                <div>
+                    <div className="text-xs text-muted-foreground">Invoice total</div>
+                    <div className="font-semibold">{formatMoney(fresh.total)}</div>
+                </div>
+                <div>
+                    <div className="text-xs text-muted-foreground">Amount paid</div>
+                    <div className="font-semibold text-emerald-600">{formatMoney(freshPaid)}</div>
+                </div>
+                <div>
+                    <div className="text-xs text-muted-foreground">Balance due</div>
+                    <div className={`font-semibold ${freshBalance > 0 ? 'text-destructive' : 'text-emerald-600'}`}>
+                        {formatMoney(freshBalance)}
+                    </div>
+                </div>
+            </div>
+
+            {/* Payment history */}
+            {history.length > 0 && (
+                <div>
+                    <div className="text-xs font-semibold text-muted-foreground mb-2">Payment history</div>
+                    <div className="space-y-1.5">
+                        {history.map((p, idx) => (
+                            <div key={idx} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
+                                <div className="flex gap-4">
+                                    <span className="font-medium">{formatMoney(p.amount)}</span>
+                                    <span className="text-muted-foreground capitalize">{p.method.replace('_', ' ')}</span>
+                                    <span className="text-muted-foreground">{formatDate(p.date)}</span>
+                                    {p.notes && <span className="text-muted-foreground truncate max-w-32">{p.notes}</span>}
+                                </div>
+                                <button
+                                    className="text-xs text-destructive hover:underline cursor-pointer"
+                                    onClick={() => { if (confirm('Remove this payment?')) deletePayment.mutate(idx) }}
+                                >
+                                    Remove
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Add payment form */}
+            {freshBalance > 0 || history.length === 0 ? (
+                <form onSubmit={submit} className="space-y-3">
+                    <div className="text-xs font-semibold text-muted-foreground">Record new payment</div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <Field label="Amount (AED)">
+                            <Input
+                                type="number"
+                                min={0.01}
+                                step="0.01"
+                                placeholder={freshBalance > 0 ? String(freshBalance) : ''}
+                                value={amount}
+                                onChange={(e) => setAmount(e.target.value)}
+                                required
+                            />
+                        </Field>
+                        <Field label="Date">
+                            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+                        </Field>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <Field label="Method">
+                            <Select value={method} onChange={(e) => setMethod(e.target.value)}>
+                                <option value="cash">Cash</option>
+                                <option value="bank_transfer">Bank transfer</option>
+                                <option value="card">Card</option>
+                                <option value="cheque">Cheque</option>
+                                <option value="other">Other</option>
+                            </Select>
+                        </Field>
+                        <Field label="Notes (optional)">
+                            <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Reference / memo" />
+                        </Field>
+                    </div>
+                    {err && <p className="text-xs text-destructive">{err}</p>}
+                    <div className="flex gap-2 justify-end">
+                        <Button type="button" variant="outline" onClick={onClose}>Done</Button>
+                        <Button type="submit" variant="success" disabled={record.isPending}>
+                            {record.isPending ? 'Recording…' : 'Record payment'}
+                        </Button>
+                    </div>
+                </form>
+            ) : (
+                <div className="text-center py-3">
+                    <p className="text-sm text-emerald-600 font-medium">Invoice fully paid</p>
+                    <Button variant="outline" className="mt-3" onClick={onClose}>Close</Button>
+                </div>
+            )}
+        </div>
+    )
+}
+
 export default function Invoices() {
     const qc = useQueryClient()
     const [search, setSearch] = useState('')
     const [status, setStatus] = useState('')
     const [adding, setAdding] = useState(false)
     const [editing, setEditing] = useState<Invoice | null>(null)
+    const [paying, setPaying] = useState<Invoice | null>(null)
     const [error, setError] = useState('')
 
     const { data: customers } = useQuery<Customer[]>({
@@ -312,6 +455,8 @@ export default function Invoices() {
                                 <Th>Invoice Date</Th>
                                 <Th>Due Date</Th>
                                 <Th>Total</Th>
+                                <Th>Paid</Th>
+                                <Th>Balance</Th>
                                 <Th>Status</Th>
                                 <Th />
                             </tr>
@@ -319,15 +464,26 @@ export default function Invoices() {
                         <tbody>
                             {(invoices || []).map((inv) => (
                                 <tr key={inv._id} className="hover:bg-muted/50">
-                                    <Td className="font-medium">{inv.invoiceNo}</Td>
+                                    <Td className="font-medium relative overflow-hidden">
+                                        {inv.status === 'overdue' && <CornerRibbon label="Overdue" color="amber" size="sm" />}
+                                        {inv.status === 'paid' && <CornerRibbon label="Paid" color="green" size="sm" />}
+                                        <Link to={`/invoices/${inv._id}`} className="text-primary hover:underline">
+                                            {inv.invoiceNo}
+                                        </Link>
+                                    </Td>
                                     <Td>{inv.customer?.fullName || '—'}</Td>
                                     <Td>{formatDate(inv.invoiceDate)}</Td>
                                     <Td>{formatDate(inv.dueDate)}</Td>
                                     <Td>{formatMoney(inv.total)}</Td>
+                                    <Td className="text-emerald-600">{formatMoney(inv.paymentMade ?? 0)}</Td>
+                                    <Td className={Math.max(0, inv.total - (inv.paymentMade ?? 0)) > 0 ? 'text-destructive font-medium' : 'text-emerald-600'}>
+                                        {formatMoney(Math.max(0, inv.total - (inv.paymentMade ?? 0)))}
+                                    </Td>
                                     <Td><Badge tone={invoiceStatusTone[inv.status]}>{statusLabel(inv.status)}</Badge></Td>
                                     <Td>
                                         <div className="flex gap-2 text-xs">
                                             <button className="text-primary hover:underline cursor-pointer" onClick={() => setEditing(inv)}>Edit</button>
+                                            <button className="text-emerald-600 hover:underline cursor-pointer" onClick={() => setPaying(inv)}>Pay</button>
                                             <button className="text-primary hover:underline cursor-pointer" onClick={() => openInvoicePdf(inv._id)}><Download size={12} className="inline mr-1" />PDF</button>
                                             <button className="text-destructive hover:underline cursor-pointer" onClick={() => { if (confirm('Delete this invoice?')) removeInvoice.mutate(inv._id) }}>Delete</button>
                                         </div>
@@ -342,6 +498,10 @@ export default function Invoices() {
 
             <Modal open={adding} onClose={() => { setAdding(false); setError('') }} title="Create invoice" wide>
                 <InvoiceForm customers={customers || []} busy={createInvoice.isPending} error={error} onSubmit={(body) => createInvoice.mutate(body)} />
+            </Modal>
+
+            <Modal open={!!paying} onClose={() => setPaying(null)} title={paying ? `Record payment — ${paying.invoiceNo}` : 'Record payment'} wide>
+                {paying && <RecordPaymentModal invoice={paying} onClose={() => setPaying(null)} />}
             </Modal>
 
             <Modal open={!!editing} onClose={() => { setEditing(null); setError('') }} title={editing ? `Edit ${editing.invoiceNo}` : 'Edit invoice'} wide>

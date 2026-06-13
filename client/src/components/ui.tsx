@@ -193,6 +193,50 @@ export function Td({ children, className }: { children?: ReactNode; className?: 
   return <td className={cn('px-4 py-2.5 border-b border-border/60', className)}>{children}</td>
 }
 
+/* ---------- Corner Ribbon ---------- */
+const ribbonColors = {
+  amber: '#D97706',
+  green: '#059669',
+  red: '#DC2626',
+}
+
+export function CornerRibbon({
+  label,
+  color,
+  size = 'md',
+}: {
+  label: string
+  color: 'amber' | 'green' | 'red'
+  size?: 'sm' | 'md'
+}) {
+  const sm = { box: 52, strip: 68, right: -18, top: 11, fontSize: 9, py: 2 }
+  const md = { box: 76, strip: 100, right: -26, top: 17, fontSize: 11, py: 3 }
+  const d = size === 'sm' ? sm : md
+  return (
+    <div
+      className="absolute top-0 right-0 overflow-hidden pointer-events-none z-10"
+      style={{ width: d.box, height: d.box }}
+    >
+      <div
+        className="absolute text-white font-bold text-center tracking-wide"
+        style={{
+          width: d.strip,
+          right: d.right,
+          top: d.top,
+          fontSize: d.fontSize,
+          paddingTop: d.py,
+          paddingBottom: d.py,
+          transform: 'rotate(45deg)',
+          background: ribbonColors[color],
+          boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
+        }}
+      >
+        {label}
+      </div>
+    </div>
+  )
+}
+
 /* ---------- Misc ---------- */
 export function EmptyState({ message }: { message: string }) {
   return <div className="py-12 text-center text-sm text-muted-foreground">{message}</div>

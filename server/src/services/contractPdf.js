@@ -1,4 +1,5 @@
 import PDFDocument from 'pdfkit';
+import { drawCompanyLogo } from './pdfLogo.js';
 
 // Renders a simple rental contract PDF and resolves with a Buffer.
 export function renderContractPdf({ contract, customer, unit }) {
@@ -10,6 +11,8 @@ export function renderContractPdf({ contract, customer, unit }) {
     doc.on('error', reject);
 
     const fmt = (d) => new Date(d).toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric' });
+
+    drawCompanyLogo(doc, 56, 44, 48);
 
     doc.fontSize(20).font('Helvetica-Bold').text('BOX UNIT RENTAL CONTRACT', { align: 'center' });
     doc.moveDown(0.3);

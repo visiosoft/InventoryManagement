@@ -87,6 +87,13 @@ export interface Quote {
   createdAt?: string
 }
 
+export interface InvoicePaymentEntry {
+  date: string
+  amount: number
+  method: string
+  notes?: string
+}
+
 export interface InvoiceItem {
   sortOrder: number
   itemDetails: string
@@ -115,12 +122,13 @@ export interface Invoice {
   salesperson?: string
   bankInformation?: string
   subject?: string
-  customer: { _id: string; fullName: string; email?: string }
+  customer: { _id: string; fullName: string; email?: string; phone?: string; address?: string }
   items: InvoiceItem[]
   customerNotes?: string
   subTotal: number
   total: number
   paymentMade?: number
+  paymentHistory?: InvoicePaymentEntry[]
   termsAndConditions?: string
   attachments: InvoiceAttachment[]
   status: InvoiceStatus

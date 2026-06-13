@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, Plus } from 'lucide-react'
 import { api, apiError, quoteApi } from '../lib/api'
 import type { Customer, Quote, QuoteItem, QuoteStatus } from '../lib/types'
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, Textarea, Th, statusLabel } from '../components/ui'
+import { Badge, Button, Card, CornerRibbon, EmptyState, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, Textarea, Th, statusLabel } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
 
 const QUOTE_STATUSES: QuoteStatus[] = ['draft', 'sent', 'accepted', 'rejected', 'expired']
@@ -277,7 +277,12 @@ export default function Quotes() {
                         <tbody>
                             {(quotes || []).map((q) => (
                                 <tr key={q._id} className="hover:bg-muted/50">
-                                    <Td className="font-medium">{q.quoteNo}</Td>
+                                    <Td className="font-medium relative overflow-hidden">
+                                        {q.status === 'expired' && <CornerRibbon label="Expired" color="amber" size="sm" />}
+                                        {q.status === 'accepted' && <CornerRibbon label="Accepted" color="green" size="sm" />}
+                                        {q.status === 'rejected' && <CornerRibbon label="Rejected" color="red" size="sm" />}
+                                        {q.quoteNo}
+                                    </Td>
                                     <Td>{q.customer?.fullName || '—'}</Td>
                                     <Td>{formatDate(q.quoteDate)}</Td>
                                     <Td>{formatDate(q.expiryDate)}</Td>

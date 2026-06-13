@@ -16,6 +16,7 @@ import Settings from './pages/Settings'
 import Leads from './pages/Leads'
 import Quotes from './pages/Quotes'
 import Invoices from './pages/Invoices'
+import InvoiceDetail from './pages/InvoiceDetail'
 import Vendors from './pages/Vendors'
 import Purchases from './pages/Purchases'
 import Expenses from './pages/Expenses'
@@ -43,6 +44,7 @@ export default function App() {
         <Route path="/leads" element={<Leads />} />
         <Route path="/quotes" element={<Quotes />} />
         <Route path="/invoices" element={<Invoices />} />
+        <Route path="/invoices/:id" element={<InvoiceDetail />} />
         <Route path="/vendors" element={<Vendors />} />
         <Route path="/purchases" element={<Purchases />} />
         <Route path="/expenses" element={<Expenses />} />
