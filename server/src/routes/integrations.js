@@ -1,10 +1,12 @@
 import { Router } from 'express';
+import { google } from 'googleapis';
 import { driveConfigured } from '../services/drive.js';
 import { zohoConfigured } from '../services/zoho.js';
 import { whatsappConfigured, whatsappMissing, verifyWebhookChallenge, verifyWhatsAppSignature } from '../services/whatsapp.js';
 import { fetchGoogleContacts, googleContactsConfigured, googleContactsMissing } from '../services/googleContacts.js';
 import { Lead } from '../models/index.js';
 import { normalizeLeadPhone } from './leads.js';
+import { updateEnvFile } from '../utils/env.js';
 
 const router = Router();
 
@@ -89,6 +91,72 @@ router.post('/google-contacts/sync', async (req, res) => {
         summary: { created, updated, skipped, errors },
         imported: contacts.length,
     });
+});
+
+// ── Google Drive OAuth ────────────────────────────────────────────────────────
+
+function driveOAuthClient() {
+    const clientId     = process.env.GOOGLE_DRIVE_CLIENT_ID     || process.env.GOOGLE_CONTACTS_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_DRIVE_CLIENT_SECRET || process.env.GOOGLE_CONTACTS_CLIENT_SECRET;
+    const callbackUrl  = `${process.env.SERVER_URL || `http://localhost:${process.env.PORT || 5010}`}/api/integrations/drive/callback`;
+    return new google.auth.OAuth2(clientId, clientSecret, callbackUrl);
+}
+
+// Returns the Google consent URL for the frontend to redirect the user to
+router.get('/drive/connect', (_req, res) => {
+    const clientId     = process.env.GOOGLE_DRIVE_CLIENT_ID     || process.env.GOOGLE_CONTACTS_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_DRIVE_CLIENT_SECRET || process.env.GOOGLE_CONTACTS_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+        return res.status(400).json({ error: 'Google OAuth credentials not configured. Set GOOGLE_CONTACTS_CLIENT_ID and GOOGLE_CONTACTS_CLIENT_SECRET in .env' });
+    }
+    const url = driveOAuthClient().generateAuthUrl({
+        access_type: 'offline',
+        prompt: 'consent',
+        scope: ['https://www.googleapis.com/auth/drive'],
+    });
+    res.json({ url });
+});
+
+// Google redirects here after user consents — exchange code, create folder, save to .env
+router.get('/drive/callback', async (req, res) => {
+    const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+    if (req.query.error) {
+        return res.redirect(`${clientOrigin}/settings?driveError=${encodeURIComponent(req.query.error)}`);
+    }
+    try {
+        const oauth2 = driveOAuthClient();
+        const { tokens } = await oauth2.getToken(String(req.query.code || ''));
+        if (!tokens.refresh_token) {
+            return res.redirect(`${clientOrigin}/settings?driveError=${encodeURIComponent('No refresh token returned. Revoke access at myaccount.google.com and try again.')}`);
+        }
+        oauth2.setCredentials(tokens);
+        const drive = google.drive({ version: 'v3', auth: oauth2 });
+
+        // Reuse existing folder if one was already created
+        const list = await drive.files.list({
+            q: "name='PurpleBox Documents' and mimeType='application/vnd.google-apps.folder' and trashed=false",
+            fields: 'files(id)',
+            spaces: 'drive',
+        });
+        let folderId = list.data.files?.[0]?.id;
+        if (!folderId) {
+            const folder = await drive.files.create({
+                requestBody: { name: 'PurpleBox Documents', mimeType: 'application/vnd.google-apps.folder' },
+                fields: 'id',
+            });
+            folderId = folder.data.id;
+        }
+
+        // Persist to .env and hot-reload into process.env so uploads work immediately
+        updateEnvFile({ GOOGLE_DRIVE_REFRESH_TOKEN: tokens.refresh_token, GOOGLE_DRIVE_FOLDER_ID: folderId });
+        process.env.GOOGLE_DRIVE_REFRESH_TOKEN = tokens.refresh_token;
+        process.env.GOOGLE_DRIVE_FOLDER_ID = folderId;
+
+        res.redirect(`${clientOrigin}/settings?driveConnected=1`);
+    } catch (err) {
+        const msg = err?.message || 'Unknown error';
+        res.redirect(`${clientOrigin}/settings?driveError=${encodeURIComponent(msg)}`);
+    }
 });
 
 router.get('/whatsapp/webhook', (req, res) => {

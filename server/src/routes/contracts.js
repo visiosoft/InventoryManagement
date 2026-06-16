@@ -21,7 +21,7 @@ function buildContractPdf(contract, signedDate) {
 
 const router = Router();
 
-const populateAll = (q) => q.populate('customer').populate('unit');
+const populateAll = (q) => q.populate('customer').populate('unit').populate('units');
 
 const OPEN_STATUSES = ['draft', 'pending_signature', 'active'];
 
@@ -62,8 +62,25 @@ async function syncUnitStatus(unitId) {
 
 router.get('/', async (req, res) => {
   const filter = {};
-  if (req.query.status) filter.status = req.query.status;
+  if (req.query.status)   filter.status   = req.query.status;
   if (req.query.customer) filter.customer = req.query.customer;
+  if (req.query.billing)  filter.billingPeriod = req.query.billing;
+  if (req.query.from || req.query.to) {
+    filter.startDate = {};
+    if (req.query.from) filter.startDate.$gte = new Date(req.query.from);
+    if (req.query.to)   filter.startDate.$lte = new Date(req.query.to + 'T23:59:59');
+  }
+  if (req.query.search) {
+    const re = new RegExp(req.query.search.trim(), 'i');
+    const [matchedUnits, matchedCustomers] = await Promise.all([
+      Unit.find({ unitNumber: re }).select('_id'),
+      Customer.find({ fullName: re }).select('_id'),
+    ]);
+    const or = [{ contractNo: re }];
+    if (matchedUnits.length)     or.push({ unit: { $in: matchedUnits.map((u) => u._id) } });
+    if (matchedCustomers.length) or.push({ customer: { $in: matchedCustomers.map((c) => c._id) } });
+    filter.$or = or;
+  }
   const contracts = await populateAll(Contract.find(filter)).sort({ createdAt: -1 });
   res.json(contracts);
 });
@@ -76,12 +93,19 @@ router.get('/:id', async (req, res) => {
   res.json({ contract, payments, documents });
 });
 
-// Create a contract (draft). Generates the payment schedule and reserves the unit.
+// Create a contract (draft). Generates the payment schedule and reserves the unit(s).
 router.post('/', async (req, res) => {
-  const { customer, unit, billingPeriod, rate, deposit, startDate, endDate, autoRenew, notes, firstMonthDiscountPct } = req.body;
+  const { customer, unit, units: extraUnits, billingPeriod, rate, deposit, startDate, endDate, autoRenew, notes, firstMonthDiscountPct } = req.body;
 
-  const unitDoc = await Unit.findById(unit);
-  if (!unitDoc) return res.status(404).json({ error: 'Unit not found' });
+  // Determine all unit IDs covered by this contract.
+  // `extraUnits` (array) is supplied when creating a single contract for multiple units.
+  const allUnitIds = (Array.isArray(extraUnits) && extraUnits.length > 1)
+    ? extraUnits
+    : [unit];
+
+  const primaryUnitDoc = await Unit.findById(allUnitIds[0]);
+  if (!primaryUnitDoc) return res.status(404).json({ error: 'Unit not found' });
+
   const start = new Date(startDate);
   const end = new Date(endDate);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
@@ -91,16 +115,23 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'End date must be after start date' });
   }
 
-  const overlap = await findOverlappingUnitContract({ unit, startDate: start, endDate: end });
-  if (overlap) {
-    return res.status(409).json({
-      error: `Unit ${unitDoc.unitNumber} is already booked for this period (${overlap.contractNo})`,
-    });
+  // Check overlap for every unit
+  for (const uid of allUnitIds) {
+    const overlap = await findOverlappingUnitContract({ unit: uid, startDate: start, endDate: end });
+    if (overlap) {
+      const u = await Unit.findById(uid).select('unitNumber');
+      return res.status(409).json({
+        error: `Unit ${u?.unitNumber ?? uid} is already booked for this period (${overlap.contractNo})`,
+      });
+    }
   }
 
   const contract = await Contract.create({
     contractNo: await nextContractNo(),
-    customer, unit, billingPeriod, rate, deposit, startDate, endDate, autoRenew, notes,
+    customer,
+    unit: allUnitIds[0],
+    units: allUnitIds.length > 1 ? allUnitIds : [],
+    billingPeriod, rate, deposit, startDate, endDate, autoRenew, notes,
     status: 'draft',
   });
 
@@ -109,7 +140,7 @@ router.post('/', async (req, res) => {
   const schedule = generateSchedule({ startDate, endDate, billingPeriod, rate, firstPaymentDiscountPct: discountPct });
   await Payment.insertMany(schedule.map((p) => ({ ...p, contract: contract._id })));
 
-  await syncUnitStatus(unitDoc._id);
+  await Promise.all(allUnitIds.map((uid) => syncUnitStatus(uid)));
 
   res.status(201).json(await populateAll(Contract.findById(contract._id)));
 });
@@ -186,7 +217,8 @@ async function markSigned(contractId) {
   contract.status = 'active';
   contract.signedDocUrl = stored.url;
   await contract.save();
-  await syncUnitStatus(contract.unit._id);
+  const signedUnitIds = contract.units?.length ? contract.units.map((u) => u._id ?? u) : [contract.unit._id];
+  await Promise.all(signedUnitIds.map((uid) => syncUnitStatus(uid)));
   return contract;
 }
 
@@ -229,8 +261,42 @@ router.post('/:id/activate', async (req, res) => {
 
   contract.status = 'active';
   await contract.save();
-  await syncUnitStatus(contract.unit);
+
+  // Generate payment schedule if none exist yet (e.g. imported contracts)
+  const existingCount = await Payment.countDocuments({ contract: contract._id });
+  if (existingCount === 0) {
+    const schedule = generateSchedule({
+      startDate: contract.startDate,
+      endDate: contract.endDate,
+      billingPeriod: contract.billingPeriod,
+      rate: contract.rate,
+    });
+    await Payment.insertMany(schedule.map((p) => ({ ...p, contract: contract._id })));
+  }
+
+  const activateUnitIds = contract.units?.length ? contract.units : [contract.unit];
+  await Promise.all(activateUnitIds.map((uid) => syncUnitStatus(uid)));
   res.json(await populateAll(Contract.findById(contract._id)));
+});
+
+// Generate (or regenerate) the payment schedule for a contract.
+// Existing PAID payments are kept; only pending ones are replaced.
+router.post('/:id/generate-schedule', async (req, res) => {
+  const contract = await Contract.findById(req.params.id);
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+
+  // Remove only unpaid entries so paid history is preserved
+  await Payment.deleteMany({ contract: contract._id, status: { $in: ['pending', 'overdue'] } });
+
+  const schedule = generateSchedule({
+    startDate: contract.startDate,
+    endDate: contract.endDate,
+    billingPeriod: contract.billingPeriod,
+    rate: contract.rate,
+  });
+  await Payment.insertMany(schedule.map((p) => ({ ...p, contract: contract._id })));
+
+  res.json({ ok: true, count: schedule.length });
 });
 
 // End or cancel a contract — frees the unit and removes unpaid future payments.
@@ -256,12 +322,29 @@ async function closeContract(req, res, status) {
     await nextContract.save();
   }
 
-  await syncUnitStatus(contract.unit);
+  const closeUnitIds = contract.units?.length ? contract.units : [contract.unit];
+  await Promise.all(closeUnitIds.map((uid) => syncUnitStatus(uid)));
   res.json(await populateAll(Contract.findById(contract._id)));
 }
 
 router.post('/:id/end', (req, res) => closeContract(req, res, 'ended'));
 router.post('/:id/cancel', (req, res) => closeContract(req, res, 'cancelled'));
+
+// Delete a contract and all its payments / documents.
+// Active contracts cannot be deleted — end or cancel them first.
+router.delete('/:id', async (req, res) => {
+  const contract = await Contract.findById(req.params.id);
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  if (contract.status === 'active') {
+    return res.status(409).json({ error: 'Cannot delete an active contract. End or cancel it first.' });
+  }
+  const allUnitIds = contract.units?.length ? contract.units : [contract.unit];
+  await Payment.deleteMany({ contract: contract._id });
+  await Document.deleteMany({ contract: contract._id });
+  await contract.deleteOne();
+  await Promise.all(allUnitIds.map((uid) => syncUnitStatus(uid)));
+  res.json({ ok: true });
+});
 
 // Download the (unsigned) contract PDF.
 router.get('/:id/pdf', async (req, res) => {

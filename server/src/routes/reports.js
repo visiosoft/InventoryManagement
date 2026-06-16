@@ -3,14 +3,7 @@ import { Unit, Contract, Payment } from '../models/index.js';
 
 const router = Router();
 
-const SIZE_BUCKETS = [
-  { label: '≤ 25', min: 0, max: 25 },
-  { label: '26–50', min: 26, max: 50 },
-  { label: '51–80', min: 51, max: 80 },
-  { label: '81–120', min: 81, max: 120 },
-  { label: '121–160', min: 121, max: 160 },
-  { label: '160+', min: 161, max: Infinity },
-];
+const SIZE_BUCKETS = [10, 25, 35, 50, 100, 150, 200];
 
 // Dashboard summary: occupancy, revenue this month, expiring soon, overdue.
 router.get('/summary', async (_req, res) => {
@@ -19,10 +12,10 @@ router.get('/summary', async (_req, res) => {
   const byStatus = { available: 0, occupied: 0, reserved: 0, maintenance: 0 };
   for (const u of units) byStatus[u.status] += 1;
 
-  const bySize = SIZE_BUCKETS.map((b) => {
-    const inBucket = units.filter((u) => u.sizeSqf != null && u.sizeSqf >= b.min && u.sizeSqf <= b.max);
+  const bySize = SIZE_BUCKETS.map((size) => {
+    const inBucket = units.filter((u) => u.sizeSqf === size);
     return {
-      sizeSqf: b.label,
+      sizeSqf: `${size} sq ft`,
       total: inBucket.length,
       available: inBucket.filter((u) => u.status === 'available').length,
       occupied: inBucket.filter((u) => u.status === 'occupied').length,
@@ -44,7 +37,7 @@ router.get('/summary', async (_req, res) => {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  const in14 = new Date(now.getTime() + 14 * 86400000);
+  const in15 = new Date(now.getTime() + 15 * 86400000);
 
   await Payment.updateMany(
     { status: 'pending', dueDate: { $lt: now } },
@@ -60,7 +53,7 @@ router.get('/summary', async (_req, res) => {
       { $match: { status: { $in: ['pending', 'overdue'] }, dueDate: { $gte: monthStart, $lt: monthEnd } } },
       { $group: { _id: null, total: { $sum: '$amount' } } },
     ]),
-    Contract.find({ status: 'active', endDate: { $gte: now, $lte: in14 } })
+    Contract.find({ status: 'active', endDate: { $gte: now, $lte: in15 } })
       .populate('customer', 'fullName')
       .populate({ path: 'unit', select: 'unitNumber' })
       .sort({ endDate: 1 }),

@@ -162,6 +162,10 @@ router.patch('/:id/status', async (req, res) => {
 
     lead.status = status;
     lead.timeline.push({ type: 'status_changed', text: `Status changed to ${status}` });
+
+    const comment = String(req.body?.comment || '').trim();
+    if (comment) lead.timeline.push({ type: 'comment', text: comment });
+
     await lead.save();
 
     res.json(await lead.populate('owner', 'name email'));

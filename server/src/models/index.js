@@ -41,14 +41,34 @@ const unitSchema = new Schema(
   { timestamps: true }
 );
 
+const accessPersonSchema = new Schema(
+  {
+    name: { type: String, required: true },
+    phone: { type: String, default: '' },
+    relation: { type: String, default: '' },
+    idType: { type: String, default: '' }, // 'Emirates ID' | 'Passport' | ''
+    idNumber: { type: String, default: '' },
+  },
+  { _id: false }
+);
+
 const customerSchema = new Schema(
   {
     fullName: { type: String, required: true },
+    clientId: { type: String, default: '' },       // e.g. PB-1002
+    tenantType: { type: String, enum: ['individual', 'company'], default: 'individual' },
     email: { type: String, default: '' },
-    phone: { type: String, default: '' },
+    phone: { type: String, default: '' },       // primary (legacy)
+    phones: [{ type: String }],                  // all phone numbers
     emergencyNumber: { type: String, default: '' },
+    nationality: { type: String, default: '' },
     address: { type: String, default: '' },
     company: { type: String, default: '' },
+    emiratesId: { type: String, default: '' },
+    eidExpiry: { type: Date },
+    passportNumber: { type: String, default: '' },
+    passportExpiry: { type: Date },
+    accessPersons: [accessPersonSchema],
     notes: { type: String, default: '' },
   },
   { timestamps: true }
@@ -97,6 +117,7 @@ const contractSchema = new Schema(
     contractNo: { type: String, required: true, unique: true },
     customer: { type: Schema.Types.ObjectId, ref: 'Customer', required: true },
     unit: { type: Schema.Types.ObjectId, ref: 'Unit', required: true },
+    units: [{ type: Schema.Types.ObjectId, ref: 'Unit' }],
     billingPeriod: { type: String, enum: ['weekly', 'monthly'], required: true },
     rate: { type: Number, required: true },
     deposit: { type: Number, default: 0 },
@@ -114,15 +135,19 @@ const contractSchema = new Schema(
     firstPaymentDate: { type: Date },
     nextPaymentDate: { type: Date },
     source: { type: String, enum: ['manual', 'import_json'], default: 'manual' },
-    externalId: { type: String, default: '' },
+    externalId: { type: String, default: null },
     importedAt: { type: Date },
     raw: { type: Schema.Types.Mixed },
     notes: { type: String, default: '' },
+    authorizedPersons: [accessPersonSchema],
   },
   { timestamps: true }
 );
 
-contractSchema.index({ externalId: 1 }, { unique: true, sparse: true });
+contractSchema.index(
+  { externalId: 1 },
+  { unique: true, partialFilterExpression: { externalId: { $type: 'string', $gt: '' } } }
+);
 
 const quoteItemSchema = new Schema(
   {
