@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { FileText, Plus, Search } from 'lucide-react'
+import { FileText, MessageCircle, Plus, Search } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import type { Contract, Payment } from '../lib/types'
 import {
@@ -218,6 +218,7 @@ export default function Payments() {
   const [editing, setEditing] = useState<Payment | null>(null)
   const [adding, setAdding] = useState(false)
   const [modalError, setModalError] = useState('')
+  const [remindingId, setRemindingId] = useState<string | null>(null)
 
   // Build date range from selected month
   const dateParams: Record<string, string> = {}
@@ -275,6 +276,18 @@ export default function Payments() {
     mutationFn: (body: object) => api.post('/payments', body),
     onSuccess: () => { invalidate(); setAdding(false); setModalError('') },
     onError: (e) => setModalError(apiError(e)),
+  })
+
+  const remindMut = useMutation({
+    mutationFn: (id: string) => api.post(`/payments/${id}/whatsapp-reminder`),
+    onSuccess: () => {
+      setRemindingId(null)
+      alert('WhatsApp reminder sent successfully')
+    },
+    onError: (e) => {
+      setRemindingId(null)
+      alert(apiError(e))
+    },
   })
 
   const now = new Date()
@@ -376,10 +389,24 @@ export default function Payments() {
                   <Td>
                     <div className="flex items-center gap-2 text-xs whitespace-nowrap">
                       {p.status !== 'paid' && (
-                        <Button size="sm" variant="outline"
-                          onClick={() => { setRecording(p); setModalError('') }}>
-                          Record
-                        </Button>
+                        <>
+                          <Button size="sm" variant="outline"
+                            onClick={() => { setRecording(p); setModalError('') }}>
+                            Record
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setRemindingId(p._id)
+                              remindMut.mutate(p._id)
+                            }}
+                            disabled={remindMut.isPending && remindingId === p._id}
+                          >
+                            <MessageCircle size={12} />
+                            {remindMut.isPending && remindingId === p._id ? 'Sending…' : 'WhatsApp'}
+                          </Button>
+                        </>
                       )}
                       {p.status === 'paid' && (
                         <>

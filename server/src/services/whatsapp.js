@@ -9,6 +9,20 @@ export function whatsappConfigured() {
     );
 }
 
+export function whatsappSendConfigured() {
+    return Boolean(
+        process.env.WHATSAPP_PHONE_NUMBER_ID &&
+        process.env.WHATSAPP_ACCESS_TOKEN
+    );
+}
+
+export function whatsappSendMissing() {
+    const missing = [];
+    if (!process.env.WHATSAPP_PHONE_NUMBER_ID) missing.push('WHATSAPP_PHONE_NUMBER_ID');
+    if (!process.env.WHATSAPP_ACCESS_TOKEN) missing.push('WHATSAPP_ACCESS_TOKEN');
+    return missing;
+}
+
 export function whatsappMissing() {
     const missing = [];
     if (!process.env.WHATSAPP_PHONE_NUMBER_ID) missing.push('WHATSAPP_PHONE_NUMBER_ID');
@@ -41,4 +55,42 @@ export function verifyWhatsAppSignature(signatureHeader, rawBodyBuffer) {
     } catch {
         return false;
     }
+}
+
+function normalizeRecipientPhone(input) {
+    return String(input || '').replace(/\D/g, '');
+}
+
+export async function sendWhatsAppText({ to, body }) {
+    if (!whatsappSendConfigured()) {
+        throw new Error('WhatsApp is not configured');
+    }
+
+    const normalizedTo = normalizeRecipientPhone(to);
+    if (!normalizedTo) {
+        throw new Error('Recipient phone number is required');
+    }
+
+    const endpoint = `https://graph.facebook.com/v20.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
+    const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            to: normalizedTo,
+            type: 'text',
+            text: { body: String(body || '').trim() },
+        }),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        const detail = payload?.error?.message || payload?.message || `HTTP ${response.status}`;
+        throw new Error(`WhatsApp send failed: ${detail}`);
+    }
+
+    return payload;
 }

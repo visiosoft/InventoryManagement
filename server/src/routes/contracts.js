@@ -64,13 +64,13 @@ async function syncUnitStatus(unitId) {
 
 router.get('/', async (req, res) => {
   const filter = {};
-  if (req.query.status)   filter.status   = req.query.status;
+  if (req.query.status) filter.status = req.query.status;
   if (req.query.customer) filter.customer = req.query.customer;
-  if (req.query.billing)  filter.billingPeriod = req.query.billing;
+  if (req.query.billing) filter.billingPeriod = req.query.billing;
   if (req.query.from || req.query.to) {
     filter.startDate = {};
     if (req.query.from) filter.startDate.$gte = new Date(req.query.from);
-    if (req.query.to)   filter.startDate.$lte = new Date(req.query.to + 'T23:59:59');
+    if (req.query.to) filter.startDate.$lte = new Date(req.query.to + 'T23:59:59');
   }
   if (req.query.search) {
     const re = new RegExp(req.query.search.trim(), 'i');
@@ -79,7 +79,7 @@ router.get('/', async (req, res) => {
       Customer.find({ fullName: re }).select('_id'),
     ]);
     const or = [{ contractNo: re }];
-    if (matchedUnits.length)     or.push({ unit: { $in: matchedUnits.map((u) => u._id) } });
+    if (matchedUnits.length) or.push({ unit: { $in: matchedUnits.map((u) => u._id) } });
     if (matchedCustomers.length) or.push({ customer: { $in: matchedCustomers.map((c) => c._id) } });
     filter.$or = or;
   }
@@ -90,7 +90,9 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   const contract = await populateAll(Contract.findById(req.params.id));
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
-  const payments = await Payment.find({ contract: contract._id }).sort({ dueDate: 1 });
+  const payments = await Payment.find({ contract: contract._id })
+    .populate('invoice', 'invoiceNo status dueDate total')
+    .sort({ dueDate: 1 });
   const documents = await Document.find({ contract: contract._id }).sort({ createdAt: -1 });
   res.json({ contract, payments, documents });
 });
@@ -400,14 +402,14 @@ router.post('/:id/sign-inperson', async (req, res) => {
     });
 
     await Document.create({
-      contract:  contract._id,
-      customer:  contract.customer._id,
-      name:      `${contract.contractNo} — signed contract`,
-      type:      'contract',
+      contract: contract._id,
+      customer: contract.customer._id,
+      name: `${contract.contractNo} — signed contract`,
+      type: 'contract',
       ...stored,
     });
 
-    contract.status       = 'active';
+    contract.status = 'active';
     contract.signedDocUrl = stored.url;
     await contract.save();
 

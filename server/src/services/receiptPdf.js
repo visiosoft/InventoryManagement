@@ -2,25 +2,25 @@ import PDFDocument from 'pdfkit';
 import { drawCompanyLogo } from './pdfLogo.js';
 
 const CO = {
-  name:    'PurpleBox',
+  name: 'PurpleBox',
   tagline: 'Box Unit Storage',
-  addr1:   'Al Quoz 2, Warehouse 12, ABA Avenue',
-  addr2:   'Dubai 333759, U.A.E.',
-  phone:   '009714 329 3924',
-  email:   'contact@purplebox.ae',
+  addr1: 'Al Quoz 2, Warehouse 12, ABA Avenue',
+  addr2: 'Dubai 333759, U.A.E.',
+  phone: '009714 329 3924',
+  email: 'contact@purplebox.ae',
 };
 
-const PURPLE  = '#5B2D8E';
-const DARK    = '#1F2937';
-const GRAY    = '#6B7280';
-const LGRAY   = '#D1D5DB';
-const GREEN   = '#059669';
-const WHITE   = '#FFFFFF';
-const ROW_BG  = '#F9FAFB';
+const PURPLE = '#5B2D8E';
+const DARK = '#1F2937';
+const GRAY = '#6B7280';
+const LGRAY = '#D1D5DB';
+const GREEN = '#059669';
+const WHITE = '#FFFFFF';
+const ROW_BG = '#F9FAFB';
 
-function aed(n)  { return `AED ${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
-function fmt(d)  { return d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : '—'; }
-function cap(s)  { return s ? String(s).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : '—'; }
+function aed(n) { return `AED ${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
+function fmt(d) { return d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : '—'; }
+function cap(s) { return s ? String(s).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : '—'; }
 
 // Returns the end of the period covered by this payment (next billing date).
 function periodEnd(dueDate, billingPeriod) {
@@ -40,11 +40,11 @@ export function renderReceiptPdf({ payment, contract, customer, unit, receiptNo 
     const doc = new PDFDocument({ size: 'A4', margin: 0, info: { Title: `Receipt ${receiptNo}` } });
     const chunks = [];
     doc.on('data', (c) => chunks.push(c));
-    doc.on('end',  () => resolve(Buffer.concat(chunks)));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
     const PW = 595.28;
-    const M  = 50;
+    const M = 50;
     const CW = PW - M * 2;  // content width
 
     // ── Purple header band ───────────────────────────────────────────────────
@@ -86,9 +86,9 @@ export function renderReceiptPdf({ payment, contract, customer, unit, receiptNo 
     doc.font('Helvetica').fontSize(9).fillColor(GRAY);
     if (customer.clientId) { doc.text(`Client ID: ${customer.clientId}`, M, y); y += 13; }
     const phone = customer.phones?.[0] || customer.phone;
-    if (phone)             { doc.text(phone, M, y); y += 13; }
-    if (customer.email)    { doc.text(customer.email, M, y); y += 13; }
-    if (customer.address)  { doc.text(customer.address, M, y, { width: colW }); }
+    if (phone) { doc.text(phone, M, y); y += 13; }
+    if (customer.email) { doc.text(customer.email, M, y); y += 13; }
+    if (customer.address) { doc.text(customer.address, M, y, { width: colW }); }
 
     // Right: Payment details
     const rx = M + colW + 20;
@@ -97,16 +97,26 @@ export function renderReceiptPdf({ payment, contract, customer, unit, receiptNo 
     ry += 16;
 
     const infoRows = [
-      ['Unit',            `${unit.unitNumber}${unit.sizeSqf != null ? ` (${unit.sizeSqf} sq ft)` : ''}`],
-      ['Billing period',  cap(contract.billingPeriod)],
-      ['Period covered',  `${fmt(payment.dueDate)} → ${fmt(periodEnd(payment.dueDate, contract.billingPeriod))}`],
-      ['Payment method',  cap(payment.method)],
-      ['Paid on',         fmt(payment.paidDate)],
+      ['Unit', `${unit.unitNumber}${unit.sizeSqf != null ? ` (${unit.sizeSqf} sq ft)` : ''}`],
+      ['Billing period', cap(contract.billingPeriod)],
+      ['Period covered', `${fmt(payment.dueDate)} → ${fmt(periodEnd(payment.dueDate, contract.billingPeriod))}`],
+      ['Payment method', cap(payment.method)],
+      ['Paid on', fmt(payment.paidDate)],
     ];
+    const labelW = 110;
+    const valueW = colW - labelW - 6;
     infoRows.forEach(([label, val]) => {
-      doc.font('Helvetica').fontSize(9).fillColor(GRAY).text(label + ':', rx, ry, { continued: true, width: 110 });
-      doc.font('Helvetica-Bold').fillColor(DARK).text(` ${val}`);
-      ry += 14;
+      const valueText = String(val || '—');
+      const lineH = doc.currentLineHeight();
+      const valueH = doc.heightOfString(valueText, { width: valueW });
+      const rowH = Math.max(lineH, valueH);
+
+      doc.font('Helvetica').fontSize(9).fillColor(GRAY)
+        .text(`${label}:`, rx, ry, { width: labelW });
+      doc.font('Helvetica-Bold').fillColor(DARK)
+        .text(valueText, rx + labelW + 6, ry, { width: valueW });
+
+      ry += rowH + 4;
     });
 
     y = Math.max(y, ry) + 30;

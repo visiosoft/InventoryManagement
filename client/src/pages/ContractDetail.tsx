@@ -25,7 +25,7 @@ function SignatureCanvas({ onCapture }: { onCapture: (dataUrl: string | null) =>
     const canvas = ref.current!
     const dpr = window.devicePixelRatio || 1
     const rect = canvas.getBoundingClientRect()
-    canvas.width  = rect.width  * dpr
+    canvas.width = rect.width * dpr
     canvas.height = rect.height * dpr
     const ctx = canvas.getContext('2d')!
     ctx.scale(dpr, dpr)
@@ -95,10 +95,10 @@ function SignInPersonModal({ contractNo, customerName, busy, error, onSign, onCl
   onSign: (body: { signerName: string; signatureDataUrl: string | null; signMode: 'draw' | 'type' }) => void
   onClose: () => void
 }) {
-  const [mode, setMode]         = useState<'draw' | 'type'>('draw')
-  const [signerName, setName]   = useState(customerName)
+  const [mode, setMode] = useState<'draw' | 'type'>('draw')
+  const [signerName, setName] = useState(customerName)
   const [sigDataUrl, setSigUrl] = useState<string | null>(null)
-  const [agreed, setAgreed]     = useState(false)
+  const [agreed, setAgreed] = useState(false)
 
   const canSubmit = agreed && signerName.trim() && (mode === 'type' || sigDataUrl)
 
@@ -115,9 +115,8 @@ function SignInPersonModal({ contractNo, customerName, busy, error, onSign, onCl
             key={m}
             type="button"
             onClick={() => setMode(m)}
-            className={`flex-1 py-1.5 font-medium transition-colors ${
-              mode === m ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-muted-foreground'
-            }`}
+            className={`flex-1 py-1.5 font-medium transition-colors ${mode === m ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-muted-foreground'
+              }`}
           >
             {m === 'draw' ? 'Draw signature' : 'Type name'}
           </button>
@@ -142,7 +141,7 @@ function SignInPersonModal({ contractNo, customerName, busy, error, onSign, onCl
           />
           {signerName && (
             <p className="text-center text-2xl py-3 border rounded-lg bg-white dark:bg-gray-50 text-gray-800"
-               style={{ fontFamily: 'cursive' }}>
+              style={{ fontFamily: 'cursive' }}>
               {signerName}
             </p>
           )}
@@ -219,9 +218,9 @@ function RecordPaymentForm({ payment, busy, onSubmit }: {
   busy: boolean
   onSubmit: (body: { method: string; paidDate: string; notes: string }) => void
 }) {
-  const [method,   setMethod]   = useState(payment.method || 'cash')
+  const [method, setMethod] = useState(payment.method || 'cash')
   const [paidDate, setPaidDate] = useState(new Date().toISOString().slice(0, 10))
-  const [notes,    setNotes]    = useState('')
+  const [notes, setNotes] = useState('')
   return (
     <div className="space-y-4">
       <p className="text-sm">
@@ -248,11 +247,11 @@ function EditPaymentForm({ payment, busy, onSubmit }: {
   onSubmit: (body: Record<string, unknown>) => void
 }) {
   const toInput = (d?: string) => d ? new Date(d).toISOString().slice(0, 10) : ''
-  const [amount,   setAmount]   = useState(String(payment.amount))
-  const [dueDate,  setDueDate]  = useState(toInput(payment.dueDate))
+  const [amount, setAmount] = useState(String(payment.amount))
+  const [dueDate, setDueDate] = useState(toInput(payment.dueDate))
   const [paidDate, setPaidDate] = useState(toInput(payment.paidDate))
-  const [method,   setMethod]   = useState(payment.method || 'cash')
-  const [notes,    setNotes]    = useState(payment.notes || '')
+  const [method, setMethod] = useState(payment.method || 'cash')
+  const [notes, setNotes] = useState(payment.notes || '')
   function submit(e: FormEvent) {
     e.preventDefault()
     const body: Record<string, unknown> = { amount: Number(amount), dueDate, notes }
@@ -291,13 +290,13 @@ function BulkPayForm({ unpaid, billingPeriod, busy, onSubmit }: {
   onSubmit: (body: { paymentIds: string[]; method: string; paidDate: string; notes: string }) => void
 }) {
   const periodLabel = billingPeriod === 'weekly' ? 'week' : 'month'
-  const [count,    setCount]    = useState(unpaid.length)   // default: all
-  const [method,   setMethod]   = useState('cash')
+  const [count, setCount] = useState(unpaid.length)   // default: all
+  const [method, setMethod] = useState('cash')
   const [paidDate, setPaidDate] = useState(new Date().toISOString().slice(0, 10))
-  const [notes,    setNotes]    = useState('')
+  const [notes, setNotes] = useState('')
 
-  const selected  = unpaid.slice(0, count)
-  const total     = selected.reduce((s, p) => s + p.amount, 0)
+  const selected = unpaid.slice(0, count)
+  const total = selected.reduce((s, p) => s + p.amount, 0)
   const overdueIn = selected.filter((p) => p.status === 'overdue').length
   const pendingIn = selected.filter((p) => p.status === 'pending').length
 
@@ -341,8 +340,8 @@ function BulkPayForm({ unpaid, billingPeriod, busy, onSubmit }: {
 
       {/* Summary */}
       <div className="rounded-lg bg-muted px-4 py-3 text-sm space-y-1">
-        {overdueIn > 0 && <div className="flex justify-between"><span className="text-red-600">Overdue ({overdueIn})</span><span>{formatMoney(selected.filter(p=>p.status==='overdue').reduce((s,p)=>s+p.amount,0))}</span></div>}
-        {pendingIn > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Upcoming ({pendingIn})</span><span>{formatMoney(selected.filter(p=>p.status==='pending').reduce((s,p)=>s+p.amount,0))}</span></div>}
+        {overdueIn > 0 && <div className="flex justify-between"><span className="text-red-600">Overdue ({overdueIn})</span><span>{formatMoney(selected.filter(p => p.status === 'overdue').reduce((s, p) => s + p.amount, 0))}</span></div>}
+        {pendingIn > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Upcoming ({pendingIn})</span><span>{formatMoney(selected.filter(p => p.status === 'pending').reduce((s, p) => s + p.amount, 0))}</span></div>}
         <div className="flex justify-between font-semibold border-t pt-1 mt-1">
           <span>Total to record</span>
           <span>{formatMoney(total)}</span>
@@ -372,9 +371,9 @@ function AddPaymentForm({ contractId, rate, busy, onSubmit }: {
   contractId: string; rate: number; busy: boolean
   onSubmit: (body: object) => void
 }) {
-  const [amount,  setAmount]  = useState(String(rate))
+  const [amount, setAmount] = useState(String(rate))
   const [dueDate, setDueDate] = useState(new Date().toISOString().slice(0, 10))
-  const [notes,   setNotes]   = useState('')
+  const [notes, setNotes] = useState('')
   function submit(e: FormEvent) {
     e.preventDefault()
     onSubmit({ contract: contractId, amount: Number(amount), dueDate, notes })
@@ -404,19 +403,35 @@ async function downloadReceipt(paymentId: string) {
   })
   if (!res.ok) { alert('Could not generate receipt'); return }
   const blob = await res.blob()
-  const url  = URL.createObjectURL(blob)
+  const url = URL.createObjectURL(blob)
   window.open(url, '_blank', 'noopener,noreferrer')
   setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
 
-function PaymentRow({ p, index, rate, onRecord, onEdit, onUnrecord, onDelete }: {
+function PaymentRow({
+  p,
+  index,
+  rate,
+  onRecord,
+  onEdit,
+  onUnrecord,
+  onDelete,
+  onGenerateInvoice,
+  onSendInvoiceWhatsApp,
+  generatingInvoice,
+  sendingInvoice,
+}: {
   p: Payment; index: number; rate: number
   onRecord: () => void; onEdit: () => void; onUnrecord: () => void; onDelete: () => void
+  onGenerateInvoice: () => void
+  onSendInvoiceWhatsApp: () => void
+  generatingInvoice: boolean
+  sendingInvoice: boolean
 }) {
   const isDiscounted = index === 0 && p.amount < rate
   const rowBg =
     p.status === 'overdue' ? 'bg-red-50/60 dark:bg-red-950/20' :
-    p.status === 'paid'    ? 'bg-emerald-50/40 dark:bg-emerald-950/10' : ''
+      p.status === 'paid' ? 'bg-emerald-50/40 dark:bg-emerald-950/10' : ''
 
   return (
     <tr className={`${rowBg} hover:brightness-95`}>
@@ -436,6 +451,28 @@ function PaymentRow({ p, index, rate, onRecord, onEdit, onUnrecord, onDelete }: 
       <Td className="text-xs text-muted-foreground max-w-[120px] truncate" title={p.notes}>{p.notes || '—'}</Td>
       <Td>
         <div className="flex items-center gap-2 text-xs whitespace-nowrap">
+          {p.invoice ? (
+            <>
+              <Link to={`/invoices/${p.invoice._id}`} className="text-primary hover:underline font-medium">
+                {p.invoice.invoiceNo}
+              </Link>
+              <button
+                className="text-emerald-700 hover:underline cursor-pointer"
+                onClick={onSendInvoiceWhatsApp}
+                disabled={sendingInvoice}
+              >
+                {sendingInvoice ? 'Sending…' : 'WhatsApp'}
+              </button>
+            </>
+          ) : (
+            <button
+              className="text-primary hover:underline cursor-pointer"
+              onClick={onGenerateInvoice}
+              disabled={generatingInvoice}
+            >
+              {generatingInvoice ? 'Generating…' : 'Generate invoice'}
+            </button>
+          )}
           {p.status !== 'paid' && <Button size="sm" variant="outline" onClick={onRecord}>Record</Button>}
           {p.status === 'paid' && (
             <>
@@ -462,7 +499,7 @@ function SectionRow({ label, count, total, tone, action }: {
   label: string; count: number; total: number; tone: string; action?: React.ReactNode
 }) {
   const colors: Record<string, string> = {
-    red:   'bg-red-100/80   text-red-800   dark:bg-red-950/40   dark:text-red-300',
+    red: 'bg-red-100/80   text-red-800   dark:bg-red-950/40   dark:text-red-300',
     amber: 'bg-amber-100/80 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300',
     green: 'bg-emerald-100/80 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300',
   }
@@ -482,18 +519,20 @@ export default function ContractDetail() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const qc = useQueryClient()
-  const [error,            setError]            = useState('')
+  const [error, setError] = useState('')
   const [recordingPayment, setRecordingPayment] = useState<Payment | null>(null)
-  const [editingPayment,   setEditingPayment]   = useState<Payment | null>(null)
-  const [bulkTarget,       setBulkTarget]       = useState<'all' | 'overdue' | null>(null)
-  const [addingPayment,    setAddingPayment]     = useState(false)
-  const [uploading,        setUploading]         = useState(false)
-  const [downloadingPdf,   setDownloadingPdf]    = useState(false)
-  const [signingInPerson,  setSigningInPerson]   = useState(false)
-  const [signError,        setSignError]         = useState('')
-  const [signingLink,      setSigningLink]       = useState('')
+  const [editingPayment, setEditingPayment] = useState<Payment | null>(null)
+  const [bulkTarget, setBulkTarget] = useState<'all' | 'overdue' | null>(null)
+  const [addingPayment, setAddingPayment] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [downloadingPdf, setDownloadingPdf] = useState(false)
+  const [signingInPerson, setSigningInPerson] = useState(false)
+  const [signError, setSignError] = useState('')
+  const [signingLink, setSigningLink] = useState('')
   const [signingLinkExpiry, setSigningLinkExpiry] = useState('')
-  const [linkCopied,       setLinkCopied]        = useState(false)
+  const [linkCopied, setLinkCopied] = useState(false)
+  const [generatingInvoiceId, setGeneratingInvoiceId] = useState<string | null>(null)
+  const [sendingInvoiceId, setSendingInvoiceId] = useState<string | null>(null)
 
   const { data, isLoading } = useQuery<{ contract: Contract; payments: Payment[]; documents: AppDocument[] }>({
     queryKey: ['contract', id],
@@ -553,6 +592,30 @@ export default function ContractDetail() {
     onError: (e) => setError(apiError(e)),
   })
 
+  const generateInvoice = useMutation({
+    mutationFn: (paymentId: string) => api.post(`/payments/${paymentId}/generate-invoice`),
+    onSuccess: () => {
+      setGeneratingInvoiceId(null)
+      invalidate()
+    },
+    onError: (e) => {
+      setGeneratingInvoiceId(null)
+      setError(apiError(e))
+    },
+  })
+
+  const sendInvoiceWhatsApp = useMutation({
+    mutationFn: (invoiceId: string) => api.post(`/invoices/${invoiceId}/whatsapp-send`),
+    onSuccess: () => {
+      setSendingInvoiceId(null)
+      alert('Invoice sent on WhatsApp')
+    },
+    onError: (e) => {
+      setSendingInvoiceId(null)
+      setError(apiError(e))
+    },
+  })
+
   const createSigningLink = useMutation({
     mutationFn: () => api.post(`/contracts/${id}/create-signing-link`),
     onSuccess: (res) => {
@@ -590,15 +653,15 @@ export default function ContractDetail() {
   const byDue = (a: Payment, b: Payment) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
   const overdue = payments.filter((p) => p.status === 'overdue').sort(byDue)
   const pending = payments.filter((p) => p.status === 'pending').sort(byDue)
-  const paid    = payments.filter((p) => p.status === 'paid')
+  const paid = payments.filter((p) => p.status === 'paid')
     .sort((a, b) => new Date(b.paidDate ?? b.dueDate).getTime() - new Date(a.paidDate ?? a.dueDate).getTime())
 
   // unpaid list in chronological order (overdue first, then pending) for bulk pay
   const unpaid = [...overdue, ...pending]
 
-  const totalPaid     = paid.reduce((s, p) => s + p.amount, 0)
-  const totalPending  = pending.reduce((s, p) => s + p.amount, 0)
-  const totalOverdue  = overdue.reduce((s, p) => s + p.amount, 0)
+  const totalPaid = paid.reduce((s, p) => s + p.amount, 0)
+  const totalPending = pending.reduce((s, p) => s + p.amount, 0)
+  const totalOverdue = overdue.reduce((s, p) => s + p.amount, 0)
   const totalContract = payments.reduce((s, p) => s + p.amount, 0)
 
   // For index display (show position in full schedule)
@@ -673,16 +736,16 @@ export default function ContractDetail() {
           <CardHeader title="Contract details" action={<Badge tone={contractStatusTone[c.status]}>{statusLabel(c.status)}</Badge>} />
           <CardBody className="pt-0 divide-y text-sm">
             {([
-              ['Customer',       <Link key="c" to={`/customers/${c.customer?._id}`} className="text-primary hover:underline">{c.customer?.fullName}</Link>],
+              ['Customer', <Link key="c" to={`/customers/${c.customer?._id}`} className="text-primary hover:underline">{c.customer?.fullName}</Link>],
               ['Billing period', <span key="b" className="capitalize">{c.billingPeriod}</span>],
-              ['Rate per period',formatMoney(c.rate)],
-              ['Deposit',        formatMoney(c.deposit)],
-              ['Start date',     formatDate(c.startDate)],
-              ['End date',       formatDate(c.endDate)],
-              ['Auto-renew',     c.autoRenew ? 'Yes' : 'No'],
+              ['Rate per period', formatMoney(c.rate)],
+              ['Deposit', formatMoney(c.deposit)],
+              ['Start date', formatDate(c.startDate)],
+              ['End date', formatDate(c.endDate)],
+              ['Auto-renew', c.autoRenew ? 'Yes' : 'No'],
               ['Payment method', c.paymentMethod || null],
-              ['First payment',  c.firstPaymentDate ? formatDate(c.firstPaymentDate) : null],
-              ['Next payment',   c.nextPaymentDate  ? formatDate(c.nextPaymentDate)  : null],
+              ['First payment', c.firstPaymentDate ? formatDate(c.firstPaymentDate) : null],
+              ['Next payment', c.nextPaymentDate ? formatDate(c.nextPaymentDate) : null],
             ] as [string, React.ReactNode][]).map(([label, val]) =>
               val == null ? null : (
                 <div key={label} className="grid grid-cols-[150px_1fr] gap-2 py-1.5">
@@ -722,32 +785,32 @@ export default function ContractDetail() {
           {/* Payment summary stats */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {([
-              ['Total value',     totalContract, 'gray'],
-              ['Collected',       totalPaid,     'green'],
-              ['Upcoming',        totalPending,  'blue'],
-              ['Overdue',         totalOverdue,  'red'],
+              ['Total value', totalContract, 'gray'],
+              ['Collected', totalPaid, 'green'],
+              ['Upcoming', totalPending, 'blue'],
+              ['Overdue', totalOverdue, 'red'],
             ] as [string, number, string][]).map(([label, amount, tone]) => {
               const bg: Record<string, string> = {
-                gray:  'bg-muted/60 border',
+                gray: 'bg-muted/60 border',
                 green: 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900/40 border',
-                blue:  'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900/40 border',
-                red:   amount > 0 ? 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900/40 border' : 'bg-muted/60 border',
+                blue: 'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900/40 border',
+                red: amount > 0 ? 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900/40 border' : 'bg-muted/60 border',
               }
               const text: Record<string, string> = {
-                gray:  'text-foreground',
+                gray: 'text-foreground',
                 green: 'text-emerald-700 dark:text-emerald-400',
-                blue:  'text-blue-700 dark:text-blue-400',
-                red:   amount > 0 ? 'text-red-700 dark:text-red-400' : 'text-muted-foreground',
+                blue: 'text-blue-700 dark:text-blue-400',
+                red: amount > 0 ? 'text-red-700 dark:text-red-400' : 'text-muted-foreground',
               }
               return (
                 <div key={label} className={`rounded-xl px-4 py-3 ${bg[tone]}`}>
                   <div className="text-xs text-muted-foreground mb-1">{label}</div>
                   <div className={`text-xl font-bold ${text[tone]}`}>{formatMoney(amount)}</div>
                   <div className="text-xs text-muted-foreground mt-0.5">
-                    {tone === 'gray'  && `${payments.length} instalment${payments.length !== 1 ? 's' : ''}`}
+                    {tone === 'gray' && `${payments.length} instalment${payments.length !== 1 ? 's' : ''}`}
                     {tone === 'green' && `${paid.length} paid`}
-                    {tone === 'blue'  && `${pending.length} upcoming`}
-                    {tone === 'red'   && (amount > 0 ? `${overdue.length} overdue` : 'none')}
+                    {tone === 'blue' && `${pending.length} upcoming`}
+                    {tone === 'red' && (amount > 0 ? `${overdue.length} overdue` : 'none')}
                   </div>
                 </div>
               )
@@ -763,7 +826,7 @@ export default function ContractDetail() {
                   <div key={i} className="rounded-lg border px-3 py-2 space-y-0.5">
                     <div className="font-medium text-sm">{p.name}</div>
                     {p.relation && <div className="text-xs text-muted-foreground">{p.relation}</div>}
-                    {p.phone    && <div className="text-xs text-muted-foreground">{p.phone}</div>}
+                    {p.phone && <div className="text-xs text-muted-foreground">{p.phone}</div>}
                     {(p.idType || p.idNumber) && (
                       <div className="text-xs text-muted-foreground flex items-center gap-1">
                         <ShieldCheck size={10} className="shrink-0" />
@@ -865,6 +928,14 @@ export default function ContractDetail() {
                       onEdit={() => setEditingPayment(p)}
                       onUnrecord={() => { if (confirm('Unrecord this payment?')) unrecordPayment.mutate(p._id) }}
                       onDelete={() => { if (confirm('Delete this payment?')) deletePayment.mutate(p._id) }}
+                      onGenerateInvoice={() => { setGeneratingInvoiceId(p._id); generateInvoice.mutate(p._id) }}
+                      onSendInvoiceWhatsApp={() => {
+                        if (!p.invoice?._id) return
+                        setSendingInvoiceId(p.invoice._id)
+                        sendInvoiceWhatsApp.mutate(p.invoice._id)
+                      }}
+                      generatingInvoice={generateInvoice.isPending && generatingInvoiceId === p._id}
+                      sendingInvoice={!!p.invoice?._id && sendInvoiceWhatsApp.isPending && sendingInvoiceId === p.invoice._id}
                     />
                   ))}
                 </>
@@ -891,6 +962,14 @@ export default function ContractDetail() {
                       onEdit={() => setEditingPayment(p)}
                       onUnrecord={() => { if (confirm('Unrecord this payment?')) unrecordPayment.mutate(p._id) }}
                       onDelete={() => { if (confirm('Delete this payment?')) deletePayment.mutate(p._id) }}
+                      onGenerateInvoice={() => { setGeneratingInvoiceId(p._id); generateInvoice.mutate(p._id) }}
+                      onSendInvoiceWhatsApp={() => {
+                        if (!p.invoice?._id) return
+                        setSendingInvoiceId(p.invoice._id)
+                        sendInvoiceWhatsApp.mutate(p.invoice._id)
+                      }}
+                      generatingInvoice={generateInvoice.isPending && generatingInvoiceId === p._id}
+                      sendingInvoice={!!p.invoice?._id && sendInvoiceWhatsApp.isPending && sendingInvoiceId === p.invoice._id}
                     />
                   ))}
                 </>
@@ -905,6 +984,14 @@ export default function ContractDetail() {
                       onEdit={() => setEditingPayment(p)}
                       onUnrecord={() => { if (confirm('Unrecord this payment?')) unrecordPayment.mutate(p._id) }}
                       onDelete={() => { if (confirm('Delete this payment?')) deletePayment.mutate(p._id) }}
+                      onGenerateInvoice={() => { setGeneratingInvoiceId(p._id); generateInvoice.mutate(p._id) }}
+                      onSendInvoiceWhatsApp={() => {
+                        if (!p.invoice?._id) return
+                        setSendingInvoiceId(p.invoice._id)
+                        sendInvoiceWhatsApp.mutate(p.invoice._id)
+                      }}
+                      generatingInvoice={generateInvoice.isPending && generatingInvoiceId === p._id}
+                      sendingInvoice={!!p.invoice?._id && sendInvoiceWhatsApp.isPending && sendingInvoiceId === p.invoice._id}
                     />
                   ))}
                 </>

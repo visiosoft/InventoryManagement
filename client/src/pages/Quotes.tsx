@@ -47,12 +47,11 @@ function QuoteForm({
             : [
                 {
                     sortOrder: 0,
-                    itemDetails:
-                        'Moving Services Including (Wrapping,packing,boxes,labour,trucks)\nPlease note that our service includes packing, wrapping, and dismantling of furniture. Our team will collect everything from your home, transport it safely, and place it securely in your storage unit. We take care of the entire process for you.',
+                    itemDetails: '',
                     quantity: 1,
-                    rate: 3500,
-                    discountPct: 7.14,
-                    amount: 3250.1,
+                    rate: 0,
+                    discountPct: 0,
+                    amount: 0,
                 },
             ]
     )

@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { Customer, Invoice, nextInvoiceNo } from '../models/index.js';
+import { Customer, Invoice, Payment, nextInvoiceNo } from '../models/index.js';
 import { renderInvoicePdf } from '../services/invoicePdf.js';
 import { uploadFile } from '../services/drive.js';
+import { sendWhatsAppText, whatsappSendConfigured, whatsappSendMissing } from '../services/whatsapp.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -63,6 +64,27 @@ function normalizeBody(body) {
     };
 }
 
+async function syncLinkedPayment(invoice) {
+    const payment = await Payment.findOne({ invoice: invoice._id });
+    if (!payment) return;
+
+    const fullyPaid = Number(invoice.paymentMade || 0) >= Number(invoice.total || 0);
+    if (invoice.status === 'paid' || fullyPaid) {
+        const latest = (invoice.paymentHistory || []).at(-1);
+        payment.status = 'paid';
+        payment.paidDate = latest?.date ? new Date(latest.date) : new Date();
+        payment.method = latest?.method || payment.method || 'other';
+        await payment.save();
+        return;
+    }
+
+    // Unpaid invoice statuses should map back to pending/overdue schedule state.
+    payment.status = new Date(payment.dueDate) < new Date() ? 'overdue' : 'pending';
+    payment.paidDate = undefined;
+    payment.method = '';
+    await payment.save();
+}
+
 router.get('/', async (req, res) => {
     const filter = {};
     if (req.query.status) filter.status = String(req.query.status);
@@ -118,12 +140,23 @@ router.patch('/:id/status', async (req, res) => {
     }
     const invoice = await Invoice.findByIdAndUpdate(req.params.id, { status }, { new: true }).populate('customer', 'fullName email');
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+    await syncLinkedPayment(invoice);
     res.json(invoice);
 });
 
 router.delete('/:id', async (req, res) => {
     const invoice = await Invoice.findByIdAndDelete(req.params.id);
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+
+    const linked = await Payment.findOne({ invoice: invoice._id });
+    if (linked) {
+        linked.invoice = undefined;
+        linked.status = new Date(linked.dueDate) < new Date() ? 'overdue' : 'pending';
+        linked.paidDate = undefined;
+        linked.method = '';
+        await linked.save();
+    }
+
     res.json({ ok: true });
 });
 
@@ -191,6 +224,7 @@ router.post('/:id/record-payment', async (req, res) => {
     }
 
     await invoice.save();
+    await syncLinkedPayment(invoice);
     res.json(invoice);
 });
 
@@ -211,6 +245,7 @@ router.delete('/:id/payments/:idx', async (req, res) => {
     }
 
     await invoice.save();
+    await syncLinkedPayment(invoice);
     res.json(invoice);
 });
 
@@ -221,6 +256,46 @@ router.get('/:id/pdf', async (req, res) => {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${invoice.invoiceNo}.pdf"`);
     res.send(pdf);
+});
+
+router.post('/:id/whatsapp-send', async (req, res) => {
+    if (!whatsappSendConfigured()) {
+        return res.status(400).json({
+            error: 'WhatsApp send is not configured in server environment',
+            missing: whatsappSendMissing(),
+        });
+    }
+
+    const invoice = await Invoice.findById(req.params.id).populate('customer', 'fullName email phone phones address');
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+
+    const customerPhone = invoice.customer?.phones?.find(Boolean) || invoice.customer?.phone || '';
+    if (!customerPhone) {
+        return res.status(400).json({ error: 'Customer has no phone number' });
+    }
+
+    const dueLabel = new Date(invoice.dueDate).toLocaleDateString('en-GB');
+    const totalLabel = Number(invoice.total || 0).toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    });
+
+    const body = [
+        `Hello ${invoice.customer?.fullName || 'Customer'},`,
+        '',
+        `Your invoice ${invoice.invoiceNo} is ready.`,
+        `Amount: AED ${totalLabel}`,
+        `Due date: ${dueLabel}`,
+        '',
+        'Please contact us to confirm payment. Thank you.',
+    ].join('\n');
+
+    try {
+        const result = await sendWhatsAppText({ to: customerPhone, body });
+        res.json({ ok: true, to: customerPhone, result });
+    } catch (err) {
+        res.status(502).json({ error: err.message || 'Failed to send invoice via WhatsApp' });
+    }
 });
 
 export default router;

@@ -400,6 +400,7 @@ expenseSchema.index({ expenseReferenceId: 1 }, { unique: true, sparse: true });
 const paymentSchema = new Schema(
   {
     contract: { type: Schema.Types.ObjectId, ref: 'Contract', required: true },
+    invoice: { type: Schema.Types.ObjectId, ref: 'Invoice' },
     amount: { type: Number, required: true },
     dueDate: { type: Date, required: true },
     paidDate: { type: Date },

@@ -324,6 +324,7 @@ export type PaymentStatus = 'pending' | 'paid' | 'overdue'
 export interface Payment {
   _id: string
   contract: Contract
+  invoice?: { _id: string; invoiceNo: string; status: InvoiceStatus; dueDate: string; total: number }
   amount: number
   dueDate: string
   paidDate?: string
