@@ -161,7 +161,7 @@ router.delete('/:id', async (req, res) => {
 });
 
 router.post('/:id/attachments', upload.array('files', 10), async (req, res) => {
-    const invoice = await Invoice.findById(req.params.id);
+    const invoice = await Invoice.findById(req.params.id).populate('customer', 'fullName');
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
 
     const files = req.files || [];
@@ -175,6 +175,7 @@ router.post('/:id/attachments', upload.array('files', 10), async (req, res) => {
             buffer: file.buffer,
             filename: file.originalname,
             mimeType: file.mimetype,
+            customerName: invoice.customer?.fullName,
         });
         invoice.attachments.push({
             name: file.originalname,

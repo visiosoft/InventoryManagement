@@ -22,6 +22,8 @@ import expenseRoutes from './routes/expenses.js';
 import movingInventoryRoutes from './routes/movingInventory.js';
 import unitTypeRoutes, { seedUnitTypes } from './routes/unitTypes.js';
 import signingRoutes from './routes/signing.js';
+import userRoutes from './routes/users.js';
+import { runGoogleContactsSync } from './services/syncContacts.js';
 
 const app = express();
 app.use(cors({ origin: '*' }));
@@ -59,9 +61,13 @@ app.use('/api/unit-types', requireAuth, unitTypeRoutes);
 app.use(
   '/api/integrations',
   (req, res, next) =>
-    req.path.startsWith('/whatsapp/webhook') ? next() : requireAuth(req, res, next),
+    req.path.startsWith('/whatsapp/webhook') || req.path.startsWith('/google/callback') || req.path.startsWith('/contacts/connect') || req.path.startsWith('/drive/callback') || req.path.startsWith('/drive/connect')
+      ? next()
+      : requireAuth(req, res, next),
   integrationRoutes
 );
+
+app.use('/api/users', requireAuth, userRoutes);
 
 // Central error handler
 app.use((err, _req, res, _next) => {
@@ -76,6 +82,13 @@ async function start() {
   await seedUnitTypes();
   console.log(`Connected to MongoDB (db: ${process.env.DB_NAME})`);
   app.listen(PORT, () => console.log(`PurpleBox API listening on http://localhost:${PORT}`));
+
+  // Auto-sync Google Contacts every 10 minutes
+  const SYNC_INTERVAL = 10 * 60 * 1000;
+  setTimeout(async () => {
+    await runGoogleContactsSync();
+    setInterval(runGoogleContactsSync, SYNC_INTERVAL);
+  }, 5000); // 5s delay so DB is fully ready
 }
 
 start().catch((err) => {

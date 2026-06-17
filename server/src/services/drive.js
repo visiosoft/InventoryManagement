@@ -4,9 +4,6 @@ import { fileURLToPath } from 'url';
 import { google } from 'googleapis';
 import { Readable } from 'stream';
 
-// Google Drive integration. If a service account is not configured, runs in
-// LOCAL mode: files are stored under server/uploads and served at /uploads.
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const UPLOADS_DIR = path.resolve(__dirname, '../../uploads');
 
@@ -31,7 +28,6 @@ export function driveConfigured() {
 
 function driveClient() {
   let auth;
-
   if (hasServiceAccountConfig()) {
     auth = new google.auth.GoogleAuth({
       keyFile: process.env.GOOGLE_SERVICE_ACCOUNT_FILE,
@@ -45,19 +41,49 @@ function driveClient() {
     oauth2Client.setCredentials({ refresh_token: refreshToken });
     auth = oauth2Client;
   }
-
   return google.drive({ version: 'v3', auth });
 }
 
-// Uploads a file buffer. Returns { storage, driveFileId, url }.
-export async function uploadFile({ buffer, filename, mimeType }) {
+// In-memory cache: customerName → Drive folder ID
+const folderCache = new Map();
+
+function safeFolderName(name) {
+  return String(name || 'Unknown').replace(/[/\\?%*:|"<>]/g, '-').trim() || 'Unknown';
+}
+
+async function getOrCreateCustomerFolder(drive, customerName) {
+  const key = safeFolderName(customerName);
+  if (folderCache.has(key)) return folderCache.get(key);
+
+  const parentId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+  const q = `name='${key.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`;
+
+  const list = await drive.files.list({ q, fields: 'files(id)', spaces: 'drive' });
+  let folderId = list.data.files?.[0]?.id;
+
+  if (!folderId) {
+    const folder = await drive.files.create({
+      requestBody: { name: key, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] },
+      fields: 'id',
+    });
+    folderId = folder.data.id;
+  }
+
+  folderCache.set(key, folderId);
+  return folderId;
+}
+
+// Uploads a file buffer. Pass customerName to store in a per-customer subfolder.
+// Returns { storage, driveFileId, url }.
+export async function uploadFile({ buffer, filename, mimeType, customerName }) {
   if (driveConfigured()) {
     const drive = driveClient();
+    const parentId = customerName
+      ? await getOrCreateCustomerFolder(drive, customerName)
+      : process.env.GOOGLE_DRIVE_FOLDER_ID;
+
     const { data } = await drive.files.create({
-      requestBody: {
-        name: filename,
-        parents: [process.env.GOOGLE_DRIVE_FOLDER_ID],
-      },
+      requestBody: { name: filename, parents: [parentId] },
       media: { mimeType, body: Readable.from(buffer) },
       fields: 'id, webViewLink',
       supportsAllDrives: true,

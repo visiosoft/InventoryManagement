@@ -52,7 +52,6 @@ export async function fillAgreementPdf({ contract, customer, unit, signedDate })
   draw(last, customer.fullName, 190, 1022);                       // Name (print)
   if (signedDate) {
     draw(last, fmtDate(signedDate), 190, 964);                    // Date Signed
-    draw(last, `Signed electronically — ${contract.contractNo}`, 200, 1087, { size: 11 }); // Signature line
   }
 
   return Buffer.from(await doc.save());

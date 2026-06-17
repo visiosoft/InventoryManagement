@@ -1,35 +1,35 @@
-// Payment schedule generation for a contract.
-// Weekly: a payment every 7 days from startDate until endDate (exclusive of periods past end).
-// Monthly: a payment on the same day-of-month each month.
+// Payment schedule generation.
+// `rate` is the MONTHLY price (4 weeks). Billing is always weekly (payment every 7 days).
+// Each weekly payment = rate / 4. No proration — any leftover day = one more full week.
+// Discount applies to first 4 weekly payments (= first month).
 
-function addDays(date, days) {
+function addDays(date, n) {
   const d = new Date(date);
-  d.setDate(d.getDate() + days);
-  return d;
-}
-
-function addMonths(date, months) {
-  const d = new Date(date);
-  const day = d.getDate();
-  d.setMonth(d.getMonth() + months);
-  // Handle short months (e.g. Jan 31 + 1 month → Feb 28)
-  if (d.getDate() < day) d.setDate(0);
+  d.setDate(d.getDate() + n);
   return d;
 }
 
 export function generateSchedule({ startDate, endDate, billingPeriod, rate, firstPaymentDiscountPct = 0 }) {
-  const start = new Date(startDate);
-  const end = new Date(endDate);
+  const start         = new Date(startDate);
+  const end           = new Date(endDate);
+  const daysPerPeriod = billingPeriod === 'weekly' ? 7 : 28;
+  const totalDays     = Math.round((end.getTime() - start.getTime()) / 86400000);
+  // Ceiling: any leftover day = one more full-rate period
+  const totalPeriods  = Math.ceil(totalDays / daysPerPeriod);
+  // First month = 4 weekly periods (or 1 monthly period)
+  const discountPeriods = daysPerPeriod === 7 ? 4 : 1;
+  // Weekly payment = monthly rate ÷ 4 (for monthly billing it stays as-is)
+  const periodRate    = billingPeriod === 'weekly' ? rate / 4 : rate;
+
   const payments = [];
-  let due = new Date(start);
-  let i = 0;
-  while (due < end && i < 520) {
-    const amount = (i === 0 && firstPaymentDiscountPct > 0)
-      ? Math.round(rate * (1 - firstPaymentDiscountPct / 100) * 100) / 100
-      : rate;
-    payments.push({ amount, dueDate: new Date(due), status: 'pending' });
-    i += 1;
-    due = billingPeriod === 'weekly' ? addDays(start, 7 * i) : addMonths(start, i);
+  for (let i = 0; i < totalPeriods; i++) {
+    const dueDate    = addDays(start, daysPerPeriod * i);
+    const discounted = i < discountPeriods && firstPaymentDiscountPct > 0;
+    const amount     = discounted
+      ? Math.round(periodRate * (1 - firstPaymentDiscountPct / 100) * 100) / 100
+      : Math.round(periodRate * 100) / 100;
+    payments.push({ amount, dueDate, status: 'pending' });
   }
+
   return payments;
 }

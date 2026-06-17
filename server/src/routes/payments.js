@@ -211,6 +211,80 @@ router.post('/:id/generate-invoice', async (req, res) => {
   res.status(201).json(await Invoice.findById(invoice._id).populate('customer', 'fullName email phone address'));
 });
 
+// Generate one invoice per calendar month — groups all weekly payments in the same
+// month into a single invoice with one line item per week.
+router.post('/:id/generate-monthly-invoice', async (req, res) => {
+  const payment = await Payment.findById(req.params.id)
+    .populate({ path: 'contract', populate: [{ path: 'customer' }, { path: 'unit' }] });
+  if (!payment) return res.status(404).json({ error: 'Payment not found' });
+
+  const contract = payment.contract;
+  if (!contract?.customer?._id) {
+    return res.status(400).json({ error: 'Payment is missing contract/customer details' });
+  }
+
+  // Month window for this payment's due date
+  const d = new Date(payment.dueDate);
+  const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
+  const monthEnd   = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+
+  // All payments for this contract in this month, sorted by due date
+  const monthPayments = await Payment.find({
+    contract: contract._id,
+    dueDate: { $gte: monthStart, $lte: monthEnd },
+  }).sort({ dueDate: 1 });
+
+  // If any already links to an invoice, reuse it and link remaining payments
+  const existingInvoiceId = monthPayments.find((p) => p.invoice)?.invoice;
+  if (existingInvoiceId) {
+    for (const p of monthPayments) {
+      if (!p.invoice) { p.invoice = existingInvoiceId; await p.save(); }
+    }
+    const existing = await Invoice.findById(existingInvoiceId).populate('customer', 'fullName email phone address');
+    if (existing) return res.json(existing);
+  }
+
+  const fmtDay = (date) => new Date(date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const monthLabel = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+  const unitNo = contract.unit?.unitNumber || '-';
+
+  const items = monthPayments.map((p, i) => {
+    const weekStart = new Date(p.dueDate);
+    const weekEnd   = new Date(weekStart); weekEnd.setDate(weekEnd.getDate() + 6);
+    const amount    = Number(p.amount || 0);
+    return {
+      sortOrder: i,
+      itemDetails: `Week ${i + 1} (${fmtDay(weekStart)} – ${fmtDay(weekEnd)}) · Unit ${unitNo}`,
+      quantity: 1,
+      rate: amount,
+      discountPct: 0,
+      amount,
+    };
+  });
+
+  const subTotal = items.reduce((s, it) => s + it.amount, 0);
+
+  const invoice = await Invoice.create({
+    invoiceNo: await nextInvoiceNo(),
+    customer: contract.customer._id,
+    invoiceDate: new Date(),
+    dueDate: monthEnd,
+    orderNumber: contract.contractNo,
+    terms: 'Due on receipt',
+    subject: `Storage Rent — ${monthLabel} · ${contract.contractNo}`,
+    items,
+    customerNotes: '',
+    subTotal,
+    total: subTotal,
+    paymentMade: 0,
+    status: 'sent',
+  });
+
+  for (const p of monthPayments) { p.invoice = invoice._id; await p.save(); }
+
+  res.status(201).json(await Invoice.findById(invoice._id).populate('customer', 'fullName email phone address'));
+});
+
 router.put('/:id', async (req, res) => {
   const payment = await Payment.findById(req.params.id);
   if (!payment) return res.status(404).json({ error: 'Payment not found' });

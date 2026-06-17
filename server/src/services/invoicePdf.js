@@ -154,29 +154,48 @@ export function renderInvoicePdf({ invoice }) {
     const TX  = M;
     const TW  = PW - 2 * M;   // 495.28
     const nW  = 32;            // # column
-    const rW  = 90;            // Rate column
     const aW  = 90;            // Amount column
-    const iW  = TW - nW - rW - aW; // Item & Description column
+    const hasDiscount = (invoice.items || []).some(it => (it.discountPct ?? 0) > 0);
+    const dW  = hasDiscount ? 70 : 0;  // Discount column (only when needed)
+    const rW  = hasDiscount ? 80 : 90; // Rate column
+    const iW  = TW - nW - rW - dW - aW; // Item & Description column
 
     // Header row
     const hH = 26;
     doc.rect(TX, y, TW, hH).fill(TH_BG);
     doc.font('Helvetica-Bold').fontSize(9).fillColor(WHITE);
-    doc.text('#',                 TX + 8,              y + 8, { width: nW - 8 });
-    doc.text('Item & Description', TX + nW + 6,        y + 8, { width: iW - 12 });
-    doc.text('Rate',              TX + nW + iW,        y + 8, { width: rW,      align: 'right' });
-    doc.text('Amount',            TX + nW + iW + rW,   y + 8, { width: aW - 8,  align: 'right' });
+    doc.text('#',                 TX + 8,                    y + 8, { width: nW - 8 });
+    doc.text('Item & Description', TX + nW + 6,              y + 8, { width: iW - 12 });
+    doc.text('Rate',              TX + nW + iW,              y + 8, { width: rW,      align: 'right' });
+    if (hasDiscount) doc.text('Discount', TX + nW + iW + rW, y + 8, { width: dW, align: 'right' });
+    doc.text('Amount',            TX + nW + iW + rW + dW,   y + 8, { width: aW - 8,  align: 'right' });
     y += hH;
 
     // Item rows
+    const AMBER_BG = '#FFFBEB';
     (invoice.items || []).forEach((it, idx) => {
       const rH = 26;
-      if (idx % 2 === 1) doc.rect(TX, y, TW, rH).fill(ROW_ALT);
+      const discounted = (it.discountPct ?? 0) > 0;
+      if (discounted) {
+        doc.rect(TX, y, TW, rH).fill(AMBER_BG);
+      } else if (idx % 2 === 1) {
+        doc.rect(TX, y, TW, rH).fill(ROW_ALT);
+      }
       doc.font('Helvetica').fontSize(9).fillColor(BLACK);
-      doc.text(String(idx + 1),    TX + 8,              y + 8, { width: nW - 8 });
-      doc.text(it.itemDetails || '-', TX + nW + 6,      y + 8, { width: iW - 12 });
-      doc.text(num(it.rate),       TX + nW + iW,        y + 8, { width: rW,     align: 'right' });
-      doc.text(num(it.amount),     TX + nW + iW + rW,   y + 8, { width: aW - 8, align: 'right' });
+      doc.text(String(idx + 1),      TX + 8,                    y + 8, { width: nW - 8 });
+      doc.text(it.itemDetails || '-', TX + nW + 6,              y + 8, { width: iW - 12 });
+      doc.text(num(it.rate),          TX + nW + iW,              y + 8, { width: rW, align: 'right' });
+      if (hasDiscount) {
+        if (discounted) {
+          doc.fillColor('#D97706').font('Helvetica-Bold')
+            .text(`${it.discountPct}% off`, TX + nW + iW + rW, y + 8, { width: dW, align: 'right' });
+          doc.fillColor(BLACK).font('Helvetica');
+        } else {
+          doc.fillColor('#94A3B8').text('—', TX + nW + iW + rW, y + 8, { width: dW, align: 'right' });
+          doc.fillColor(BLACK);
+        }
+      }
+      doc.text(num(it.amount),        TX + nW + iW + rW + dW,   y + 8, { width: aW - 8, align: 'right' });
       y += rH;
     });
 

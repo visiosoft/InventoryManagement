@@ -14,8 +14,13 @@ export function requireAuth(req, res, next) {
 
 export function signToken(user) {
   return jwt.sign(
-    { id: user._id, email: user.email, name: user.name, role: user.role },
+    { id: user._id, email: user.email, name: user.name, role: user.role, permissions: user.permissions ?? [] },
     process.env.JWT_SECRET,
     { expiresIn: '7d' }
   );
+}
+
+export function requireAdmin(req, res, next) {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+  next();
 }

@@ -3,9 +3,8 @@ import { google } from 'googleapis';
 import { driveConfigured } from '../services/drive.js';
 import { zohoConfigured } from '../services/zoho.js';
 import { whatsappConfigured, whatsappMissing, verifyWebhookChallenge, verifyWhatsAppSignature } from '../services/whatsapp.js';
-import { fetchGoogleContacts, googleContactsConfigured, googleContactsMissing } from '../services/googleContacts.js';
-import { Lead } from '../models/index.js';
-import { normalizeLeadPhone } from './leads.js';
+import { googleContactsConfigured, googleContactsMissing } from '../services/googleContacts.js';
+import { runGoogleContactsSync, syncState } from '../services/syncContacts.js';
 import { updateEnvFile } from '../utils/env.js';
 
 const router = Router();
@@ -20,77 +19,89 @@ router.get('/status', (_req, res) => {
 });
 
 router.post('/google-contacts/sync', async (req, res) => {
-    const ownerId = req.body?.owner || req.user?.id;
-    if (!ownerId) return res.status(400).json({ error: 'Owner is required for sync' });
-
-    const { contacts, note } = await fetchGoogleContacts();
     if (!googleContactsConfigured()) {
-        return res.json({
-            ok: true,
-            configured: false,
-            note,
-            summary: { created: 0, updated: 0, skipped: 0, errors: 0 },
-        });
+        return res.json({ ok: true, configured: false, summary: { created: 0, updated: 0, skipped: 0, errors: 0 } });
     }
+    const summary = await runGoogleContactsSync();
+    res.json({ ok: true, configured: true, summary });
+});
 
-    let created = 0;
-    let updated = 0;
-    let skipped = 0;
-    let errors = 0;
+router.get('/google-contacts/last-sync', (_req, res) => {
+    res.json(syncState);
+});
 
-    for (const c of contacts) {
-        try {
-            const phoneNormalized = normalizeLeadPhone(c.phone);
-            if (!phoneNormalized) {
-                skipped += 1;
-                continue;
-            }
+// ── Google Contacts OAuth ─────────────────────────────────────────────────────
 
-            const existing = await Lead.findOne({ phoneNormalized });
-            if (!existing) {
-                await Lead.create({
-                    fullName: c.name || 'Unknown Contact',
-                    email: c.email || '',
-                    phone: c.phone,
-                    phoneNormalized,
-                    status: 'new',
-                    source: 'google_contacts',
-                    leadDateTime: new Date(),
-                    storageSizeValue: 25,
-                    storageSizeUnit: 'sqft',
-                    durationValue: 1,
-                    durationUnit: 'month',
-                    owner: ownerId,
-                    unitsNeeded: 1,
-                    notes: c.notes || '',
-                    timeline: [{ type: 'google_contacts_import', text: 'Lead created from Google Contacts sync' }],
-                });
-                created += 1;
-                continue;
-            }
+function contactsOAuthClient() {
+    const callbackUrl = `${process.env.SERVER_URL || `http://localhost:${process.env.PORT || 5010}`}/api/integrations/google/callback`;
+    return new google.auth.OAuth2(
+        process.env.GOOGLE_CONTACTS_CLIENT_ID,
+        process.env.GOOGLE_CONTACTS_CLIENT_SECRET,
+        callbackUrl
+    );
+}
 
-            existing.fullName = c.name || existing.fullName;
-            existing.email = c.email || existing.email;
-            existing.phone = c.phone || existing.phone;
-            existing.phoneNormalized = phoneNormalized;
-            if (!existing.source || existing.source === 'manual') existing.source = 'google_contacts';
-            if (c.notes) {
-                existing.notes = existing.notes ? `${existing.notes}\n${c.notes}` : c.notes;
-            }
-            existing.timeline.push({ type: 'google_contacts_update', text: 'Lead updated from Google Contacts sync' });
-            await existing.save();
-            updated += 1;
-        } catch {
-            errors += 1;
-        }
+router.get('/contacts/connect', (_req, res) => {
+    if (!process.env.GOOGLE_CONTACTS_CLIENT_ID || !process.env.GOOGLE_CONTACTS_CLIENT_SECRET) {
+        return res.status(400).json({ error: 'Google OAuth credentials not configured.' });
     }
-
-    res.json({
-        ok: true,
-        configured: true,
-        summary: { created, updated, skipped, errors },
-        imported: contacts.length,
+    const url = contactsOAuthClient().generateAuthUrl({
+        access_type: 'offline',
+        prompt: 'consent',
+        // Request both scopes so one connect covers Contacts + Drive
+        scope: [
+            'https://www.googleapis.com/auth/contacts.readonly',
+            'https://www.googleapis.com/auth/drive',
+        ],
     });
+    res.json({ url });
+});
+
+router.get('/google/callback', async (req, res) => {
+    const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+    if (req.query.error) {
+        return res.redirect(`${clientOrigin}/settings?contactsError=${encodeURIComponent(req.query.error)}`);
+    }
+    try {
+        const oauth2 = contactsOAuthClient();
+        const { tokens } = await oauth2.getToken(String(req.query.code || ''));
+        if (!tokens.refresh_token) {
+            return res.redirect(`${clientOrigin}/settings?contactsError=${encodeURIComponent('No refresh token — revoke access at myaccount.google.com and try again.')}`);
+        }
+
+        // Save contacts token
+        updateEnvFile({ GOOGLE_CONTACTS_REFRESH_TOKEN: tokens.refresh_token });
+        process.env.GOOGLE_CONTACTS_REFRESH_TOKEN = tokens.refresh_token;
+
+        // Also set up Drive with the same token
+        oauth2.setCredentials(tokens);
+        const drive = google.drive({ version: 'v3', auth: oauth2 });
+
+        const list = await drive.files.list({
+            q: "name='PurpleBox Documents' and mimeType='application/vnd.google-apps.folder' and trashed=false",
+            fields: 'files(id)',
+            spaces: 'drive',
+        });
+        let folderId = list.data.files?.[0]?.id;
+        if (!folderId) {
+            const folder = await drive.files.create({
+                requestBody: { name: 'PurpleBox Documents', mimeType: 'application/vnd.google-apps.folder' },
+                fields: 'id',
+            });
+            folderId = folder.data.id;
+        }
+
+        updateEnvFile({
+            GOOGLE_DRIVE_REFRESH_TOKEN: tokens.refresh_token,
+            GOOGLE_DRIVE_FOLDER_ID: folderId,
+        });
+        process.env.GOOGLE_DRIVE_REFRESH_TOKEN = tokens.refresh_token;
+        process.env.GOOGLE_DRIVE_FOLDER_ID = folderId;
+
+        res.redirect(`${clientOrigin}/settings?contactsConnected=1`);
+    } catch (err) {
+        res.redirect(`${clientOrigin}/settings?contactsError=${encodeURIComponent(err?.message || 'Unknown error')}`);
+    }
 });
 
 // ── Google Drive OAuth ────────────────────────────────────────────────────────

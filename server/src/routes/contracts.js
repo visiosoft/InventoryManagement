@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import { stampSignature } from '../services/stampSignature.js';
-import { Contract, Customer, Unit, Payment, Document, nextContractNo } from '../models/index.js';
+import { Contract, Customer, Unit, Payment, Document, Invoice, nextContractNo, nextInvoiceNo } from '../models/index.js';
 import { generateSchedule } from '../services/schedule.js';
 import { sendForSignature, downloadSignedPdf, zohoConfigured } from '../services/zoho.js';
 import { uploadFile } from '../services/drive.js';
@@ -139,11 +139,6 @@ router.post('/', async (req, res) => {
     status: 'draft',
   });
 
-  const discountPct = (billingPeriod === 'monthly' && Number(firstMonthDiscountPct) > 0)
-    ? Number(firstMonthDiscountPct) : 0;
-  const schedule = generateSchedule({ startDate, endDate, billingPeriod, rate, firstPaymentDiscountPct: discountPct });
-  await Payment.insertMany(schedule.map((p) => ({ ...p, contract: contract._id })));
-
   await Promise.all(allUnitIds.map((uid) => syncUnitStatus(uid)));
 
   res.status(201).json(await populateAll(Contract.findById(contract._id)));
@@ -241,6 +236,7 @@ async function markSigned(contractId) {
     buffer: pdfBuffer,
     filename: `${contract.contractNo}-signed.pdf`,
     mimeType: 'application/pdf',
+    customerName: contract.customer?.fullName,
   });
   await Document.create({
     contract: contract._id,
@@ -297,18 +293,6 @@ router.post('/:id/activate', async (req, res) => {
 
   contract.status = 'active';
   await contract.save();
-
-  // Generate payment schedule if none exist yet (e.g. imported contracts)
-  const existingCount = await Payment.countDocuments({ contract: contract._id });
-  if (existingCount === 0) {
-    const schedule = generateSchedule({
-      startDate: contract.startDate,
-      endDate: contract.endDate,
-      billingPeriod: contract.billingPeriod,
-      rate: contract.rate,
-    });
-    await Payment.insertMany(schedule.map((p) => ({ ...p, contract: contract._id })));
-  }
 
   const activateUnitIds = contract.units?.length ? contract.units : [contract.unit];
   await Promise.all(activateUnitIds.map((uid) => syncUnitStatus(uid)));
@@ -439,6 +423,130 @@ router.delete('/:id', async (req, res) => {
   await contract.deleteOne();
   await Promise.all(allUnitIds.map((uid) => syncUnitStatus(uid)));
   res.json({ ok: true });
+});
+
+// Flexible invoice generator — called from the UI modal.
+// Body: { startDate, endDate, dueDate, notes, discountPct } for a period invoice
+//       { isDeposit: true, dueDate, notes }                 for a security deposit invoice
+// After creating the invoice, Payment entries are inserted for each week (linked via invoice field).
+router.post('/:id/generate-custom-invoice', async (req, res) => {
+  const contract = await populateAll(Contract.findById(req.params.id));
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  if (!contract.customer?._id) return res.status(400).json({ error: 'Contract has no customer' });
+
+  const { startDate, endDate, dueDate, notes, isDeposit, discountPct: rawDiscount, extraItems: rawExtras } = req.body;
+  const fmt = (d) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const unitNo = contract.unit?.unitNumber || '-';
+
+  // ── Security deposit invoice ──────────────────────────────────────────────
+  if (isDeposit) {
+    const amount = Number(contract.deposit || 0);
+    if (!amount) return res.status(400).json({ error: 'No deposit amount set on this contract' });
+    const invoice = await Invoice.create({
+      invoiceNo: await nextInvoiceNo(),
+      customer: contract.customer._id,
+      invoiceDate: new Date(),
+      dueDate: dueDate ? new Date(dueDate) : new Date(),
+      orderNumber: contract.contractNo,
+      terms: 'Due on receipt',
+      subject: `Security Deposit — ${contract.contractNo} · Unit ${unitNo}`,
+      items: [{ sortOrder: 0, itemDetails: `Security deposit · Unit ${unitNo}`, quantity: 1, rate: amount, discountPct: 0, amount }],
+      customerNotes: notes || '',
+      subTotal: amount, total: amount, paymentMade: 0, status: 'sent',
+    });
+    // Create a single pending payment entry linked to this invoice
+    await Payment.create({
+      contract: contract._id,
+      invoice: invoice._id,
+      amount,
+      dueDate: dueDate ? new Date(dueDate) : new Date(),
+      status: 'pending',
+      notes: notes || 'Security deposit',
+    });
+    return res.status(201).json(await Invoice.findById(invoice._id).populate('customer', 'fullName email phone address'));
+  }
+
+  // ── Period invoice (weekly breakdown) ────────────────────────────────────
+  if (!startDate || !endDate) return res.status(400).json({ error: 'startDate and endDate are required' });
+
+  const start       = new Date(startDate);
+  const end         = new Date(endDate);
+  const totalDays   = Math.round((end - start) / 86400000);
+  if (totalDays <= 0) return res.status(400).json({ error: 'End date must be after start date' });
+
+  // rate is monthly price; weekly payment = rate / 4. Ceiling: any leftover day = full week.
+  const monthlyRate  = Number(contract.rate || 0);
+  const weeklyRate   = Math.round((monthlyRate / 4) * 100) / 100;
+  const totalWeeks   = Math.ceil(totalDays / 7);
+  const discountPct  = Math.max(0, Math.min(100, Number(rawDiscount || 0)));
+
+  // Global week offset from contract start → discount only applies to first 4 weeks of entire contract.
+  const contractStart   = new Date(contract.startDate);
+  const daysSinceStart  = Math.round((start - contractStart) / 86400000);
+  const globalWeekOffset = Math.max(0, Math.floor(daysSinceStart / 7));
+
+  const items = [];
+  for (let i = 0; i < totalWeeks; i++) {
+    const ws = new Date(start); ws.setDate(ws.getDate() + i * 7);
+    const discounted = discountPct > 0 && (globalWeekOffset + i) < 4;
+    const amount = discounted
+      ? Math.round(weeklyRate * (1 - discountPct / 100) * 100) / 100
+      : weeklyRate;
+    items.push({
+      sortOrder: i,
+      itemDetails: `Week ${i + 1}: ${fmt(ws)} · Unit ${unitNo}`,
+      quantity: 1,
+      rate: weeklyRate,
+      discountPct: discounted ? discountPct : 0,
+      amount,
+    });
+  }
+
+  // Append any extra charges / credits (locks, cleaning fees, credits, etc.)
+  const extras = Array.isArray(rawExtras) ? rawExtras : [];
+  extras.forEach((x, xi) => {
+    if (!x.description || !Number(x.amount)) return;
+    const amt = Math.round(Number(x.amount) * 100) / 100;
+    const signed = x.type === 'credit' ? -amt : amt;
+    items.push({
+      sortOrder: totalWeeks + xi,
+      itemDetails: x.description,
+      quantity: 1,
+      rate: signed,
+      discountPct: 0,
+      amount: signed,
+    });
+  });
+
+  const subTotal = Math.round(items.reduce((s, it) => s + it.amount, 0) * 100) / 100;
+
+  const invoice = await Invoice.create({
+    invoiceNo: await nextInvoiceNo(),
+    customer: contract.customer._id,
+    invoiceDate: new Date(),
+    dueDate: dueDate ? new Date(dueDate) : end,
+    orderNumber: contract.contractNo,
+    terms: 'Due on receipt',
+    subject: `Storage Rent ${fmt(start)} – ${fmt(new Date(end - 86400000))} · ${contract.contractNo}`,
+    items,
+    customerNotes: notes || '',
+    subTotal, total: subTotal, paymentMade: 0, status: 'sent',
+  });
+
+  // Create one Payment entry per week, each linked to this invoice
+  await Payment.insertMany(items.map((item, i) => {
+    const ws = new Date(start); ws.setDate(ws.getDate() + i * 7);
+    return {
+      contract: contract._id,
+      invoice: invoice._id,
+      amount: item.amount,
+      dueDate: ws,
+      status: 'pending',
+      notes: item.itemDetails,
+    };
+  }));
+
+  res.status(201).json(await Invoice.findById(invoice._id).populate('customer', 'fullName email phone address'));
 });
 
 // Download the (unsigned) contract PDF.

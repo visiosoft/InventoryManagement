@@ -24,10 +24,10 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { unitNumber, floor, sizeSqf, price, lengthFt, widthFt, status, notes } = req.body;
+  const { unitNumber, floor, sizeSqf, price, lengthFt, widthFt, status, discountPct, notes } = req.body;
   const exists = await Unit.exists({ unitNumber });
   if (exists) return res.status(409).json({ error: `Unit ${unitNumber} already exists` });
-  const unit = await Unit.create({ unitNumber, floor, sizeSqf, price, lengthFt, widthFt, status, notes });
+  const unit = await Unit.create({ unitNumber, floor, sizeSqf, price, lengthFt, widthFt, status, discountPct, notes });
   res.status(201).json(unit);
 });
 

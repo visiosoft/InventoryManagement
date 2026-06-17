@@ -2,15 +2,29 @@ import mongoose from 'mongoose';
 
 const { Schema, model } = mongoose;
 
+const ALL_MODULES = [
+  'dashboard','units','moving_inventory','contracts','documents',
+  'customers','quotes','invoices','vendors','expenses',
+  'leads','purchases','payments',
+  'reports_monthly','reports_units','reports_finances','reports_forecast','reports_contracts',
+  'reports_vacancies','reports_overdue','reports_expiring',
+  'settings',
+];
+
 const userSchema = new Schema(
   {
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true, lowercase: true },
     passwordHash: { type: String, required: true },
     role: { type: String, enum: ['admin', 'staff'], default: 'staff' },
+    // Modules this user can access. Admins bypass this check entirely.
+    permissions: { type: [String], default: [] },
+    isActive: { type: Boolean, default: true },
   },
   { timestamps: true }
 );
+
+export { ALL_MODULES };
 
 const unitTypeSchema = new Schema(
   {
@@ -36,6 +50,7 @@ const unitSchema = new Schema(
       enum: ['available', 'occupied', 'reserved', 'maintenance'],
       default: 'available',
     },
+    discountPct: { type: Number, default: 0, min: 0, max: 100 },
     notes: { type: String, default: '' },
   },
   { timestamps: true }
@@ -345,6 +360,7 @@ const purchaseSchema = new Schema(
 const expenseSchema = new Schema(
   {
     expenseDate: { type: Date, required: true, default: Date.now },
+    expenseType: { type: String, default: '' },
     description: { type: String, default: '' },
     expenseAccount: { type: String, default: '' },
     expenseAccountCode: { type: String, default: '' },

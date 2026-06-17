@@ -86,17 +86,22 @@ router.post('/:token', async (req, res) => {
       return res.status(409).json({ error: 'This contract cannot be signed in its current state' });
     }
 
-    const { signerName, signatureDataUrl, signMode } = req.body;
+    const { signerName, signatureDataUrl, signMode, initialsText, initialsDataUrl, initialsMode } = req.body;
     if (!signerName?.trim()) return res.status(400).json({ error: 'Signer name is required' });
 
     const now = new Date();
     let pdfBuffer = await buildContractPdf(contract, now);
-    pdfBuffer = await stampSignature(pdfBuffer, { signerName, signatureDataUrl, signMode, signedAt: now });
+    pdfBuffer = await stampSignature(pdfBuffer, {
+      signerName, signatureDataUrl, signMode,
+      initialsText, initialsDataUrl, initialsMode,
+      signedAt: now,
+    });
 
     const stored = await uploadFile({
       buffer: pdfBuffer,
       filename: `${contract.contractNo}-signed.pdf`,
       mimeType: 'application/pdf',
+      customerName: contract.customer?.fullName,
     });
 
     await Document.create({

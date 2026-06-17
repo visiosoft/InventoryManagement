@@ -14,7 +14,7 @@ router.post('/login', async (req, res) => {
   }
   res.json({
     token: signToken(user),
-    user: { id: user._id, name: user.name, email: user.email, role: user.role },
+    user: { id: user._id, name: user.name, email: user.email, role: user.role, permissions: user.permissions ?? [], isActive: user.isActive ?? true },
   });
 });
 
