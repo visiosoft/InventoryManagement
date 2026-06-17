@@ -2,11 +2,10 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
-import { apiError, integrationApi, unitTypeApi, api } from '../lib/api'
+import { apiError, integrationApi, unitTypeApi } from '../lib/api'
 import type { IntegrationStatus, UnitType } from '../lib/types'
 import { Button, Card, CardBody, CardHeader, Field, Input, Modal, PageHeader, Table, Td, Th } from '../components/ui'
 import { formatMoney } from '../lib/utils'
-import { useAuth } from '../lib/auth'
 
 // ---- Tier Form ----
 function TierForm({
@@ -216,7 +215,6 @@ function PricingTiersCard() {
 
 // ---- Main Settings Page ----
 export default function Settings() {
-  const { user } = useAuth()
   const qc = useQueryClient()
   const location = useLocation()
   const [driveMsg, setDriveMsg] = useState<{ ok: boolean; text: string } | null>(null)
@@ -317,6 +315,11 @@ export default function Settings() {
             {contactsMsg && (
               <p className={`text-xs ${contactsMsg.ok ? 'text-emerald-700 dark:text-emerald-400' : 'text-destructive'}`}>
                 {contactsMsg.text}
+              </p>
+            )}
+            {driveMsg && (
+              <p className={`text-xs ${driveMsg.ok ? 'text-emerald-700 dark:text-emerald-400' : 'text-destructive'}`}>
+                {driveMsg.text}
               </p>
             )}
             {!integrations?.googleContacts?.configured && (

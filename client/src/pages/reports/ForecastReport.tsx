@@ -44,7 +44,11 @@ export default function ForecastReport() {
                   <YAxis tick={CHART_STYLE.axisStyle} axisLine={false} tickLine={false} width={72}
                     tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
                   <Tooltip contentStyle={CHART_STYLE.contentStyle}
-                    formatter={(v: number, name: string) => [`AED ${formatMoney(v)}`, name]} />
+                    formatter={(v, name) => {
+                      const amount = typeof v === 'number' ? v : Number(v ?? 0)
+                      const label = String(name ?? '')
+                      return [`AED ${formatMoney(amount)}`, label]
+                    }} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
                   <Bar dataKey="expected" name="Expected" fill="#8b5cf6" radius={[4, 4, 0, 0]} opacity={0.7} />
                   <Bar dataKey="actual" name="Actual Collected" fill="#10b981" radius={[4, 4, 0, 0]} />

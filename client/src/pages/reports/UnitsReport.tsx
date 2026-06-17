@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Building2, Download, TrendingUp, Wallet } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from 'recharts'
 import { api } from '../../lib/api'
-import { Button, Card, CardBody, CardHeader, EmptyState, PageHeader, Spinner, Table, Td, Th } from '../../components/ui'
+import { Button, Card, CardBody, CardHeader, PageHeader, Spinner, Table, Td, Th } from '../../components/ui'
 import { formatMoney } from '../../lib/utils'
 import { CHART_STYLE, downloadCsv, StatCard, type UnitRevenueData } from './shared'
 

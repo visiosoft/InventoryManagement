@@ -17,10 +17,10 @@ import { UploadDocumentForm } from './Documents'
 // ── Custom invoice generator modal ────────────────────────────────────────────
 type Preset = 'month' | 'month2' | 'custom' | 'deposit'
 
-function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, onDone, onClose }: {
+function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, onDone }: {
   contract: Contract; payments: Payment[]
   overrideStart?: string; overrideEnd?: string
-  onDone: () => void; onClose: () => void
+  onDone: () => void
 }) {
   const monthlyRate = Number(contract.rate || 0)
   const weeklyRate  = Math.round((monthlyRate / 4) * 100) / 100
@@ -1041,8 +1041,6 @@ export default function ContractDetail() {
   const totalPaid = paid.reduce((s, p) => s + p.amount, 0)
   const totalPending = pending.reduce((s, p) => s + p.amount, 0)
   const totalOverdue = overdue.reduce((s, p) => s + p.amount, 0)
-  const totalContract = payments.reduce((s, p) => s + p.amount, 0)
-
   // Group payments by invoice → one display row per invoice
   const groupMap = new Map<string, Payment[]>()
   const standalonePayments: Payment[] = []
@@ -1058,6 +1056,7 @@ export default function ContractDetail() {
     const anyOverdue = ps.some(p => p.status === 'overdue')
     const allPaid = unpaidInGroup.length === 0
     const anyPaid = paidInGroup.length > 0
+    const status: InvoiceGroup['status'] = allPaid ? 'paid' : anyOverdue ? 'overdue' : anyPaid ? 'partial' : 'pending'
     return {
       invoiceId: invId,
       invoiceRef: ps[0].invoice as { _id: string; invoiceNo: string },
@@ -1066,7 +1065,7 @@ export default function ContractDetail() {
       paidTotal: Math.round(paidInGroup.reduce((s, p) => s + p.amount, 0) * 100) / 100,
       earliestDue: new Date(sorted[0].dueDate),
       latestDue: new Date(sorted[sorted.length - 1].dueDate),
-      status: allPaid ? 'paid' : anyOverdue ? 'overdue' : anyPaid ? 'partial' : 'pending',
+      status,
     }
   }).sort((a, b) => a.earliestDue.getTime() - b.earliestDue.getTime())
 
@@ -1529,7 +1528,6 @@ export default function ContractDetail() {
             overrideStart={invoiceOverride?.start}
             overrideEnd={invoiceOverride?.end}
             onDone={() => { setShowInvoiceModal(false); setInvoiceOverride(null); invalidate(); qc.invalidateQueries({ queryKey: ['invoices'] }) }}
-            onClose={() => { setShowInvoiceModal(false); setInvoiceOverride(null) }}
           />
         )}
       </Modal>

@@ -85,7 +85,10 @@ export default function FinancesReport() {
                 <YAxis tick={CHART_STYLE.axisStyle} axisLine={false} tickLine={false} width={70}
                   tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
                 <Tooltip contentStyle={CHART_STYLE.contentStyle}
-                  formatter={(v: number) => [`AED ${formatMoney(v)}`, 'Revenue']} />
+                  formatter={(v) => {
+                    const amount = typeof v === 'number' ? v : Number(v ?? 0)
+                    return [`AED ${formatMoney(amount)}`, 'Revenue']
+                  }} />
                 <Line type="monotone" dataKey="total" name="Revenue" stroke="#8b5cf6" strokeWidth={2.5}
                   dot={{ r: 3, fill: '#8b5cf6' }} activeDot={{ r: 5 }} />
               </LineChart>
@@ -137,7 +140,10 @@ export default function FinancesReport() {
                     <YAxis tick={CHART_STYLE.axisStyle} axisLine={false} tickLine={false} width={60}
                       tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
                     <Tooltip contentStyle={CHART_STYLE.contentStyle}
-                      formatter={(v: number) => [`AED ${formatMoney(v)}`, 'Expenses']} />
+                      formatter={(v) => {
+                        const amount = typeof v === 'number' ? v : Number(v ?? 0)
+                        return [`AED ${formatMoney(amount)}`, 'Expenses']
+                      }} />
                     <Bar dataKey="total" name="Expenses" fill="#f59e0b" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
@@ -160,7 +166,10 @@ export default function FinancesReport() {
                             ))}
                           </Pie>
                           <Tooltip contentStyle={CHART_STYLE.contentStyle}
-                            formatter={(v: number) => `AED ${formatMoney(v)}`} />
+                            formatter={(v) => {
+                              const amount = typeof v === 'number' ? v : Number(v ?? 0)
+                              return `AED ${formatMoney(amount)}`
+                            }} />
                         </PieChart>
                       </ResponsiveContainer>
                       <div className="flex-1 space-y-1.5 text-xs overflow-auto max-h-48">

@@ -105,11 +105,6 @@ function SignatureCanvas({ onCapture }: { onCapture: (url: string | null) => voi
   return <DrawCanvas height={128} lineWidth={2.5} onCapture={onCapture} />
 }
 
-// ── Initials canvas (compact) ─────────────────────────────────────────────────
-function InitialsCanvas({ onCapture }: { onCapture: (url: string | null) => void }) {
-  return <DrawCanvas height={72} lineWidth={2} onCapture={onCapture} />
-}
-
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function SignContract() {
   const { token } = useParams<{ token: string }>()

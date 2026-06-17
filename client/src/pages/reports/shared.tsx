@@ -1,5 +1,3 @@
-import type { ReactElement } from 'react'
-
 // ── Shared chart/style constants ──────────────────────────────────────────────
 
 export const CHART_STYLE = {
