@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useParams } from 'react-router-dom'
-import { Pencil, Plus, Upload, ShieldCheck } from 'lucide-react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Pencil, Plus, Upload, ShieldCheck, Trash2 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import type { AccessPerson, AppDocument, Contract, Customer } from '../lib/types'
 import {
@@ -42,6 +42,7 @@ function AccessPersonCard({ p, index }: { p: AccessPerson; index: number }) {
 
 export default function CustomerDetail() {
   const { id } = useParams()
+  const navigate = useNavigate()
   const qc = useQueryClient()
   const [editing, setEditing] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -63,14 +64,30 @@ export default function CustomerDetail() {
     onError: (e) => setError(apiError(e)),
   })
 
+  const removeCustomer = useMutation({
+    mutationFn: () => api.delete(`/customers/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['customers'] })
+      navigate('/customers')
+    },
+    onError: (e) => setError(apiError(e)),
+  })
+
+  function onDeleteCustomer() {
+    const ok = window.confirm(`Delete customer ${customer.fullName}? This cannot be undone.`)
+    if (!ok) return
+    setError('')
+    removeCustomer.mutate()
+  }
+
   if (isLoading || !data) return <Spinner />
   const { customer, contracts, documents } = data
 
   const allPhones = customer.phones?.filter(Boolean).length
     ? customer.phones!
     : customer.phone
-    ? [customer.phone]
-    : []
+      ? [customer.phone]
+      : []
 
   const subtitleParts = [
     customer.clientId,
@@ -85,11 +102,16 @@ export default function CustomerDetail() {
         subtitle={subtitleParts.join(' · ') || 'Customer'}
         action={
           <div className="flex gap-2">
+            <Button variant="outline" onClick={onDeleteCustomer} disabled={removeCustomer.isPending}>
+              <Trash2 size={14} /> Delete
+            </Button>
             <Button variant="outline" onClick={() => setEditing(true)}><Pencil size={14} /> Edit</Button>
             <Link to={`/contracts/new?customer=${customer._id}`}><Button><Plus size={15} /> New contract</Button></Link>
           </div>
         }
       />
+
+      {error && <p className="mb-3 text-xs text-destructive">{error}</p>}
 
       <div className="grid gap-4 lg:grid-cols-[340px_1fr]">
         {/* ── Left sidebar ── */}

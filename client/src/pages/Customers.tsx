@@ -89,22 +89,22 @@ export function CustomerForm({
     e.preventDefault()
     const f = new FormData(e.currentTarget)
     onSubmit({
-      fullName:       String(f.get('fullName') || ''),
-      clientId:       String(f.get('clientId') || ''),
-      tenantType:     (f.get('tenantType') as 'individual' | 'company') || 'individual',
-      email:          String(f.get('email') || ''),
-      phone:          phones[0] ?? '',
-      phones:         phones.filter(Boolean),
-      nationality:    String(f.get('nationality') || ''),
-      emergencyNumber:String(f.get('emergencyNumber') || ''),
-      company:        String(f.get('company') || ''),
-      address:        String(f.get('address') || ''),
-      emiratesId:     String(f.get('emiratesId') || ''),
-      eidExpiry:      String(f.get('eidExpiry') || '') || undefined,
+      fullName: String(f.get('fullName') || ''),
+      clientId: String(f.get('clientId') || ''),
+      tenantType: (f.get('tenantType') as 'individual' | 'company') || 'individual',
+      email: String(f.get('email') || ''),
+      phone: phones[0] ?? '',
+      phones: phones.filter(Boolean),
+      nationality: String(f.get('nationality') || ''),
+      emergencyNumber: String(f.get('emergencyNumber') || ''),
+      company: String(f.get('company') || ''),
+      address: String(f.get('address') || ''),
+      emiratesId: String(f.get('emiratesId') || ''),
+      eidExpiry: String(f.get('eidExpiry') || '') || undefined,
       passportNumber: String(f.get('passportNumber') || ''),
       passportExpiry: String(f.get('passportExpiry') || '') || undefined,
       accessPersons,
-      notes:          String(f.get('notes') || ''),
+      notes: String(f.get('notes') || ''),
     })
   }
 
@@ -224,6 +224,8 @@ export default function Customers() {
   const [prefill, setPrefill] = useState<Partial<Customer> | null>(null)
   const [error, setError] = useState('')
   const [newCustomer, setNewCustomer] = useState<Customer | null>(null)
+  const [actionError, setActionError] = useState('')
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   useEffect(() => {
     const p = (location.state as { prefill?: Partial<Customer> } | null)?.prefill
@@ -249,6 +251,26 @@ export default function Customers() {
     },
     onError: (e) => setError(apiError(e)),
   })
+
+  const removeCustomer = useMutation({
+    mutationFn: (id: string) => api.delete(`/customers/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['customers'] })
+      setActionError('')
+      setDeletingId(null)
+    },
+    onError: (e) => {
+      setActionError(apiError(e))
+      setDeletingId(null)
+    },
+  })
+
+  function onDeleteCustomer(c: Customer) {
+    const ok = window.confirm(`Delete customer ${c.fullName}? This cannot be undone.`)
+    if (!ok) return
+    setDeletingId(c._id)
+    removeCustomer.mutate(c._id)
+  }
 
   function closeModal() {
     setAdding(false)
@@ -279,8 +301,9 @@ export default function Customers() {
         <Spinner />
       ) : (
         <Card>
+          {actionError && <p className="px-4 pt-4 text-xs text-destructive">{actionError}</p>}
           <Table>
-            <thead><tr><Th>Name</Th><Th>Client ID</Th><Th>Email</Th><Th>Phone</Th><Th>Nationality</Th><Th>Since</Th></tr></thead>
+            <thead><tr><Th>Name</Th><Th>Client ID</Th><Th>Email</Th><Th>Phone</Th><Th>Nationality</Th><Th>Since</Th><Th /></tr></thead>
             <tbody>
               {(customers || []).map((c) => (
                 <tr key={c._id} className="hover:bg-muted/50">
@@ -293,6 +316,17 @@ export default function Customers() {
                   <Td>{c.phones?.[0] ?? c.phone ?? '—'}</Td>
                   <Td>{c.nationality || '—'}</Td>
                   <Td>{formatDate(c.createdAt)}</Td>
+                  <Td className="text-right">
+                    <button
+                      type="button"
+                      onClick={() => onDeleteCustomer(c)}
+                      disabled={removeCustomer.isPending && deletingId === c._id}
+                      className="inline-flex items-center gap-1 text-xs text-destructive hover:underline disabled:opacity-50 cursor-pointer"
+                    >
+                      <Trash2 size={12} />
+                      Delete
+                    </button>
+                  </Td>
                 </tr>
               ))}
             </tbody>
