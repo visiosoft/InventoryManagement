@@ -5,32 +5,32 @@ import { FileText, Plus, Search } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import type { Contract, Payment } from '../lib/types'
 import {
-  Badge, Button, Card, CardBody, CardHeader, EmptyState,
+  Badge, Button, Card, EmptyState,
   Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, Th,
   Textarea, paymentStatusTone, statusLabel,
 } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
 
 interface PaymentSummary {
-  overdue:       { count: number; total: number }
-  pending:       { count: number; total: number }
+  overdue: { count: number; total: number }
+  pending: { count: number; total: number }
   paidThisMonth: { count: number; total: number }
-  dueThisMonth:  { count: number; total: number }
+  dueThisMonth: { count: number; total: number }
 }
 
 // ── Summary stat card ──────────────────────────────────────────────────────────
 function StatCard({ label, count, total, tone }: { label: string; count: number; total: number; tone: string }) {
   const colors: Record<string, string> = {
-    red:   'border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-950/30',
+    red: 'border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-950/30',
     amber: 'border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-950/30',
     green: 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-950/30',
-    blue:  'border-blue-200 bg-blue-50 dark:border-blue-900/40 dark:bg-blue-950/30',
+    blue: 'border-blue-200 bg-blue-50 dark:border-blue-900/40 dark:bg-blue-950/30',
   }
   const textColors: Record<string, string> = {
-    red:   'text-red-700 dark:text-red-400',
+    red: 'text-red-700 dark:text-red-400',
     amber: 'text-amber-700 dark:text-amber-400',
     green: 'text-emerald-700 dark:text-emerald-400',
-    blue:  'text-blue-700 dark:text-blue-400',
+    blue: 'text-blue-700 dark:text-blue-400',
   }
   return (
     <div className={`rounded-xl border px-5 py-4 ${colors[tone]}`}>
@@ -53,9 +53,9 @@ function RecordForm({
   error: string
   onSubmit: (body: { method: string; paidDate: string; notes: string }) => void
 }) {
-  const [method, setMethod]     = useState(payment.method || 'cash')
+  const [method, setMethod] = useState(payment.method || 'cash')
   const [paidDate, setPaidDate] = useState(new Date().toISOString().slice(0, 10))
-  const [notes, setNotes]       = useState('')
+  const [notes, setNotes] = useState('')
 
   return (
     <div className="space-y-4">
@@ -101,11 +101,11 @@ function EditForm({
   onSubmit: (body: Record<string, unknown>) => void
 }) {
   const toInput = (d?: string) => d ? new Date(d).toISOString().slice(0, 10) : ''
-  const [amount,   setAmount]   = useState(String(payment.amount))
-  const [dueDate,  setDueDate]  = useState(toInput(payment.dueDate))
+  const [amount, setAmount] = useState(String(payment.amount))
+  const [dueDate, setDueDate] = useState(toInput(payment.dueDate))
   const [paidDate, setPaidDate] = useState(toInput(payment.paidDate))
-  const [method,   setMethod]   = useState(payment.method || 'cash')
-  const [notes,    setNotes]    = useState(payment.notes || '')
+  const [method, setMethod] = useState(payment.method || 'cash')
+  const [notes, setNotes] = useState(payment.notes || '')
 
   function submit(e: FormEvent) {
     e.preventDefault()
@@ -165,9 +165,9 @@ function AddPaymentForm({
     queryFn: () => api.get('/contracts', { params: { status: 'active' } }).then((r) => r.data),
   })
   const [contract, setContract] = useState('')
-  const [amount, setAmount]     = useState('')
-  const [dueDate, setDueDate]   = useState(new Date().toISOString().slice(0, 10))
-  const [notes, setNotes]       = useState('')
+  const [amount, setAmount] = useState('')
+  const [dueDate, setDueDate] = useState(new Date().toISOString().slice(0, 10))
+  const [notes, setNotes] = useState('')
 
   function submit(e: FormEvent) {
     e.preventDefault()
@@ -209,14 +209,14 @@ export default function Payments() {
   const qc = useQueryClient()
 
   // Filters
-  const [status,  setStatus]  = useState('')
-  const [search,  setSearch]  = useState('')
-  const [month,   setMonth]   = useState('')   // 'YYYY-MM' or ''
+  const [status, setStatus] = useState('')
+  const [search, setSearch] = useState('')
+  const [month, setMonth] = useState('')   // 'YYYY-MM' or ''
 
   // Modal state
-  const [recording,  setRecording]  = useState<Payment | null>(null)
-  const [editing,    setEditing]    = useState<Payment | null>(null)
-  const [adding,     setAdding]     = useState(false)
+  const [recording, setRecording] = useState<Payment | null>(null)
+  const [editing, setEditing] = useState<Payment | null>(null)
+  const [adding, setAdding] = useState(false)
   const [modalError, setModalError] = useState('')
 
   // Build date range from selected month
@@ -225,7 +225,7 @@ export default function Payments() {
     const [y, m] = month.split('-').map(Number)
     dateParams.from = `${month}-01`
     const last = new Date(y, m, 0).getDate()
-    dateParams.to   = `${month}-${String(last).padStart(2, '0')}`
+    dateParams.to = `${month}-${String(last).padStart(2, '0')}`
   }
 
   const queryParams = { ...(status ? { status } : {}), ...(search ? { search } : {}), ...dateParams }
@@ -294,10 +294,10 @@ export default function Payments() {
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        <StatCard label="Overdue"           count={summary?.overdue.count       ?? 0} total={summary?.overdue.total       ?? 0} tone="red"   />
+        <StatCard label="Overdue" count={summary?.overdue.count ?? 0} total={summary?.overdue.total ?? 0} tone="red" />
         <StatCard label={`Due in ${currentMonthLabel}`} count={summary?.dueThisMonth.count ?? 0} total={summary?.dueThisMonth.total ?? 0} tone="amber" />
         <StatCard label={`Paid in ${currentMonthLabel}`} count={summary?.paidThisMonth.count ?? 0} total={summary?.paidThisMonth.total ?? 0} tone="green" />
-        <StatCard label="All pending"       count={summary?.pending.count       ?? 0} total={summary?.pending.total       ?? 0} tone="blue"  />
+        <StatCard label="All pending" count={summary?.pending.count ?? 0} total={summary?.pending.total ?? 0} tone="blue" />
       </div>
 
       {/* Filters */}
@@ -391,7 +391,7 @@ export default function Payments() {
                               })
                               if (!res.ok) { alert('Could not generate receipt'); return }
                               const blob = await res.blob()
-                              const url  = URL.createObjectURL(blob)
+                              const url = URL.createObjectURL(blob)
                               window.open(url, '_blank', 'noopener,noreferrer')
                               setTimeout(() => URL.revokeObjectURL(url), 60_000)
                             }}

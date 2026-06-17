@@ -267,7 +267,7 @@ export function Spinner() {
   )
 }
 
-export function PageHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: ReactNode }) {
+export function PageHeader({ title, subtitle, action }: { title: string; subtitle?: ReactNode; action?: ReactNode }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
       <div>

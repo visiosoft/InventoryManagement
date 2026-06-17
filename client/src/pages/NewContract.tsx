@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Check, ChevronDown, FileText, Files, Layers, X } from 'lucide-react'
@@ -36,11 +36,11 @@ function CustomerCombobox({
   value: string
   onChange: (id: string) => void
 }) {
-  const [query, setQuery]   = useState('')
-  const [open, setOpen]     = useState(false)
-  const containerRef        = useRef<HTMLDivElement>(null)
-  const inputRef            = useRef<HTMLInputElement>(null)
-  const pickingRef          = useRef(false)   // prevents blur from resetting during a pick
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const pickingRef = useRef(false)   // prevents blur from resetting during a pick
 
   // Sync display text whenever the selected value or customer list changes.
   // This covers (a) URL pre-populate where customers load async after mount,
@@ -171,9 +171,9 @@ function ModePicker({ onPick }: { onPick: (m: Mode) => void }) {
   return (
     <div className="grid gap-4 sm:grid-cols-3">
       {([
-        { mode: 'single'   as Mode, Icon: FileText, title: 'Single unit',                       desc: 'One contract · one unit. Standard rental agreement.' },
-        { mode: 'combined' as Mode, Icon: Layers,   title: 'Single contract · multiple units',  desc: 'One contract number covers several units. One combined payment per period.' },
-        { mode: 'multi'    as Mode, Icon: Files,    title: 'Separate contracts · multiple units', desc: 'Pick several units — creates one contract per unit with the same terms.' },
+        { mode: 'single' as Mode, Icon: FileText, title: 'Single unit', desc: 'One contract · one unit. Standard rental agreement.' },
+        { mode: 'combined' as Mode, Icon: Layers, title: 'Single contract · multiple units', desc: 'One contract number covers several units. One combined payment per period.' },
+        { mode: 'multi' as Mode, Icon: Files, title: 'Separate contracts · multiple units', desc: 'Pick several units — creates one contract per unit with the same terms.' },
       ]).map(({ mode, Icon, title, desc }) => (
         <button
           key={mode}
@@ -208,21 +208,21 @@ function unitAvailability(u: Unit, contracts: Contract[], startDate: string, end
 }
 
 const availStyle: Record<UnitAvail, string> = {
-  available:    'border-emerald-500/60 bg-emerald-500/10 hover:bg-emerald-500/20',
-  prebookable:  'border-amber-500/60 bg-amber-500/10 hover:bg-amber-500/20',
-  booked:       'border-rose-400/60 bg-rose-500/10 opacity-60',
-  maintenance:  'border-border bg-muted opacity-40 cursor-not-allowed',
+  available: 'border-emerald-500/60 bg-emerald-500/10 hover:bg-emerald-500/20',
+  prebookable: 'border-amber-500/60 bg-amber-500/10 hover:bg-amber-500/20',
+  booked: 'border-rose-400/60 bg-rose-500/10 opacity-60',
+  maintenance: 'border-border bg-muted opacity-40 cursor-not-allowed',
 }
 const availLabel: Record<UnitAvail, string> = {
-  available:   'Available',
+  available: 'Available',
   prebookable: 'Pre-bookable',
-  booked:      'Booked',
+  booked: 'Booked',
   maintenance: 'Construction',
 }
 const availLabelColor: Record<UnitAvail, string> = {
-  available:   'text-emerald-600 dark:text-emerald-400',
+  available: 'text-emerald-600 dark:text-emerald-400',
   prebookable: 'text-amber-600 dark:text-amber-400',
-  booked:      'text-rose-500',
+  booked: 'text-rose-500',
   maintenance: 'text-muted-foreground',
 }
 
@@ -300,9 +300,9 @@ export default function NewContract() {
     return units
       .filter((u) =>
         u.status !== 'maintenance' &&
-        (!sizeFilter  || u.sizeSqf === Number(sizeFilter)) &&
+        (!sizeFilter || u.sizeSqf === Number(sizeFilter)) &&
         (!floorFilter || u.floor === floorFilter) &&
-        (showBooked   || unitAvailMap.get(u._id) !== 'booked')
+        (showBooked || unitAvailMap.get(u._id) !== 'booked')
       )
       .sort((a, b) => {
         const ao = availOrder[unitAvailMap.get(a._id) ?? 'maintenance']
@@ -408,7 +408,7 @@ export default function NewContract() {
   ][step]
 
   // Availability counts
-  const availCount  = useMemo(() => [...unitAvailMap.values()].filter((v) => v === 'available').length, [unitAvailMap])
+  const availCount = useMemo(() => [...unitAvailMap.values()].filter((v) => v === 'available').length, [unitAvailMap])
   const bookedCount = useMemo(() => [...unitAvailMap.values()].filter((v) => v === 'booked').length, [unitAvailMap])
 
   if (unitsLoading) return <Spinner />
@@ -427,7 +427,7 @@ export default function NewContract() {
           <span>
             {mode === 'single' ? 'Single unit contract'
               : mode === 'combined' ? 'Single contract · multiple units'
-              : 'Separate contracts · multiple units'}
+                : 'Separate contracts · multiple units'}
             <button
               onClick={() => { setMode(null); setStep(0); setUnitIds([]); setError('') }}
               className="ml-2 text-xs text-primary hover:underline cursor-pointer"
@@ -448,7 +448,7 @@ export default function NewContract() {
                 'flex h-7 items-center gap-2 rounded-full px-3 text-xs font-medium cursor-pointer',
                 i === step ? 'bg-primary text-primary-foreground'
                   : i < step ? 'bg-accent text-accent-foreground'
-                  : 'bg-muted text-muted-foreground'
+                    : 'bg-muted text-muted-foreground'
               )}
             >
               {i + 1}. {s}
@@ -541,7 +541,7 @@ export default function NewContract() {
                     </p>
                     <div className="grid grid-cols-[repeat(auto-fill,minmax(88px,1fr))] gap-1.5">
                       {list.map((u) => {
-                        const avail   = unitAvailMap.get(u._id) ?? 'maintenance'
+                        const avail = unitAvailMap.get(u._id) ?? 'maintenance'
                         const selected = unitIds.includes(u._id)
                         const disabled = avail === 'maintenance' || avail === 'booked'
                         const conflict = conflictMap.get(u._id)
@@ -551,7 +551,7 @@ export default function NewContract() {
                             type="button"
                             disabled={disabled}
                             onClick={() => toggleUnit(u._id)}
-                            title={conflict ? `Booked: ${conflict.contractNo} (${conflict.startDate?.slice(0,10)} → ${conflict.endDate?.slice(0,10)})` : undefined}
+                            title={conflict ? `Booked: ${conflict.contractNo} (${conflict.startDate?.slice(0, 10)} → ${conflict.endDate?.slice(0, 10)})` : undefined}
                             className={cn(
                               'relative rounded-lg border px-2 py-2 text-center transition-all',
                               selected
@@ -622,8 +622,8 @@ export default function NewContract() {
                 {mode === 'single'
                   ? 'Click a unit to select it.'
                   : mode === 'combined'
-                  ? 'Click units to select. All will be grouped under one contract.'
-                  : 'Click units to select. One contract will be created per unit.'}
+                    ? 'Click units to select. All will be grouped under one contract.'
+                    : 'Click units to select. One contract will be created per unit.'}
               </p>
             </>
           )}
@@ -661,13 +661,13 @@ export default function NewContract() {
                     type="number" min={0} step="0.01" value={rate}
                     placeholder={
                       mode === 'combined' ? String(combinedRate) + ' (sum of selected units)'
-                      : mode === 'multi'  ? "Leave blank — use each unit's own price"
-                      : String(getUnitRate(selectedUnits[0] ?? ({} as Unit)))
+                        : mode === 'multi' ? "Leave blank — use each unit's own price"
+                          : String(getUnitRate(selectedUnits[0] ?? ({} as Unit)))
                     }
                     onChange={(e) => setRate(e.target.value === '' ? '' : Number(e.target.value))}
                   />
                   {mode === 'combined' && <p className="mt-1 text-[11px] text-muted-foreground">Auto-calculated as sum of each unit's price. Override if needed.</p>}
-                  {mode === 'multi'    && <p className="mt-1 text-[11px] text-muted-foreground">Leave blank to use each unit's individual rate</p>}
+                  {mode === 'multi' && <p className="mt-1 text-[11px] text-muted-foreground">Leave blank to use each unit's individual rate</p>}
                 </Field>
                 <Field label={`Security deposit${isMultiUnit ? ' (per unit)' : ''}`}>
                   <Input type="number" min={0} step="0.01" value={deposit} placeholder="0.00"
@@ -743,7 +743,7 @@ export default function NewContract() {
               <div className="rounded-lg bg-accent px-3 py-2 text-accent-foreground text-xs space-y-0.5">
                 <div>
                   {mode === 'multi' ? 'Combined value' : 'Contract value'}: <strong>{formatMoney(totalValue)}</strong>
-                  {mode === 'multi'    && ` · ${selectedUnits.length} contracts`}
+                  {mode === 'multi' && ` · ${selectedUnits.length} contracts`}
                   {mode === 'combined' && ` · ${selectedUnits.length} units · 1 contract`}
                   {' '}· ≈ {periods} {billing === 'weekly' ? 'weekly' : 'monthly'} payment{periods !== 1 ? 's' : ''}
                   {autoRenew && <Badge tone="purple" className="ml-2">Auto-renew</Badge>}
@@ -766,9 +766,9 @@ export default function NewContract() {
             ) : (
               <Button disabled={create.isPending || overlappingUnitIds.length > 0} onClick={() => create.mutate()}>
                 {create.isPending ? 'Creating…'
-                  : mode === 'multi'    ? `Create ${selectedUnits.length} contract${selectedUnits.length !== 1 ? 's' : ''}`
-                  : mode === 'combined' ? `Create 1 contract (${selectedUnits.length} units)`
-                  : 'Create contract'}
+                  : mode === 'multi' ? `Create ${selectedUnits.length} contract${selectedUnits.length !== 1 ? 's' : ''}`
+                    : mode === 'combined' ? `Create 1 contract (${selectedUnits.length} units)`
+                      : 'Create contract'}
               </Button>
             )}
           </div>
