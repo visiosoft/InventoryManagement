@@ -411,6 +411,49 @@ const paymentSchema = new Schema(
   { timestamps: true }
 );
 
+const movingItemSchema = new Schema(
+  {
+    sku: { type: String, required: true, unique: true },
+    name: { type: String, required: true },
+    category: { type: String, default: 'box' },
+    sizeLabel: { type: String, default: '' },
+    lengthCm: { type: Number, default: null },
+    widthCm: { type: Number, default: null },
+    heightCm: { type: Number, default: null },
+    unit: { type: String, enum: ['pcs', 'packs', 'rolls', 'sets', 'other'], default: 'pcs' },
+    onHand: { type: Number, default: 0 },
+    reorderLevel: { type: Number, default: 0 },
+    active: { type: Boolean, default: true },
+    notes: { type: String, default: '' },
+  },
+  { timestamps: true }
+);
+
+const movingStockTxnSchema = new Schema(
+  {
+    item: { type: Schema.Types.ObjectId, ref: 'MovingItem', required: true },
+    txnType: { type: String, enum: ['in', 'out', 'adjustment', 'transfer', 'return'], required: true },
+    qty: { type: Number, required: true },
+    previousOnHand: { type: Number, default: 0 },
+    resultingOnHand: { type: Number, default: 0 },
+    unitCost: { type: Number, default: 0 },
+    reason: { type: String, default: '' },
+    takenBy: { type: String, default: '' },
+    contract: { type: Schema.Types.ObjectId, ref: 'Contract' },
+    customer: { type: Schema.Types.ObjectId, ref: 'Customer' },
+    txnDate: { type: Date, default: Date.now },
+    notes: { type: String, default: '' },
+    createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
+  },
+  { timestamps: true }
+);
+
+movingItemSchema.index({ name: 1, sizeLabel: 1 });
+movingItemSchema.index({ active: 1, onHand: 1 });
+movingStockTxnSchema.index({ item: 1, txnDate: -1 });
+movingStockTxnSchema.index({ contract: 1, txnDate: -1 });
+movingStockTxnSchema.index({ customer: 1, txnDate: -1 });
+
 const documentSchema = new Schema(
   {
     contract: { type: Schema.Types.ObjectId, ref: 'Contract' },
@@ -452,6 +495,8 @@ export const Vendor = model('Vendor', vendorSchema);
 export const Purchase = model('Purchase', purchaseSchema);
 export const Expense = model('Expense', expenseSchema);
 export const Payment = model('Payment', paymentSchema);
+export const MovingItem = model('MovingItem', movingItemSchema);
+export const MovingStockTxn = model('MovingStockTxn', movingStockTxnSchema);
 export const Document = model('Document', documentSchema);
 export const AuditLog = model('AuditLog', auditLogSchema);
 export const Counter = model('Counter', counterSchema);

@@ -19,6 +19,7 @@ import invoiceRoutes from './routes/invoices.js';
 import vendorRoutes from './routes/vendors.js';
 import purchaseRoutes from './routes/purchases.js';
 import expenseRoutes from './routes/expenses.js';
+import movingInventoryRoutes from './routes/movingInventory.js';
 import unitTypeRoutes, { seedUnitTypes } from './routes/unitTypes.js';
 import signingRoutes from './routes/signing.js';
 
@@ -53,6 +54,7 @@ app.use('/api/invoices', requireAuth, invoiceRoutes);
 app.use('/api/vendors', requireAuth, vendorRoutes);
 app.use('/api/purchases', requireAuth, purchaseRoutes);
 app.use('/api/expenses', requireAuth, expenseRoutes);
+app.use('/api/moving-inventory', requireAuth, movingInventoryRoutes);
 app.use('/api/unit-types', requireAuth, unitTypeRoutes);
 app.use(
   '/api/integrations',

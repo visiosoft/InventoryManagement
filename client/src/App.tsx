@@ -22,6 +22,7 @@ import Vendors from './pages/Vendors'
 import VendorDetail from './pages/VendorDetail'
 import Purchases from './pages/Purchases'
 import Expenses from './pages/Expenses'
+import MovingInventory from './pages/MovingInventory'
 
 export default function App() {
   const { user } = useAuth()
@@ -53,6 +54,7 @@ export default function App() {
         <Route path="/vendors/:id" element={<VendorDetail />} />
         <Route path="/purchases" element={<Purchases />} />
         <Route path="/expenses" element={<Expenses />} />
+        <Route path="/moving-inventory" element={<MovingInventory />} />
         <Route path="/contracts" element={<Contracts />} />
         <Route path="/contracts/new" element={<NewContract />} />
         <Route path="/contracts/:id" element={<ContractDetail />} />

@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Box, Users, FileText, CreditCard, BarChart3, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, FileSpreadsheet, Truck, ShoppingCart, Wallet } from 'lucide-react'
+import { LayoutDashboard, Box, Users, FileText, CreditCard, BarChart3, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, FileSpreadsheet, Truck, ShoppingCart, Wallet, PackageOpen } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { cn } from '../lib/utils'
@@ -13,6 +13,7 @@ const navGroups = [
     title: 'Inventory',
     items: [
       { to: '/units', label: 'Units', icon: Box },
+      { to: '/moving-inventory', label: 'Moving Ops', icon: PackageOpen },
       { to: '/contracts', label: 'Contracts', icon: FileText },
       { to: '/documents', label: 'Documents', icon: FolderOpen },
     ],
