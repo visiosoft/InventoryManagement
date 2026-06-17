@@ -8,6 +8,10 @@ import type { Contract, Summary, Unit } from '../lib/types'
 import { Button, Card, CardBody, CardHeader, EmptyState, Field, Input, PageHeader, Spinner, Table, Td, Th } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
 
+function daysUntil(date: string) {
+  return Math.ceil((new Date(date).getTime() - Date.now()) / 86400000)
+}
+
 function downloadCsv(filename: string, rows: (string | number)[][]) {
   const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
@@ -89,7 +93,7 @@ export default function Reports() {
                 const pct = rentable ? Math.round((s.occupied / rentable) * 100) : 0
                 return (
                   <tr key={s.sizeSqf} className="hover:bg-muted/50">
-                    <Td className="font-medium">{s.sizeSqf} sq ft</Td>
+                    <Td className="font-medium">{s.sizeSqf}</Td>
                     <Td>{s.total}</Td>
                     <Td>{s.available}</Td>
                     <Td>{s.occupied}</Td>
@@ -109,6 +113,48 @@ export default function Reports() {
           </Table>
         </Card>
       </div>
+
+      <Card className="mt-4">
+        <CardHeader
+          title="Contracts expiring soon"
+          subtitle="Active contracts ending in the next 15 days"
+          action={
+            <Button size="sm" variant="outline" onClick={() => summary && downloadCsv('expiring-contracts.csv', [
+              ['Customer', 'Unit', 'Contract', 'End Date', 'Days Left'],
+              ...(summary.expiringContracts || []).map((c) => [
+                c.customer?.fullName ?? '',
+                c.unit?.unitNumber ?? '',
+                c.contractNo,
+                c.endDate,
+                daysUntil(c.endDate),
+              ]),
+            ])}>
+              <Download size={13} /> CSV
+            </Button>
+          }
+        />
+        {(summary?.expiringContracts || []).length === 0 ? (
+          <EmptyState message="No contracts expiring in the next 15 days." />
+        ) : (
+          <ul className="divide-y divide-border">
+            {(summary?.expiringContracts || []).map((c) => {
+              const dl = daysUntil(c.endDate)
+              const endFmt = new Date(c.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
+              const urgency = dl <= 3 ? 'text-destructive' : dl <= 7 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'
+              return (
+                <li key={c._id} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-muted/40">
+                  <div className="min-w-0">
+                    <span className="font-medium text-sm">{c.customer?.fullName}</span>
+                    <span className="text-muted-foreground text-sm"> — {c.unit?.unitNumber} — </span>
+                    <span className={`text-sm ${urgency}`}>expires in {dl} day{dl !== 1 ? 's' : ''} ({endFmt})</span>
+                  </div>
+                  <Link to={`/contracts/${c._id}`} className="shrink-0 text-xs font-medium text-primary hover:underline whitespace-nowrap">View Contract</Link>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </Card>
 
       <Card className="mt-4">
         <CardHeader title="Availability search" subtitle="Find free units by size and date range" />

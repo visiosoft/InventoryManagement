@@ -140,6 +140,8 @@ const contractSchema = new Schema(
     raw: { type: Schema.Types.Mixed },
     notes: { type: String, default: '' },
     authorizedPersons: [accessPersonSchema],
+    signingToken: { type: String, default: null },
+    signingTokenExpiry: { type: Date, default: null },
   },
   { timestamps: true }
 );

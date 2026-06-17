@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { Plus, Search, Upload } from 'lucide-react'
 import { api, apiError, leadApi } from '../lib/api'
 import type { Lead, LeadSource, LeadStatus } from '../lib/types'
@@ -193,6 +194,7 @@ function parseGoogleContactsCsv(text: string): ContactRow[] {
 
 export default function Leads() {
     const qc = useQueryClient()
+    const navigate = useNavigate()
 
     const [search, setSearch] = useState('')
     const [status, setStatus] = useState('')
@@ -205,6 +207,8 @@ export default function Leads() {
     const [editing, setEditing] = useState<Lead | null>(null)
     const [error, setError] = useState('')
     const [importResult, setImportResult] = useState<ImportResult | null>(null)
+    const [pendingChange, setPendingChange] = useState<{ lead: Lead; newStatus: LeadStatus } | null>(null)
+    const [changeComment, setChangeComment] = useState('')
     const fileInputRef = useRef<HTMLInputElement>(null)
 
     const { data: users } = useQuery<{ _id: string; name: string; email: string }[]>({
@@ -254,14 +258,20 @@ export default function Leads() {
     })
 
     const updateStatus = useMutation({
-        mutationFn: ({ id, nextStatus }: { id: string; nextStatus: LeadStatus }) => leadApi.updateStatus(id, nextStatus),
-        onSuccess: () => qc.invalidateQueries({ queryKey: ['leads'] }),
+        mutationFn: ({ id, nextStatus, comment }: { id: string; nextStatus: LeadStatus; comment?: string }) =>
+            leadApi.updateStatus(id, nextStatus, comment),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['leads'] })
+            setPendingChange(null)
+            setChangeComment('')
+        },
     })
 
     const removeLead = useMutation({
         mutationFn: (id: string) => leadApi.remove(id),
         onSuccess: () => qc.invalidateQueries({ queryKey: ['leads'] }),
     })
+
 
     const importContacts = useMutation({
         mutationFn: (contacts: ContactRow[]) =>
@@ -373,7 +383,13 @@ export default function Leads() {
                                     <Td>
                                         <Select
                                             value={lead.status}
-                                            onChange={(e) => updateStatus.mutate({ id: lead._id, nextStatus: e.target.value as LeadStatus })}
+                                            onChange={(e) => {
+                                                const newStatus = e.target.value as LeadStatus
+                                                if (newStatus !== lead.status) {
+                                                    setPendingChange({ lead, newStatus })
+                                                    setChangeComment('')
+                                                }
+                                            }}
                                             className="h-8 text-xs"
                                         >
                                             {LEAD_STATUSES.map((s) => (
@@ -394,6 +410,21 @@ export default function Leads() {
                                     <Td>
                                         <div className="flex gap-2 text-xs">
                                             <button onClick={() => setEditing(lead)} className="text-primary hover:underline cursor-pointer">Edit</button>
+                                            <button
+                                                onClick={() => navigate('/customers', {
+                                                    state: {
+                                                        prefill: {
+                                                            fullName: lead.fullName,
+                                                            phone: lead.phone,
+                                                            email: lead.email,
+                                                            notes: lead.notes,
+                                                        }
+                                                    }
+                                                })}
+                                                className="text-emerald-600 hover:underline cursor-pointer"
+                                            >
+                                                Convert
+                                            </button>
                                             <button
                                                 onClick={() => {
                                                     if (confirm('Delete this lead?')) removeLead.mutate(lead._id)
@@ -430,6 +461,45 @@ export default function Leads() {
                         error={error}
                         onSubmit={(body) => updateLead.mutate({ id: editing._id, body })}
                     />
+                )}
+            </Modal>
+
+            <Modal
+                open={!!pendingChange}
+                onClose={() => { setPendingChange(null); setChangeComment('') }}
+                title="Update status"
+            >
+                {pendingChange && (
+                    <div className="space-y-4">
+                        <p className="text-sm text-muted-foreground">
+                            Moving <strong className="text-foreground">{pendingChange.lead.fullName}</strong> to{' '}
+                            <Badge tone={leadStatusTone[pendingChange.newStatus]}>{statusLabel(pendingChange.newStatus)}</Badge>
+                        </p>
+                        <div>
+                            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Comment (optional)</label>
+                            <Textarea
+                                value={changeComment}
+                                onChange={(e) => setChangeComment(e.target.value)}
+                                placeholder="Add a note about this change…"
+                                rows={3}
+                            />
+                        </div>
+                        <div className="flex gap-2 justify-end">
+                            <Button variant="outline" onClick={() => { setPendingChange(null); setChangeComment('') }}>
+                                Cancel
+                            </Button>
+                            <Button
+                                disabled={updateStatus.isPending}
+                                onClick={() => updateStatus.mutate({
+                                    id: pendingChange.lead._id,
+                                    nextStatus: pendingChange.newStatus,
+                                    comment: changeComment.trim() || undefined,
+                                })}
+                            >
+                                {updateStatus.isPending ? 'Saving…' : 'Update status'}
+                            </Button>
+                        </div>
+                    </div>
                 )}
             </Modal>
 

@@ -48,7 +48,7 @@ export const leadApi = {
   list: (params: LeadQuery) => api.get<Lead[]>('/leads', { params }).then((r) => r.data),
   create: (body: Partial<Lead>) => api.post<Lead>('/leads', body).then((r) => r.data),
   update: (id: string, body: Partial<Lead>) => api.put<Lead>(`/leads/${id}`, body).then((r) => r.data),
-  updateStatus: (id: string, status: string) => api.patch<Lead>(`/leads/${id}/status`, { status }).then((r) => r.data),
+  updateStatus: (id: string, status: string, comment?: string) => api.patch<Lead>(`/leads/${id}/status`, { status, comment }).then((r) => r.data),
   remove: (id: string) => api.delete<{ ok: true }>(`/leads/${id}`).then((r) => r.data),
 }
 

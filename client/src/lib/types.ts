@@ -22,14 +22,31 @@ export interface Unit {
   notes?: string
 }
 
+export interface AccessPerson {
+  name: string
+  phone?: string
+  relation?: string
+  idType?: string
+  idNumber?: string
+}
+
 export interface Customer {
   _id: string
   fullName: string
+  clientId?: string
+  tenantType?: 'individual' | 'company'
   email?: string
   phone?: string
+  phones?: string[]
   emergencyNumber?: string
+  nationality?: string
   address?: string
   company?: string
+  emiratesId?: string
+  eidExpiry?: string
+  passportNumber?: string
+  passportExpiry?: string
+  accessPersons?: AccessPerson[]
   notes?: string
   createdAt?: string
 }
@@ -284,6 +301,7 @@ export interface Contract {
   contractNo: string
   customer: Customer
   unit: Unit
+  units?: Unit[]
   billingPeriod: 'weekly' | 'monthly'
   rate: number
   deposit: number
@@ -293,6 +311,10 @@ export interface Contract {
   status: ContractStatus
   zohoRequestId?: string
   signedDocUrl?: string
+  paymentMethod?: string
+  firstPaymentDate?: string
+  nextPaymentDate?: string
+  authorizedPersons?: AccessPerson[]
   notes?: string
   createdAt?: string
 }

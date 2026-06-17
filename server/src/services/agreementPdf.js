@@ -40,12 +40,11 @@ export async function fillAgreementPdf({ contract, customer, unit, signedDate })
   draw(page1, customer.emergencyNumber || '', 240, 760);          // Emergency Number
   draw(page1, fmtDate(contract.startDate), 240, 694);             // Move In Date
   draw(page1, fmtDate(contract.endDate), 755, 694);               // Move Out Date
-  draw(
-    page1,
-    `${unit.sizeSqf ?? '—'} sq ft — Unit ${unit.unitNumber} (${contract.billingPeriod} @ ${Number(contract.rate).toFixed(2)})`,
-    240,
-    630
-  );                                                              // App. Unit Size
+  const allUnits = contract.units?.length > 1 ? contract.units : [unit];
+  const unitLine = allUnits.length > 1
+    ? `Units: ${allUnits.map((u) => `${u.unitNumber} (${u.sizeSqf ?? '—'} sqft)`).join(', ')} @ ${Number(contract.rate).toFixed(2)} ${contract.billingPeriod}`
+    : `${unit.sizeSqf ?? '—'} sq ft — Unit ${unit.unitNumber} (${contract.billingPeriod} @ ${Number(contract.rate).toFixed(2)})`;
+  draw(page1, unitLine, 240, 630);                                                              // App. Unit Size
   draw(page1, `Contract No: ${contract.contractNo}`, 240, 566);   // Access row (left box)
 
   // --- Last page: signature block ---

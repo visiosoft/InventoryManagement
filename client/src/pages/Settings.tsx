@@ -1,7 +1,8 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
-import { apiError, integrationApi, unitTypeApi } from '../lib/api'
+import { useLocation } from 'react-router-dom'
+import { apiError, integrationApi, unitTypeApi, api } from '../lib/api'
 import type { IntegrationStatus, UnitType } from '../lib/types'
 import { Button, Card, CardBody, CardHeader, Field, Input, Modal, PageHeader, Table, Td, Th } from '../components/ui'
 import { formatMoney } from '../lib/utils'
@@ -217,6 +218,21 @@ function PricingTiersCard() {
 export default function Settings() {
   const { user } = useAuth()
   const qc = useQueryClient()
+  const location = useLocation()
+  const [driveMsg, setDriveMsg] = useState<{ ok: boolean; text: string } | null>(null)
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    if (params.get('driveConnected')) {
+      setDriveMsg({ ok: true, text: 'Google Drive connected! A "PurpleBox Documents" folder was created in your Drive.' })
+      window.history.replaceState({}, '', '/settings')
+      qc.invalidateQueries({ queryKey: ['integrations-status'] })
+    } else if (params.get('driveError')) {
+      setDriveMsg({ ok: false, text: `Drive connection failed: ${params.get('driveError')}` })
+      window.history.replaceState({}, '', '/settings')
+    }
+  }, [location.search, qc])
+
   const { data: integrations } = useQuery<IntegrationStatus>({
     queryKey: ['integrations-status'],
     queryFn: () => integrationApi.status(),
@@ -244,14 +260,42 @@ export default function Settings() {
               {integrations?.zoho?.configured ? 'Connected' : 'Not configured'}
             </span>
           </div>
-          <div className="flex items-center justify-between rounded-lg border px-4 py-3">
-            <div>
-              <div className="font-medium">Google Drive</div>
-              <div className="text-xs text-muted-foreground">Document storage</div>
+          <div className="rounded-lg border px-4 py-3 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="font-medium">Google Drive</div>
+                <div className="text-xs text-muted-foreground">Document storage for customer ID proofs, contracts, and files</div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className={integrations?.drive?.configured ? 'text-xs text-emerald-600 font-medium' : 'text-xs text-amber-600 font-medium'}>
+                  {integrations?.drive?.configured ? 'Connected' : 'Not connected — using local storage'}
+                </span>
+                <Button
+                  size="sm"
+                  variant={integrations?.drive?.configured ? 'outline' : 'default'}
+                  onClick={async () => {
+                    try {
+                      const { url } = await api.get('/integrations/drive/connect').then(r => r.data)
+                      window.location.href = url
+                    } catch (e) {
+                      setDriveMsg({ ok: false, text: apiError(e) })
+                    }
+                  }}
+                >
+                  {integrations?.drive?.configured ? 'Reconnect' : 'Connect Drive'}
+                </Button>
+              </div>
             </div>
-            <span className={integrations?.drive?.configured ? 'text-xs text-emerald-600 font-medium' : 'text-xs text-amber-600 font-medium'}>
-              {integrations?.drive?.configured ? 'Connected' : 'Not configured — using local storage'}
-            </span>
+            {driveMsg && (
+              <p className={`text-xs ${driveMsg.ok ? 'text-emerald-700 dark:text-emerald-400' : 'text-destructive'}`}>
+                {driveMsg.text}
+              </p>
+            )}
+            {!integrations?.drive?.configured && (
+              <p className="text-xs text-muted-foreground">
+                Before connecting, add <code className="bg-muted px-1 rounded">http://localhost:5010/api/integrations/drive/callback</code> to your OAuth 2.0 client's authorized redirect URIs in Google Cloud Console.
+              </p>
+            )}
           </div>
           <div className="flex items-center justify-between rounded-lg border px-4 py-3">
             <div>

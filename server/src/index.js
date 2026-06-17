@@ -20,6 +20,7 @@ import vendorRoutes from './routes/vendors.js';
 import purchaseRoutes from './routes/purchases.js';
 import expenseRoutes from './routes/expenses.js';
 import unitTypeRoutes, { seedUnitTypes } from './routes/unitTypes.js';
+import signingRoutes from './routes/signing.js';
 
 const app = express();
 app.use(cors({ origin: '*' }));
@@ -27,6 +28,9 @@ app.use(express.json({ limit: '2mb' }));
 app.use('/uploads', express.static(UPLOADS_DIR));
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, db: mongoose.connection.readyState === 1 }));
+
+// Public signing routes — no JWT required
+app.use('/api/sign', signingRoutes);
 
 app.use('/api/auth', authRoutes);
 // Zoho webhook must be reachable without a JWT.

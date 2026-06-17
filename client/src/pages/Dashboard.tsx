@@ -39,7 +39,7 @@ export default function Dashboard() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard icon={TrendingUp} label="Occupancy" value={`${data.occupancyPct}%`} sub={`${data.byStatus.occupied + data.byStatus.reserved} of ${data.byStatus.available + data.byStatus.occupied + data.byStatus.reserved} rentable units`} tone="bg-violet-500/15 text-violet-600 dark:text-violet-400" />
         <StatCard icon={Box} label="Available units" value={String(data.byStatus.available)} sub={`${data.byStatus.maintenance} under construction`} tone="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" />
-        <StatCard icon={FileText} label="Active contracts" value={String(data.activeContracts)} sub={`${data.expiringContracts.length} expiring in 14 days`} tone="bg-blue-500/15 text-blue-600 dark:text-blue-400" />
+        <StatCard icon={FileText} label="Active contracts" value={String(data.activeContracts)} sub={`${data.expiringContracts.length} expiring in 15 days`} tone="bg-blue-500/15 text-blue-600 dark:text-blue-400" />
         <StatCard icon={TrendingUp} label="Revenue this month" value={formatMoney(data.revenueThisMonth)} sub={`${formatMoney(data.expectedThisMonth)} expected`} tone="bg-amber-500/15 text-amber-600 dark:text-amber-400" />
       </div>
 
@@ -61,23 +61,27 @@ export default function Dashboard() {
         </Card>
 
         <Card>
-          <CardHeader title="Contracts expiring soon" subtitle="Next 14 days" />
+          <CardHeader title="Contracts expiring soon" subtitle="Next 15 days" />
           {data.expiringContracts.length === 0 ? (
-            <EmptyState message="No contracts expiring in the next 14 days." />
+            <EmptyState message="No contracts expiring in the next 15 days." />
           ) : (
-            <Table>
-              <thead><tr><Th>Contract</Th><Th>Customer</Th><Th>Unit</Th><Th>Ends</Th></tr></thead>
-              <tbody>
-                {data.expiringContracts.map((c) => (
-                  <tr key={c._id} className="hover:bg-muted/50">
-                    <Td><Link className="text-primary font-medium hover:underline" to={`/contracts/${c._id}`}>{c.contractNo}</Link></Td>
-                    <Td>{c.customer?.fullName}</Td>
-                    <Td>{c.unit?.unitNumber}</Td>
-                    <Td>{formatDate(c.endDate)}</Td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
+            <ul className="divide-y divide-border">
+              {data.expiringContracts.map((c) => {
+                const daysLeft = Math.ceil((new Date(c.endDate).getTime() - Date.now()) / 86400000)
+                const endFmt = new Date(c.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                const urgency = daysLeft <= 3 ? 'text-destructive' : daysLeft <= 7 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'
+                return (
+                  <li key={c._id} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-muted/40">
+                    <div className="min-w-0">
+                      <span className="font-medium text-sm">{c.customer?.fullName}</span>
+                      <span className="text-muted-foreground text-sm"> — {c.unit?.unitNumber} — </span>
+                      <span className={`text-sm ${urgency}`}>expires in {daysLeft} day{daysLeft !== 1 ? 's' : ''} ({endFmt})</span>
+                    </div>
+                    <Link to={`/contracts/${c._id}`} className="shrink-0 text-xs font-medium text-primary hover:underline whitespace-nowrap">View Contract</Link>
+                  </li>
+                )
+              })}
+            </ul>
           )}
         </Card>
       </div>

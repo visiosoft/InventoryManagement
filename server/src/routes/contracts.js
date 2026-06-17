@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import crypto from 'crypto';
+import { stampSignature } from '../services/stampSignature.js';
 import { Contract, Customer, Unit, Payment, Document, nextContractNo } from '../models/index.js';
 import { generateSchedule } from '../services/schedule.js';
 import { sendForSignature, downloadSignedPdf, zohoConfigured } from '../services/zoho.js';
@@ -143,6 +145,38 @@ router.post('/', async (req, res) => {
   await Promise.all(allUnitIds.map((uid) => syncUnitStatus(uid)));
 
   res.status(201).json(await populateAll(Contract.findById(contract._id)));
+});
+
+// Generate a unique signing link for the customer.
+// Draft / pending_signature → any authenticated user.
+// Active (re-sign) → admin only.
+router.post('/:id/create-signing-link', async (req, res) => {
+  const contract = await Contract.findById(req.params.id);
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+
+  const allowedStatuses = ['draft', 'pending_signature', 'active'];
+  if (!allowedStatuses.includes(contract.status)) {
+    return res.status(409).json({ error: `Cannot generate a signing link for a ${contract.status} contract` });
+  }
+
+  // Re-signing an already-active contract requires admin
+  if (contract.status === 'active' && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Only an admin can generate a signing link for an already-signed contract' });
+  }
+
+  const token = crypto.randomBytes(32).toString('hex');
+  contract.signingToken = token;
+  contract.signingTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+  // Move unsigned contracts to pending_signature; keep active contracts active
+  if (contract.status === 'draft') contract.status = 'pending_signature';
+  await contract.save();
+
+  const baseUrl = (process.env.CLIENT_ORIGIN || 'http://localhost:5173').replace(/\/$/, '');
+  res.json({
+    signingUrl: `${baseUrl}/sign/${token}`,
+    expiresAt: contract.signingTokenExpiry,
+    reSign: contract.status === 'active',
+  });
 });
 
 // Send the contract for e-signature via Zoho Sign (or mock).
@@ -329,6 +363,65 @@ async function closeContract(req, res, status) {
 
 router.post('/:id/end', (req, res) => closeContract(req, res, 'ended'));
 router.post('/:id/cancel', (req, res) => closeContract(req, res, 'cancelled'));
+
+// Sign a contract in person — capture a drawn or typed signature, stamp it on the PDF,
+// archive the signed copy, and activate the contract.
+router.post('/:id/sign-inperson', async (req, res) => {
+  try {
+    const { signerName, signatureDataUrl, signMode } = req.body;
+    if (!signerName?.trim()) return res.status(400).json({ error: 'Signer name is required' });
+
+    const contract = await populateAll(Contract.findById(req.params.id));
+    if (!contract) return res.status(404).json({ error: 'Contract not found' });
+    if (!['draft', 'pending_signature'].includes(contract.status)) {
+      return res.status(409).json({ error: `Cannot sign a ${contract.status} contract` });
+    }
+
+    const overlap = await findOverlappingUnitContract({
+      unit: contract.unit._id,
+      startDate: contract.startDate,
+      endDate: contract.endDate,
+      excludeId: contract._id,
+    });
+    if (overlap) {
+      return res.status(409).json({
+        error: `Unit ${contract.unit.unitNumber} is already booked for this period (${overlap.contractNo})`,
+      });
+    }
+
+    const now = new Date();
+    let pdfBuffer = await buildContractPdf(contract, now);
+    pdfBuffer = await stampSignature(pdfBuffer, { signerName, signatureDataUrl, signMode, signedAt: now });
+
+    const stored = await uploadFile({
+      buffer: pdfBuffer,
+      filename: `${contract.contractNo}-signed.pdf`,
+      mimeType: 'application/pdf',
+    });
+
+    await Document.create({
+      contract:  contract._id,
+      customer:  contract.customer._id,
+      name:      `${contract.contractNo} — signed contract`,
+      type:      'contract',
+      ...stored,
+    });
+
+    contract.status       = 'active';
+    contract.signedDocUrl = stored.url;
+    await contract.save();
+
+    const signedUnitIds = contract.units?.length
+      ? contract.units.map((u) => u._id ?? u)
+      : [contract.unit._id];
+    await Promise.all(signedUnitIds.map((uid) => syncUnitStatus(uid)));
+
+    res.json(await populateAll(Contract.findById(contract._id)));
+  } catch (err) {
+    console.error('sign-inperson error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Delete a contract and all its payments / documents.
 // Active contracts cannot be deleted — end or cancel them first.

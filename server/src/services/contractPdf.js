@@ -34,10 +34,19 @@ export function renderContractPdf({ contract, customer, unit }) {
     if (customer.address) row('Address:', customer.address);
     doc.moveDown(0.6);
 
-    doc.fontSize(13).font('Helvetica-Bold').text('2. Rented Unit');
+    const allUnits = (contract.units?.length > 1 ? contract.units : [unit]);
+    doc.fontSize(13).font('Helvetica-Bold').text(`2. Rented Unit${allUnits.length > 1 ? 's' : ''}`);
     doc.moveDown(0.5);
-    row('Unit Number:', unit.unitNumber);
-    row('Size:', `${unit.sizeSqf ?? '—'} sq ft`);
+    if (allUnits.length === 1) {
+      row('Unit Number:', allUnits[0].unitNumber);
+      row('Size:', `${allUnits[0].sizeSqf ?? '—'} sq ft`);
+    } else {
+      allUnits.forEach((u, i) => {
+        doc.font('Helvetica-Bold').fontSize(10).text(`Unit ${i + 1}:`, { continued: true });
+        doc.font('Helvetica').text(`  ${u.unitNumber}  (${u.sizeSqf ?? '—'} sq ft)`);
+        doc.moveDown(0.3);
+      });
+    }
     doc.moveDown(0.6);
 
     doc.fontSize(13).font('Helvetica-Bold').text('3. Terms');

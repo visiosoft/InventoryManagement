@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './lib/auth'
 import Layout from './components/Layout'
 import Login from './pages/Login'
+import SignContract from './pages/SignContract'
 import Dashboard from './pages/Dashboard'
 import Units from './pages/Units'
 import Customers from './pages/Customers'
@@ -29,6 +30,7 @@ export default function App() {
     return (
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/sign/:token" element={<SignContract />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     )
@@ -37,6 +39,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Navigate to="/" replace />} />
+      <Route path="/sign/:token" element={<SignContract />} />
       <Route element={<Layout />}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/units" element={<Units />} />
