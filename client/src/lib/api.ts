@@ -54,13 +54,20 @@ export const leadApi = {
 
 export const integrationApi = {
   status: () => api.get<IntegrationStatus>('/integrations/status').then((r) => r.data),
-  syncGoogleContacts: (owner?: string) =>
+  syncGoogleContacts: () =>
     api
       .post<{ ok: boolean; configured: boolean; summary: { created: number; updated: number; skipped: number; errors: number } }>(
-        '/integrations/google-contacts/sync',
-        owner ? { owner } : {}
+        '/integrations/google-contacts/sync', {}
       )
       .then((r) => r.data),
+  lastSync: () =>
+    api
+      .get<{ at: string | null; created: number; updated: number; skipped: number; errors: number }>(
+        '/integrations/google-contacts/last-sync'
+      )
+      .then((r) => r.data),
+  connectContacts: () =>
+    api.get<{ url: string }>('/integrations/contacts/connect').then((r) => r.data),
 }
 
 export type QuoteQuery = { search?: string; status?: string; customer?: string }

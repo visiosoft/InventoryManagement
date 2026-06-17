@@ -469,18 +469,38 @@ export default function InvoiceDetail() {
                             <Th>#</Th>
                             <Th>Item & Description</Th>
                             <Th className="text-right">Rate (AED)</Th>
+                            {(invoice.items || []).some(it => (it.discountPct ?? 0) > 0) && (
+                                <Th className="text-right">Discount</Th>
+                            )}
                             <Th className="text-right">Amount (AED)</Th>
                         </tr>
                     </thead>
                     <tbody>
-                        {(invoice.items || []).map((it, idx) => (
-                            <tr key={idx} className="hover:bg-muted/50">
-                                <Td className="text-muted-foreground">{idx + 1}</Td>
-                                <Td className="whitespace-pre-line">{it.itemDetails}</Td>
-                                <Td className="text-right">{formatMoney(it.rate)}</Td>
-                                <Td className="text-right font-medium">{formatMoney(it.amount)}</Td>
-                            </tr>
-                        ))}
+                        {(invoice.items || []).map((it, idx) => {
+                            const hasDiscount = (invoice.items || []).some(i => (i.discountPct ?? 0) > 0)
+                            const discounted = (it.discountPct ?? 0) > 0
+                            return (
+                                <tr key={idx} className={`hover:bg-muted/50 ${discounted ? 'bg-amber-50/60 dark:bg-amber-950/20' : ''}`}>
+                                    <Td className="text-muted-foreground">{idx + 1}</Td>
+                                    <Td className="whitespace-pre-line">{it.itemDetails}</Td>
+                                    <Td className="text-right">
+                                        {discounted
+                                            ? <span className="line-through text-muted-foreground">{formatMoney(it.rate)}</span>
+                                            : formatMoney(it.rate)
+                                        }
+                                    </Td>
+                                    {hasDiscount && (
+                                        <Td className="text-right">
+                                            {discounted
+                                                ? <span className="text-amber-600 font-medium">{it.discountPct}% off</span>
+                                                : <span className="text-muted-foreground">—</span>
+                                            }
+                                        </Td>
+                                    )}
+                                    <Td className="text-right font-medium">{formatMoney(it.amount)}</Td>
+                                </tr>
+                            )
+                        })}
                     </tbody>
                 </Table>
                 <div className="border-t px-5 py-3 space-y-1.5 text-sm">

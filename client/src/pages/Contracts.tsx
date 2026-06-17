@@ -98,13 +98,7 @@ export default function Contracts() {
           {STATUSES.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
         </Select>
 
-        <Select value={billing} onChange={(e) => setBilling(e.target.value)} className="w-36">
-          <option value="">All billing</option>
-          <option value="monthly">Monthly</option>
-          <option value="weekly">Weekly</option>
-        </Select>
-
-        <Select value={floor} onChange={(e) => setFloor(e.target.value)} className="w-32">
+<Select value={floor} onChange={(e) => setFloor(e.target.value)} className="w-32">
           <option value="">All floors</option>
           <option value="F1">Floor F1</option>
           <option value="F2">Floor F2</option>

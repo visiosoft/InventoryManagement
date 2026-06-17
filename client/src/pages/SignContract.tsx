@@ -23,8 +23,16 @@ function fmtMoney(n: number) {
   return `AED ${n.toLocaleString('en-AE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
-// ── Signature canvas ──────────────────────────────────────────────────────────
-function SignatureCanvas({ onCapture }: { onCapture: (url: string | null) => void }) {
+// ── Reusable drawing canvas (used for both initials and signature) ────────────
+function DrawCanvas({
+  height = 128,
+  lineWidth = 2.5,
+  onCapture,
+}: {
+  height?: number
+  lineWidth?: number
+  onCapture: (url: string | null) => void
+}) {
   const ref = useRef<HTMLCanvasElement>(null)
   const drawing = useRef(false)
   const hasStroke = useRef(false)
@@ -47,8 +55,8 @@ function SignatureCanvas({ onCapture }: { onCapture: (url: string | null) => voi
   function start(e: React.MouseEvent | React.TouchEvent) {
     e.preventDefault()
     const canvas = ref.current!
-    const ctx = canvas.getContext('2d')!
     const { x, y } = pos(e.nativeEvent as MouseEvent | TouchEvent, canvas)
+    const ctx = canvas.getContext('2d')!
     ctx.beginPath(); ctx.moveTo(x, y)
     drawing.current = true
   }
@@ -58,7 +66,7 @@ function SignatureCanvas({ onCapture }: { onCapture: (url: string | null) => voi
     if (!drawing.current) return
     const canvas = ref.current!
     const ctx = canvas.getContext('2d')!
-    ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+    ctx.lineWidth = lineWidth; ctx.lineCap = 'round'; ctx.lineJoin = 'round'
     ctx.strokeStyle = '#1a1a2e'
     const { x, y } = pos(e.nativeEvent as MouseEvent | TouchEvent, canvas)
     ctx.lineTo(x, y); ctx.stroke()
@@ -78,33 +86,43 @@ function SignatureCanvas({ onCapture }: { onCapture: (url: string | null) => voi
   }
 
   return (
-    <div className="space-y-1">
+    <div style={{ userSelect: 'none' }}>
       <canvas
         ref={ref}
-        style={{ width: '100%', height: 128, border: '2px dashed #ccc', borderRadius: 8, background: '#fff', cursor: 'crosshair', touchAction: 'none', display: 'block' }}
+        style={{ width: '100%', height, border: '2px dashed #ccc', borderRadius: 8, background: '#fff', cursor: 'crosshair', touchAction: 'none', display: 'block' }}
         onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
         onTouchStart={start} onTouchMove={move} onTouchEnd={end}
       />
-      <button type="button" onClick={clear} style={{ fontSize: 12, color: '#888', cursor: 'pointer', background: 'none', border: 'none', padding: 0 }}>
+      <button type="button" onClick={clear} style={{ fontSize: 12, color: '#888', cursor: 'pointer', background: 'none', border: 'none', padding: '4px 0' }}>
         Clear
       </button>
     </div>
   )
 }
 
+// ── Signature canvas (full-size) ──────────────────────────────────────────────
+function SignatureCanvas({ onCapture }: { onCapture: (url: string | null) => void }) {
+  return <DrawCanvas height={128} lineWidth={2.5} onCapture={onCapture} />
+}
+
+// ── Initials canvas (compact) ─────────────────────────────────────────────────
+function InitialsCanvas({ onCapture }: { onCapture: (url: string | null) => void }) {
+  return <DrawCanvas height={72} lineWidth={2} onCapture={onCapture} />
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function SignContract() {
   const { token } = useParams<{ token: string }>()
 
-  const [info, setInfo]         = useState<ContractInfo | null>(null)
-  const [loadErr, setLoadErr]   = useState('')
-  const [mode, setMode]         = useState<'draw' | 'type'>('draw')
-  const [signerName, setName]   = useState('')
-  const [sigDataUrl, setSigUrl] = useState<string | null>(null)
-  const [agreed, setAgreed]     = useState(false)
-  const [busy, setBusy]         = useState(false)
-  const [submitErr, setSubmitErr] = useState('')
-  const [done, setDone]         = useState(false)
+  const [info, setInfo]               = useState<ContractInfo | null>(null)
+  const [loadErr, setLoadErr]         = useState('')
+  const [mode, setMode]               = useState<'draw' | 'type'>('draw')
+  const [signerName, setName]         = useState('')
+  const [sigDataUrl, setSigUrl]       = useState<string | null>(null)
+  const [agreed, setAgreed]           = useState(false)
+  const [busy, setBusy]               = useState(false)
+  const [submitErr, setSubmitErr]     = useState('')
+  const [done, setDone]               = useState(false)
   const [signedDocUrl, setSignedDocUrl] = useState('')
 
   useEffect(() => {
@@ -113,7 +131,9 @@ export default function SignContract() {
       .then((data) => {
         if (data.error) { setLoadErr(data.error); return }
         setInfo(data)
-        if (data.customerName) setName(data.customerName)
+        if (data.customerName) {
+          setName(data.customerName)
+        }
       })
       .catch(() => setLoadErr('Could not load contract details'))
   }, [token])
@@ -132,6 +152,10 @@ export default function SignContract() {
           signerName: signerName.trim(),
           signatureDataUrl: mode === 'draw' ? sigDataUrl : null,
           signMode: mode,
+          // Auto-derive initials from signer name — no separate UI needed
+          initialsText: signerName.trim().split(/\s+/).map((w) => w[0]?.toUpperCase() ?? '').join(''),
+          initialsDataUrl: null,
+          initialsMode: 'type',
         }),
       })
       const data = await res.json()
@@ -205,11 +229,11 @@ export default function SignContract() {
   }
 
   // ── Main signing UI ───────────────────────────────────────────────────────
-  const pdfUrl = `${apiBase}/sign/${token}/pdf`
+  const pdfUrl = `${apiBase}/sign/${token}/pdf#view=FitH`
 
   return (
     <PageShell>
-      <div style={{ maxWidth: 860, margin: '0 auto', padding: '24px 16px' }}>
+      <div style={{ maxWidth: 1400, margin: '0 auto', padding: '24px 16px' }}>
         {/* Header */}
         <div style={{ marginBottom: 24 }}>
           <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>Storage Rental Contract</h1>
@@ -244,11 +268,11 @@ export default function SignContract() {
           <iframe
             src={pdfUrl}
             title="Contract PDF"
-            style={{ width: '100%', height: 520, border: 'none', display: 'block' }}
+            style={{ width: '100%', height: 'calc(100vh - 180px)', minHeight: 700, border: 'none', display: 'block' }}
           />
         </div>
 
-        {/* Signature section */}
+        {/* ── Full signature section ─────────────────────────────────────── */}
         <div style={{ background: '#fff', border: '1px solid #e5e5e5', borderRadius: 12, padding: 24 }}>
           <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Electronic Signature</h2>
 

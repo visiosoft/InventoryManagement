@@ -1,8 +1,8 @@
 import { useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Search, Upload } from 'lucide-react'
-import { api, apiError, leadApi } from '../lib/api'
+import { Plus, RefreshCw, Search, Upload } from 'lucide-react'
+import { api, apiError, integrationApi, leadApi } from '../lib/api'
 import type { Lead, LeadSource, LeadStatus } from '../lib/types'
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, Th, Textarea, leadStatusTone, statusLabel } from '../components/ui'
 import { formatDate } from '../lib/utils'
@@ -283,6 +283,21 @@ export default function Leads() {
         onError: (e) => setError(apiError(e)),
     })
 
+    const [syncMsg, setSyncMsg] = useState<string | null>(null)
+    const syncContacts = useMutation({
+        mutationFn: () => integrationApi.syncGoogleContacts(),
+        onSuccess: (data) => {
+            qc.invalidateQueries({ queryKey: ['leads'] })
+            setSyncMsg(
+                data.summary.created > 0
+                    ? `${data.summary.created} new contact${data.summary.created > 1 ? 's' : ''} added from Google`
+                    : `Sync done — no new contacts`
+            )
+            setTimeout(() => setSyncMsg(null), 5000)
+        },
+        onError: (e) => { setSyncMsg(`Sync failed: ${apiError(e)}`); setTimeout(() => setSyncMsg(null), 5000) },
+    })
+
     function handleCsvFile(e: React.ChangeEvent<HTMLInputElement>) {
         const file = e.target.files?.[0]
         if (!file) return
@@ -307,12 +322,22 @@ export default function Leads() {
                             <Upload size={15} />
                             {importContacts.isPending ? 'Importing…' : 'Import CSV'}
                         </Button>
+                        <Button variant="outline" onClick={() => syncContacts.mutate()} disabled={syncContacts.isPending}>
+                            <RefreshCw size={15} className={syncContacts.isPending ? 'animate-spin' : ''} />
+                            {syncContacts.isPending ? 'Syncing…' : 'Sync Google Contacts'}
+                        </Button>
                         <Button onClick={() => setAdding(true)}>
                             <Plus size={15} /> Add lead
                         </Button>
                     </div>
                 }
             />
+
+            {syncMsg && (
+                <p className={`mb-3 text-xs font-medium ${syncMsg.startsWith('Sync failed') ? 'text-destructive' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                    {syncMsg}
+                </p>
+            )}
 
             <div className="mb-4 grid grid-cols-1 md:grid-cols-6 gap-2">
                 <div className="relative md:col-span-2">

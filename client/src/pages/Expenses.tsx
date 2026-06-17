@@ -8,6 +8,20 @@ import { formatDate, formatMoney } from '../lib/utils'
 
 const EXPENSE_STATUSES: ExpenseStatus[] = ['recorded', 'approved', 'paid', 'reimbursed', 'cancelled']
 
+const EXPENSE_TYPES = [
+    'Office',
+    'Transportation',
+    'Personal',
+    'Food & Meals',
+    'Accommodation',
+    'Utilities',
+    'Entertainment',
+    'Healthcare',
+    'Education & Training',
+    'Subscriptions',
+    'Other',
+]
+
 const expenseStatusTone: Record<ExpenseStatus, string> = {
     recorded: 'blue',
     approved: 'purple',
@@ -39,122 +53,71 @@ function ExpenseForm({
     function submit(e: FormEvent<HTMLFormElement>) {
         e.preventDefault()
         const f = new FormData(e.currentTarget)
-
         onSubmit({
-            expenseDate: f.get('expenseDate'),
-            description: f.get('description'),
+            expenseDate:    f.get('expenseDate'),
+            expenseType:    f.get('expenseType'),
             expenseAccount: f.get('expenseAccount'),
-            expenseAccountCode: f.get('expenseAccountCode'),
-            paidThrough: f.get('paidThrough'),
-            paidThroughAccountCode: f.get('paidThroughAccountCode'),
-            vendor: f.get('vendor') || undefined,
-            vendorName: f.get('vendorName'),
-            projectName: f.get('projectName'),
-            entryNumber: Number(f.get('entryNumber') || 0),
-            currencyCode: f.get('currencyCode') || 'AED',
-            exchangeRate: Number(f.get('exchangeRate') || 1),
-            taxName: f.get('taxName'),
-            taxPercentage: Number(f.get('taxPercentage') || 0),
-            taxAmount: Number(f.get('taxAmount') || 0),
-            expenseAmount: Number(f.get('expenseAmount') || 0),
-            total: Number(f.get('total') || 0),
-            referenceNo: f.get('referenceNo'),
-            isBillable: f.get('isBillable') === 'true',
-            customerName: f.get('customerName'),
-            expenseReferenceId: f.get('expenseReferenceId'),
-            recurrenceName: f.get('recurrenceName'),
-            expenseReportName: f.get('expenseReportName'),
-            isReimbursable: f.get('isReimbursable') === 'true',
-            categories: String(f.get('categories') || '')
-                .split(',')
-                .map((x) => x.trim())
-                .filter(Boolean),
-            status: f.get('status') || 'recorded',
+            description:    f.get('description'),
+            vendor:         f.get('vendor') || undefined,
+            paidThrough:    f.get('paidThrough'),
+            total:          Number(f.get('total') || 0),
+            referenceNo:    f.get('referenceNo'),
+            status:         f.get('status') || 'recorded',
         })
     }
 
     return (
         <form onSubmit={submit} className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
-                <Field label="Expense Date"><Input type="date" name="expenseDate" defaultValue={toLocalDateInput(initial?.expenseDate) || toLocalDateInput(new Date().toISOString())} required /></Field>
-                <Field label="Expense Account"><Input name="expenseAccount" defaultValue={initial?.expenseAccount || ''} required /></Field>
+                <Field label="Date *">
+                    <Input type="date" name="expenseDate"
+                        defaultValue={toLocalDateInput(initial?.expenseDate) || toLocalDateInput(new Date().toISOString())}
+                        required />
+                </Field>
+                <Field label="Type">
+                    <Select name="expenseType" defaultValue={initial?.expenseType || ''}>
+                        <option value="">— Select type —</option>
+                        {EXPENSE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </Select>
+                </Field>
             </div>
 
-            <Field label="Expense Description"><Textarea name="description" defaultValue={initial?.description || ''} /></Field>
+            <Field label="Expense account *">
+                <Input name="expenseAccount" placeholder="e.g. Office Supplies" defaultValue={initial?.expenseAccount || ''} required />
+            </Field>
 
-            <div className="grid grid-cols-2 gap-3">
-                <Field label="Expense Account Code"><Input name="expenseAccountCode" defaultValue={initial?.expenseAccountCode || ''} /></Field>
-                <Field label="Paid Through"><Input name="paidThrough" defaultValue={initial?.paidThrough || ''} /></Field>
-            </div>
+            <Field label="Description">
+                <Textarea name="description" placeholder="What was this expense for?" defaultValue={initial?.description || ''} />
+            </Field>
 
             <div className="grid grid-cols-2 gap-3">
                 <Field label="Vendor">
                     <Select name="vendor" defaultValue={initial?.vendor?._id || ''}>
-                        <option value="">Select vendor (optional)</option>
+                        <option value="">— None —</option>
                         {vendors.map((v) => (
                             <option key={v._id} value={v._id}>{v.contactName}</option>
                         ))}
                     </Select>
                 </Field>
-                <Field label="Vendor Name (raw)"><Input name="vendorName" defaultValue={initial?.vendorName || ''} /></Field>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-                <Field label="Project Name"><Input name="projectName" defaultValue={initial?.projectName || ''} /></Field>
-                <Field label="Entry Number"><Input type="number" name="entryNumber" defaultValue={initial?.entryNumber ?? 0} /></Field>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-                <Field label="Currency"><Input name="currencyCode" defaultValue={initial?.currencyCode || 'AED'} /></Field>
-                <Field label="Exchange Rate"><Input type="number" step="0.0001" name="exchangeRate" defaultValue={initial?.exchangeRate ?? 1} /></Field>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-                <Field label="Tax Name"><Input name="taxName" defaultValue={initial?.taxName || ''} /></Field>
-                <Field label="Tax Percentage"><Input type="number" step="0.01" name="taxPercentage" defaultValue={initial?.taxPercentage ?? 0} /></Field>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3">
-                <Field label="Tax Amount"><Input type="number" step="0.01" name="taxAmount" defaultValue={initial?.taxAmount ?? 0} /></Field>
-                <Field label="Expense Amount"><Input type="number" step="0.01" name="expenseAmount" defaultValue={initial?.expenseAmount ?? 0} /></Field>
-                <Field label="Total"><Input type="number" step="0.01" name="total" defaultValue={initial?.total ?? 0} required /></Field>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-                <Field label="Reference #"><Input name="referenceNo" defaultValue={initial?.referenceNo || ''} /></Field>
-                <Field label="Expense Reference ID"><Input name="expenseReferenceId" defaultValue={initial?.expenseReferenceId || ''} /></Field>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-                <Field label="Customer Name"><Input name="customerName" defaultValue={initial?.customerName || ''} /></Field>
-                <Field label="Status">
-                    <Select name="status" defaultValue={initial?.status || 'recorded'}>
-                        {EXPENSE_STATUSES.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
-                    </Select>
+                <Field label="Paid through">
+                    <Input name="paidThrough" placeholder="e.g. Cash, Bank, Card" defaultValue={initial?.paidThrough || ''} />
                 </Field>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-                <Field label="Is Billable">
-                    <Select name="isBillable" defaultValue={String(Boolean(initial?.isBillable))}>
-                        <option value="false">No</option>
-                        <option value="true">Yes</option>
-                    </Select>
+                <Field label="Total (AED) *">
+                    <Input type="number" step="0.01" min="0" name="total" defaultValue={initial?.total ?? ''} required />
                 </Field>
-                <Field label="Is Reimbursable">
-                    <Select name="isReimbursable" defaultValue={String(Boolean(initial?.isReimbursable))}>
-                        <option value="false">No</option>
-                        <option value="true">Yes</option>
-                    </Select>
+                <Field label="Reference #">
+                    <Input name="referenceNo" placeholder="Receipt or invoice number" defaultValue={initial?.referenceNo || ''} />
                 </Field>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-                <Field label="Recurrence Name"><Input name="recurrenceName" defaultValue={initial?.recurrenceName || ''} /></Field>
-                <Field label="Expense Report Name"><Input name="expenseReportName" defaultValue={initial?.expenseReportName || ''} /></Field>
-            </div>
-
-            <Field label="Categories (comma separated)"><Input name="categories" defaultValue={(initial?.categories || []).join(', ')} /></Field>
+            <Field label="Status">
+                <Select name="status" defaultValue={initial?.status || 'recorded'}>
+                    {EXPENSE_STATUSES.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
+                </Select>
+            </Field>
 
             {error && <p className="text-xs text-destructive">{error}</p>}
             <Button type="submit" className="w-full" disabled={busy}>{busy ? 'Saving…' : 'Save expense'}</Button>

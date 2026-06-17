@@ -24,6 +24,7 @@ type UnitBody = {
   lengthFt: number | null
   widthFt: number | null
   status: string
+  discountPct: number | null
   notes: string
 }
 
@@ -42,6 +43,10 @@ function UnitFormFields({ initial }: { initial?: Partial<Unit> }) {
         <Field label="Monthly price (AED)"><Input name="price" type="number" step="0.01" defaultValue={initial?.price ?? ''} /></Field>
         <Field label="Length (ft)"><Input name="lengthFt" type="number" step="0.1" defaultValue={initial?.lengthFt ?? ''} /></Field>
         <Field label="Width (ft)"><Input name="widthFt" type="number" step="0.1" defaultValue={initial?.widthFt ?? ''} /></Field>
+        <Field label="First month discount (%) — 28 days">
+          <Input name="discountPct" type="number" min={0} max={100} step="0.01"
+            defaultValue={initial?.discountPct ?? ''} placeholder="0" />
+        </Field>
       </div>
     </>
   )
@@ -56,6 +61,7 @@ function readUnitForm(f: FormData): UnitBody {
     lengthFt: num(f.get('lengthFt')),
     widthFt: num(f.get('widthFt')),
     status: String(f.get('status') || 'available'),
+    discountPct: num(f.get('discountPct')),
     notes: String(f.get('notes') || ''),
   }
 }
@@ -163,6 +169,7 @@ export default function Units() {
                   >
                     <div className="text-xs font-bold">{u.unitNumber}</div>
                     <div className="text-[10px] opacity-70 mt-0.5">{u.sizeSqf != null ? `${u.sizeSqf} sqf` : '—'}</div>
+                    {u.discountPct ? <div className="text-[9px] mt-0.5 font-medium text-amber-600">{u.discountPct}% 1st mo</div> : null}
                   </button>
                 ))}
               </div>
@@ -173,7 +180,7 @@ export default function Units() {
       ) : (
         <Card>
           <Table>
-            <thead><tr><Th>Unit</Th><Th>Floor</Th><Th>Size</Th><Th>L × W (ft)</Th><Th>Monthly (AED)</Th><Th>Status</Th><Th>Notes</Th></tr></thead>
+            <thead><tr><Th>Unit</Th><Th>Floor</Th><Th>Size</Th><Th>L × W (ft)</Th><Th>Monthly (AED)</Th><Th>1st Month Discount</Th><Th>Status</Th><Th>Notes</Th></tr></thead>
             <tbody>
               {filtered.map((u) => (
                 <tr key={u._id} className="hover:bg-muted/50 cursor-pointer" onClick={() => setSelected(u)}>
@@ -182,6 +189,7 @@ export default function Units() {
                   <Td>{u.sizeSqf != null ? `${u.sizeSqf} sq ft` : '—'}</Td>
                   <Td>{u.lengthFt && u.widthFt ? `${u.lengthFt} × ${u.widthFt}` : '—'}</Td>
                   <Td>{u.price != null ? formatMoney(u.price) : '—'}</Td>
+                  <Td>{u.discountPct ? <span className="text-amber-600 font-medium">{u.discountPct}%</span> : <span className="text-muted-foreground">—</span>}</Td>
                   <Td><Badge tone={unitStatusTone[u.status]}>{statusLabel(u.status)}</Badge></Td>
                   <Td className="text-muted-foreground max-w-60 truncate">{u.notes}</Td>
                 </tr>

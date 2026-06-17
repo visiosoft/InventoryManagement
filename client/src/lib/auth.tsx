@@ -1,17 +1,21 @@
 import { createContext, useContext, useState, type ReactNode } from 'react'
 import { api } from './api'
 
-interface AuthUser {
+export interface AuthUser {
   id: string
   name: string
   email: string
-  role: string
+  role: string          // 'admin' | 'staff'
+  permissions: string[] // module keys; admins bypass this entirely
+  isActive: boolean
 }
 
 interface AuthContextValue {
   user: AuthUser | null
   login: (email: string, password: string) => Promise<void>
   logout: () => void
+  /** Returns true if the current user can access the given module key. Admins always return true. */
+  hasPermission: (module: string) => boolean
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -35,7 +39,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }
 
-  return <AuthContext.Provider value={{ user, login, logout }}>{children}</AuthContext.Provider>
+  function hasPermission(module: string): boolean {
+    if (!user) return false
+    if (user.role === 'admin') return true
+    return user.permissions.includes(module)
+  }
+
+  return (
+    <AuthContext.Provider value={{ user, login, logout, hasPermission }}>
+      {children}
+    </AuthContext.Provider>
+  )
 }
 
 export function useAuth() {

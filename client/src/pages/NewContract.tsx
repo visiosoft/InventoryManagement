@@ -9,12 +9,112 @@ import { cn, formatMoney } from '../lib/utils'
 
 type Mode = 'single' | 'combined' | 'multi'
 
+const DAYS_PER_PERIOD = { weekly: 7, monthly: 28 } as const
+
 function estimatePeriods(start: string, end: string, billing: 'weekly' | 'monthly'): number {
   const ms = new Date(end).getTime() - new Date(start).getTime()
   if (ms <= 0) return 0
-  if (billing === 'weekly') return Math.round(ms / (7 * 86400000))
-  const s = new Date(start), e = new Date(end)
-  return (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth())
+  return Math.ceil(ms / (DAYS_PER_PERIOD[billing] * 86400000))
+}
+
+// rate = monthly price. Weekly payment = rate/4. Ceiling billing (any leftover day = full week).
+// Discount applies to first 4 weekly payments (= first month).
+function computeContractTotal(
+  startDate: string, endDate: string,
+  billing: 'weekly' | 'monthly',
+  rate: number,
+  applyDiscount: boolean,
+  discountPct: number,
+): number {
+  const totalDays = Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000)
+  if (totalDays <= 0 || rate <= 0) return 0
+  const dpp = DAYS_PER_PERIOD[billing]
+  const totalPeriods = Math.ceil(totalDays / dpp)
+  const discountPeriods = billing === 'weekly' ? 4 : 1
+  const discountCount = applyDiscount && discountPct > 0 ? Math.min(discountPeriods, totalPeriods) : 0
+  const fullCount = totalPeriods - discountCount
+  const periodRate = billing === 'weekly' ? rate / 4 : rate
+  const discountedPeriodRate = Math.round(periodRate * (1 - discountPct / 100) * 100) / 100
+  return Math.round((discountCount * discountedPeriodRate + fullCount * periodRate) * 100) / 100
+}
+
+type BreakdownSection = { label: string; detail: string; amount: number; accent?: boolean }
+
+function computeBreakdown(
+  startDate: string, endDate: string,
+  billing: 'weekly' | 'monthly',
+  rate: number,
+  discountPct: number,
+): BreakdownSection[] {
+  const totalDays = Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000)
+  if (totalDays <= 0 || rate <= 0) return []
+  const dpp    = DAYS_PER_PERIOD[billing]
+  const fmt    = (n: number) => formatMoney(Math.round(n * 100) / 100)
+
+  // Any leftover day = one more full week (ceiling, no proration)
+  const totalWeeks     = Math.ceil(totalDays / dpp)
+  const discountWeeks  = billing === 'weekly' ? 4 : 1
+  const firstCount = Math.min(discountWeeks, totalWeeks)
+
+  // rate = monthly price; weekly payment = rate/4
+  const weeklyRate     = Math.round((rate / 4) * 100) / 100
+  const discountedRate = Math.round(weeklyRate * (1 - discountPct / 100) * 100) / 100
+
+  const rows: BreakdownSection[] = []
+
+  // ── Month 1 (first 4 weeks, possibly discounted) ──
+  if (discountPct > 0) {
+    const month1Full = Math.round(weeklyRate * firstCount * 100) / 100
+    const month1Disc = Math.round(discountedRate * firstCount * 100) / 100
+    const saved      = Math.round((month1Full - month1Disc) * 100) / 100
+    const detail = firstCount === 4
+      ? `${fmt(rate)}/mo × ${100 - discountPct}% = ${fmt(month1Disc)}`
+      : `${firstCount} wks × ${fmt(weeklyRate)} × ${100 - discountPct}% = ${fmt(month1Disc)}`
+    rows.push({
+      label: `Month 1 — ${firstCount} wk${firstCount !== 1 ? 's' : ''} (${discountPct}% off · save ${fmt(saved)})`,
+      detail,
+      amount: month1Disc,
+      accent: true,
+    })
+  } else {
+    const month1Amt = Math.round(weeklyRate * firstCount * 100) / 100
+    const detail = firstCount === 4
+      ? `${fmt(rate)}/mo`
+      : `${firstCount} wks × ${fmt(weeklyRate)}`
+    rows.push({ label: `Month 1 — ${firstCount} wk${firstCount !== 1 ? 's' : ''}`, detail, amount: month1Amt })
+  }
+
+  // ── Remaining weeks grouped into months of 4 ──
+  let remaining  = totalWeeks - firstCount
+  let monthNum   = 2
+  let weekOffset = firstCount
+
+  while (remaining > 0) {
+    const weeksThisMonth = Math.min(4, remaining)
+    const isPartial      = weeksThisMonth < 4
+    const wkStart        = weekOffset + 1
+    const wkEnd          = weekOffset + weeksThisMonth
+    const monthAmt       = Math.round(weeklyRate * weeksThisMonth * 100) / 100
+    const detail         = isPartial
+      ? `Wk ${wkStart}${wkEnd > wkStart ? `–${wkEnd}` : ''} · ${weeksThisMonth} × ${fmt(weeklyRate)}`
+      : `Wk ${wkStart}–${wkEnd} · ${fmt(rate)}/mo`
+    rows.push({
+      label: `Month ${monthNum}${isPartial ? ' (partial)' : ''} — ${weeksThisMonth} wk${weeksThisMonth !== 1 ? 's' : ''}`,
+      detail,
+      amount: monthAmt,
+    })
+    remaining  -= weeksThisMonth
+    weekOffset += weeksThisMonth
+    monthNum++
+  }
+
+  const total = Math.round(rows.reduce((s, r) => s + r.amount, 0) * 100) / 100
+  rows.push({
+    label: 'Total',
+    detail: `${totalWeeks} wk${totalWeeks !== 1 ? 's' : ''}`,
+    amount: total,
+  })
+  return rows
 }
 
 function hasDateOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string) {
@@ -130,7 +230,7 @@ function CustomerCombobox({
       </div>
 
       {open && (
-        <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover shadow-lg max-h-60 overflow-y-auto">
+        <div className="absolute z-50 mt-1 w-full rounded-md border bg-white dark:bg-zinc-900 shadow-lg max-h-60 overflow-y-auto">
           {filtered.length === 0 ? (
             <div className="px-3 py-3 text-xs text-muted-foreground">
               No customers found.{' '}
@@ -240,7 +340,7 @@ export default function NewContract() {
   const [customerId, setCustomerId] = useState(params.get('customer') || '')
   const [unitIds, setUnitIds] = useState<string[]>(params.get('unit') ? [params.get('unit')!] : [])
 
-  const [billing, setBilling] = useState<'weekly' | 'monthly'>('monthly')
+  const billing = 'weekly' as const
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [endDate, setEndDate] = useState(() => {
     const d = new Date(); d.setMonth(d.getMonth() + 3); return d.toISOString().slice(0, 10)
@@ -248,7 +348,6 @@ export default function NewContract() {
   const [rate, setRate] = useState<number | ''>('')
   const [deposit, setDeposit] = useState<number | ''>('')
   const [autoRenew, setAutoRenew] = useState(false)
-  const [firstMonthDiscount, setFirstMonthDiscount] = useState(false)
   const [notes, setNotes] = useState('')
   const [sizeFilter, setSizeFilter] = useState('')
   const [floorFilter, setFloorFilter] = useState('')
@@ -326,14 +425,27 @@ export default function NewContract() {
 
   function getUnitRate(u: Unit): number {
     if (rate !== '') return Number(rate)
-    const tier = unitTypes.find((t) => t.sizeSqf === u.sizeSqf)
-    const monthly = tier?.monthlyRate ?? u.price ?? 0
-    const weekly = tier?.weeklyRate ?? Math.round((monthly / 4) * 100) / 100
-    return billing === 'weekly' ? weekly : monthly
+    // unit.price is the monthly price — weekly payment = rate / 4
+    return u.price ?? 0
   }
 
-  const firstTier = useMemo(() => unitTypes.find((t) => t.sizeSqf === selectedUnits[0]?.sizeSqf), [unitTypes, selectedUnits])
-  const discountPct = firstTier?.discountPct ?? 20
+  const [discountMap, setDiscountMap] = useState<Record<string, string>>({})
+
+  // When a unit is (de)selected, seed its discount from unit.discountPct if not already set
+  useEffect(() => {
+    setDiscountMap((prev) => {
+      const next = { ...prev }
+      for (const u of selectedUnits) {
+        const key = mode === 'combined' ? 'combined' : u._id
+        if (!(key in next) && u.discountPct) next[key] = String(u.discountPct)
+      }
+      return next
+    })
+  }, [selectedUnits])
+
+  // For combined mode all units share one rate, so we key the discount on 'combined'
+  function discountKey(u: Unit) { return mode === 'combined' ? 'combined' : u._id }
+  function unitDiscount(u: Unit) { return Math.min(100, Math.max(0, Number(discountMap[discountKey(u)] || 0))) }
 
   const overlappingUnitIds = useMemo(
     () => unitIds.filter((uid) => unitAvailMap.get(uid) === 'booked'),
@@ -343,11 +455,10 @@ export default function NewContract() {
   const totalValue = useMemo(() =>
     selectedUnits.reduce((sum, u) => {
       const r = getUnitRate(u)
-      const firstAmt = firstMonthDiscount && billing === 'monthly' && r > 0
-        ? Math.round(r * (1 - discountPct / 100) * 100) / 100 : r
-      return sum + firstAmt + r * (periods - 1)
+      const pct = unitDiscount(u)
+      return sum + computeContractTotal(startDate, endDate, billing, r, pct > 0, pct)
     }, 0),
-    [selectedUnits, rate, billing, periods, firstMonthDiscount, discountPct, unitTypes]
+    [selectedUnits, rate, billing, startDate, endDate, discountMap, unitTypes]
   )
 
   const combinedRate = useMemo(
@@ -368,27 +479,25 @@ export default function NewContract() {
     mutationFn: () => {
       if (mode === 'combined') {
         const r = rate !== '' ? Number(rate) : combinedRate
-        const firstAmt = firstMonthDiscount && billing === 'monthly' && r > 0
-          ? Math.round(r * (1 - discountPct / 100) * 100) / 100 : r
+        const pct = Number(discountMap['combined'] || 0)
         return api.post('/contracts', {
           customer: customerId, unit: selectedUnits[0]._id,
           units: selectedUnits.map((u) => u._id),
           billingPeriod: billing, rate: r,
           deposit: deposit === '' ? 0 : deposit,
           startDate, endDate, autoRenew, notes,
-          firstMonthDiscountPct: firstAmt < r ? discountPct : 0,
+          firstMonthDiscountPct: pct,
         }).then((res) => [res])
       }
       return Promise.all(selectedUnits.map((u) => {
         const r = getUnitRate(u)
-        const firstAmt = firstMonthDiscount && billing === 'monthly' && r > 0
-          ? Math.round(r * (1 - discountPct / 100) * 100) / 100 : r
+        const pct = unitDiscount(u)
         return api.post('/contracts', {
           customer: customerId, unit: u._id,
           billingPeriod: billing, rate: r,
           deposit: deposit === '' ? 0 : deposit,
           startDate, endDate, autoRenew, notes,
-          firstMonthDiscountPct: firstAmt < r ? discountPct : 0,
+          firstMonthDiscountPct: pct,
         })
       }))
     },
@@ -629,72 +738,183 @@ export default function NewContract() {
           )}
 
           {/* ── Step 2: Terms ────────────────────────────────────── */}
-          {step === 2 && (
-            <>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Billing period">
-                  <Select
-                    value={billing}
-                    onChange={(e) => { setBilling(e.target.value as 'weekly' | 'monthly'); setRate(''); setFirstMonthDiscount(false) }}
-                  >
-                    <option value="weekly">Weekly</option>
-                    <option value="monthly">Monthly</option>
-                  </Select>
-                </Field>
-                <Field label="Start date">
-                  <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-                </Field>
-                <Field label="End date">
-                  <Input type="date" value={endDate} min={startDate} onChange={(e) => setEndDate(e.target.value)} />
-                </Field>
-                <div className="flex items-end pb-1">
-                  <p className="text-xs text-muted-foreground">
-                    ≈ {periods} {billing === 'weekly' ? 'week' : 'month'}{periods !== 1 ? 's' : ''}
-                  </p>
-                </div>
-                <Field label={
-                  mode === 'combined'
-                    ? `Combined rate / ${billing === 'weekly' ? 'week' : 'month'}`
-                    : `Rate / ${billing === 'weekly' ? 'week' : 'month'}${mode === 'multi' ? ' (all units)' : ''}`
-                }>
-                  <Input
-                    type="number" min={0} step="0.01" value={rate}
-                    placeholder={
-                      mode === 'combined' ? String(combinedRate) + ' (sum of selected units)'
-                        : mode === 'multi' ? "Leave blank — use each unit's own price"
-                          : String(getUnitRate(selectedUnits[0] ?? ({} as Unit)))
-                    }
-                    onChange={(e) => setRate(e.target.value === '' ? '' : Number(e.target.value))}
-                  />
-                  {mode === 'combined' && <p className="mt-1 text-[11px] text-muted-foreground">Auto-calculated as sum of each unit's price. Override if needed.</p>}
-                  {mode === 'multi' && <p className="mt-1 text-[11px] text-muted-foreground">Leave blank to use each unit's individual rate</p>}
-                </Field>
-                <Field label={`Security deposit${isMultiUnit ? ' (per unit)' : ''}`}>
-                  <Input type="number" min={0} step="0.01" value={deposit} placeholder="0.00"
-                    onChange={(e) => setDeposit(e.target.value === '' ? '' : Number(e.target.value))} />
-                </Field>
+          {step === 2 && (() => {
+            const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : ''
+            const firstUnit = selectedUnits[0] ?? ({} as Unit)
+            const displayRate = mode === 'combined'
+              ? (rate !== '' ? Number(rate) : combinedRate)
+              : getUnitRate(firstUnit)
+            const weeklyRate = displayRate > 0 ? Math.round(displayRate / 4 * 100) / 100 : 0
+            const firstDiscount = mode === 'combined'
+              ? Math.min(100, Math.max(0, Number(discountMap['combined'] || 0)))
+              : unitDiscount(firstUnit)
+            const breakdown = displayRate > 0 && periods > 0
+              ? computeBreakdown(startDate, endDate, billing, displayRate, firstDiscount)
+              : []
+
+            return (
+              <div className="space-y-3">
+
+                {/* ── Period ── */}
+                <section className="rounded-xl border overflow-hidden">
+                  <div className="px-4 py-2 bg-muted/60 border-b">
+                    <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Contract Period</h3>
+                  </div>
+                  <div className="px-4 py-3 space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label="Start date">
+                        <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                      </Field>
+                      <Field label="End date">
+                        <Input type="date" value={endDate} min={startDate} onChange={(e) => setEndDate(e.target.value)} />
+                      </Field>
+                    </div>
+                    {periods > 0 && startDate && endDate && (
+                      <div className="flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5">
+                        <div className="text-center min-w-[40px]">
+                          <div className="text-3xl font-bold text-primary leading-none">{periods}</div>
+                          <div className="text-[10px] text-muted-foreground mt-0.5 uppercase tracking-wide">weeks</div>
+                        </div>
+                        <div className="w-px h-8 bg-border" />
+                        <div className="text-sm text-muted-foreground">
+                          {fmtDate(startDate)}
+                          <span className="mx-2 opacity-40">→</span>
+                          {fmtDate(endDate)}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                {/* ── Pricing ── */}
+                <section className="rounded-xl border overflow-hidden">
+                  <div className="px-4 py-2 bg-muted/60 border-b">
+                    <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Pricing</h3>
+                  </div>
+                  <div className="px-4 py-3 space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label={mode === 'combined' ? 'Combined monthly rate' : `Monthly rate${mode === 'multi' ? ' (all units)' : ''}`}>
+                        <Input
+                          type="number" min={0} step="0.01" value={rate}
+                          placeholder={
+                            mode === 'combined' ? String(combinedRate) + ' (sum of units)'
+                              : mode === 'multi' ? "Each unit's own price"
+                                : String(getUnitRate(firstUnit))
+                          }
+                          onChange={(e) => setRate(e.target.value === '' ? '' : Number(e.target.value))}
+                        />
+                        {mode === 'combined' && <p className="mt-1 text-[11px] text-muted-foreground">Sum of unit prices. Override if needed.</p>}
+                        {mode === 'multi' && <p className="mt-1 text-[11px] text-muted-foreground">Leave blank to use each unit's own rate.</p>}
+                      </Field>
+                      <Field label={`Security deposit${isMultiUnit ? ' (per unit)' : ''}`}>
+                        <Input type="number" min={0} step="0.01" value={deposit} placeholder="0.00"
+                          onChange={(e) => setDeposit(e.target.value === '' ? '' : Number(e.target.value))} />
+                      </Field>
+                    </div>
+                    {weeklyRate > 0 && (
+                      <div className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm">
+                        <span className="font-semibold tabular-nums">{formatMoney(displayRate)}<span className="font-normal text-muted-foreground text-xs">/mo</span></span>
+                        <span className="text-muted-foreground">÷ 4 weeks</span>
+                        <span className="text-muted-foreground">=</span>
+                        <span className="font-bold text-primary tabular-nums">{formatMoney(weeklyRate)}<span className="font-normal text-muted-foreground text-xs">/wk</span></span>
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                {/* ── First month discount ── */}
+                <section className="rounded-xl border overflow-hidden">
+                  <div className="px-4 py-2 bg-muted/60 border-b flex items-center justify-between">
+                    <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">First Month Discount</h3>
+                    <span className="text-[11px] text-muted-foreground">Weeks 1–4 only (optional)</span>
+                  </div>
+                  <div className="px-4 py-3 space-y-2">
+                    {mode === 'combined' ? (
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm flex-1 text-muted-foreground">Combined rate</span>
+                        <div className="flex items-center gap-1.5">
+                          <Input type="number" min={0} max={100} step="0.01"
+                            value={discountMap['combined'] ?? ''}
+                            onChange={(e) => setDiscountMap((p) => ({ ...p, combined: e.target.value }))}
+                            placeholder="0" className="w-20 text-right" />
+                          <span className="text-sm text-muted-foreground">%</span>
+                        </div>
+                      </div>
+                    ) : (
+                      selectedUnits.map((u) => (
+                        <div key={u._id} className="flex items-center gap-3">
+                          <span className="text-sm font-semibold w-16">{u.unitNumber}</span>
+                          {u.sizeSqf != null && <span className="text-xs text-muted-foreground flex-1">{u.sizeSqf} sqft</span>}
+                          {weeklyRate > 0 && Number(discountMap[u._id] || 0) > 0 && (
+                            <span className="text-xs text-amber-600 ml-auto mr-2">
+                              {formatMoney(Math.round(weeklyRate * (1 - Number(discountMap[u._id]) / 100) * 100) / 100)}/wk × 4
+                            </span>
+                          )}
+                          <div className="flex items-center gap-1.5">
+                            <Input type="number" min={0} max={100} step="0.01"
+                              value={discountMap[u._id] ?? ''}
+                              onChange={(e) => setDiscountMap((p) => ({ ...p, [u._id]: e.target.value }))}
+                              placeholder="0" className="w-20 text-right" />
+                            <span className="text-sm text-muted-foreground">%</span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </section>
+
+                {/* ── Payment breakdown ── */}
+                {breakdown.length > 0 && (
+                  <section className="rounded-xl border overflow-hidden">
+                    <div className="px-4 py-2 bg-muted/60 border-b flex items-center justify-between">
+                      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Payment Breakdown</h3>
+                      {mode === 'multi' && <span className="text-[11px] text-muted-foreground">Showing {firstUnit.unitNumber}</span>}
+                    </div>
+                    <table className="w-full text-sm">
+                      <tbody>
+                        {breakdown.map((row, i) => {
+                          const isTotal = row.label === 'Total'
+                          return (
+                            <tr key={i} className={cn(
+                              'border-b last:border-0',
+                              row.accent && 'bg-amber-50 dark:bg-amber-950/20',
+                              isTotal && 'bg-muted/40 font-semibold',
+                            )}>
+                              <td className="px-4 py-2.5 font-medium">{row.label}</td>
+                              <td className="px-4 py-2.5 text-xs text-muted-foreground">{row.detail}</td>
+                              <td className="px-4 py-2.5 text-right font-semibold tabular-nums">{formatMoney(row.amount)}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </section>
+                )}
+
+                {/* ── Other ── */}
+                <section className="rounded-xl border overflow-hidden">
+                  <div className="px-4 py-2 bg-muted/60 border-b">
+                    <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Other</h3>
+                  </div>
+                  <div className="px-4 py-3 space-y-3">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input type="checkbox" checked={autoRenew} onChange={(e) => setAutoRenew(e.target.checked)} className="accent-(--primary)" />
+                      Auto-renew at end of term
+                    </label>
+                    <Field label="Notes"><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
+                  </div>
+                </section>
+
+                {overlappingUnitIds.length > 0 && (
+                  <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                    {overlappingUnitIds.map((id) => units.find((u) => u._id === id)?.unitNumber).join(', ')} {overlappingUnitIds.length === 1 ? 'is' : 'are'} already booked for this period.
+                    Go back and choose different dates or units.
+                  </div>
+                )}
+
               </div>
-
-              {billing === 'monthly' && discountPct > 0 && (
-                <label className="flex items-center gap-2 text-sm cursor-pointer rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-800/40 dark:bg-amber-900/20">
-                  <input type="checkbox" checked={firstMonthDiscount} onChange={(e) => setFirstMonthDiscount(e.target.checked)} className="accent-amber-500" />
-                  <span>Apply first-month {discountPct}% discount{isMultiUnit ? ' to all units' : ''}</span>
-                </label>
-              )}
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input type="checkbox" checked={autoRenew} onChange={(e) => setAutoRenew(e.target.checked)} className="accent-(--primary)" />
-                Auto-renew at end of term
-              </label>
-              <Field label="Notes"><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
-
-              {overlappingUnitIds.length > 0 && (
-                <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                  {overlappingUnitIds.map((id) => units.find((u) => u._id === id)?.unitNumber).join(', ')} {overlappingUnitIds.length === 1 ? 'is' : 'are'} already booked for this period.
-                  Go back and choose different dates or units.
-                </div>
-              )}
-            </>
-          )}
+            )
+          })()}
 
           {/* ── Step 3: Review ───────────────────────────────────── */}
           {step === 3 && (
@@ -717,40 +937,62 @@ export default function NewContract() {
               <div>
                 <div className="text-xs text-muted-foreground mb-1.5">
                   {mode === 'multi' ? `Units booked (${selectedUnits.length} separate contracts)` : mode === 'combined' ? `Units covered (1 combined contract)` : 'Unit'}
+                  {' · '}{Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / (7 * 86400000))} wks total
                 </div>
-                <div className="rounded-lg border divide-y divide-border">
+                <div className="rounded-lg border divide-y divide-border text-xs">
                   {selectedUnits.map((u) => {
                     const r = mode === 'combined' ? (rate !== '' ? Number(rate) / selectedUnits.length : getUnitRate(u)) : getUnitRate(u)
-                    const firstAmt = firstMonthDiscount && billing === 'monthly' && r > 0 ? Math.round(r * (1 - discountPct / 100) * 100) / 100 : r
-                    const unitTotal = firstAmt + r * (periods - 1)
+                    const pct = unitDiscount(u)
+                    const rows = computeBreakdown(startDate, endDate, billing, r, pct)
+                    const unitTotal = rows[rows.length - 1]?.amount ?? 0
                     return (
-                      <div key={u._id} className="flex items-center justify-between px-3 py-2 text-xs">
-                        <span className="font-medium">{u.unitNumber}</span>
-                        <span className="text-muted-foreground">{u.sizeSqf != null ? `${u.sizeSqf} sq ft` : '—'}</span>
-                        <span className="text-muted-foreground">{formatMoney(r)} / {billing === 'weekly' ? 'wk' : 'mo'}</span>
-                        <span className="font-medium">{formatMoney(unitTotal)}</span>
+                      <div key={u._id}>
+                        {/* Unit header */}
+                        <div className="flex items-center justify-between px-3 py-2 bg-muted/40 font-medium">
+                          <span>{u.unitNumber}{u.sizeSqf != null ? <span className="ml-1.5 font-normal text-muted-foreground">{u.sizeSqf} sq ft</span> : null}</span>
+                          <span className="text-muted-foreground font-normal">
+                            {formatMoney(r)}/mo
+                            <span className="ml-1.5 opacity-60 text-[10px]">({formatMoney(Math.round(r/4*100)/100)}/wk)</span>
+                          </span>
+                          <span>{formatMoney(unitTotal)}</span>
+                        </div>
+                        {/* Breakdown rows */}
+                        {rows.map((row, i) => {
+                          const isLast = i === rows.length - 1
+                          return (
+                            <div key={i} className={`flex items-center justify-between px-4 py-1.5 gap-4
+                              ${isLast ? 'border-t font-semibold bg-accent/40' : ''}
+                              ${row.accent ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground'}`}>
+                              <span className={isLast ? 'text-foreground' : ''}>{row.label}</span>
+                              <span className="flex-1 text-right text-[11px] opacity-70">{row.detail}</span>
+                              <span className={isLast ? 'text-foreground' : 'text-foreground/80'}>{formatMoney(row.amount)}</span>
+                            </div>
+                          )
+                        })}
                       </div>
                     )
                   })}
                   {mode === 'combined' && selectedUnits.length > 1 && (
-                    <div className="flex items-center justify-between px-3 py-2 text-xs bg-accent/50 font-medium">
-                      <span>Combined rate</span><span /><span>{formatMoney(rate !== '' ? Number(rate) : combinedRate)} / {billing === 'weekly' ? 'wk' : 'mo'}</span><span>{formatMoney(totalValue)}</span>
+                    <div className="flex items-center justify-between px-3 py-2 bg-accent/60 font-semibold">
+                      <span>Combined total</span>
+                      <span>{formatMoney(rate !== '' ? Number(rate) : combinedRate)}/mo</span>
+                      <span>{formatMoney(totalValue)}</span>
                     </div>
                   )}
                 </div>
               </div>
 
               <div className="rounded-lg bg-accent px-3 py-2 text-accent-foreground text-xs space-y-0.5">
-                <div>
-                  {mode === 'multi' ? 'Combined value' : 'Contract value'}: <strong>{formatMoney(totalValue)}</strong>
-                  {mode === 'multi' && ` · ${selectedUnits.length} contracts`}
-                  {mode === 'combined' && ` · ${selectedUnits.length} units · 1 contract`}
-                  {' '}· ≈ {periods} {billing === 'weekly' ? 'weekly' : 'monthly'} payment{periods !== 1 ? 's' : ''}
-                  {autoRenew && <Badge tone="purple" className="ml-2">Auto-renew</Badge>}
+                <div className="flex items-center justify-between">
+                  <span>
+                    {mode === 'multi' ? 'Combined value' : 'Contract value'}
+                    {mode === 'multi' && ` · ${selectedUnits.length} contracts`}
+                    {mode === 'combined' && ` · ${selectedUnits.length} units · 1 contract`}
+                    {' '}· ≈ {periods} {billing === 'weekly' ? 'weekly' : 'monthly'} payment{periods !== 1 ? 's' : ''}
+                    {autoRenew && <Badge tone="purple" className="ml-2">Auto-renew</Badge>}
+                  </span>
+                  <strong>{formatMoney(totalValue)}</strong>
                 </div>
-                {firstMonthDiscount && billing === 'monthly' && (
-                  <div className="text-amber-600">First payment {discountPct}% off{isMultiUnit ? ' for all units' : ''}</div>
-                )}
               </div>
             </div>
           )}

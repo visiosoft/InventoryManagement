@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Upload } from 'lucide-react'
+import { Upload, CloudUpload, Loader2 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import type { AppDocument, Customer } from '../lib/types'
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, Th, statusLabel } from '../components/ui'
@@ -61,6 +61,7 @@ export function UploadDocumentForm({ contractId, customerId, onDone }: { contrac
 export default function Documents() {
   const qc = useQueryClient()
   const [uploading, setUploading] = useState(false)
+  const [syncingId, setSyncingId] = useState<string | null>(null)
 
   const { data: docs, isLoading } = useQuery<AppDocument[]>({
     queryKey: ['documents'],
@@ -74,6 +75,12 @@ export default function Documents() {
   const del = useMutation({
     mutationFn: (id: string) => api.delete(`/documents/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['documents'] }),
+  })
+
+  const syncToDrive = useMutation({
+    mutationFn: (id: string) => api.post(`/documents/${id}/sync-to-drive`),
+    onSuccess: () => { setSyncingId(null); qc.invalidateQueries({ queryKey: ['documents'] }) },
+    onError: () => setSyncingId(null),
   })
 
   return (
@@ -100,8 +107,20 @@ export default function Documents() {
                   <Td><Badge tone={d.storage === 'drive' ? 'blue' : 'gray'}>{d.storage === 'drive' ? 'Google Drive' : 'Local'}</Badge></Td>
                   <Td>{formatDate(d.createdAt)}</Td>
                   <Td>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 items-center">
                       <a href={d.url} target="_blank" rel="noreferrer" className="text-primary text-xs hover:underline">Open</a>
+                      {d.storage !== 'drive' && storage?.driveConfigured && (
+                        <button
+                          onClick={() => { setSyncingId(d._id); syncToDrive.mutate(d._id) }}
+                          disabled={syncingId === d._id}
+                          title="Upload to Google Drive"
+                          className="text-xs text-blue-600 hover:underline cursor-pointer disabled:opacity-50 flex items-center gap-1"
+                        >
+                          {syncingId === d._id
+                            ? <><Loader2 size={12} className="animate-spin" /> Uploading…</>
+                            : <><CloudUpload size={12} /> Drive</>}
+                        </button>
+                      )}
                       <button onClick={() => { if (confirm('Delete this document record?')) del.mutate(d._id) }} className="text-destructive text-xs hover:underline cursor-pointer">Delete</button>
                     </div>
                   </Td>

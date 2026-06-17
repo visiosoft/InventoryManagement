@@ -19,6 +19,7 @@ export interface Unit {
   lengthFt: number | null
   widthFt: number | null
   status: UnitStatus
+  discountPct?: number
   notes?: string
 }
 
@@ -254,6 +255,7 @@ export interface Purchase {
 export interface Expense {
   _id: string
   expenseDate: string
+  expenseType?: string
   description?: string
   expenseAccount: string
   expenseAccountCode?: string
