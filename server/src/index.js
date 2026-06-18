@@ -23,11 +23,22 @@ import movingInventoryRoutes from './routes/movingInventory.js';
 import unitTypeRoutes, { seedUnitTypes } from './routes/unitTypes.js';
 import signingRoutes from './routes/signing.js';
 import userRoutes from './routes/users.js';
+import whatsappRoutes from './routes/whatsapp.js';
 import { runGoogleContactsSync } from './services/syncContacts.js';
+import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
 
 const app = express();
 app.use(cors({ origin: '*' }));
-app.use(express.json({ limit: '2mb' }));
+app.use(
+  express.json({
+    limit: '2mb',
+    verify: (req, _res, buf) => {
+      if (req.originalUrl?.includes('/api/integrations/whatsapp/webhook')) {
+        req.rawBody = Buffer.from(buf);
+      }
+    },
+  })
+);
 app.use('/uploads', express.static(UPLOADS_DIR));
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, db: mongoose.connection.readyState === 1 }));
@@ -68,6 +79,7 @@ app.use(
 );
 
 app.use('/api/users', requireAuth, userRoutes);
+app.use('/api/whatsapp', requireAuth, whatsappRoutes);
 
 // Central error handler
 app.use((err, _req, res, _next) => {
@@ -89,6 +101,15 @@ async function start() {
     await runGoogleContactsSync();
     setInterval(runGoogleContactsSync, SYNC_INTERVAL);
   }, 5000); // 5s delay so DB is fully ready
+
+  // Reconcile WhatsApp label-driven lead state every 15 minutes.
+  const WHATSAPP_RECONCILE_INTERVAL = 15 * 60 * 1000;
+  if (process.env.WHATSAPP_LABEL_SYNC_ENABLED === 'true') {
+    setTimeout(async () => {
+      await runWhatsAppLabelReconciliation();
+      setInterval(runWhatsAppLabelReconciliation, WHATSAPP_RECONCILE_INTERVAL);
+    }, 7000);
+  }
 }
 
 start().catch((err) => {

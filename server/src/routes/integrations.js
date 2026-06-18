@@ -1,10 +1,12 @@
 import { Router } from 'express';
 import { google } from 'googleapis';
+import { requireAdmin } from '../middleware/auth.js';
 import { driveConfigured } from '../services/drive.js';
 import { zohoConfigured } from '../services/zoho.js';
 import { whatsappConfigured, whatsappMissing, verifyWebhookChallenge, verifyWhatsAppSignature } from '../services/whatsapp.js';
 import { googleContactsConfigured, googleContactsMissing } from '../services/googleContacts.js';
 import { runGoogleContactsSync, syncState } from '../services/syncContacts.js';
+import { getWhatsAppLabelSyncStatus, processWhatsAppWebhookPayload, runWhatsAppLabelReconciliation } from '../services/whatsappLeadSync.js';
 import { updateEnvFile } from '../utils/env.js';
 
 const router = Router();
@@ -14,6 +16,7 @@ router.get('/status', (_req, res) => {
         zoho: { configured: zohoConfigured() },
         drive: { configured: driveConfigured() },
         whatsapp: { configured: whatsappConfigured(), missing: whatsappMissing() },
+        whatsappLabelSync: getWhatsAppLabelSyncStatus(),
         googleContacts: { configured: googleContactsConfigured(), missing: googleContactsMissing() },
     });
 });
@@ -28,6 +31,15 @@ router.post('/google-contacts/sync', async (req, res) => {
 
 router.get('/google-contacts/last-sync', (_req, res) => {
     res.json(syncState);
+});
+
+router.post('/whatsapp/reconcile', requireAdmin, async (_req, res) => {
+    const summary = await runWhatsAppLabelReconciliation();
+    res.json({ ok: true, summary });
+});
+
+router.get('/whatsapp/last-sync', requireAdmin, (_req, res) => {
+    res.json(getWhatsAppLabelSyncStatus());
 });
 
 // ── Google Contacts OAuth ─────────────────────────────────────────────────────
@@ -107,15 +119,15 @@ router.get('/google/callback', async (req, res) => {
 // ── Google Drive OAuth ────────────────────────────────────────────────────────
 
 function driveOAuthClient() {
-    const clientId     = process.env.GOOGLE_DRIVE_CLIENT_ID     || process.env.GOOGLE_CONTACTS_CLIENT_ID;
+    const clientId = process.env.GOOGLE_DRIVE_CLIENT_ID || process.env.GOOGLE_CONTACTS_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_DRIVE_CLIENT_SECRET || process.env.GOOGLE_CONTACTS_CLIENT_SECRET;
-    const callbackUrl  = `${process.env.SERVER_URL || `http://localhost:${process.env.PORT || 5010}`}/api/integrations/drive/callback`;
+    const callbackUrl = `${process.env.SERVER_URL || `http://localhost:${process.env.PORT || 5010}`}/api/integrations/drive/callback`;
     return new google.auth.OAuth2(clientId, clientSecret, callbackUrl);
 }
 
 // Returns the Google consent URL for the frontend to redirect the user to
 router.get('/drive/connect', (_req, res) => {
-    const clientId     = process.env.GOOGLE_DRIVE_CLIENT_ID     || process.env.GOOGLE_CONTACTS_CLIENT_ID;
+    const clientId = process.env.GOOGLE_DRIVE_CLIENT_ID || process.env.GOOGLE_CONTACTS_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_DRIVE_CLIENT_SECRET || process.env.GOOGLE_CONTACTS_CLIENT_SECRET;
     if (!clientId || !clientSecret) {
         return res.status(400).json({ error: 'Google OAuth credentials not configured. Set GOOGLE_CONTACTS_CLIENT_ID and GOOGLE_CONTACTS_CLIENT_SECRET in .env' });
@@ -176,14 +188,18 @@ router.get('/whatsapp/webhook', (req, res) => {
     res.status(200).send(result.challenge);
 });
 
-router.post('/whatsapp/webhook', (req, res) => {
+router.post('/whatsapp/webhook', async (req, res) => {
     const signature = req.headers['x-hub-signature-256'];
-    const rawBody = Buffer.from(JSON.stringify(req.body || {}));
+    const rawBody = req.rawBody || Buffer.from(JSON.stringify(req.body || {}));
     if (!verifyWhatsAppSignature(String(signature || ''), rawBody)) {
         return res.status(401).json({ error: 'Invalid WhatsApp signature' });
     }
-    // Setup-only v1: accept and acknowledge webhook payloads without processing timeline/messages.
-    return res.json({ ok: true, received: true });
+    try {
+        const result = await processWhatsAppWebhookPayload(req.body || {});
+        return res.json({ ok: true, received: true, result });
+    } catch (err) {
+        return res.status(500).json({ error: err?.message || 'Failed to process webhook payload' });
+    }
 });
 
 export default router;

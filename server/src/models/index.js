@@ -3,11 +3,11 @@ import mongoose from 'mongoose';
 const { Schema, model } = mongoose;
 
 const ALL_MODULES = [
-  'dashboard','units','moving_inventory','contracts','documents',
-  'customers','quotes','invoices','vendors','expenses',
-  'leads','purchases','payments',
-  'reports_monthly','reports_units','reports_finances','reports_forecast','reports_contracts',
-  'reports_vacancies','reports_overdue','reports_expiring',
+  'dashboard', 'units', 'moving_inventory', 'contracts', 'documents',
+  'customers', 'quotes', 'invoices', 'vendors', 'expenses',
+  'leads', 'purchases', 'payments',
+  'reports_monthly', 'reports_units', 'reports_finances', 'reports_forecast', 'reports_contracts',
+  'reports_vacancies', 'reports_overdue', 'reports_expiring',
   'settings',
 ];
 
@@ -126,6 +126,63 @@ const leadSchema = new Schema(
 
 leadSchema.index({ status: 1, owner: 1, leadDateTime: -1 });
 leadSchema.index({ source: 1, createdAt: -1 });
+
+const whatsappWebhookEventSchema = new Schema(
+  {
+    eventKey: { type: String, required: true, unique: true },
+    phoneNormalized: { type: String, default: '' },
+    labels: { type: [String], default: [] },
+    status: { type: String, enum: ['received', 'processed', 'skipped', 'failed'], default: 'received' },
+    detail: { type: String, default: '' },
+    payload: { type: Schema.Types.Mixed },
+    expiresAt: {
+      type: Date,
+      default: () => new Date(Date.now() + 1000 * 60 * 60 * 24 * 30),
+    },
+  },
+  { timestamps: true }
+);
+
+whatsappWebhookEventSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+whatsappWebhookEventSchema.index({ phoneNormalized: 1, createdAt: -1 });
+
+const whatsappLabelStateSchema = new Schema(
+  {
+    phone: { type: String, default: '' },
+    phoneNormalized: { type: String, required: true, unique: true },
+    labels: { type: [String], default: [] },
+    mappedStatus: {
+      type: String,
+      enum: ['', 'new', 'contacted', 'qualified', 'proposal_sent', 'won', 'lost'],
+      default: '',
+    },
+    lastEventKey: { type: String, default: '' },
+    lastWebhookAt: { type: Date, default: Date.now },
+    lastReconciledAt: { type: Date },
+  },
+  { timestamps: true }
+);
+
+whatsappLabelStateSchema.index({ mappedStatus: 1, updatedAt: -1 });
+
+const whatsappMessageSchema = new Schema(
+  {
+    messageId: { type: String, default: '' },
+    phone: { type: String, default: '' },
+    phoneNormalized: { type: String, required: true },
+    lead: { type: Schema.Types.ObjectId, ref: 'Lead' },
+    direction: { type: String, enum: ['inbound', 'outbound'], default: 'inbound' },
+    type: { type: String, default: 'text' },
+    text: { type: String, default: '' },
+    status: { type: String, default: '' },
+    occurredAt: { type: Date, default: Date.now },
+    raw: { type: Schema.Types.Mixed },
+  },
+  { timestamps: true }
+);
+
+whatsappMessageSchema.index({ phoneNormalized: 1, occurredAt: -1 });
+whatsappMessageSchema.index({ messageId: 1 }, { unique: true, sparse: true });
 
 const contractSchema = new Schema(
   {
@@ -504,6 +561,9 @@ export const UnitType = model('UnitType', unitTypeSchema);
 export const Unit = model('Unit', unitSchema);
 export const Customer = model('Customer', customerSchema);
 export const Lead = model('Lead', leadSchema);
+export const WhatsAppWebhookEvent = model('WhatsAppWebhookEvent', whatsappWebhookEventSchema);
+export const WhatsAppLabelState = model('WhatsAppLabelState', whatsappLabelStateSchema);
+export const WhatsAppMessage = model('WhatsAppMessage', whatsappMessageSchema);
 export const Contract = model('Contract', contractSchema);
 export const Quote = model('Quote', quoteSchema);
 export const Invoice = model('Invoice', invoiceSchema);
