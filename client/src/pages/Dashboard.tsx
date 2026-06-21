@@ -16,9 +16,9 @@ type WidgetId =
   | 'overdue-aging'
   | 'expiring-contracts'
   | 'top-delinquents'
-  | 'overdue-payments'
+  | 'latest-notes'
 
-const DASHBOARD_LAYOUT_KEY = 'pb_dashboard_layout_v1'
+const DASHBOARD_LAYOUT_KEY = 'pb_dashboard_layout_v2'
 
 const DEFAULT_LAYOUT: WidgetId[] = [
   'stats',
@@ -27,7 +27,7 @@ const DEFAULT_LAYOUT: WidgetId[] = [
   'overdue-aging',
   'expiring-contracts',
   'top-delinquents',
-  'overdue-payments',
+  'latest-notes',
 ]
 
 function safeLoadLayout() {
@@ -108,6 +108,12 @@ export default function Dashboard() {
   const { data, isLoading, isError, error, refetch } = useQuery<Summary>({
     queryKey: ['summary'],
     queryFn: () => api.get('/reports/summary').then((r) => r.data),
+  })
+
+  type LatestNote = { contractId: string; contractNo: string; customerName: string; at: string; text: string; author: string }
+  const { data: latestNotes = [] } = useQuery<LatestNote[]>({
+    queryKey: ['latest-notes'],
+    queryFn: () => api.get('/contracts/latest-notes?limit=30').then((r) => r.data),
   })
 
   // ── All derived values must be computed before any early return so hooks
@@ -319,39 +325,52 @@ export default function Dashboard() {
           )}
         </WidgetShell>
       ),
-      'overdue-payments': (
+      'latest-notes': (
         <WidgetShell
-          id="overdue-payments"
-          title="Overdue payments"
-          subtitle="Pending payments past their due date"
+          id="latest-notes"
+          title="Latest notes & follow-ups"
+          subtitle="30 most recent notes across all contracts"
           onDragStart={onDragStart}
           onDragOver={onDragOver}
           onDrop={onDrop}
         >
-          {data.overduePayments.length === 0 ? (
-            <EmptyState message="No overdue payments." />
+          {latestNotes.length === 0 ? (
+            <EmptyState message="No notes yet. Add follow-up notes from any contract page." />
           ) : (
-            <Table>
-              <thead><tr><Th>Customer</Th><Th>Contract</Th><Th>Unit</Th><Th>Due date</Th><Th>Amount</Th><Th /></tr></thead>
-              <tbody>
-                {data.overduePayments.map((p) => (
-                  <tr key={p._id} className="hover:bg-muted/50">
-                    <Td>{p.contract?.customer?.fullName}</Td>
-                    <Td><Link className="text-primary font-medium hover:underline" to={`/contracts/${p.contract?._id}`}>{p.contract?.contractNo}</Link></Td>
-                    <Td>{p.contract?.unit?.unitNumber}</Td>
-                    <Td>{formatDate(p.dueDate)}</Td>
-                    <Td className="font-medium">{formatMoney(p.amount)}</Td>
-                    <Td><Badge tone="red">Overdue</Badge></Td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
+            <div className="divide-y divide-border">
+              {latestNotes.map((n, i) => {
+                const fmtAt = (d: string) => {
+                  const dt = new Date(d)
+                  return dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+                    + ' · ' + dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+                }
+                return (
+                  <div key={i} className="flex gap-3 py-3 hover:bg-muted/40 px-1">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                        <Link to={`/contracts/${n.contractId}`} className="text-xs font-semibold text-primary hover:underline shrink-0">
+                          {n.contractNo}
+                        </Link>
+                        {n.customerName && (
+                          <span className="text-xs text-muted-foreground truncate">{n.customerName}</span>
+                        )}
+                        {n.author && (
+                          <span className="text-[10px] text-muted-foreground/70">· {n.author}</span>
+                        )}
+                      </div>
+                      <p className="text-sm leading-snug line-clamp-2">{n.text}</p>
+                    </div>
+                    <time className="text-[10px] text-muted-foreground whitespace-nowrap shrink-0 pt-0.5">{fmtAt(n.at)}</time>
+                  </div>
+                )
+              })}
+            </div>
           )}
         </WidgetShell>
       ),
       })
     },
-    [collectionRate, data, overdueAging, onDrop, revenueGap, topDelinquents, totalUnits]
+    [collectionRate, data, latestNotes, overdueAging, onDrop, revenueGap, topDelinquents, totalUnits]
   )
 
   // Early returns come AFTER all hooks so hook call order is always stable
@@ -413,7 +432,7 @@ export default function Dashboard() {
             )
           }
 
-          if (id === 'overdue-payments') {
+          if (id === 'latest-notes') {
             return <div key={id}>{widgets[id]}</div>
           }
 

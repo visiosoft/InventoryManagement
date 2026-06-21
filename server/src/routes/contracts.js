@@ -720,6 +720,33 @@ router.post('/:id/generate-custom-invoice', async (req, res) => {
   res.status(201).json(await Invoice.findById(invoice._id).populate('customer', 'fullName email phone address'));
 });
 
+// Latest notes across all contracts (for dashboard)
+router.get('/latest-notes', async (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 30, 100);
+  const notes = await Contract.aggregate([
+    { $match: { 'timeline.0': { $exists: true } } },
+    { $unwind: '$timeline' },
+    { $sort: { 'timeline.at': -1 } },
+    { $limit: limit },
+    { $lookup: { from: 'customers', localField: 'customer', foreignField: '_id', as: '_cust' } },
+    {
+      $project: {
+        contractNo: 1,
+        note: '$timeline',
+        customer: { $arrayElemAt: ['$_cust', 0] },
+      },
+    },
+  ]);
+  res.json(notes.map((n) => ({
+    contractId: n._id,
+    contractNo: n.contractNo,
+    customerName: n.customer?.fullName || '',
+    at: n.note.at,
+    text: n.note.text,
+    author: n.note.author,
+  })));
+});
+
 // Add a timeline note to a contract
 router.post('/:id/notes', async (req, res) => {
   const contract = await Contract.findById(req.params.id);
