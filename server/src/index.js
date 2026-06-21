@@ -63,7 +63,11 @@ app.use('/api/documents', requireAuth, documentRoutes);
 app.use('/api/reports', requireAuth, reportRoutes);
 app.use('/api/leads', requireAuth, leadRoutes);
 app.use('/api/quotes', requireAuth, quoteRoutes);
-app.use('/api/invoices', requireAuth, invoiceRoutes);
+app.use(
+  '/api/invoices',
+  (req, res, next) => req.path.startsWith('/public/') ? next() : requireAuth(req, res, next),
+  invoiceRoutes
+);
 app.use('/api/vendors', requireAuth, vendorRoutes);
 app.use('/api/purchases', requireAuth, purchaseRoutes);
 app.use('/api/expenses', requireAuth, expenseRoutes);

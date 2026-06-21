@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import crypto from 'crypto';
 import multer from 'multer';
 import { Customer, Invoice, Payment, nextInvoiceNo } from '../models/index.js';
 import { renderInvoicePdf } from '../services/invoicePdf.js';
@@ -87,6 +88,31 @@ async function syncLinkedPayment(invoice) {
     payment.method = '';
     await payment.save();
 }
+
+// Public: view invoice PDF by share token (no auth required)
+router.get('/public/:token/pdf', async (req, res) => {
+    const invoice = await Invoice.findOne({ shareToken: req.params.token })
+        .populate('customer', 'fullName email phone address');
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found or link expired' });
+    const pdf = await renderInvoicePdf({ invoice });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${invoice.invoiceNo}.pdf"`);
+    res.send(pdf);
+});
+
+// Generate (or return existing) share link for an invoice
+router.post('/:id/share', async (req, res) => {
+    const invoice = await Invoice.findById(req.params.id);
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+    if (!invoice.shareToken) {
+        invoice.shareToken = crypto.randomUUID();
+        await invoice.save();
+    }
+    const proto = req.headers['x-forwarded-proto'] || req.protocol;
+    const host  = req.headers['x-forwarded-host']  || req.get('host');
+    const url   = `${proto}://${host}/api/invoices/public/${invoice.shareToken}/pdf`;
+    res.json({ token: invoice.shareToken, url });
+});
 
 router.get('/', async (req, res) => {
     const filter = {};

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { Plus, Search, Trash2, X } from 'lucide-react'
@@ -32,15 +32,6 @@ export default function Contracts() {
     queryKey: ['contracts'],
     queryFn: () => api.get('/contracts').then((r) => r.data),
   })
-
-  // Silently generate missing invoices for all active contracts on first visit
-  const synced = useRef(false)
-  useEffect(() => {
-    if (!synced.current) {
-      synced.current = true
-      api.post('/contracts/auto-invoices', null, { params: { months: 3 } }).catch(() => {})
-    }
-  }, [])
 
   // All filtering done client-side so every filter combination is instant
   const filtered = useMemo(() => {

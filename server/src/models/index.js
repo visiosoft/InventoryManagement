@@ -312,6 +312,7 @@ const invoiceSchema = new Schema(
     termsAndConditions: { type: String, default: '' },
     attachments: { type: [invoiceAttachmentSchema], default: [] },
     status: { type: String, enum: ['draft', 'sent', 'paid', 'overdue', 'cancelled'], default: 'draft' },
+    shareToken: { type: String, default: null },
   },
   { timestamps: true }
 );

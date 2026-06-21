@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Download, AlertCircle, CheckCircle2, Clock, Pencil } from 'lucide-react'
+import { ArrowLeft, Download, AlertCircle, CheckCircle2, Clock, Pencil, MessageCircle } from 'lucide-react'
 import { api, apiError, invoiceApi } from '../lib/api'
 import type { Invoice, InvoicePaymentEntry, InvoiceStatus } from '../lib/types'
 import {
@@ -413,6 +413,30 @@ export default function InvoiceDetail() {
         enabled: !!id,
     })
 
+    const whatsapp = useMutation({
+        mutationFn: () => api.post(`/invoices/${id}/share`).then((r) => r.data as { url: string }),
+        onSuccess: ({ url }) => {
+            const phone = (invoice!.customer as any)?.phone?.replace(/\D/g, '') || ''
+            const due   = invoice!.dueDate ? new Date(invoice!.dueDate).toLocaleDateString('en-GB') : ''
+            const text  = [
+                `Hello ${(invoice!.customer as any)?.fullName ?? 'there'},`,
+                ``,
+                `Your invoice *${invoice!.invoiceNo}* is ready.`,
+                `Amount: AED ${Number(invoice!.total || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
+                due ? `Due date: ${due}` : '',
+                ``,
+                `View & download your invoice:`,
+                url,
+                ``,
+                `Thank you – PurpleBox`,
+            ].filter(l => l !== null).join('\n')
+            const waUrl = phone
+                ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
+                : `https://wa.me/?text=${encodeURIComponent(text)}`
+            window.open(waUrl, '_blank', 'noopener,noreferrer')
+        },
+    })
+
     const updateStatus = useMutation({
         mutationFn: (status: string) => invoiceApi.updateStatus(id!, status),
         onSuccess: () => {
@@ -488,6 +512,16 @@ export default function InvoiceDetail() {
                             <Pencil size={13} /> Edit
                         </Button>
                     )}
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => whatsapp.mutate()}
+                        disabled={whatsapp.isPending}
+                        className="text-emerald-600 border-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+                    >
+                        <MessageCircle size={13} />
+                        {whatsapp.isPending ? 'Generating…' : 'WhatsApp'}
+                    </Button>
                     <Button size="sm" variant="outline" onClick={openPdf}>
                         <Download size={14} /> PDF
                     </Button>
