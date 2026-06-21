@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Box, Users, FileText, CreditCard, BarChart3, Building2, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, FileSpreadsheet, Truck, ShoppingCart, Wallet, PackageOpen, TrendingUp, UserCheck, UserCog, X, MessageCircle } from 'lucide-react'
+import { LayoutDashboard, Box, Users, FileText, CreditCard, BarChart3, Building2, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, FileSpreadsheet, Truck, ShoppingCart, Wallet, TrendingUp, UserCheck, UserCog, X, MessageCircle } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { cn } from '../lib/utils'
@@ -16,8 +16,7 @@ const navGroups = [
     title: 'Inventory',
     items: [
       { to: '/units',           label: 'Units',       icon: Box,         perm: 'units' },
-      { to: '/moving-inventory',label: 'Moving Ops',  icon: PackageOpen, perm: 'moving_inventory' },
-      { to: '/contracts',       label: 'Contracts',   icon: FileText,    perm: 'contracts' },
+{ to: '/contracts',       label: 'Contracts',   icon: FileText,    perm: 'contracts' },
       { to: '/documents',       label: 'Documents',   icon: FolderOpen,  perm: 'documents' },
     ],
   },

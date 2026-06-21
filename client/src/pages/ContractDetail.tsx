@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
-import { CalendarDays, CheckCircle2, Download, FileText, FilePlus, PenLine, Plus, ShieldCheck, Upload, X, XCircle } from 'lucide-react'
+import { CalendarDays, CheckCircle2, Download, FileText, FilePlus, MessageSquare, PenLine, Plus, ShieldCheck, Upload, X, XCircle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
-import type { AppDocument, Contract, Payment } from '../lib/types'
+import type { AppDocument, Contract, ContractNote, Payment } from '../lib/types'
 import {
   Badge, Button, Card, CardBody, CardHeader, EmptyState,
   Field, Input, Modal, PageHeader, Select, Spinner,
@@ -886,6 +886,104 @@ function PaymentRow({
   )
 }
 
+// ── Contract timeline (notes / follow-ups) ────────────────────────────────────
+function ContractTimeline({ notes, onAdd, onDelete, addBusy }: {
+  notes: ContractNote[]
+  onAdd: (text: string) => void
+  onDelete: (idx: number) => void
+  addBusy: boolean
+}) {
+  const [text, setText] = useState('')
+
+  function submit(e: FormEvent) {
+    e.preventDefault()
+    if (!text.trim()) return
+    onAdd(text.trim())
+    setText('')
+  }
+
+  const fmtAt = (d: string) => {
+    const dt = new Date(d)
+    return (
+      dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) +
+      ' · ' +
+      dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+    )
+  }
+
+  const noteColors = [
+    'bg-[#fef9c3] border-[#fde047] text-yellow-900',
+    'bg-[#dcfce7] border-[#86efac] text-green-900',
+    'bg-[#dbeafe] border-[#93c5fd] text-blue-900',
+    'bg-[#fce7f3] border-[#f9a8d4] text-pink-900',
+    'bg-[#ede9fe] border-[#c4b5fd] text-violet-900',
+    'bg-[#ffedd5] border-[#fdba74] text-orange-900',
+  ]
+
+  const rotations = ['-rotate-1', 'rotate-1', '-rotate-[0.5deg]', 'rotate-[0.8deg]', '-rotate-[1.2deg]', 'rotate-[0.3deg]']
+
+  return (
+    <div className="space-y-4">
+      {/* Add note form */}
+      <form onSubmit={submit} className="flex gap-2 items-end">
+        <Textarea
+          className="flex-1 resize-none"
+          placeholder="Type a note or follow-up — what did you discuss, what's the next step…"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={2}
+        />
+        <Button type="submit" disabled={addBusy || !text.trim()} className="shrink-0">
+          {addBusy ? 'Saving…' : 'Add note'}
+        </Button>
+      </form>
+
+      {notes.length === 0 ? (
+        <p className="text-xs text-muted-foreground text-center py-4">No notes yet. Add your first note above.</p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {[...notes].reverse().map((note, ri) => {
+            const origIdx = notes.length - 1 - ri
+            const color = noteColors[origIdx % noteColors.length]
+            const rot = rotations[origIdx % rotations.length]
+            return (
+              <div
+                key={ri}
+                className={`relative rounded-sm border-l-4 px-4 pt-3 pb-4 shadow-md transition-transform hover:scale-[1.01] ${color} ${rot}`}
+              >
+                {/* Pin */}
+                <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-white/60 border border-white/80 shadow-sm" />
+
+                {/* Header */}
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold opacity-50 leading-none">#{notes.length - ri}</span>
+                    <time className="text-[10px] opacity-60 leading-none">{fmtAt(note.at)}</time>
+                    {note.author && (
+                      <span className="text-[10px] font-semibold opacity-70">· {note.author}</span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    title="Delete note"
+                    onClick={() => { if (confirm('Delete this note?')) onDelete(origIdx) }}
+                    className="opacity-40 hover:opacity-80 transition-opacity cursor-pointer"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+
+                {/* Text */}
+                <p className="text-sm leading-relaxed whitespace-pre-wrap break-words font-medium">{note.text}</p>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Section divider row ────────────────────────────────────────────────────────
 function SectionRow({ label, count, total, tone, action }: {
   label: string; count: number; total: number; tone: string; action?: React.ReactNode
@@ -1019,6 +1117,19 @@ export default function ContractDetail() {
       setSendingInvoiceId(null)
       setError(apiError(e))
     },
+  })
+
+  const addNote = useMutation({
+    mutationFn: (text: string) =>
+      api.post(`/contracts/${id}/notes`, { text, author: user?.name || '' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['contract', id] }),
+    onError: (e) => setError(apiError(e)),
+  })
+
+  const deleteNote = useMutation({
+    mutationFn: (idx: number) => api.delete(`/contracts/${id}/notes/${idx}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['contract', id] }),
+    onError: (e) => setError(apiError(e)),
   })
 
   const createSigningLink = useMutation({
@@ -1477,6 +1588,23 @@ export default function ContractDetail() {
             </tbody>
           </Table>
         )}
+      </Card>
+
+      {/* ── Notes & Follow-ups timeline ── */}
+      <Card className="mt-4">
+        <CardHeader
+          title="Notes & Follow-ups"
+          subtitle={c.timeline?.length ? `${c.timeline.length} note${c.timeline.length !== 1 ? 's' : ''}` : 'Track conversations and follow-ups'}
+          action={<MessageSquare size={15} className="text-muted-foreground" />}
+        />
+        <CardBody className="pt-0 space-y-4">
+          <ContractTimeline
+            notes={c.timeline || []}
+            onAdd={(text) => addNote.mutate(text)}
+            onDelete={(idx) => deleteNote.mutate(idx)}
+            addBusy={addNote.isPending}
+          />
+        </CardBody>
       </Card>
 
       {/* ── Modals ── */}

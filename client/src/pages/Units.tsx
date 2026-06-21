@@ -83,12 +83,19 @@ export default function Units() {
 
   const filtered = useMemo(
     () =>
-      (units || []).filter(
-        (u) =>
-          (!statusFilter || u.status === statusFilter) &&
-          (!floorFilter || u.floor === floorFilter) &&
-          (!search || u.unitNumber.toLowerCase().includes(search.toLowerCase()) || String(u.sizeSqf ?? '').includes(search))
-      ),
+      (units || [])
+        .filter(
+          (u) =>
+            (!statusFilter || u.status === statusFilter) &&
+            (!floorFilter || u.floor === floorFilter) &&
+            (!search || u.unitNumber.toLowerCase().includes(search.toLowerCase()) || String(u.sizeSqf ?? '').includes(search))
+        )
+        .sort((a, b) => {
+          const floorCmp = a.floor.localeCompare(b.floor)
+          if (floorCmp !== 0) return floorCmp
+          const norm = (s: string) => s.replace(/\s+/g, '')
+          return norm(a.unitNumber).localeCompare(norm(b.unitNumber), undefined, { numeric: true })
+        }),
     [units, statusFilter, floorFilter, search]
   )
 
@@ -111,6 +118,12 @@ export default function Units() {
 
   const updateUnit = useMutation({
     mutationFn: ({ id, ...body }: { id: string } & Partial<UnitBody>) => api.put(`/units/${id}`, body),
+    onSuccess: () => { invalidate(); setSelected(null); setError('') },
+    onError: (e) => setError(apiError(e)),
+  })
+
+  const deleteUnit = useMutation({
+    mutationFn: (id: string) => api.delete(`/units/${id}`),
     onSuccess: () => { invalidate(); setSelected(null); setError('') },
     onError: (e) => setError(apiError(e)),
   })
@@ -206,8 +219,9 @@ export default function Units() {
           <UnitDetail
             unit={selected}
             onUpdate={(body) => updateUnit.mutate({ id: selected._id, ...body })}
+            onDelete={() => deleteUnit.mutate(selected._id)}
             error={error}
-            busy={updateUnit.isPending}
+            busy={updateUnit.isPending || deleteUnit.isPending}
           />
         )}
       </Modal>
@@ -233,7 +247,8 @@ export default function Units() {
   )
 }
 
-function UnitDetail({ unit, onUpdate, error, busy }: { unit: Unit; onUpdate: (b: Partial<UnitBody>) => void; error: string; busy: boolean }) {
+function UnitDetail({ unit, onUpdate, onDelete, error, busy }: { unit: Unit; onUpdate: (b: Partial<UnitBody>) => void; onDelete: () => void; error: string; busy: boolean }) {
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const { data } = useQuery<{ unit: Unit; contracts: Contract[] }>({
     queryKey: ['unit', unit._id],
     queryFn: () => api.get(`/units/${unit._id}`).then((r) => r.data),
@@ -273,6 +288,22 @@ function UnitDetail({ unit, onUpdate, error, busy }: { unit: Unit; onUpdate: (b:
         <Link to={`/contracts/new?unit=${unit._id}`}>
           <Button type="button" variant="outline" className="w-full mt-1">New contract for this unit</Button>
         </Link>
+      )}
+      {!openContract && (
+        confirmDelete ? (
+          <div className="flex gap-2 mt-2">
+            <Button type="button" className="flex-1 bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={onDelete} disabled={busy}>
+              Yes, delete
+            </Button>
+            <Button type="button" variant="outline" className="flex-1" onClick={() => setConfirmDelete(false)}>
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <Button type="button" variant="outline" className="w-full mt-2 text-destructive hover:bg-destructive/10 border-destructive/30" onClick={() => setConfirmDelete(true)}>
+            Delete unit
+          </Button>
+        )
       )}
     </form>
   )

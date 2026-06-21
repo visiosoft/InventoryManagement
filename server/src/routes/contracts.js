@@ -720,6 +720,30 @@ router.post('/:id/generate-custom-invoice', async (req, res) => {
   res.status(201).json(await Invoice.findById(invoice._id).populate('customer', 'fullName email phone address'));
 });
 
+// Add a timeline note to a contract
+router.post('/:id/notes', async (req, res) => {
+  const contract = await Contract.findById(req.params.id);
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  const text = String(req.body?.text || '').trim();
+  if (!text) return res.status(400).json({ error: 'Note text is required' });
+  contract.timeline.push({ text, author: String(req.body?.author || '') });
+  await contract.save();
+  res.json(contract.timeline);
+});
+
+// Delete a timeline note by index
+router.delete('/:id/notes/:idx', async (req, res) => {
+  const contract = await Contract.findById(req.params.id);
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  const idx = Number(req.params.idx);
+  if (!Number.isInteger(idx) || idx < 0 || idx >= contract.timeline.length) {
+    return res.status(400).json({ error: 'Invalid note index' });
+  }
+  contract.timeline.splice(idx, 1);
+  await contract.save();
+  res.json(contract.timeline);
+});
+
 // Download the (unsigned) contract PDF.
 router.get('/:id/pdf', async (req, res) => {
   const contract = await populateAll(Contract.findById(req.params.id));

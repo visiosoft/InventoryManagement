@@ -215,6 +215,13 @@ const contractSchema = new Schema(
     authorizedPersons: [accessPersonSchema],
     signingToken: { type: String, default: null },
     signingTokenExpiry: { type: Date, default: null },
+    timeline: [
+      {
+        at: { type: Date, default: Date.now },
+        text: { type: String, default: '' },
+        author: { type: String, default: '' },
+      },
+    ],
   },
   { timestamps: true }
 );

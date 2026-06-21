@@ -298,6 +298,12 @@ export interface Expense {
 
 export type ContractStatus = 'draft' | 'pending_signature' | 'active' | 'ended' | 'cancelled'
 
+export interface ContractNote {
+  at: string
+  text: string
+  author: string
+}
+
 export interface Contract {
   _id: string
   contractNo: string
@@ -318,6 +324,7 @@ export interface Contract {
   nextPaymentDate?: string
   authorizedPersons?: AccessPerson[]
   notes?: string
+  timeline?: ContractNote[]
   createdAt?: string
 }
 
