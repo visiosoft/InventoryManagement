@@ -932,6 +932,11 @@ export default function ContractDetail() {
     queryFn: () => api.get(`/contracts/${id}`).then((r) => r.data),
   })
 
+  const autoInvoice = useMutation({
+    mutationFn: () => api.post(`/contracts/${id}/auto-invoices`, null, { params: { months: 3 } }),
+    onSuccess: () => invalidate(),
+  })
+
   function invalidate() {
     qc.invalidateQueries({ queryKey: ['contract', id] })
     qc.invalidateQueries({ queryKey: ['contracts'] })
@@ -1410,16 +1415,21 @@ export default function ContractDetail() {
           </Table>
         )}
 
-        {/* All-paid prompt — suggest generating next invoice */}
+        {/* All-paid prompt — auto-generate or open manual modal */}
         {payments.length > 0 && unpaidGroups.length === 0 && standalonePayments.filter(p => p.status !== 'paid').length === 0 && c.status === 'active' && (
           <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 mx-4 mb-4">
             <div>
               <div className="text-sm font-medium">All invoices paid</div>
-              <div className="text-xs text-muted-foreground">Ready to generate the next invoice period</div>
+              <div className="text-xs text-muted-foreground">Auto-generate the next period, or create a custom invoice</div>
             </div>
-            <Button size="sm" onClick={() => setShowInvoiceModal(true)}>
-              <FilePlus size={13} /> Generate next invoice
-            </Button>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => setShowInvoiceModal(true)}>
+                <FilePlus size={13} /> Custom
+              </Button>
+              <Button size="sm" onClick={() => autoInvoice.mutate()} disabled={autoInvoice.isPending}>
+                <FilePlus size={13} /> {autoInvoice.isPending ? 'Generating…' : 'Auto-generate'}
+              </Button>
+            </div>
           </div>
         )}
       </Card>

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { WhatsAppMessage } from '../models/index.js';
+import { sendWhatsAppText, whatsappSendConfigured, whatsappSendMissing } from '../services/whatsapp.js';
 
 const router = Router();
 
@@ -40,6 +41,31 @@ router.get('/conversations', async (_req, res) => {
         count: r.count,
         lastAt: r.lastAt,
     })));
+});
+
+router.post('/send', async (req, res) => {
+    if (!whatsappSendConfigured()) {
+        return res.status(400).json({ error: `WhatsApp not configured. Missing: ${whatsappSendMissing().join(', ')}` });
+    }
+    const { to, body } = req.body || {};
+    if (!to || !body) return res.status(400).json({ error: 'to and body are required' });
+
+    const result = await sendWhatsAppText({ to, body });
+
+    const phoneNormalized = String(to).replace(/\D/g, '');
+    await WhatsAppMessage.create({
+        messageId: result?.messages?.[0]?.id || '',
+        phone: to,
+        phoneNormalized,
+        direction: 'outbound',
+        type: 'text',
+        text: body,
+        status: 'sent',
+        occurredAt: new Date(),
+        raw: result,
+    });
+
+    res.json({ ok: true, result });
 });
 
 export default router;

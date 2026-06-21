@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Download, AlertCircle, CheckCircle2, Clock } from 'lucide-react'
+import { ArrowLeft, Download, AlertCircle, CheckCircle2, Clock, Pencil } from 'lucide-react'
 import { api, apiError, invoiceApi } from '../lib/api'
 import type { Invoice, InvoicePaymentEntry, InvoiceStatus } from '../lib/types'
 import {
@@ -241,10 +241,171 @@ function RecordPaymentModalContent({ invoiceId, onClose }: { invoiceId: string; 
     )
 }
 
+function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onClose: () => void; onSaved: () => void }) {
+    const [dueDate, setDueDate] = useState(invoice.dueDate ? new Date(invoice.dueDate).toISOString().slice(0, 10) : '')
+    const [subject, setSubject] = useState(invoice.subject || '')
+    const [notes, setNotes]     = useState(invoice.customerNotes || '')
+    const [items, setItems]     = useState(() =>
+        (invoice.items || []).map((it, i) => ({ ...it, sortOrder: it.sortOrder ?? i, discountPct: it.discountPct ?? 0 }))
+    )
+    const [err, setErr] = useState('')
+
+    function updateDiscount(idx: number, pct: number) {
+        setItems(prev => prev.map((it, i) => {
+            if (i !== idx) return it
+            const gross  = it.quantity * it.rate
+            const amount = Math.round((gross - gross * pct / 100) * 100) / 100
+            return { ...it, discountPct: pct, amount }
+        }))
+    }
+
+    function updateAmount(idx: number, val: number) {
+        setItems(prev => prev.map((it, i) => {
+            if (i !== idx) return it
+            const isWeekly = String(it.itemDetails).startsWith('Week ')
+            // For extra items (non-weekly), mirror rate = amount so server computes correctly
+            return isWeekly ? { ...it, amount: val } : { ...it, amount: val, rate: val }
+        }))
+    }
+
+    function updateDesc(idx: number, desc: string) {
+        setItems(prev => prev.map((it, i) => i !== idx ? it : { ...it, itemDetails: desc }))
+    }
+
+    function removeItem(idx: number) {
+        setItems(prev => prev.filter((_, i) => i !== idx))
+    }
+
+    function addExtra() {
+        setItems(prev => [...prev, { sortOrder: prev.length, itemDetails: '', quantity: 1, rate: 0, discountPct: 0, amount: 0 }])
+    }
+
+    const save = useMutation({
+        mutationFn: () => api.put(`/invoices/${invoice._id}`, {
+            customer: (invoice.customer as any)?._id ?? invoice.customer,
+            invoiceDate: invoice.invoiceDate,
+            dueDate,
+            subject,
+            customerNotes: notes,
+            items: items.map((it, i) => ({ ...it, sortOrder: i })),
+            orderNumber: invoice.orderNumber,
+            terms: invoice.terms,
+            bankInformation: invoice.bankInformation,
+            salesperson: invoice.salesperson,
+            paymentMade: invoice.paymentMade ?? 0,
+            status: invoice.status,
+            total: items.reduce((s, it) => s + Number(it.amount || 0), 0),
+        }),
+        onSuccess: () => onSaved(),
+        onError: (e) => setErr(apiError(e)),
+    })
+
+    const subTotal = items.reduce((s, it) => s + Number(it.amount || 0), 0)
+
+    return (
+        <Modal open wide title={`Edit ${invoice.invoiceNo}`} onClose={onClose}>
+            <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                    <Field label="Due Date">
+                        <Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+                    </Field>
+                    <Field label="Subject">
+                        <Input value={subject} onChange={e => setSubject(e.target.value)} />
+                    </Field>
+                </div>
+
+                <div>
+                    <div className="text-xs font-semibold text-muted-foreground mb-2">Line items</div>
+                    <div className="rounded-lg border overflow-hidden">
+                        <table className="w-full text-sm">
+                            <thead className="bg-muted/50">
+                                <tr>
+                                    <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Description</th>
+                                    <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground w-24">Rate</th>
+                                    <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground w-24">Discount %</th>
+                                    <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground w-28">Amount (AED)</th>
+                                    <th className="w-8" />
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {items.map((it, idx) => {
+                                    const isWeekly = String(it.itemDetails).startsWith('Week ')
+                                    return (
+                                        <tr key={idx} className="border-t hover:bg-muted/30">
+                                            <td className="px-3 py-2">
+                                                {isWeekly
+                                                    ? <span className="text-xs text-muted-foreground">{it.itemDetails}</span>
+                                                    : <Input value={it.itemDetails} onChange={e => updateDesc(idx, e.target.value)}
+                                                        placeholder="Description" className="h-7 text-xs" />
+                                                }
+                                            </td>
+                                            <td className="px-3 py-2 text-right text-muted-foreground text-xs">
+                                                {it.rate > 0 ? formatMoney(it.rate) : '—'}
+                                            </td>
+                                            <td className="px-3 py-2 text-right">
+                                                {isWeekly
+                                                    ? <Input type="number" min={0} max={100} value={it.discountPct}
+                                                        onChange={e => updateDiscount(idx, Number(e.target.value))}
+                                                        className="h-7 text-xs w-20 ml-auto text-right" />
+                                                    : <span className="text-muted-foreground text-xs">—</span>
+                                                }
+                                            </td>
+                                            <td className="px-3 py-2 text-right">
+                                                {isWeekly
+                                                    ? <span className="font-medium text-xs">{formatMoney(it.amount)}</span>
+                                                    : <Input type="number" min={0} step="0.01" value={it.amount}
+                                                        onChange={e => updateAmount(idx, Number(e.target.value))}
+                                                        className="h-7 text-xs w-24 ml-auto text-right" />
+                                                }
+                                            </td>
+                                            <td className="px-3 py-2 text-center">
+                                                {!isWeekly && (
+                                                    <button onClick={() => removeItem(idx)}
+                                                        className="text-destructive hover:opacity-70 text-xs cursor-pointer">✕</button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    )
+                                })}
+                            </tbody>
+                            <tfoot>
+                                <tr className="border-t bg-muted/30">
+                                    <td colSpan={3} className="px-3 py-2">
+                                        <button onClick={addExtra} className="text-xs text-primary hover:underline cursor-pointer">
+                                            + Add extra charge / credit
+                                        </button>
+                                    </td>
+                                    <td className="px-3 py-2 text-right font-semibold text-sm">AED {formatMoney(subTotal)}</td>
+                                    <td />
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+
+                <Field label="Notes">
+                    <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Customer notes / memo" />
+                </Field>
+
+                <div className="flex items-center justify-between pt-3 border-t">
+                    {err && <p className="text-xs text-destructive">{err}</p>}
+                    <div className="flex gap-2 ml-auto">
+                        <Button variant="outline" onClick={onClose}>Cancel</Button>
+                        <Button onClick={() => save.mutate()} disabled={save.isPending}>
+                            {save.isPending ? 'Saving…' : 'Save changes'}
+                        </Button>
+                    </div>
+                </div>
+            </div>
+        </Modal>
+    )
+}
+
 export default function InvoiceDetail() {
     const { id } = useParams<{ id: string }>()
     const qc = useQueryClient()
-    const [paying, setPaying] = useState(false)
+    const [paying, setPaying]   = useState(false)
+    const [editing, setEditing] = useState(false)
 
     const { data: invoice, isLoading } = useQuery<Invoice>({
         queryKey: ['invoice', id],
@@ -320,6 +481,11 @@ export default function InvoiceDetail() {
                             disabled={updateStatus.isPending}
                         >
                             Mark as Sent
+                        </Button>
+                    )}
+                    {invoice.status !== 'cancelled' && (
+                        <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+                            <Pencil size={13} /> Edit
                         </Button>
                     )}
                     <Button size="sm" variant="outline" onClick={openPdf}>
@@ -565,6 +731,19 @@ export default function InvoiceDetail() {
             >
                 {id && <RecordPaymentModalContent invoiceId={id} onClose={() => setPaying(false)} />}
             </Modal>
+
+            {/* Edit Invoice modal */}
+            {editing && (
+                <EditInvoiceModal
+                    invoice={invoice}
+                    onClose={() => setEditing(false)}
+                    onSaved={() => {
+                        setEditing(false)
+                        qc.invalidateQueries({ queryKey: ['invoice', id] })
+                        qc.invalidateQueries({ queryKey: ['invoices'] })
+                    }}
+                />
+            )}
         </div>
     )
 }

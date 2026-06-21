@@ -136,12 +136,22 @@ router.post('/', async (req, res) => {
     unit: allUnitIds[0],
     units: allUnitIds.length > 1 ? allUnitIds : [],
     billingPeriod, rate, deposit, startDate, endDate, autoRenew, notes,
+    firstMonthDiscountPct: Number(req.body.firstMonthDiscountPct || 0),
     status: 'draft',
   });
 
   await Promise.all(allUnitIds.map((uid) => syncUnitStatus(uid)));
 
-  res.status(201).json(await populateAll(Contract.findById(contract._id)));
+  // Generate invoices synchronously so they're ready when the client lands on the detail page.
+  // Errors here must not fail the contract creation itself.
+  const populated = await populateAll(Contract.findById(contract._id));
+  try {
+    await generateMissingPeriodInvoices(populated, new Date(Date.now() + 90 * 86400000));
+  } catch (e) {
+    console.error('Invoice pre-generation failed for', contract.contractNo, e.message);
+  }
+
+  res.status(201).json(populated);
 });
 
 // Generate a unique signing link for the customer.
@@ -205,6 +215,21 @@ router.post('/:id/send-signature', async (req, res) => {
   }
 });
 
+// Fire-and-forget: generate all missing 4-week invoices for a contract.
+// Works for draft, pending_signature, and active contracts.
+async function autoInvoiceAfterActivation(contractId) {
+  try {
+    const c = await Contract.findById(contractId)
+      .populate('customer', '_id fullName email')
+      .populate('unit', 'unitNumber');
+    if (c && !['ended', 'cancelled'].includes(c.status)) {
+      await generateMissingPeriodInvoices(c, new Date(Date.now() + 90 * 86400000));
+    }
+  } catch (e) {
+    console.error('Auto-invoice generation error:', e.message);
+  }
+}
+
 // Marks the contract signed → active. Called by the Zoho webhook, or manually
 // ("simulate signed" in mock mode / paper signature).
 async function markSigned(contractId) {
@@ -251,6 +276,7 @@ async function markSigned(contractId) {
   await contract.save();
   const signedUnitIds = contract.units?.length ? contract.units.map((u) => u._id ?? u) : [contract.unit._id];
   await Promise.all(signedUnitIds.map((uid) => syncUnitStatus(uid)));
+  autoInvoiceAfterActivation(contract._id); // non-blocking
   return contract;
 }
 
@@ -296,6 +322,7 @@ router.post('/:id/activate', async (req, res) => {
 
   const activateUnitIds = contract.units?.length ? contract.units : [contract.unit];
   await Promise.all(activateUnitIds.map((uid) => syncUnitStatus(uid)));
+  autoInvoiceAfterActivation(contract._id); // non-blocking
   res.json(await populateAll(Contract.findById(contract._id)));
 });
 
@@ -401,6 +428,7 @@ router.post('/:id/sign-inperson', async (req, res) => {
       ? contract.units.map((u) => u._id ?? u)
       : [contract.unit._id];
     await Promise.all(signedUnitIds.map((uid) => syncUnitStatus(uid)));
+    autoInvoiceAfterActivation(contract._id); // non-blocking
 
     res.json(await populateAll(Contract.findById(contract._id)));
   } catch (err) {
@@ -423,6 +451,149 @@ router.delete('/:id', async (req, res) => {
   await contract.deleteOne();
   await Promise.all(allUnitIds.map((uid) => syncUnitStatus(uid)));
   res.json({ ok: true });
+});
+
+// ── Auto-invoice generator ────────────────────────────────────────────────────
+// Walks 4-week periods from contract start, skips periods that already have an
+// invoiced payment, creates Invoice + Payment records for the rest.
+async function generateMissingPeriodInvoices(contract, cutoffDate) {
+  const fmt = (d) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const contractStart = new Date(contract.startDate);
+  const contractEnd   = new Date(contract.endDate);
+  const cutoff        = cutoffDate || new Date(Date.now() + 90 * 86400000); // default 3 months ahead
+  const until         = contractEnd < cutoff ? contractEnd : cutoff;
+
+  const monthlyRate  = Number(contract.rate || 0);
+  const weeklyRate   = Math.round((monthlyRate / 4) * 100) / 100;
+  const unitNo       = contract.unit?.unitNumber || '-';
+  const customerId   = contract.customer?._id || contract.customer;
+
+  // Determine discount: stored field first, then infer from first existing payment
+  let discountPct = Number(contract.firstMonthDiscountPct || 0);
+  if (!discountPct && weeklyRate > 0) {
+    const firstPayment = await Payment.findOne({ contract: contract._id, invoice: { $ne: null } }).sort({ dueDate: 1 });
+    if (firstPayment) {
+      const actual = Number(firstPayment.amount);
+      if (actual > 0 && actual < weeklyRate) {
+        discountPct = Math.round((1 - actual / weeklyRate) * 100);
+      }
+    }
+  }
+
+  let generated = 0;
+  const periodStart = new Date(contractStart);
+
+  while (periodStart < until) {
+    const periodEnd = new Date(periodStart);
+    periodEnd.setDate(periodEnd.getDate() + 28);
+
+    // Skip if any invoiced payment already exists in this window
+    const exists = await Payment.findOne({
+      contract: contract._id,
+      invoice: { $ne: null },
+      dueDate: { $gte: periodStart, $lt: periodEnd },
+    });
+
+    if (!exists) {
+      const effectiveEnd  = periodEnd < contractEnd ? periodEnd : contractEnd;
+      const totalDays     = Math.round((effectiveEnd - periodStart) / 86400000);
+      const totalWeeks    = Math.max(1, Math.ceil(totalDays / 7));
+      const daysSinceStart   = Math.round((periodStart - contractStart) / 86400000);
+      const globalWeekOffset = Math.max(0, Math.floor(daysSinceStart / 7));
+
+      const items = [];
+      for (let i = 0; i < totalWeeks; i++) {
+        const ws = new Date(periodStart);
+        ws.setDate(ws.getDate() + i * 7);
+        const discounted = discountPct > 0 && (globalWeekOffset + i) < 4;
+        const amount = discounted
+          ? Math.round(weeklyRate * (1 - discountPct / 100) * 100) / 100
+          : weeklyRate;
+        items.push({
+          sortOrder: i,
+          itemDetails: `Week ${globalWeekOffset + i + 1}: ${fmt(ws)} · Unit ${unitNo}`,
+          quantity: 1, rate: weeklyRate,
+          discountPct: discounted ? discountPct : 0,
+          amount,
+        });
+      }
+
+      const subTotal = Math.round(items.reduce((s, it) => s + it.amount, 0) * 100) / 100;
+      const displayEnd = new Date(effectiveEnd); displayEnd.setDate(displayEnd.getDate() - 1);
+
+      // Double-check right before writing — closes the race window between concurrent requests
+      const raceCheck = await Payment.findOne({
+        contract: contract._id,
+        invoice: { $ne: null },
+        dueDate: { $gte: periodStart, $lt: periodEnd },
+      });
+      if (raceCheck) { periodStart.setDate(periodStart.getDate() + 28); continue; }
+
+      const invoice = await Invoice.create({
+        invoiceNo: await nextInvoiceNo(),
+        customer: customerId,
+        invoiceDate: new Date(),
+        dueDate: periodStart,
+        orderNumber: contract.contractNo,
+        terms: 'Due on receipt',
+        subject: `Storage Rent ${fmt(periodStart)} – ${fmt(displayEnd)} · ${contract.contractNo}`,
+        items,
+        customerNotes: '',
+        subTotal, total: subTotal, paymentMade: 0, status: 'sent',
+      });
+
+      await Payment.insertMany(items.map((_item, i) => {
+        const ws = new Date(periodStart); ws.setDate(ws.getDate() + i * 7);
+        return {
+          contract: contract._id,
+          invoice: invoice._id,
+          amount: items[i].amount,
+          dueDate: ws,
+          status: periodStart <= new Date() ? 'pending' : 'pending',
+          notes: items[i].itemDetails,
+        };
+      }));
+
+      generated++;
+    }
+
+    periodStart.setDate(periodStart.getDate() + 28);
+  }
+
+  return generated;
+}
+
+// Auto-generate missing period invoices for ALL active contracts
+router.post('/auto-invoices', async (req, res) => {
+  const monthsAhead = Math.min(Number(req.query.months) || 3, 12);
+  const cutoff = new Date(Date.now() + monthsAhead * 30 * 86400000);
+
+  const contracts = await Contract.find({ status: { $in: ['draft', 'pending_signature', 'active'] } })
+    .populate('customer', 'fullName email')
+    .populate('unit', 'unitNumber');
+
+  let totalGenerated = 0;
+  const results = [];
+  for (const contract of contracts) {
+    const n = await generateMissingPeriodInvoices(contract, cutoff);
+    if (n > 0) { results.push({ contractNo: contract.contractNo, generated: n }); totalGenerated += n; }
+  }
+  res.json({ generated: totalGenerated, results });
+});
+
+// Auto-generate missing period invoices for ONE contract (any non-cancelled status)
+router.post('/:id/auto-invoices', async (req, res) => {
+  const contract = await populateAll(Contract.findById(req.params.id));
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  if (['ended', 'cancelled'].includes(contract.status)) {
+    return res.status(409).json({ error: 'Cannot generate invoices for an ended or cancelled contract' });
+  }
+
+  const monthsAhead = Math.min(Number(req.query.months) || 3, 12);
+  const cutoff = new Date(Date.now() + monthsAhead * 30 * 86400000);
+
+  const generated = await generateMissingPeriodInvoices(contract, cutoff);
+  res.json({ generated });
 });
 
 // Flexible invoice generator — called from the UI modal.

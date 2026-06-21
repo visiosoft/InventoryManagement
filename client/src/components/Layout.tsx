@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Box, Users, FileText, CreditCard, BarChart3, Building2, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, FileSpreadsheet, Truck, ShoppingCart, Wallet, PackageOpen, TrendingUp, UserCheck, UserCog, X } from 'lucide-react'
+import { LayoutDashboard, Box, Users, FileText, CreditCard, BarChart3, Building2, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, FileSpreadsheet, Truck, ShoppingCart, Wallet, PackageOpen, TrendingUp, UserCheck, UserCog, X, MessageCircle } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { cn } from '../lib/utils'
@@ -24,9 +24,10 @@ const navGroups = [
   {
     title: 'Sales',
     items: [
-      { to: '/customers', label: 'Customers', icon: Users,         perm: 'customers' },
+      { to: '/customers', label: 'Customers', icon: Users,          perm: 'customers' },
       { to: '/quotes',    label: 'Quotes',    icon: FileSpreadsheet, perm: 'quotes' },
-      { to: '/invoices',  label: 'Invoices',  icon: ReceiptText,   perm: 'invoices' },
+      { to: '/invoices',  label: 'Invoices',  icon: ReceiptText,    perm: 'invoices' },
+      { to: '/whatsapp',  label: 'WhatsApp',  icon: MessageCircle,  perm: undefined },
     ],
   },
   {

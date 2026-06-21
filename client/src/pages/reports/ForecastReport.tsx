@@ -1,7 +1,7 @@
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useRef, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, ChevronDown, ChevronRight, Download, TrendingUp, Users } from 'lucide-react'
+import { AlertTriangle, ChevronDown, ChevronRight, Download, RefreshCw, TrendingUp, Users } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { api } from '../../lib/api'
 import { Button, Card, CardBody, CardHeader, PageHeader, Spinner, Table, Td, Th } from '../../components/ui'
@@ -9,16 +9,57 @@ import { formatDate, formatMoney } from '../../lib/utils'
 import { CHART_STYLE, downloadCsv, StatCard, type ForecastData } from './shared'
 
 export default function ForecastReport() {
-  const [expanded, setExpanded] = useState<string | null>(null)
+  const [expanded, setExpanded]   = useState<string | null>(null)
+  const [syncMsg, setSyncMsg]     = useState<string | null>(null)
+  const hasSynced                 = useRef(false)
+  const qc                        = useQueryClient()
 
   const { data, isLoading } = useQuery<ForecastData>({
     queryKey: ['forecast'],
     queryFn: () => api.get('/reports/forecast', { params: { months: 6 } }).then(r => r.data),
   })
 
+  const sync = useMutation({
+    mutationFn: () => api.post('/contracts/auto-invoices', null, { params: { months: 3 } }).then(r => r.data),
+    onSuccess: (result) => {
+      if (result.generated > 0) {
+        setSyncMsg(`Generated ${result.generated} new invoice${result.generated !== 1 ? 's' : ''} for upcoming periods.`)
+        qc.invalidateQueries({ queryKey: ['forecast'] })
+      } else {
+        setSyncMsg('All upcoming invoices are up to date.')
+      }
+      setTimeout(() => setSyncMsg(null), 5000)
+    },
+  })
+
+  // Auto-sync once on first load
+  useEffect(() => {
+    if (!hasSynced.current) {
+      hasSynced.current = true
+      sync.mutate()
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div>
-      <PageHeader title="Payment Forecast" subtitle="Expected income per month from active contracts" />
+      <PageHeader
+        title="Payment Forecast"
+        subtitle="Expected income per month from active contracts"
+        action={
+          <Button size="sm" variant="outline" onClick={() => sync.mutate()} disabled={sync.isPending}>
+            <RefreshCw size={13} className={sync.isPending ? 'animate-spin' : ''} />
+            {sync.isPending ? 'Syncing…' : 'Sync invoices'}
+          </Button>
+        }
+      />
+
+      {/* Sync result banner */}
+      {syncMsg && (
+        <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5 text-sm text-primary flex items-center gap-2">
+          <RefreshCw size={13} />
+          {syncMsg}
+        </div>
+      )}
 
       {isLoading ? <Spinner /> : data && (
         <div className="space-y-5">

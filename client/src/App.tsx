@@ -44,6 +44,7 @@ import Purchases from './pages/Purchases'
 import Expenses from './pages/Expenses'
 import MovingInventory from './pages/MovingInventory'
 import UserManagement from './pages/UserManagement'
+import WhatsApp from './pages/WhatsApp'
 
 export default function App() {
   const { user } = useAuth()
@@ -92,6 +93,7 @@ export default function App() {
         <Route path="/reports/expiring"  element={<PermGuard module="reports_expiring"><ExpiringContractsReport /></PermGuard>} />
         <Route path="/users" element={<AdminGuard><UserManagement /></AdminGuard>} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/whatsapp" element={<WhatsApp />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

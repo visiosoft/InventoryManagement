@@ -1,11 +1,88 @@
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
+import { GripVertical } from 'lucide-react'
 import { Box, FileText, TrendingUp, AlertTriangle, Wallet } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
-import { api } from '../lib/api'
+import { api, apiError } from '../lib/api'
 import type { Summary } from '../lib/types'
-import { Card, CardHeader, CardBody, Badge, Spinner, PageHeader, EmptyState, Table, Th, Td } from '../components/ui'
+import { Card, CardHeader, CardBody, Badge, Spinner, PageHeader, EmptyState, Table, Th, Td, Button } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
+
+type WidgetId =
+  | 'stats'
+  | 'units-by-size'
+  | 'floor-occupancy'
+  | 'overdue-aging'
+  | 'expiring-contracts'
+  | 'top-delinquents'
+  | 'overdue-payments'
+
+const DASHBOARD_LAYOUT_KEY = 'pb_dashboard_layout_v1'
+
+const DEFAULT_LAYOUT: WidgetId[] = [
+  'stats',
+  'units-by-size',
+  'floor-occupancy',
+  'overdue-aging',
+  'expiring-contracts',
+  'top-delinquents',
+  'overdue-payments',
+]
+
+function safeLoadLayout() {
+  try {
+    const raw = localStorage.getItem(DASHBOARD_LAYOUT_KEY)
+    if (!raw) return DEFAULT_LAYOUT
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return DEFAULT_LAYOUT
+    const filtered = parsed.filter((x): x is WidgetId => DEFAULT_LAYOUT.includes(x as WidgetId))
+    const missing = DEFAULT_LAYOUT.filter((x) => !filtered.includes(x))
+    return [...filtered, ...missing]
+  } catch {
+    return DEFAULT_LAYOUT
+  }
+}
+
+function WidgetShell({
+  title,
+  subtitle,
+  id,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  children,
+}: {
+  title: string
+  subtitle?: string
+  id: WidgetId
+  onDragStart: (id: WidgetId) => void
+  onDragOver: (e: React.DragEvent<HTMLDivElement>) => void
+  onDrop: (id: WidgetId) => void
+  children: React.ReactNode
+}) {
+  return (
+    <div
+      draggable
+      onDragStart={() => onDragStart(id)}
+      onDragOver={onDragOver}
+      onDrop={() => onDrop(id)}
+    >
+      <Card className="overflow-hidden">
+        <CardHeader
+          title={
+            <span className="flex items-center gap-2">
+              <GripVertical size={14} className="text-muted-foreground" />
+              {title}
+            </span>
+          }
+          subtitle={subtitle}
+        />
+        <CardBody>{children}</CardBody>
+      </Card>
+    </div>
+  )
+}
 
 function StatCard({ icon: Icon, label, value, sub, tone }: { icon: typeof Box; label: string; value: string; sub?: string; tone: string }) {
   return (
@@ -25,12 +102,31 @@ function StatCard({ icon: Icon, label, value, sub, tone }: { icon: typeof Box; l
 }
 
 export default function Dashboard() {
-  const { data, isLoading } = useQuery<Summary>({
+  const [layout, setLayout] = useState<WidgetId[]>(() => safeLoadLayout())
+  const [dragged, setDragged] = useState<WidgetId | null>(null)
+
+  const { data, isLoading, isError, error, refetch } = useQuery<Summary>({
     queryKey: ['summary'],
     queryFn: () => api.get('/reports/summary').then((r) => r.data),
   })
 
-  if (isLoading || !data) return <Spinner />
+  if (isLoading) return <Spinner />
+
+  if (isError || !data) {
+    return (
+      <div>
+        <PageHeader title="Dashboard" subtitle="Facility overview at a glance" />
+        <Card>
+          <CardHeader title="Unable to load dashboard" subtitle={apiError(error)} />
+          <CardBody className="flex flex-wrap items-center gap-3">
+            <Button onClick={() => refetch()}>Retry</Button>
+            <span className="text-xs text-muted-foreground">If this keeps happening, verify backend API and login session.</span>
+          </CardBody>
+          <EmptyState message="Dashboard data is temporarily unavailable." />
+        </Card>
+      </div>
+    )
+  }
 
   const collectionRate = data.expectedThisMonth > 0
     ? Math.round((data.revenueThisMonth / data.expectedThisMonth) * 100)
@@ -86,77 +182,112 @@ export default function Dashboard() {
     .sort((a, b) => b.total - a.total || b.count - a.count)
     .slice(0, 5)
 
-  return (
-    <div>
-      <PageHeader title="Dashboard" subtitle="Facility overview at a glance" />
+  const totalUnits = data.byStatus.available + data.byStatus.occupied + data.byStatus.reserved + data.byStatus.maintenance
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
-        <StatCard icon={TrendingUp} label="Occupancy" value={`${data.occupancyPct}%`} sub={`${data.byStatus.occupied + data.byStatus.reserved} of ${data.byStatus.available + data.byStatus.occupied + data.byStatus.reserved} rentable units`} tone="bg-violet-500/15 text-violet-600 dark:text-violet-400" />
-        <StatCard icon={Box} label="Available units" value={String(data.byStatus.available)} sub={`${data.byStatus.maintenance} under construction`} tone="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" />
-        <StatCard icon={FileText} label="Active contracts" value={String(data.activeContracts)} sub={`${data.expiringContracts.length} expiring in 15 days`} tone="bg-blue-500/15 text-blue-600 dark:text-blue-400" />
-        <StatCard icon={TrendingUp} label="Revenue this month" value={formatMoney(data.revenueThisMonth)} sub={`${formatMoney(data.expectedThisMonth)} expected`} tone="bg-amber-500/15 text-amber-600 dark:text-amber-400" />
-        <StatCard icon={Wallet} label="Collection rate" value={`${collectionRate}%`} sub={`Gap: ${formatMoney(revenueGap)}`} tone="bg-cyan-500/15 text-cyan-600 dark:text-cyan-400" />
-        <StatCard icon={AlertTriangle} label="Revenue gap" value={formatMoney(revenueGap)} sub="Expected minus collected" tone="bg-rose-500/15 text-rose-600 dark:text-rose-400" />
-      </div>
+  const onDragStart = (id: WidgetId) => setDragged(id)
+  const onDragOver = (e: React.DragEvent<HTMLDivElement>) => e.preventDefault()
+  const onDrop = (targetId: WidgetId) => {
+    if (!dragged || dragged === targetId) return
+    const next = [...layout]
+    const from = next.indexOf(dragged)
+    const to = next.indexOf(targetId)
+    if (from < 0 || to < 0) return
+    next.splice(from, 1)
+    next.splice(to, 0, dragged)
+    setLayout(next)
+    setDragged(null)
+    localStorage.setItem(DASHBOARD_LAYOUT_KEY, JSON.stringify(next))
+  }
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-3">
-        <Card>
-          <CardHeader title="Units by size" subtitle="Available vs occupied per size" />
-          <CardBody>
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={data.bySize} barGap={2}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="sizeSqf" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={28} />
-                <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
-                <Bar dataKey="available" name="Available" fill="#10b981" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="occupied" name="Occupied" fill="#8b5cf6" radius={[3, 3, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardHeader title="Floor occupancy" subtitle="Available vs occupied by floor" />
-          <CardBody>
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={data.byFloor} barGap={2}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="floor" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={28} />
-                <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
-                <Bar dataKey="available" name="Available" fill="#10b981" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="occupied" name="Occupied" fill="#8b5cf6" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="maintenance" name="Maintenance" fill="#94a3b8" radius={[3, 3, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardHeader title="Overdue aging" subtitle="How old current overdues are" />
-          <CardBody>
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={overdueAging} barGap={6}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="bucket" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={28} />
-                <Tooltip
-                  contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
-                />
-                <Bar dataKey="count" name="count" fill="#ef4444" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="amount" name="amount" fill="#f59e0b" radius={[3, 3, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardBody>
-        </Card>
-
-      </div>
-
-      <div className="mt-5 grid gap-4 lg:grid-cols-2">
-
-        <Card>
-          <CardHeader title="Contracts expiring soon" subtitle="Next 15 days" />
+  const widgets = useMemo<Record<WidgetId, React.ReactNode>>(
+    () => ({
+      stats: (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-8">
+          <StatCard icon={TrendingUp} label="Occupancy" value={`${data.occupancyPct}%`} sub={`${data.byStatus.occupied + data.byStatus.reserved} of ${totalUnits} units`} tone="bg-violet-500/15 text-violet-600 dark:text-violet-400" />
+          <StatCard icon={Box} label="Available units" value={String(data.byStatus.available)} sub="Ready to rent" tone="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" />
+          <StatCard icon={Box} label="Reserved units" value={String(data.byStatus.reserved)} sub="Booked, not occupied" tone="bg-orange-500/15 text-orange-600 dark:text-orange-400" />
+          <StatCard icon={Box} label="Maintenance" value={String(data.byStatus.maintenance)} sub="Unavailable stock" tone="bg-slate-500/15 text-slate-600 dark:text-slate-400" />
+          <StatCard icon={FileText} label="Active contracts" value={String(data.activeContracts)} sub={`${data.expiringContracts.length} expiring in 15 days`} tone="bg-blue-500/15 text-blue-600 dark:text-blue-400" />
+          <StatCard icon={TrendingUp} label="Revenue this month" value={formatMoney(data.revenueThisMonth)} sub={`${formatMoney(data.expectedThisMonth)} expected`} tone="bg-amber-500/15 text-amber-600 dark:text-amber-400" />
+          <StatCard icon={Wallet} label="Collection rate" value={`${collectionRate}%`} sub={`Gap: ${formatMoney(revenueGap)}`} tone="bg-cyan-500/15 text-cyan-600 dark:text-cyan-400" />
+          <StatCard icon={AlertTriangle} label="Revenue gap" value={formatMoney(revenueGap)} sub="Expected minus collected" tone="bg-rose-500/15 text-rose-600 dark:text-rose-400" />
+        </div>
+      ),
+      'units-by-size': (
+        <WidgetShell
+          id="units-by-size"
+          title="Units by size"
+          subtitle="Available vs occupied per size"
+          onDragStart={onDragStart}
+          onDragOver={onDragOver}
+          onDrop={onDrop}
+        >
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={data.bySize} barGap={2}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+              <XAxis dataKey="sizeSqf" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={28} />
+              <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
+              <Bar dataKey="available" name="Available" fill="#10b981" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="occupied" name="Occupied" fill="#8b5cf6" radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </WidgetShell>
+      ),
+      'floor-occupancy': (
+        <WidgetShell
+          id="floor-occupancy"
+          title="Floor occupancy"
+          subtitle="Available vs occupied by floor"
+          onDragStart={onDragStart}
+          onDragOver={onDragOver}
+          onDrop={onDrop}
+        >
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={data.byFloor} barGap={2}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+              <XAxis dataKey="floor" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={28} />
+              <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
+              <Bar dataKey="available" name="Available" fill="#10b981" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="occupied" name="Occupied" fill="#8b5cf6" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="maintenance" name="Maintenance" fill="#94a3b8" radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </WidgetShell>
+      ),
+      'overdue-aging': (
+        <WidgetShell
+          id="overdue-aging"
+          title="Overdue aging"
+          subtitle="How old current overdues are"
+          onDragStart={onDragStart}
+          onDragOver={onDragOver}
+          onDrop={onDrop}
+        >
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={overdueAging} barGap={6}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+              <XAxis dataKey="bucket" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={28} />
+              <Tooltip
+                contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
+              />
+              <Bar dataKey="count" name="count" fill="#ef4444" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="amount" name="amount" fill="#f59e0b" radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </WidgetShell>
+      ),
+      'expiring-contracts': (
+        <WidgetShell
+          id="expiring-contracts"
+          title="Contracts expiring soon"
+          subtitle="Next 15 days"
+          onDragStart={onDragStart}
+          onDragOver={onDragOver}
+          onDrop={onDrop}
+        >
           {data.expiringContracts.length === 0 ? (
             <EmptyState message="No contracts expiring in the next 15 days." />
           ) : (
@@ -166,7 +297,7 @@ export default function Dashboard() {
                 const endFmt = new Date(c.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
                 const urgency = daysLeft <= 3 ? 'text-destructive' : daysLeft <= 7 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'
                 return (
-                  <li key={c._id} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-muted/40">
+                  <li key={c._id} className="flex items-center justify-between gap-3 py-3 hover:bg-muted/40">
                     <div className="min-w-0">
                       <span className="font-medium text-sm">{c.customer?.fullName}</span>
                       <span className="text-muted-foreground text-sm"> — {c.unit?.unitNumber} — </span>
@@ -178,10 +309,17 @@ export default function Dashboard() {
               })}
             </ul>
           )}
-        </Card>
-
-        <Card>
-          <CardHeader title="Top delinquent customers" subtitle="Highest current overdue balances" />
+        </WidgetShell>
+      ),
+      'top-delinquents': (
+        <WidgetShell
+          id="top-delinquents"
+          title="Top delinquent customers"
+          subtitle="Highest current overdue balances"
+          onDragStart={onDragStart}
+          onDragOver={onDragOver}
+          onDrop={onDrop}
+        >
           {topDelinquents.length === 0 ? (
             <EmptyState message="No customers with overdue balances." />
           ) : (
@@ -205,34 +343,90 @@ export default function Dashboard() {
               </tbody>
             </Table>
           )}
-        </Card>
-      </div>
-
-      <Card className="mt-5">
-        <CardHeader
-          title={<span className="flex items-center gap-2"><AlertTriangle size={14} className="text-destructive" /> Overdue payments</span>}
+        </WidgetShell>
+      ),
+      'overdue-payments': (
+        <WidgetShell
+          id="overdue-payments"
+          title="Overdue payments"
           subtitle="Pending payments past their due date"
-        />
-        {data.overduePayments.length === 0 ? (
-          <EmptyState message="No overdue payments. 🎉" />
-        ) : (
-          <Table>
-            <thead><tr><Th>Customer</Th><Th>Contract</Th><Th>Unit</Th><Th>Due date</Th><Th>Amount</Th><Th /></tr></thead>
-            <tbody>
-              {data.overduePayments.map((p) => (
-                <tr key={p._id} className="hover:bg-muted/50">
-                  <Td>{p.contract?.customer?.fullName}</Td>
-                  <Td><Link className="text-primary font-medium hover:underline" to={`/contracts/${p.contract?._id}`}>{p.contract?.contractNo}</Link></Td>
-                  <Td>{p.contract?.unit?.unitNumber}</Td>
-                  <Td>{formatDate(p.dueDate)}</Td>
-                  <Td className="font-medium">{formatMoney(p.amount)}</Td>
-                  <Td><Badge tone="red">Overdue</Badge></Td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        )}
-      </Card>
+          onDragStart={onDragStart}
+          onDragOver={onDragOver}
+          onDrop={onDrop}
+        >
+          {data.overduePayments.length === 0 ? (
+            <EmptyState message="No overdue payments." />
+          ) : (
+            <Table>
+              <thead><tr><Th>Customer</Th><Th>Contract</Th><Th>Unit</Th><Th>Due date</Th><Th>Amount</Th><Th /></tr></thead>
+              <tbody>
+                {data.overduePayments.map((p) => (
+                  <tr key={p._id} className="hover:bg-muted/50">
+                    <Td>{p.contract?.customer?.fullName}</Td>
+                    <Td><Link className="text-primary font-medium hover:underline" to={`/contracts/${p.contract?._id}`}>{p.contract?.contractNo}</Link></Td>
+                    <Td>{p.contract?.unit?.unitNumber}</Td>
+                    <Td>{formatDate(p.dueDate)}</Td>
+                    <Td className="font-medium">{formatMoney(p.amount)}</Td>
+                    <Td><Badge tone="red">Overdue</Badge></Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </WidgetShell>
+      ),
+    }),
+    [collectionRate, data, overdueAging, onDrop, revenueGap, topDelinquents, totalUnits]
+  )
+
+  return (
+    <div>
+      <PageHeader title="Dashboard" subtitle="Facility overview at a glance (drag cards to reorder)" />
+
+      <div className="space-y-5">
+        {layout.map((id) => {
+          if (id === 'stats') {
+            return (
+              <div key={id} draggable onDragStart={() => onDragStart(id)} onDragOver={onDragOver} onDrop={() => onDrop(id)}>
+                <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground"><GripVertical size={14} /> KPI Cards</div>
+                {widgets[id]}
+              </div>
+            )
+          }
+
+          if (id === 'units-by-size' || id === 'floor-occupancy' || id === 'overdue-aging') {
+            const peerIds: WidgetId[] = ['units-by-size', 'floor-occupancy', 'overdue-aging']
+            const first = peerIds.find((x) => layout.includes(x))
+            if (id !== first) return null
+            return (
+              <div key="charts-grid" className="grid gap-4 lg:grid-cols-3">
+                {peerIds.filter((x) => layout.includes(x)).map((x) => (
+                  <div key={x}>{widgets[x]}</div>
+                ))}
+              </div>
+            )
+          }
+
+          if (id === 'expiring-contracts' || id === 'top-delinquents') {
+            const peerIds: WidgetId[] = ['expiring-contracts', 'top-delinquents']
+            const first = peerIds.find((x) => layout.includes(x))
+            if (id !== first) return null
+            return (
+              <div key="middle-grid" className="grid gap-4 lg:grid-cols-2">
+                {peerIds.filter((x) => layout.includes(x)).map((x) => (
+                  <div key={x}>{widgets[x]}</div>
+                ))}
+              </div>
+            )
+          }
+
+          if (id === 'overdue-payments') {
+            return <div key={id}>{widgets[id]}</div>
+          }
+
+          return null
+        })}
+      </div>
     </div>
   )
 }

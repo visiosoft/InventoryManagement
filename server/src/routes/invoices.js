@@ -27,7 +27,10 @@ function mapItem(item, idx) {
     const rate = toNumber(item.rate);
     const discountPct = toNumber(item.discountPct);
     const gross = quantity * rate;
-    const amount = Number((gross - (gross * discountPct) / 100).toFixed(2));
+    // When rate is 0 (extra/custom items), use the direct amount field rather than computing 0
+    const amount = rate === 0
+        ? Number(toNumber(item.amount).toFixed(2))
+        : Number((gross - (gross * discountPct) / 100).toFixed(2));
     return {
         sortOrder: toNumber(item.sortOrder, idx),
         itemDetails: String(item.itemDetails || '').trim(),
@@ -130,6 +133,19 @@ router.put('/:id', async (req, res) => {
 
     Object.assign(invoice, body);
     await invoice.save();
+
+    // Sync all linked payment amounts to match updated invoice items
+    const payments = await Payment.find({ invoice: invoice._id }).sort({ dueDate: 1 });
+    const sortedItems = [...body.items].sort((a, b) => a.sortOrder - b.sortOrder);
+    for (let i = 0; i < payments.length; i++) {
+        const item = sortedItems[i];
+        if (item) {
+            payments[i].amount = item.amount;
+            payments[i].notes = item.itemDetails;
+            await payments[i].save();
+        }
+    }
+
     res.json(await invoice.populate('customer', 'fullName email'));
 });
 

@@ -171,3 +171,30 @@ export const expenseApi = {
       )
       .then((r) => r.data),
 }
+
+export type WhatsAppMsg = {
+  _id: string
+  messageId: string
+  phone: string
+  phoneNormalized: string
+  direction: 'inbound' | 'outbound'
+  type: string
+  text: string
+  status: string
+  occurredAt: string
+  lead?: { _id: string; fullName: string; phone: string; status: string; source: string }
+}
+
+export type WhatsAppConversation = {
+  phoneNormalized: string
+  phone: string
+  count: number
+  lastAt: string
+}
+
+export const whatsappApi = {
+  conversations: () => api.get<WhatsAppConversation[]>('/whatsapp/conversations').then((r) => r.data),
+  messages: (phone?: string) =>
+    api.get<WhatsAppMsg[]>('/whatsapp/messages', { params: phone ? { phone } : {} }).then((r) => r.data),
+  send: (to: string, body: string) => api.post<{ ok: boolean }>('/whatsapp/send', { to, body }).then((r) => r.data),
+}
