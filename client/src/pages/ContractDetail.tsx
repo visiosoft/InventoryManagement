@@ -991,10 +991,29 @@ export default function ContractDetail() {
   })
 
   const sendInvoiceWhatsApp = useMutation({
-    mutationFn: (invoiceId: string) => api.post(`/invoices/${invoiceId}/whatsapp-send`),
-    onSuccess: () => {
+    mutationFn: (invoiceId: string) =>
+      api.post(`/invoices/${invoiceId}/share`).then((r) => r.data as { url: string }),
+    onSuccess: ({ url }) => {
+      const c = data?.contract
+      const phone = (c?.customer as any)?.phone?.replace(/\D/g, '') || ''
+      const invoiceNo = data?.payments
+        .find((p) => (p.invoice as any)?._id === sendingInvoiceId)
+        ?.invoice?.invoiceNo ?? ''
+      const text = [
+        `Hello ${(c?.customer as any)?.fullName ?? 'there'},`,
+        ``,
+        `Your invoice${invoiceNo ? ` *${invoiceNo}*` : ''} from PurpleBox is ready.`,
+        ``,
+        `View & download:`,
+        url,
+        ``,
+        `Thank you – PurpleBox`,
+      ].join('\n')
+      const waUrl = phone
+        ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
+        : `https://wa.me/?text=${encodeURIComponent(text)}`
+      window.open(waUrl, '_blank', 'noopener,noreferrer')
       setSendingInvoiceId(null)
-      alert('Invoice sent on WhatsApp')
     },
     onError: (e) => {
       setSendingInvoiceId(null)

@@ -110,28 +110,16 @@ export default function Dashboard() {
     queryFn: () => api.get('/reports/summary').then((r) => r.data),
   })
 
-  if (isLoading) return <Spinner />
+  // ── All derived values must be computed before any early return so hooks
+  //    (useMemo below) are always called in the same order every render. ──────
 
-  if (isError || !data) {
-    return (
-      <div>
-        <PageHeader title="Dashboard" subtitle="Facility overview at a glance" />
-        <Card>
-          <CardHeader title="Unable to load dashboard" subtitle={apiError(error)} />
-          <CardBody className="flex flex-wrap items-center gap-3">
-            <Button onClick={() => refetch()}>Retry</Button>
-            <span className="text-xs text-muted-foreground">If this keeps happening, verify backend API and login session.</span>
-          </CardBody>
-          <EmptyState message="Dashboard data is temporarily unavailable." />
-        </Card>
-      </div>
-    )
-  }
-
-  const collectionRate = data.expectedThisMonth > 0
+  const collectionRate = data && data.expectedThisMonth > 0
     ? Math.round((data.revenueThisMonth / data.expectedThisMonth) * 100)
     : 0
-  const revenueGap = Math.max(0, data.expectedThisMonth - data.revenueThisMonth)
+  const revenueGap = data ? Math.max(0, data.expectedThisMonth - data.revenueThisMonth) : 0
+  const totalUnits = data
+    ? data.byStatus.available + data.byStatus.occupied + data.byStatus.reserved + data.byStatus.maintenance
+    : 0
 
   const now = Date.now()
   const overdueAging = [
@@ -139,50 +127,34 @@ export default function Dashboard() {
     { bucket: '8-30d', count: 0, amount: 0 },
     { bucket: '30+d', count: 0, amount: 0 },
   ]
-  for (const p of data.overduePayments) {
+  for (const p of data?.overduePayments ?? []) {
     const days = Math.max(1, Math.floor((now - new Date(p.dueDate).getTime()) / 86400000))
     if (days <= 7) {
-      overdueAging[0].count += 1
-      overdueAging[0].amount += p.amount || 0
+      overdueAging[0].count += 1; overdueAging[0].amount += p.amount || 0
     } else if (days <= 30) {
-      overdueAging[1].count += 1
-      overdueAging[1].amount += p.amount || 0
+      overdueAging[1].count += 1; overdueAging[1].amount += p.amount || 0
     } else {
-      overdueAging[2].count += 1
-      overdueAging[2].amount += p.amount || 0
+      overdueAging[2].count += 1; overdueAging[2].amount += p.amount || 0
     }
   }
 
   const delinquentMap = new Map<string, {
-    customerId: string
-    customerName: string
-    count: number
-    total: number
-    oldestDue: number
+    customerId: string; customerName: string; count: number; total: number; oldestDue: number
   }>()
-  for (const p of data.overduePayments) {
-    const id = p.contract?.customer?._id || p.contract?._id || 'unknown'
+  for (const p of data?.overduePayments ?? []) {
+    const pid = p.contract?.customer?._id || p.contract?._id || 'unknown'
     const dueTs = new Date(p.dueDate).getTime()
-    const hit = delinquentMap.get(id)
-    if (hit) {
-      hit.count += 1
-      hit.total += p.amount || 0
-      hit.oldestDue = Math.min(hit.oldestDue, dueTs)
-      continue
-    }
-    delinquentMap.set(id, {
+    const hit = delinquentMap.get(pid)
+    if (hit) { hit.count += 1; hit.total += p.amount || 0; hit.oldestDue = Math.min(hit.oldestDue, dueTs); continue }
+    delinquentMap.set(pid, {
       customerId: p.contract?.customer?._id || '',
       customerName: p.contract?.customer?.fullName || 'Unknown customer',
-      count: 1,
-      total: p.amount || 0,
-      oldestDue: dueTs,
+      count: 1, total: p.amount || 0, oldestDue: dueTs,
     })
   }
   const topDelinquents = [...delinquentMap.values()]
     .sort((a, b) => b.total - a.total || b.count - a.count)
     .slice(0, 5)
-
-  const totalUnits = data.byStatus.available + data.byStatus.occupied + data.byStatus.reserved + data.byStatus.maintenance
 
   const onDragStart = (id: WidgetId) => setDragged(id)
   const onDragOver = (e: React.DragEvent<HTMLDivElement>) => e.preventDefault()
@@ -190,7 +162,7 @@ export default function Dashboard() {
     if (!dragged || dragged === targetId) return
     const next = [...layout]
     const from = next.indexOf(dragged)
-    const to = next.indexOf(targetId)
+    const to   = next.indexOf(targetId)
     if (from < 0 || to < 0) return
     next.splice(from, 1)
     next.splice(to, 0, dragged)
@@ -200,7 +172,9 @@ export default function Dashboard() {
   }
 
   const widgets = useMemo<Record<WidgetId, React.ReactNode>>(
-    () => ({
+    () => {
+      if (!data) return {} as Record<WidgetId, React.ReactNode>
+      return ({
       stats: (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-8">
           <StatCard icon={TrendingUp} label="Occupancy" value={`${data.occupancyPct}%`} sub={`${data.byStatus.occupied + data.byStatus.reserved} of ${totalUnits} units`} tone="bg-violet-500/15 text-violet-600 dark:text-violet-400" />
@@ -375,9 +349,28 @@ export default function Dashboard() {
           )}
         </WidgetShell>
       ),
-    }),
+      })
+    },
     [collectionRate, data, overdueAging, onDrop, revenueGap, topDelinquents, totalUnits]
   )
+
+  // Early returns come AFTER all hooks so hook call order is always stable
+  if (isLoading) return <Spinner />
+  if (isError || !data) {
+    return (
+      <div>
+        <PageHeader title="Dashboard" subtitle="Facility overview at a glance" />
+        <Card>
+          <CardHeader title="Unable to load dashboard" subtitle={apiError(error)} />
+          <CardBody className="flex flex-wrap items-center gap-3">
+            <Button onClick={() => refetch()}>Retry</Button>
+            <span className="text-xs text-muted-foreground">If this keeps happening, verify the backend API and login session.</span>
+          </CardBody>
+          <EmptyState message="Dashboard data is temporarily unavailable." />
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div>
