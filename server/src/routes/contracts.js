@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import crypto from 'crypto';
+import { isValidObjectId } from 'mongoose';
 import { stampSignature } from '../services/stampSignature.js';
 import { Contract, Customer, Unit, Payment, Document, Invoice, nextContractNo, nextInvoiceNo } from '../models/index.js';
 import { generateSchedule } from '../services/schedule.js';
@@ -22,6 +23,13 @@ function buildContractPdf(contract, signedDate) {
 }
 
 const router = Router();
+
+router.param('id', (req, res, next, id) => {
+  if (!isValidObjectId(id)) {
+    return res.status(400).json({ error: 'Invalid contract id' });
+  }
+  next();
+});
 
 const populateAll = (q) => q.populate('customer').populate('unit').populate('units');
 
@@ -85,6 +93,33 @@ router.get('/', async (req, res) => {
   }
   const contracts = await populateAll(Contract.find(filter)).sort({ createdAt: -1 });
   res.json(contracts);
+});
+
+// Latest notes across all contracts (for dashboard)
+router.get('/latest-notes', async (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 30, 100);
+  const notes = await Contract.aggregate([
+    { $match: { 'timeline.0': { $exists: true } } },
+    { $unwind: '$timeline' },
+    { $sort: { 'timeline.at': -1 } },
+    { $limit: limit },
+    { $lookup: { from: 'customers', localField: 'customer', foreignField: '_id', as: '_cust' } },
+    {
+      $project: {
+        contractNo: 1,
+        note: '$timeline',
+        customer: { $arrayElemAt: ['$_cust', 0] },
+      },
+    },
+  ]);
+  res.json(notes.map((n) => ({
+    contractId: n._id,
+    contractNo: n.contractNo,
+    customerName: n.customer?.fullName || '',
+    at: n.note.at,
+    text: n.note.text,
+    author: n.note.author,
+  })));
 });
 
 router.get('/:id', async (req, res) => {
@@ -459,14 +494,14 @@ router.delete('/:id', async (req, res) => {
 async function generateMissingPeriodInvoices(contract, cutoffDate) {
   const fmt = (d) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   const contractStart = new Date(contract.startDate);
-  const contractEnd   = new Date(contract.endDate);
-  const cutoff        = cutoffDate || new Date(Date.now() + 90 * 86400000); // default 3 months ahead
-  const until         = contractEnd < cutoff ? contractEnd : cutoff;
+  const contractEnd = new Date(contract.endDate);
+  const cutoff = cutoffDate || new Date(Date.now() + 90 * 86400000); // default 3 months ahead
+  const until = contractEnd < cutoff ? contractEnd : cutoff;
 
-  const monthlyRate  = Number(contract.rate || 0);
-  const weeklyRate   = Math.round((monthlyRate / 4) * 100) / 100;
-  const unitNo       = contract.unit?.unitNumber || '-';
-  const customerId   = contract.customer?._id || contract.customer;
+  const monthlyRate = Number(contract.rate || 0);
+  const weeklyRate = Math.round((monthlyRate / 4) * 100) / 100;
+  const unitNo = contract.unit?.unitNumber || '-';
+  const customerId = contract.customer?._id || contract.customer;
 
   // Determine discount: stored field first, then infer from first existing payment
   let discountPct = Number(contract.firstMonthDiscountPct || 0);
@@ -495,10 +530,10 @@ async function generateMissingPeriodInvoices(contract, cutoffDate) {
     });
 
     if (!exists) {
-      const effectiveEnd  = periodEnd < contractEnd ? periodEnd : contractEnd;
-      const totalDays     = Math.round((effectiveEnd - periodStart) / 86400000);
-      const totalWeeks    = Math.max(1, Math.ceil(totalDays / 7));
-      const daysSinceStart   = Math.round((periodStart - contractStart) / 86400000);
+      const effectiveEnd = periodEnd < contractEnd ? periodEnd : contractEnd;
+      const totalDays = Math.round((effectiveEnd - periodStart) / 86400000);
+      const totalWeeks = Math.max(1, Math.ceil(totalDays / 7));
+      const daysSinceStart = Math.round((periodStart - contractStart) / 86400000);
       const globalWeekOffset = Math.max(0, Math.floor(daysSinceStart / 7));
 
       const items = [];
@@ -640,20 +675,20 @@ router.post('/:id/generate-custom-invoice', async (req, res) => {
   // ── Period invoice (weekly breakdown) ────────────────────────────────────
   if (!startDate || !endDate) return res.status(400).json({ error: 'startDate and endDate are required' });
 
-  const start       = new Date(startDate);
-  const end         = new Date(endDate);
-  const totalDays   = Math.round((end - start) / 86400000);
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const totalDays = Math.round((end - start) / 86400000);
   if (totalDays <= 0) return res.status(400).json({ error: 'End date must be after start date' });
 
   // rate is monthly price; weekly payment = rate / 4. Ceiling: any leftover day = full week.
-  const monthlyRate  = Number(contract.rate || 0);
-  const weeklyRate   = Math.round((monthlyRate / 4) * 100) / 100;
-  const totalWeeks   = Math.ceil(totalDays / 7);
-  const discountPct  = Math.max(0, Math.min(100, Number(rawDiscount || 0)));
+  const monthlyRate = Number(contract.rate || 0);
+  const weeklyRate = Math.round((monthlyRate / 4) * 100) / 100;
+  const totalWeeks = Math.ceil(totalDays / 7);
+  const discountPct = Math.max(0, Math.min(100, Number(rawDiscount || 0)));
 
   // Global week offset from contract start → discount only applies to first 4 weeks of entire contract.
-  const contractStart   = new Date(contract.startDate);
-  const daysSinceStart  = Math.round((start - contractStart) / 86400000);
+  const contractStart = new Date(contract.startDate);
+  const daysSinceStart = Math.round((start - contractStart) / 86400000);
   const globalWeekOffset = Math.max(0, Math.floor(daysSinceStart / 7));
 
   const items = [];
@@ -718,33 +753,6 @@ router.post('/:id/generate-custom-invoice', async (req, res) => {
   }));
 
   res.status(201).json(await Invoice.findById(invoice._id).populate('customer', 'fullName email phone address'));
-});
-
-// Latest notes across all contracts (for dashboard)
-router.get('/latest-notes', async (req, res) => {
-  const limit = Math.min(Number(req.query.limit) || 30, 100);
-  const notes = await Contract.aggregate([
-    { $match: { 'timeline.0': { $exists: true } } },
-    { $unwind: '$timeline' },
-    { $sort: { 'timeline.at': -1 } },
-    { $limit: limit },
-    { $lookup: { from: 'customers', localField: 'customer', foreignField: '_id', as: '_cust' } },
-    {
-      $project: {
-        contractNo: 1,
-        note: '$timeline',
-        customer: { $arrayElemAt: ['$_cust', 0] },
-      },
-    },
-  ]);
-  res.json(notes.map((n) => ({
-    contractId: n._id,
-    contractNo: n.contractNo,
-    customerName: n.customer?.fullName || '',
-    at: n.note.at,
-    text: n.note.text,
-    author: n.note.author,
-  })));
 });
 
 // Add a timeline note to a contract

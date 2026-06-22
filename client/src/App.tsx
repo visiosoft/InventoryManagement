@@ -45,6 +45,24 @@ import Expenses from './pages/Expenses'
 import MovingInventory from './pages/MovingInventory'
 import UserManagement from './pages/UserManagement'
 import WhatsApp from './pages/WhatsApp'
+import MovingDashboard from './pages/moving/MovingDashboard'
+import MovingLeads from './pages/moving/MovingLeads'
+import MovingLeadDetail from './pages/moving/MovingLeadDetail'
+import MovingJobs from './pages/moving/MovingJobs'
+import MovingJobDetail from './pages/moving/MovingJobDetail'
+import NewMovingJob from './pages/moving/NewMovingJob'
+import MovingSchedule from './pages/moving/MovingSchedule'
+import MovingDispatch from './pages/moving/MovingDispatch'
+import Workers from './pages/moving/Workers'
+import Fleet from './pages/moving/Fleet'
+import MovingQuotes from './pages/moving/MovingQuotes'
+import MovingQuoteDetail from './pages/moving/MovingQuoteDetail'
+import MovingInvoices from './pages/moving/MovingInvoices'
+import MovingInvoiceDetail from './pages/moving/MovingInvoiceDetail'
+import MovingRevenueReport from './pages/moving/reports/MovingRevenueReport'
+import MovingJobsReport from './pages/moving/reports/MovingJobsReport'
+import MovingCrewReport from './pages/moving/reports/MovingCrewReport'
+import MovingFleetReport from './pages/moving/reports/MovingFleetReport'
 
 export default function App() {
   const { user } = useAuth()
@@ -94,6 +112,26 @@ export default function App() {
         <Route path="/users" element={<AdminGuard><UserManagement /></AdminGuard>} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/whatsapp" element={<WhatsApp />} />
+
+        {/* ── Moving Business ── */}
+        <Route path="/moving" element={<PermGuard module="moving_dashboard"><MovingDashboard /></PermGuard>} />
+        <Route path="/moving/leads" element={<PermGuard module="moving_leads"><MovingLeads /></PermGuard>} />
+        <Route path="/moving/leads/:id" element={<PermGuard module="moving_leads"><MovingLeadDetail /></PermGuard>} />
+        <Route path="/moving/jobs" element={<PermGuard module="moving_jobs"><MovingJobs /></PermGuard>} />
+        <Route path="/moving/jobs/new" element={<PermGuard module="moving_jobs"><NewMovingJob /></PermGuard>} />
+        <Route path="/moving/jobs/:id" element={<PermGuard module="moving_jobs"><MovingJobDetail /></PermGuard>} />
+        <Route path="/moving/schedule" element={<PermGuard module="moving_schedule"><MovingSchedule /></PermGuard>} />
+        <Route path="/moving/dispatch" element={<PermGuard module="moving_dispatch"><MovingDispatch /></PermGuard>} />
+        <Route path="/moving/workers" element={<PermGuard module="moving_workers"><Workers /></PermGuard>} />
+        <Route path="/moving/fleet" element={<PermGuard module="moving_fleet"><Fleet /></PermGuard>} />
+        <Route path="/moving/quotes" element={<PermGuard module="moving_quotes"><MovingQuotes /></PermGuard>} />
+        <Route path="/moving/quotes/:id" element={<PermGuard module="moving_quotes"><MovingQuoteDetail /></PermGuard>} />
+        <Route path="/moving/invoices" element={<PermGuard module="moving_invoices"><MovingInvoices /></PermGuard>} />
+        <Route path="/moving/invoices/:id" element={<PermGuard module="moving_invoices"><MovingInvoiceDetail /></PermGuard>} />
+        <Route path="/moving/reports/revenue" element={<PermGuard module="reports_moving_revenue"><MovingRevenueReport /></PermGuard>} />
+        <Route path="/moving/reports/jobs" element={<PermGuard module="reports_moving_jobs"><MovingJobsReport /></PermGuard>} />
+        <Route path="/moving/reports/crew" element={<PermGuard module="reports_moving_crew"><MovingCrewReport /></PermGuard>} />
+        <Route path="/moving/reports/fleet" element={<PermGuard module="reports_moving_fleet"><MovingFleetReport /></PermGuard>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

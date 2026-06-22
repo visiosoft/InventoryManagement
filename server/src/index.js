@@ -24,6 +24,13 @@ import unitTypeRoutes, { seedUnitTypes } from './routes/unitTypes.js';
 import signingRoutes from './routes/signing.js';
 import userRoutes from './routes/users.js';
 import whatsappRoutes from './routes/whatsapp.js';
+import workerRoutes from './routes/workers.js';
+import truckRoutes from './routes/trucks.js';
+import movingJobRoutes from './routes/movingJobs.js';
+import movingLeadRoutes from './routes/movingLeads.js';
+import movingQuoteRoutes from './routes/movingQuotes.js';
+import movingInvoiceRoutes from './routes/movingInvoices.js';
+import movingReportRoutes from './routes/movingReports.js';
 import { runGoogleContactsSync } from './services/syncContacts.js';
 import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
 
@@ -72,6 +79,13 @@ app.use('/api/vendors', requireAuth, vendorRoutes);
 app.use('/api/purchases', requireAuth, purchaseRoutes);
 app.use('/api/expenses', requireAuth, expenseRoutes);
 app.use('/api/moving-inventory', requireAuth, movingInventoryRoutes);
+app.use('/api/workers', requireAuth, workerRoutes);
+app.use('/api/trucks', requireAuth, truckRoutes);
+app.use('/api/moving-jobs', requireAuth, movingJobRoutes);
+app.use('/api/moving-leads', requireAuth, movingLeadRoutes);
+app.use('/api/moving-quotes', requireAuth, movingQuoteRoutes);
+app.use('/api/moving-invoices', requireAuth, movingInvoiceRoutes);
+app.use('/api/moving-reports', requireAuth, movingReportRoutes);
 app.use('/api/unit-types', requireAuth, unitTypeRoutes);
 app.use(
   '/api/integrations',

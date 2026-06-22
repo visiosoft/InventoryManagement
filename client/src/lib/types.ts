@@ -366,3 +366,169 @@ export interface Summary {
   expiringContracts: Contract[]
   overduePayments: Payment[]
 }
+
+// ── Moving Business Types ────────────────────────────────────────────────────
+
+export type WorkerRole = 'driver' | 'helper' | 'supervisor' | 'packer'
+export type WorkerStatus = 'active' | 'inactive' | 'on_leave'
+
+export interface Worker {
+  _id: string
+  name: string
+  phone?: string
+  email?: string
+  role: WorkerRole
+  dailyRate: number
+  status: WorkerStatus
+  notes?: string
+  emergencyContact?: string
+  createdAt?: string
+}
+
+export type TruckType = 'small' | 'medium' | 'large' | 'extra_large'
+export type TruckStatus = 'available' | 'in_use' | 'maintenance'
+
+export interface Truck {
+  _id: string
+  name: string
+  plateNumber?: string
+  type: TruckType
+  capacityCbm?: number
+  status: TruckStatus
+  lastServiceDate?: string
+  nextServiceDate?: string
+  notes?: string
+  createdAt?: string
+}
+
+export type MovingLeadStatus = 'new' | 'contacted' | 'quoted' | 'won' | 'lost'
+export type MovingLeadSource = 'phone' | 'web_form' | 'whatsapp' | 'referral' | 'walk_in' | 'other'
+
+export interface MovingLead {
+  _id: string
+  customer?: { _id: string; fullName: string; phone?: string; email?: string }
+  prospectName?: string
+  prospectPhone?: string
+  prospectEmail?: string
+  source: MovingLeadSource
+  status: MovingLeadStatus
+  moveDate?: string
+  pickupAddress?: string
+  deliveryAddress?: string
+  estimatedVolumeCbm?: number
+  notes?: string
+  timeline?: ContractNote[]
+  createdAt?: string
+}
+
+export type MovingJobStatus = 'draft' | 'confirmed' | 'survey_done' | 'in_progress' | 'completed' | 'invoiced' | 'cancelled'
+export type MovingJobType = 'local' | 'inter_emirate' | 'international' | 'office' | 'storage_to_home' | 'other'
+
+export interface MovingJobCrewMember {
+  worker: Worker | { _id: string; name: string; phone?: string; role: string }
+  role?: string
+  dailyRate?: number
+}
+
+export interface MovingJobTruck {
+  truck: Truck | { _id: string; name: string; plateNumber?: string; type: string }
+  notes?: string
+}
+
+export interface MovingJobCosts {
+  labor?: number
+  truck?: number
+  materials?: number
+  packing?: number
+  extras?: number
+  total?: number
+}
+
+export interface MovingJob {
+  _id: string
+  jobNo: string
+  customer: { _id: string; fullName: string; phone?: string; email?: string }
+  lead?: { _id: string }
+  status: MovingJobStatus
+  jobType?: MovingJobType
+  pickupAddress?: string
+  pickupFloor?: string
+  pickupHasElevator?: boolean
+  deliveryAddress?: string
+  deliveryFloor?: string
+  deliveryHasElevator?: boolean
+  scheduledDate?: string
+  scheduledTimeSlot?: string
+  estimatedDurationHours?: number
+  crew?: MovingJobCrewMember[]
+  trucks?: MovingJobTruck[]
+  teamLead?: Worker | { _id: string; name: string }
+  costs?: MovingJobCosts
+  survey?: { _id: string; totalEstimatedVolumeCbm?: number; recommendedTruckType?: string }
+  quote?: { _id: string; quoteNo: string; status: string; total: number }
+  invoice?: { _id: string; invoiceNo: string; status: string; total: number; balanceDue: number }
+  notes?: string
+  timeline?: ContractNote[]
+  dispatchNotes?: string
+  createdAt?: string
+}
+
+export interface MovingQuoteItem {
+  description: string
+  qty: number
+  rate: number
+  amount: number
+}
+
+export type MovingQuoteStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired'
+
+export interface MovingQuote {
+  _id: string
+  quoteNo: string
+  job?: { _id: string; jobNo: string; status: string; pickupAddress?: string; deliveryAddress?: string; scheduledDate?: string }
+  customer: { _id: string; fullName: string; email?: string; phone?: string; address?: string }
+  status: MovingQuoteStatus
+  quoteDate: string
+  expiryDate?: string
+  items: MovingQuoteItem[]
+  subTotal: number
+  discount?: number
+  total: number
+  depositRequired?: boolean
+  depositPct?: number
+  notes?: string
+  termsAndConditions?: string
+  salesperson?: string
+  shareToken?: string
+  createdAt?: string
+}
+
+export interface MovingPaymentEntry {
+  date: string
+  amount: number
+  method: string
+  notes?: string
+}
+
+export type MovingInvoiceStatus = 'draft' | 'sent' | 'paid' | 'partial' | 'cancelled'
+
+export interface MovingInvoice {
+  _id: string
+  invoiceNo: string
+  job?: { _id: string; jobNo: string; status: string; pickupAddress?: string; deliveryAddress?: string; scheduledDate?: string }
+  customer: { _id: string; fullName: string; email?: string; phone?: string; address?: string }
+  status: MovingInvoiceStatus
+  invoiceDate: string
+  dueDate?: string
+  items: MovingQuoteItem[]
+  subTotal: number
+  total: number
+  depositPaid: number
+  balanceDue: number
+  paymentHistory?: MovingPaymentEntry[]
+  bankInformation?: string
+  notes?: string
+  termsAndConditions?: string
+  shareToken?: string
+  createdAt?: string
+}

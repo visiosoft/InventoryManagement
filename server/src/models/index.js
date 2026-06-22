@@ -9,6 +9,11 @@ const ALL_MODULES = [
   'reports_monthly', 'reports_units', 'reports_finances', 'reports_forecast', 'reports_contracts',
   'reports_vacancies', 'reports_overdue', 'reports_expiring',
   'settings',
+  // Moving business
+  'moving_dashboard', 'moving_leads', 'moving_jobs', 'moving_workers',
+  'moving_fleet', 'moving_schedule', 'moving_dispatch',
+  'moving_quotes', 'moving_invoices',
+  'reports_moving_revenue', 'reports_moving_jobs', 'reports_moving_crew', 'reports_moving_fleet',
 ];
 
 const userSchema = new Schema(
@@ -523,6 +528,7 @@ const movingStockTxnSchema = new Schema(
     takenBy: { type: String, default: '' },
     contract: { type: Schema.Types.ObjectId, ref: 'Contract' },
     customer: { type: Schema.Types.ObjectId, ref: 'Customer' },
+    movingJob: { type: Schema.Types.ObjectId, ref: 'MovingJob' },
     txnDate: { type: Date, default: Date.now },
     notes: { type: String, default: '' },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
@@ -535,6 +541,270 @@ movingItemSchema.index({ active: 1, onHand: 1 });
 movingStockTxnSchema.index({ item: 1, txnDate: -1 });
 movingStockTxnSchema.index({ contract: 1, txnDate: -1 });
 movingStockTxnSchema.index({ customer: 1, txnDate: -1 });
+movingStockTxnSchema.index({ movingJob: 1, txnDate: -1 });
+
+// ── Moving Business Schemas ──────────────────────────────────────────────────
+
+const workerSchema = new Schema(
+  {
+    name: { type: String, required: true },
+    phone: { type: String, default: '' },
+    email: { type: String, default: '' },
+    role: { type: String, enum: ['driver', 'helper', 'supervisor', 'packer'], default: 'helper' },
+    dailyRate: { type: Number, default: 0 },
+    status: { type: String, enum: ['active', 'inactive', 'on_leave'], default: 'active' },
+    emergencyContact: { type: String, default: '' },
+    notes: { type: String, default: '' },
+  },
+  { timestamps: true }
+);
+workerSchema.index({ status: 1, name: 1 });
+
+const truckSchema = new Schema(
+  {
+    name: { type: String, required: true },
+    plateNumber: { type: String, default: '' },
+    type: { type: String, enum: ['small', 'medium', 'large', 'extra_large'], default: 'medium' },
+    capacityCbm: { type: Number, default: 0 },
+    status: { type: String, enum: ['available', 'in_use', 'maintenance'], default: 'available' },
+    lastServiceDate: { type: Date },
+    nextServiceDate: { type: Date },
+    notes: { type: String, default: '' },
+  },
+  { timestamps: true }
+);
+truckSchema.index({ status: 1 });
+
+const movingTimelineEntrySchema = new Schema(
+  { at: { type: Date, default: Date.now }, text: { type: String, default: '' }, author: { type: String, default: '' } },
+  { _id: false }
+);
+
+const movingLeadSchema = new Schema(
+  {
+    customer: { type: Schema.Types.ObjectId, ref: 'Customer' },
+    prospectName: { type: String, default: '' },
+    prospectPhone: { type: String, default: '' },
+    prospectEmail: { type: String, default: '' },
+    source: { type: String, enum: ['phone', 'web_form', 'whatsapp', 'referral', 'walk_in', 'other'], default: 'phone' },
+    status: { type: String, enum: ['new', 'contacted', 'quoted', 'won', 'lost'], default: 'new' },
+    moveDate: { type: Date },
+    pickupAddress: { type: String, default: '' },
+    deliveryAddress: { type: String, default: '' },
+    estimatedVolumeCbm: { type: Number, default: 0 },
+    notes: { type: String, default: '' },
+    timeline: [movingTimelineEntrySchema],
+  },
+  { timestamps: true }
+);
+movingLeadSchema.index({ status: 1, createdAt: -1 });
+movingLeadSchema.index({ customer: 1 });
+
+const movingJobCrewSchema = new Schema(
+  {
+    worker: { type: Schema.Types.ObjectId, ref: 'Worker', required: true },
+    role: { type: String, default: '' },
+    dailyRate: { type: Number, default: 0 },
+  },
+  { _id: false }
+);
+
+const movingJobTruckSchema = new Schema(
+  {
+    truck: { type: Schema.Types.ObjectId, ref: 'Truck', required: true },
+    notes: { type: String, default: '' },
+  },
+  { _id: false }
+);
+
+const movingMaterialUsageSchema = new Schema(
+  {
+    item: { type: Schema.Types.ObjectId, ref: 'MovingItem', required: true },
+    qty: { type: Number, required: true, min: 0 },
+    unitCost: { type: Number, default: 0 },
+    notes: { type: String, default: '' },
+  },
+  { _id: false }
+);
+
+const movingJobSchema = new Schema(
+  {
+    jobNo: { type: String, required: true, unique: true },
+    customer: { type: Schema.Types.ObjectId, ref: 'Customer', required: true },
+    lead: { type: Schema.Types.ObjectId, ref: 'MovingLead' },
+    status: {
+      type: String,
+      enum: ['draft', 'confirmed', 'survey_done', 'in_progress', 'completed', 'invoiced', 'cancelled'],
+      default: 'draft',
+    },
+    jobType: {
+      type: String,
+      enum: ['local', 'inter_emirate', 'international', 'office', 'storage_to_home', 'other'],
+      default: 'local',
+    },
+    pickupAddress: { type: String, default: '' },
+    pickupFloor: { type: String, default: '' },
+    pickupHasElevator: { type: Boolean, default: false },
+    deliveryAddress: { type: String, default: '' },
+    deliveryFloor: { type: String, default: '' },
+    deliveryHasElevator: { type: Boolean, default: false },
+    scheduledDate: { type: Date },
+    scheduledTimeSlot: { type: String, default: '' },
+    estimatedDurationHours: { type: Number, default: 0 },
+    crew: [movingJobCrewSchema],
+    trucks: [movingJobTruckSchema],
+    teamLead: { type: Schema.Types.ObjectId, ref: 'Worker' },
+    materialUsage: [movingMaterialUsageSchema],
+    costs: {
+      labor:     { type: Number, default: 0 },
+      truck:     { type: Number, default: 0 },
+      materials: { type: Number, default: 0 },
+      packing:   { type: Number, default: 0 },
+      extras:    { type: Number, default: 0 },
+      total:     { type: Number, default: 0 },
+    },
+    survey:   { type: Schema.Types.ObjectId, ref: 'MovingSurvey' },
+    quote:    { type: Schema.Types.ObjectId, ref: 'MovingQuote' },
+    invoice:  { type: Schema.Types.ObjectId, ref: 'MovingInvoice' },
+    dispatchNotes: { type: String, default: '' },
+    routeNotes:    { type: String, default: '' },
+    notes:         { type: String, default: '' },
+    timeline: [movingTimelineEntrySchema],
+  },
+  { timestamps: true }
+);
+movingJobSchema.index({ status: 1, scheduledDate: -1 });
+movingJobSchema.index({ customer: 1, scheduledDate: -1 });
+movingJobSchema.index({ scheduledDate: 1 });
+
+const movingQuoteItemSchema = new Schema(
+  {
+    description: { type: String, default: '' },
+    qty: { type: Number, default: 1 },
+    rate: { type: Number, default: 0 },
+    amount: { type: Number, default: 0 },
+  },
+  { _id: false }
+);
+
+const movingQuoteSchema = new Schema(
+  {
+    quoteNo: { type: String, required: true, unique: true },
+    job: { type: Schema.Types.ObjectId, ref: 'MovingJob' },
+    customer: { type: Schema.Types.ObjectId, ref: 'Customer', required: true },
+    status: { type: String, enum: ['draft', 'sent', 'accepted', 'rejected', 'expired'], default: 'draft' },
+    quoteDate: { type: Date, default: Date.now },
+    expiryDate: { type: Date },
+    items: [movingQuoteItemSchema],
+    subTotal: { type: Number, default: 0 },
+    discount: { type: Number, default: 0 },
+    total: { type: Number, default: 0 },
+    depositRequired: { type: Boolean, default: false },
+    depositPct: { type: Number, default: 0 },
+    notes: { type: String, default: '' },
+    termsAndConditions: { type: String, default: '' },
+    salesperson: { type: String, default: '' },
+    shareToken: { type: String, default: null },
+  },
+  { timestamps: true }
+);
+movingQuoteSchema.index({ customer: 1, createdAt: -1 });
+movingQuoteSchema.index({ status: 1 });
+
+const movingInvoicePaymentSchema = new Schema(
+  {
+    date: { type: Date, default: Date.now },
+    amount: { type: Number, required: true },
+    method: { type: String, enum: ['cash', 'bank_transfer', 'card', 'online', 'other'], default: 'cash' },
+    notes: { type: String, default: '' },
+  },
+  { _id: false }
+);
+
+const movingInvoiceAttachmentSchema = new Schema(
+  {
+    name: { type: String, default: '' },
+    url: { type: String, default: '' },
+    storage: { type: String, enum: ['local', 'drive'], default: 'local' },
+    driveFileId: { type: String, default: '' },
+    mimeType: { type: String, default: '' },
+    size: { type: Number, default: 0 },
+  },
+  { _id: false }
+);
+
+const movingInvoiceSchema = new Schema(
+  {
+    invoiceNo: { type: String, required: true, unique: true },
+    job: { type: Schema.Types.ObjectId, ref: 'MovingJob' },
+    customer: { type: Schema.Types.ObjectId, ref: 'Customer', required: true },
+    status: { type: String, enum: ['draft', 'sent', 'paid', 'partial', 'cancelled'], default: 'draft' },
+    invoiceDate: { type: Date, default: Date.now },
+    dueDate: { type: Date },
+    items: [movingQuoteItemSchema],
+    subTotal: { type: Number, default: 0 },
+    total: { type: Number, default: 0 },
+    depositPaid: { type: Number, default: 0 },
+    balanceDue: { type: Number, default: 0 },
+    paymentHistory: [movingInvoicePaymentSchema],
+    shareToken: { type: String, default: null },
+    attachments: [movingInvoiceAttachmentSchema],
+    notes: { type: String, default: '' },
+    termsAndConditions: { type: String, default: '' },
+    bankInformation: { type: String, default: '' },
+  },
+  { timestamps: true }
+);
+movingInvoiceSchema.index({ customer: 1, createdAt: -1 });
+movingInvoiceSchema.index({ status: 1 });
+movingInvoiceSchema.index({ job: 1 });
+
+const movingSurveyItemSchema = new Schema(
+  {
+    description: { type: String, default: '' },
+    qty: { type: Number, default: 1 },
+    estimatedVolumeCbm: { type: Number, default: 0 },
+    fragile: { type: Boolean, default: false },
+    notes: { type: String, default: '' },
+    photoUrl: { type: String, default: '' },
+  },
+  { _id: false }
+);
+
+const movingSurveyRoomSchema = new Schema(
+  {
+    name: { type: String, default: '' },
+    items: [movingSurveyItemSchema],
+  },
+  { _id: false }
+);
+
+const movingSurveySchema = new Schema(
+  {
+    job: { type: Schema.Types.ObjectId, ref: 'MovingJob', required: true },
+    rooms: [movingSurveyRoomSchema],
+    totalEstimatedVolumeCbm: { type: Number, default: 0 },
+    recommendedTruckType: { type: String, enum: ['small', 'medium', 'large', 'extra_large', ''], default: '' },
+    notes: { type: String, default: '' },
+    surveyedBy: { type: String, default: '' },
+    surveyedAt: { type: Date },
+  },
+  { timestamps: true }
+);
+
+const movingDocumentSchema = new Schema(
+  {
+    job: { type: Schema.Types.ObjectId, ref: 'MovingJob', required: true },
+    customer: { type: Schema.Types.ObjectId, ref: 'Customer' },
+    type: { type: String, enum: ['bill_of_lading', 'inventory_sheet', 'contract', 'other'], default: 'other' },
+    name: { type: String, required: true },
+    url: { type: String, default: '' },
+    storage: { type: String, enum: ['local', 'drive'], default: 'local' },
+    driveFileId: { type: String, default: '' },
+  },
+  { timestamps: true }
+);
+movingDocumentSchema.index({ job: 1 });
 
 const documentSchema = new Schema(
   {
@@ -582,6 +852,14 @@ export const Expense = model('Expense', expenseSchema);
 export const Payment = model('Payment', paymentSchema);
 export const MovingItem = model('MovingItem', movingItemSchema);
 export const MovingStockTxn = model('MovingStockTxn', movingStockTxnSchema);
+export const Worker = model('Worker', workerSchema);
+export const Truck = model('Truck', truckSchema);
+export const MovingLead = model('MovingLead', movingLeadSchema);
+export const MovingJob = model('MovingJob', movingJobSchema);
+export const MovingQuote = model('MovingQuote', movingQuoteSchema);
+export const MovingInvoice = model('MovingInvoice', movingInvoiceSchema);
+export const MovingSurvey = model('MovingSurvey', movingSurveySchema);
+export const MovingDocument = model('MovingDocument', movingDocumentSchema);
 export const Document = model('Document', documentSchema);
 export const AuditLog = model('AuditLog', auditLogSchema);
 export const Counter = model('Counter', counterSchema);
@@ -624,4 +902,32 @@ export async function nextPurchaseNo() {
     { new: true, upsert: true }
   );
   return `PO-${year}-${String(counter.seq).padStart(4, '0')}`;
+}
+
+export async function nextMovingJobNo() {
+  const year = new Date().getFullYear();
+  const counter = await Counter.findOneAndUpdate(
+    { key: `moving-job-${year}` },
+    { $inc: { seq: 1 } },
+    { new: true, upsert: true }
+  );
+  return `MJ-${year}-${String(counter.seq).padStart(4, '0')}`;
+}
+
+export async function nextMovingQuoteNo() {
+  const counter = await Counter.findOneAndUpdate(
+    { key: 'moving-quote' },
+    { $inc: { seq: 1 } },
+    { new: true, upsert: true }
+  );
+  return `MVQ-${String(counter.seq).padStart(5, '0')}`;
+}
+
+export async function nextMovingInvoiceNo() {
+  const counter = await Counter.findOneAndUpdate(
+    { key: 'moving-invoice' },
+    { $inc: { seq: 1 } },
+    { new: true, upsert: true }
+  );
+  return `MVI-${String(counter.seq).padStart(5, '0')}`;
 }

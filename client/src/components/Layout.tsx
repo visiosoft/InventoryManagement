@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Box, Users, FileText, CreditCard, BarChart3, Building2, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, FileSpreadsheet, Truck, ShoppingCart, Wallet, TrendingUp, UserCheck, UserCog, X, MessageCircle } from 'lucide-react'
+import { LayoutDashboard, Box, Users, FileText, CreditCard, BarChart3, Building2, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, FileSpreadsheet, Truck, ShoppingCart, Wallet, TrendingUp, UserCheck, UserCog, X, MessageCircle, Package, CalendarDays, ClipboardList, Users2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { cn } from '../lib/utils'
@@ -56,12 +56,34 @@ const navBottom = [
   { to: '/settings',  label: 'Settings',  icon: Settings,  perm: 'settings' },
 ]
 
+const movingNavItems = [
+  { to: '/moving',          label: 'Dashboard',  icon: LayoutDashboard, perm: 'moving_dashboard' as string },
+  { to: '/moving/leads',    label: 'Leads',      icon: UserPlus,        perm: 'moving_leads' },
+  { to: '/moving/jobs',     label: 'Jobs',       icon: ClipboardList,   perm: 'moving_jobs' },
+  { to: '/moving/schedule', label: 'Schedule',   icon: CalendarDays,    perm: 'moving_schedule' },
+  { to: '/moving/dispatch', label: 'Dispatch',   icon: Package,         perm: 'moving_dispatch' },
+  { to: '/moving/workers',  label: 'Workers',    icon: Users2,          perm: 'moving_workers' },
+  { to: '/moving/fleet',    label: 'Fleet',      icon: Truck,           perm: 'moving_fleet' },
+  { to: '/moving/quotes',   label: 'Quotes',     icon: FileSpreadsheet, perm: 'moving_quotes' },
+  { to: '/moving/invoices', label: 'Invoices',   icon: ReceiptText,     perm: 'moving_invoices' },
+]
+
+const movingReportItems = [
+  { to: '/moving/reports/revenue', label: 'Revenue',     icon: Wallet,    perm: 'reports_moving_revenue' },
+  { to: '/moving/reports/jobs',    label: 'Jobs',        icon: BarChart3, perm: 'reports_moving_jobs' },
+  { to: '/moving/reports/crew',    label: 'Crew',        icon: Users,     perm: 'reports_moving_crew' },
+  { to: '/moving/reports/fleet',   label: 'Fleet',       icon: Truck,     perm: 'reports_moving_fleet' },
+]
+
 export default function Layout() {
   const { user, logout, hasPermission } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const onReportsRoute = location.pathname.startsWith('/reports')
+  const onMovingRoute = location.pathname.startsWith('/moving')
   const [reportsOpen, setReportsOpen] = useState(onReportsRoute)
+  const [movingOpen, setMovingOpen] = useState(onMovingRoute)
+  const [movingReportsOpen, setMovingReportsOpen] = useState(location.pathname.startsWith('/moving/reports'))
   const [dark, setDark] = useState(() => localStorage.getItem('pb_theme') === 'dark')
   const isAdmin = user?.role === 'admin'
   const [contactsToast, setContactsToast] = useState<{ created: number } | null>(null)
@@ -189,6 +211,72 @@ export default function Layout() {
               <UserCog size={16} />Users
             </NavLink>
           )}
+
+          {/* ── Moving Business section ── */}
+          {(() => {
+            const visibleMoving = movingNavItems.filter(({ perm }) => hasPermission(perm))
+            const visibleMovingReports = movingReportItems.filter(({ perm }) => hasPermission(perm))
+            if (visibleMoving.length === 0 && visibleMovingReports.length === 0) return null
+            return (
+              <div className="pt-3">
+                <div className="mb-1 border-t border-white/10" />
+                <button
+                  onClick={() => setMovingOpen(o => !o)}
+                  className={cn(
+                    'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors cursor-pointer',
+                    onMovingRoute ? 'text-sidebar-foreground' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/5'
+                  )}
+                >
+                  <Truck size={16} />
+                  <span className="flex-1 text-left">Moving</span>
+                  <ChevronDown size={13} className={cn('transition-transform duration-200', movingOpen ? 'rotate-180' : '')} />
+                </button>
+
+                {movingOpen && (
+                  <div className="space-y-0.5">
+                    {visibleMoving.map(({ to, label, icon: Icon }) => (
+                      <NavLink key={to} to={to} end={to === '/moving'}
+                        className={({ isActive }) => cn(
+                          'flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors',
+                          isActive ? 'bg-sidebar-active text-white' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/5'
+                        )}>
+                        <Icon size={16} />{label}
+                      </NavLink>
+                    ))}
+
+                    {visibleMovingReports.length > 0 && (
+                      <>
+                        <button
+                          onClick={() => setMovingReportsOpen(o => !o)}
+                          className={cn(
+                            'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors cursor-pointer',
+                            location.pathname.startsWith('/moving/reports') ? 'text-sidebar-foreground' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/5'
+                          )}
+                        >
+                          <BarChart3 size={16} />
+                          <span className="flex-1 text-left">Reports</span>
+                          <ChevronDown size={13} className={cn('transition-transform duration-200', movingReportsOpen ? 'rotate-180' : '')} />
+                        </button>
+                        {movingReportsOpen && (
+                          <div className="ml-3 mt-0.5 border-l border-white/10 pl-2 space-y-0.5">
+                            {visibleMovingReports.map(({ to, label, icon: Icon }) => (
+                              <NavLink key={to} to={to}
+                                className={({ isActive }) => cn(
+                                  'flex items-center gap-2 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors',
+                                  isActive ? 'bg-sidebar-active text-white' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/5'
+                                )}>
+                                <Icon size={13} />{label}
+                              </NavLink>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
         </nav>
         <div className="border-t border-white/10 p-3 space-y-1">
           <div className="px-3 py-1">

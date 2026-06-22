@@ -88,12 +88,12 @@ export function Card({ children, className }: { children: ReactNode; className?:
 
 export function CardHeader({ title, subtitle, action }: { title: ReactNode; subtitle?: ReactNode; action?: ReactNode }) {
   return (
-    <div className="flex items-start justify-between px-5 pt-4 pb-2">
-      <div>
+    <div className="flex items-center justify-between px-5 pt-4 pb-3 gap-3">
+      <div className="flex-1">
         <h3 className="font-semibold text-sm">{title}</h3>
         {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
       </div>
-      {action}
+      {action && <div className="shrink-0">{action}</div>}
     </div>
   )
 }
@@ -161,18 +161,20 @@ export function Modal({
   title,
   children,
   wide,
+  className,
 }: {
   open: boolean
   onClose: () => void
   title: ReactNode
   children: ReactNode
   wide?: boolean
+  className?: string
 }) {
   if (!open) return null
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className={cn('relative w-full rounded-xl border bg-card shadow-xl max-h-[90vh] overflow-y-auto', wide ? 'max-w-2xl' : 'max-w-md')}>
+      <div className={cn('relative w-full rounded-xl border bg-card shadow-xl max-h-[90vh] overflow-y-auto', className || (wide ? 'max-w-2xl' : 'max-w-md'))}>
         <div className="flex items-center justify-between border-b px-5 py-3">
           <h2 className="font-semibold text-sm">{title}</h2>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground cursor-pointer">
