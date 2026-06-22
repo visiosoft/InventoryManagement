@@ -216,7 +216,7 @@ export default function Contracts() {
               <div><span className="text-muted-foreground">Customer:</span> {deleteTarget.customer?.fullName}</div>
               <div>
                 <span className="text-muted-foreground">Unit(s):</span>{' '}
-                {(deleteTarget.units?.length ? deleteTarget.units : [deleteTarget.unit]).map((u) => u.unitNumber).join(', ')}
+                {(deleteTarget.units?.length ? deleteTarget.units : deleteTarget.unit ? [deleteTarget.unit] : []).map((u) => u?.unitNumber ?? '—').join(', ') || '—'}
               </div>
               <div><span className="text-muted-foreground">Status:</span> {statusLabel(deleteTarget.status)}</div>
             </div>

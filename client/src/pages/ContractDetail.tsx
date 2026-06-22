@@ -1208,10 +1208,12 @@ export default function ContractDetail() {
   const paidGroups   = invoiceGroups.filter(g => g.status === 'paid')
   const totalUnpaidGroups = unpaidGroups.reduce((s, g) => s + g.total - g.paidTotal, 0)
 
-  const allUnits = c.units?.length ? c.units : [c.unit]
+  const allUnits = c.units?.length ? c.units : c.unit ? [c.unit] : []
   const unitLabel = allUnits.length > 1
-    ? `Units: ${allUnits.map((u) => u.unitNumber).join(', ')}`
-    : `Unit ${c.unit?.unitNumber}${c.unit?.sizeSqf != null ? ` · ${c.unit.sizeSqf} sq ft` : ''}`
+    ? `Units: ${allUnits.map((u) => u?.unitNumber ?? '—').join(', ')}`
+    : allUnits.length === 1
+      ? `Unit ${allUnits[0]?.unitNumber ?? '—'}${allUnits[0]?.sizeSqf != null ? ` · ${allUnits[0].sizeSqf} sq ft` : ''}`
+      : 'No unit assigned'
 
   // allUnpaid for "Pay multiple" header button
   const allUnpaid = [...overdue, ...pending]
