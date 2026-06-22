@@ -283,7 +283,7 @@ export default function MovingJobDetail() {
 
       {/* Addresses Section */}
       <Card>
-        <CardHeader title="Locations" icon={MapPin} subtitle="Pickup and delivery addresses" />
+        <CardHeader title={<span className="flex items-center gap-2"><MapPin size={15} />Locations</span>} subtitle="Pickup and delivery addresses" />
         <CardBody>
           <div className="grid grid-cols-2 gap-8">
             <div>
@@ -321,8 +321,7 @@ export default function MovingJobDetail() {
         {/* Crew */}
         <Card>
           <CardHeader
-            title="Crew"
-            icon={Users}
+            title={<span className="flex items-center gap-2"><Users size={15} />Crew</span>}
             subtitle={`${crewList.length} member${crewList.length !== 1 ? 's' : ''}`}
             action={<Button size="sm" variant="outline" onClick={() => setCrewModal(true)}><Plus size={14} className="mr-1" /> Add</Button>}
           />
@@ -367,8 +366,7 @@ export default function MovingJobDetail() {
         {/* Trucks */}
         <Card>
           <CardHeader
-            title="Trucks"
-            icon={TruckIcon}
+            title={<span className="flex items-center gap-2"><TruckIcon size={15} />Trucks</span>}
             subtitle={`${truckList.length} truck${truckList.length !== 1 ? 's' : ''}`}
             action={<Button size="sm" variant="outline" onClick={() => setTruckModal(true)}><Plus size={14} className="mr-1" /> Add</Button>}
           />
@@ -537,11 +535,11 @@ export default function MovingJobDetail() {
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Total Cost</p>
             <p className="text-lg font-bold text-foreground">
               AED {(
-                (Number(document.querySelector('input[name="labor"]')?.value) || 0) +
-                (Number(document.querySelector('input[name="truck"]')?.value) || 0) +
-                (Number(document.querySelector('input[name="materials"]')?.value) || 0) +
-                (Number(document.querySelector('input[name="packing"]')?.value) || 0) +
-                (Number(document.querySelector('input[name="extras"]')?.value) || 0)
+                (Number((document.querySelector('input[name="labor"]') as HTMLInputElement)?.value) || 0) +
+                (Number((document.querySelector('input[name="truck"]') as HTMLInputElement)?.value) || 0) +
+                (Number((document.querySelector('input[name="materials"]') as HTMLInputElement)?.value) || 0) +
+                (Number((document.querySelector('input[name="packing"]') as HTMLInputElement)?.value) || 0) +
+                (Number((document.querySelector('input[name="extras"]') as HTMLInputElement)?.value) || 0)
               ).toLocaleString()}
             </p>
           </div>

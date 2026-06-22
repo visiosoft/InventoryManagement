@@ -4,7 +4,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft, Download, Share2, Edit, Plus, Trash2 } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingInvoice, MovingInvoiceStatus } from '../../lib/types'
-import { Badge, Button, Card, CardBody, CardHeader, Field, Input, Modal, Select, Spinner, Table, Td, Th, Textarea } from '../../components/ui'
+import { Badge, Button, Card, CardBody, CardHeader, Field, Input, Modal, Select, Spinner, Table, Td, Th } from '../../components/ui'
 
 const statusTone: Record<MovingInvoiceStatus, string> = {
   draft: 'gray', sent: 'blue', partial: 'yellow', paid: 'green', cancelled: 'red',
@@ -35,7 +35,7 @@ export default function MovingInvoiceDetail() {
   const [payModal, setPayModal] = useState(false)
   const [itemsModal, setItemsModal] = useState(false)
   const [items, setItems] = useState<Array<{ description: string; qty: number; rate: number; amount: number }>>([])
-  const [editIdx, setEditIdx] = useState<number | null>(null)
+  const [_editIdx, setEditIdx] = useState<number | null>(null)
   const [shareToken, setShareToken] = useState<string>('')
 
   const { data: invoice, isLoading } = useQuery<MovingInvoice>({

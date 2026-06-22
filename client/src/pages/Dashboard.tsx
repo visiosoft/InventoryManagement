@@ -6,7 +6,7 @@ import { Box, FileText, TrendingUp, AlertTriangle, Wallet } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { api, apiError } from '../lib/api'
 import type { Summary } from '../lib/types'
-import { Card, CardHeader, CardBody, Badge, Spinner, PageHeader, EmptyState, Table, Th, Td, Button } from '../components/ui'
+import { Card, CardHeader, CardBody, Spinner, PageHeader, EmptyState, Table, Th, Td, Button } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
 
 type WidgetId =

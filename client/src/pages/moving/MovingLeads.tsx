@@ -14,11 +14,12 @@ const statusTone: Record<MovingLeadStatus, string> = {
   new: 'blue', contacted: 'yellow', quoted: 'purple', won: 'green', lost: 'red',
 }
 
-function LeadForm({ initial, busy, error, onSubmit }: {
+function LeadForm({ initial, busy, error, onSubmit, onCancel }: {
   initial?: Partial<MovingLead>
   busy: boolean
   error: string
   onSubmit: (body: Record<string, unknown>) => void
+  onCancel: () => void
 }) {
   function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -64,7 +65,7 @@ function LeadForm({ initial, busy, error, onSubmit }: {
         </div>
       )}
       <div className="flex justify-end gap-2 pt-4 border-t">
-        <Button type="button" variant="outline" onClick={() => setModal(null)}>Cancel</Button>
+        <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
         <Button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Add Lead'}</Button>
       </div>
     </form>
@@ -203,7 +204,7 @@ export default function MovingLeads() {
 
       <Modal open={modal !== null} title="Add Moving Lead" onClose={() => setModal(null)}>
         {modal !== null && (
-          <LeadForm busy={createMut.isPending} error={err} onSubmit={body => { setErr(''); createMut.mutate(body) }} />
+          <LeadForm busy={createMut.isPending} error={err} onSubmit={body => { setErr(''); createMut.mutate(body) }} onCancel={() => setModal(null)} />
         )}
       </Modal>
     </div>

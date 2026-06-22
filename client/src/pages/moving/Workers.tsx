@@ -21,11 +21,12 @@ const roleTone: Record<WorkerRole, string> = {
   packer: 'amber',
 }
 
-function WorkerForm({ initial, busy, error, onSubmit }: {
+function WorkerForm({ initial, busy, error, onSubmit, onCancel }: {
   initial?: Partial<Worker>
   busy: boolean
   error: string
   onSubmit: (body: Record<string, unknown>) => void
+  onCancel: () => void
 }) {
   function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -67,7 +68,7 @@ function WorkerForm({ initial, busy, error, onSubmit }: {
         </div>
       )}
       <div className="flex justify-end gap-2 pt-4 border-t">
-        <Button type="button" variant="outline" onClick={() => setModal(null)}>Cancel</Button>
+        <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
         <Button type="submit" disabled={busy}>{busy ? 'Saving…' : initial ? 'Update' : 'Add'} Worker</Button>
       </div>
     </form>
@@ -232,6 +233,7 @@ export default function Workers() {
             busy={busy}
             error={err}
             onSubmit={handleSubmit}
+            onCancel={() => setModal(null)}
           />
         )}
       </Modal>

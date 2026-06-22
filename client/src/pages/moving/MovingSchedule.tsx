@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { api } from '../../lib/api'
 import type { MovingJob, MovingJobStatus } from '../../lib/types'
-import { Badge, Button, Card, CardBody, EmptyState, PageHeader, Spinner } from '../../components/ui'
+import { Badge, Button, Card, CardBody, PageHeader, Spinner } from '../../components/ui'
 
 const statusTone: Record<MovingJobStatus, string> = {
   draft: 'gray', confirmed: 'blue', survey_done: 'purple',
@@ -59,9 +59,10 @@ export default function MovingSchedule() {
 
   const daysInMonth = getDaysInMonth(currentMonth)
   const firstDay = getFirstDayOfMonth(currentMonth)
-  const days = Array.from({ length: firstDay }, () => null).concat(
-    Array.from({ length: daysInMonth }, (_, i) => new Date(currentMonth.getFullYear(), currentMonth.getMonth(), i + 1))
-  )
+  const days: (Date | null)[] = [
+    ...Array.from({ length: firstDay }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, i) => new Date(currentMonth.getFullYear(), currentMonth.getMonth(), i + 1)),
+  ]
 
   const monthLabel = currentMonth.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
   const today = isoDate(new Date())

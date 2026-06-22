@@ -21,11 +21,12 @@ const typeTone: Record<TruckType, string> = {
   extra_large: 'red',
 }
 
-function TruckForm({ initial, busy, error, onSubmit }: {
+function TruckForm({ initial, busy, error, onSubmit, onCancel }: {
   initial?: Partial<Truck>
   busy: boolean
   error: string
   onSubmit: (body: Record<string, unknown>) => void
+  onCancel: () => void
 }) {
   function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -66,7 +67,7 @@ function TruckForm({ initial, busy, error, onSubmit }: {
         </div>
       )}
       <div className="flex justify-end gap-2 pt-4 border-t">
-        <Button type="button" variant="outline" onClick={() => setModal(null)}>Cancel</Button>
+        <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
         <Button type="submit" disabled={busy}>{busy ? 'Saving…' : initial ? 'Update' : 'Add'} Truck</Button>
       </div>
     </form>
@@ -106,7 +107,6 @@ export default function Fleet() {
 
   const availableTrucks = trucks.filter(t => t.status === 'available').length
   const inUseTrucks = trucks.filter(t => t.status === 'in_use').length
-  const maintenanceTrucks = trucks.filter(t => t.status === 'maintenance').length
   const totalCapacity = trucks.reduce((sum, t) => sum + (t.capacityCbm || 0), 0)
 
   return (
@@ -246,6 +246,7 @@ export default function Fleet() {
             busy={busy}
             error={err}
             onSubmit={handleSubmit}
+            onCancel={() => setModal(null)}
           />
         )}
       </Modal>

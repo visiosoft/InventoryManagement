@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft, Download, CheckCircle, Plus, Trash2, Edit } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingQuote, MovingQuoteStatus } from '../../lib/types'
-import { Badge, Button, Card, CardBody, CardHeader, Field, Input, Modal, PageHeader, Spinner, Table, Td, Th } from '../../components/ui'
+import { Badge, Button, Card, CardBody, CardHeader, Field, Input, Modal, Spinner, Table, Td, Th } from '../../components/ui'
 import { useState } from 'react'
 
 const statusTone: Record<MovingQuoteStatus, string> = {
@@ -34,7 +34,7 @@ export default function MovingQuoteDetail() {
   const [err, setErr] = useState('')
   const [itemsModal, setItemsModal] = useState(false)
   const [items, setItems] = useState<Array<{ description: string; qty: number; rate: number; amount: number }>>([])
-  const [editIdx, setEditIdx] = useState<number | null>(null)
+  const [_editIdx, setEditIdx] = useState<number | null>(null)
   const [shareToken, setShareToken] = useState<string>('')
 
   const { data: quote, isLoading } = useQuery<MovingQuote>({

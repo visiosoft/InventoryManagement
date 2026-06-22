@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { ClipboardList, Truck, Wallet, TrendingUp, Calendar, Users, FileText, BarChart3, CheckCircle2, AlertCircle } from 'lucide-react'
+import { ClipboardList, Truck, Wallet, TrendingUp, Calendar, Users, FileText, BarChart3, AlertCircle } from 'lucide-react'
 import { api } from '../../lib/api'
 import type { MovingJob } from '../../lib/types'
 import { Badge, Button, Card, CardBody, CardHeader, EmptyState, PageHeader, Spinner, Table, Td, Th } from '../../components/ui'
