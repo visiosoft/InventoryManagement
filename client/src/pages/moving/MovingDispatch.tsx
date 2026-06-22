@@ -6,13 +6,19 @@ import { api } from '../../lib/api'
 import type { MovingJob } from '../../lib/types'
 import { Badge, Button, Card, CardBody, CardHeader, EmptyState, PageHeader, Spinner } from '../../components/ui'
 
-export default function MovingDispatch() {
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
+function getLocalDateString(d: Date) {
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 
-  const from = new Date(date)
-  from.setHours(0, 0, 0, 0)
-  const to = new Date(date)
-  to.setHours(23, 59, 59, 999)
+export default function MovingDispatch() {
+  const [date, setDate] = useState(() => getLocalDateString(new Date()))
+
+  const [year, month, day] = date.split('-').map(Number)
+  const from = new Date(year, month - 1, day, 0, 0, 0, 0)
+  const to = new Date(year, month - 1, day, 23, 59, 59, 999)
 
   const { data: jobs = [], isLoading } = useQuery<MovingJob[]>({
     queryKey: ['moving-dispatch', date],
@@ -26,21 +32,31 @@ export default function MovingDispatch() {
   })
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between">
-        <PageHeader title="Dispatch" subtitle={dateLabel} />
-        <div className="flex items-center gap-2">
-          <input
-            type="date"
-            value={date}
-            onChange={e => setDate(e.target.value)}
-            className="h-9 rounded-lg border bg-card px-3 text-sm focus-visible:outline-2 focus-visible:outline-ring"
-          />
-          <Button variant="outline" size="sm" onClick={() => window.print()}>
-            <Printer size={14} className="mr-1" />Print
-          </Button>
+    <>
+      <style>{`
+        @media print {
+          body { background: white; }
+          .dispatch-header { display: none; }
+          .sidebar-nav { display: none; }
+          .dispatch-content { width: 100%; }
+          @page { margin: 0.4in; size: A4; }
+        }
+      `}</style>
+      <div className="space-y-8">
+        <div className="dispatch-header flex items-center justify-between">
+          <PageHeader title="Dispatch" subtitle={dateLabel} />
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              value={date}
+              onChange={e => setDate(e.target.value)}
+              className="h-9 rounded-lg border bg-card px-3 text-sm focus-visible:outline-2 focus-visible:outline-ring"
+            />
+            <Button variant="outline" size="sm" onClick={() => window.print()}>
+              <Printer size={14} className="mr-1" />Print
+            </Button>
+          </div>
         </div>
-      </div>
 
       {isLoading ? (
         <div className="flex justify-center py-16"><Spinner /></div>
@@ -141,6 +157,7 @@ export default function MovingDispatch() {
           })}
         </div>
       )}
-    </div>
+      </div>
+    </>
   )
 }

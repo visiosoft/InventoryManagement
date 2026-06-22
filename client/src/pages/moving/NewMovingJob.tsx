@@ -26,6 +26,7 @@ export default function NewMovingJob() {
   const [scheduledDate, setScheduledDate] = useState(dateParam || '')
   const [showCustomerModal, setShowCustomerModal] = useState(false)
   const [customerId, setCustomerId] = useState('')
+  const [customerName, setCustomerName] = useState('')
 
   const { data: customers = [] } = useQuery<Customer[]>({
     queryKey: ['customers-search', customerSearch],
@@ -37,6 +38,7 @@ export default function NewMovingJob() {
     onSuccess: (customer) => {
       qc.invalidateQueries({ queryKey: ['customers-search'] })
       setCustomerId(customer._id)
+      setCustomerName(customer.fullName)
       setShowCustomerModal(false)
       setCustomerSearch('')
     },
@@ -96,7 +98,7 @@ export default function NewMovingJob() {
                           key={c._id}
                           type="button"
                           className="w-full text-left px-3 py-2.5 hover:bg-muted/50 transition-colors"
-                          onClick={() => { setCustomerId(c._id); setCustomerSearch('') }}
+                          onClick={() => { setCustomerId(c._id); setCustomerName(c.fullName); setCustomerSearch('') }}
                         >
                           <div className="font-medium">{c.fullName}</div>
                           <div className="text-xs text-muted-foreground">{c.phone || c.email || 'No contact'}</div>
@@ -114,13 +116,13 @@ export default function NewMovingJob() {
                 <>
                   <div className="px-3 py-2 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg">
                     <p className="text-sm font-medium text-green-800 dark:text-green-200">✓ Customer selected</p>
-                    <p className="text-sm text-green-700 dark:text-green-300 mt-1">{customerSearch}</p>
+                    <p className="text-sm text-green-700 dark:text-green-300 mt-1">{customerName}</p>
                   </div>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => { setCustomerId(''); setCustomerSearch('') }}
+                    onClick={() => { setCustomerId(''); setCustomerName(''); setCustomerSearch('') }}
                   >
                     Change Customer
                   </Button>

@@ -271,12 +271,95 @@ export function Spinner() {
 
 export function PageHeader({ title, subtitle, action }: { title: string; subtitle?: ReactNode; action?: ReactNode }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+    <div className="flex flex-wrap items-center justify-between gap-4 pb-6">
       <div>
-        <h1 className="text-xl font-bold tracking-tight">{title}</h1>
-        {subtitle && <p className="text-sm text-muted-foreground mt-0.5">{subtitle}</p>}
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">{title}</h1>
+        {subtitle && <p className="text-sm text-muted-foreground mt-2">{subtitle}</p>}
       </div>
-      {action}
+      {action && <div className="shrink-0">{action}</div>}
+    </div>
+  )
+}
+
+/* ---------- Breadcrumb ---------- */
+export function Breadcrumb({ items }: { items: Array<{ label: string; href?: string }> }) {
+  return (
+    <nav className="flex items-center gap-2 text-xs text-muted-foreground mb-6">
+      {items.map((item, idx) => (
+        <div key={idx} className="flex items-center gap-2">
+          {idx > 0 && <span className="text-muted-foreground/50">/</span>}
+          {item.href ? (
+            <a href={item.href} className="hover:text-foreground transition-colors">{item.label}</a>
+          ) : (
+            <span className="text-foreground font-medium">{item.label}</span>
+          )}
+        </div>
+      ))}
+    </nav>
+  )
+}
+
+/* ---------- Section Header ---------- */
+export function SectionHeader({ icon: Icon, title, subtitle, action }: {
+  icon?: React.ElementType
+  title: string
+  subtitle?: string
+  action?: ReactNode
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 mb-4">
+      <div className="flex items-center gap-3">
+        {Icon && <Icon size={22} className="text-primary" />}
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+          {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
+        </div>
+      </div>
+      {action && <div className="shrink-0">{action}</div>}
+    </div>
+  )
+}
+
+/* ---------- Status Badge with Icon ---------- */
+export function StatusBadge({
+  label,
+  tone,
+  icon: Icon
+}: {
+  label: string
+  tone: string
+  icon?: React.ElementType
+}) {
+  return (
+    <div className={cn(
+      'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold',
+      badgeTones[tone] || badgeTones.gray
+    )}>
+      {Icon && <Icon size={14} />}
+      {label}
+    </div>
+  )
+}
+
+/* ---------- Info Grid ---------- */
+export function InfoGrid({ children, cols = 2 }: { children: ReactNode; cols?: number }) {
+  return (
+    <dl className={cn('grid gap-6', {
+      'grid-cols-1': cols === 1,
+      'grid-cols-2': cols === 2,
+      'grid-cols-3': cols === 3,
+      'grid-cols-4': cols === 4,
+    })}>
+      {children}
+    </dl>
+  )
+}
+
+export function InfoItem({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div>
+      <dt className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">{label}</dt>
+      <dd className="text-sm font-medium text-foreground">{value}</dd>
     </div>
   )
 }

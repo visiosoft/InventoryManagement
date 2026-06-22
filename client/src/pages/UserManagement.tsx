@@ -59,6 +59,24 @@ const MODULE_GROUPS = [
     ],
   },
   {
+    label: 'Moving Business',
+    modules: [
+      { key: 'moving_dashboard',        label: 'Dashboard' },
+      { key: 'moving_leads',            label: 'Leads' },
+      { key: 'moving_jobs',             label: 'Jobs' },
+      { key: 'moving_schedule',         label: 'Schedule' },
+      { key: 'moving_dispatch',         label: 'Dispatch' },
+      { key: 'moving_workers',          label: 'Workers' },
+      { key: 'moving_fleet',            label: 'Fleet' },
+      { key: 'moving_quotes',           label: 'Quotes' },
+      { key: 'moving_invoices',         label: 'Invoices' },
+      { key: 'reports_moving_revenue',  label: 'Revenue Report' },
+      { key: 'reports_moving_jobs',     label: 'Jobs Report' },
+      { key: 'reports_moving_crew',     label: 'Crew Report' },
+      { key: 'reports_moving_fleet',    label: 'Fleet Report' },
+    ],
+  },
+  {
     label: 'Admin',
     modules: [
       { key: 'settings', label: 'Settings' },
