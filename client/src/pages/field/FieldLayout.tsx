@@ -1,4 +1,4 @@
-import { ReactNode } from 'react'
+import { type ReactNode } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { Home, Briefcase, ClipboardList, Truck, LogOut } from 'lucide-react'
 import { useAuth } from '../../lib/auth'
