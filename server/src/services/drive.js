@@ -73,6 +73,42 @@ async function getOrCreateCustomerFolder(drive, customerName) {
   return folderId;
 }
 
+// Uploads an image and makes it publicly readable.
+// Returns { storage, driveFileId, url } where url is directly embeddable in <img>.
+export async function uploadPublicImage({ buffer, filename, mimeType, customerName }) {
+  if (driveConfigured()) {
+    const drive = driveClient();
+    const parentId = customerName
+      ? await getOrCreateCustomerFolder(drive, customerName)
+      : process.env.GOOGLE_DRIVE_FOLDER_ID;
+
+    const { data } = await drive.files.create({
+      requestBody: { name: filename, parents: [parentId] },
+      media: { mimeType, body: Readable.from(buffer) },
+      fields: 'id, webViewLink',
+      supportsAllDrives: true,
+    });
+
+    // Make publicly readable so thumbnails render in <img> without auth
+    await drive.permissions.create({
+      fileId: data.id,
+      requestBody: { role: 'reader', type: 'anyone' },
+      supportsAllDrives: true,
+    });
+
+    // thumbnail URL works in <img> for public files; viewUrl for "open in Drive"
+    const url = `https://drive.google.com/thumbnail?id=${data.id}&sz=w800`;
+    return { storage: 'drive', driveFileId: data.id, url, viewUrl: data.webViewLink };
+  }
+
+  // Local fallback — served by express.static('/uploads')
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  const safeName = `${Date.now()}-${filename.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+  fs.writeFileSync(path.join(UPLOADS_DIR, safeName), buffer);
+  const url = `/uploads/${safeName}`;
+  return { storage: 'local', driveFileId: '', url, viewUrl: url };
+}
+
 // Uploads a file buffer. Pass customerName to store in a per-customer subfolder.
 // Returns { storage, driveFileId, url }.
 export async function uploadFile({ buffer, filename, mimeType, customerName }) {

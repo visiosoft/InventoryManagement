@@ -71,6 +71,7 @@ export default function Units() {
   const [view, setView] = useState<'grid' | 'table'>('grid')
   const [statusFilter, setStatusFilter] = useState('')
   const [floorFilter, setFloorFilter] = useState('')
+  const [sizeFilter, setSizeFilter] = useState('')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Unit | null>(null)
   const [adding, setAdding] = useState(false)
@@ -81,6 +82,18 @@ export default function Units() {
     queryFn: () => api.get('/units').then((r) => r.data),
   })
 
+  const sizeBreakdown = useMemo(() => {
+    const map = new Map<number, { available: number; total: number }>()
+    for (const u of units || []) {
+      if (u.sizeSqf == null) continue
+      const entry = map.get(u.sizeSqf) ?? { available: 0, total: 0 }
+      entry.total += 1
+      if (u.status === 'available') entry.available += 1
+      map.set(u.sizeSqf, entry)
+    }
+    return [...map.entries()].sort((a, b) => a[0] - b[0]).map(([sqf, counts]) => ({ sqf, ...counts }))
+  }, [units])
+
   const filtered = useMemo(
     () =>
       (units || [])
@@ -88,6 +101,7 @@ export default function Units() {
           (u) =>
             (!statusFilter || u.status === statusFilter) &&
             (!floorFilter || u.floor === floorFilter) &&
+            (!sizeFilter || u.sizeSqf === Number(sizeFilter)) &&
             (!search || u.unitNumber.toLowerCase().includes(search.toLowerCase()) || String(u.sizeSqf ?? '').includes(search))
         )
         .sort((a, b) => {
@@ -96,7 +110,7 @@ export default function Units() {
           const norm = (s: string) => s.replace(/\s+/g, '')
           return norm(a.unitNumber).localeCompare(norm(b.unitNumber), undefined, { numeric: true })
         }),
-    [units, statusFilter, floorFilter, search]
+    [units, statusFilter, floorFilter, sizeFilter, search]
   )
 
   const grouped = useMemo(() => {
@@ -145,6 +159,43 @@ export default function Units() {
           </div>
         }
       />
+
+      {/* Size summary cards */}
+      {sizeBreakdown.length > 0 && (
+        <div className="mb-3 flex flex-wrap gap-2">
+          {sizeBreakdown.map(({ sqf, available, total }) => {
+            const active = sizeFilter === String(sqf)
+            return (
+              <button
+                key={sqf}
+                type="button"
+                onClick={() => setSizeFilter(active ? '' : String(sqf))}
+                className={cn(
+                  'rounded-lg border px-3 py-2 text-left transition-all text-xs cursor-pointer',
+                  active
+                    ? 'border-primary bg-primary/10 ring-1 ring-primary'
+                    : 'border-border bg-card hover:border-primary/60 hover:bg-accent'
+                )}
+              >
+                <div className="font-semibold text-foreground">{sqf} sq ft</div>
+                <div className={cn('mt-0.5 font-medium tabular-nums', available === 0 ? 'text-muted-foreground' : 'text-emerald-600 dark:text-emerald-400')}>
+                  {available} / {total}
+                </div>
+                <div className="text-[10px] text-muted-foreground">available</div>
+              </button>
+            )
+          })}
+          {sizeFilter && (
+            <button
+              type="button"
+              onClick={() => setSizeFilter('')}
+              className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors self-center"
+            >
+              Show all
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="mb-4 flex flex-wrap gap-2">
         <Input className="w-44" placeholder="Search unit / size…" value={search} onChange={(e) => setSearch(e.target.value)} />

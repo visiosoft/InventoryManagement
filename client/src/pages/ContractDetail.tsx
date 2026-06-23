@@ -1024,6 +1024,7 @@ export default function ContractDetail() {
   const [sendingInvoiceId, setSendingInvoiceId] = useState<string | null>(null)
   const [showInvoiceModal, setShowInvoiceModal] = useState(false)
   const [invoiceOverride, setInvoiceOverride] = useState<{ start: string; end: string } | null>(null)
+  const [editModal, setEditModal] = useState(false)
 
   const { data, isLoading } = useQuery<{ contract: Contract; payments: Payment[]; documents: AppDocument[] }>({
     queryKey: ['contract', id],
@@ -1117,6 +1118,12 @@ export default function ContractDetail() {
       setSendingInvoiceId(null)
       setError(apiError(e))
     },
+  })
+
+  const updateContract = useMutation({
+    mutationFn: (body: Record<string, unknown>) => api.put(`/contracts/${id}`, body),
+    onSuccess: () => { invalidate(); setEditModal(false); setError('') },
+    onError: (e) => setError(apiError(e)),
   })
 
   const addNote = useMutation({
@@ -1225,6 +1232,9 @@ export default function ContractDetail() {
         subtitle={`${c.customer?.fullName} · ${unitLabel}`}
         action={
           <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => { setError(''); setEditModal(true) }}>
+              <PenLine size={14} /> Edit
+            </Button>
             <Button variant="outline" size="sm" onClick={downloadContractPdf} disabled={downloadingPdf}>
               <Download size={14} /> {downloadingPdf ? 'Opening PDF...' : 'Contract PDF'}
             </Button>
@@ -1736,6 +1746,82 @@ export default function ContractDetail() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      {/* ── Edit Contract Modal ── */}
+      <Modal open={editModal} onClose={() => setEditModal(false)} title="Edit Contract" wide>
+        {editModal && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              const f = new FormData(e.currentTarget)
+              updateContract.mutate({
+                rate: Number(f.get('rate')),
+                deposit: Number(f.get('deposit')),
+                billingPeriod: String(f.get('billingPeriod')),
+                startDate: String(f.get('startDate')),
+                endDate: String(f.get('endDate')),
+                autoRenew: f.get('autoRenew') === 'true',
+                paymentMethod: String(f.get('paymentMethod') || ''),
+                firstPaymentDate: f.get('firstPaymentDate') ? String(f.get('firstPaymentDate')) : undefined,
+                notes: String(f.get('notes') || ''),
+              })
+            }}
+            className="space-y-4"
+          >
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Monthly Rate (AED)">
+                <Input name="rate" type="number" min="0" step="0.01" defaultValue={c.rate} required />
+              </Field>
+              <Field label="Deposit (AED)">
+                <Input name="deposit" type="number" min="0" step="0.01" defaultValue={c.deposit} />
+              </Field>
+              <Field label="Billing Period">
+                <Select name="billingPeriod" defaultValue={c.billingPeriod}>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </Select>
+              </Field>
+              <Field label="Payment Method">
+                <Select name="paymentMethod" defaultValue={c.paymentMethod || ''}>
+                  <option value="">— Select —</option>
+                  <option value="cash">Cash</option>
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="cheque">Cheque</option>
+                  <option value="card">Card</option>
+                </Select>
+              </Field>
+              <Field label="Start Date">
+                <Input name="startDate" type="date" defaultValue={c.startDate?.slice(0, 10)} required />
+              </Field>
+              <Field label="End Date">
+                <Input name="endDate" type="date" defaultValue={c.endDate?.slice(0, 10)} required />
+              </Field>
+              <Field label="First Payment Date">
+                <Input name="firstPaymentDate" type="date" defaultValue={c.firstPaymentDate?.slice(0, 10)} />
+              </Field>
+              <Field label="Auto Renew">
+                <Select name="autoRenew" defaultValue={c.autoRenew ? 'true' : 'false'}>
+                  <option value="true">Yes</option>
+                  <option value="false">No</option>
+                </Select>
+              </Field>
+              <Field label="Notes" className="col-span-2">
+                <Textarea name="notes" rows={3} defaultValue={c.notes || ''} placeholder="Internal notes about this contract" />
+              </Field>
+            </div>
+            <div className="rounded-lg bg-muted/50 border px-3 py-2 text-xs text-muted-foreground">
+              <strong>Note:</strong> Customer and unit cannot be changed here. To change these, end this contract and create a new one.
+            </div>
+            {error && <p className="text-xs text-destructive">{error}</p>}
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <Button type="button" variant="outline" onClick={() => setEditModal(false)}>Cancel</Button>
+              <Button type="submit" disabled={updateContract.isPending}>
+                {updateContract.isPending ? 'Saving…' : 'Save Changes'}
+              </Button>
+            </div>
+          </form>
+        )}
       </Modal>
     </div>
   )

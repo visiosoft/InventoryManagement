@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { GripVertical } from 'lucide-react'
-import { Box, FileText, TrendingUp, AlertTriangle, Wallet } from 'lucide-react'
+import { Box, FileText, TrendingUp } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { api, apiError } from '../lib/api'
 import type { Summary } from '../lib/types'
@@ -119,10 +119,6 @@ export default function Dashboard() {
   // ── All derived values must be computed before any early return so hooks
   //    (useMemo below) are always called in the same order every render. ──────
 
-  const collectionRate = data && data.expectedThisMonth > 0
-    ? Math.round((data.revenueThisMonth / data.expectedThisMonth) * 100)
-    : 0
-  const revenueGap = data ? Math.max(0, data.expectedThisMonth - data.revenueThisMonth) : 0
   const totalUnits = data
     ? data.byStatus.available + data.byStatus.occupied + data.byStatus.reserved + data.byStatus.maintenance
     : 0
@@ -168,7 +164,7 @@ export default function Dashboard() {
     if (!dragged || dragged === targetId) return
     const next = [...layout]
     const from = next.indexOf(dragged)
-    const to   = next.indexOf(targetId)
+    const to = next.indexOf(targetId)
     if (from < 0 || to < 0) return
     next.splice(from, 1)
     next.splice(to, 0, dragged)
@@ -181,196 +177,194 @@ export default function Dashboard() {
     () => {
       if (!data) return {} as Record<WidgetId, React.ReactNode>
       return ({
-      stats: (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-8">
-          <StatCard icon={TrendingUp} label="Occupancy" value={`${data.occupancyPct}%`} sub={`${data.byStatus.occupied + data.byStatus.reserved} of ${totalUnits} units`} tone="bg-violet-500/15 text-violet-600 dark:text-violet-400" />
-          <StatCard icon={Box} label="Available units" value={String(data.byStatus.available)} sub="Ready to rent" tone="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" />
-          <StatCard icon={Box} label="Reserved units" value={String(data.byStatus.reserved)} sub="Booked, not occupied" tone="bg-orange-500/15 text-orange-600 dark:text-orange-400" />
-          <StatCard icon={Box} label="Maintenance" value={String(data.byStatus.maintenance)} sub="Unavailable stock" tone="bg-slate-500/15 text-slate-600 dark:text-slate-400" />
-          <StatCard icon={FileText} label="Active contracts" value={String(data.activeContracts)} sub={`${data.expiringContracts.length} expiring in 15 days`} tone="bg-blue-500/15 text-blue-600 dark:text-blue-400" />
-          <StatCard icon={TrendingUp} label="Revenue this month" value={formatMoney(data.revenueThisMonth)} sub={`${formatMoney(data.expectedThisMonth)} expected`} tone="bg-amber-500/15 text-amber-600 dark:text-amber-400" />
-          <StatCard icon={Wallet} label="Collection rate" value={`${collectionRate}%`} sub={`Gap: ${formatMoney(revenueGap)}`} tone="bg-cyan-500/15 text-cyan-600 dark:text-cyan-400" />
-          <StatCard icon={AlertTriangle} label="Revenue gap" value={formatMoney(revenueGap)} sub="Expected minus collected" tone="bg-rose-500/15 text-rose-600 dark:text-rose-400" />
-        </div>
-      ),
-      'units-by-size': (
-        <WidgetShell
-          id="units-by-size"
-          title="Units by size"
-          subtitle="Available vs occupied per size"
-          onDragStart={onDragStart}
-          onDragOver={onDragOver}
-          onDrop={onDrop}
-        >
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={data.bySize} barGap={2}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-              <XAxis dataKey="sizeSqf" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
-              <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={28} />
-              <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
-              <Bar dataKey="available" name="Available" fill="#10b981" radius={[3, 3, 0, 0]} />
-              <Bar dataKey="occupied" name="Occupied" fill="#8b5cf6" radius={[3, 3, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </WidgetShell>
-      ),
-      'floor-occupancy': (
-        <WidgetShell
-          id="floor-occupancy"
-          title="Floor occupancy"
-          subtitle="Available vs occupied by floor"
-          onDragStart={onDragStart}
-          onDragOver={onDragOver}
-          onDrop={onDrop}
-        >
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={data.byFloor} barGap={2}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-              <XAxis dataKey="floor" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
-              <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={28} />
-              <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
-              <Bar dataKey="available" name="Available" fill="#10b981" radius={[3, 3, 0, 0]} />
-              <Bar dataKey="occupied" name="Occupied" fill="#8b5cf6" radius={[3, 3, 0, 0]} />
-              <Bar dataKey="maintenance" name="Maintenance" fill="#94a3b8" radius={[3, 3, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </WidgetShell>
-      ),
-      'overdue-aging': (
-        <WidgetShell
-          id="overdue-aging"
-          title="Overdue aging"
-          subtitle="How old current overdues are"
-          onDragStart={onDragStart}
-          onDragOver={onDragOver}
-          onDrop={onDrop}
-        >
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={overdueAging} barGap={6}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-              <XAxis dataKey="bucket" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
-              <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={28} />
-              <Tooltip
-                contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
-              />
-              <Bar dataKey="count" name="count" fill="#ef4444" radius={[3, 3, 0, 0]} />
-              <Bar dataKey="amount" name="amount" fill="#f59e0b" radius={[3, 3, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </WidgetShell>
-      ),
-      'expiring-contracts': (
-        <WidgetShell
-          id="expiring-contracts"
-          title="Contracts expiring soon"
-          subtitle="Next 15 days"
-          onDragStart={onDragStart}
-          onDragOver={onDragOver}
-          onDrop={onDrop}
-        >
-          {data.expiringContracts.length === 0 ? (
-            <EmptyState message="No contracts expiring in the next 15 days." />
-          ) : (
-            <ul className="divide-y divide-border">
-              {data.expiringContracts.map((c) => {
-                const daysLeft = Math.ceil((new Date(c.endDate).getTime() - Date.now()) / 86400000)
-                const endFmt = new Date(c.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
-                const urgency = daysLeft <= 3 ? 'text-destructive' : daysLeft <= 7 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'
-                return (
-                  <li key={c._id} className="flex items-center justify-between gap-3 py-3 hover:bg-muted/40">
-                    <div className="min-w-0">
-                      <span className="font-medium text-sm">{c.customer?.fullName}</span>
-                      <span className="text-muted-foreground text-sm"> — {c.unit?.unitNumber} — </span>
-                      <span className={`text-sm ${urgency}`}>expires in {daysLeft} day{daysLeft !== 1 ? 's' : ''} ({endFmt})</span>
-                    </div>
-                    <Link to={`/contracts/${c._id}`} className="shrink-0 text-xs font-medium text-primary hover:underline whitespace-nowrap">View Contract</Link>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
-        </WidgetShell>
-      ),
-      'top-delinquents': (
-        <WidgetShell
-          id="top-delinquents"
-          title="Top delinquent customers"
-          subtitle="Highest current overdue balances"
-          onDragStart={onDragStart}
-          onDragOver={onDragOver}
-          onDrop={onDrop}
-        >
-          {topDelinquents.length === 0 ? (
-            <EmptyState message="No customers with overdue balances." />
-          ) : (
-            <Table>
-              <thead><tr><Th>Customer</Th><Th>Overdue items</Th><Th>Oldest due</Th><Th>Total overdue</Th></tr></thead>
-              <tbody>
-                {topDelinquents.map((c) => (
-                  <tr key={c.customerId || c.customerName} className="hover:bg-muted/50">
-                    <Td>
-                      {c.customerId ? (
-                        <Link className="text-primary font-medium hover:underline" to={`/customers/${c.customerId}`}>{c.customerName}</Link>
-                      ) : (
-                        c.customerName
-                      )}
-                    </Td>
-                    <Td>{c.count}</Td>
-                    <Td>{formatDate(new Date(c.oldestDue).toISOString())}</Td>
-                    <Td className="font-medium text-destructive">{formatMoney(c.total)}</Td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
-          )}
-        </WidgetShell>
-      ),
-      'latest-notes': (
-        <WidgetShell
-          id="latest-notes"
-          title="Latest notes & follow-ups"
-          subtitle="30 most recent notes across all contracts"
-          onDragStart={onDragStart}
-          onDragOver={onDragOver}
-          onDrop={onDrop}
-        >
-          {latestNotes.length === 0 ? (
-            <EmptyState message="No notes yet. Add follow-up notes from any contract page." />
-          ) : (
-            <div className="divide-y divide-border">
-              {latestNotes.map((n, i) => {
-                const fmtAt = (d: string) => {
-                  const dt = new Date(d)
-                  return dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-                    + ' · ' + dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-                }
-                return (
-                  <div key={i} className="flex gap-3 py-3 hover:bg-muted/40 px-1">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                        <Link to={`/contracts/${n.contractId}`} className="text-xs font-semibold text-primary hover:underline shrink-0">
-                          {n.contractNo}
-                        </Link>
-                        {n.customerName && (
-                          <span className="text-xs text-muted-foreground truncate">{n.customerName}</span>
-                        )}
-                        {n.author && (
-                          <span className="text-[10px] text-muted-foreground/70">· {n.author}</span>
-                        )}
+        stats: (
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-8">
+            <StatCard icon={TrendingUp} label="Occupancy" value={`${data.occupancyPct}%`} sub={`${data.byStatus.occupied + data.byStatus.reserved} of ${totalUnits} units`} tone="bg-violet-500/15 text-violet-600 dark:text-violet-400" />
+            <StatCard icon={Box} label="Available units" value={String(data.byStatus.available)} sub="Ready to rent" tone="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" />
+            <StatCard icon={Box} label="Reserved units" value={String(data.byStatus.reserved)} sub="Booked, not occupied" tone="bg-orange-500/15 text-orange-600 dark:text-orange-400" />
+            <StatCard icon={Box} label="Maintenance" value={String(data.byStatus.maintenance)} sub="Unavailable stock" tone="bg-slate-500/15 text-slate-600 dark:text-slate-400" />
+            <StatCard icon={FileText} label="Active contracts" value={String(data.activeContracts)} sub={`${data.expiringContracts.length} expiring in 15 days`} tone="bg-blue-500/15 text-blue-600 dark:text-blue-400" />
+            <StatCard icon={TrendingUp} label="Revenue this month" value={formatMoney(data.revenueThisMonth)} sub={`${formatMoney(data.expectedThisMonth)} expected`} tone="bg-amber-500/15 text-amber-600 dark:text-amber-400" />
+          </div>
+        ),
+        'units-by-size': (
+          <WidgetShell
+            id="units-by-size"
+            title="Units by size"
+            subtitle="Available vs occupied per size"
+            onDragStart={onDragStart}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+          >
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={data.bySize} barGap={2}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                <XAxis dataKey="sizeSqf" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={28} />
+                <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
+                <Bar dataKey="available" name="Available" fill="#10b981" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="occupied" name="Occupied" fill="#8b5cf6" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </WidgetShell>
+        ),
+        'floor-occupancy': (
+          <WidgetShell
+            id="floor-occupancy"
+            title="Floor occupancy"
+            subtitle="Available vs occupied by floor"
+            onDragStart={onDragStart}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+          >
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={data.byFloor} barGap={2}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                <XAxis dataKey="floor" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={28} />
+                <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
+                <Bar dataKey="available" name="Available" fill="#10b981" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="occupied" name="Occupied" fill="#8b5cf6" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="maintenance" name="Maintenance" fill="#94a3b8" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </WidgetShell>
+        ),
+        'overdue-aging': (
+          <WidgetShell
+            id="overdue-aging"
+            title="Overdue aging"
+            subtitle="How old current overdues are"
+            onDragStart={onDragStart}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+          >
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={overdueAging} barGap={6}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                <XAxis dataKey="bucket" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={28} />
+                <Tooltip
+                  contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
+                />
+                <Bar dataKey="count" name="count" fill="#ef4444" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="amount" name="amount" fill="#f59e0b" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </WidgetShell>
+        ),
+        'expiring-contracts': (
+          <WidgetShell
+            id="expiring-contracts"
+            title="Contracts expiring soon"
+            subtitle="Next 15 days"
+            onDragStart={onDragStart}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+          >
+            {data.expiringContracts.length === 0 ? (
+              <EmptyState message="No contracts expiring in the next 15 days." />
+            ) : (
+              <ul className="divide-y divide-border">
+                {data.expiringContracts.map((c) => {
+                  const daysLeft = Math.ceil((new Date(c.endDate).getTime() - Date.now()) / 86400000)
+                  const endFmt = new Date(c.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                  const urgency = daysLeft <= 3 ? 'text-destructive' : daysLeft <= 7 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'
+                  return (
+                    <li key={c._id} className="flex items-center justify-between gap-3 py-3 hover:bg-muted/40">
+                      <div className="min-w-0">
+                        <span className="font-medium text-sm">{c.customer?.fullName}</span>
+                        <span className="text-muted-foreground text-sm"> — {c.unit?.unitNumber} — </span>
+                        <span className={`text-sm ${urgency}`}>expires in {daysLeft} day{daysLeft !== 1 ? 's' : ''} ({endFmt})</span>
                       </div>
-                      <p className="text-sm leading-snug line-clamp-2">{n.text}</p>
+                      <Link to={`/contracts/${c._id}`} className="shrink-0 text-xs font-medium text-primary hover:underline whitespace-nowrap">View Contract</Link>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </WidgetShell>
+        ),
+        'top-delinquents': (
+          <WidgetShell
+            id="top-delinquents"
+            title="Top delinquent customers"
+            subtitle="Highest current overdue balances"
+            onDragStart={onDragStart}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+          >
+            {topDelinquents.length === 0 ? (
+              <EmptyState message="No customers with overdue balances." />
+            ) : (
+              <Table>
+                <thead><tr><Th>Customer</Th><Th>Overdue items</Th><Th>Oldest due</Th><Th>Total overdue</Th></tr></thead>
+                <tbody>
+                  {topDelinquents.map((c) => (
+                    <tr key={c.customerId || c.customerName} className="hover:bg-muted/50">
+                      <Td>
+                        {c.customerId ? (
+                          <Link className="text-primary font-medium hover:underline" to={`/customers/${c.customerId}`}>{c.customerName}</Link>
+                        ) : (
+                          c.customerName
+                        )}
+                      </Td>
+                      <Td>{c.count}</Td>
+                      <Td>{formatDate(new Date(c.oldestDue).toISOString())}</Td>
+                      <Td className="font-medium text-destructive">{formatMoney(c.total)}</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            )}
+          </WidgetShell>
+        ),
+        'latest-notes': (
+          <WidgetShell
+            id="latest-notes"
+            title="Latest notes & follow-ups"
+            subtitle="30 most recent notes across all contracts"
+            onDragStart={onDragStart}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+          >
+            {latestNotes.length === 0 ? (
+              <EmptyState message="No notes yet. Add follow-up notes from any contract page." />
+            ) : (
+              <div className="divide-y divide-border">
+                {latestNotes.map((n, i) => {
+                  const fmtAt = (d: string) => {
+                    const dt = new Date(d)
+                    return dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+                      + ' · ' + dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+                  }
+                  return (
+                    <div key={i} className="flex gap-3 py-3 hover:bg-muted/40 px-1">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                          <Link to={`/contracts/${n.contractId}`} className="text-xs font-semibold text-primary hover:underline shrink-0">
+                            {n.contractNo}
+                          </Link>
+                          {n.customerName && (
+                            <span className="text-xs text-muted-foreground truncate">{n.customerName}</span>
+                          )}
+                          {n.author && (
+                            <span className="text-[10px] text-muted-foreground/70">· {n.author}</span>
+                          )}
+                        </div>
+                        <p className="text-sm leading-snug line-clamp-2">{n.text}</p>
+                      </div>
+                      <time className="text-[10px] text-muted-foreground whitespace-nowrap shrink-0 pt-0.5">{fmtAt(n.at)}</time>
                     </div>
-                    <time className="text-[10px] text-muted-foreground whitespace-nowrap shrink-0 pt-0.5">{fmtAt(n.at)}</time>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </WidgetShell>
-      ),
+                  )
+                })}
+              </div>
+            )}
+          </WidgetShell>
+        ),
       })
     },
-    [collectionRate, data, latestNotes, overdueAging, onDrop, revenueGap, topDelinquents, totalUnits]
+    [data, latestNotes, overdueAging, onDrop, topDelinquents, totalUnits]
   )
 
   // Early returns come AFTER all hooks so hook call order is always stable

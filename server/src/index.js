@@ -31,6 +31,7 @@ import movingLeadRoutes from './routes/movingLeads.js';
 import movingQuoteRoutes from './routes/movingQuotes.js';
 import movingInvoiceRoutes from './routes/movingInvoices.js';
 import movingReportRoutes from './routes/movingReports.js';
+import movingSurveyRoutes from './routes/movingSurveys.js';
 import { runGoogleContactsSync } from './services/syncContacts.js';
 import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
 
@@ -86,6 +87,7 @@ app.use('/api/moving-leads', requireAuth, movingLeadRoutes);
 app.use('/api/moving-quotes', requireAuth, movingQuoteRoutes);
 app.use('/api/moving-invoices', requireAuth, movingInvoiceRoutes);
 app.use('/api/moving-reports', requireAuth, movingReportRoutes);
+app.use('/api/moving-surveys', requireAuth, movingSurveyRoutes);
 app.use('/api/unit-types', requireAuth, unitTypeRoutes);
 app.use(
   '/api/integrations',

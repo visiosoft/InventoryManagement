@@ -771,10 +771,21 @@ const movingSurveyItemSchema = new Schema(
   { _id: false }
 );
 
+const surveyPhotoSchema = new Schema(
+  {
+    url: { type: String, default: '' },       // thumbnail / embeddable
+    viewUrl: { type: String, default: '' },   // open-in-Drive link
+    name: { type: String, default: '' },
+    mimeType: { type: String, default: '' },
+  },
+  { _id: false }
+);
+
 const movingSurveyRoomSchema = new Schema(
   {
     name: { type: String, default: '' },
     items: [movingSurveyItemSchema],
+    photos: { type: [surveyPhotoSchema], default: [] },
   },
   { _id: false }
 );

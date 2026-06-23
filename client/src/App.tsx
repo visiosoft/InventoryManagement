@@ -63,6 +63,9 @@ import MovingRevenueReport from './pages/moving/reports/MovingRevenueReport'
 import MovingJobsReport from './pages/moving/reports/MovingJobsReport'
 import MovingCrewReport from './pages/moving/reports/MovingCrewReport'
 import MovingFleetReport from './pages/moving/reports/MovingFleetReport'
+import MovingSurveyDetail from './pages/moving/MovingSurveyDetail'
+import FieldLogin from './pages/field/FieldLogin'
+import FieldApp from './pages/field/FieldApp'
 
 export default function App() {
   const { user } = useAuth()
@@ -72,6 +75,8 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/sign/:token" element={<SignContract />} />
+        <Route path="/field/login" element={<FieldLogin />} />
+        <Route path="/field/*" element={<FieldApp />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     )
@@ -81,6 +86,8 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Navigate to="/" replace />} />
       <Route path="/sign/:token" element={<SignContract />} />
+      <Route path="/field/login" element={<Navigate to="/field" replace />} />
+      <Route path="/field/*" element={<FieldApp />} />
       <Route element={<Layout />}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/units" element={<Units />} />
@@ -120,6 +127,7 @@ export default function App() {
         <Route path="/moving/jobs" element={<PermGuard module="moving_jobs"><MovingJobs /></PermGuard>} />
         <Route path="/moving/jobs/new" element={<PermGuard module="moving_jobs"><NewMovingJob /></PermGuard>} />
         <Route path="/moving/jobs/:id" element={<PermGuard module="moving_jobs"><MovingJobDetail /></PermGuard>} />
+        <Route path="/moving/jobs/:id/survey" element={<PermGuard module="moving_jobs"><MovingSurveyDetail /></PermGuard>} />
         <Route path="/moving/schedule" element={<PermGuard module="moving_schedule"><MovingSchedule /></PermGuard>} />
         <Route path="/moving/dispatch" element={<PermGuard module="moving_dispatch"><MovingDispatch /></PermGuard>} />
         <Route path="/moving/workers" element={<PermGuard module="moving_workers"><Workers /></PermGuard>} />

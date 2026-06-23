@@ -472,6 +472,28 @@ router.post('/:id/sign-inperson', async (req, res) => {
   }
 });
 
+// Update editable fields on a contract (rate, deposit, dates, notes, payment method, auto-renew).
+// Does NOT allow changing customer or unit — those require a new contract.
+router.put('/:id', async (req, res) => {
+  try {
+    const contract = await Contract.findById(req.params.id);
+    if (!contract) return res.status(404).json({ error: 'Contract not found' });
+
+    const allowed = ['rate', 'deposit', 'startDate', 'endDate', 'billingPeriod', 'autoRenew', 'paymentMethod', 'firstPaymentDate', 'notes'];
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) {
+        contract[key] = key.endsWith('Date') && req.body[key] ? new Date(req.body[key]) : req.body[key];
+      }
+    }
+
+    await contract.save();
+    const populated = await populateAll(Contract.findById(contract._id));
+    res.json(populated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Delete a contract and all its payments / documents.
 // Active contracts cannot be deleted — end or cancel them first.
 router.delete('/:id', async (req, res) => {

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { Check, ChevronDown, FileText, Files, Layers, X } from 'lucide-react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Check, ChevronDown, FileText, Files, Layers, Plus, X } from 'lucide-react'
 import { api, apiError, unitTypeApi } from '../lib/api'
 import type { Contract, Customer, Unit, UnitType } from '../lib/types'
 import { Badge, Button, Card, CardBody, Field, Input, PageHeader, Select, Spinner, Textarea } from '../components/ui'
+import { AddCustomerModal } from '../components/AddCustomerModal'
 import { cn, formatMoney } from '../lib/utils'
 
 type Mode = 'single' | 'combined' | 'multi'
@@ -131,10 +132,12 @@ function CustomerCombobox({
   customers,
   value,
   onChange,
+  onAddNew,
 }: {
   customers: Customer[]
   value: string
   onChange: (id: string) => void
+  onAddNew: () => void
 }) {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
@@ -232,9 +235,12 @@ function CustomerCombobox({
       {open && (
         <div className="absolute z-50 mt-1 w-full rounded-md border bg-white dark:bg-zinc-900 shadow-lg max-h-60 overflow-y-auto">
           {filtered.length === 0 ? (
-            <div className="px-3 py-3 text-xs text-muted-foreground">
-              No customers found.{' '}
-              <Link to="/customers" className="text-primary hover:underline">Add customer</Link>
+            <div className="px-3 py-3 text-xs text-muted-foreground flex items-center justify-between">
+              <span>No customers found.</span>
+              <button type="button" onMouseDown={(e) => { e.preventDefault(); onAddNew() }}
+                className="flex items-center gap-1 text-primary hover:underline font-medium">
+                <Plus size={11} /> Add new
+              </button>
             </div>
           ) : (
             filtered.map((c) => (
@@ -339,6 +345,7 @@ export default function NewContract() {
 
   const [customerId, setCustomerId] = useState(params.get('customer') || '')
   const [unitIds, setUnitIds] = useState<string[]>(params.get('unit') ? [params.get('unit')!] : [])
+  const [addCustOpen, setAddCustOpen] = useState(false)
 
   const billing = 'weekly' as const
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10))
@@ -520,6 +527,23 @@ export default function NewContract() {
   const availCount = useMemo(() => [...unitAvailMap.values()].filter((v) => v === 'available').length, [unitAvailMap])
   const bookedCount = useMemo(() => [...unitAvailMap.values()].filter((v) => v === 'booked').length, [unitAvailMap])
 
+  // Per-size availability summary for the clickable summary cards
+  const sizeBreakdown = useMemo(() => {
+    const map = new Map<number, { available: number; total: number }>()
+    for (const u of units) {
+      if (u.sizeSqf == null || u.status === 'maintenance') continue
+      const avail = unitAvailMap.get(u._id) ?? 'maintenance'
+      if (avail === 'maintenance') continue
+      const entry = map.get(u.sizeSqf) ?? { available: 0, total: 0 }
+      entry.total += 1
+      if (avail === 'available' || avail === 'prebookable') entry.available += 1
+      map.set(u.sizeSqf, entry)
+    }
+    return [...map.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([sqf, counts]) => ({ sqf, ...counts }))
+  }, [units, unitAvailMap])
+
   if (unitsLoading) return <Spinner />
   if (!mode) return (
     <div className="max-w-2xl">
@@ -574,7 +598,7 @@ export default function NewContract() {
           {step === 0 && (
             <>
               <Field label="Customer">
-                <CustomerCombobox customers={customers} value={customerId} onChange={setCustomerId} />
+                <CustomerCombobox customers={customers} value={customerId} onChange={setCustomerId} onAddNew={() => setAddCustOpen(true)} />
               </Field>
               {selectedCustomer && (
                 <div className="rounded-lg border bg-accent/50 px-3 py-2 text-xs space-y-0.5">
@@ -584,10 +608,10 @@ export default function NewContract() {
                   {selectedCustomer.email && <p className="text-muted-foreground">{selectedCustomer.email}</p>}
                 </div>
               )}
-              <p className="text-xs text-muted-foreground">
-                Customer not listed?{' '}
-                <Link to="/customers" className="text-primary hover:underline">Add them first</Link>, then come back.
-              </p>
+              <button type="button" onClick={() => setAddCustOpen(true)}
+                className="flex items-center gap-1.5 text-xs text-primary hover:underline">
+                <Plus size={12} /> Add new customer
+              </button>
             </>
           )}
 
@@ -618,6 +642,46 @@ export default function NewContract() {
                   </div>
                 </div>
               </div>
+
+              {/* Size summary cards */}
+              {sizeBreakdown.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {sizeBreakdown.map(({ sqf, available, total }) => {
+                    const active = sizeFilter === String(sqf)
+                    const none = available === 0
+                    return (
+                      <button
+                        key={sqf}
+                        type="button"
+                        onClick={() => setSizeFilter(active ? '' : String(sqf))}
+                        className={cn(
+                          'rounded-lg border px-3 py-2 text-left transition-all text-xs',
+                          active
+                            ? 'border-primary bg-primary/10 ring-1 ring-primary'
+                            : none
+                              ? 'border-border bg-muted/40 opacity-60 cursor-default'
+                              : 'border-border bg-card hover:border-primary/60 hover:bg-accent cursor-pointer'
+                        )}
+                      >
+                        <div className="font-semibold text-foreground">{sqf} sq ft</div>
+                        <div className={cn('mt-0.5 font-medium tabular-nums', none ? 'text-muted-foreground' : 'text-emerald-600 dark:text-emerald-400')}>
+                          {available} / {total}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground">available</div>
+                      </button>
+                    )
+                  })}
+                  {sizeFilter && (
+                    <button
+                      type="button"
+                      onClick={() => setSizeFilter('')}
+                      className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:border-border/80 transition-colors self-center"
+                    >
+                      Show all
+                    </button>
+                  )}
+                </div>
+              )}
 
               {/* Filters */}
               <div className="flex flex-wrap items-center gap-2">
@@ -1016,6 +1080,12 @@ export default function NewContract() {
           </div>
         </CardBody>
       </Card>
+
+      <AddCustomerModal
+        open={addCustOpen}
+        onClose={() => setAddCustOpen(false)}
+        onCreated={(customer) => { setCustomerId(customer._id) }}
+      />
     </div>
   )
 }

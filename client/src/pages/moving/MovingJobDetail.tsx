@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, FileText, MapPin, Users, Truck as TruckIcon, AlertCircle } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, FileText, MapPin, Users, Truck as TruckIcon, AlertCircle, ClipboardList } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingJob, MovingJobStatus, Worker, Truck } from '../../lib/types'
 import { Badge, Button, Card, CardBody, CardHeader, EmptyState, Field, Input, Modal, Select, Spinner, Table, Td, Th, Textarea, InfoGrid, InfoItem } from '../../components/ui'
@@ -182,6 +182,15 @@ export default function MovingJobDetail() {
 
         {/* Action Buttons */}
         <div className="flex gap-2 shrink-0">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => navigate(`/moving/jobs/${id}/survey`)}
+            title="View or edit the moving survey"
+          >
+            <ClipboardList size={16} className="mr-1" />
+            Survey
+          </Button>
           {!job.quote && (
             <Button
               size="sm"
