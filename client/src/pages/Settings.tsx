@@ -2,8 +2,8 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
-import { apiError, integrationApi, unitTypeApi } from '../lib/api'
-import type { IntegrationStatus, UnitType } from '../lib/types'
+import { apiError, integrationApi, productApi, unitTypeApi } from '../lib/api'
+import type { IntegrationStatus, Product, UnitType } from '../lib/types'
 import { Button, Card, CardBody, CardHeader, Field, Input, Modal, PageHeader, Table, Td, Th } from '../components/ui'
 import { formatMoney } from '../lib/utils'
 
@@ -213,12 +213,155 @@ function PricingTiersCard() {
   )
 }
 
+// ---- Products / Services Card ----
+function ProductsCard() {
+  const qc = useQueryClient()
+  const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState<Product | null>(null)
+  const [err, setErr] = useState('')
+
+  const { data: products = [] } = useQuery<Product[]>({
+    queryKey: ['products-all'],
+    queryFn: () => productApi.listAll(),
+  })
+
+  const create = useMutation({
+    mutationFn: (body: Partial<Product>) => productApi.create(body),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['products'] }); qc.invalidateQueries({ queryKey: ['products-all'] }); setAdding(false); setErr('') },
+    onError: (e) => setErr(apiError(e)),
+  })
+  const update = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: Partial<Product> }) => productApi.update(id, body),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['products'] }); qc.invalidateQueries({ queryKey: ['products-all'] }); setEditing(null); setErr('') },
+    onError: (e) => setErr(apiError(e)),
+  })
+  const remove = useMutation({
+    mutationFn: (id: string) => productApi.remove(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['products'] }); qc.invalidateQueries({ queryKey: ['products-all'] }) },
+  })
+
+  function ProductForm({ initial, onSubmit, busy }: { initial?: Product; busy: boolean; onSubmit: (b: Partial<Product>) => void }) {
+    const [name, setName] = useState(initial?.name ?? '')
+    const [description, setDescription] = useState(initial?.description ?? '')
+    const [rate, setRate] = useState(String(initial?.rate ?? ''))
+    const [unit, setUnit] = useState(initial?.unit ?? 'qty')
+    const [isActive, setIsActive] = useState(initial?.isActive ?? true)
+
+    function submit(e: FormEvent) {
+      e.preventDefault()
+      onSubmit({ name: name.trim(), description: description.trim(), rate: Number(rate), unit: unit.trim() || 'qty', isActive })
+    }
+
+    return (
+      <form onSubmit={submit} className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Product / Service name *">
+            <Input value={name} onChange={(e) => setName(e.target.value)} required placeholder="e.g. Storage Rental" />
+          </Field>
+          <Field label="Unit">
+            <Input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="qty / hr / month" />
+          </Field>
+        </div>
+        <Field label="Description">
+          <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Optional short description" />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Rate (AED)">
+            <Input type="number" min={0} step="0.01" value={rate} onChange={(e) => setRate(e.target.value)} required placeholder="0.00" />
+          </Field>
+          <Field label="Status">
+            <div className="flex items-center gap-2 h-9">
+              <button type="button" onClick={() => setIsActive(v => !v)}
+                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${isActive ? 'bg-primary' : 'bg-muted-foreground/30'}`}>
+                <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${isActive ? 'translate-x-4' : 'translate-x-1'}`} />
+              </button>
+              <span className="text-sm">{isActive ? 'Active' : 'Inactive'}</span>
+            </div>
+          </Field>
+        </div>
+        {err && <p className="text-xs text-destructive">{err}</p>}
+        <div className="flex justify-end gap-2 pt-1">
+          <Button type="button" variant="outline" onClick={() => { setAdding(false); setEditing(null); setErr('') }}>Cancel</Button>
+          <Button type="submit" disabled={busy}>{busy ? 'Saving…' : initial ? 'Save changes' : 'Add product'}</Button>
+        </div>
+      </form>
+    )
+  }
+
+  return (
+    <>
+      <Card>
+        <CardHeader
+          title="Products & Services"
+          subtitle={`${products.filter(p => p.isActive).length} active`}
+          action={<Button size="sm" onClick={() => { setAdding(true); setEditing(null); setErr('') }}><Plus size={14} /> Add product</Button>}
+        />
+        {adding && (
+          <CardBody className="border-b">
+            <ProductForm busy={create.isPending} onSubmit={(b) => create.mutate(b)} />
+          </CardBody>
+        )}
+        {products.length === 0 ? (
+          <CardBody><p className="text-sm text-muted-foreground text-center py-4">No products yet. Add your first product or service.</p></CardBody>
+        ) : (
+          <Table>
+            <thead><tr><Th>Name</Th><Th>Description</Th><Th>Rate (AED)</Th><Th>Unit</Th><Th>Status</Th><Th /></tr></thead>
+            <tbody>
+              {products.map((p) => (
+                <tr key={p._id} className="hover:bg-muted/50">
+                  <Td className="font-medium">{p.name}</Td>
+                  <Td className="text-muted-foreground text-xs">{p.description || '—'}</Td>
+                  <Td>{formatMoney(p.rate)}</Td>
+                  <Td className="text-xs text-muted-foreground">{p.unit}</Td>
+                  <Td>
+                    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${p.isActive ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' : 'bg-muted text-muted-foreground'}`}>
+                      {p.isActive ? 'Active' : 'Inactive'}
+                    </span>
+                  </Td>
+                  <Td className="text-right">
+                    <div className="flex items-center justify-end gap-3">
+                      <button type="button" onClick={() => { setEditing(p); setAdding(false); setErr('') }}
+                        className="text-xs text-primary hover:underline flex items-center gap-1 cursor-pointer">
+                        <Pencil size={11} /> Edit
+                      </button>
+                      <button type="button" onClick={() => { if (confirm(`Delete "${p.name}"?`)) remove.mutate(p._id) }}
+                        className="text-xs text-destructive hover:underline flex items-center gap-1 cursor-pointer">
+                        <Trash2 size={11} /> Delete
+                      </button>
+                    </div>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </Card>
+
+      <Modal open={!!editing} onClose={() => { setEditing(null); setErr('') }} title="Edit product">
+        {editing && (
+          <ProductForm initial={editing} busy={update.isPending}
+            onSubmit={(b) => update.mutate({ id: editing._id, body: b })} />
+        )}
+      </Modal>
+    </>
+  )
+}
+
 // ---- Main Settings Page ----
 export default function Settings() {
   const qc = useQueryClient()
   const location = useLocation()
   const [driveMsg, setDriveMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [contactsMsg, setContactsMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [whatsAppAllowedLabels, setWhatsAppAllowedLabels] = useState('')
+  const [whatsAppSyncOnlyAllowedLabels, setWhatsAppSyncOnlyAllowedLabels] = useState(false)
+
+  useEffect(() => {
+    const saved = localStorage.getItem('whatsapplead.allowedLabels') || ''
+    setWhatsAppAllowedLabels(saved)
+    const savedToggle = localStorage.getItem('whatsapplead.syncOnlyAllowedLabels')
+    setWhatsAppSyncOnlyAllowedLabels(savedToggle === 'true')
+  }, [])
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)
@@ -253,6 +396,7 @@ export default function Settings() {
       <PageHeader title="Settings" subtitle="Pricing tiers and integrations" />
 
       <PricingTiersCard />
+      <ProductsCard />
 
       <Card>
         <CardHeader title="Integrations" />
@@ -346,6 +490,61 @@ export default function Settings() {
           </div>
           <p className="text-xs text-muted-foreground">
             Setup instructions are in <code>README.md</code>. WhatsApp v1 currently validates webhook setup only.
+          </p>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader title="WhatsAppLead Label Rules" subtitle="Restrict which labels are kept after WhatsApp sync" />
+        <CardBody className="space-y-3 text-sm">
+          <Field label="Allowed labels (comma-separated)">
+            <Input
+              value={whatsAppAllowedLabels}
+              onChange={(e) => setWhatsAppAllowedLabels(e.target.value)}
+              placeholder="Inquiry,New customer"
+            />
+          </Field>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              onClick={() => {
+                localStorage.setItem('whatsapplead.allowedLabels', whatsAppAllowedLabels.trim())
+                localStorage.setItem('whatsapplead.syncOnlyAllowedLabels', String(whatsAppSyncOnlyAllowedLabels))
+              }}
+            >
+              Save label rules
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                localStorage.removeItem('whatsapplead.allowedLabels')
+                localStorage.removeItem('whatsapplead.syncOnlyAllowedLabels')
+                setWhatsAppAllowedLabels('')
+                setWhatsAppSyncOnlyAllowedLabels(false)
+              }}
+            >
+              Clear
+            </Button>
+          </div>
+          <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+            <div>
+              <p className="text-sm font-medium">Sync only chats with allowed labels</p>
+              <p className="text-xs text-muted-foreground">Turn off to sync all chats regardless of label.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setWhatsAppSyncOnlyAllowedLabels((v) => !v)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${whatsAppSyncOnlyAllowedLabels ? 'bg-emerald-600' : 'bg-muted-foreground/30'}`}
+              aria-label="Toggle sync only allowed labels"
+              aria-pressed={whatsAppSyncOnlyAllowedLabels}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${whatsAppSyncOnlyAllowedLabels ? 'translate-x-6' : 'translate-x-1'}`} />
+            </button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            These values are sent to WhatsApp sync requests from the Leads page. For always-on server rules, also set
+            <code className="bg-muted px-1 rounded ml-1">WHATSAPP_ALLOWED_LABELS</code> in the WhatsAppLead .env.
           </p>
         </CardBody>
       </Card>

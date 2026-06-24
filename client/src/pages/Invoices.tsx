@@ -2,8 +2,8 @@ import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { Download, Plus, Upload } from 'lucide-react'
-import { api, apiError, invoiceApi } from '../lib/api'
-import type { Customer, Invoice, InvoiceAttachment, InvoiceItem, InvoicePaymentEntry, InvoiceStatus } from '../lib/types'
+import { api, apiError, invoiceApi, productApi } from '../lib/api'
+import type { Customer, Invoice, InvoiceAttachment, InvoiceItem, InvoicePaymentEntry, InvoiceStatus, Product, Unit } from '../lib/types'
 import { Badge, Button, Card, CornerRibbon, EmptyState, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, Textarea, Th, statusLabel } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
 
@@ -21,6 +21,12 @@ const invoiceStatusTone: Record<InvoiceStatus, string> = {
     overdue: 'red',
     cancelled: 'amber',
 }
+
+function invoiceLabel(status: InvoiceStatus) {
+    return status === 'draft' ? 'Quote' : statusLabel(status)
+}
+
+function isQuote(inv: Invoice) { return inv.status === 'draft' }
 
 function calcAmount(item: Pick<InvoiceItem, 'quantity' | 'rate' | 'discountPct'>) {
     const gross = Number(item.quantity || 0) * Number(item.rate || 0)
@@ -47,6 +53,31 @@ function InvoiceForm({
     error: string
     onSubmit: (body: Record<string, unknown>) => void
 }) {
+    const todayISO = new Date().toISOString().slice(0, 10)
+    const twoDaysISO = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10)
+    const VAT_PCT = 5
+    const [vatEnabled, setVatEnabled] = useState(initial?.vatEnabled ?? false)
+    const [invoiceDate, setInvoiceDate] = useState(toLocalDateInput(initial?.invoiceDate) || todayISO)
+    const [dueDate, setDueDate] = useState(toLocalDateInput(initial?.dueDate) || twoDaysISO)
+
+    const { data: products = [] } = useQuery<Product[]>({
+      queryKey: ['products'],
+      queryFn: () => productApi.list(),
+    })
+
+    const { data: units = [] } = useQuery<Unit[]>({
+      queryKey: ['units'],
+      queryFn: () => api.get<Unit[]>('/units').then(r => r.data),
+    })
+
+    function handleInvoiceDateChange(val: string) {
+      setInvoiceDate(val)
+      if (val) {
+        const due = new Date(new Date(val).getTime() + 2 * 86400000).toISOString().slice(0, 10)
+        setDueDate(due)
+      }
+    }
+
     const [items, setItems] = useState<InvoiceItem[]>(
         initial?.items?.length
             ? initial.items
@@ -54,15 +85,15 @@ function InvoiceForm({
     )
 
     const subTotal = useMemo(() => Number(items.reduce((s, i) => s + calcAmount(i), 0).toFixed(2)), [items])
+    const vatAmount = vatEnabled ? Number((subTotal * VAT_PCT / 100).toFixed(2)) : 0
+    const grossTotal = Number((subTotal + vatAmount).toFixed(2))
 
     function patchItem(index: number, patch: Partial<InvoiceItem>) {
         setItems((prev) => prev.map((it, i) => (i === index ? { ...it, ...patch } : it)))
     }
-
     function addItem() {
         setItems((prev) => [...prev, { sortOrder: prev.length, itemDetails: '', quantity: 1, rate: 0, discountPct: 0, amount: 0 }])
     }
-
     function removeItem(index: number) {
         setItems((prev) => prev.filter((_, i) => i !== index).map((it, i) => ({ ...it, sortOrder: i })))
     }
@@ -71,7 +102,6 @@ function InvoiceForm({
         e.preventDefault()
         const f = new FormData(e.currentTarget)
         const normalizedItems = items.map((it, idx) => ({ ...it, sortOrder: idx, amount: calcAmount(it) }))
-
         onSubmit({
             customer: f.get('customer'),
             orderNumber: f.get('orderNumber'),
@@ -84,86 +114,242 @@ function InvoiceForm({
             items: normalizedItems,
             customerNotes: f.get('customerNotes'),
             subTotal,
-            total: subTotal,
+            vatEnabled,
+            vatPct: vatEnabled ? VAT_PCT : 0,
+            vatAmount,
+            total: grossTotal,
             paymentMade: Number(f.get('paymentMade') || 0),
             termsAndConditions: f.get('termsAndConditions'),
             status: f.get('status') || 'draft',
         })
     }
 
+    const inputCls = 'w-full bg-transparent border border-border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-orange-400'
+    const metaInputCls = 'bg-transparent border-0 border-b border-border text-sm text-right focus:outline-none focus:border-orange-400 w-full'
+
     return (
-        <form onSubmit={submit} className="space-y-4">
-            <Field label="Customer Name">
-                <Select name="customer" defaultValue={initial?.customer?._id || ''} required>
-                    <option value="">Select customer</option>
-                    {customers.map((c) => (
-                        <option key={c._id} value={c._id}>{c.fullName}</option>
-                    ))}
-                </Select>
-            </Field>
-
-            <div className="grid grid-cols-2 gap-3">
-                <Field label="Order Number"><Input name="orderNumber" defaultValue={initial?.orderNumber || ''} /></Field>
-                <Field label="Invoice Date"><Input type="date" name="invoiceDate" defaultValue={toLocalDateInput(initial?.invoiceDate) || toLocalDateInput(new Date().toISOString())} required /></Field>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-                <Field label="Terms"><Input name="terms" defaultValue={initial?.terms || ''} placeholder="Net 7 / Net 15" /></Field>
-                <Field label="Due Date"><Input type="date" name="dueDate" defaultValue={toLocalDateInput(initial?.dueDate)} required /></Field>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-                <Field label="Salesperson"><Input name="salesperson" defaultValue={initial?.salesperson || ''} /></Field>
-                <Field label="Status">
-                    <Select name="status" defaultValue={initial?.status || 'draft'}>
-                        {INVOICE_STATUSES.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
+        <form onSubmit={submit} className="space-y-0 text-sm">
+            {/* ── Header: customer + invoice meta ── */}
+            <div className="grid grid-cols-[1fr_280px] gap-6 pb-5 border-b mb-0">
+                {/* Customer */}
+                <div className="flex flex-col justify-center">
+                    <Select name="customer" defaultValue={initial?.customer?._id || ''} required
+                        className="border-dashed text-muted-foreground">
+                        <option value="">Find or add a customer</option>
+                        {customers.map((c) => (
+                            <option key={c._id} value={c._id}>{c.fullName}</option>
+                        ))}
                     </Select>
-                </Field>
+                </div>
+
+                {/* Invoice meta */}
+                <div className="space-y-1.5">
+                    <div className="grid grid-cols-[130px_1fr] items-center gap-2">
+                        <span className="text-orange-500 font-medium text-right text-xs">Invoice No.:</span>
+                        <span className="text-right text-xs text-muted-foreground">{initial?.invoiceNo ?? 'Auto-assigned'}</span>
+                    </div>
+                    <div className="grid grid-cols-[130px_1fr] items-center gap-2">
+                        <label className="text-orange-500 font-medium text-right text-xs">Invoice Date</label>
+                        <input type="date" name="invoiceDate" value={invoiceDate} onChange={(e) => handleInvoiceDateChange(e.target.value)} required className={metaInputCls} />
+                    </div>
+                    <div className="grid grid-cols-[130px_1fr] items-center gap-2">
+                        <label className="text-orange-500 font-medium text-right text-xs">Due Date:</label>
+                        <input type="date" name="dueDate" value={dueDate} onChange={(e) => setDueDate(e.target.value)} required className={metaInputCls} />
+                    </div>
+                    <div className="grid grid-cols-[130px_1fr] items-center gap-2">
+                        <label className="text-orange-500 font-medium text-right text-xs">Status:</label>
+                        <select name="status" defaultValue={initial?.status || 'draft'}
+                            className="bg-transparent border-0 border-b border-border text-sm text-right focus:outline-none focus:border-orange-400 w-full">
+                            {INVOICE_STATUSES.map((s) => <option key={s} value={s}>{invoiceLabel(s)}</option>)}
+                        </select>
+                    </div>
+                    <div className="border-t border-border pt-1.5 grid grid-cols-[130px_1fr] items-center gap-2">
+                        <span className="text-orange-500 font-medium text-right text-xs">Due:</span>
+                        <span className="text-right font-semibold">{grossTotal.toFixed(2)}</span>
+                    </div>
+                </div>
             </div>
 
-            <Field label="Bank Information"><Textarea name="bankInformation" defaultValue={initial?.bankInformation || DEFAULT_BANK_INFORMATION} /></Field>
-            <Field label="Subject"><Input name="subject" defaultValue={initial?.subject || ''} /></Field>
+            {/* ── Line items table ── */}
+            <div className="mb-0">
+                <table className="w-full">
+                    <thead>
+                        <tr className="border-y-2 border-orange-400 bg-orange-50 dark:bg-orange-950/20">
+                            <th className="text-left py-2 px-3 text-orange-600 dark:text-orange-400 font-semibold uppercase text-[11px] tracking-wide">Product / Service</th>
+                            <th className="text-left py-2 px-3 text-orange-600 dark:text-orange-400 font-semibold uppercase text-[11px] tracking-wide w-28">Unit Cost</th>
+                            <th className="text-left py-2 px-3 text-orange-600 dark:text-orange-400 font-semibold uppercase text-[11px] tracking-wide w-24">Quantity</th>
+                            <th className="text-left py-2 px-3 text-orange-600 dark:text-orange-400 font-semibold uppercase text-[11px] tracking-wide w-24">Discount %</th>
+                            <th className="text-right py-2 px-3 text-orange-600 dark:text-orange-400 font-semibold uppercase text-[11px] tracking-wide w-28">Price (AED)</th>
+                            <th className="w-8" />
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {items.map((it, idx) => {
+                            const amount = calcAmount(it)
+                            const [productName, ...descLines] = it.itemDetails.split('\n')
+                            const description = descLines.join('\n')
+                            return (
+                                <tr key={idx} className="border-b border-border align-top group">
+                                    <td className="px-3 py-2">
+                                            <select
+                                            value=""
+                                            onChange={(e) => {
+                                                const val = e.target.value
+                                                if (val.startsWith('unit:')) {
+                                                    const unit = units.find(u => u._id === val.slice(5))
+                                                    if (unit) patchItem(idx, {
+                                                        itemDetails: `Unit ${unit.unitNumber}${unit.sizeSqf ? ` · ${unit.sizeSqf} sq ft` : ''}`,
+                                                        rate: unit.price ?? 0,
+                                                        quantity: 1,
+                                                    })
+                                                } else if (val.startsWith('prod:')) {
+                                                    const prod = products.find(p => p._id === val.slice(5))
+                                                    if (prod) patchItem(idx, {
+                                                        itemDetails: prod.name + (prod.description ? '\n' + prod.description : ''),
+                                                        rate: prod.rate,
+                                                        quantity: 1,
+                                                    })
+                                                }
+                                            }}
+                                            className="w-full bg-transparent border-b border-dashed border-border text-sm focus:outline-none focus:border-orange-400 pb-0.5 text-muted-foreground"
+                                        >
+                                            <option value="">— Select product, unit, or type below —</option>
+                                            {units.length > 0 && (
+                                                <optgroup label="Storage Units">
+                                                    {units.map(u => (
+                                                        <option key={u._id} value={`unit:${u._id}`}>
+                                                            {u.unitNumber}{u.sizeSqf ? ` · ${u.sizeSqf} sq ft` : ''}{u.price ? ` — AED ${u.price}/mo` : ''} [{u.status}]
+                                                        </option>
+                                                    ))}
+                                                </optgroup>
+                                            )}
+                                            {products.length > 0 && (
+                                                <optgroup label="Products & Services">
+                                                    {products.map(p => (
+                                                        <option key={p._id} value={`prod:${p._id}`}>
+                                                            {p.name} — AED {p.rate}
+                                                        </option>
+                                                    ))}
+                                                </optgroup>
+                                            )}
+                                        </select>
+                                        <input
+                                            type="text"
+                                            placeholder="Item name"
+                                            value={productName}
+                                            onChange={(e) => patchItem(idx, { itemDetails: e.target.value + (description ? '\n' + description : '') })}
+                                            className="w-full mt-1 bg-transparent border-b border-dashed border-border/50 text-sm focus:outline-none focus:border-orange-400 pb-0.5"
+                                        />
+                                        <textarea
+                                            placeholder="Description"
+                                            value={description}
+                                            onChange={(e) => patchItem(idx, { itemDetails: (productName || '') + (e.target.value ? '\n' + e.target.value : '') })}
+                                            rows={1}
+                                            className="w-full mt-1 text-xs text-muted-foreground bg-transparent focus:outline-none resize-none border border-dashed border-border/50 rounded px-1 py-0.5 placeholder:text-border"
+                                        />
+                                    </td>
+                                    <td className="px-3 py-2">
+                                        <input type="number" min={0} step="0.01" value={it.rate}
+                                            onChange={(e) => patchItem(idx, { rate: Number(e.target.value) })}
+                                            placeholder="Unit Cost" className={inputCls} required />
+                                    </td>
+                                    <td className="px-3 py-2">
+                                        <input type="number" min={0} step="1" value={it.quantity}
+                                            onChange={(e) => patchItem(idx, { quantity: Number(e.target.value) })}
+                                            placeholder="Quantity" className={inputCls} required />
+                                    </td>
+                                    <td className="px-3 py-2">
+                                        <input type="number" min={0} max={100} step="0.01" value={it.discountPct}
+                                            onChange={(e) => patchItem(idx, { discountPct: Number(e.target.value) })}
+                                            placeholder="0%" className={inputCls} />
+                                    </td>
+                                    <td className="px-3 py-2 text-right font-medium whitespace-nowrap">
+                                        AED {formatMoney(amount)}
+                                    </td>
+                                    <td className="px-1 py-2 text-center">
+                                        {items.length > 1 && (
+                                            <button type="button" onClick={() => removeItem(idx)}
+                                                className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all text-base leading-none cursor-pointer">
+                                                ×
+                                            </button>
+                                        )}
+                                    </td>
+                                </tr>
+                            )
+                        })}
+                    </tbody>
+                </table>
 
-            <Card>
-                <div className="px-4 pt-3 pb-2 flex items-center justify-between">
-                    <h3 className="text-sm font-semibold">Item Table</h3>
-                    <Button type="button" variant="outline" size="sm" onClick={addItem}>Add item</Button>
-                </div>
-                <div className="px-4 pb-4 space-y-3">
-                    {items.map((it, idx) => {
-                        const amount = calcAmount(it)
-                        return (
-                            <div key={idx} className="rounded-lg border p-3 space-y-2">
-                                <div className="flex items-center justify-between">
-                                    <div className="text-xs font-medium">Item {idx + 1}</div>
-                                    {items.length > 1 && (
-                                        <button type="button" className="text-xs text-destructive hover:underline cursor-pointer" onClick={() => removeItem(idx)}>Remove</button>
-                                    )}
-                                </div>
-                                <Field label="Item Details"><Textarea value={it.itemDetails} onChange={(e) => patchItem(idx, { itemDetails: e.target.value })} required /></Field>
-                                <div className="grid grid-cols-4 gap-2">
-                                    <Field label="Quantity"><Input type="number" min={0} step="1" value={it.quantity} onChange={(e) => patchItem(idx, { quantity: Number(e.target.value) })} required /></Field>
-                                    <Field label="Rate"><Input type="number" min={0} step="0.01" value={it.rate} onChange={(e) => patchItem(idx, { rate: Number(e.target.value) })} required /></Field>
-                                    <Field label="Discount"><Input type="number" min={0} max={100} step="0.01" value={it.discountPct} onChange={(e) => patchItem(idx, { discountPct: Number(e.target.value) })} /></Field>
-                                    <Field label="Amount"><Input value={formatMoney(amount)} readOnly /></Field>
-                                </div>
-                            </div>
-                        )
-                    })}
-                </div>
-            </Card>
-
-            <div className="grid grid-cols-3 gap-3">
-                <Field label="Sub Total"><Input value={subTotal.toFixed(2)} readOnly /></Field>
-                <Field label="Total (AED)"><Input value={subTotal.toFixed(2)} readOnly /></Field>
-                <Field label="Payment Made"><Input type="number" name="paymentMade" min={0} step="0.01" defaultValue={initial?.paymentMade ?? 0} /></Field>
+                {/* Add a line */}
+                <button type="button" onClick={addItem}
+                    className="w-full border border-dashed border-border py-2 text-sm text-muted-foreground hover:text-foreground hover:border-orange-400 hover:text-orange-500 transition-colors mt-0 cursor-pointer">
+                    + Add A Line
+                </button>
             </div>
 
-            <Field label="Customer Notes"><Textarea name="customerNotes" defaultValue={initial?.customerNotes || ''} placeholder="Will be displayed on the invoice" /></Field>
-            <Field label="Terms & Conditions"><Textarea name="termsAndConditions" defaultValue={initial?.termsAndConditions || ''} /></Field>
+            {/* ── Totals ── */}
+            <div className="flex justify-end py-4 border-b">
+                <div className="space-y-1.5 min-w-[260px]">
+                    <div className="grid grid-cols-[1fr_auto] gap-8">
+                        <span className="text-right text-muted-foreground">Subtotal:</span>
+                        <span className="text-right w-24">AED {subTotal.toFixed(2)}</span>
+                    </div>
 
-            {error && <p className="text-xs text-destructive">{error}</p>}
-            <Button type="submit" className="w-full" disabled={busy}>{busy ? 'Saving…' : 'Save invoice'}</Button>
+                    {/* VAT toggle row */}
+                    <div className="grid grid-cols-[1fr_auto] gap-8 items-center">
+                        <label className="flex items-center justify-end gap-2 cursor-pointer select-none">
+                            <span className={`text-right text-sm ${vatEnabled ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>
+                                VAT ({VAT_PCT}%):
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => setVatEnabled(v => !v)}
+                                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none ${vatEnabled ? 'bg-orange-500' : 'bg-muted-foreground/30'}`}
+                            >
+                                <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${vatEnabled ? 'translate-x-4' : 'translate-x-1'}`} />
+                            </button>
+                        </label>
+                        <span className={`text-right w-24 ${vatEnabled ? 'text-foreground' : 'text-muted-foreground/50'}`}>
+                            AED {vatAmount.toFixed(2)}
+                        </span>
+                    </div>
+
+                    <div className="grid grid-cols-[1fr_auto] gap-8 pt-1.5 border-t">
+                        <span className="text-right text-orange-500 font-semibold">Gross Total:</span>
+                        <span className="text-right w-24 font-semibold">AED {grossTotal.toFixed(2)}</span>
+                    </div>
+                </div>
+            </div>
+
+            {/* ── Terms & Notes ── */}
+            <div className="grid grid-cols-2 gap-4 py-4 border-b">
+                <div>
+                    <label className="text-xs font-semibold text-foreground block mb-1.5">*Terms &amp; Conditions:</label>
+                    <textarea name="termsAndConditions" defaultValue={initial?.termsAndConditions || ''}
+                        placeholder="Enter Terms &amp; Conditions" rows={4}
+                        className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-orange-400 resize-none" />
+                </div>
+                <div>
+                    <label className="text-xs font-semibold text-foreground block mb-1.5">*Invoice Note:</label>
+                    <textarea name="customerNotes" defaultValue={initial?.customerNotes || ''}
+                        placeholder="Enter Invoice Notes" rows={4}
+                        className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-orange-400 resize-none" />
+                </div>
+            </div>
+
+            {/* ── Extra fields (hidden but kept for API) ── */}
+            <input type="hidden" name="orderNumber" defaultValue={initial?.orderNumber || ''} />
+            <input type="hidden" name="salesperson" defaultValue={initial?.salesperson || ''} />
+            <input type="hidden" name="subject" defaultValue={initial?.subject || ''} />
+            <input type="hidden" name="bankInformation" defaultValue={initial?.bankInformation || DEFAULT_BANK_INFORMATION} />
+            <input type="hidden" name="paymentMade" value={initial?.paymentMade ?? 0} readOnly />
+
+            {error && <p className="text-xs text-destructive pt-2">{error}</p>}
+
+            {/* ── Actions ── */}
+            <div className="flex justify-end gap-2 pt-4">
+                <Button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save invoice'}</Button>
+            </div>
         </form>
     )
 }
@@ -430,16 +616,16 @@ export default function Invoices() {
     return (
         <div>
             <PageHeader
-                title="Invoices"
-                subtitle={`${invoices?.length ?? 0} invoices`}
-                action={<Button onClick={() => setAdding(true)}><Plus size={15} /> New invoice</Button>}
+                title="Invoices & Quotes"
+                subtitle={`${invoices?.length ?? 0} records`}
+                action={<Button onClick={() => setAdding(true)}><Plus size={15} /> New</Button>}
             />
 
             <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-2">
                 <Input placeholder="Search invoice #, order #, subject" value={search} onChange={(e) => setSearch(e.target.value)} />
                 <Select value={status} onChange={(e) => setStatus(e.target.value)}>
                     <option value="">All statuses</option>
-                    {INVOICE_STATUSES.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
+                    {INVOICE_STATUSES.map((s) => <option key={s} value={s}>{invoiceLabel(s)}</option>)}
                 </Select>
             </div>
 
@@ -450,7 +636,7 @@ export default function Invoices() {
                     <Table>
                         <thead>
                             <tr>
-                                <Th>Invoice #</Th>
+                                <Th>#</Th>
                                 <Th>Customer</Th>
                                 <Th>Invoice Date</Th>
                                 <Th>Due Date</Th>
@@ -479,7 +665,7 @@ export default function Invoices() {
                                     <Td className={Math.max(0, inv.total - (inv.paymentMade ?? 0)) > 0 ? 'text-destructive font-medium' : 'text-emerald-600'}>
                                         {formatMoney(Math.max(0, inv.total - (inv.paymentMade ?? 0)))}
                                     </Td>
-                                    <Td><Badge tone={invoiceStatusTone[inv.status]}>{statusLabel(inv.status)}</Badge></Td>
+                                    <Td><Badge tone={invoiceStatusTone[inv.status]}>{invoiceLabel(inv.status)}</Badge></Td>
                                     <Td>
                                         <div className="flex gap-2 text-xs">
                                             <button className="text-primary hover:underline cursor-pointer" onClick={() => setEditing(inv)}>Edit</button>

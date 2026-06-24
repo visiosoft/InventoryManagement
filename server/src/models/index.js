@@ -129,6 +129,7 @@ const leadSchema = new Schema(
   { timestamps: true }
 );
 
+  leadSchema.index({ leadDateTime: -1, createdAt: -1 });
 leadSchema.index({ status: 1, owner: 1, leadDateTime: -1 });
 leadSchema.index({ source: 1, createdAt: -1 });
 
@@ -871,6 +872,18 @@ export const MovingQuote = model('MovingQuote', movingQuoteSchema);
 export const MovingInvoice = model('MovingInvoice', movingInvoiceSchema);
 export const MovingSurvey = model('MovingSurvey', movingSurveySchema);
 export const MovingDocument = model('MovingDocument', movingDocumentSchema);
+
+const productSchema = new Schema(
+  {
+    name: { type: String, required: true },
+    description: { type: String, default: '' },
+    rate: { type: Number, required: true, default: 0 },
+    unit: { type: String, default: 'qty' },
+    isActive: { type: Boolean, default: true },
+  },
+  { timestamps: true }
+);
+export const Product = model('Product', productSchema);
 export const Document = model('Document', documentSchema);
 export const AuditLog = model('AuditLog', auditLogSchema);
 export const Counter = model('Counter', counterSchema);

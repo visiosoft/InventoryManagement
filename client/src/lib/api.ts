@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { Expense, IntegrationStatus, Invoice, Lead, Purchase, Quote, UnitType, Vendor } from './types'
+import type { Expense, IntegrationStatus, Invoice, Lead, Product, Purchase, Quote, UnitType, Vendor } from './types'
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || '/api'
 
@@ -35,6 +35,14 @@ export type LeadQuery = {
   owner?: string
   from?: string
   to?: string
+}
+
+export const productApi = {
+  list: () => api.get<Product[]>('/products').then((r) => r.data),
+  listAll: () => api.get<Product[]>('/products?active=false').then((r) => r.data),
+  create: (body: Partial<Product>) => api.post<Product>('/products', body).then((r) => r.data),
+  update: (id: string, body: Partial<Product>) => api.put<Product>(`/products/${id}`, body).then((r) => r.data),
+  remove: (id: string) => api.delete<{ ok: true }>(`/products/${id}`).then((r) => r.data),
 }
 
 export const unitTypeApi = {

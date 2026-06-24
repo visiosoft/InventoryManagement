@@ -35,7 +35,6 @@ import OverduePaymentsReport from './pages/reports/OverduePaymentsReport'
 import ExpiringContractsReport from './pages/reports/ExpiringContractsReport'
 import Settings from './pages/Settings'
 import Leads from './pages/Leads'
-import Quotes from './pages/Quotes'
 import Invoices from './pages/Invoices'
 import InvoiceDetail from './pages/InvoiceDetail'
 import Vendors from './pages/Vendors'
@@ -94,7 +93,6 @@ export default function App() {
         <Route path="/customers" element={<Customers />} />
         <Route path="/customers/:id" element={<CustomerDetail />} />
         <Route path="/leads" element={<Leads />} />
-        <Route path="/quotes" element={<Quotes />} />
         <Route path="/invoices" element={<Invoices />} />
         <Route path="/invoices/:id" element={<InvoiceDetail />} />
         <Route path="/vendors" element={<Vendors />} />

@@ -154,12 +154,25 @@ export interface Invoice {
   items: InvoiceItem[]
   customerNotes?: string
   subTotal: number
+  vatEnabled?: boolean
+  vatPct?: number
+  vatAmount?: number
   total: number
   paymentMade?: number
   paymentHistory?: InvoicePaymentEntry[]
   termsAndConditions?: string
   attachments: InvoiceAttachment[]
   status: InvoiceStatus
+  createdAt?: string
+}
+
+export interface Product {
+  _id: string
+  name: string
+  description?: string
+  rate: number
+  unit?: string
+  isActive: boolean
   createdAt?: string
 }
 

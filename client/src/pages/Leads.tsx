@@ -147,6 +147,28 @@ function LeadForm({
 
 type ImportResult = { created: number; skipped: number; errors: number; total: number }
 type ContactRow = { firstName: string; lastName: string; phone: string; email: string; organization: string }
+type WhatsAppLeadRow = {
+    lead: {
+        _id: string
+        fullName: string
+        phone: string
+        status?: string
+        source?: string
+        notes?: string
+        updatedAt?: string
+        createdAt?: string
+    }
+    labels: string[]
+    mappedStatus?: string
+    totalMessages: number
+    lastFiveMessages: Array<{
+        messageId: string
+        text: string
+        direction: 'inbound' | 'outbound'
+        occurredAt?: string
+    }>
+    whatsappWebLink?: string
+}
 
 function parseCsvLine(line: string): string[] {
     const result: string[] = []
@@ -210,6 +232,71 @@ export default function Leads() {
     const [pendingChange, setPendingChange] = useState<{ lead: Lead; newStatus: LeadStatus } | null>(null)
     const [changeComment, setChangeComment] = useState('')
     const fileInputRef = useRef<HTMLInputElement>(null)
+    const [waSearch, setWaSearch] = useState('')
+    const [waLabel, setWaLabel] = useState('')
+    const [selectedWhatsAppLeadId, setSelectedWhatsAppLeadId] = useState('')
+
+    const whatsAppLeadBaseUrl = (import.meta.env.VITE_WHATSAPPLEAD_BASE_URL as string | undefined)?.trim() || 'http://localhost:5075'
+    const useWhatsAppLeadView = true
+
+    const whatsAppContacts = useQuery<{ contacts: WhatsAppLeadRow[]; total: number }>({
+        queryKey: ['whatsapplead-contacts', whatsAppLeadBaseUrl],
+        queryFn: async () => {
+            const response = await fetch(`${whatsAppLeadBaseUrl}/api/contacts`)
+            if (!response.ok) throw new Error(`WhatsAppLead unavailable (${response.status})`)
+            return response.json()
+        },
+        enabled: useWhatsAppLeadView,
+    })
+
+    const syncWhatsAppLead = useMutation({
+        mutationFn: async () => {
+            const allowlistCsv = localStorage.getItem('whatsapplead.allowedLabels') || ''
+            const allowedLabels = allowlistCsv
+                .split(',')
+                .map((x) => x.trim())
+                .filter(Boolean)
+            const syncOnlyAllowedLabels = localStorage.getItem('whatsapplead.syncOnlyAllowedLabels') === 'true'
+
+            const response = await fetch(`${whatsAppLeadBaseUrl}/api/sync`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ allowedLabels, syncOnlyAllowedLabels }),
+            })
+            const data = await response.json().catch(() => ({}))
+            if (!response.ok) throw new Error((data as { error?: string })?.error || `Sync failed (${response.status})`)
+            return data as { scrapedCount?: number }
+        },
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['whatsapplead-contacts'] })
+        },
+    })
+
+    const whatsAppLabelOptions = useMemo(() => {
+        const labels = (whatsAppContacts.data?.contacts || [])
+            .flatMap((row) => row.labels || [])
+            .map((v) => String(v || '').trim())
+            .filter(Boolean)
+        return Array.from(new Set(labels)).sort((a, b) => a.localeCompare(b))
+    }, [whatsAppContacts.data?.contacts])
+
+    const filteredWhatsAppContacts = useMemo(() => {
+        const rows = whatsAppContacts.data?.contacts || []
+        const q = waSearch.trim().toLowerCase()
+        return rows.filter((row) => {
+            if (waLabel && !(row.labels || []).includes(waLabel)) return false
+            if (!q) return true
+            const lead = row.lead || { fullName: '', phone: '', notes: '' }
+            const labels = (row.labels || []).join(' ')
+            const blob = `${lead.fullName || ''} ${lead.phone || ''} ${lead.notes || ''} ${labels}`.toLowerCase()
+            return blob.includes(q)
+        })
+    }, [whatsAppContacts.data?.contacts, waSearch, waLabel])
+
+    const selectedWhatsAppRow = useMemo(
+        () => filteredWhatsAppContacts.find((row) => row.lead?._id === selectedWhatsAppLeadId) || filteredWhatsAppContacts[0],
+        [filteredWhatsAppContacts, selectedWhatsAppLeadId]
+    )
 
     const { data: users } = useQuery<{ _id: string; name: string; email: string }[]>({
         queryKey: ['lead-owners'],
@@ -308,6 +395,152 @@ export default function Leads() {
         }
         reader.readAsText(file)
         e.target.value = ''
+    }
+
+    if (useWhatsAppLeadView) {
+        return (
+            <div className="relative space-y-4">
+                <div className="pointer-events-none absolute -top-16 -left-10 h-56 w-56 rounded-full bg-emerald-400/20 blur-3xl" />
+                <div className="pointer-events-none absolute -bottom-20 -right-10 h-64 w-64 rounded-full bg-orange-400/20 blur-3xl" />
+
+                <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-950 via-emerald-900 to-teal-900 p-6 text-emerald-50 shadow-2xl">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                            <p className="text-xs uppercase tracking-[0.16em] text-emerald-200/90">Unified Pipeline</p>
+                            <h1 className="mt-1 text-3xl font-semibold">WhatsAppLead Contacts</h1>
+                            <p className="mt-2 text-sm text-emerald-100/85">{`Synced from ${whatsAppLeadBaseUrl} into your lead workflow.`}</p>
+                        </div>
+                        <div className="flex gap-2">
+                            <Button variant="outline" onClick={() => setAdding(true)} className="border-emerald-200/30 bg-white/10 text-emerald-50 hover:bg-white/20">
+                                <Plus size={15} /> Add manual lead
+                            </Button>
+                            <Button onClick={() => syncWhatsAppLead.mutate()} disabled={syncWhatsAppLead.isPending} className="bg-orange-500 text-white hover:bg-orange-400">
+                                <RefreshCw size={15} className={syncWhatsAppLead.isPending ? 'animate-spin' : ''} />
+                                {syncWhatsAppLead.isPending ? 'Syncing…' : 'Sync WhatsApp'}
+                            </Button>
+                        </div>
+                    </div>
+                </section>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="rounded-2xl border bg-card/95 p-4 shadow-sm">
+                        <p className="text-xs text-muted-foreground">WhatsApp Leads</p>
+                        <p className="text-3xl font-semibold tracking-tight">{whatsAppContacts.data?.contacts?.length || 0}</p>
+                    </div>
+                    <div className="rounded-2xl border bg-card/95 p-4 shadow-sm">
+                        <p className="text-xs text-muted-foreground">Labelled Contacts</p>
+                        <p className="text-3xl font-semibold tracking-tight">{(whatsAppContacts.data?.contacts || []).filter((x) => (x.labels || []).length > 0).length}</p>
+                    </div>
+                    <div className="rounded-2xl border bg-card/95 p-4 shadow-sm">
+                        <p className="text-xs text-muted-foreground">Stored Messages</p>
+                        <p className="text-3xl font-semibold tracking-tight">{(whatsAppContacts.data?.contacts || []).reduce((sum, row) => sum + Number(row.totalMessages || 0), 0)}</p>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-[1fr_260px] gap-2 max-w-3xl">
+                    <Input placeholder="Search name, phone, label" value={waSearch} onChange={(e) => setWaSearch(e.target.value)} className="bg-card/95" />
+                    <Select value={waLabel} onChange={(e) => setWaLabel(e.target.value)}>
+                        <option value="">All labels</option>
+                        {whatsAppLabelOptions.map((label) => (
+                            <option key={label} value={label}>{label}</option>
+                        ))}
+                    </Select>
+                </div>
+
+                {whatsAppContacts.isLoading ? (
+                    <Spinner />
+                ) : whatsAppContacts.error ? (
+                    <Card className="p-6">
+                        <p className="text-sm text-destructive">{apiError(whatsAppContacts.error)}</p>
+                        <p className="text-xs text-muted-foreground mt-2">Start WhatsAppLead server on {whatsAppLeadBaseUrl} and refresh this page.</p>
+                    </Card>
+                ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-4">
+                        <div className="overflow-hidden rounded-2xl border bg-card/95 shadow-sm">
+                            <div className="max-h-[70vh] overflow-auto">
+                                {filteredWhatsAppContacts.length === 0 ? (
+                                    <EmptyState message="No WhatsApp leads found." />
+                                ) : (
+                                    filteredWhatsAppContacts.map((row) => {
+                                        const active = (selectedWhatsAppRow?.lead?._id || '') === row.lead?._id
+                                        return (
+                                            <button
+                                                key={row.lead._id}
+                                                className={`w-full border-b px-4 py-3 text-left transition-colors ${active ? 'bg-emerald-50/80 dark:bg-emerald-900/20' : 'hover:bg-muted/50'}`}
+                                                onClick={() => setSelectedWhatsAppLeadId(row.lead._id)}
+                                            >
+                                                <div className="font-semibold">{row.lead.fullName || 'Unknown'}</div>
+                                                <div className="mt-1 text-xs text-muted-foreground">
+                                                    {row.lead.phone || 'No phone'}
+                                                    {(row.labels || []).length > 0 ? ` • ${row.labels.slice(0, 2).join(', ')}` : ' • No labels'}
+                                                </div>
+                                            </button>
+                                        )
+                                    })
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="rounded-2xl border bg-card/95 p-5 shadow-sm">
+                            {!selectedWhatsAppRow ? (
+                                <EmptyState message="Select a contact to see details." />
+                            ) : (
+                                <div>
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                        <div>
+                                            <h3 className="text-2xl font-semibold">{selectedWhatsAppRow.lead.fullName || 'Unknown'}</h3>
+                                            <p className="text-sm text-muted-foreground">
+                                                {selectedWhatsAppRow.lead.phone || 'No phone'} • Status: {selectedWhatsAppRow.mappedStatus || selectedWhatsAppRow.lead.status || 'new'}
+                                            </p>
+                                        </div>
+                                        {selectedWhatsAppRow.whatsappWebLink ? (
+                                            <a className="rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-muted" href={selectedWhatsAppRow.whatsappWebLink} target="_blank" rel="noreferrer">
+                                                Open in WhatsApp Web
+                                            </a>
+                                        ) : null}
+                                    </div>
+
+                                    <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                                        <div className="rounded-xl border bg-muted/30 p-3"><p className="text-xs text-muted-foreground">Lead Source</p><p className="font-semibold">{selectedWhatsAppRow.lead.source || 'whatsapp'}</p></div>
+                                        <div className="rounded-xl border bg-muted/30 p-3"><p className="text-xs text-muted-foreground">Messages Saved</p><p className="font-semibold">{selectedWhatsAppRow.totalMessages || 0}</p></div>
+                                        <div className="rounded-xl border bg-muted/30 p-3"><p className="text-xs text-muted-foreground">Last Updated</p><p className="font-semibold">{formatDate(selectedWhatsAppRow.lead.updatedAt || selectedWhatsAppRow.lead.createdAt)}</p></div>
+                                    </div>
+
+                                    <div className="mt-4 flex flex-wrap gap-2">
+                                        {(selectedWhatsAppRow.labels || []).length > 0 ? (
+                                            selectedWhatsAppRow.labels.map((l) => <span key={l} className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300">{l}</span>)
+                                        ) : (
+                                            <span className="rounded-full border px-2.5 py-1 text-xs text-muted-foreground">No labels detected</span>
+                                        )}
+                                    </div>
+
+                                    <div className="mt-5 space-y-2">
+                                        {(selectedWhatsAppRow.lastFiveMessages || []).map((msg) => (
+                                            <div key={msg.messageId} className={`rounded-xl border bg-background p-3 ${msg.direction === 'outbound' ? 'border-l-4 border-l-emerald-600' : 'border-l-4 border-l-orange-500'}`}>
+                                                <div className="flex justify-between text-xs text-muted-foreground">
+                                                    <span>{msg.direction || 'inbound'}</span>
+                                                    <span>{formatDate(msg.occurredAt)}</span>
+                                                </div>
+                                                <p className="mt-1 text-sm whitespace-pre-wrap">{msg.text || '(non-text message)'}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                <Modal open={adding} onClose={() => { setAdding(false); setError('') }} title="Add lead" wide>
+                    <LeadForm
+                        users={users || []}
+                        busy={createLead.isPending}
+                        error={error}
+                        onSubmit={(body) => createLead.mutate(body)}
+                    />
+                </Modal>
+            </div>
+        )
     }
 
     return (

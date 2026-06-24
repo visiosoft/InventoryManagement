@@ -24,7 +24,6 @@ const navGroups = [
     title: 'Sales',
     items: [
       { to: '/customers', label: 'Customers', icon: Users,          perm: 'customers' },
-      { to: '/quotes',    label: 'Quotes',    icon: FileSpreadsheet, perm: 'quotes' },
       { to: '/invoices',  label: 'Invoices',  icon: ReceiptText,    perm: 'invoices' },
       { to: '/whatsapp',  label: 'WhatsApp',  icon: MessageCircle,  perm: undefined },
     ],

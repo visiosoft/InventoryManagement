@@ -14,6 +14,14 @@ const invoiceStatusTone: Record<InvoiceStatus, string> = {
     draft: 'gray', sent: 'blue', paid: 'green', overdue: 'red', cancelled: 'amber',
 }
 
+function invoiceLabel(status: InvoiceStatus) {
+    return status === 'draft' ? 'Quote' : statusLabel(status)
+}
+
+function docLabel(invoice: Invoice) {
+    return invoice.status === 'draft' ? 'Quote' : 'Invoice'
+}
+
 function WhatNext({ invoice, onRecordPayment }: { invoice: Invoice; onRecordPayment: () => void }) {
     const balance = Math.max(0, invoice.total - (invoice.paymentMade ?? 0))
     const isOverdue =
@@ -51,9 +59,9 @@ function WhatNext({ invoice, onRecordPayment }: { invoice: Invoice; onRecordPaym
             <div className="mb-5 flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-900 px-5 py-4">
                 <Clock className="text-blue-600 shrink-0 mt-0.5" size={18} />
                 <div>
-                    <p className="text-sm font-semibold text-blue-700 dark:text-blue-400">What's Next?</p>
+                    <p className="text-sm font-semibold text-blue-700 dark:text-blue-400">Quote</p>
                     <p className="text-xs text-blue-600 dark:text-blue-500 mt-0.5">
-                        This invoice is in draft. Mark it as <strong>Sent</strong> once you've shared it with the customer.
+                        This is a quote. Mark it as <strong>Sent</strong> once you've shared it with the customer to convert it to an invoice.
                     </p>
                 </div>
             </div>
@@ -149,7 +157,7 @@ function RecordPaymentModalContent({ invoiceId, onClose }: { invoiceId: string; 
             {/* Summary */}
             <div className="grid grid-cols-3 gap-3 rounded-lg bg-muted/50 px-4 py-3 text-sm">
                 <div>
-                    <div className="text-xs text-muted-foreground">Invoice total</div>
+                    <div className="text-xs text-muted-foreground">{docLabel(invoice)} total</div>
                     <div className="font-semibold">{formatMoney(total)}</div>
                 </div>
                 <div>
@@ -303,7 +311,7 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
     const subTotal = items.reduce((s, it) => s + Number(it.amount || 0), 0)
 
     return (
-        <Modal open wide title={`Edit ${invoice.invoiceNo}`} onClose={onClose}>
+        <Modal open wide title={`Edit ${docLabel(invoice)} ${invoice.invoiceNo}`} onClose={onClose}>
             <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                     <Field label="Due Date">
@@ -488,7 +496,7 @@ export default function InvoiceDetail() {
                 <div>
                     <div className="flex items-center gap-3">
                         <h1 className="text-2xl font-bold">{invoice.invoiceNo}</h1>
-                        <Badge tone={invoiceStatusTone[invoice.status]}>{statusLabel(invoice.status)}</Badge>
+                        <Badge tone={invoiceStatusTone[invoice.status]}>{invoiceLabel(invoice.status)}</Badge>
                     </div>
                     {invoice.customer?.fullName && (
                         <p className="text-sm text-muted-foreground mt-1">{invoice.customer.fullName}</p>
@@ -542,7 +550,7 @@ export default function InvoiceDetail() {
                 <Card className="lg:col-span-2 relative overflow-hidden">
                     {invoice.status === 'overdue' && <CornerRibbon label="Overdue" color="amber" />}
                     {invoice.status === 'paid' && <CornerRibbon label="Paid" color="green" />}
-                    <CardHeader title="Invoice Details" />
+                    <CardHeader title={`${docLabel(invoice)} Details`} />
                     <CardBody className="space-y-4 text-sm">
                         <div className="grid grid-cols-2 gap-6">
                             <div>
@@ -708,6 +716,12 @@ export default function InvoiceDetail() {
                         <span className="text-muted-foreground">Sub Total</span>
                         <span className="w-28 text-right">{formatMoney(invoice.subTotal)}</span>
                     </div>
+                    {invoice.vatEnabled && (
+                        <div className="flex justify-end gap-8 text-muted-foreground">
+                            <span>VAT ({invoice.vatPct ?? 5}%)</span>
+                            <span className="w-28 text-right">{formatMoney(invoice.vatAmount ?? 0)}</span>
+                        </div>
+                    )}
                     <div className="flex justify-end gap-8 font-bold text-base border-t pt-1.5">
                         <span>Total</span>
                         <span className="w-28 text-right">AED {formatMoney(invoice.total)}</span>
