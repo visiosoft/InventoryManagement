@@ -52,8 +52,10 @@ function computeBreakdown(
   const dpp    = DAYS_PER_PERIOD[billing]
   const fmt    = (n: number) => formatMoney(Math.round(n * 100) / 100)
 
-  // Any leftover day = one more full week (ceiling, no proration)
-  const totalWeeks     = Math.ceil(totalDays / dpp)
+  // Cap to last COMPLETE 4-week period so the partial trailing period is absorbed by the deposit.
+  const rawWeeks       = Math.ceil(totalDays / dpp)
+  const fullPeriods    = Math.floor(rawWeeks / 4)
+  const totalWeeks     = fullPeriods > 1 ? fullPeriods * 4 : rawWeeks
   const discountWeeks  = billing === 'weekly' ? 4 : 1
   const firstCount = Math.min(discountWeeks, totalWeeks)
 
@@ -378,8 +380,13 @@ export default function NewContract() {
   })
 
   const periods = useMemo(() => estimatePeriods(startDate, endDate, billing), [startDate, endDate, billing])
-  // Invoices are always generated monthly (28-day periods), regardless of billing cadence
-  const monthlyPeriods = useMemo(() => estimatePeriods(startDate, endDate, 'monthly'), [startDate, endDate])
+  // Invoices = number of complete 4-week periods (floor, not ceil — last period is deposit-covered
+  // and the partial trailing weeks are absorbed by the deposit, so they don't add an extra invoice)
+  const monthlyPeriods = useMemo(() => {
+    const rawWeeks = estimatePeriods(startDate, endDate, 'weekly')
+    const full = Math.floor(rawWeeks / 4)
+    return full > 1 ? full : estimatePeriods(startDate, endDate, 'monthly')
+  }, [startDate, endDate])
 
   // Per-unit availability for selected date range
   const unitAvailMap = useMemo(() => {
@@ -467,9 +474,9 @@ export default function NewContract() {
       const pct = unitDiscount(u)
       const bd = computeBreakdown(startDate, endDate, billing, r, pct)
       const monthRows = bd.filter(b => b.label !== 'Total')
-      // Exclude last period — covered by deposit (if only 1 period, charge it fully)
-      const chargeable = monthRows.length > 1 ? monthRows.slice(0, -1) : monthRows
-      return sum + chargeable.reduce((s, row) => s + row.amount, 0)
+      // All month rows are chargeable rent; the last is covered by deposit but still counts
+      // as rent value (deposit is not free money — it offsets the last invoice).
+      return sum + monthRows.reduce((s, row) => s + row.amount, 0)
     }, 0),
     [selectedUnits, rate, billing, startDate, endDate, discountMap, unitTypes]
   )
@@ -938,15 +945,18 @@ export default function NewContract() {
                   const monthRows = breakdown.filter(r => r.label !== 'Total')
                   const secDeposit = displayRate  // always 1 month rent
 
-                  // Compute last month period dates for the deposit coverage label
-                  const lastMonthWeekCount = Math.min(4, periods)
-                  const weeksBeforeLast = periods - lastMonthWeekCount
+                  // Deposit period = start of last complete 4-week period
+                  const totalWeeksRaw = Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / (7 * 86400000))
+                  const fullPeriodsCount = Math.floor(totalWeeksRaw / 4)
+                  const depositWeekStart = fullPeriodsCount > 1 ? (fullPeriodsCount - 1) * 4 : 0
                   const lastMonthStartDate = startDate
-                    ? new Date(new Date(startDate).getTime() + weeksBeforeLast * 7 * 86400000)
+                    ? new Date(new Date(startDate).getTime() + depositWeekStart * 7 * 86400000)
                     : null
-                  const lastMonthEndDate = endDate ? new Date(endDate) : null
+                  const lastMonthEndDate = lastMonthStartDate
+                    ? new Date(lastMonthStartDate.getTime() + 28 * 86400000)
+                    : null
                   const depositPeriod = lastMonthStartDate && lastMonthEndDate
-                    ? `${fmtDate(lastMonthStartDate.toISOString().slice(0, 10))} – ${fmtDate(endDate)}`
+                    ? `${fmtDate(lastMonthStartDate.toISOString().slice(0, 10))} – ${fmtDate(new Date(lastMonthEndDate.getTime() - 86400000).toISOString().slice(0, 10))}`
                     : '1 month · last period'
 
                   // Split rows: all months before the last, and the last month row

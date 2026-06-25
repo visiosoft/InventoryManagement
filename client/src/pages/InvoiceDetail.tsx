@@ -20,7 +20,7 @@ function consolidateItems(items: Invoice['items']) {
     const weekRe = /^Week\s+\d+:\s+(.+?)\s+·\s+(.+)$/
     const weekItems = items.filter(it => weekRe.test(it.itemDetails ?? ''))
     const otherItems = items.filter(it => !weekRe.test(it.itemDetails ?? ''))
-    if (weekItems.length < 2) return items
+    if (weekItems.length < 2) return normaliseRentItems(items)
 
     const total = weekItems.reduce((s, it) => s + Number(it.amount ?? 0), 0)
     const singleWeekRate = Number(weekItems[0].rate ?? 0)
@@ -36,10 +36,27 @@ function consolidateItems(items: Invoice['items']) {
         toDate = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
     } catch { /* keep raw */ }
 
-    return [
-        { ...weekItems[0], itemDetails: `Storage Rent ${fromDate} – ${toDate} · ${unitNo}`, quantity: weekItems.length, rate: singleWeekRate, discountPct, amount: total },
+    return normaliseRentItems([
+        { ...weekItems[0], itemDetails: `Storage Rent ${fromDate} – ${toDate} · ${unitNo}`, quantity: 1, rate: Math.round(weekItems.length * singleWeekRate * 100) / 100, discountPct, amount: total },
         ...otherItems,
-    ]
+    ])
+}
+
+function normaliseRentItems(items: Invoice['items']): Invoice['items'] {
+    return items.map(it => {
+        const desc = it.itemDetails ?? ''
+        // Convert weekly-quantity rent items to monthly rate (qty=1)
+        if (/^(Storage Rent|Advance Rent)/.test(desc) && Number(it.quantity ?? 1) > 1) {
+            const monthlyRate = Math.round(Number(it.quantity) * Number(it.rate || 0) * 100) / 100
+            return { ...it, quantity: 1, rate: monthlyRate }
+        }
+        // Rename contract-generated "Security Deposit · Unit X" → "Advance Rent — Last Period · Unit X"
+        const depMatch = desc.match(/^Security Deposit\s+·\s+Unit\s+(.+)$/)
+        if (depMatch) {
+            return { ...it, itemDetails: `Advance Rent — Last Period · Unit ${depMatch[1]}` }
+        }
+        return it
+    })
 }
 
 function invoiceLabel(status: InvoiceStatus) {
@@ -377,7 +394,7 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
                                                 }
                                             </td>
                                             <td className="px-3 py-2 text-right text-muted-foreground text-xs">
-                                                {(it.quantity ?? 1) > 1 ? `${it.quantity} wk` : '—'}
+                                                {/^(Storage Rent|Advance Rent)/.test(it.itemDetails ?? '') ? '1 mo' : '—'}
                                             </td>
                                             <td className="px-3 py-2 text-right text-muted-foreground text-xs">
                                                 {it.rate > 0 ? formatMoney(it.rate) : '—'}
@@ -725,7 +742,7 @@ export default function InvoiceDetail() {
                                     <Td className="text-muted-foreground">{idx + 1}</Td>
                                     <Td className="whitespace-pre-line">{it.itemDetails}</Td>
                                     <Td className="text-right text-muted-foreground">
-                                        {(it.quantity ?? 1) > 1 ? `${it.quantity} wk` : '—'}
+                                        {/^(Storage Rent|Advance Rent)/.test(it.itemDetails ?? '') ? '1 mo' : '—'}
                                     </Td>
                                     <Td className="text-right">
                                         {discounted

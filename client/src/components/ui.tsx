@@ -172,16 +172,20 @@ export function Modal({
 }) {
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className={cn('relative w-full rounded-xl border bg-card shadow-xl max-h-[90vh] overflow-y-auto', className || (wide ? 'max-w-2xl' : 'max-w-md'))}>
-        <div className="flex items-center justify-between border-b px-5 py-3">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className={cn(
+        'relative w-full bg-card shadow-2xl max-h-[92vh] overflow-y-auto',
+        'rounded-t-2xl sm:rounded-xl border',
+        className || (wide ? 'sm:max-w-2xl' : 'sm:max-w-md')
+      )}>
+        <div className="flex items-center justify-between border-b px-5 py-3.5 sticky top-0 bg-card z-10">
           <h2 className="font-semibold text-sm">{title}</h2>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground cursor-pointer">
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground cursor-pointer p-1 rounded-lg hover:bg-muted transition-colors">
             <X size={16} />
           </button>
         </div>
-        <div className="p-5">{children}</div>
+        <div className="p-4 sm:p-5">{children}</div>
       </div>
     </div>
   )
@@ -198,7 +202,7 @@ export function Table({ children, className }: { children: ReactNode; className?
 
 export function Th({ children, className, ...props }: ThHTMLAttributes<HTMLTableCellElement>) {
   return (
-    <th className={cn('text-left text-xs font-medium text-muted-foreground px-4 py-2.5 border-b', className)} {...props}>
+    <th className={cn('text-left text-xs font-semibold text-muted-foreground px-4 py-2.5 border-b bg-muted/50 first:rounded-tl-lg last:rounded-tr-lg whitespace-nowrap', className)} {...props}>
       {children}
     </th>
   )
@@ -271,10 +275,10 @@ export function Spinner() {
 
 export function PageHeader({ title, subtitle, action }: { title: string; subtitle?: ReactNode; action?: ReactNode }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 pb-6">
+    <div className="flex flex-wrap items-start justify-between gap-3 pb-5">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">{title}</h1>
-        {subtitle && <p className="text-sm text-muted-foreground mt-2">{subtitle}</p>}
+        <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-foreground">{title}</h1>
+        {subtitle && <p className="text-xs sm:text-sm text-muted-foreground mt-1">{subtitle}</p>}
       </div>
       {action && <div className="shrink-0">{action}</div>}
     </div>

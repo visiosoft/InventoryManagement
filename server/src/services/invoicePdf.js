@@ -49,7 +49,7 @@ function consolidateItems(items) {
   const weekItems = (items || []).filter(it => weekPattern.test(it.itemDetails || ''));
   const otherItems = (items || []).filter(it => !weekPattern.test(it.itemDetails || ''));
 
-  if (weekItems.length < 2) return items || [];
+  if (weekItems.length < 2) return normaliseRentItems(items || []);
 
   const total = Math.round(weekItems.reduce((s, it) => s + Number(it.amount || 0), 0) * 100) / 100;
   // Use the single-week rate (not the sum) so Qty × Rate = Amount works in the table
@@ -74,13 +74,32 @@ function consolidateItems(items) {
   const merged = {
     sortOrder: 0,
     itemDetails: `Storage Rent ${fromDate} – ${toDate} · ${unitNo}`,
-    quantity: weekItems.length,
-    rate: singleWeekRate,
+    quantity: 1,
+    rate: Math.round(weekItems.length * singleWeekRate * 100) / 100, // monthly rate
     discountPct,
     amount: total,
   };
 
-  return [merged, ...otherItems];
+  return normaliseRentItems([merged, ...otherItems]);
+}
+
+function normaliseRentItems(items) {
+  return items.map(it => {
+    // Convert Mongoose subdocument to plain object before spreading
+    const obj = (it && typeof it.toObject === 'function') ? it.toObject() : { ...it };
+    const desc = obj.itemDetails || '';
+    // Convert weekly-quantity rent items to monthly rate (qty=1)
+    if (/^(Storage Rent|Advance Rent)/.test(desc) && Number(obj.quantity ?? 1) > 1) {
+      const monthlyRate = Math.round(Number(obj.quantity) * Number(obj.rate || 0) * 100) / 100;
+      return { ...obj, quantity: 1, rate: monthlyRate };
+    }
+    // Rename contract-generated "Security Deposit · Unit X" → "Advance Rent — Last Period · Unit X"
+    const depMatch = desc.match(/^Security Deposit\s+·\s+Unit\s+(.+)$/);
+    if (depMatch) {
+      return { ...obj, itemDetails: `Advance Rent — Last Period · Unit ${depMatch[1]}` };
+    }
+    return obj;
+  });
 }
 
 export function renderInvoicePdf({ invoice }) {
@@ -229,8 +248,8 @@ export function renderInvoicePdf({ invoice }) {
       doc.font('Helvetica').fontSize(9).fillColor(BLACK);
       doc.text(String(idx + 1),       TX + 6,                         y + 8, { width: nW - 6 });
       doc.text(it.itemDetails || '-', TX + nW + 6,                    y + 8, { width: iW - 12 });
-      const qty = Number(it.quantity ?? 1);
-      doc.text(qty !== 1 ? `${qty} wk` : '—', TX + nW + iW,          y + 8, { width: qW, align: 'right' });
+      const isRentLine = /^(Storage Rent|Advance Rent)/.test(it.itemDetails || '');
+      doc.text(isRentLine ? '1 mo' : '—', TX + nW + iW, y + 8, { width: qW, align: 'right' });
       doc.text(num(it.rate),           TX + nW + iW + qW,              y + 8, { width: rW, align: 'right' });
       if (hasDiscount) {
         if (discounted) {
@@ -250,11 +269,11 @@ export function renderInvoicePdf({ invoice }) {
     doc.moveTo(TX, y).lineTo(TX + TW, y).strokeColor(BORDER).lineWidth(0.5).stroke();
     y += 16;
 
-    // ── TOTALS BLOCK (right-aligned under Rate+Amount columns) ────────────
-    const tX  = TX + nW + iW;  // start of Rate column = 365
-    const lblW = rW;            // label fills Rate column
-    const valX = tX + lblW;    // value starts at Amount column
-    const valW = aW - 8;       // value width
+    // ── TOTALS BLOCK (pinned to right margin, always in Rate+Amount columns) ─
+    const valW = aW - 8;
+    const valX = TX + TW - aW;          // Amount column start (fixed)
+    const lblW = rW + dW;               // span Rate + Discount columns
+    const tX   = valX - lblW;           // label start
 
     const paymentMade = invoice.paymentMade != null
       ? Number(invoice.paymentMade)

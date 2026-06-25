@@ -69,24 +69,36 @@ function normalizeBody(body) {
 }
 
 async function syncLinkedPayment(invoice) {
-    const payment = await Payment.findOne({ invoice: invoice._id });
-    if (!payment) return;
+    // An invoice may have multiple linked payment records (e.g. rent + deposit on invoice 1).
+    // Update ALL of them so the payment schedule group reflects the correct status.
+    const payments = await Payment.find({ invoice: invoice._id });
+    if (!payments.length) return;
 
     const fullyPaid = Number(invoice.paymentMade || 0) >= Number(invoice.total || 0);
+    const latest = (invoice.paymentHistory || []).at(-1);
+
     if (invoice.status === 'paid' || fullyPaid) {
-        const latest = (invoice.paymentHistory || []).at(-1);
-        payment.status = 'paid';
-        payment.paidDate = latest?.date ? new Date(latest.date) : new Date();
-        payment.method = latest?.method || payment.method || 'other';
-        await payment.save();
+        await Payment.updateMany(
+            { invoice: invoice._id },
+            {
+                $set: {
+                    status: 'paid',
+                    paidDate: latest?.date ? new Date(latest.date) : new Date(),
+                    method: latest?.method || 'other',
+                },
+            }
+        );
         return;
     }
 
-    // Unpaid invoice statuses should map back to pending/overdue schedule state.
-    payment.status = new Date(payment.dueDate) < new Date() ? 'overdue' : 'pending';
-    payment.paidDate = undefined;
-    payment.method = '';
-    await payment.save();
+    // Unpaid — reset all linked records to pending/overdue based on due date.
+    const now = new Date();
+    for (const p of payments) {
+        p.status = new Date(p.dueDate) < now ? 'overdue' : 'pending';
+        p.paidDate = undefined;
+        p.method = '';
+        await p.save();
+    }
 }
 
 async function detachLinkedPayment(invoiceId) {

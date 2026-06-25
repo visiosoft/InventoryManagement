@@ -144,6 +144,20 @@ router.get('/:id', async (req, res) => {
     try { await generateMissingPeriodInvoices(contract, new Date(contract.endDate)); } catch (_) { }
   }
 
+  // Sync payment record statuses from their linked invoices — fixes cases where payment
+  // was recorded via the Invoice page (which updates the Invoice doc) but the Payment
+  // records for that invoice were not all updated (e.g. deposit record still 'overdue').
+  const paidInvoiceIds = await Invoice.find({
+    orderNumber: contract.contractNo,
+    status: 'paid',
+  }).distinct('_id');
+  if (paidInvoiceIds.length > 0) {
+    await Payment.updateMany(
+      { contract: contract._id, invoice: { $in: paidInvoiceIds }, status: { $in: ['pending', 'overdue'] } },
+      { $set: { status: 'paid' } }
+    );
+  }
+
   const payments = await Payment.find({ contract: contract._id })
     .populate('invoice', 'invoiceNo status dueDate total')
     .sort({ dueDate: 1 });
@@ -385,6 +399,28 @@ router.post('/:id/activate', async (req, res) => {
   res.json(await populateAll(Contract.findById(contract._id)));
 });
 
+// Regenerate all invoices for a contract — deletes unpaid invoices + their payment records,
+// then re-runs the invoice generator so deposit coverage is recalculated correctly.
+router.post('/:id/regenerate-invoices', async (req, res) => {
+  const contract = await populateAll(Contract.findById(req.params.id));
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+
+  // Find unpaid invoices linked to this contract via orderNumber
+  const unpaidInvoices = await Invoice.find({
+    orderNumber: contract.contractNo,
+    status: { $in: ['draft', 'sent'] },
+  }).select('_id');
+
+  if (unpaidInvoices.length > 0) {
+    const unpaidIds = unpaidInvoices.map(i => i._id);
+    await Payment.deleteMany({ invoice: { $in: unpaidIds } });
+    await Invoice.deleteMany({ _id: { $in: unpaidIds } });
+  }
+
+  await generateMissingPeriodInvoices(contract, new Date(contract.endDate));
+  res.json({ ok: true });
+});
+
 // Generate (or regenerate) the payment schedule for a contract.
 // Existing PAID payments are kept; only pending ones are replaced.
 router.post('/:id/generate-schedule', async (req, res) => {
@@ -594,13 +630,14 @@ async function generateMissingPeriodInvoices(contract, cutoffDate) {
   const priorInvoiceIds = await Payment.distinct('invoice', { contract: contract._id, invoice: { $ne: null } });
   const hasExistingInvoices = priorInvoiceIds.filter(Boolean).length > 0;
 
-  // Deposit covers the last MONTHLY PERIOD (not last 4 weeks) so period boundaries are never split.
+  // Deposit covers the last COMPLETE 4-week period (floor, not ceil, so partial trailing
+  // periods don't create a spurious 4th invoice — the deposit absorbs them).
   const totalContractDays = Math.round((contractEnd - contractStart) / 86400000);
   const totalContractWeeks = Math.ceil(totalContractDays / 7);
-  const totalMonthlyPeriods = Math.ceil(totalContractWeeks / 4);
-  // For single-period contracts the deposit is just held (no period to cover); set depositStartWeek
-  // beyond the contract so no weeks are flagged as covered.
-  const depositStartWeek = totalMonthlyPeriods > 1 ? (totalMonthlyPeriods - 1) * 4 : totalContractWeeks;
+  const totalFullPeriods = Math.floor(totalContractWeeks / 4); // complete 4-week periods only
+  // For contracts ≤ 1 full period the deposit is just held; set beyond the contract so no weeks
+  // are flagged as covered.
+  const depositStartWeek = totalFullPeriods > 1 ? (totalFullPeriods - 1) * 4 : totalContractWeeks;
 
   let generated = 0;
   const periodStart = new Date(contractStart);
@@ -666,12 +703,18 @@ async function generateMissingPeriodInvoices(contract, cutoffDate) {
           if (chargeableEnd > contractEnd) chargeableEnd = contractEnd;
         }
         const chargeableDisplayEnd = new Date(chargeableEnd); chargeableDisplayEnd.setDate(chargeableDisplayEnd.getDate() - 1);
-        items.push({ sortOrder: 0, itemDetails: `Storage Rent ${fmt(periodStart)} – ${fmt(chargeableDisplayEnd)} · Unit ${unitNo}`, quantity: chargeableWeeks.length, rate: weeklyRate, discountPct: hasDiscount ? discountPct : 0, amount: chargeableSubTotal });
+        // Use monthly rate (qty=1) so the invoice shows 625/mo not 4×156.25/wk
+        const chargeableMonthlyRate = Math.round(chargeableWeeks.length * weeklyRate * 100) / 100;
+        items.push({ sortOrder: 0, itemDetails: `Storage Rent ${fmt(periodStart)} – ${fmt(chargeableDisplayEnd)} · Unit ${unitNo}`, quantity: 1, rate: chargeableMonthlyRate, discountPct: hasDiscount ? discountPct : 0, amount: chargeableSubTotal });
       }
 
-      // First invoice ever for this contract → add security deposit line
+      // First invoice ever for this contract → add advance rent line for the deposit period
       if (!hasExistingInvoices && generated === 0) {
-        items.push({ sortOrder: items.length, itemDetails: `Security Deposit · Unit ${unitNo}`, quantity: 1, rate: monthlyRate, discountPct: 0, amount: monthlyRate });
+        // Show the PERIOD the deposit covers (last full 4-week period) rather than "Security Deposit"
+        const depPeriodStart = new Date(contractStart.getTime() + depositStartWeek * 7 * 86400000);
+        const depPeriodEnd   = new Date(depPeriodStart.getTime() + 28 * 86400000);
+        const depPeriodDisplayEnd = new Date(depPeriodEnd.getTime() - 86400000);
+        items.push({ sortOrder: items.length, itemDetails: `Advance Rent ${fmt(depPeriodStart)} – ${fmt(depPeriodDisplayEnd)} · Unit ${unitNo}`, quantity: 1, rate: monthlyRate, discountPct: 0, amount: monthlyRate });
       }
 
       // Double-check right before writing — closes the race window between concurrent requests
@@ -731,6 +774,9 @@ async function generateMissingPeriodInvoices(contract, cutoffDate) {
       }
 
       generated++;
+      // Stop after the deposit-covered period — any trailing partial weeks are absorbed by
+      // the deposit (which equals a full month's rent and covers them).
+      if (fullyByDeposit) break;
     }
 
     periodStart.setDate(periodStart.getDate() + 28);

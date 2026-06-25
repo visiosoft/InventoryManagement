@@ -466,7 +466,7 @@ function ContactDetailPanel({ row, onUpdateLead }: { row: WhatsAppLeadRow; onUpd
                     <p className="text-xs text-muted-foreground text-center py-2">No messages saved yet.</p>
                 ) : (
                     row.lastFiveMessages.map((msg) => (
-                        <div key={msg.messageId} className={`rounded-xl border bg-background p-3 ${msg.direction === 'outbound' ? 'border-l-4 border-l-emerald-600' : 'border-l-4 border-l-orange-500'}`}>
+                        <div key={msg.messageId} className={`rounded-xl border bg-background p-3 ${msg.direction === 'outbound' ? 'border-l-4 border-l-emerald-600' : 'border-l-4 border-l-[#FFF799]'}`}>
                             <div className="flex justify-between text-xs text-muted-foreground">
                                 <span className="capitalize">{msg.direction || 'inbound'}</span>
                                 <span>{formatDate(msg.occurredAt)}</span>
@@ -670,7 +670,7 @@ export default function Leads() {
         return (
             <div className="relative space-y-4">
                 <div className="pointer-events-none absolute -top-16 -left-10 h-56 w-56 rounded-full bg-emerald-400/20 blur-3xl" />
-                <div className="pointer-events-none absolute -bottom-20 -right-10 h-64 w-64 rounded-full bg-orange-400/20 blur-3xl" />
+                <div className="pointer-events-none absolute -bottom-20 -right-10 h-64 w-64 rounded-full bg-[#4C8CE4]/15 blur-3xl" />
 
                 <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-950 via-emerald-900 to-teal-900 p-6 text-emerald-50 shadow-2xl">
                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -683,7 +683,7 @@ export default function Leads() {
                             <Button variant="outline" onClick={() => setAdding(true)} className="border-emerald-200/30 bg-white/10 text-emerald-50 hover:bg-white/20">
                                 <Plus size={15} /> Add manual lead
                             </Button>
-                            <Button onClick={() => whatsAppContacts.refetch()} disabled={whatsAppContacts.isFetching} className="bg-orange-500 text-white hover:bg-orange-400">
+                            <Button onClick={() => whatsAppContacts.refetch()} disabled={whatsAppContacts.isFetching} className="bg-[#FFF799] text-[#111218] hover:opacity-90">
                                 <RefreshCw size={15} className={whatsAppContacts.isFetching ? 'animate-spin' : ''} />
                                 {whatsAppContacts.isFetching ? 'Refreshing…' : 'Refresh'}
                             </Button>

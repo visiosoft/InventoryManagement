@@ -917,7 +917,7 @@ function ContractTimeline({ notes, onAdd, onDelete, addBusy }: {
     'bg-[#dbeafe] border-[#93c5fd] text-blue-900',
     'bg-[#fce7f3] border-[#f9a8d4] text-pink-900',
     'bg-[#ede9fe] border-[#c4b5fd] text-violet-900',
-    'bg-[#ffedd5] border-[#fdba74] text-orange-900',
+    'bg-[#FFF799]/40 border-[#4C8CE4]/60 text-[#111218]',
   ]
 
   const rotations = ['-rotate-1', 'rotate-1', '-rotate-[0.5deg]', 'rotate-[0.8deg]', '-rotate-[1.2deg]', 'rotate-[0.3deg]']
@@ -1357,9 +1357,9 @@ export default function ContractDetail() {
         {error && <p className="mb-3 text-xs text-destructive">{error}</p>}
 
         {/* ── Main layout ── */}
-        <div className="flex gap-5 items-start">
+        <div className="flex flex-col lg:flex-row gap-5 items-start">
           {/* Left sidebar */}
-          <div className="w-72 shrink-0 space-y-4">
+          <div className="w-full lg:w-72 lg:shrink-0 space-y-4">
             <Card>
               <CardBody className="space-y-4">
                 {/* Avatar + name */}
@@ -1496,7 +1496,7 @@ export default function ContractDetail() {
           {/* Right content */}
           <div className="flex-1 min-w-0">
             {/* Tabs */}
-            <div className="flex gap-1 border-b mb-4">
+            <div className="flex gap-1 border-b mb-4 overflow-x-auto scrollbar-none">
               {([
                 ['overview', 'Overview', 0],
                 ['payments', 'Payments', unpaidGroups.length],
@@ -1546,7 +1546,7 @@ export default function ContractDetail() {
                   </div>
                 )}
 
-                <div className="grid grid-cols-[1fr_300px] gap-4">
+                <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
                   {/* Activity feed */}
                   <Card>
                     <CardHeader title="Activity" subtitle="Most recent first" />
