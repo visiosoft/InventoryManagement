@@ -8,7 +8,9 @@ const ALLOWED_SOURCE = new Set(['manual', 'google_contacts', 'whatsapp', 'referr
 const ALLOWED_DURATION_UNIT = new Set(['week', 'month']);
 
 function normalizePhone(input) {
-    return String(input || '').replace(/\D/g, '');
+    let d = String(input || '').replace(/\D/g, '');
+    if (d.startsWith('00')) d = d.slice(2);
+    return d;
 }
 
 function escRegex(s) {
@@ -67,7 +69,10 @@ router.get('/', async (req, res) => {
         filter.$or = [{ fullName: re }, { email: re }, { phone: re }, { notes: re }];
     }
 
-    const leads = await Lead.find(filter).populate('owner', 'name email').sort({ leadDateTime: -1, createdAt: -1 });
+    const leads = await Lead.find(filter)
+        .populate('owner', 'name email')
+        .sort({ leadDateTime: -1, createdAt: -1 })
+        .allowDiskUse(true);
     res.json(leads);
 });
 
@@ -211,50 +216,59 @@ router.post('/import/bulk', async (req, res) => {
         });
     }
 
-    // Check which phones already exist in one query
+    // Upsert by phoneNormalized — merge if exists, create if new
     const allNormalized = [...new Set(valid.map(c => c.phoneNormalized))];
-    const existing = await Lead.find({ phoneNormalized: { $in: allNormalized } }).select('phoneNormalized');
-    const existingSet = new Set(existing.map(l => l.phoneNormalized));
-
-    const toCreate = valid.filter(c => !existingSet.has(c.phoneNormalized));
-    const skippedDuplicates = valid.length - toCreate.length;
+    const existingLeads = await Lead.find({ phoneNormalized: { $in: allNormalized } }).select('phoneNormalized fullName email');
+    const existingMap = new Map(existingLeads.map(l => [l.phoneNormalized, l]));
 
     let created = 0;
+    let updated = 0;
     let insertErrors = 0;
 
-    if (toCreate.length > 0) {
-        const docs = toCreate.map(c => ({
-            fullName: c.fullName,
-            email: c.email,
-            phone: c.phone,
-            phoneNormalized: c.phoneNormalized,
-            owner: owner._id,
-            status: 'new',
-            source: 'other',
-            leadDateTime: new Date(),
-            storageSizeValue: 0,
-            storageSizeUnit: 'sqft',
-            durationValue: 1,
-            durationUnit: 'month',
-            unitsNeeded: 1,
-            notes: c.notes,
-            timeline: [{ type: 'created', text: 'Imported from contacts CSV' }],
-        }));
-
+    for (const c of valid) {
         try {
-            const result = await Lead.insertMany(docs, { ordered: false });
-            created = result.length;
-        } catch (err) {
-            created = err.insertedDocs?.length ?? 0;
-            const dupCount = (err.writeErrors || []).filter(e => e.code === 11000).length;
-            insertErrors = (err.writeErrors || []).length - dupCount;
+            const existing = existingMap.get(c.phoneNormalized);
+            if (existing) {
+                // Merge: fill in missing name/email without overwriting existing data
+                const set = {};
+                if (!existing.fullName || existing.fullName.startsWith('Contact ')) set.fullName = c.fullName;
+                if (!existing.email && c.email) set.email = c.email;
+                if (Object.keys(set).length > 0) {
+                    await Lead.findByIdAndUpdate(existing._id, {
+                        $set: set,
+                        $push: { timeline: { type: 'csv_merge', text: 'Contact updated from CSV import.' } },
+                    });
+                }
+                updated++;
+            } else {
+                await Lead.create({
+                    fullName: c.fullName,
+                    email: c.email,
+                    phone: c.phone,
+                    phoneNormalized: c.phoneNormalized,
+                    owner: owner._id,
+                    status: 'new',
+                    source: 'other',
+                    leadDateTime: new Date(),
+                    storageSizeValue: 0,
+                    storageSizeUnit: 'sqft',
+                    durationValue: 1,
+                    durationUnit: 'month',
+                    unitsNeeded: 1,
+                    notes: c.notes,
+                    timeline: [{ type: 'created', text: 'Imported from contacts CSV.' }],
+                });
+                created++;
+            }
+        } catch {
+            insertErrors++;
         }
     }
 
     res.json({
         ok: true,
         created,
-        skipped: skippedDuplicates,
+        skipped: updated,
         errors: parseErrors + insertErrors,
         total: contacts.length,
     });

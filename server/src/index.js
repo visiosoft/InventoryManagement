@@ -111,8 +111,32 @@ app.use((err, _req, res, _next) => {
 
 const PORT = process.env.PORT || 5010;
 
+function isTransientMongoNetworkError(error) {
+  if (!error) return false;
+  const name = String(error.name || '');
+  const message = String(error.message || '');
+  return name.includes('MongoNetworkError')
+    || message.includes('MongoNetworkError')
+    || message.includes('ECONNRESET')
+    || message.includes('connection reset');
+}
+
 async function start() {
   await connectDb();
+  mongoose.connection.on('error', (err) => {
+    console.error('[MongoDB] connection error:', err.message);
+  });
+  mongoose.connection.on('disconnected', () => {
+    console.warn('[MongoDB] disconnected from Atlas. The driver will keep retrying.');
+  });
+
+  const client = mongoose.connection.getClient?.();
+  if (client?.on) {
+    client.on('error', (err) => {
+      console.error('[MongoDB] client error:', err.message);
+    });
+  }
+
   await seedUnitTypes();
   console.log(`Connected to MongoDB (db: ${process.env.DB_NAME})`);
   app.listen(PORT, () => console.log(`PurpleBox API listening on http://localhost:${PORT}`));
@@ -136,5 +160,22 @@ async function start() {
 
 start().catch((err) => {
   console.error('Failed to start server:', err.message);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  if (isTransientMongoNetworkError(reason)) {
+    console.error('[Runtime] transient MongoDB network rejection:', reason?.message || reason);
+    return;
+  }
+  console.error('[Runtime] unhandled rejection:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  if (isTransientMongoNetworkError(err)) {
+    console.error('[Runtime] transient MongoDB network exception:', err.message);
+    return;
+  }
+  console.error('[Runtime] uncaught exception:', err);
   process.exit(1);
 });

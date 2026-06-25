@@ -129,7 +129,7 @@ const leadSchema = new Schema(
   { timestamps: true }
 );
 
-  leadSchema.index({ leadDateTime: -1, createdAt: -1 });
+leadSchema.index({ leadDateTime: -1, createdAt: -1 });
 leadSchema.index({ status: 1, owner: 1, leadDateTime: -1 });
 leadSchema.index({ source: 1, createdAt: -1 });
 
@@ -657,19 +657,19 @@ const movingJobSchema = new Schema(
     teamLead: { type: Schema.Types.ObjectId, ref: 'Worker' },
     materialUsage: [movingMaterialUsageSchema],
     costs: {
-      labor:     { type: Number, default: 0 },
-      truck:     { type: Number, default: 0 },
+      labor: { type: Number, default: 0 },
+      truck: { type: Number, default: 0 },
       materials: { type: Number, default: 0 },
-      packing:   { type: Number, default: 0 },
-      extras:    { type: Number, default: 0 },
-      total:     { type: Number, default: 0 },
+      packing: { type: Number, default: 0 },
+      extras: { type: Number, default: 0 },
+      total: { type: Number, default: 0 },
     },
-    survey:   { type: Schema.Types.ObjectId, ref: 'MovingSurvey' },
-    quote:    { type: Schema.Types.ObjectId, ref: 'MovingQuote' },
-    invoice:  { type: Schema.Types.ObjectId, ref: 'MovingInvoice' },
+    survey: { type: Schema.Types.ObjectId, ref: 'MovingSurvey' },
+    quote: { type: Schema.Types.ObjectId, ref: 'MovingQuote' },
+    invoice: { type: Schema.Types.ObjectId, ref: 'MovingInvoice' },
     dispatchNotes: { type: String, default: '' },
-    routeNotes:    { type: String, default: '' },
-    notes:         { type: String, default: '' },
+    routeNotes: { type: String, default: '' },
+    notes: { type: String, default: '' },
     timeline: [movingTimelineEntrySchema],
   },
   { timestamps: true }
