@@ -1,7 +1,7 @@
-import { useMemo, useRef, useState, type FormEvent } from 'react'
+import { useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Plus, RefreshCw, Search, Upload } from 'lucide-react'
+import { CalendarPlus, CheckSquare, FileText, Mail, MessageCircle, MoreHorizontal, Plus, RefreshCw, Search, Upload, X } from 'lucide-react'
 import { api, apiError, integrationApi, leadApi } from '../lib/api'
 import type { Lead, LeadSource, LeadStatus } from '../lib/types'
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, Th, Textarea, leadStatusTone, statusLabel } from '../components/ui'
@@ -212,6 +212,272 @@ function parseGoogleContactsCsv(text: string): ContactRow[] {
         })
     }
     return contacts
+}
+
+type ActionType = 'note' | 'email' | 'whatsapp' | 'task' | 'meeting' | 'more' | null
+
+function ActionButton({ icon, label, active, onClick }: { icon: ReactNode; label: string; active?: boolean; onClick: () => void }) {
+    return (
+        <button
+            onClick={onClick}
+            className={`flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-xs font-medium transition-colors ${active ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-muted-foreground hover:text-foreground'}`}
+        >
+            <span className={`flex h-8 w-8 items-center justify-center rounded-full border ${active ? 'border-primary-foreground/30 bg-white/20' : 'border-border bg-background'}`}>
+                {icon}
+            </span>
+            {label}
+        </button>
+    )
+}
+
+function ContactDetailPanel({ row, onUpdateLead }: { row: WhatsAppLeadRow; onUpdateLead: (id: string, body: Record<string, unknown>) => void }) {
+    const [action, setAction] = useState<ActionType>(null)
+    const [noteText, setNoteText] = useState('')
+    const [taskTitle, setTaskTitle] = useState('')
+    const [taskDue, setTaskDue] = useState('')
+    const [savedNote, setSavedNote] = useState('')
+    const [showMore, setShowMore] = useState(false)
+
+    const lead = row.lead
+    const phone = lead.phone || ''
+    const email = (lead as any).email || ''
+    const name = lead.fullName || 'Unknown'
+
+    function toggleAction(a: ActionType) {
+        setAction(prev => prev === a ? null : a)
+        setShowMore(false)
+    }
+
+    function saveNote() {
+        if (!noteText.trim()) return
+        const existing = lead.notes ? lead.notes + '\n' : ''
+        onUpdateLead(lead._id, { notes: existing + `[Note ${new Date().toLocaleDateString()}] ${noteText.trim()}` })
+        setSavedNote(noteText.trim())
+        setNoteText('')
+        setAction(null)
+    }
+
+    function saveTask() {
+        if (!taskTitle.trim()) return
+        const existing = lead.notes ? lead.notes + '\n' : ''
+        const dueStr = taskDue ? ` (due ${taskDue})` : ''
+        onUpdateLead(lead._id, { notes: existing + `[Task${dueStr}] ${taskTitle.trim()}` })
+        setTaskTitle('')
+        setTaskDue('')
+        setAction(null)
+    }
+
+    function googleCalendarUrl() {
+        const title = encodeURIComponent(`Meeting with ${name}`)
+        const details = encodeURIComponent(`Lead from PurpleBox\nPhone: ${phone}${email ? `\nEmail: ${email}` : ''}`)
+        const now = new Date()
+        const start = new Date(now.getTime() + 24 * 60 * 60 * 1000)
+        start.setMinutes(0, 0, 0)
+        const end = new Date(start.getTime() + 60 * 60 * 1000)
+        const fmt = (d: Date) => d.toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z'
+        return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&details=${details}&dates=${fmt(start)}/${fmt(end)}`
+    }
+
+    function outlookCalendarUrl() {
+        const title = encodeURIComponent(`Meeting with ${name}`)
+        const body = encodeURIComponent(`Lead from PurpleBox\nPhone: ${phone}`)
+        return `https://outlook.office.com/calendar/0/deeplink/compose?subject=${title}&body=${body}&path=%2Fcalendar%2Faction%2Fcompose`
+    }
+
+    return (
+        <div>
+            {/* Header */}
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b p-5 pb-4">
+                <div className="flex items-center gap-3">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/10 text-lg font-bold text-primary">
+                        {name.split(' ').slice(0, 2).map((w: string) => w[0] ?? '').join('').toUpperCase() || '?'}
+                    </div>
+                    <div>
+                        <h3 className="text-xl font-semibold leading-tight">{name}</h3>
+                        <p className="text-sm text-muted-foreground">{phone || 'No phone'}</p>
+                    </div>
+                </div>
+                {row.whatsappWebLink && (
+                    <a href={row.whatsappWebLink} target="_blank" rel="noreferrer"
+                        className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400">
+                        Open in WhatsApp
+                    </a>
+                )}
+            </div>
+
+            {/* Action bar */}
+            <div className="flex items-center justify-around border-b bg-muted/30 px-4 py-2">
+                <ActionButton icon={<FileText size={15} />} label="Note" active={action === 'note'} onClick={() => toggleAction('note')} />
+                <ActionButton icon={<Mail size={15} />} label="Email" active={action === 'email'} onClick={() => toggleAction('email')} />
+                <ActionButton icon={<MessageCircle size={15} />} label="WhatsApp" active={action === 'whatsapp'} onClick={() => toggleAction('whatsapp')} />
+                <ActionButton icon={<CheckSquare size={15} />} label="Task" active={action === 'task'} onClick={() => toggleAction('task')} />
+                <ActionButton icon={<CalendarPlus size={15} />} label="Meeting" active={action === 'meeting'} onClick={() => toggleAction('meeting')} />
+                <div className="relative">
+                    <ActionButton icon={<MoreHorizontal size={15} />} label="More" active={showMore} onClick={() => { setShowMore(v => !v); setAction(null) }} />
+                    {showMore && (
+                        <div className="absolute right-0 top-full z-20 mt-1 w-44 rounded-xl border bg-popover shadow-lg py-1">
+                            <button onClick={() => { window.open(`https://wa.me/${phone.replace(/\D/g,'').replace(/^00/,'')}`, '_blank'); setShowMore(false) }}
+                                className="w-full px-4 py-2 text-left text-sm hover:bg-muted">WhatsApp</button>
+                            <button onClick={() => { navigator.clipboard.writeText(phone); setShowMore(false) }}
+                                className="w-full px-4 py-2 text-left text-sm hover:bg-muted">Copy phone</button>
+                            {email && <button onClick={() => { navigator.clipboard.writeText(email); setShowMore(false) }}
+                                className="w-full px-4 py-2 text-left text-sm hover:bg-muted">Copy email</button>}
+                            <hr className="my-1" />
+                            <button onClick={() => { window.open(googleCalendarUrl(), '_blank'); setShowMore(false) }}
+                                className="w-full px-4 py-2 text-left text-sm hover:bg-muted">Google Calendar</button>
+                            <button onClick={() => { window.open(outlookCalendarUrl(), '_blank'); setShowMore(false) }}
+                                className="w-full px-4 py-2 text-left text-sm hover:bg-muted">Outlook Calendar</button>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Action panels */}
+            {action === 'note' && (
+                <div className="border-b bg-muted/20 p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold">Add a note</p>
+                        <button onClick={() => setAction(null)}><X size={14} className="text-muted-foreground" /></button>
+                    </div>
+                    <textarea value={noteText} onChange={e => setNoteText(e.target.value)} rows={3}
+                        placeholder="Type your note here…"
+                        className="w-full rounded-lg border bg-background p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary resize-none" />
+                    <div className="flex justify-end gap-2">
+                        <button onClick={() => setAction(null)} className="rounded-lg border px-3 py-1.5 text-xs hover:bg-muted">Cancel</button>
+                        <button onClick={saveNote} className="rounded-lg bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary/90">Save note</button>
+                    </div>
+                    {savedNote && <p className="text-xs text-emerald-600">✓ Note saved</p>}
+                </div>
+            )}
+
+            {action === 'email' && (
+                <div className="border-b bg-muted/20 p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold">Send email</p>
+                        <button onClick={() => setAction(null)}><X size={14} className="text-muted-foreground" /></button>
+                    </div>
+                    {email ? (
+                        <a href={`mailto:${email}?subject=Regarding your storage inquiry&body=Hello ${encodeURIComponent(name)},%0D%0A%0D%0A`}
+                            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90">
+                            <Mail size={14} /> Open email to {email}
+                        </a>
+                    ) : (
+                        <p className="text-sm text-muted-foreground">No email address on file for this contact.</p>
+                    )}
+                </div>
+            )}
+
+            {action === 'whatsapp' && (
+                <div className="border-b bg-muted/20 p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold">Send WhatsApp message</p>
+                        <button onClick={() => setAction(null)}><X size={14} className="text-muted-foreground" /></button>
+                    </div>
+                    {phone ? (
+                        <div className="space-y-2">
+                            <p className="text-xs text-muted-foreground">Phone: <span className="font-mono font-semibold text-foreground">{phone}</span></p>
+                            <div className="flex flex-wrap gap-2">
+                                <a href={`https://wa.me/${phone.replace(/\D/g, '').replace(/^00/, '')}?text=${encodeURIComponent(`Hello ${name},\n\nThank you for your interest in PurpleBox Storage.\n\nHow can we help you today?`)}`}
+                                    target="_blank" rel="noreferrer"
+                                    className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-500">
+                                    <MessageCircle size={14} /> Open WhatsApp
+                                </a>
+                                <a href={row.whatsappWebLink || `https://web.whatsapp.com/send?phone=${phone.replace(/\D/g, '')}`}
+                                    target="_blank" rel="noreferrer"
+                                    className="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm hover:bg-muted">
+                                    WhatsApp Web
+                                </a>
+                            </div>
+                        </div>
+                    ) : (
+                        <p className="text-sm text-muted-foreground">No phone number on file.</p>
+                    )}
+                </div>
+            )}
+
+            {action === 'task' && (
+                <div className="border-b bg-muted/20 p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold">Create task</p>
+                        <button onClick={() => setAction(null)}><X size={14} className="text-muted-foreground" /></button>
+                    </div>
+                    <input value={taskTitle} onChange={e => setTaskTitle(e.target.value)} placeholder="Task title…"
+                        className="w-full rounded-lg border bg-background p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
+                    <input type="date" value={taskDue} onChange={e => setTaskDue(e.target.value)}
+                        className="w-full rounded-lg border bg-background p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
+                    <div className="flex justify-end gap-2">
+                        <button onClick={() => setAction(null)} className="rounded-lg border px-3 py-1.5 text-xs hover:bg-muted">Cancel</button>
+                        <button onClick={saveTask} className="rounded-lg bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary/90">Save task</button>
+                    </div>
+                </div>
+            )}
+
+            {action === 'meeting' && (
+                <div className="border-b bg-muted/20 p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold">Schedule a meeting</p>
+                        <button onClick={() => setAction(null)}><X size={14} className="text-muted-foreground" /></button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Choose your calendar app to create a meeting with <strong>{name}</strong>:</p>
+                    <div className="grid grid-cols-2 gap-2">
+                        <a href={googleCalendarUrl()} target="_blank" rel="noreferrer"
+                            className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-400">
+                            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor"><path d="M19.5 3h-2V1.5A.5.5 0 0 0 17 1h-1a.5.5 0 0 0-.5.5V3h-7V1.5A.5.5 0 0 0 8 1H7a.5.5 0 0 0-.5.5V3h-2A2.5 2.5 0 0 0 2 5.5v15A2.5 2.5 0 0 0 4.5 23h15a2.5 2.5 0 0 0 2.5-2.5v-15A2.5 2.5 0 0 0 19.5 3zM21 20.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 20.5V10h18v10.5zM21 9H3V5.5A1.5 1.5 0 0 1 4.5 4h15A1.5 1.5 0 0 1 21 5.5V9z"/></svg>
+                            Google Calendar
+                        </a>
+                        <a href={outlookCalendarUrl()} target="_blank" rel="noreferrer"
+                            className="flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-400">
+                            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor"><path d="M24 7.387v13.227A1.39 1.39 0 0 1 22.613 22H7.5l-.024-.003L7.47 22H1.387A1.39 1.39 0 0 1 0 20.613V7.387A1.39 1.39 0 0 1 1.387 6H6V3.387A1.39 1.39 0 0 1 7.387 2h9.226A1.39 1.39 0 0 1 18 3.387V6h4.613A1.39 1.39 0 0 1 24 7.387zm-6-4H7.5v2.625h10.5V3.387zM12 8.25A3.75 3.75 0 1 0 12 15.75 3.75 3.75 0 0 0 12 8.25z"/></svg>
+                            Outlook Calendar
+                        </a>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Meeting will be pre-filled with contact name and phone.</p>
+                </div>
+            )}
+
+            {/* Stats */}
+            <div className="grid grid-cols-3 gap-3 p-4 border-b">
+                <div className="rounded-xl border bg-muted/30 p-3">
+                    <p className="text-xs text-muted-foreground">Source</p>
+                    <p className="font-semibold capitalize text-sm">{lead.source || 'WhatsApp'}</p>
+                </div>
+                <div className="rounded-xl border bg-muted/30 p-3">
+                    <p className="text-xs text-muted-foreground">Messages</p>
+                    <p className="font-semibold text-sm">{row.totalMessages || 0}</p>
+                </div>
+                <div className="rounded-xl border bg-muted/30 p-3">
+                    <p className="text-xs text-muted-foreground">Last seen</p>
+                    <p className="font-semibold text-sm">{formatDate(lead.updatedAt || lead.createdAt)}</p>
+                </div>
+            </div>
+
+            {/* Labels */}
+            {(row.labels || []).length > 0 && (
+                <div className="flex flex-wrap gap-2 px-4 py-3 border-b">
+                    {row.labels.map((l) => (
+                        <span key={l} className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300">{l}</span>
+                    ))}
+                </div>
+            )}
+
+            {/* Recent messages */}
+            <div className="p-4 space-y-2 max-h-64 overflow-auto">
+                {(row.lastFiveMessages || []).length === 0 ? (
+                    <p className="text-xs text-muted-foreground text-center py-2">No messages saved yet.</p>
+                ) : (
+                    row.lastFiveMessages.map((msg) => (
+                        <div key={msg.messageId} className={`rounded-xl border bg-background p-3 ${msg.direction === 'outbound' ? 'border-l-4 border-l-emerald-600' : 'border-l-4 border-l-orange-500'}`}>
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                                <span className="capitalize">{msg.direction || 'inbound'}</span>
+                                <span>{formatDate(msg.occurredAt)}</span>
+                            </div>
+                            <p className="mt-1 text-sm whitespace-pre-wrap">{msg.text || '(non-text message)'}</p>
+                        </div>
+                    ))
+                )}
+            </div>
+        </div>
+    )
 }
 
 export default function Leads() {
@@ -481,51 +747,14 @@ export default function Leads() {
                             </div>
                         </div>
 
-                        <div className="rounded-2xl border bg-card/95 p-5 shadow-sm">
+                        <div className="rounded-2xl border bg-card/95 shadow-sm overflow-hidden">
                             {!selectedWhatsAppRow ? (
-                                <EmptyState message="Select a contact to see details." />
+                                <div className="p-5"><EmptyState message="Select a contact to see details." /></div>
                             ) : (
-                                <div>
-                                    <div className="flex flex-wrap items-start justify-between gap-3">
-                                        <div>
-                                            <h3 className="text-2xl font-semibold">{selectedWhatsAppRow.lead.fullName || 'Unknown'}</h3>
-                                            <p className="text-sm text-muted-foreground">
-                                                {selectedWhatsAppRow.lead.phone || 'No phone'} • Status: {selectedWhatsAppRow.mappedStatus || selectedWhatsAppRow.lead.status || 'new'}
-                                            </p>
-                                        </div>
-                                        {selectedWhatsAppRow.whatsappWebLink ? (
-                                            <a className="rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-muted" href={selectedWhatsAppRow.whatsappWebLink} target="_blank" rel="noreferrer">
-                                                Open in WhatsApp Web
-                                            </a>
-                                        ) : null}
-                                    </div>
-
-                                    <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-                                        <div className="rounded-xl border bg-muted/30 p-3"><p className="text-xs text-muted-foreground">Lead Source</p><p className="font-semibold">{selectedWhatsAppRow.lead.source || 'whatsapp'}</p></div>
-                                        <div className="rounded-xl border bg-muted/30 p-3"><p className="text-xs text-muted-foreground">Messages Saved</p><p className="font-semibold">{selectedWhatsAppRow.totalMessages || 0}</p></div>
-                                        <div className="rounded-xl border bg-muted/30 p-3"><p className="text-xs text-muted-foreground">Last Updated</p><p className="font-semibold">{formatDate(selectedWhatsAppRow.lead.updatedAt || selectedWhatsAppRow.lead.createdAt)}</p></div>
-                                    </div>
-
-                                    <div className="mt-4 flex flex-wrap gap-2">
-                                        {(selectedWhatsAppRow.labels || []).length > 0 ? (
-                                            selectedWhatsAppRow.labels.map((l) => <span key={l} className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300">{l}</span>)
-                                        ) : (
-                                            <span className="rounded-full border px-2.5 py-1 text-xs text-muted-foreground">No labels detected</span>
-                                        )}
-                                    </div>
-
-                                    <div className="mt-5 space-y-2">
-                                        {(selectedWhatsAppRow.lastFiveMessages || []).map((msg) => (
-                                            <div key={msg.messageId} className={`rounded-xl border bg-background p-3 ${msg.direction === 'outbound' ? 'border-l-4 border-l-emerald-600' : 'border-l-4 border-l-orange-500'}`}>
-                                                <div className="flex justify-between text-xs text-muted-foreground">
-                                                    <span>{msg.direction || 'inbound'}</span>
-                                                    <span>{formatDate(msg.occurredAt)}</span>
-                                                </div>
-                                                <p className="mt-1 text-sm whitespace-pre-wrap">{msg.text || '(non-text message)'}</p>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
+                                <ContactDetailPanel
+                                    row={selectedWhatsAppRow}
+                                    onUpdateLead={(id, body) => updateLead.mutate({ id, body })}
+                                />
                             )}
                         </div>
                     </div>

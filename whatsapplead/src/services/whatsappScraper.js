@@ -1,8 +1,10 @@
 import path from 'path';
 import fs from 'fs';
+import dns from 'dns';
 import puppeteer from 'puppeteer';
 
 let sharedBrowser = null;
+const GOOGLE_DNS = ['8.8.8.8', '8.8.4.4'];
 
 function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -122,7 +124,43 @@ function extractBestPhoneCandidate(...values) {
     return '';
 }
 
-async function getSharedBrowser({ headless, profileDir }) {
+async function buildChromiumHostResolverRules(webUrl) {
+    let hostname = 'web.whatsapp.com';
+    try {
+        hostname = new URL(webUrl).hostname || hostname;
+    } catch {
+        // Keep default host if URL is malformed.
+    }
+
+    const hosts = Array.from(new Set([
+        hostname,
+        'web.whatsapp.com',
+        'web-fallback.whatsapp.com',
+        'dyn.web.whatsapp.com',
+        'static.whatsapp.net',
+    ]));
+
+    const resolver = new dns.Resolver();
+    resolver.setServers(GOOGLE_DNS);
+
+    const rules = [];
+    for (const host of hosts) {
+        try {
+            // eslint-disable-next-line no-await-in-loop
+            const addresses = await resolver.resolve4(host);
+            if (Array.isArray(addresses) && addresses.length > 0) {
+                rules.push(`MAP ${host} ${addresses[0]}`);
+            }
+        } catch {
+            // Skip host if it cannot be resolved by Google DNS in this environment.
+        }
+    }
+
+    if (rules.length === 0) return '';
+    return `${rules.join(', ')}, EXCLUDE localhost`;
+}
+
+async function getSharedBrowser({ headless, profileDir, webUrl }) {
     if (sharedBrowser?.connected) {
         return sharedBrowser;
     }
@@ -130,11 +168,18 @@ async function getSharedBrowser({ headless, profileDir }) {
     const resolvedProfile = path.resolve(process.cwd(), profileDir);
     fs.mkdirSync(resolvedProfile, { recursive: true });
 
+    const launchArgs = ['--no-sandbox', '--disable-setuid-sandbox'];
+
+    const hostResolverRules = await buildChromiumHostResolverRules(webUrl);
+    if (hostResolverRules) {
+        launchArgs.push(`--host-resolver-rules=${hostResolverRules}`);
+    }
+
     sharedBrowser = await puppeteer.launch({
         headless,
         userDataDir: resolvedProfile,
         defaultViewport: { width: 1366, height: 900 },
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        args: launchArgs,
     });
 
     sharedBrowser.on('disconnected', () => {
@@ -235,9 +280,9 @@ async function waitForOpenedChat(page, expectedTitle, rowIndex) {
 
 async function extractPhoneFromContactPanel(page, delays) {
     const closePanels = async () => {
-        await page.keyboard.press('Escape').catch(() => {});
+        await page.keyboard.press('Escape').catch(() => { });
         await sleep(120);
-        await page.keyboard.press('Escape').catch(() => {});
+        await page.keyboard.press('Escape').catch(() => { });
     };
 
     try {
@@ -286,7 +331,7 @@ async function extractPhoneFromContactPanel(page, delays) {
                     return phoneLike.test(drawerText);
                 },
                 { timeout: 5000 }
-            ).catch(() => {});
+            ).catch(() => { });
         }
 
         const panelData = await page.evaluate(() => {
@@ -379,7 +424,7 @@ export async function scrapeWhatsAppConversations({
     allowedLabels,
     syncOnlyAllowedLabels,
 }) {
-    const browser = await getSharedBrowser({ headless, profileDir });
+    const browser = await getSharedBrowser({ headless, profileDir, webUrl });
     const delays = getScrapeDelays();
     const allowedLabelSet = parseAllowedLabelSet(allowedLabels);
     const onlyAllowed = String(syncOnlyAllowedLabels ?? 'false').toLowerCase() === 'true';

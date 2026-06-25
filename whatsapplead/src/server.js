@@ -77,45 +77,52 @@ app.get('/api/contacts/:leadId/messages', async (req, res) => {
 });
 
 app.post('/api/sync', requireApiKey, async (req, res) => {
-    const maxChats = Number(req.body?.maxChats || process.env.WHATSAPP_MAX_CHATS || 15);
-    const messagesPerChat = Number(req.body?.messagesPerChat || process.env.WHATSAPP_MESSAGES_PER_CHAT || 10);
-    const maxStoreMessages = Number(req.body?.maxStoreMessages || process.env.WHATSAPP_MAX_STORE_MESSAGES || 10);
+    try {
+        const maxChats = Number(req.body?.maxChats || process.env.WHATSAPP_MAX_CHATS || 15);
+        const messagesPerChat = Number(req.body?.messagesPerChat || process.env.WHATSAPP_MESSAGES_PER_CHAT || 10);
+        const maxStoreMessages = Number(req.body?.maxStoreMessages || process.env.WHATSAPP_MAX_STORE_MESSAGES || 10);
 
-    const allowedLabels = parseAllowedLabels(req.body?.allowedLabels || process.env.WHATSAPP_ALLOWED_LABELS || '');
-    const syncOnlyAllowedLabels = parseBoolean(
-        req.body?.syncOnlyAllowedLabels,
-        parseBoolean(process.env.WHATSAPP_SYNC_ONLY_ALLOWED_LABELS || 'false', false)
-    );
+        const allowedLabels = parseAllowedLabels(req.body?.allowedLabels || process.env.WHATSAPP_ALLOWED_LABELS || '');
+        const syncOnlyAllowedLabels = parseBoolean(
+            req.body?.syncOnlyAllowedLabels,
+            parseBoolean(process.env.WHATSAPP_SYNC_ONLY_ALLOWED_LABELS || 'false', false)
+        );
 
-    if (syncOnlyAllowedLabels && allowedLabels.length === 0) {
-        return res.status(400).json({
-            error: 'Sync-only label mode is enabled but no allowed labels are configured. Set labels in Settings and try again.',
+        if (syncOnlyAllowedLabels && allowedLabels.length === 0) {
+            return res.status(400).json({
+                error: 'Sync-only label mode is enabled but no allowed labels are configured. Set labels in Settings and try again.',
+            });
+        }
+
+        const scraped = await scrapeWhatsAppConversations({
+            webUrl: process.env.WHATSAPP_WEB_URL || 'https://web.whatsapp.com',
+            headless: String(process.env.WHATSAPP_HEADLESS || 'false').toLowerCase() === 'true',
+            maxChats: Math.max(1, Math.min(maxChats, 200)),
+            messagesPerChat: Math.max(1, Math.min(messagesPerChat, 20)),
+            profileDir: process.env.WHATSAPP_PROFILE_DIR || '.wa-profile',
+            allowedLabels,
+            syncOnlyAllowedLabels,
         });
+
+        const syncResult = await upsertConversationBatch(scraped, {
+            defaultOwnerEmail: process.env.DEFAULT_LEAD_OWNER_EMAIL || '',
+            maxStoreMessages,
+            allowSyntheticPhone: process.env.WHATSAPP_ALLOW_SYNTHETIC_PHONE,
+            allowedLabels,
+            syncOnlyAllowedLabels,
+        });
+
+        res.json({
+            ok: true,
+            scrapedCount: scraped.length,
+            ...syncResult,
+        });
+    } catch (error) {
+        console.error('[WhatsAppLead] Manual sync failed:', error.message);
+        const msg = String(error?.message || 'Unknown sync error');
+        const status = msg.includes('ERR_NAME_NOT_RESOLVED') ? 502 : 500;
+        res.status(status).json({ error: msg });
     }
-
-    const scraped = await scrapeWhatsAppConversations({
-        webUrl: process.env.WHATSAPP_WEB_URL || 'https://web.whatsapp.com',
-        headless: String(process.env.WHATSAPP_HEADLESS || 'false').toLowerCase() === 'true',
-        maxChats: Math.max(1, Math.min(maxChats, 200)),
-        messagesPerChat: Math.max(1, Math.min(messagesPerChat, 20)),
-        profileDir: process.env.WHATSAPP_PROFILE_DIR || '.wa-profile',
-        allowedLabels,
-        syncOnlyAllowedLabels,
-    });
-
-    const syncResult = await upsertConversationBatch(scraped, {
-        defaultOwnerEmail: process.env.DEFAULT_LEAD_OWNER_EMAIL || '',
-        maxStoreMessages,
-        allowSyntheticPhone: process.env.WHATSAPP_ALLOW_SYNTHETIC_PHONE,
-        allowedLabels,
-        syncOnlyAllowedLabels,
-    });
-
-    res.json({
-        ok: true,
-        scrapedCount: scraped.length,
-        ...syncResult,
-    });
 });
 
 app.use(express.static(publicDir));

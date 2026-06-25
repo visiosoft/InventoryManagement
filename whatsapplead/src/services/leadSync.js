@@ -6,7 +6,9 @@ import {
 } from '../../../server/src/models/index.js';
 
 function normalizePhone(input) {
-    return String(input || '').replace(/\D/g, '');
+    let d = String(input || '').replace(/\D/g, '');
+    if (d.startsWith('00')) d = d.slice(2);
+    return d;
 }
 
 function numericHash(input) {
@@ -183,14 +185,21 @@ export async function upsertConversationBatch(conversations, options) {
     let skippedByLabel = 0;
 
     for (const conversation of conversations) {
-        const labels = filterAllowedLabels(
-            sanitizeConversationLabels(conversation.labels || [], conversation),
-            options
-        );
+        // Skip contacts with no WhatsApp labels at all
+        const rawLabels = (conversation.labels || []).map(normalizeLabel).filter(Boolean);
+        if (rawLabels.length === 0) {
+            skippedByLabel += 1;
+            continue;
+        }
+
+        const labels = filterAllowedLabels(rawLabels, options);
         if (syncOnlyAllowedLabels && allowlist.length > 0 && labels.length === 0) {
             skippedByLabel += 1;
             continue;
         }
+
+        // Use sanitized labels for storage (strips labels that look like the contact's own name)
+        const sanitizedLabels = sanitizeConversationLabels(rawLabels, conversation);
 
         const identity = resolvePhoneIdentity(conversation, options);
         if (!identity) continue;
@@ -226,8 +235,32 @@ export async function upsertConversationBatch(conversations, options) {
                 labels: conversation.labels,
             });
         } else {
-            // Existing leads are not edited; only new messages/labels are synced.
-            logLeadSync('existing', {
+            // Merge: update existing lead with WhatsApp data without overwriting good data
+            const waName = cleanName(conversation.chatTitle, phoneNormalized);
+            const updates = {};
+
+            // Upgrade source to whatsapp if it was manual/google so we know it's on WA
+            if (lead.source !== 'whatsapp') updates.source = 'whatsapp';
+
+            // Only overwrite name if existing name is a placeholder and WA has a real name
+            if (isPlaceholderLeadName(lead.fullName) && !isPlaceholderLeadName(waName)) {
+                updates.fullName = waName;
+            }
+
+            // Fill in phone display if existing record has a synthetic/placeholder phone
+            if (isPlaceholderPhone(lead.phone) && !isSynthetic) {
+                updates.phone = phoneDisplay;
+            }
+
+            if (Object.keys(updates).length > 0) {
+                await Lead.findByIdAndUpdate(lead._id, {
+                    $set: updates,
+                    $push: { timeline: { type: 'whatsapp_merge', text: 'Lead merged with WhatsApp contact.' } },
+                });
+            }
+
+            updatedLeads += 1;
+            logLeadSync('merged', {
                 name: lead.fullName,
                 phone: lead.phone,
                 phoneNormalized,

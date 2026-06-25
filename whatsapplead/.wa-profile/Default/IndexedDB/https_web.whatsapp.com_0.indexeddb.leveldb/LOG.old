@@ -1,42 +1,14 @@
-2026/06/24-06:46:14.755 2f98 Reusing MANIFEST D:\Personal Project\InventoryManagementSystem\whatsapplead\.wa-profile\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
-2026/06/24-06:46:14.757 2f98 Recovering log #684
-2026/06/24-06:46:14.807 2f98 Reusing old log D:\Personal Project\InventoryManagementSystem\whatsapplead\.wa-profile\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/000684.log 
-2026/06/24-06:46:27.414 2f98 Level-0 table #701: started
-2026/06/24-06:46:27.482 2f98 Level-0 table #701: 1426707 bytes OK
-2026/06/24-06:46:27.488 2f98 Delete type=0 #684
-2026/06/24-06:46:27.529 2f98 Compacting 1@0 + 0@1 files
-2026/06/24-06:46:27.554 2f98 Generated table #702@0: 20362 keys, 506288 bytes
-2026/06/24-06:46:27.559 2f98 Generated table #703@0: 448 keys, 54228 bytes
-2026/06/24-06:46:27.559 2f98 Compacted 1@0 + 0@1 files => 560516 bytes
-2026/06/24-06:46:27.561 2f98 compacted to: files[ 0 2 15 0 0 0 0 ]
-2026/06/24-06:46:27.561 2f98 Delete type=2 #701
-2026/06/24-06:46:27.610 43a0 Compacting 1@1 + 10@2 files
-2026/06/24-06:46:27.686 43a0 Generated table #704@1: 82035 keys, 2275323 bytes
-2026/06/24-06:46:27.741 43a0 Generated table #705@1: 28702 keys, 2477759 bytes
-2026/06/24-06:46:27.781 43a0 Generated table #706@1: 1993 keys, 2146668 bytes
-2026/06/24-06:46:27.817 43a0 Generated table #707@1: 2175 keys, 2146785 bytes
-2026/06/24-06:46:27.852 43a0 Generated table #708@1: 2454 keys, 2152470 bytes
-2026/06/24-06:46:27.884 43a0 Generated table #709@1: 2226 keys, 2149724 bytes
-2026/06/24-06:46:27.927 43a0 Generated table #710@1: 2608 keys, 2152681 bytes
-2026/06/24-06:46:27.975 43a0 Generated table #711@1: 20488 keys, 2197281 bytes
-2026/06/24-06:46:28.024 43a0 Generated table #712@1: 28960 keys, 2264810 bytes
-2026/06/24-06:46:28.066 43a0 Generated table #713@1: 21780 keys, 1846707 bytes
-2026/06/24-06:46:28.066 43a0 Compacted 1@1 + 10@2 files => 21810208 bytes
-2026/06/24-06:46:28.067 43a0 compacted to: files[ 0 1 15 0 0 0 0 ]
-2026/06/24-06:46:28.068 43a0 Delete type=2 #688
-2026/06/24-06:46:28.068 43a0 Delete type=2 #689
-2026/06/24-06:46:28.068 43a0 Delete type=2 #690
-2026/06/24-06:46:28.068 43a0 Delete type=2 #691
-2026/06/24-06:46:28.068 43a0 Delete type=2 #692
-2026/06/24-06:46:28.068 43a0 Delete type=2 #693
-2026/06/24-06:46:28.068 43a0 Delete type=2 #694
-2026/06/24-06:46:28.068 43a0 Delete type=2 #695
-2026/06/24-06:46:28.068 43a0 Delete type=2 #696
-2026/06/24-06:46:28.068 43a0 Delete type=2 #697
-2026/06/24-06:46:28.068 43a0 Delete type=2 #702
-2026/06/24-06:46:58.742 23b8 Compacting 1@1 + 1@2 files
-2026/06/24-06:46:58.864 23b8 Generated table #714@1: 35120 keys, 1143982 bytes
-2026/06/24-06:46:58.865 23b8 Compacted 1@1 + 1@2 files => 1143982 bytes
-2026/06/24-06:46:58.866 23b8 compacted to: files[ 0 0 15 0 0 0 0 ]
-2026/06/24-06:46:58.867 23b8 Delete type=2 #698
-2026/06/24-06:46:58.867 23b8 Delete type=2 #703
+2026/06/25-01:58:46.360 5ca4 Reusing MANIFEST D:\Personal Project\InventoryManagementSystem\whatsapplead\.wa-profile\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/06/25-01:58:46.360 5ca4 Recovering log #753
+2026/06/25-01:58:46.416 5ca4 Reusing old log D:\Personal Project\InventoryManagementSystem\whatsapplead\.wa-profile\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/000753.log 
+2026/06/25-01:58:46.416 5ca4 Delete type=2 #736
+2026/06/25-01:58:46.416 5ca4 Delete type=2 #737
+2026/06/25-01:58:46.417 5ca4 Delete type=2 #738
+2026/06/25-01:58:46.417 5ca4 Delete type=2 #739
+2026/06/25-01:58:46.417 5ca4 Delete type=2 #740
+2026/06/25-01:58:46.417 5ca4 Delete type=2 #741
+2026/06/25-01:58:46.417 5ca4 Delete type=2 #742
+2026/06/25-01:58:46.418 5ca4 Delete type=2 #743
+2026/06/25-01:58:46.418 5ca4 Delete type=2 #744
+2026/06/25-01:58:46.418 5ca4 Delete type=2 #745
+2026/06/25-01:58:46.418 5ca4 Delete type=2 #755
