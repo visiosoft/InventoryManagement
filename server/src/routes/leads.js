@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { Lead, User } from '../models/index.js';
+import { Customer, Lead, User } from '../models/index.js';
 
 const router = Router();
 
@@ -174,6 +174,67 @@ router.patch('/:id/status', async (req, res) => {
     await lead.save();
 
     res.json(await lead.populate('owner', 'name email'));
+});
+
+router.post('/:id/convert', async (req, res) => {
+    const lead = await Lead.findById(req.params.id).populate('owner', 'name email');
+    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+
+    const normalizedLeadPhone = normalizePhone(lead.phone);
+    const email = String(lead.email || '').trim().toLowerCase();
+
+    const phoneCandidates = [
+        String(lead.phone || '').trim(),
+        normalizedLeadPhone,
+        normalizedLeadPhone ? `+${normalizedLeadPhone}` : '',
+    ].filter(Boolean);
+
+    const existingCustomer = await Customer.findOne({
+        $or: [
+            ...(email ? [{ email }] : []),
+            ...phoneCandidates.flatMap((p) => [{ phone: p }, { phones: p }]),
+        ],
+    });
+
+    if (existingCustomer) {
+        if (lead.status !== 'won') {
+            lead.status = 'won';
+            lead.timeline.push({ type: 'converted', text: `Linked to existing customer ${existingCustomer.fullName}` });
+            await lead.save();
+        }
+
+        return res.json({
+            ok: true,
+            created: false,
+            customer: existingCustomer,
+            lead: await lead.populate('owner', 'name email'),
+        });
+    }
+
+    const customerPhones = Array.from(new Set(phoneCandidates));
+
+    const customer = await Customer.create({
+        fullName: lead.fullName,
+        email,
+        phone: String(lead.phone || '').trim(),
+        phones: customerPhones,
+        notes: lead.notes || '',
+        company: '',
+        address: '',
+        emergencyNumber: '',
+        tenantType: 'individual',
+    });
+
+    lead.status = 'won';
+    lead.timeline.push({ type: 'converted', text: `Converted to customer ${customer.fullName}` });
+    await lead.save();
+
+    res.json({
+        ok: true,
+        created: true,
+        customer,
+        lead: await lead.populate('owner', 'name email'),
+    });
 });
 
 router.delete('/:id', async (req, res) => {

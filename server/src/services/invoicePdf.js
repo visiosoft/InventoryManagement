@@ -43,6 +43,45 @@ function dt(d) {
   return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+function consolidateItems(items) {
+  // Merge legacy weekly items ("Week N: DD Mon YYYY · Unit X") into one monthly line
+  const weekPattern = /^Week\s+\d+:\s+(.+?)\s+·\s+(.+)$/;
+  const weekItems = (items || []).filter(it => weekPattern.test(it.itemDetails || ''));
+  const otherItems = (items || []).filter(it => !weekPattern.test(it.itemDetails || ''));
+
+  if (weekItems.length < 2) return items || [];
+
+  const total = Math.round(weekItems.reduce((s, it) => s + Number(it.amount || 0), 0) * 100) / 100;
+  const monthlyRate = Math.round(weekItems.reduce((s, it) => s + Number(it.rate || 0), 0) * 100) / 100;
+  const discountPct = weekItems.some(it => (it.discountPct ?? 0) > 0)
+    ? weekItems.find(it => (it.discountPct ?? 0) > 0)?.discountPct ?? 0
+    : 0;
+
+  // Extract unit from first weekly item and build a date range from first→last week start
+  const firstMatch = weekPattern.exec(weekItems[0].itemDetails);
+  const lastMatch  = weekPattern.exec(weekItems[weekItems.length - 1].itemDetails);
+  const unitNo = firstMatch?.[2] ?? '';
+  const fromDate = firstMatch?.[1] ?? '';
+  // End date: last week start + 6 days
+  let toDate = lastMatch?.[1] ?? '';
+  try {
+    const d = new Date(toDate.replace(/(\d{2})\s(\w{3})\s(\d{4})/, '$1 $2 $3'));
+    d.setDate(d.getDate() + 6);
+    toDate = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  } catch { /* keep raw */ }
+
+  const merged = {
+    sortOrder: 0,
+    itemDetails: `Storage Rent ${fromDate} – ${toDate} · ${unitNo}`,
+    quantity: 1,
+    rate: monthlyRate,
+    discountPct,
+    amount: total,
+  };
+
+  return [merged, ...otherItems];
+}
+
 export function renderInvoicePdf({ invoice }) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 0, info: { Title: invoice.invoiceNo || 'Invoice' } });
@@ -50,6 +89,9 @@ export function renderInvoicePdf({ invoice }) {
     doc.on('data', (c) => chunks.push(c));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
+
+    // Consolidate legacy weekly line items into one monthly line
+    invoice = { ...invoice.toObject ? invoice.toObject() : invoice, items: consolidateItems(invoice.items) };
 
     const PW = 595.28;
     const PH = 841.89;

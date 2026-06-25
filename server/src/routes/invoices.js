@@ -94,6 +94,13 @@ router.get('/public/:token/pdf', async (req, res) => {
     const invoice = await Invoice.findOne({ shareToken: req.params.token })
         .populate('customer', 'fullName email phone address');
     if (!invoice) return res.status(404).json({ error: 'Invoice not found or link expired' });
+
+    const contractPayments = await Payment.find({ invoice: invoice._id, status: 'paid' });
+    if (contractPayments.length > 0) {
+        const actualPaid = Math.round(contractPayments.reduce((s, p) => s + Number(p.amount || 0), 0) * 100) / 100;
+        if (actualPaid > Number(invoice.paymentMade || 0)) invoice.paymentMade = actualPaid;
+    }
+
     const pdf = await renderInvoicePdf({ invoice });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${invoice.invoiceNo}.pdf"`);
@@ -129,6 +136,23 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
     const invoice = await Invoice.findById(req.params.id).populate('customer', 'fullName email phone address');
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+
+    // For contract-linked invoices, sync paymentMade and status from actual Payment records
+    const contractPayments = await Payment.find({ invoice: invoice._id });
+    if (contractPayments.length > 0) {
+        const actualPaid = Math.round(
+            contractPayments.filter(p => p.status === 'paid').reduce((s, p) => s + Number(p.amount || 0), 0) * 100
+        ) / 100;
+        const allPaid = contractPayments.every(p => p.status === 'paid');
+        const updates = {};
+        if (actualPaid > Number(invoice.paymentMade || 0)) updates.paymentMade = actualPaid;
+        if (allPaid && invoice.status !== 'paid') updates.status = 'paid';
+        if (Object.keys(updates).length > 0) {
+            await Invoice.findByIdAndUpdate(invoice._id, { $set: updates });
+            Object.assign(invoice, updates);
+        }
+    }
+
     res.json(invoice);
 });
 
@@ -295,6 +319,16 @@ router.delete('/:id/payments/:idx', async (req, res) => {
 router.get('/:id/pdf', async (req, res) => {
     const invoice = await Invoice.findById(req.params.id).populate('customer', 'fullName email phone address');
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+
+    // For contract-linked invoices the paymentMade field may not be updated — sum actual paid Payment records
+    const contractPayments = await Payment.find({ invoice: invoice._id, status: 'paid' });
+    if (contractPayments.length > 0) {
+        const actualPaid = Math.round(contractPayments.reduce((s, p) => s + Number(p.amount || 0), 0) * 100) / 100;
+        if (actualPaid > Number(invoice.paymentMade || 0)) {
+            invoice.paymentMade = actualPaid;
+        }
+    }
+
     const pdf = await renderInvoicePdf({ invoice });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${invoice.invoiceNo}.pdf"`);

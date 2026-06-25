@@ -558,25 +558,27 @@ async function generateMissingPeriodInvoices(contract, cutoffDate) {
       const daysSinceStart = Math.round((periodStart - contractStart) / 86400000);
       const globalWeekOffset = Math.max(0, Math.floor(daysSinceStart / 7));
 
-      const items = [];
+      // Build per-week payment amounts (discount only on first 4 weeks of contract)
+      const weekAmounts = [];
       for (let i = 0; i < totalWeeks; i++) {
-        const ws = new Date(periodStart);
-        ws.setDate(ws.getDate() + i * 7);
         const discounted = discountPct > 0 && (globalWeekOffset + i) < 4;
-        const amount = discounted
+        weekAmounts.push(discounted
           ? Math.round(weeklyRate * (1 - discountPct / 100) * 100) / 100
-          : weeklyRate;
-        items.push({
-          sortOrder: i,
-          itemDetails: `Week ${globalWeekOffset + i + 1}: ${fmt(ws)} · Unit ${unitNo}`,
-          quantity: 1, rate: weeklyRate,
-          discountPct: discounted ? discountPct : 0,
-          amount,
-        });
+          : weeklyRate);
       }
-
-      const subTotal = Math.round(items.reduce((s, it) => s + it.amount, 0) * 100) / 100;
+      const subTotal = Math.round(weekAmounts.reduce((s, a) => s + a, 0) * 100) / 100;
       const displayEnd = new Date(effectiveEnd); displayEnd.setDate(displayEnd.getDate() - 1);
+      const hasDiscount = discountPct > 0 && globalWeekOffset < 4;
+
+      // One invoice line item for the whole month period
+      const items = [{
+        sortOrder: 0,
+        itemDetails: `Storage Rent ${fmt(periodStart)} – ${fmt(displayEnd)} · Unit ${unitNo}`,
+        quantity: 1,
+        rate: monthlyRate,
+        discountPct: hasDiscount ? discountPct : 0,
+        amount: subTotal,
+      }];
 
       // Double-check right before writing — closes the race window between concurrent requests
       const raceCheck = await Payment.findOne({
@@ -599,15 +601,16 @@ async function generateMissingPeriodInvoices(contract, cutoffDate) {
         subTotal, total: subTotal, paymentMade: 0, status: 'sent',
       });
 
-      await Payment.insertMany(items.map((_item, i) => {
+      // Still create one Payment per week for granular tracking, all linked to the same invoice
+      await Payment.insertMany(weekAmounts.map((amount, i) => {
         const ws = new Date(periodStart); ws.setDate(ws.getDate() + i * 7);
         return {
           contract: contract._id,
           invoice: invoice._id,
-          amount: items[i].amount,
+          amount,
           dueDate: ws,
-          status: periodStart <= new Date() ? 'pending' : 'pending',
-          notes: items[i].itemDetails,
+          status: 'pending',
+          notes: `${fmt(ws)} · Unit ${unitNo}`,
         };
       }));
 
@@ -713,22 +716,27 @@ router.post('/:id/generate-custom-invoice', async (req, res) => {
   const daysSinceStart = Math.round((start - contractStart) / 86400000);
   const globalWeekOffset = Math.max(0, Math.floor(daysSinceStart / 7));
 
-  const items = [];
+  // Build per-week payment amounts (discount only on first 4 weeks of contract)
+  const weekAmounts = [];
   for (let i = 0; i < totalWeeks; i++) {
-    const ws = new Date(start); ws.setDate(ws.getDate() + i * 7);
     const discounted = discountPct > 0 && (globalWeekOffset + i) < 4;
-    const amount = discounted
+    weekAmounts.push(discounted
       ? Math.round(weeklyRate * (1 - discountPct / 100) * 100) / 100
-      : weeklyRate;
-    items.push({
-      sortOrder: i,
-      itemDetails: `Week ${i + 1}: ${fmt(ws)} · Unit ${unitNo}`,
-      quantity: 1,
-      rate: weeklyRate,
-      discountPct: discounted ? discountPct : 0,
-      amount,
-    });
+      : weeklyRate);
   }
+  const periodSubTotal = Math.round(weekAmounts.reduce((s, a) => s + a, 0) * 100) / 100;
+  const hasDiscount = discountPct > 0 && globalWeekOffset < 4;
+  const displayEnd = fmt(new Date(end - 86400000));
+
+  // One invoice line item for the whole month period
+  const items = [{
+    sortOrder: 0,
+    itemDetails: `Storage Rent ${fmt(start)} – ${displayEnd} · Unit ${unitNo}`,
+    quantity: 1,
+    rate: monthlyRate,
+    discountPct: hasDiscount ? discountPct : 0,
+    amount: periodSubTotal,
+  }];
 
   // Append any extra charges / credits (locks, cleaning fees, credits, etc.)
   const extras = Array.isArray(rawExtras) ? rawExtras : [];
@@ -737,7 +745,7 @@ router.post('/:id/generate-custom-invoice', async (req, res) => {
     const amt = Math.round(Number(x.amount) * 100) / 100;
     const signed = x.type === 'credit' ? -amt : amt;
     items.push({
-      sortOrder: totalWeeks + xi,
+      sortOrder: 1 + xi,
       itemDetails: x.description,
       quantity: 1,
       rate: signed,
@@ -755,22 +763,22 @@ router.post('/:id/generate-custom-invoice', async (req, res) => {
     dueDate: dueDate ? new Date(dueDate) : end,
     orderNumber: contract.contractNo,
     terms: 'Due on receipt',
-    subject: `Storage Rent ${fmt(start)} – ${fmt(new Date(end - 86400000))} · ${contract.contractNo}`,
+    subject: `Storage Rent ${fmt(start)} – ${displayEnd} · ${contract.contractNo}`,
     items,
     customerNotes: notes || '',
     subTotal, total: subTotal, paymentMade: 0, status: 'sent',
   });
 
-  // Create one Payment entry per week, each linked to this invoice
-  await Payment.insertMany(items.map((item, i) => {
+  // Still create one Payment per week for granular tracking, all linked to the same invoice
+  await Payment.insertMany(weekAmounts.map((amount, i) => {
     const ws = new Date(start); ws.setDate(ws.getDate() + i * 7);
     return {
       contract: contract._id,
       invoice: invoice._id,
-      amount: item.amount,
+      amount,
       dueDate: ws,
       status: 'pending',
-      notes: item.itemDetails,
+      notes: `${fmt(ws)} · Unit ${unitNo}`,
     };
   }));
 
