@@ -89,16 +89,27 @@ async function syncLinkedPayment(invoice) {
     await payment.save();
 }
 
+async function detachLinkedPayment(invoiceId) {
+    const linked = await Payment.findOne({ invoice: invoiceId });
+    if (!linked) return;
+
+    linked.invoice = undefined;
+    linked.status = new Date(linked.dueDate) < new Date() ? 'overdue' : 'pending';
+    linked.paidDate = undefined;
+    linked.method = '';
+    await linked.save();
+}
+
 // Public: view invoice PDF by share token (no auth required)
 router.get('/public/:token/pdf', async (req, res) => {
     const invoice = await Invoice.findOne({ shareToken: req.params.token })
         .populate('customer', 'fullName email phone address');
     if (!invoice) return res.status(404).json({ error: 'Invoice not found or link expired' });
 
-    const contractPayments = await Payment.find({ invoice: invoice._id, status: 'paid' });
-    if (contractPayments.length > 0) {
-        const actualPaid = Math.round(contractPayments.reduce((s, p) => s + Number(p.amount || 0), 0) * 100) / 100;
-        if (actualPaid > Number(invoice.paymentMade || 0)) invoice.paymentMade = actualPaid;
+    const pdfPayments = await Payment.find({ invoice: invoice._id, status: 'paid' });
+    if (pdfPayments.length > 0) {
+        const totalPaid2 = Math.round(pdfPayments.reduce((s, p) => s + Number(p.amount || 0), 0) * 100) / 100;
+        if (totalPaid2 > Number(invoice.paymentMade || 0)) invoice.paymentMade = totalPaid2;
     }
 
     const pdf = await renderInvoicePdf({ invoice });
@@ -116,8 +127,8 @@ router.post('/:id/share', async (req, res) => {
         await invoice.save();
     }
     const proto = req.headers['x-forwarded-proto'] || req.protocol;
-    const host  = req.headers['x-forwarded-host']  || req.get('host');
-    const url   = `${proto}://${host}/api/invoices/public/${invoice.shareToken}/pdf`;
+    const host = req.headers['x-forwarded-host'] || req.get('host');
+    const url = `${proto}://${host}/api/invoices/public/${invoice.shareToken}/pdf`;
     res.json({ token: invoice.shareToken, url });
 });
 
@@ -137,16 +148,16 @@ router.get('/:id', async (req, res) => {
     const invoice = await Invoice.findById(req.params.id).populate('customer', 'fullName email phone address');
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
 
-    // For contract-linked invoices, sync paymentMade and status from actual Payment records
+    // For contract-linked invoices, sync paymentMade and status from linked Payment records.
     const contractPayments = await Payment.find({ invoice: invoice._id });
     if (contractPayments.length > 0) {
-        const actualPaid = Math.round(
+        const totalPaid = Math.round(
             contractPayments.filter(p => p.status === 'paid').reduce((s, p) => s + Number(p.amount || 0), 0) * 100
         ) / 100;
         const allPaid = contractPayments.every(p => p.status === 'paid');
         const updates = {};
-        if (actualPaid > Number(invoice.paymentMade || 0)) updates.paymentMade = actualPaid;
-        if (allPaid && invoice.status !== 'paid') updates.status = 'paid';
+        if (totalPaid > Number(invoice.paymentMade || 0)) updates.paymentMade = totalPaid;
+        if (allPaid && totalPaid >= Number(invoice.total || 0) && invoice.status !== 'paid') updates.status = 'paid';
         if (Object.keys(updates).length > 0) {
             await Invoice.findByIdAndUpdate(invoice._id, { $set: updates });
             Object.assign(invoice, updates);
@@ -210,18 +221,33 @@ router.patch('/:id/status', async (req, res) => {
     res.json(invoice);
 });
 
+router.post('/bulk-delete', async (req, res) => {
+    const ids = Array.isArray(req.body?.ids)
+        ? req.body.ids.map((id) => String(id || '').trim()).filter(Boolean)
+        : [];
+
+    if (!ids.length) {
+        return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    const uniqueIds = Array.from(new Set(ids));
+    const invoices = await Invoice.find({ _id: { $in: uniqueIds } }).select('_id');
+    const foundIds = invoices.map((invoice) => String(invoice._id));
+
+    await Invoice.deleteMany({ _id: { $in: uniqueIds } });
+
+    for (const invoiceId of foundIds) {
+        await detachLinkedPayment(invoiceId);
+    }
+
+    res.json({ ok: true, deleted: foundIds.length, requested: uniqueIds.length });
+});
+
 router.delete('/:id', async (req, res) => {
     const invoice = await Invoice.findByIdAndDelete(req.params.id);
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
 
-    const linked = await Payment.findOne({ invoice: invoice._id });
-    if (linked) {
-        linked.invoice = undefined;
-        linked.status = new Date(linked.dueDate) < new Date() ? 'overdue' : 'pending';
-        linked.paidDate = undefined;
-        linked.method = '';
-        await linked.save();
-    }
+    await detachLinkedPayment(invoice._id);
 
     res.json({ ok: true });
 });
@@ -320,13 +346,10 @@ router.get('/:id/pdf', async (req, res) => {
     const invoice = await Invoice.findById(req.params.id).populate('customer', 'fullName email phone address');
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
 
-    // For contract-linked invoices the paymentMade field may not be updated — sum actual paid Payment records
-    const contractPayments = await Payment.find({ invoice: invoice._id, status: 'paid' });
-    if (contractPayments.length > 0) {
-        const actualPaid = Math.round(contractPayments.reduce((s, p) => s + Number(p.amount || 0), 0) * 100) / 100;
-        if (actualPaid > Number(invoice.paymentMade || 0)) {
-            invoice.paymentMade = actualPaid;
-        }
+    const pdfPaymentsPaid = await Payment.find({ invoice: invoice._id, status: 'paid' });
+    if (pdfPaymentsPaid.length > 0) {
+        const pdfTotalPaid = Math.round(pdfPaymentsPaid.reduce((s, p) => s + Number(p.amount || 0), 0) * 100) / 100;
+        if (pdfTotalPaid > Number(invoice.paymentMade || 0)) invoice.paymentMade = pdfTotalPaid;
     }
 
     const pdf = await renderInvoicePdf({ invoice });

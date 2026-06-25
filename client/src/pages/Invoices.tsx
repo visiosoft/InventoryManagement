@@ -558,6 +558,7 @@ export default function Invoices() {
     const qc = useQueryClient()
     const [search, setSearch] = useState('')
     const [status, setStatus] = useState('')
+    const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([])
     const [adding, setAdding] = useState(false)
     const [editing, setEditing] = useState<Invoice | null>(null)
     const [paying, setPaying] = useState<Invoice | null>(null)
@@ -595,8 +596,48 @@ export default function Invoices() {
 
     const removeInvoice = useMutation({
         mutationFn: (id: string) => invoiceApi.remove(id),
-        onSuccess: () => qc.invalidateQueries({ queryKey: ['invoices'] }),
+        onSuccess: (_, id) => {
+            qc.invalidateQueries({ queryKey: ['invoices'] })
+            setSelectedInvoiceIds((prev) => prev.filter((selectedId) => selectedId !== id))
+        },
     })
+
+    const removeManyInvoices = useMutation({
+        mutationFn: (ids: string[]) => invoiceApi.removeMany(ids),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['invoices'] })
+            setSelectedInvoiceIds([])
+        },
+        onError: (e) => setError(apiError(e)),
+    })
+
+    const visibleInvoiceIds = (invoices || []).map((inv) => inv._id)
+    const allVisibleSelected = visibleInvoiceIds.length > 0 && visibleInvoiceIds.every((id) => selectedInvoiceIds.includes(id))
+
+    function toggleInvoiceSelection(invoiceId: string) {
+        setSelectedInvoiceIds((prev) => (
+            prev.includes(invoiceId)
+                ? prev.filter((id) => id !== invoiceId)
+                : [...prev, invoiceId]
+        ))
+    }
+
+    function toggleAllVisibleInvoices() {
+        setSelectedInvoiceIds((prev) => {
+            if (allVisibleSelected) {
+                return prev.filter((id) => !visibleInvoiceIds.includes(id))
+            }
+
+            return Array.from(new Set([...prev, ...visibleInvoiceIds]))
+        })
+    }
+
+    function confirmBulkDelete() {
+        if (!selectedInvoiceIds.length) return
+        if (confirm(`Delete ${selectedInvoiceIds.length} selected invoice${selectedInvoiceIds.length > 1 ? 's' : ''}?`)) {
+            removeManyInvoices.mutate(selectedInvoiceIds)
+        }
+    }
 
     const openInvoicePdf = async (invoiceId: string) => {
         try {
@@ -616,7 +657,16 @@ export default function Invoices() {
             <PageHeader
                 title="Invoices & Quotes"
                 subtitle={`${invoices?.length ?? 0} records`}
-                action={<Button onClick={() => setAdding(true)}><Plus size={15} /> New</Button>}
+                action={
+                    <div className="flex gap-2">
+                        {selectedInvoiceIds.length > 0 && (
+                            <Button variant="destructive" onClick={confirmBulkDelete} disabled={removeManyInvoices.isPending}>
+                                {removeManyInvoices.isPending ? 'Deleting…' : `Delete selected (${selectedInvoiceIds.length})`}
+                            </Button>
+                        )}
+                        <Button onClick={() => setAdding(true)}><Plus size={15} /> New</Button>
+                    </div>
+                }
             />
 
             <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-2">
@@ -631,9 +681,18 @@ export default function Invoices() {
                 <Spinner />
             ) : (
                 <Card>
+                    {error && <p className="px-4 pt-4 text-xs text-destructive">{error}</p>}
                     <Table>
                         <thead>
                             <tr>
+                                <Th>
+                                    <input
+                                        type="checkbox"
+                                        checked={allVisibleSelected}
+                                        onChange={toggleAllVisibleInvoices}
+                                        aria-label="Select all invoices"
+                                    />
+                                </Th>
                                 <Th>#</Th>
                                 <Th>Customer</Th>
                                 <Th>Invoice Date</Th>
@@ -648,6 +707,14 @@ export default function Invoices() {
                         <tbody>
                             {(invoices || []).map((inv) => (
                                 <tr key={inv._id} className="hover:bg-muted/50">
+                                    <Td>
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedInvoiceIds.includes(inv._id)}
+                                            onChange={() => toggleInvoiceSelection(inv._id)}
+                                            aria-label={`Select invoice ${inv.invoiceNo}`}
+                                        />
+                                    </Td>
                                     <Td className="font-medium relative overflow-hidden">
                                         {inv.status === 'overdue' && <CornerRibbon label="Overdue" color="amber" size="sm" />}
                                         {inv.status === 'paid' && <CornerRibbon label="Paid" color="green" size="sm" />}

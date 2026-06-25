@@ -101,6 +101,7 @@ export const invoiceApi = {
   update: (id: string, body: Record<string, unknown>) => api.put<Invoice>(`/invoices/${id}`, body).then((r) => r.data),
   updateStatus: (id: string, status: string) => api.patch<Invoice>(`/invoices/${id}/status`, { status }).then((r) => r.data),
   remove: (id: string) => api.delete<{ ok: true }>(`/invoices/${id}`).then((r) => r.data),
+  removeMany: (ids: string[]) => api.post<{ ok: true; deleted: number; requested: number }>('/invoices/bulk-delete', { ids }).then((r) => r.data),
   uploadAttachments: (id: string, form: FormData) =>
     api.post<Invoice>(`/invoices/${id}/attachments`, form, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
   removeAttachment: (id: string, index: number) => api.delete<Invoice>(`/invoices/${id}/attachments/${index}`).then((r) => r.data),

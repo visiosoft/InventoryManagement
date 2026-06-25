@@ -378,6 +378,8 @@ export default function NewContract() {
   })
 
   const periods = useMemo(() => estimatePeriods(startDate, endDate, billing), [startDate, endDate, billing])
+  // Invoices are always generated monthly (28-day periods), regardless of billing cadence
+  const monthlyPeriods = useMemo(() => estimatePeriods(startDate, endDate, 'monthly'), [startDate, endDate])
 
   // Per-unit availability for selected date range
   const unitAvailMap = useMemo(() => {
@@ -463,7 +465,11 @@ export default function NewContract() {
     selectedUnits.reduce((sum, u) => {
       const r = getUnitRate(u)
       const pct = unitDiscount(u)
-      return sum + computeContractTotal(startDate, endDate, billing, r, pct > 0, pct)
+      const bd = computeBreakdown(startDate, endDate, billing, r, pct)
+      const monthRows = bd.filter(b => b.label !== 'Total')
+      // Exclude last period — covered by deposit (if only 1 period, charge it fully)
+      const chargeable = monthRows.length > 1 ? monthRows.slice(0, -1) : monthRows
+      return sum + chargeable.reduce((s, row) => s + row.amount, 0)
     }, 0),
     [selectedUnits, rate, billing, startDate, endDate, discountMap, unitTypes]
   )
@@ -928,32 +934,73 @@ export default function NewContract() {
                 </section>
 
                 {/* ── Payment breakdown ── */}
-                {breakdown.length > 0 && (
-                  <section className="rounded-xl border overflow-hidden">
-                    <div className="px-4 py-2 bg-muted/60 border-b flex items-center justify-between">
-                      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Payment Breakdown</h3>
-                      {mode === 'multi' && <span className="text-[11px] text-muted-foreground">Showing {firstUnit.unitNumber}</span>}
-                    </div>
-                    <table className="w-full text-sm">
-                      <tbody>
-                        {breakdown.map((row, i) => {
-                          const isTotal = row.label === 'Total'
-                          return (
-                            <tr key={i} className={cn(
-                              'border-b last:border-0',
-                              row.accent && 'bg-amber-50 dark:bg-amber-950/20',
-                              isTotal && 'bg-muted/40 font-semibold',
-                            )}>
+                {breakdown.length > 0 && (() => {
+                  const monthRows = breakdown.filter(r => r.label !== 'Total')
+                  const secDeposit = displayRate  // always 1 month rent
+
+                  // Compute last month period dates for the deposit coverage label
+                  const lastMonthWeekCount = Math.min(4, periods)
+                  const weeksBeforeLast = periods - lastMonthWeekCount
+                  const lastMonthStartDate = startDate
+                    ? new Date(new Date(startDate).getTime() + weeksBeforeLast * 7 * 86400000)
+                    : null
+                  const lastMonthEndDate = endDate ? new Date(endDate) : null
+                  const depositPeriod = lastMonthStartDate && lastMonthEndDate
+                    ? `${fmtDate(lastMonthStartDate.toISOString().slice(0, 10))} – ${fmtDate(endDate)}`
+                    : '1 month · last period'
+
+                  // Split rows: all months before the last, and the last month row
+                  const beforeLastRows = monthRows.slice(0, -1)
+                  const lastMonthRow = monthRows[monthRows.length - 1]
+
+                  // 1st invoice = Month 1 rent + security deposit
+                  const firstMonthAmt = monthRows[0]?.amount ?? 0
+                  const totalDue = Math.round((firstMonthAmt + secDeposit) * 100) / 100
+
+                  return (
+                    <section className="rounded-xl border overflow-hidden">
+                      <div className="px-4 py-2 bg-muted/60 border-b flex items-center justify-between">
+                        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Payment Breakdown</h3>
+                        {mode === 'multi' && <span className="text-[11px] text-muted-foreground">Showing {firstUnit.unitNumber}</span>}
+                      </div>
+                      <table className="w-full text-sm">
+                        <tbody>
+                          {/* Month rows (all except last) */}
+                          {beforeLastRows.map((row, i) => (
+                            <tr key={i} className={cn('border-b', row.accent && 'bg-amber-50 dark:bg-amber-950/20')}>
                               <td className="px-4 py-2.5 font-medium">{row.label}</td>
                               <td className="px-4 py-2.5 text-xs text-muted-foreground">{row.detail}</td>
                               <td className="px-4 py-2.5 text-right font-semibold tabular-nums">{formatMoney(row.amount)}</td>
                             </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </section>
-                )}
+                          ))}
+                          {/* Last month — covered by security deposit, no separate invoice */}
+                          {lastMonthRow && (
+                            <tr className="border-b opacity-60">
+                              <td className="px-4 py-2.5 font-medium">
+                                {lastMonthRow.label}
+                                <span className="ml-2 text-[10px] font-normal text-blue-600 dark:text-blue-400 uppercase tracking-wide">covered by deposit</span>
+                              </td>
+                              <td className="px-4 py-2.5 text-xs text-muted-foreground">{lastMonthRow.detail}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums line-through text-muted-foreground">{formatMoney(lastMonthRow.amount)}</td>
+                            </tr>
+                          )}
+                          {/* Security deposit row — collected in 1st invoice, covers last month */}
+                          <tr className="border-b bg-blue-50 dark:bg-blue-950/20">
+                            <td className="px-4 py-2.5 font-medium text-blue-700 dark:text-blue-300">Security Deposit</td>
+                            <td className="px-4 py-2.5 text-xs text-blue-600 dark:text-blue-400">{depositPeriod} · adjusted at end</td>
+                            <td className="px-4 py-2.5 text-right font-semibold tabular-nums text-blue-700 dark:text-blue-300">{formatMoney(secDeposit)}</td>
+                          </tr>
+                          {/* Total due on 1st invoice = Month 1 rent + deposit */}
+                          <tr className="bg-muted/40 font-semibold">
+                            <td className="px-4 py-2.5">Total Due (1st invoice)</td>
+                            <td className="px-4 py-2.5 text-xs text-muted-foreground">Month 1 rent + deposit</td>
+                            <td className="px-4 py-2.5 text-right tabular-nums">{formatMoney(totalDue)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </section>
+                  )
+                })()}
 
                 {/* ── Other ── */}
                 <section className="rounded-xl border overflow-hidden">
@@ -995,7 +1042,13 @@ export default function NewContract() {
                   <span className="ml-1.5 text-muted-foreground text-xs">(≈ {periods} {billing === 'weekly' ? 'week' : 'month'}{periods !== 1 ? 's' : ''})</span>
                 </div>
                 <div><div className="text-xs text-muted-foreground">Billing</div><span className="capitalize">{billing}</span></div>
-                <div><div className="text-xs text-muted-foreground">Deposit{mode === 'multi' ? ' per unit' : ''}</div>{formatMoney(Number(deposit || 0))}</div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Security Deposit{mode === 'multi' ? ' (per unit)' : ''}</div>
+                  {formatMoney(mode === 'combined'
+                    ? (rate !== '' ? Number(rate) / Math.max(1, selectedUnits.length) : getUnitRate(selectedUnits[0]))
+                    : getUnitRate(selectedUnits[0]))}
+                  <span className="ml-1 text-[11px] text-muted-foreground">· 1 month rent</span>
+                </div>
               </div>
 
               <div>
@@ -1008,7 +1061,17 @@ export default function NewContract() {
                     const r = mode === 'combined' ? (rate !== '' ? Number(rate) / selectedUnits.length : getUnitRate(u)) : getUnitRate(u)
                     const pct = unitDiscount(u)
                     const rows = computeBreakdown(startDate, endDate, billing, r, pct)
-                    const unitTotal = rows[rows.length - 1]?.amount ?? 0
+                    const totalWks = Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / (7 * 86400000))
+                    const lastMonthWks = Math.min(4, totalWks)
+                    const wksBeforeLast = totalWks - lastMonthWks
+                    const lastMonthStart = new Date(new Date(startDate).getTime() + wksBeforeLast * 7 * 86400000)
+                    const fmtD = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+                    const depositPeriod = `${fmtD(lastMonthStart)} – ${fmtD(new Date(endDate))}`
+                    const monthRows = rows.filter(row => row.label !== 'Total')
+                    const beforeLastRows = monthRows.slice(0, -1)
+                    const lastMonthRow = monthRows[monthRows.length - 1]
+                    const firstMonthAmt = monthRows[0]?.amount ?? 0
+                    const totalDue = Math.round((firstMonthAmt + r) * 100) / 100
                     return (
                       <div key={u._id}>
                         {/* Unit header */}
@@ -1018,21 +1081,40 @@ export default function NewContract() {
                             {formatMoney(r)}/mo
                             <span className="ml-1.5 opacity-60 text-[10px]">({formatMoney(Math.round(r/4*100)/100)}/wk)</span>
                           </span>
-                          <span>{formatMoney(unitTotal)}</span>
+                          <span>{formatMoney(totalDue)}</span>
                         </div>
-                        {/* Breakdown rows */}
-                        {rows.map((row, i) => {
-                          const isLast = i === rows.length - 1
-                          return (
-                            <div key={i} className={`flex items-center justify-between px-4 py-1.5 gap-4
-                              ${isLast ? 'border-t font-semibold bg-accent/40' : ''}
-                              ${row.accent ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground'}`}>
-                              <span className={isLast ? 'text-foreground' : ''}>{row.label}</span>
-                              <span className="flex-1 text-right text-[11px] opacity-70">{row.detail}</span>
-                              <span className={isLast ? 'text-foreground' : 'text-foreground/80'}>{formatMoney(row.amount)}</span>
-                            </div>
-                          )
-                        })}
+                        {/* Month rows before last */}
+                        {beforeLastRows.map((row, i) => (
+                          <div key={i} className={`flex items-center justify-between px-4 py-1.5 gap-4
+                            ${row.accent ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground'}`}>
+                            <span>{row.label}</span>
+                            <span className="flex-1 text-right text-[11px] opacity-70">{row.detail}</span>
+                            <span className="text-foreground/80">{formatMoney(row.amount)}</span>
+                          </div>
+                        ))}
+                        {/* Last month — covered by security deposit */}
+                        {lastMonthRow && (
+                          <div className="flex items-center justify-between px-4 py-1.5 gap-4 opacity-55">
+                            <span className="text-muted-foreground">
+                              {lastMonthRow.label}
+                              <span className="ml-1.5 text-[10px] text-blue-500 uppercase tracking-wide font-medium">deposit</span>
+                            </span>
+                            <span className="flex-1 text-right text-[11px] opacity-70">{lastMonthRow.detail}</span>
+                            <span className="text-foreground/60 line-through">{formatMoney(lastMonthRow.amount)}</span>
+                          </div>
+                        )}
+                        {/* Security deposit row */}
+                        <div className="flex items-center justify-between px-4 py-1.5 gap-4 bg-blue-50 dark:bg-blue-950/20">
+                          <span className="text-blue-700 dark:text-blue-300 font-medium">Security Deposit</span>
+                          <span className="flex-1 text-right text-[11px] text-blue-500">{depositPeriod} · adjusted at end</span>
+                          <span className="text-blue-700 dark:text-blue-300 font-semibold">{formatMoney(r)}</span>
+                        </div>
+                        {/* Total due on 1st invoice */}
+                        <div className="flex items-center justify-between px-4 py-1.5 gap-4 border-t font-semibold bg-accent/40">
+                          <span className="text-foreground">Total (1st invoice)</span>
+                          <span className="flex-1 text-right text-[11px] opacity-70">Month 1 + deposit</span>
+                          <span className="text-foreground">{formatMoney(totalDue)}</span>
+                        </div>
                       </div>
                     )
                   })}
@@ -1052,7 +1134,7 @@ export default function NewContract() {
                     {mode === 'multi' ? 'Combined value' : 'Contract value'}
                     {mode === 'multi' && ` · ${selectedUnits.length} contracts`}
                     {mode === 'combined' && ` · ${selectedUnits.length} units · 1 contract`}
-                    {' '}· ≈ {periods} {billing === 'weekly' ? 'weekly' : 'monthly'} payment{periods !== 1 ? 's' : ''}
+                    {' '}· ≈ {monthlyPeriods} monthly invoice{monthlyPeriods !== 1 ? 's' : ''}
                     {autoRenew && <Badge tone="purple" className="ml-2">Auto-renew</Badge>}
                   </span>
                   <strong>{formatMoney(totalValue)}</strong>

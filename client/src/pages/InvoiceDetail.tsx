@@ -23,7 +23,7 @@ function consolidateItems(items: Invoice['items']) {
     if (weekItems.length < 2) return items
 
     const total = weekItems.reduce((s, it) => s + Number(it.amount ?? 0), 0)
-    const monthlyRate = weekItems.reduce((s, it) => s + Number(it.rate ?? 0), 0)
+    const singleWeekRate = Number(weekItems[0].rate ?? 0)
     const discountPct = weekItems.find(it => (it.discountPct ?? 0) > 0)?.discountPct ?? 0
     const firstMatch = weekRe.exec(weekItems[0].itemDetails ?? '')
     const lastMatch  = weekRe.exec(weekItems[weekItems.length - 1].itemDetails ?? '')
@@ -37,7 +37,7 @@ function consolidateItems(items: Invoice['items']) {
     } catch { /* keep raw */ }
 
     return [
-        { ...weekItems[0], itemDetails: `Storage Rent ${fromDate} – ${toDate} · ${unitNo}`, quantity: 1, rate: monthlyRate, discountPct, amount: total },
+        { ...weekItems[0], itemDetails: `Storage Rent ${fromDate} – ${toDate} · ${unitNo}`, quantity: weekItems.length, rate: singleWeekRate, discountPct, amount: total },
         ...otherItems,
     ]
 }
@@ -282,7 +282,7 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
     const [subject, setSubject] = useState(invoice.subject || '')
     const [notes, setNotes] = useState(invoice.customerNotes || '')
     const [items, setItems] = useState(() =>
-        (invoice.items || []).map((it, i) => ({ ...it, sortOrder: it.sortOrder ?? i, discountPct: it.discountPct ?? 0 }))
+        consolidateItems(invoice.items).map((it, i) => ({ ...it, sortOrder: it.sortOrder ?? i, discountPct: it.discountPct ?? 0 }))
     )
     const [err, setErr] = useState('')
 
@@ -357,6 +357,7 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
                             <thead className="bg-muted/50">
                                 <tr>
                                     <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Description</th>
+                                    <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground w-16">Qty</th>
                                     <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground w-24">Rate</th>
                                     <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground w-24">Discount %</th>
                                     <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground w-28">Amount (AED)</th>
@@ -374,6 +375,9 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
                                                     : <Input value={it.itemDetails} onChange={e => updateDesc(idx, e.target.value)}
                                                         placeholder="Description" className="h-7 text-xs" />
                                                 }
+                                            </td>
+                                            <td className="px-3 py-2 text-right text-muted-foreground text-xs">
+                                                {(it.quantity ?? 1) > 1 ? `${it.quantity} wk` : '—'}
                                             </td>
                                             <td className="px-3 py-2 text-right text-muted-foreground text-xs">
                                                 {it.rate > 0 ? formatMoney(it.rate) : '—'}
@@ -406,7 +410,7 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
                             </tbody>
                             <tfoot>
                                 <tr className="border-t bg-muted/30">
-                                    <td colSpan={3} className="px-3 py-2">
+                                    <td colSpan={4} className="px-3 py-2">
                                         <button onClick={addExtra} className="text-xs text-primary hover:underline cursor-pointer">
                                             + Add extra charge / credit
                                         </button>
@@ -704,6 +708,7 @@ export default function InvoiceDetail() {
                         <tr>
                             <Th>#</Th>
                             <Th>Item & Description</Th>
+                            <Th className="text-right">Qty</Th>
                             <Th className="text-right">Rate (AED)</Th>
                             {(invoice.items || []).some(it => (it.discountPct ?? 0) > 0) && (
                                 <Th className="text-right">Discount</Th>
@@ -719,6 +724,9 @@ export default function InvoiceDetail() {
                                 <tr key={idx} className={`hover:bg-muted/50 ${discounted ? 'bg-amber-50/60 dark:bg-amber-950/20' : ''}`}>
                                     <Td className="text-muted-foreground">{idx + 1}</Td>
                                     <Td className="whitespace-pre-line">{it.itemDetails}</Td>
+                                    <Td className="text-right text-muted-foreground">
+                                        {(it.quantity ?? 1) > 1 ? `${it.quantity} wk` : '—'}
+                                    </Td>
                                     <Td className="text-right">
                                         {discounted
                                             ? <span className="line-through text-muted-foreground">{formatMoney(it.rate)}</span>

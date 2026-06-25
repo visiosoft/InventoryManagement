@@ -52,7 +52,8 @@ function consolidateItems(items) {
   if (weekItems.length < 2) return items || [];
 
   const total = Math.round(weekItems.reduce((s, it) => s + Number(it.amount || 0), 0) * 100) / 100;
-  const monthlyRate = Math.round(weekItems.reduce((s, it) => s + Number(it.rate || 0), 0) * 100) / 100;
+  // Use the single-week rate (not the sum) so Qty × Rate = Amount works in the table
+  const singleWeekRate = Number(weekItems[0].rate || 0);
   const discountPct = weekItems.some(it => (it.discountPct ?? 0) > 0)
     ? weekItems.find(it => (it.discountPct ?? 0) > 0)?.discountPct ?? 0
     : 0;
@@ -73,8 +74,8 @@ function consolidateItems(items) {
   const merged = {
     sortOrder: 0,
     itemDetails: `Storage Rent ${fromDate} – ${toDate} · ${unitNo}`,
-    quantity: 1,
-    rate: monthlyRate,
+    quantity: weekItems.length,
+    rate: singleWeekRate,
     discountPct,
     amount: total,
   };
@@ -195,22 +196,24 @@ export function renderInvoicePdf({ invoice }) {
     // ── ITEMS TABLE ───────────────────────────────────────────────────────
     const TX  = M;
     const TW  = PW - 2 * M;   // 495.28
-    const nW  = 32;            // # column
+    const nW  = 28;            // # column
+    const qW  = 36;            // Qty column
     const aW  = 90;            // Amount column
     const hasDiscount = (invoice.items || []).some(it => (it.discountPct ?? 0) > 0);
-    const dW  = hasDiscount ? 70 : 0;  // Discount column (only when needed)
-    const rW  = hasDiscount ? 80 : 90; // Rate column
-    const iW  = TW - nW - rW - dW - aW; // Item & Description column
+    const dW  = hasDiscount ? 65 : 0;  // Discount column (only when needed)
+    const rW  = hasDiscount ? 75 : 85; // Rate column
+    const iW  = TW - nW - qW - rW - dW - aW; // Item & Description column
 
     // Header row
     const hH = 26;
     doc.rect(TX, y, TW, hH).fill(TH_BG);
     doc.font('Helvetica-Bold').fontSize(9).fillColor(WHITE);
-    doc.text('#',                 TX + 8,                    y + 8, { width: nW - 8 });
-    doc.text('Item & Description', TX + nW + 6,              y + 8, { width: iW - 12 });
-    doc.text('Rate',              TX + nW + iW,              y + 8, { width: rW,      align: 'right' });
-    if (hasDiscount) doc.text('Discount', TX + nW + iW + rW, y + 8, { width: dW, align: 'right' });
-    doc.text('Amount',            TX + nW + iW + rW + dW,   y + 8, { width: aW - 8,  align: 'right' });
+    doc.text('#',                  TX + 6,                         y + 8, { width: nW - 6 });
+    doc.text('Item & Description', TX + nW + 6,                    y + 8, { width: iW - 12 });
+    doc.text('Qty',                TX + nW + iW,                   y + 8, { width: qW,      align: 'right' });
+    doc.text('Rate',               TX + nW + iW + qW,              y + 8, { width: rW,      align: 'right' });
+    if (hasDiscount) doc.text('Discount', TX + nW + iW + qW + rW, y + 8, { width: dW, align: 'right' });
+    doc.text('Amount',             TX + nW + iW + qW + rW + dW,   y + 8, { width: aW - 8,  align: 'right' });
     y += hH;
 
     // Item rows
@@ -224,20 +227,22 @@ export function renderInvoicePdf({ invoice }) {
         doc.rect(TX, y, TW, rH).fill(ROW_ALT);
       }
       doc.font('Helvetica').fontSize(9).fillColor(BLACK);
-      doc.text(String(idx + 1),      TX + 8,                    y + 8, { width: nW - 8 });
-      doc.text(it.itemDetails || '-', TX + nW + 6,              y + 8, { width: iW - 12 });
-      doc.text(num(it.rate),          TX + nW + iW,              y + 8, { width: rW, align: 'right' });
+      doc.text(String(idx + 1),       TX + 6,                         y + 8, { width: nW - 6 });
+      doc.text(it.itemDetails || '-', TX + nW + 6,                    y + 8, { width: iW - 12 });
+      const qty = Number(it.quantity ?? 1);
+      doc.text(qty !== 1 ? `${qty} wk` : '—', TX + nW + iW,          y + 8, { width: qW, align: 'right' });
+      doc.text(num(it.rate),           TX + nW + iW + qW,              y + 8, { width: rW, align: 'right' });
       if (hasDiscount) {
         if (discounted) {
           doc.fillColor('#D97706').font('Helvetica-Bold')
-            .text(`${it.discountPct}% off`, TX + nW + iW + rW, y + 8, { width: dW, align: 'right' });
+            .text(`${it.discountPct}% off`, TX + nW + iW + qW + rW, y + 8, { width: dW, align: 'right' });
           doc.fillColor(BLACK).font('Helvetica');
         } else {
-          doc.fillColor('#94A3B8').text('—', TX + nW + iW + rW, y + 8, { width: dW, align: 'right' });
+          doc.fillColor('#94A3B8').text('—', TX + nW + iW + qW + rW, y + 8, { width: dW, align: 'right' });
           doc.fillColor(BLACK);
         }
       }
-      doc.text(num(it.amount),        TX + nW + iW + rW + dW,   y + 8, { width: aW - 8, align: 'right' });
+      doc.text(num(it.amount),         TX + nW + iW + qW + rW + dW,   y + 8, { width: aW - 8, align: 'right' });
       y += rH;
     });
 

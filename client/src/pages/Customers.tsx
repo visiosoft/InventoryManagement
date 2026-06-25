@@ -16,6 +16,7 @@ export default function Customers() {
   const location = useLocation()
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
+  const [sort, setSort] = useState('date_added_desc')
   const [adding, setAdding] = useState(false)
   const [prefill, setPrefill] = useState<Partial<Customer> | null>(null)
   const [newCustomer, setNewCustomer] = useState<Customer | null>(null)
@@ -32,8 +33,8 @@ export default function Customers() {
   }, [location.state])
 
   const { data: customers, isLoading } = useQuery<Customer[]>({
-    queryKey: ['customers', search],
-    queryFn: () => api.get('/customers', { params: { search } }).then((r) => r.data),
+    queryKey: ['customers', search, sort],
+    queryFn: () => api.get('/customers', { params: { search, sort } }).then((r) => r.data),
   })
 
   async function onDeleteCustomer(c: Customer) {
@@ -63,9 +64,28 @@ export default function Customers() {
         action={<Button onClick={() => { setPrefill(null); setAdding(true) }}><Plus size={15} /> Add customer</Button>}
       />
 
-      <div className="relative mb-4 max-w-sm">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <Input className="pl-9" placeholder="Search name, email, phone…" value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div className="relative max-w-sm flex-1">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            className="pl-9"
+            placeholder="Search name, phone, nationality, email, client ID…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="w-full md:w-56">
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value)}
+            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+          >
+            <option value="date_added_desc">Date added: newest first</option>
+            <option value="date_added_asc">Date added: oldest first</option>
+            <option value="name_asc">Name: A to Z</option>
+            <option value="name_desc">Name: Z to A</option>
+          </select>
+        </div>
       </div>
 
       {isLoading ? (

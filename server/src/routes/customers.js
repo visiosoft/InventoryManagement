@@ -3,13 +3,38 @@ import { Customer, Contract, Document } from '../models/index.js';
 
 const router = Router();
 
+function escRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 router.get('/', async (req, res) => {
   const filter = {};
   if (req.query.search) {
-    const re = new RegExp(String(req.query.search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-    filter.$or = [{ fullName: re }, { email: re }, { phone: re }, { company: re }];
+    const re = new RegExp(escRegex(req.query.search), 'i');
+    filter.$or = [
+      { fullName: re },
+      { clientId: re },
+      { email: re },
+      { phone: re },
+      { phones: re },
+      { emergencyNumber: re },
+      { nationality: re },
+      { address: re },
+      { company: re },
+      { emiratesId: re },
+      { passportNumber: re },
+      { notes: re },
+      { tenantType: re },
+    ];
   }
-  const customers = await Customer.find(filter).sort({ fullName: 1 });
+
+  const sortKey = String(req.query.sort || 'date_added_desc');
+  let sort = { createdAt: -1, _id: -1 };
+  if (sortKey === 'name_asc') sort = { fullName: 1, _id: -1 };
+  else if (sortKey === 'name_desc') sort = { fullName: -1, _id: -1 };
+  else if (sortKey === 'date_added_asc') sort = { createdAt: 1, _id: 1 };
+
+  const customers = await Customer.find(filter).sort(sort);
   res.json(customers);
 });
 

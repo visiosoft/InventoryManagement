@@ -70,6 +70,18 @@ async function syncUnitStatus(unitId) {
   await Unit.findByIdAndUpdate(unitId, { status: 'available' });
 }
 
+async function deleteContractRecord(contract) {
+  if (contract.status === 'active') {
+    throw new Error('Cannot delete an active contract. End or cancel it first.');
+  }
+
+  const allUnitIds = contract.units?.length ? contract.units : [contract.unit];
+  await Payment.deleteMany({ contract: contract._id });
+  await Document.deleteMany({ contract: contract._id });
+  await contract.deleteOne();
+  await Promise.all(allUnitIds.map((uid) => syncUnitStatus(uid)));
+}
+
 router.get('/', async (req, res) => {
   const filter = {};
   if (req.query.status) filter.status = req.query.status;
@@ -125,11 +137,23 @@ router.get('/latest-notes', async (req, res) => {
 router.get('/:id', async (req, res) => {
   const contract = await populateAll(Contract.findById(req.params.id));
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
+
+  // Fill in any missing invoices (e.g. the deposit-covered last period that has no
+  // payment record and so gets skipped by the payment-record-only exists check).
+  if (!['ended', 'cancelled'].includes(contract.status)) {
+    try { await generateMissingPeriodInvoices(contract, new Date(contract.endDate)); } catch (_) { }
+  }
+
   const payments = await Payment.find({ contract: contract._id })
     .populate('invoice', 'invoiceNo status dueDate total')
     .sort({ dueDate: 1 });
   const documents = await Document.find({ contract: contract._id }).sort({ createdAt: -1 });
-  res.json({ contract, payments, documents });
+  // Include all invoices so the payment schedule can show deposit-covered (net-0) ones
+  // that have no payment records attached.
+  const invoices = await Invoice.find({ orderNumber: contract.contractNo })
+    .select('invoiceNo status dueDate total paymentMade items subject')
+    .sort({ dueDate: 1 });
+  res.json({ contract, payments, documents, invoices });
 });
 
 // Create a contract (draft). Generates the payment schedule and reserves the unit(s).
@@ -494,19 +518,46 @@ router.put('/:id', async (req, res) => {
   }
 });
 
+router.post('/bulk-delete', async (req, res) => {
+  const ids = Array.isArray(req.body?.ids)
+    ? req.body.ids.map((id) => String(id || '').trim()).filter(Boolean)
+    : [];
+
+  if (!ids.length) {
+    return res.status(400).json({ error: 'ids array is required' });
+  }
+
+  const uniqueIds = Array.from(new Set(ids));
+  const contracts = await Contract.find({ _id: { $in: uniqueIds } });
+
+  if (!contracts.length) {
+    return res.status(404).json({ error: 'No contracts found' });
+  }
+
+  const activeContract = contracts.find((contract) => contract.status === 'active');
+  if (activeContract) {
+    return res.status(409).json({ error: `Cannot delete active contract ${activeContract.contractNo}. End or cancel it first.` });
+  }
+
+  for (const contract of contracts) {
+    await deleteContractRecord(contract);
+  }
+
+  res.json({ ok: true, deleted: contracts.length, requested: uniqueIds.length });
+});
+
 // Delete a contract and all its payments / documents.
 // Active contracts cannot be deleted — end or cancel them first.
 router.delete('/:id', async (req, res) => {
   const contract = await Contract.findById(req.params.id);
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
-  if (contract.status === 'active') {
-    return res.status(409).json({ error: 'Cannot delete an active contract. End or cancel it first.' });
+
+  try {
+    await deleteContractRecord(contract);
+  } catch (err) {
+    return res.status(409).json({ error: err.message });
   }
-  const allUnitIds = contract.units?.length ? contract.units : [contract.unit];
-  await Payment.deleteMany({ contract: contract._id });
-  await Document.deleteMany({ contract: contract._id });
-  await contract.deleteOne();
-  await Promise.all(allUnitIds.map((uid) => syncUnitStatus(uid)));
+
   res.json({ ok: true });
 });
 
@@ -518,7 +569,9 @@ async function generateMissingPeriodInvoices(contract, cutoffDate) {
   const contractStart = new Date(contract.startDate);
   const contractEnd = new Date(contract.endDate);
   const cutoff = cutoffDate || new Date(Date.now() + 90 * 86400000); // default 3 months ahead
-  const until = contractEnd < cutoff ? contractEnd : cutoff;
+  // Always generate through contractEnd so the deposit-covered last period is never omitted.
+  // For regular upcoming periods, still respect the 90-day cutoff.
+  const until = contractEnd;
 
   const monthlyRate = Number(contract.rate || 0);
   const weeklyRate = Math.round((monthlyRate / 4) * 100) / 100;
@@ -537,6 +590,18 @@ async function generateMissingPeriodInvoices(contract, cutoffDate) {
     }
   }
 
+  // Check if this contract already has any invoices (to decide whether to add security deposit)
+  const priorInvoiceIds = await Payment.distinct('invoice', { contract: contract._id, invoice: { $ne: null } });
+  const hasExistingInvoices = priorInvoiceIds.filter(Boolean).length > 0;
+
+  // Deposit covers the last MONTHLY PERIOD (not last 4 weeks) so period boundaries are never split.
+  const totalContractDays = Math.round((contractEnd - contractStart) / 86400000);
+  const totalContractWeeks = Math.ceil(totalContractDays / 7);
+  const totalMonthlyPeriods = Math.ceil(totalContractWeeks / 4);
+  // For single-period contracts the deposit is just held (no period to cover); set depositStartWeek
+  // beyond the contract so no weeks are flagged as covered.
+  const depositStartWeek = totalMonthlyPeriods > 1 ? (totalMonthlyPeriods - 1) * 4 : totalContractWeeks;
+
   let generated = 0;
   const periodStart = new Date(contractStart);
 
@@ -544,41 +609,70 @@ async function generateMissingPeriodInvoices(contract, cutoffDate) {
     const periodEnd = new Date(periodStart);
     periodEnd.setDate(periodEnd.getDate() + 28);
 
-    // Skip if any invoiced payment already exists in this window
-    const exists = await Payment.findOne({
+    // Skip if any payment record OR invoice already covers this period
+    // (deposit-covered invoices have no payment record, so check both)
+    const existingPayment = await Payment.findOne({
       contract: contract._id,
       invoice: { $ne: null },
       dueDate: { $gte: periodStart, $lt: periodEnd },
     });
+    const existingInvoice = !existingPayment
+      ? await Invoice.findOne({ orderNumber: contract.contractNo, dueDate: { $gte: periodStart, $lt: periodEnd } })
+      : null;
 
-    if (!exists) {
+    if (!existingPayment && !existingInvoice) {
       const effectiveEnd = periodEnd < contractEnd ? periodEnd : contractEnd;
       const totalDays = Math.round((effectiveEnd - periodStart) / 86400000);
       const totalWeeks = Math.max(1, Math.ceil(totalDays / 7));
       const daysSinceStart = Math.round((periodStart - contractStart) / 86400000);
       const globalWeekOffset = Math.max(0, Math.floor(daysSinceStart / 7));
 
-      // Build per-week payment amounts (discount only on first 4 weeks of contract)
-      const weekAmounts = [];
+      // Classify each week: chargeable vs. covered by the security deposit
+      const weekDetails = [];
       for (let i = 0; i < totalWeeks; i++) {
-        const discounted = discountPct > 0 && (globalWeekOffset + i) < 4;
-        weekAmounts.push(discounted
+        const globalIdx = globalWeekOffset + i;
+        const discounted = discountPct > 0 && globalIdx < 4;
+        const rate = discounted
           ? Math.round(weeklyRate * (1 - discountPct / 100) * 100) / 100
-          : weeklyRate);
+          : weeklyRate;
+        // Deposit coverage applies only when there is already at least one invoice (or one
+        // has been generated this run), so a 1-month-only contract still charges rent normally.
+        const coveredByDeposit = (generated > 0 || hasExistingInvoices) && globalIdx >= depositStartWeek;
+        weekDetails.push({ i, globalIdx, rate, coveredByDeposit });
       }
-      const subTotal = Math.round(weekAmounts.reduce((s, a) => s + a, 0) * 100) / 100;
-      const displayEnd = new Date(effectiveEnd); displayEnd.setDate(displayEnd.getDate() - 1);
-      const hasDiscount = discountPct > 0 && globalWeekOffset < 4;
 
-      // One invoice line item for the whole month period
-      const items = [{
-        sortOrder: 0,
-        itemDetails: `Storage Rent ${fmt(periodStart)} – ${fmt(displayEnd)} · Unit ${unitNo}`,
-        quantity: 1,
-        rate: monthlyRate,
-        discountPct: hasDiscount ? discountPct : 0,
-        amount: subTotal,
-      }];
+      const chargeableWeeks = weekDetails.filter(w => !w.coveredByDeposit);
+      const depositWeeks = weekDetails.filter(w => w.coveredByDeposit);
+      const chargeableSubTotal = Math.round(chargeableWeeks.reduce((s, w) => s + w.rate, 0) * 100) / 100;
+      const depositSubTotal = Math.round(depositWeeks.reduce((s, w) => s + w.rate, 0) * 100) / 100;
+      const fullyByDeposit = chargeableWeeks.length === 0 && depositWeeks.length > 0;
+      const hasDiscount = chargeableWeeks.some(w => w.globalIdx < 4) && discountPct > 0;
+
+      const displayEnd = new Date(effectiveEnd); displayEnd.setDate(displayEnd.getDate() - 1);
+
+      // Build invoice line items
+      const items = [];
+
+      if (fullyByDeposit) {
+        // Entire period pre-paid by deposit — show rent + adjustment so balance = 0
+        items.push({ sortOrder: 0, itemDetails: `Storage Rent ${fmt(periodStart)} – ${fmt(displayEnd)} · Unit ${unitNo}`, quantity: 1, rate: depositSubTotal, discountPct: 0, amount: depositSubTotal });
+        items.push({ sortOrder: 1, itemDetails: `Security Deposit Adjustment · Unit ${unitNo}`, quantity: 1, rate: -depositSubTotal, discountPct: 0, amount: -depositSubTotal });
+      } else {
+        // Show only the chargeable date range (may be shorter than the full period)
+        let chargeableEnd = effectiveEnd;
+        if (depositWeeks.length > 0 && chargeableWeeks.length > 0) {
+          const lastChargeableWeekIdx = chargeableWeeks[chargeableWeeks.length - 1].i;
+          chargeableEnd = new Date(periodStart.getTime() + (lastChargeableWeekIdx + 1) * 7 * 86400000);
+          if (chargeableEnd > contractEnd) chargeableEnd = contractEnd;
+        }
+        const chargeableDisplayEnd = new Date(chargeableEnd); chargeableDisplayEnd.setDate(chargeableDisplayEnd.getDate() - 1);
+        items.push({ sortOrder: 0, itemDetails: `Storage Rent ${fmt(periodStart)} – ${fmt(chargeableDisplayEnd)} · Unit ${unitNo}`, quantity: chargeableWeeks.length, rate: weeklyRate, discountPct: hasDiscount ? discountPct : 0, amount: chargeableSubTotal });
+      }
+
+      // First invoice ever for this contract → add security deposit line
+      if (!hasExistingInvoices && generated === 0) {
+        items.push({ sortOrder: items.length, itemDetails: `Security Deposit · Unit ${unitNo}`, quantity: 1, rate: monthlyRate, discountPct: 0, amount: monthlyRate });
+      }
 
       // Double-check right before writing — closes the race window between concurrent requests
       const raceCheck = await Payment.findOne({
@@ -587,6 +681,13 @@ async function generateMissingPeriodInvoices(contract, cutoffDate) {
         dueDate: { $gte: periodStart, $lt: periodEnd },
       });
       if (raceCheck) { periodStart.setDate(periodStart.getDate() + 28); continue; }
+
+      const invoiceTotal = Math.round(items.reduce((s, it) => s + it.amount, 0) * 100) / 100;
+      const depositNotes = depositWeeks.length > 0 && (generated > 0 || hasExistingInvoices)
+        ? (fullyByDeposit
+          ? 'This invoice is fully covered by the security deposit paid in advance.'
+          : `Security deposit covers the last ${depositWeeks.length} week${depositWeeks.length !== 1 ? 's' : ''} of this billing period.`)
+        : '';
 
       const invoice = await Invoice.create({
         invoiceNo: await nextInvoiceNo(),
@@ -597,22 +698,37 @@ async function generateMissingPeriodInvoices(contract, cutoffDate) {
         terms: 'Due on receipt',
         subject: `Storage Rent ${fmt(periodStart)} – ${fmt(displayEnd)} · ${contract.contractNo}`,
         items,
-        customerNotes: '',
-        subTotal, total: subTotal, paymentMade: 0, status: 'sent',
+        customerNotes: depositNotes,
+        subTotal: invoiceTotal,
+        total: invoiceTotal,
+        paymentMade: 0,
+        status: fullyByDeposit ? 'paid' : 'sent',
       });
 
-      // Still create one Payment per week for granular tracking, all linked to the same invoice
-      await Payment.insertMany(weekAmounts.map((amount, i) => {
-        const ws = new Date(periodStart); ws.setDate(ws.getDate() + i * 7);
-        return {
+      // One monthly payment record per invoice (not per week).
+      // Fully-deposit-covered invoices (net 0) get no payment records.
+      if (!fullyByDeposit && chargeableSubTotal > 0) {
+        await Payment.create({
           contract: contract._id,
           invoice: invoice._id,
-          amount,
-          dueDate: ws,
+          amount: chargeableSubTotal,
+          dueDate: periodStart,
           status: 'pending',
-          notes: `${fmt(ws)} · Unit ${unitNo}`,
-        };
-      }));
+          notes: `Storage Rent ${fmt(periodStart)} – ${fmt(displayEnd)} · Unit ${unitNo}`,
+        });
+      }
+
+      // First invoice: also add one deposit payment record
+      if (!hasExistingInvoices && generated === 0) {
+        await Payment.create({
+          contract: contract._id,
+          invoice: invoice._id,
+          amount: monthlyRate,
+          dueDate: periodStart,
+          status: 'pending',
+          notes: `Security deposit · Unit ${unitNo}`,
+        });
+      }
 
       generated++;
     }
@@ -728,15 +844,28 @@ router.post('/:id/generate-custom-invoice', async (req, res) => {
   const hasDiscount = discountPct > 0 && globalWeekOffset < 4;
   const displayEnd = fmt(new Date(end - 86400000));
 
-  // One invoice line item for the whole month period
+  // One invoice line item for the whole month period — quantity = weeks, rate = weekly rate
   const items = [{
     sortOrder: 0,
     itemDetails: `Storage Rent ${fmt(start)} – ${displayEnd} · Unit ${unitNo}`,
-    quantity: 1,
-    rate: monthlyRate,
+    quantity: totalWeeks,
+    rate: weeklyRate,
     discountPct: hasDiscount ? discountPct : 0,
     amount: periodSubTotal,
   }];
+
+  // First invoice for this contract: prepend security deposit (= 1 month rent, no discount)
+  const priorInvoiceIds = await Payment.distinct('invoice', { contract: contract._id, invoice: { $ne: null } });
+  if (priorInvoiceIds.filter(Boolean).length === 0) {
+    items.push({
+      sortOrder: 1,
+      itemDetails: `Security Deposit · Unit ${unitNo}`,
+      quantity: 1,
+      rate: monthlyRate,
+      discountPct: 0,
+      amount: monthlyRate,
+    });
+  }
 
   // Append any extra charges / credits (locks, cleaning fees, credits, etc.)
   const extras = Array.isArray(rawExtras) ? rawExtras : [];
@@ -745,7 +874,7 @@ router.post('/:id/generate-custom-invoice', async (req, res) => {
     const amt = Math.round(Number(x.amount) * 100) / 100;
     const signed = x.type === 'credit' ? -amt : amt;
     items.push({
-      sortOrder: 1 + xi,
+      sortOrder: 2 + xi,
       itemDetails: x.description,
       quantity: 1,
       rate: signed,
@@ -769,18 +898,28 @@ router.post('/:id/generate-custom-invoice', async (req, res) => {
     subTotal, total: subTotal, paymentMade: 0, status: 'sent',
   });
 
-  // Still create one Payment per week for granular tracking, all linked to the same invoice
-  await Payment.insertMany(weekAmounts.map((amount, i) => {
-    const ws = new Date(start); ws.setDate(ws.getDate() + i * 7);
-    return {
+  // One monthly payment record for the rent portion
+  await Payment.create({
+    contract: contract._id,
+    invoice: invoice._id,
+    amount: periodSubTotal,
+    dueDate: dueDate ? new Date(dueDate) : start,
+    status: 'pending',
+    notes: `Storage Rent ${fmt(start)} – ${displayEnd} · Unit ${unitNo}`,
+  });
+
+  // If first invoice, also add the deposit payment record
+  const isFirstInvoice = priorInvoiceIds.filter(Boolean).length === 0;
+  if (isFirstInvoice) {
+    await Payment.create({
       contract: contract._id,
       invoice: invoice._id,
-      amount,
-      dueDate: ws,
+      amount: monthlyRate,
+      dueDate: dueDate ? new Date(dueDate) : start,
       status: 'pending',
-      notes: `${fmt(ws)} · Unit ${unitNo}`,
-    };
-  }));
+      notes: `Security deposit · Unit ${unitNo}`,
+    });
+  }
 
   res.status(201).json(await Invoice.findById(invoice._id).populate('customer', 'fullName email phone address'));
 });

@@ -726,8 +726,8 @@ function AddPaymentForm({ contractId, rate, busy, onSubmit }: {
 type InvoiceGroup = {
   invoiceId: string; invoiceRef: { _id: string; invoiceNo: string }
   payments: Payment[]; unpaidInGroup: Payment[]; paidInGroup: Payment[]
-  total: number; paidTotal: number
-  earliestDue: Date; latestDue: Date
+  total: number; paidTotal: number; rentTotal: number; depositTotal: number
+  earliestDue: Date; latestDue: Date; periodLabel: string
   status: 'paid' | 'partial' | 'overdue' | 'pending'
 }
 
@@ -740,7 +740,6 @@ function InvoiceGroupRow({ g, index, onRecord, onDelete, onSendWhatsApp, sending
   onSendWhatsApp: () => void; sendingInvoice: boolean
   onGenerateForRemaining?: () => void
 }) {
-  const fmtShort = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
   const rowBg = g.status === 'overdue' ? 'bg-red-50/60 dark:bg-red-950/20'
     : g.status === 'paid' ? 'bg-emerald-50/40 dark:bg-emerald-950/10' : ''
 
@@ -753,12 +752,13 @@ function InvoiceGroupRow({ g, index, onRecord, onDelete, onSendWhatsApp, sending
         </Link>
       </Td>
       <Td className="text-sm text-muted-foreground whitespace-nowrap">
-        {fmtShort(g.earliestDue)}
-        {g.payments.length > 1 && <> – {fmtShort(g.latestDue)}</>}
+        {g.periodLabel}
       </Td>
-      <Td className="text-sm text-muted-foreground">{g.payments.length}</Td>
       <Td>
         <span className="font-medium">{formatMoney(g.total)}</span>
+        {g.depositTotal > 0 && (
+          <span className="text-xs text-muted-foreground ml-1.5">(incl. {formatMoney(g.depositTotal)} dep.)</span>
+        )}
         {g.status === 'partial' && (
           <span className="text-xs text-muted-foreground ml-1.5">({formatMoney(g.paidTotal)} paid)</span>
         )}
@@ -996,7 +996,7 @@ function SectionRow({ label, count, total, tone, action }: {
   return (
     <tr className={colors[tone]}>
       <td colSpan={action ? 7 : 8} className="px-4 py-1.5 text-xs font-semibold uppercase tracking-wide">
-        {label} — {count} payment{count !== 1 ? 's' : ''} · {formatMoney(total)}
+        {label} — {count} invoice{count !== 1 ? 's' : ''} · {formatMoney(total)}
       </td>
       {action && <td className="px-3 py-1 text-right">{action}</td>}
     </tr>
@@ -1171,7 +1171,7 @@ export default function ContractDetail() {
   }
 
   if (isLoading || !data) return <Spinner />
-  const { contract: c, payments, documents } = data
+  const { contract: c, payments, documents, invoices: allInvoices = [] } = data as any
 
   // Sort and split
   const byDue = (a: Payment, b: Payment) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
@@ -1182,8 +1182,10 @@ export default function ContractDetail() {
 
 
   const totalPaid = paid.reduce((s, p) => s + p.amount, 0)
-  const totalPending = pending.reduce((s, p) => s + p.amount, 0)
-  const totalOverdue = overdue.reduce((s, p) => s + p.amount, 0)
+  // Exclude security deposit records from rent totals — deposit is a separate liability
+  const isDepositPayment = (p: Payment) => /^security deposit/i.test(p.notes || '')
+  const totalPending = pending.filter(p => !isDepositPayment(p)).reduce((s, p) => s + p.amount, 0)
+  const totalOverdue = overdue.filter(p => !isDepositPayment(p)).reduce((s, p) => s + p.amount, 0)
   // Group payments by invoice → one display row per invoice
   const groupMap = new Map<string, Payment[]>()
   const standalonePayments: Payment[] = []
@@ -1192,6 +1194,8 @@ export default function ContractDetail() {
     if (invId) { if (!groupMap.has(invId)) groupMap.set(invId, []); groupMap.get(invId)!.push(p) }
     else standalonePayments.push(p)
   }
+  const fmtShortDate = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+
   const invoiceGroups: InvoiceGroup[] = Array.from(groupMap.entries()).map(([invId, ps]) => {
     const sorted = [...ps].sort(byDue)
     const paidInGroup = ps.filter(p => p.status === 'paid')
@@ -1200,12 +1204,21 @@ export default function ContractDetail() {
     const allPaid = unpaidInGroup.length === 0
     const anyPaid = paidInGroup.length > 0
     const status: InvoiceGroup['status'] = allPaid ? 'paid' : anyOverdue ? 'overdue' : anyPaid ? 'partial' : 'pending'
+    const depositTotal = Math.round(ps.filter(isDepositPayment).reduce((s, p) => s + p.amount, 0) * 100) / 100
+    const total = Math.round(ps.reduce((s, p) => s + p.amount, 0) * 100) / 100
+    const rentTotal = Math.round((total - depositTotal) * 100) / 100
+    // Extract human-readable period from the rent payment note: "Storage Rent DD Mon YYYY – DD Mon YYYY · Unit X"
+    const rentNote = sorted.find(p => /^Storage Rent/i.test(p.notes || ''))?.notes ?? ''
+    const rangeMatch = rentNote.match(/^Storage Rent (.+?) – (.+?) ·/)
+    const periodLabel = rangeMatch
+      ? `${rangeMatch[1]} – ${rangeMatch[2]}`
+      : fmtShortDate(new Date(sorted[0].dueDate))
     return {
       invoiceId: invId,
       invoiceRef: ps[0].invoice as { _id: string; invoiceNo: string },
       payments: sorted, unpaidInGroup, paidInGroup,
-      total: Math.round(ps.reduce((s, p) => s + p.amount, 0) * 100) / 100,
-      paidTotal: Math.round(paidInGroup.reduce((s, p) => s + p.amount, 0) * 100) / 100,
+      total, paidTotal: Math.round(paidInGroup.reduce((s, p) => s + p.amount, 0) * 100) / 100,
+      rentTotal, depositTotal, periodLabel,
       earliestDue: new Date(sorted[0].dueDate),
       latestDue: new Date(sorted[sorted.length - 1].dueDate),
       status,
@@ -1214,7 +1227,19 @@ export default function ContractDetail() {
 
   const unpaidGroups = invoiceGroups.filter(g => g.status !== 'paid')
   const paidGroups   = invoiceGroups.filter(g => g.status === 'paid')
-  const totalUnpaidGroups = unpaidGroups.reduce((s, g) => s + g.total - g.paidTotal, 0)
+  // Upcoming total = rent only (exclude security deposit which is a separate liability)
+  const totalUnpaidGroups = unpaidGroups.reduce((s, g) => {
+    const unpaidRent = g.unpaidInGroup.filter(p => !isDepositPayment(p)).reduce((ss, p) => ss + p.amount, 0)
+    return s + Math.round(unpaidRent * 100) / 100
+  }, 0)
+
+  // Deposit-covered invoices: status 'paid', net 0, no payment records linked to them
+  const groupedInvoiceIds = new Set(invoiceGroups.map(g => String(g.invoiceId)))
+  const depositCoveredInvoices = allInvoices.filter((inv: any) =>
+    inv.status === 'paid' &&
+    Number(inv.total ?? 0) <= 0 &&
+    !groupedInvoiceIds.has(String(inv._id))
+  )
 
   const allUnits = c.units?.length ? c.units : c.unit ? [c.unit] : []
   const unitLabel = allUnits.length > 1
@@ -1625,7 +1650,7 @@ export default function ContractDetail() {
             {activeTab === 'payments' && (
               <Card>
                 <CardHeader title="Payment schedule"
-                  subtitle={payments.length === 0 ? 'No invoices yet' : `${paidGroups.length} of ${invoiceGroups.length} invoice${invoiceGroups.length !== 1 ? 's' : ''} paid · ${formatMoney(totalPaid)} collected`}
+                  subtitle={payments.length === 0 && depositCoveredInvoices.length === 0 ? 'No invoices yet' : `${paidGroups.length + depositCoveredInvoices.length} of ${invoiceGroups.length + depositCoveredInvoices.length} invoice${(invoiceGroups.length + depositCoveredInvoices.length) !== 1 ? 's' : ''} paid · ${formatMoney(totalPaid)} collected`}
                   action={
                     <div className="flex gap-2">
                       {allUnpaid.length > 0 && <Button size="sm" variant="outline" onClick={() => setBulkTarget(allUnpaid)}><CalendarDays size={13} /> Pay multiple</Button>}
@@ -1634,11 +1659,11 @@ export default function ContractDetail() {
                     </div>
                   }
                 />
-                {payments.length === 0 ? (
+                {payments.length === 0 && depositCoveredInvoices.length === 0 ? (
                   <CardBody><p className="text-sm text-muted-foreground text-center py-6">No payments yet. Use the <strong>Invoice</strong> button to generate an invoice.</p></CardBody>
                 ) : (
                   <Table>
-                    <thead><tr><Th>#</Th><Th>Invoice</Th><Th>Period</Th><Th>Weeks</Th><Th>Amount</Th><Th>Status</Th><Th /></tr></thead>
+                    <thead><tr><Th>#</Th><Th>Invoice</Th><Th>Period</Th><Th>Amount</Th><Th>Status</Th><Th /></tr></thead>
                     <tbody>
                       {unpaidGroups.length > 0 && (
                         <>
@@ -1690,6 +1715,33 @@ export default function ContractDetail() {
                               onDelete={() => { if (confirm('Delete this payment?')) deletePayment.mutate(p._id) }}
                               onSendInvoiceWhatsApp={() => {}} sendingInvoice={false}
                             />
+                          ))}
+                        </>
+                      )}
+                      {depositCoveredInvoices.length > 0 && (
+                        <>
+                          <tr>
+                            <td colSpan={6} className="px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400 bg-blue-50/60 dark:bg-blue-950/20 border-t">
+                              Deposit Covered — {depositCoveredInvoices.length} invoice{depositCoveredInvoices.length !== 1 ? 's' : ''} · AED 0.00
+                            </td>
+                          </tr>
+                          {depositCoveredInvoices.map((inv: any, i: number) => (
+                            <tr key={inv._id} className="opacity-70 hover:bg-muted/30">
+                              <Td className="text-muted-foreground">{unpaidGroups.length + paidGroups.length + i + 1}</Td>
+                              <Td>
+                                <a href={`/invoices/${inv._id}`} className="text-primary text-xs hover:underline font-medium">{inv.invoiceNo}</a>
+                              </Td>
+                              <Td className="text-xs text-muted-foreground">
+                                {inv.dueDate ? new Date(inv.dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                              </Td>
+                              <Td className="font-medium">0.00</Td>
+                              <Td>
+                                <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40 px-2 py-0.5 rounded-full">
+                                  Deposit
+                                </span>
+                              </Td>
+                              <Td />
+                            </tr>
                           ))}
                         </>
                       )}

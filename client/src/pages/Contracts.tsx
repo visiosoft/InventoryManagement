@@ -17,16 +17,17 @@ export default function Contracts() {
   const qc = useQueryClient()
 
   // Filters
-  const [search, setSearch]     = useState('')
-  const [status, setStatus]     = useState('')
-  const [billing, setBilling]   = useState('')
-  const [floor, setFloor]       = useState('')
-  const [from, setFrom]         = useState('')
-  const [to, setTo]             = useState('')
+  const [search, setSearch] = useState('')
+  const [status, setStatus] = useState('')
+  const [billing, setBilling] = useState('')
+  const [floor, setFloor] = useState('')
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
 
   // Delete state
   const [deleteTarget, setDeleteTarget] = useState<Contract | null>(null)
-  const [deleteError, setDeleteError]   = useState('')
+  const [deleteError, setDeleteError] = useState('')
+  const [selectedContractIds, setSelectedContractIds] = useState<string[]>([])
 
   const { data: contracts, isLoading } = useQuery<Contract[]>({
     queryKey: ['contracts'],
@@ -37,13 +38,13 @@ export default function Contracts() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     const fromD = from ? new Date(from) : null
-    const toD   = to   ? new Date(to + 'T23:59:59') : null
+    const toD = to ? new Date(to + 'T23:59:59') : null
     return (contracts || []).filter((c) => {
-      if (status  && c.status        !== status)  return false
-      if (billing && c.billingPeriod !== billing)  return false
-      if (floor   && c.unit?.floor   !== floor)    return false
-      if (fromD   && new Date(c.startDate) < fromD) return false
-      if (toD     && new Date(c.startDate) > toD)   return false
+      if (status && c.status !== status) return false
+      if (billing && c.billingPeriod !== billing) return false
+      if (floor && c.unit?.floor !== floor) return false
+      if (fromD && new Date(c.startDate) < fromD) return false
+      if (toD && new Date(c.startDate) > toD) return false
       if (q) {
         const haystack = [
           c.contractNo,
@@ -67,18 +68,67 @@ export default function Contracts() {
     mutationFn: (id: string) => api.delete(`/contracts/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['contracts'] })
+      setSelectedContractIds((prev) => prev.filter((id) => id !== deleteTarget?._id))
       setDeleteTarget(null)
       setDeleteError('')
     },
     onError: (e) => setDeleteError(apiError(e)),
   })
 
+  const deleteManyContracts = useMutation({
+    mutationFn: (ids: string[]) => api.post('/contracts/bulk-delete', { ids }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['contracts'] })
+      setSelectedContractIds([])
+      setDeleteError('')
+    },
+    onError: (e) => setDeleteError(apiError(e)),
+  })
+
+  const visibleContractIds = filtered.map((contract) => contract._id)
+  const allVisibleSelected = visibleContractIds.length > 0 && visibleContractIds.every((id) => selectedContractIds.includes(id))
+
+  function toggleContractSelection(contractId: string) {
+    setSelectedContractIds((prev) => (
+      prev.includes(contractId)
+        ? prev.filter((id) => id !== contractId)
+        : [...prev, contractId]
+    ))
+  }
+
+  function toggleAllVisibleContracts() {
+    setSelectedContractIds((prev) => {
+      if (allVisibleSelected) {
+        return prev.filter((id) => !visibleContractIds.includes(id))
+      }
+
+      return Array.from(new Set([...prev, ...visibleContractIds]))
+    })
+  }
+
+  function confirmBulkDelete() {
+    if (!selectedContractIds.length) return
+    setDeleteError('')
+    if (window.confirm(`Delete ${selectedContractIds.length} selected contract${selectedContractIds.length > 1 ? 's' : ''}?`)) {
+      deleteManyContracts.mutate(selectedContractIds)
+    }
+  }
+
   return (
     <div>
       <PageHeader
         title="Contracts"
         subtitle={`${filtered.length}${hasFilters ? ` of ${contracts?.length ?? 0}` : ''} contracts`}
-        action={<Link to="/contracts/new"><Button><Plus size={15} /> New contract</Button></Link>}
+        action={
+          <div className="flex gap-2">
+            {selectedContractIds.length > 0 && (
+              <Button variant="destructive" onClick={confirmBulkDelete} disabled={deleteManyContracts.isPending}>
+                {deleteManyContracts.isPending ? 'Deleting…' : `Delete selected (${selectedContractIds.length})`}
+              </Button>
+            )}
+            <Link to="/contracts/new"><Button><Plus size={15} /> New contract</Button></Link>
+          </div>
+        }
       />
 
       {/* ── Filter bar ───────────────────────────────────────────── */}
@@ -98,7 +148,7 @@ export default function Contracts() {
           {STATUSES.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
         </Select>
 
-<Select value={floor} onChange={(e) => setFloor(e.target.value)} className="w-32">
+        <Select value={floor} onChange={(e) => setFloor(e.target.value)} className="w-32">
           <option value="">All floors</option>
           <option value="F1">Floor F1</option>
           <option value="F2">Floor F2</option>
@@ -127,9 +177,18 @@ export default function Contracts() {
         <Spinner />
       ) : (
         <Card>
+          {deleteError && <p className="px-4 pt-4 text-xs text-destructive">{deleteError}</p>}
           <Table>
             <thead>
               <tr>
+                <Th>
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={toggleAllVisibleContracts}
+                    aria-label="Select all contracts"
+                  />
+                </Th>
                 <Th>Contract</Th>
                 <Th>Customer</Th>
                 <Th>Unit(s)</Th>
@@ -146,6 +205,14 @@ export default function Contracts() {
                 const allUnits = c.units?.length ? c.units : [c.unit]
                 return (
                   <tr key={c._id} className="hover:bg-muted/50">
+                    <Td>
+                      <input
+                        type="checkbox"
+                        checked={selectedContractIds.includes(c._id)}
+                        onChange={() => toggleContractSelection(c._id)}
+                        aria-label={`Select contract ${c.contractNo}`}
+                      />
+                    </Td>
                     <Td>
                       <Link to={`/contracts/${c._id}`} className="font-medium text-primary hover:underline">
                         {c.contractNo}
