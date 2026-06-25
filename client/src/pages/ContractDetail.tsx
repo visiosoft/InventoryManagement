@@ -1248,10 +1248,23 @@ export default function ContractDetail() {
     const daysLate = Math.round((today2.getTime() - new Date(p.dueDate).getTime()) / 86400000)
     activityEvents.push({ id: `ovd-${p._id}`, type: 'overdue', at: new Date(), title: 'Payment overdue', subtitle: `${(p.invoice as any)?.invoiceNo ?? ''} · ${formatDate(p.dueDate)} is ${daysLate}d late` })
   }
+  // Group paid payments by invoice — show one activity row per invoice (month), not per week
+  const paidByInvoice = new Map<string, typeof paid>()
   for (const p of paid) {
-    const inv = (p.invoice as any)
-    const period = inv ? ` · ${inv.invoiceNo}` : ''
-    activityEvents.push({ id: `paid-${p._id}`, type: 'paid', at: new Date(p.paidDate ?? p.dueDate), title: 'Payment received', subtitle: `${c.paymentMethod ?? 'Cash'}${period} · ${formatMoney(p.amount)}` })
+    const invId = (p.invoice as any)?._id ?? (p.invoice as any) ?? 'no-invoice'
+    const key = String(invId)
+    if (!paidByInvoice.has(key)) paidByInvoice.set(key, [])
+    paidByInvoice.get(key)!.push(p)
+  }
+  for (const [, group] of paidByInvoice) {
+    const inv = (group[0].invoice as any)
+    const total = group.reduce((s, p) => s + Number(p.amount ?? 0), 0)
+    const latestPaid = group.reduce((latest, p) => {
+      const d = new Date(p.paidDate ?? p.dueDate)
+      return d > latest ? d : latest
+    }, new Date(0))
+    const period = inv?.invoiceNo ? ` · ${inv.invoiceNo}` : ''
+    activityEvents.push({ id: `paid-${group[0]._id}`, type: 'paid', at: latestPaid, title: 'Payment received', subtitle: `${c.paymentMethod ?? 'Cash'}${period} · ${formatMoney(total)}` })
   }
   for (const note of (c.timeline ?? [])) {
     activityEvents.push({ id: `note-${note.at}`, type: 'note', at: new Date(note.at), title: note.text, subtitle: note.author ? `by ${note.author}` : '' })

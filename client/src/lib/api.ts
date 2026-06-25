@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { Expense, IntegrationStatus, Invoice, Lead, Product, Purchase, Quote, UnitType, Vendor } from './types'
+import type { Customer, Expense, IntegrationStatus, Invoice, Lead, Product, Purchase, Quote, UnitType, Vendor } from './types'
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || '/api'
 
@@ -57,6 +57,10 @@ export const leadApi = {
   create: (body: Partial<Lead>) => api.post<Lead>('/leads', body).then((r) => r.data),
   update: (id: string, body: Partial<Lead>) => api.put<Lead>(`/leads/${id}`, body).then((r) => r.data),
   updateStatus: (id: string, status: string, comment?: string) => api.patch<Lead>(`/leads/${id}/status`, { status, comment }).then((r) => r.data),
+  convertToCustomer: (id: string) =>
+    api
+      .post<{ ok: true; created: boolean; customer: Customer; lead: Lead }>(`/leads/${id}/convert`)
+      .then((r) => r.data),
   remove: (id: string) => api.delete<{ ok: true }>(`/leads/${id}`).then((r) => r.data),
 }
 

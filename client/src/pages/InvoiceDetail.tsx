@@ -14,6 +14,34 @@ const invoiceStatusTone: Record<InvoiceStatus, string> = {
     draft: 'gray', sent: 'blue', paid: 'green', overdue: 'red', cancelled: 'amber',
 }
 
+// Merge legacy "Week N: DD Mon YYYY · Unit X" line items into one monthly line
+function consolidateItems(items: Invoice['items']) {
+    if (!items?.length) return items ?? []
+    const weekRe = /^Week\s+\d+:\s+(.+?)\s+·\s+(.+)$/
+    const weekItems = items.filter(it => weekRe.test(it.itemDetails ?? ''))
+    const otherItems = items.filter(it => !weekRe.test(it.itemDetails ?? ''))
+    if (weekItems.length < 2) return items
+
+    const total = weekItems.reduce((s, it) => s + Number(it.amount ?? 0), 0)
+    const monthlyRate = weekItems.reduce((s, it) => s + Number(it.rate ?? 0), 0)
+    const discountPct = weekItems.find(it => (it.discountPct ?? 0) > 0)?.discountPct ?? 0
+    const firstMatch = weekRe.exec(weekItems[0].itemDetails ?? '')
+    const lastMatch  = weekRe.exec(weekItems[weekItems.length - 1].itemDetails ?? '')
+    const fromDate = firstMatch?.[1] ?? ''
+    const unitNo   = firstMatch?.[2] ?? ''
+    let toDate = lastMatch?.[1] ?? ''
+    try {
+        const d = new Date(toDate)
+        d.setDate(d.getDate() + 6)
+        toDate = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    } catch { /* keep raw */ }
+
+    return [
+        { ...weekItems[0], itemDetails: `Storage Rent ${fromDate} – ${toDate} · ${unitNo}`, quantity: 1, rate: monthlyRate, discountPct, amount: total },
+        ...otherItems,
+    ]
+}
+
 function invoiceLabel(status: InvoiceStatus) {
     return status === 'draft' ? 'Quote' : statusLabel(status)
 }
@@ -684,8 +712,8 @@ export default function InvoiceDetail() {
                         </tr>
                     </thead>
                     <tbody>
-                        {(invoice.items || []).map((it, idx) => {
-                            const hasDiscount = (invoice.items || []).some(i => (i.discountPct ?? 0) > 0)
+                        {consolidateItems(invoice.items).map((it, idx) => {
+                            const hasDiscount = consolidateItems(invoice.items).some(i => (i.discountPct ?? 0) > 0)
                             const discounted = (it.discountPct ?? 0) > 0
                             return (
                                 <tr key={idx} className={`hover:bg-muted/50 ${discounted ? 'bg-amber-50/60 dark:bg-amber-950/20' : ''}`}>

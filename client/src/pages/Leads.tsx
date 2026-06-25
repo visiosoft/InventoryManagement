@@ -316,7 +316,7 @@ function ContactDetailPanel({ row, onUpdateLead }: { row: WhatsAppLeadRow; onUpd
                     <ActionButton icon={<MoreHorizontal size={15} />} label="More" active={showMore} onClick={() => { setShowMore(v => !v); setAction(null) }} />
                     {showMore && (
                         <div className="absolute right-0 top-full z-20 mt-1 w-44 rounded-xl border bg-popover shadow-lg py-1">
-                            <button onClick={() => { window.open(`https://wa.me/${phone.replace(/\D/g,'').replace(/^00/,'')}`, '_blank'); setShowMore(false) }}
+                            <button onClick={() => { window.open(`https://wa.me/${phone.replace(/\D/g, '').replace(/^00/, '')}`, '_blank'); setShowMore(false) }}
                                 className="w-full px-4 py-2 text-left text-sm hover:bg-muted">WhatsApp</button>
                             <button onClick={() => { navigator.clipboard.writeText(phone); setShowMore(false) }}
                                 className="w-full px-4 py-2 text-left text-sm hover:bg-muted">Copy phone</button>
@@ -422,12 +422,12 @@ function ContactDetailPanel({ row, onUpdateLead }: { row: WhatsAppLeadRow; onUpd
                     <div className="grid grid-cols-2 gap-2">
                         <a href={googleCalendarUrl()} target="_blank" rel="noreferrer"
                             className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-400">
-                            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor"><path d="M19.5 3h-2V1.5A.5.5 0 0 0 17 1h-1a.5.5 0 0 0-.5.5V3h-7V1.5A.5.5 0 0 0 8 1H7a.5.5 0 0 0-.5.5V3h-2A2.5 2.5 0 0 0 2 5.5v15A2.5 2.5 0 0 0 4.5 23h15a2.5 2.5 0 0 0 2.5-2.5v-15A2.5 2.5 0 0 0 19.5 3zM21 20.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 20.5V10h18v10.5zM21 9H3V5.5A1.5 1.5 0 0 1 4.5 4h15A1.5 1.5 0 0 1 21 5.5V9z"/></svg>
+                            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor"><path d="M19.5 3h-2V1.5A.5.5 0 0 0 17 1h-1a.5.5 0 0 0-.5.5V3h-7V1.5A.5.5 0 0 0 8 1H7a.5.5 0 0 0-.5.5V3h-2A2.5 2.5 0 0 0 2 5.5v15A2.5 2.5 0 0 0 4.5 23h15a2.5 2.5 0 0 0 2.5-2.5v-15A2.5 2.5 0 0 0 19.5 3zM21 20.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 20.5V10h18v10.5zM21 9H3V5.5A1.5 1.5 0 0 1 4.5 4h15A1.5 1.5 0 0 1 21 5.5V9z" /></svg>
                             Google Calendar
                         </a>
                         <a href={outlookCalendarUrl()} target="_blank" rel="noreferrer"
                             className="flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-400">
-                            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor"><path d="M24 7.387v13.227A1.39 1.39 0 0 1 22.613 22H7.5l-.024-.003L7.47 22H1.387A1.39 1.39 0 0 1 0 20.613V7.387A1.39 1.39 0 0 1 1.387 6H6V3.387A1.39 1.39 0 0 1 7.387 2h9.226A1.39 1.39 0 0 1 18 3.387V6h4.613A1.39 1.39 0 0 1 24 7.387zm-6-4H7.5v2.625h10.5V3.387zM12 8.25A3.75 3.75 0 1 0 12 15.75 3.75 3.75 0 0 0 12 8.25z"/></svg>
+                            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor"><path d="M24 7.387v13.227A1.39 1.39 0 0 1 22.613 22H7.5l-.024-.003L7.47 22H1.387A1.39 1.39 0 0 1 0 20.613V7.387A1.39 1.39 0 0 1 1.387 6H6V3.387A1.39 1.39 0 0 1 7.387 2h9.226A1.39 1.39 0 0 1 18 3.387V6h4.613A1.39 1.39 0 0 1 24 7.387zm-6-4H7.5v2.625h10.5V3.387zM12 8.25A3.75 3.75 0 1 0 12 15.75 3.75 3.75 0 0 0 12 8.25z" /></svg>
                             Outlook Calendar
                         </a>
                     </div>
@@ -502,40 +502,34 @@ export default function Leads() {
     const [waLabel, setWaLabel] = useState('')
     const [selectedWhatsAppLeadId, setSelectedWhatsAppLeadId] = useState('')
 
-    const whatsAppLeadBaseUrl = (import.meta.env.VITE_WHATSAPPLEAD_BASE_URL as string | undefined)?.trim() || 'http://localhost:5075'
     const useWhatsAppLeadView = true
 
     const whatsAppContacts = useQuery<{ contacts: WhatsAppLeadRow[]; total: number }>({
-        queryKey: ['whatsapplead-contacts', whatsAppLeadBaseUrl],
+        queryKey: ['whatsapp-leads-table'],
         queryFn: async () => {
-            const response = await fetch(`${whatsAppLeadBaseUrl}/api/contacts`)
-            if (!response.ok) throw new Error(`WhatsAppLead unavailable (${response.status})`)
-            return response.json()
+            const rows = await leadApi.list({ source: 'whatsapp' })
+            const contacts: WhatsAppLeadRow[] = rows.map((lead) => ({
+                lead: {
+                    _id: lead._id,
+                    fullName: lead.fullName,
+                    phone: lead.phone,
+                    status: lead.status,
+                    source: lead.source,
+                    notes: lead.notes,
+                    createdAt: lead.createdAt,
+                },
+                labels: [],
+                mappedStatus: lead.status,
+                totalMessages: 0,
+                lastFiveMessages: [],
+            }))
+
+            return {
+                contacts,
+                total: contacts.length,
+            }
         },
         enabled: useWhatsAppLeadView,
-    })
-
-    const syncWhatsAppLead = useMutation({
-        mutationFn: async () => {
-            const allowlistCsv = localStorage.getItem('whatsapplead.allowedLabels') || ''
-            const allowedLabels = allowlistCsv
-                .split(',')
-                .map((x) => x.trim())
-                .filter(Boolean)
-            const syncOnlyAllowedLabels = localStorage.getItem('whatsapplead.syncOnlyAllowedLabels') === 'true'
-
-            const response = await fetch(`${whatsAppLeadBaseUrl}/api/sync`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ allowedLabels, syncOnlyAllowedLabels }),
-            })
-            const data = await response.json().catch(() => ({}))
-            if (!response.ok) throw new Error((data as { error?: string })?.error || `Sync failed (${response.status})`)
-            return data as { scrapedCount?: number }
-        },
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['whatsapplead-contacts'] })
-        },
     })
 
     const whatsAppLabelOptions = useMemo(() => {
@@ -625,6 +619,15 @@ export default function Leads() {
         onSuccess: () => qc.invalidateQueries({ queryKey: ['leads'] }),
     })
 
+    const convertLead = useMutation({
+        mutationFn: (id: string) => leadApi.convertToCustomer(id),
+        onSuccess: (data) => {
+            qc.invalidateQueries({ queryKey: ['leads'] })
+            navigate(`/customers/${data.customer._id}`)
+        },
+        onError: (e) => alert(apiError(e)),
+    })
+
 
     const importContacts = useMutation({
         mutationFn: (contacts: ContactRow[]) =>
@@ -674,15 +677,15 @@ export default function Leads() {
                         <div>
                             <p className="text-xs uppercase tracking-[0.16em] text-emerald-200/90">Unified Pipeline</p>
                             <h1 className="mt-1 text-3xl font-semibold">WhatsAppLead Contacts</h1>
-                            <p className="mt-2 text-sm text-emerald-100/85">{`Synced from ${whatsAppLeadBaseUrl} into your lead workflow.`}</p>
+                            <p className="mt-2 text-sm text-emerald-100/85">Loaded from your leads table (source: whatsapp).</p>
                         </div>
                         <div className="flex gap-2">
                             <Button variant="outline" onClick={() => setAdding(true)} className="border-emerald-200/30 bg-white/10 text-emerald-50 hover:bg-white/20">
                                 <Plus size={15} /> Add manual lead
                             </Button>
-                            <Button onClick={() => syncWhatsAppLead.mutate()} disabled={syncWhatsAppLead.isPending} className="bg-orange-500 text-white hover:bg-orange-400">
-                                <RefreshCw size={15} className={syncWhatsAppLead.isPending ? 'animate-spin' : ''} />
-                                {syncWhatsAppLead.isPending ? 'Syncing…' : 'Sync WhatsApp'}
+                            <Button onClick={() => whatsAppContacts.refetch()} disabled={whatsAppContacts.isFetching} className="bg-orange-500 text-white hover:bg-orange-400">
+                                <RefreshCw size={15} className={whatsAppContacts.isFetching ? 'animate-spin' : ''} />
+                                {whatsAppContacts.isFetching ? 'Refreshing…' : 'Refresh'}
                             </Button>
                         </div>
                     </div>
@@ -718,7 +721,6 @@ export default function Leads() {
                 ) : whatsAppContacts.error ? (
                     <Card className="p-6">
                         <p className="text-sm text-destructive">{apiError(whatsAppContacts.error)}</p>
-                        <p className="text-xs text-muted-foreground mt-2">Start WhatsAppLead server on {whatsAppLeadBaseUrl} and refresh this page.</p>
                     </Card>
                 ) : (
                     <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-4">
@@ -898,19 +900,11 @@ export default function Leads() {
                                         <div className="flex gap-2 text-xs">
                                             <button onClick={() => setEditing(lead)} className="text-primary hover:underline cursor-pointer">Edit</button>
                                             <button
-                                                onClick={() => navigate('/customers', {
-                                                    state: {
-                                                        prefill: {
-                                                            fullName: lead.fullName,
-                                                            phone: lead.phone,
-                                                            email: lead.email,
-                                                            notes: lead.notes,
-                                                        }
-                                                    }
-                                                })}
-                                                className="text-emerald-600 hover:underline cursor-pointer"
+                                                onClick={() => convertLead.mutate(lead._id)}
+                                                className="text-emerald-600 hover:underline cursor-pointer disabled:opacity-50"
+                                                disabled={convertLead.isPending}
                                             >
-                                                Convert
+                                                {convertLead.isPending ? 'Converting…' : 'Convert'}
                                             </button>
                                             <button
                                                 onClick={() => {
