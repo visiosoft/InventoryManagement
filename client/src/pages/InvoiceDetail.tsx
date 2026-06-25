@@ -157,7 +157,7 @@ function RecordPaymentModalContent({ invoiceId, onClose }: { invoiceId: string; 
             {/* Summary */}
             <div className="grid grid-cols-3 gap-3 rounded-lg bg-muted/50 px-4 py-3 text-sm">
                 <div>
-                    <div className="text-xs text-muted-foreground">{docLabel(invoice)} total</div>
+                    <div className="text-xs text-muted-foreground">{docLabel(inv)} total</div>
                     <div className="font-semibold">{formatMoney(total)}</div>
                 </div>
                 <div>
@@ -252,8 +252,8 @@ function RecordPaymentModalContent({ invoiceId, onClose }: { invoiceId: string; 
 function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onClose: () => void; onSaved: () => void }) {
     const [dueDate, setDueDate] = useState(invoice.dueDate ? new Date(invoice.dueDate).toISOString().slice(0, 10) : '')
     const [subject, setSubject] = useState(invoice.subject || '')
-    const [notes, setNotes]     = useState(invoice.customerNotes || '')
-    const [items, setItems]     = useState(() =>
+    const [notes, setNotes] = useState(invoice.customerNotes || '')
+    const [items, setItems] = useState(() =>
         (invoice.items || []).map((it, i) => ({ ...it, sortOrder: it.sortOrder ?? i, discountPct: it.discountPct ?? 0 }))
     )
     const [err, setErr] = useState('')
@@ -261,7 +261,7 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
     function updateDiscount(idx: number, pct: number) {
         setItems(prev => prev.map((it, i) => {
             if (i !== idx) return it
-            const gross  = it.quantity * it.rate
+            const gross = it.quantity * it.rate
             const amount = Math.round((gross - gross * pct / 100) * 100) / 100
             return { ...it, discountPct: pct, amount }
         }))
@@ -412,7 +412,7 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
 export default function InvoiceDetail() {
     const { id } = useParams<{ id: string }>()
     const qc = useQueryClient()
-    const [paying, setPaying]   = useState(false)
+    const [paying, setPaying] = useState(false)
     const [editing, setEditing] = useState(false)
 
     const { data: invoice, isLoading } = useQuery<Invoice>({
@@ -425,8 +425,8 @@ export default function InvoiceDetail() {
         mutationFn: () => api.post(`/invoices/${id}/share`).then((r) => r.data as { url: string }),
         onSuccess: ({ url }) => {
             const phone = (invoice!.customer as any)?.phone?.replace(/\D/g, '') || ''
-            const due   = invoice!.dueDate ? new Date(invoice!.dueDate).toLocaleDateString('en-GB') : ''
-            const text  = [
+            const due = invoice!.dueDate ? new Date(invoice!.dueDate).toLocaleDateString('en-GB') : ''
+            const text = [
                 `Hello ${(invoice!.customer as any)?.fullName ?? 'there'},`,
                 ``,
                 `Your invoice *${invoice!.invoiceNo}* is ready.`,

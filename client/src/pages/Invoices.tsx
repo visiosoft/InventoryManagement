@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { Download, Plus, Upload } from 'lucide-react'
 import { api, apiError, invoiceApi, productApi } from '../lib/api'
 import type { Customer, Invoice, InvoiceAttachment, InvoiceItem, InvoicePaymentEntry, InvoiceStatus, Product, Unit } from '../lib/types'
-import { Badge, Button, Card, CornerRibbon, EmptyState, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, Textarea, Th, statusLabel } from '../components/ui'
+import { Badge, Button, Card, CornerRibbon, EmptyState, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, Th, statusLabel } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
 
 const INVOICE_STATUSES: InvoiceStatus[] = ['draft', 'sent', 'paid', 'overdue', 'cancelled']
@@ -25,8 +25,6 @@ const invoiceStatusTone: Record<InvoiceStatus, string> = {
 function invoiceLabel(status: InvoiceStatus) {
     return status === 'draft' ? 'Quote' : statusLabel(status)
 }
-
-function isQuote(inv: Invoice) { return inv.status === 'draft' }
 
 function calcAmount(item: Pick<InvoiceItem, 'quantity' | 'rate' | 'discountPct'>) {
     const gross = Number(item.quantity || 0) * Number(item.rate || 0)
@@ -61,21 +59,21 @@ function InvoiceForm({
     const [dueDate, setDueDate] = useState(toLocalDateInput(initial?.dueDate) || twoDaysISO)
 
     const { data: products = [] } = useQuery<Product[]>({
-      queryKey: ['products'],
-      queryFn: () => productApi.list(),
+        queryKey: ['products'],
+        queryFn: () => productApi.list(),
     })
 
     const { data: units = [] } = useQuery<Unit[]>({
-      queryKey: ['units'],
-      queryFn: () => api.get<Unit[]>('/units').then(r => r.data),
+        queryKey: ['units'],
+        queryFn: () => api.get<Unit[]>('/units').then(r => r.data),
     })
 
     function handleInvoiceDateChange(val: string) {
-      setInvoiceDate(val)
-      if (val) {
-        const due = new Date(new Date(val).getTime() + 2 * 86400000).toISOString().slice(0, 10)
-        setDueDate(due)
-      }
+        setInvoiceDate(val)
+        if (val) {
+            const due = new Date(new Date(val).getTime() + 2 * 86400000).toISOString().slice(0, 10)
+            setDueDate(due)
+        }
     }
 
     const [items, setItems] = useState<InvoiceItem[]>(
@@ -191,7 +189,7 @@ function InvoiceForm({
                             return (
                                 <tr key={idx} className="border-b border-border align-top group">
                                     <td className="px-3 py-2">
-                                            <select
+                                        <select
                                             value=""
                                             onChange={(e) => {
                                                 const val = e.target.value
