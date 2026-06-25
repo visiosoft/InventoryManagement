@@ -4,7 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import { CalendarDays, CheckCircle2, Download, FileText, FilePlus, MessageSquare, PenLine, Plus, ShieldCheck, Upload, X, XCircle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
-import type { AppDocument, Contract, ContractNote, Payment } from '../lib/types'
+import type { AppDocument, Contract, ContractNote, Invoice, Payment } from '../lib/types'
 import {
   Badge, Button, Card, CardBody, CardHeader, EmptyState,
   Field, Input, Modal, Select, Spinner,
@@ -16,6 +16,13 @@ import { UploadDocumentForm } from './Documents'
 
 // ── Custom invoice generator modal ────────────────────────────────────────────
 type Preset = 'month' | 'month2' | 'custom' | 'deposit'
+
+type ContractDetailData = {
+  contract: Contract
+  payments: Payment[]
+  documents: AppDocument[]
+  invoices?: Invoice[]
+}
 
 function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, onDone }: {
   contract: Contract; payments: Payment[]
@@ -1027,7 +1034,7 @@ export default function ContractDetail() {
   const [editModal, setEditModal] = useState(false)
   const [activeTab, setActiveTab] = useState<'overview' | 'payments' | 'documents' | 'activity'>('overview')
 
-  const { data, isLoading } = useQuery<{ contract: Contract; payments: Payment[]; documents: AppDocument[] }>({
+  const { data, isLoading } = useQuery<ContractDetailData>({
     queryKey: ['contract', id],
     queryFn: () => api.get(`/contracts/${id}`).then((r) => r.data),
   })
@@ -1171,7 +1178,7 @@ export default function ContractDetail() {
   }
 
   if (isLoading || !data) return <Spinner />
-  const { contract: c, payments, documents, invoices: allInvoices = [] } = data as any
+  const { contract: c, payments, documents, invoices: allInvoices = [] } = data
 
   // Sort and split
   const byDue = (a: Payment, b: Payment) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
@@ -1235,7 +1242,7 @@ export default function ContractDetail() {
 
   // Deposit-covered invoices: status 'paid', net 0, no payment records linked to them
   const groupedInvoiceIds = new Set(invoiceGroups.map(g => String(g.invoiceId)))
-  const depositCoveredInvoices = allInvoices.filter((inv: any) =>
+  const depositCoveredInvoices = allInvoices.filter((inv) =>
     inv.status === 'paid' &&
     Number(inv.total ?? 0) <= 0 &&
     !groupedInvoiceIds.has(String(inv._id))

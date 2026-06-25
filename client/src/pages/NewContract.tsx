@@ -18,27 +18,6 @@ function estimatePeriods(start: string, end: string, billing: 'weekly' | 'monthl
   return Math.ceil(ms / (DAYS_PER_PERIOD[billing] * 86400000))
 }
 
-// rate = monthly price. Weekly payment = rate/4. Ceiling billing (any leftover day = full week).
-// Discount applies to first 4 weekly payments (= first month).
-function computeContractTotal(
-  startDate: string, endDate: string,
-  billing: 'weekly' | 'monthly',
-  rate: number,
-  applyDiscount: boolean,
-  discountPct: number,
-): number {
-  const totalDays = Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000)
-  if (totalDays <= 0 || rate <= 0) return 0
-  const dpp = DAYS_PER_PERIOD[billing]
-  const totalPeriods = Math.ceil(totalDays / dpp)
-  const discountPeriods = billing === 'weekly' ? 4 : 1
-  const discountCount = applyDiscount && discountPct > 0 ? Math.min(discountPeriods, totalPeriods) : 0
-  const fullCount = totalPeriods - discountCount
-  const periodRate = billing === 'weekly' ? rate / 4 : rate
-  const discountedPeriodRate = Math.round(periodRate * (1 - discountPct / 100) * 100) / 100
-  return Math.round((discountCount * discountedPeriodRate + fullCount * periodRate) * 100) / 100
-}
-
 type BreakdownSection = { label: string; detail: string; amount: number; accent?: boolean }
 
 function computeBreakdown(
