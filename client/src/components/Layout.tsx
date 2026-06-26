@@ -32,6 +32,7 @@ const navGroups = [
       { to: '/vendors', label: 'Vendors', icon: Truck, perm: 'vendors' },
       { to: '/purchases', label: 'Purchases/Bill', icon: ShoppingCart, perm: 'purchases' },
       { to: '/expenses', label: 'Expenses', icon: Wallet, perm: 'expenses' },
+      { to: '/payments', label: 'Payments', icon: CreditCard, perm: 'payments' },
     ],
   },
 ]
@@ -48,7 +49,6 @@ const reportItems = [
 ]
 
 const navBottom = [
-  { to: '/payments', label: 'Payments', icon: CreditCard, perm: 'payments' },
   { to: '/settings', label: 'Settings', icon: Settings, perm: 'settings' },
 ]
 

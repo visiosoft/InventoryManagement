@@ -463,8 +463,8 @@ function TransactionsTab({
                         key={key}
                         onClick={() => setView(key)}
                         className={`px-5 py-2.5 text-sm font-medium transition-colors cursor-pointer ${view === key
-                                ? 'border-b-2 border-primary text-primary'
-                                : 'text-muted-foreground hover:text-foreground'
+                            ? 'border-b-2 border-primary text-primary'
+                            : 'text-muted-foreground hover:text-foreground'
                             }`}
                     >
                         {label}
@@ -1042,8 +1042,8 @@ export default function VendorDetail() {
                         key={key}
                         onClick={() => setTab(key)}
                         className={`px-5 py-2.5 text-sm font-medium transition-colors cursor-pointer ${tab === key
-                                ? 'border-b-2 border-primary text-primary'
-                                : 'text-muted-foreground hover:text-foreground'
+                            ? 'border-b-2 border-primary text-primary'
+                            : 'text-muted-foreground hover:text-foreground'
                             }`}
                     >
                         {label}
