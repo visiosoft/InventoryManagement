@@ -55,7 +55,7 @@ function WhatNext({ purchase, onRecordPayment }: { purchase: Purchase; onRecordP
             </div>
         )
     }
-    const isOverdue = purchase.dueDate && new Date(purchase.dueDate) < new Date() && purchase.status !== 'received'
+    const isOverdue = purchase.dueDate && new Date(purchase.dueDate) < new Date()
     if (isOverdue) {
         return (
             <div className="mb-5 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 dark:bg-red-950/20 dark:border-red-900 px-5 py-4">

@@ -231,6 +231,7 @@ function ActionButton({ icon, label, active, onClick }: { icon: ReactNode; label
 }
 
 function ContactDetailPanel({ row, onUpdateLead }: { row: WhatsAppLeadRow; onUpdateLead: (id: string, body: Record<string, unknown>) => void }) {
+    const navigate = useNavigate()
     const [action, setAction] = useState<ActionType>(null)
     const [noteText, setNoteText] = useState('')
     const [taskTitle, setTaskTitle] = useState('')

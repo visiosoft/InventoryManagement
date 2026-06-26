@@ -7,7 +7,7 @@ import { formatDate } from '../lib/utils'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type LogEntry   = { at: string; msg: string; level: 'info' | 'ok' | 'error' }
+type LogEntry = { at: string; msg: string; level: 'info' | 'ok' | 'error' }
 type BackupResult = {
   filename: string; backedUpAt: string; storage: 'drive' | 'local'
   driveUrl?: string; sizeKb: number; collections: number; documents: number; durationMs: number
@@ -39,7 +39,7 @@ function StorageBadge({ storage }: { storage: 'drive' | 'local' }) {
 }
 
 function logColor(level: string) {
-  if (level === 'ok')    return 'text-emerald-400'
+  if (level === 'ok') return 'text-emerald-400'
   if (level === 'error') return 'text-red-400'
   return 'text-slate-300'
 }
@@ -49,20 +49,20 @@ function logColor(level: string) {
 export default function Backup() {
   const qc = useQueryClient()
   const [runError, setRunError] = useState('')
-  const [, setTick]            = useState(0)   // drives elapsed timer re-render
+  const [, setTick] = useState(0)   // drives elapsed timer re-render
   const logRef = useRef<HTMLDivElement>(null)
 
   // Poll status (fast when running, slow otherwise)
   const { data: status, refetch: refetchStatus } = useQuery<StatusResponse>({
     queryKey: ['backup-status'],
-    queryFn:  () => api.get('/backup/status').then(r => r.data),
+    queryFn: () => api.get('/backup/status').then(r => r.data),
     refetchInterval: (query) => (query.state.data?.running ? 1500 : 15_000),
   })
 
   // Backup history list
   const { data: listData, isLoading: listLoading } = useQuery<{ backups: BackupEntry[] }>({
     queryKey: ['backup-list'],
-    queryFn:  () => api.get('/backup/list').then(r => r.data),
+    queryFn: () => api.get('/backup/list').then(r => r.data),
     refetchInterval: status?.running ? 5_000 : 60_000,
   })
 
@@ -97,10 +97,10 @@ export default function Backup() {
     }
   }
 
-  const backups  = listData?.backups ?? []
-  const running  = status?.running ?? false
+  const backups = listData?.backups ?? []
+  const running = status?.running ?? false
   const lastResult = status?.lastResult
-  const lastError  = status?.lastError
+  const lastError = status?.lastError
 
   return (
     <div className="max-w-4xl space-y-6">

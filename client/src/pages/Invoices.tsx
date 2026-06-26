@@ -553,8 +553,8 @@ export default function Invoices() {
     const qc = useQueryClient()
     const [search, setSearch] = useState('')
     const [status, setStatus] = useState('')
-    const [page, setPage]     = useState(1)
-    const [limit, setLimit]   = useState(25)
+    const [page, setPage] = useState(1)
+    const [limit, setLimit] = useState(25)
     const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([])
     const [adding, setAdding] = useState(false)
     const [editing, setEditing] = useState<Invoice | null>(null)
@@ -748,8 +748,8 @@ export default function Invoices() {
                     </Table>
                     {invoices.length === 0 && <EmptyState message="No invoices found." />}
                     {invoiceData && invoiceData.pages > 1 && (
-                      <Pagination page={invoiceData.page} pages={invoiceData.pages} total={invoiceData.total} limit={limit}
-                        onPage={setPage} onLimit={setLimit} />
+                        <Pagination page={invoiceData.page} pages={invoiceData.pages} total={invoiceData.total} limit={limit}
+                            onPage={setPage} onLimit={setLimit} />
                     )}
                 </Card>
             )}

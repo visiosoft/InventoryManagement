@@ -26,9 +26,9 @@ function consolidateItems(items: Invoice['items']) {
     const singleWeekRate = Number(weekItems[0].rate ?? 0)
     const discountPct = weekItems.find(it => (it.discountPct ?? 0) > 0)?.discountPct ?? 0
     const firstMatch = weekRe.exec(weekItems[0].itemDetails ?? '')
-    const lastMatch  = weekRe.exec(weekItems[weekItems.length - 1].itemDetails ?? '')
+    const lastMatch = weekRe.exec(weekItems[weekItems.length - 1].itemDetails ?? '')
     const fromDate = firstMatch?.[1] ?? ''
-    const unitNo   = firstMatch?.[2] ?? ''
+    const unitNo = firstMatch?.[2] ?? ''
     let toDate = lastMatch?.[1] ?? ''
     try {
         const d = new Date(toDate)

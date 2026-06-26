@@ -13,62 +13,62 @@ const navGroups = [
   {
     title: 'Inventory',
     items: [
-      { to: '/units',      label: 'Units',     icon: Box,        perm: 'units' },
-      { to: '/contracts',  label: 'Contracts', icon: FileText,   perm: 'contracts' },
-      { to: '/documents',  label: 'Documents', icon: FolderOpen, perm: 'documents' },
+      { to: '/units', label: 'Units', icon: Box, perm: 'units' },
+      { to: '/contracts', label: 'Contracts', icon: FileText, perm: 'contracts' },
+      { to: '/documents', label: 'Documents', icon: FolderOpen, perm: 'documents' },
     ],
   },
   {
     title: 'Sales',
     items: [
-      { to: '/customers', label: 'Customers', icon: Users,         perm: 'customers' },
-      { to: '/invoices',  label: 'Invoices',  icon: ReceiptText,   perm: 'invoices' },
-      { to: '/leads',     label: 'Leads',     icon: UserPlus,      perm: 'leads' },
+      { to: '/customers', label: 'Customers', icon: Users, perm: 'customers' },
+      { to: '/invoices', label: 'Invoices', icon: ReceiptText, perm: 'invoices' },
+      { to: '/leads', label: 'Leads', icon: UserPlus, perm: 'leads' },
     ],
   },
   {
     title: 'Purchases',
     items: [
-      { to: '/vendors',   label: 'Vendors',        icon: Truck,        perm: 'vendors' },
+      { to: '/vendors', label: 'Vendors', icon: Truck, perm: 'vendors' },
       { to: '/purchases', label: 'Purchases/Bill', icon: ShoppingCart, perm: 'purchases' },
-      { to: '/expenses',  label: 'Expenses',       icon: Wallet,       perm: 'expenses' },
+      { to: '/expenses', label: 'Expenses', icon: Wallet, perm: 'expenses' },
     ],
   },
 ]
 
 const reportItems = [
-  { to: '/reports/monthly',   label: 'Monthly Payments',   icon: CalendarClock,  perm: 'reports_monthly' },
-  { to: '/reports/units',     label: 'Unit Revenue',       icon: Building2,      perm: 'reports_units' },
-  { to: '/reports/finances',  label: 'Finances',           icon: Wallet,         perm: 'reports_finances' },
-  { to: '/reports/forecast',  label: 'Forecast',           icon: TrendingUp,     perm: 'reports_forecast' },
-  { to: '/reports/contracts', label: 'Contracts',          icon: BarChart3,      perm: 'reports_contracts' },
-  { to: '/reports/vacancies', label: 'Upcoming Vacancies', icon: CalendarOff,    perm: 'reports_vacancies' },
-  { to: '/reports/overdue',   label: 'Overdue Payments',   icon: AlertTriangle,  perm: 'reports_overdue' },
-  { to: '/reports/expiring',  label: 'Expiring Contracts', icon: Clock,          perm: 'reports_expiring' },
+  { to: '/reports/monthly', label: 'Monthly Payments', icon: CalendarClock, perm: 'reports_monthly' },
+  { to: '/reports/units', label: 'Unit Revenue', icon: Building2, perm: 'reports_units' },
+  { to: '/reports/finances', label: 'Finances', icon: Wallet, perm: 'reports_finances' },
+  { to: '/reports/forecast', label: 'Forecast', icon: TrendingUp, perm: 'reports_forecast' },
+  { to: '/reports/contracts', label: 'Contracts', icon: BarChart3, perm: 'reports_contracts' },
+  { to: '/reports/vacancies', label: 'Upcoming Vacancies', icon: CalendarOff, perm: 'reports_vacancies' },
+  { to: '/reports/overdue', label: 'Overdue Payments', icon: AlertTriangle, perm: 'reports_overdue' },
+  { to: '/reports/expiring', label: 'Expiring Contracts', icon: Clock, perm: 'reports_expiring' },
 ]
 
 const navBottom = [
-  { to: '/payments',  label: 'Payments',  icon: CreditCard,  perm: 'payments' },
-  { to: '/settings',  label: 'Settings',  icon: Settings,    perm: 'settings' },
+  { to: '/payments', label: 'Payments', icon: CreditCard, perm: 'payments' },
+  { to: '/settings', label: 'Settings', icon: Settings, perm: 'settings' },
 ]
 
 const movingNavItems = [
-  { to: '/moving',          label: 'Dashboard', icon: LayoutDashboard, perm: 'moving_dashboard' as string },
-  { to: '/moving/leads',    label: 'Leads',     icon: UserPlus,        perm: 'moving_leads' },
-  { to: '/moving/jobs',     label: 'Jobs',      icon: ClipboardList,   perm: 'moving_jobs' },
-  { to: '/moving/schedule', label: 'Schedule',  icon: CalendarDays,    perm: 'moving_schedule' },
-  { to: '/moving/dispatch', label: 'Dispatch',  icon: Package,         perm: 'moving_dispatch' },
-  { to: '/moving/workers',  label: 'Workers',   icon: Users2,          perm: 'moving_workers' },
-  { to: '/moving/fleet',    label: 'Fleet',     icon: Truck,           perm: 'moving_fleet' },
-  { to: '/moving/quotes',   label: 'Quotes',    icon: FileSpreadsheet, perm: 'moving_quotes' },
-  { to: '/moving/invoices', label: 'Invoices',  icon: ReceiptText,     perm: 'moving_invoices' },
+  { to: '/moving', label: 'Dashboard', icon: LayoutDashboard, perm: 'moving_dashboard' as string },
+  { to: '/moving/leads', label: 'Leads', icon: UserPlus, perm: 'moving_leads' },
+  { to: '/moving/jobs', label: 'Jobs', icon: ClipboardList, perm: 'moving_jobs' },
+  { to: '/moving/schedule', label: 'Schedule', icon: CalendarDays, perm: 'moving_schedule' },
+  { to: '/moving/dispatch', label: 'Dispatch', icon: Package, perm: 'moving_dispatch' },
+  { to: '/moving/workers', label: 'Workers', icon: Users2, perm: 'moving_workers' },
+  { to: '/moving/fleet', label: 'Fleet', icon: Truck, perm: 'moving_fleet' },
+  { to: '/moving/quotes', label: 'Quotes', icon: FileSpreadsheet, perm: 'moving_quotes' },
+  { to: '/moving/invoices', label: 'Invoices', icon: ReceiptText, perm: 'moving_invoices' },
 ]
 
 const movingReportItems = [
-  { to: '/moving/reports/revenue', label: 'Revenue', icon: Wallet,    perm: 'reports_moving_revenue' },
-  { to: '/moving/reports/jobs',    label: 'Jobs',    icon: BarChart3, perm: 'reports_moving_jobs' },
-  { to: '/moving/reports/crew',    label: 'Crew',    icon: Users,     perm: 'reports_moving_crew' },
-  { to: '/moving/reports/fleet',   label: 'Fleet',   icon: Truck,     perm: 'reports_moving_fleet' },
+  { to: '/moving/reports/revenue', label: 'Revenue', icon: Wallet, perm: 'reports_moving_revenue' },
+  { to: '/moving/reports/jobs', label: 'Jobs', icon: BarChart3, perm: 'reports_moving_jobs' },
+  { to: '/moving/reports/crew', label: 'Crew', icon: Users, perm: 'reports_moving_crew' },
+  { to: '/moving/reports/fleet', label: 'Fleet', icon: Truck, perm: 'reports_moving_fleet' },
 ]
 
 const navLinkCls = (isActive: boolean) => cn(
@@ -90,12 +90,12 @@ export default function Layout() {
   const navigate = useNavigate()
   const location = useLocation()
   const onReportsRoute = location.pathname.startsWith('/reports')
-  const onMovingRoute  = location.pathname.startsWith('/moving')
-  const [reportsOpen,       setReportsOpen]       = useState(onReportsRoute)
-  const [movingOpen,        setMovingOpen]         = useState(onMovingRoute)
-  const [movingReportsOpen, setMovingReportsOpen]  = useState(location.pathname.startsWith('/moving/reports'))
-  const [dark,              setDark]               = useState(() => localStorage.getItem('pb_theme') === 'dark')
-  const [sidebarOpen,       setSidebarOpen]        = useState(false)
+  const onMovingRoute = location.pathname.startsWith('/moving')
+  const [reportsOpen, setReportsOpen] = useState(onReportsRoute)
+  const [movingOpen, setMovingOpen] = useState(onMovingRoute)
+  const [movingReportsOpen, setMovingReportsOpen] = useState(location.pathname.startsWith('/moving/reports'))
+  const [dark, setDark] = useState(() => localStorage.getItem('pb_theme') === 'dark')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const isAdmin = user?.role === 'admin'
   const [contactsToast, setContactsToast] = useState<{ created: number } | null>(null)
   const lastSeenAt = useRef<string | null>(null)
@@ -219,7 +219,7 @@ export default function Layout() {
 
         {/* Moving Business */}
         {(() => {
-          const visibleMoving        = movingNavItems.filter(({ perm }) => hasPermission(perm))
+          const visibleMoving = movingNavItems.filter(({ perm }) => hasPermission(perm))
           const visibleMovingReports = movingReportItems.filter(({ perm }) => hasPermission(perm))
           if (visibleMoving.length === 0 && visibleMovingReports.length === 0) return null
           return (

@@ -5,7 +5,7 @@ import {
     ArrowLeft, Building2, ChevronDown, DollarSign,
     FileText, Globe, Mail, Phone, Receipt, Trash2,
 } from 'lucide-react'
-import { apiError, vendorApi, purchaseApi, expenseApi, type VendorSummary } from '../lib/api'
+import { apiError, vendorApi, purchaseApi, expenseApi, type PagedResponse, type VendorSummary } from '../lib/api'
 import type { Purchase, Expense, PurchasePaymentEntry, PurchaseStatus, Vendor, VendorAddress } from '../lib/types'
 import {
     Badge, Button, CornerRibbon,
@@ -899,13 +899,13 @@ export default function VendorDetail() {
         enabled: !!id,
     })
 
-    const { data: purchases, isLoading: purchasesLoading } = useQuery<Purchase[]>({
+    const { data: purchasesResult, isLoading: purchasesLoading } = useQuery<PagedResponse<Purchase>>({
         queryKey: ['purchases', '', '', id],
         queryFn: () => purchaseApi.list({ vendor: id }),
         enabled: !!id,
     })
 
-    const { data: expenses, isLoading: expensesLoading } = useQuery<Expense[]>({
+    const { data: expensesResult, isLoading: expensesLoading } = useQuery<PagedResponse<Expense>>({
         queryKey: ['expenses', 'vendor', id, vendor?.contactName],
         queryFn: () => expenseApi.list({ vendor: id, vendorName: vendor?.contactName }),
         enabled: !!id && !!vendor,
@@ -931,6 +931,9 @@ export default function VendorDetail() {
 
     if (vendorLoading) return <div className="flex justify-center pt-20"><Spinner /></div>
     if (!vendor) return <div className="p-6 text-sm text-muted-foreground">Vendor not found.</div>
+
+    const purchases = purchasesResult?.data ?? []
+    const expenses = expensesResult?.data ?? []
 
     const TABS: { key: Tab; label: string }[] = [
         { key: 'overview', label: 'Overview' },
@@ -1057,8 +1060,8 @@ export default function VendorDetail() {
                             vendor={vendor}
                             summary={summary}
                             summaryLoading={summaryLoading}
-                            purchases={purchases ?? []}
-                            expenses={expenses ?? []}
+                            purchases={purchases}
+                            expenses={expenses}
                             purchasesLoading={purchasesLoading || expensesLoading}
                         />
                     </div>
@@ -1067,8 +1070,8 @@ export default function VendorDetail() {
                 {tab === 'transactions' && (
                     <div className="rounded-xl border bg-card overflow-hidden">
                         <TransactionsTab
-                            purchases={purchases ?? []}
-                            expenses={expenses ?? []}
+                            purchases={purchases}
+                            expenses={expenses}
                             purchasesLoading={purchasesLoading}
                             onPayBill={setPayingId}
                         />
@@ -1080,7 +1083,7 @@ export default function VendorDetail() {
                         {purchasesLoading ? (
                             <div className="flex justify-center py-8"><Spinner /></div>
                         ) : (
-                            <StatementTab vendor={vendor} purchases={purchases ?? []} />
+                            <StatementTab vendor={vendor} purchases={purchases} />
                         )}
                     </div>
                 )}
