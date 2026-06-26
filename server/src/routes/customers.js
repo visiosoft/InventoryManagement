@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { Customer, Contract, Document } from '../models/index.js';
+import { Customer, Contract, Document, Payment, Invoice } from '../models/index.js';
 
 const router = Router();
 
@@ -45,7 +45,27 @@ router.get('/:id', async (req, res) => {
     .populate('unit')
     .sort({ createdAt: -1 });
   const documents = await Document.find({ customer: customer._id }).sort({ createdAt: -1 });
-  res.json({ customer, contracts, documents });
+
+  // All invoices across every contract this customer has ever had
+  const contractNos = contracts.map(c => c.contractNo);
+  const invoices = await Invoice.find({ orderNumber: { $in: contractNos } })
+    .select('invoiceNo orderNumber status dueDate invoiceDate total paymentMade')
+    .sort({ dueDate: -1 });
+
+  // Payment summary per contract
+  const contractIds = contracts.map(c => c._id);
+  const allPayments = await Payment.find({ contract: { $in: contractIds } })
+    .select('contract amount status paidDate method notes dueDate')
+    .sort({ dueDate: -1 });
+
+  const paymentSummary = contracts.map(c => {
+    const cPayments = allPayments.filter(p => String(p.contract) === String(c._id));
+    const totalPaid   = Math.round(cPayments.filter(p => p.status === 'paid').reduce((s, p) => s + p.amount, 0) * 100) / 100;
+    const totalUnpaid = Math.round(cPayments.filter(p => p.status !== 'paid').reduce((s, p) => s + p.amount, 0) * 100) / 100;
+    return { contractId: c._id, contractNo: c.contractNo, totalPaid, totalUnpaid };
+  });
+
+  res.json({ customer, contracts, documents, invoices, paymentSummary });
 });
 
 router.post('/', async (req, res) => {

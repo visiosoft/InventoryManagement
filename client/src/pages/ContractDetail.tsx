@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
-import { CalendarDays, CheckCircle2, Download, FileText, FilePlus, MessageSquare, PenLine, Plus, ShieldCheck, Upload, X, XCircle } from 'lucide-react'
+import { CalendarDays, CheckCircle2, Download, FileText, FilePlus, MessageSquare, PenLine, Plus, ShieldCheck, Upload, X, XCircle, Receipt, Clock, FolderOpen } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { AppDocument, Contract, ContractNote, Invoice, Payment } from '../lib/types'
@@ -622,7 +622,7 @@ function BulkPayForm({ unpaid, billingPeriod, busy, onSubmit }: {
   busy: boolean
   onSubmit: (body: { paymentIds: string[]; method: string; paidDate: string; notes: string }) => void
 }) {
-  const periodLabel = billingPeriod === 'weekly' ? 'week' : 'month'
+  const periodLabel = 'month'
   const [count, setCount] = useState(unpaid.length)   // default: all
   const [method, setMethod] = useState('cash')
   const [paidDate, setPaidDate] = useState(new Date().toISOString().slice(0, 10))
@@ -694,6 +694,102 @@ function BulkPayForm({ unpaid, billingPeriod, busy, onSubmit }: {
         onClick={() => onSubmit({ paymentIds: selected.map((p) => p._id), method, paidDate, notes })}
       >
         {busy ? 'Recording…' : `Record ${count} ${periodLabel}${count !== 1 ? 's' : ''} — ${formatMoney(total)}`}
+      </Button>
+    </div>
+  )
+}
+
+// ── Single-invoice pay form (clean, no breakdown) ─────────────────────────────
+function InvoicePayForm({ group, contractId, busy, onSubmitFull, onSubmitPartial }: {
+  group: InvoiceGroup
+  contractId: string
+  busy: boolean
+  onSubmitFull: (body: { paymentIds: string[]; method: string; paidDate: string; notes: string }) => void
+  onSubmitPartial: (body: { invoiceId: string; contractId: string; amount: number; method: string; paidDate: string; notes: string }) => void
+}) {
+  const [method, setMethod] = useState('cash')
+  const [paidDate, setPaidDate] = useState(new Date().toISOString().slice(0, 10))
+  const [notes, setNotes] = useState('')
+  const [isPartial, setIsPartial] = useState(false)
+  const amountDue = Math.round((group.total - group.paidTotal) * 100) / 100
+  const [partialAmt, setPartialAmt] = useState(String(amountDue))
+  const paymentIds = group.unpaidInGroup.map(p => p._id)
+  const parsedPartial = Math.round(Number(partialAmt) * 100) / 100
+  const partialValid = parsedPartial > 0 && parsedPartial < amountDue
+
+  function handleSubmit() {
+    if (isPartial) {
+      onSubmitPartial({ invoiceId: group.invoiceId, contractId, amount: parsedPartial, method, paidDate, notes })
+    } else {
+      onSubmitFull({ paymentIds, method, paidDate, notes })
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-lg border bg-muted/30 px-4 py-3 text-sm space-y-2">
+        <div className="flex justify-between">
+          <span className="text-muted-foreground">Invoice</span>
+          <span className="font-medium">{group.invoiceRef.invoiceNo}</span>
+        </div>
+        {group.periodLabel && (
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Period</span>
+            <span>{group.periodLabel}</span>
+          </div>
+        )}
+        <div className="flex justify-between font-semibold border-t pt-2">
+          <span>Amount due</span>
+          <span>{formatMoney(amountDue)}</span>
+        </div>
+      </div>
+
+      {/* Full / Partial toggle */}
+      <div className="flex rounded-lg border overflow-hidden text-sm">
+        <button type="button" onClick={() => setIsPartial(false)}
+          className={`flex-1 py-2 font-medium transition-colors ${!isPartial ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}>
+          Pay in full
+        </button>
+        <button type="button" onClick={() => setIsPartial(true)}
+          className={`flex-1 py-2 font-medium transition-colors ${isPartial ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}>
+          Partial payment
+        </button>
+      </div>
+
+      {isPartial && (
+        <Field label="Amount to pay (AED)">
+          <Input
+            type="number"
+            min="0.01"
+            max={amountDue - 0.01}
+            step="0.01"
+            value={partialAmt}
+            onChange={(e) => setPartialAmt(e.target.value)}
+            placeholder={`Max ${amountDue}`}
+          />
+          {parsedPartial > 0 && (
+            <p className="text-xs text-muted-foreground mt-1">
+              Remaining after this payment: {formatMoney(Math.round((amountDue - parsedPartial) * 100) / 100)}
+            </p>
+          )}
+        </Field>
+      )}
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Payment method"><MethodSelect value={method} onChange={setMethod} /></Field>
+        <Field label="Paid on"><Input type="date" value={paidDate} onChange={(e) => setPaidDate(e.target.value)} /></Field>
+      </div>
+      <Field label="Notes (optional)">
+        <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Reference no., remarks…" />
+      </Field>
+      <Button
+        className="w-full"
+        disabled={busy || paymentIds.length === 0 || (isPartial && !partialValid)}
+        onClick={handleSubmit}
+      >
+        {busy ? 'Recording…' : isPartial
+          ? `Record partial — ${formatMoney(parsedPartial)}`
+          : `Record payment — ${formatMoney(amountDue)}`}
       </Button>
     </div>
   )
@@ -1020,6 +1116,7 @@ export default function ContractDetail() {
   const [recordingPayment, setRecordingPayment] = useState<Payment | null>(null)
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null)
   const [bulkTarget, setBulkTarget] = useState<Payment[] | null>(null)
+  const [invoiceGroupTarget, setInvoiceGroupTarget] = useState<InvoiceGroup | null>(null)
   const [addingPayment, setAddingPayment] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [downloadingPdf, setDownloadingPdf] = useState(false)
@@ -1032,6 +1129,9 @@ export default function ContractDetail() {
   const [showInvoiceModal, setShowInvoiceModal] = useState(false)
   const [invoiceOverride, setInvoiceOverride] = useState<{ start: string; end: string } | null>(null)
   const [editModal, setEditModal] = useState(false)
+  const [endModal, setEndModal] = useState(false)
+  const [endDate, setEndDate] = useState('')
+  const [endReason, setEndReason] = useState('')
   const [activeTab, setActiveTab] = useState<'overview' | 'payments' | 'documents' | 'activity'>('overview')
 
   const { data, isLoading } = useQuery<ContractDetailData>({
@@ -1059,6 +1159,12 @@ export default function ContractDetail() {
     onError: (e) => setError(apiError(e)),
   })
 
+  const endContract = useMutation({
+    mutationFn: (body: { endDate: string; reason?: string }) => api.post(`/contracts/${id}/end`, body),
+    onSuccess: () => { invalidate(); setError(''); setEndModal(false); setEndReason('') },
+    onError: (e) => setError(apiError(e)),
+  })
+
   const recordPayment = useMutation({
     mutationFn: ({ paymentId, body }: { paymentId: string; body: object }) =>
       api.post(`/payments/${paymentId}/record`, body),
@@ -1069,6 +1175,12 @@ export default function ContractDetail() {
   const bulkRecord = useMutation({
     mutationFn: (body: object) => api.post('/payments/bulk-record', body),
     onSuccess: () => { invalidate(); setBulkTarget(null) },
+    onError: (e) => setError(apiError(e)),
+  })
+
+  const partialRecord = useMutation({
+    mutationFn: (body: object) => api.post('/payments/invoice-partial', body),
+    onSuccess: () => { invalidate(); setInvoiceGroupTarget(null) },
     onError: (e) => setError(apiError(e)),
   })
 
@@ -1189,8 +1301,8 @@ export default function ContractDetail() {
 
 
   const totalPaid = paid.reduce((s, p) => s + p.amount, 0)
-  // Exclude security deposit records from rent totals — deposit is a separate liability
-  const isDepositPayment = (p: Payment) => /^security deposit/i.test(p.notes || '')
+  // Exclude deposit/advance-rent records from rent totals
+  const isDepositPayment = (p: Payment) => /^(security deposit|advance rent)/i.test(p.notes || '')
   const totalPending = pending.filter(p => !isDepositPayment(p)).reduce((s, p) => s + p.amount, 0)
   const totalOverdue = overdue.filter(p => !isDepositPayment(p)).reduce((s, p) => s + p.amount, 0)
   // Group payments by invoice → one display row per invoice
@@ -1234,8 +1346,13 @@ export default function ContractDetail() {
 
   const unpaidGroups = invoiceGroups.filter(g => g.status !== 'paid')
   const paidGroups   = invoiceGroups.filter(g => g.status === 'paid')
-  // Upcoming total = rent only (exclude security deposit which is a separate liability)
+  // Upcoming total = everything unpaid (rent + deposit) for display
   const totalUnpaidGroups = unpaidGroups.reduce((s, g) => {
+    const unpaidAll = g.unpaidInGroup.reduce((ss, p) => ss + p.amount, 0)
+    return s + Math.round(unpaidAll * 100) / 100
+  }, 0)
+  // Rent-only upcoming — used for the balance denominator (excludes deposit liability)
+  const totalUnpaidGroupsRent = unpaidGroups.reduce((s, g) => {
     const unpaidRent = g.unpaidInGroup.filter(p => !isDepositPayment(p)).reduce((ss, p) => ss + p.amount, 0)
     return s + Math.round(unpaidRent * 100) / 100
   }, 0)
@@ -1268,39 +1385,119 @@ export default function ContractDetail() {
   const theoreticalTotal2 = dPct2 > 0
     ? Math.round((Math.min(4, contractWeeks2) * Math.round(wRate2 * (1 - dPct2 / 100) * 100) / 100 + Math.max(0, contractWeeks2 - 4) * wRate2) * 100) / 100
     : Math.round(contractWeeks2 * wRate2 * 100) / 100
+  // Use actual invoiced rent total when available (paid + unpaid rent, no deposit)
+  const invoicedRentTotal = invoiceGroups.length > 0
+    ? Math.round((totalPaid + totalUnpaidGroupsRent + totalOverdue) * 100) / 100
+    : theoreticalTotal2
   const customerPhone = c.customer?.phones?.[0] ?? c.customer?.phone ?? ''
   const waPhone = customerPhone.replace(/\D/g, '').replace(/^00/, '')
   const waText = [`Hello ${c.customer?.fullName ?? 'there'},`, ``, `This is a message regarding your storage contract *${c.contractNo}*.`, `${unitLabel}`, ``, `Thank you – PurpleBox`].join('\n')
   const waUrl = waPhone ? `https://wa.me/${waPhone}?text=${encodeURIComponent(waText)}` : `https://wa.me/?text=${encodeURIComponent(waText)}`
 
   // Activity feed
-  type ActivityEvent = { id: string; type: 'overdue' | 'paid' | 'note'; at: Date; title: string; subtitle: string }
+  type ActivityEvent = {
+    id: string
+    type: 'overdue' | 'paid' | 'partial' | 'invoice' | 'contract' | 'note'
+    at: Date
+    title: string
+    subtitle: string
+  }
   const activityEvents: ActivityEvent[] = []
+
+  // Contract created
+  if (c.createdAt) {
+    activityEvents.push({
+      id: 'contract-created',
+      type: 'contract',
+      at: new Date(c.createdAt),
+      title: 'Contract created',
+      subtitle: `${c.contractNo} · ${c.status}`,
+    })
+  }
+
+  // Invoice generated events
+  for (const inv of allInvoices) {
+    const at = new Date(inv.invoiceDate || inv.createdAt || inv.dueDate)
+    const byLabel = (inv as any).createdBy ? ` · by ${(inv as any).createdBy}` : ''
+    activityEvents.push({
+      id: `inv-${inv._id}`,
+      type: 'invoice',
+      at,
+      title: 'Invoice generated',
+      subtitle: `${inv.invoiceNo} · ${formatMoney(inv.total)}${byLabel}`,
+    })
+  }
+
+  // Overdue payments
   for (const p of overdue) {
     const daysLate = Math.round((today2.getTime() - new Date(p.dueDate).getTime()) / 86400000)
-    activityEvents.push({ id: `ovd-${p._id}`, type: 'overdue', at: new Date(), title: 'Payment overdue', subtitle: `${(p.invoice as any)?.invoiceNo ?? ''} · ${formatDate(p.dueDate)} is ${daysLate}d late` })
+    activityEvents.push({
+      id: `ovd-${p._id}`,
+      type: 'overdue',
+      at: new Date(p.dueDate),
+      title: 'Payment overdue',
+      subtitle: `${(p.invoice as any)?.invoiceNo ?? ''} · due ${formatDate(p.dueDate)} · ${daysLate}d late`,
+    })
   }
-  // Group paid payments by invoice — show one activity row per invoice (month), not per week
-  const paidByInvoice = new Map<string, typeof paid>()
+
+  // Paid payments — one event per (invoice × paid-date) so multiple partial
+  // payments on different dates each appear as their own activity row.
+  const paidByInvoiceDate = new Map<string, typeof paid>()
   for (const p of paid) {
     const invId = (p.invoice as any)?._id ?? (p.invoice as any) ?? 'no-invoice'
-    const key = String(invId)
-    if (!paidByInvoice.has(key)) paidByInvoice.set(key, [])
-    paidByInvoice.get(key)!.push(p)
+    const dateKey = (p.paidDate ? new Date(p.paidDate) : new Date(p.dueDate)).toISOString().slice(0, 10)
+    const key = `${invId}__${dateKey}`
+    if (!paidByInvoiceDate.has(key)) paidByInvoiceDate.set(key, [])
+    paidByInvoiceDate.get(key)!.push(p)
   }
-  for (const [, group] of paidByInvoice) {
+  // Total paid so far per invoice (to compute remaining correctly per event)
+  const totalPaidPerInvoice = new Map<string, number>()
+  for (const p of paid) {
+    const invId = String((p.invoice as any)?._id ?? (p.invoice as any) ?? 'no-invoice')
+    totalPaidPerInvoice.set(invId, (totalPaidPerInvoice.get(invId) ?? 0) + Number(p.amount ?? 0))
+  }
+  for (const [, group] of paidByInvoiceDate) {
     const inv = (group[0].invoice as any)
-    const total = group.reduce((s, p) => s + Number(p.amount ?? 0), 0)
-    const latestPaid = group.reduce((latest, p) => {
-      const d = new Date(p.paidDate ?? p.dueDate)
+    const invId = String(inv?._id ?? inv ?? 'no-invoice')
+    const batchTotal = Math.round(group.reduce((s, p) => s + Number(p.amount ?? 0), 0) * 100) / 100
+    const paidAt = group.reduce((latest, p) => {
+      const d = new Date((p as any).paidDate ?? p.dueDate)
       return d > latest ? d : latest
     }, new Date(0))
-    const period = inv?.invoiceNo ? ` · ${inv.invoiceNo}` : ''
-    activityEvents.push({ id: `paid-${group[0]._id}`, type: 'paid', at: latestPaid, title: 'Payment received', subtitle: `${c.paymentMethod ?? 'Cash'}${period} · ${formatMoney(total)}` })
+    const method = group.find(p => (p as any).method)?.method ?? ''
+    const methodLabel = method === 'bank_transfer' ? 'Bank transfer' : method ? method.charAt(0).toUpperCase() + method.slice(1) : 'Cash'
+    const invoiceRef = inv?.invoiceNo ? ` · ${inv.invoiceNo}` : ''
+    const recorder = group.find(p => (p as any).recordedBy)?.recordedBy as string | undefined
+    const byLabel = recorder ? ` · by ${recorder}` : ''
+    const invDoc = allInvoices.find(i => String(i._id) === invId)
+    const totalPaidForInv = Math.round((totalPaidPerInvoice.get(invId) ?? 0) * 100) / 100
+    const isFullyPaid = invDoc ? invDoc.status === 'paid' : false
+    const isPartialPay = invDoc ? invDoc.status === 'partial' : false
+    const remaining = invDoc ? Math.round((invDoc.total - totalPaidForInv) * 100) / 100 : 0
+    const remainingLabel = isPartialPay && remaining > 0 ? ` · remaining ${formatMoney(remaining)}` : ''
+    const paidDateLabel = paidAt > new Date(0)
+      ? paidAt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+      : ''
+    activityEvents.push({
+      id: `paid-${group[0]._id}`,
+      type: (isFullyPaid && !isPartialPay) ? 'paid' : 'partial',
+      at: paidAt,
+      title: (isFullyPaid && !isPartialPay) ? 'Payment received' : 'Partial payment received',
+      subtitle: `${methodLabel}${invoiceRef} · ${formatMoney(batchTotal)}${paidDateLabel ? ` · ${paidDateLabel}` : ''}${remainingLabel}${byLabel}`,
+    })
   }
+
+  // Timeline notes
   for (const note of (c.timeline ?? [])) {
-    activityEvents.push({ id: `note-${note.at}`, type: 'note', at: new Date(note.at), title: note.text, subtitle: note.author ? `by ${note.author}` : '' })
+    activityEvents.push({
+      id: `note-${note.at}`,
+      type: 'note',
+      at: new Date(note.at),
+      title: note.text,
+      subtitle: note.author ? `by ${note.author}` : '',
+    })
   }
+
   activityEvents.sort((a, b) => b.at.getTime() - a.at.getTime())
 
   return (
@@ -1353,7 +1550,10 @@ export default function ContractDetail() {
             )}
             {c.status === 'active' && (
               <Button size="sm" variant="destructive"
-                onClick={() => { if (confirm('End this contract and free the unit?')) action.mutate('end') }}
+                onClick={() => {
+                  setEndDate(new Date().toISOString().slice(0, 10))
+                  setEndModal(true)
+                }}
                 disabled={action.isPending}>
                 End contract
               </Button>
@@ -1406,11 +1606,11 @@ export default function ContractDetail() {
                 <div className="space-y-2 pt-1">
                   <div className="flex justify-between text-xs text-muted-foreground font-medium">
                     <span>BALANCE</span>
-                    <span>AED {formatMoney(totalPaid)} / {formatMoney(theoreticalTotal2)}</span>
+                    <span>AED {formatMoney(totalPaid)} / {formatMoney(invoicedRentTotal)}</span>
                   </div>
                   <div className="h-2 rounded-full bg-muted overflow-hidden">
                     <div className="h-full rounded-full bg-emerald-500 transition-all"
-                      style={{ width: `${theoreticalTotal2 > 0 ? Math.min(100, (totalPaid / theoreticalTotal2) * 100) : 0}%` }} />
+                      style={{ width: `${invoicedRentTotal > 0 ? Math.min(100, (totalPaid / invoicedRentTotal) * 100) : 0}%` }} />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/40 px-3 py-2">
@@ -1419,7 +1619,7 @@ export default function ContractDetail() {
                     </div>
                     <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/40 px-3 py-2">
                       <div className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide">Upcoming</div>
-                      <div className="text-lg font-bold text-blue-700 dark:text-blue-400">{formatMoney(totalPending)}</div>
+                      <div className="text-lg font-bold text-blue-700 dark:text-blue-400">{formatMoney(totalUnpaidGroups)}</div>
                     </div>
                   </div>
                 </div>
@@ -1432,17 +1632,32 @@ export default function ContractDetail() {
                       <span className="font-medium">{u.unitNumber}{u.sizeSqf != null ? ` · ${u.sizeSqf} sq ft` : ''}</span>
                     </div>
                   ))}
-                  {c.startDate && c.endDate && (
-                    <div className="flex justify-between py-2">
-                      <span className="text-muted-foreground">Term</span>
-                      <span className="font-medium text-right">
-                        {new Date(c.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} → {new Date(c.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                      </span>
-                    </div>
-                  )}
+                  {c.startDate && c.endDate && (() => {
+                    const s = new Date(c.startDate), e = new Date(c.endDate)
+                    const totalDays = Math.round((e.getTime() - s.getTime()) / 86400000)
+                    const months = Math.floor(totalDays / 30)
+                    const remWeeks = Math.round((totalDays % 30) / 7)
+                    const durParts: string[] = []
+                    if (months > 0) durParts.push(`${months} month${months !== 1 ? 's' : ''}`)
+                    if (remWeeks > 0) durParts.push(`${remWeeks} week${remWeeks !== 1 ? 's' : ''}`)
+                    const dur = durParts.join(' ') || '< 1 week'
+                    return (
+                      <div className="flex justify-between py-2">
+                        <span className="text-muted-foreground">Term</span>
+                        <span className="font-medium text-right">
+                          {s.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} → {e.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                          <span className="block text-xs text-muted-foreground">{dur}</span>
+                        </span>
+                      </div>
+                    )
+                  })()}
                   <div className="flex justify-between py-2">
-                    <span className="text-muted-foreground">Weekly</span>
-                    <span className="font-medium">AED {formatMoney(wRate2)}</span>
+                    <span className="text-muted-foreground">Monthly</span>
+                    <span className="font-medium">AED {formatMoney(c.rate)}</span>
+                  </div>
+                  <div className="flex justify-between py-2">
+                    <span className="text-muted-foreground">Total</span>
+                    <span className="font-medium">AED {formatMoney(theoreticalTotal2)}</span>
                   </div>
                   {c.paymentMethod && (
                     <div className="flex justify-between py-2">
@@ -1528,6 +1743,21 @@ export default function ContractDetail() {
             {/* OVERVIEW */}
             {activeTab === 'overview' && (
               <div>
+                {/* No invoices banner */}
+                {invoiceGroups.length === 0 && !['ended', 'cancelled'].includes(c.status) && (
+                  <div className="flex items-center gap-3 rounded-xl border border-blue-200 dark:border-blue-900/50 bg-blue-50 dark:bg-blue-950/20 px-4 py-3 mb-4">
+                    <FilePlus size={20} className="text-primary shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <span className="font-semibold text-primary">No invoices generated yet</span>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Generate the payment schedule based on contract dates and monthly rate (AED {formatMoney(c.rate)}/mo).
+                      </p>
+                    </div>
+                    <Button size="sm" onClick={() => autoInvoice.mutate()} disabled={autoInvoice.isPending} className="shrink-0">
+                      {autoInvoice.isPending ? 'Generating…' : 'Auto-generate'}
+                    </Button>
+                  </div>
+                )}
                 {totalOverdue > 0 && (
                   <div className="flex items-center gap-3 rounded-xl border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/20 px-4 py-3 mb-4">
                     <XCircle size={20} className="text-red-500 shrink-0" />
@@ -1562,34 +1792,47 @@ export default function ContractDetail() {
                         <EmptyState message="No activity yet." />
                       ) : (
                         <div className="divide-y">
-                          {activityEvents.map((ev) => (
-                            <div key={ev.id} className="flex gap-3 py-3">
-                              <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
-                                ev.type === 'overdue' ? 'bg-red-100 dark:bg-red-950/40 text-red-600' :
-                                ev.type === 'paid' ? 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600' :
-                                'bg-muted text-muted-foreground'
-                              }`}>
-                                {ev.type === 'overdue' && <XCircle size={15} />}
-                                {ev.type === 'paid' && <CheckCircle2 size={15} />}
-                                {ev.type === 'note' && <MessageSquare size={15} />}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-start justify-between gap-2">
-                                  <p className="text-sm font-medium leading-tight">{ev.title}</p>
-                                  <span className="text-xs text-muted-foreground shrink-0">
-                                    {ev.at.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                                  </span>
+                          {activityEvents.map((ev) => {
+                            const iconBg =
+                              ev.type === 'overdue'  ? 'bg-red-100 dark:bg-red-950/40 text-red-600' :
+                              ev.type === 'paid'     ? 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600' :
+                              ev.type === 'partial'  ? 'bg-amber-100 dark:bg-amber-950/40 text-amber-600' :
+                              ev.type === 'invoice'  ? 'bg-blue-100 dark:bg-blue-950/40 text-blue-600' :
+                              ev.type === 'contract' ? 'bg-purple-100 dark:bg-purple-950/40 text-purple-600' :
+                              'bg-muted text-muted-foreground'
+                            const icon =
+                              ev.type === 'overdue'  ? <XCircle size={15} /> :
+                              ev.type === 'paid'     ? <CheckCircle2 size={15} /> :
+                              ev.type === 'partial'  ? <Receipt size={15} /> :
+                              ev.type === 'invoice'  ? <FilePlus size={15} /> :
+                              ev.type === 'contract' ? <FolderOpen size={15} /> :
+                              <MessageSquare size={15} />
+                            const dateLabel = ev.at > new Date(0)
+                              ? ev.at.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+                              : '—'
+                            return (
+                              <div key={ev.id} className="flex gap-3 py-3">
+                                <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${iconBg}`}>
+                                  {icon}
                                 </div>
-                                {ev.subtitle && <p className="text-xs text-muted-foreground mt-0.5">{ev.subtitle}</p>}
-                                {ev.type === 'overdue' && (
-                                  <button className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
-                                    onClick={() => { const p = overdue.find(x => activityEvents.find(a => a.id === `ovd-${x._id}`)?.id === ev.id); if (p) setRecordingPayment(p) }}>
-                                    <CalendarDays size={11} /> Collect now
-                                  </button>
-                                )}
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <p className="text-sm font-medium leading-tight">{ev.title}</p>
+                                    <span className="text-xs text-muted-foreground shrink-0 flex items-center gap-1">
+                                      <Clock size={10} />{dateLabel}
+                                    </span>
+                                  </div>
+                                  {ev.subtitle && <p className="text-xs text-muted-foreground mt-0.5">{ev.subtitle}</p>}
+                                  {ev.type === 'overdue' && (
+                                    <button className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
+                                      onClick={() => { const p = overdue.find(x => ev.id === `ovd-${x._id}`); if (p) setRecordingPayment(p) }}>
+                                      <CalendarDays size={11} /> Collect now
+                                    </button>
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            )
+                          })}
                         </div>
                       )}
                     </CardBody>
@@ -1659,7 +1902,12 @@ export default function ContractDetail() {
                 <CardHeader title="Payment schedule"
                   subtitle={payments.length === 0 && depositCoveredInvoices.length === 0 ? 'No invoices yet' : `${paidGroups.length + depositCoveredInvoices.length} of ${invoiceGroups.length + depositCoveredInvoices.length} invoice${(invoiceGroups.length + depositCoveredInvoices.length) !== 1 ? 's' : ''} paid · ${formatMoney(totalPaid)} collected`}
                   action={
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
+                      {invoiceGroups.length === 0 && (
+                        <Button size="sm" onClick={() => autoInvoice.mutate()} disabled={autoInvoice.isPending}>
+                          <FilePlus size={13} /> {autoInvoice.isPending ? 'Generating…' : 'Auto-generate'}
+                        </Button>
+                      )}
                       {allUnpaid.length > 0 && <Button size="sm" variant="outline" onClick={() => setBulkTarget(allUnpaid)}><CalendarDays size={13} /> Pay multiple</Button>}
                       <Button size="sm" variant="outline" onClick={() => setShowInvoiceModal(true)}><FilePlus size={13} /> Invoice</Button>
                       <Button size="sm" variant="outline" onClick={() => setAddingPayment(true)}><Plus size={13} /> Add</Button>
@@ -1667,7 +1915,14 @@ export default function ContractDetail() {
                   }
                 />
                 {payments.length === 0 && depositCoveredInvoices.length === 0 ? (
-                  <CardBody><p className="text-sm text-muted-foreground text-center py-6">No payments yet. Use the <strong>Invoice</strong> button to generate an invoice.</p></CardBody>
+                  <CardBody>
+                    <div className="text-center py-8 space-y-3">
+                      <p className="text-sm text-muted-foreground">No invoices yet.</p>
+                      <Button onClick={() => autoInvoice.mutate()} disabled={autoInvoice.isPending}>
+                        <FilePlus size={14} /> {autoInvoice.isPending ? 'Generating…' : 'Auto-generate invoices'}
+                      </Button>
+                    </div>
+                  </CardBody>
                 ) : (
                   <Table>
                     <thead><tr><Th>#</Th><Th>Invoice</Th><Th>Period</Th><Th>Amount</Th><Th>Status</Th><Th /></tr></thead>
@@ -1679,7 +1934,7 @@ export default function ContractDetail() {
                           />
                           {unpaidGroups.map((g, i) => (
                             <InvoiceGroupRow key={g.invoiceId} g={g} index={i + 1}
-                              onRecord={() => { if (g.unpaidInGroup.length === 1) setRecordingPayment(g.unpaidInGroup[0]); else setBulkTarget(g.unpaidInGroup) }}
+                              onRecord={() => setInvoiceGroupTarget(g)}
                               onDelete={() => { if (confirm(`Delete all ${g.payments.length} payment entries for ${g.invoiceRef.invoiceNo}?`)) g.payments.forEach(p => deletePayment.mutate(p._id)) }}
                               onSendWhatsApp={() => { setSendingInvoiceId(g.invoiceId); sendInvoiceWhatsApp.mutate(g.invoiceId) }}
                               sendingInvoice={sendInvoiceWhatsApp.isPending && sendingInvoiceId === g.invoiceId}
@@ -1813,6 +2068,57 @@ export default function ContractDetail() {
           </div>
         </div>
 
+      {/* ── End contract modal ── */}
+      <Modal open={endModal} onClose={() => setEndModal(false)} title="End contract">
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            This will mark the contract as <strong>ended</strong>, free the unit, and cancel all future unpaid invoices.
+            Paid records and history are retained.
+          </p>
+
+          {/* Unpaid invoice warning */}
+          {invoiceGroups.filter(g => g.status !== 'paid').length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-900 px-3 py-2.5 text-xs text-amber-800 dark:text-amber-300">
+              {invoiceGroups.filter(g => g.status !== 'paid').length} unpaid invoice(s) will be cancelled when you end this contract.
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-semibold mb-1.5">Effective end date</label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={e => setEndDate(e.target.value)}
+              max={c.endDate ? c.endDate.slice(0, 10) : undefined}
+              className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            <p className="text-xs text-muted-foreground mt-1">Defaults to today. Set earlier for a backdated end.</p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold mb-1.5">Reason <span className="font-normal text-muted-foreground">(optional)</span></label>
+            <textarea
+              value={endReason}
+              onChange={e => setEndReason(e.target.value)}
+              placeholder="e.g. Customer vacated early, lease not renewed…"
+              rows={3}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="outline" onClick={() => setEndModal(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={!endDate || endContract.isPending}
+              onClick={() => endContract.mutate({ endDate, reason: endReason || undefined })}
+            >
+              {endContract.isPending ? 'Ending…' : 'End contract'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       {/* ── Modals ── */}
       <Modal open={!!recordingPayment} onClose={() => setRecordingPayment(null)} title="Record payment">
         {recordingPayment && (
@@ -1846,6 +2152,22 @@ export default function ContractDetail() {
             billingPeriod={c.billingPeriod}
             busy={bulkRecord.isPending}
             onSubmit={(body) => bulkRecord.mutate(body)}
+          />
+        )}
+      </Modal>
+
+      <Modal
+        open={invoiceGroupTarget !== null}
+        onClose={() => setInvoiceGroupTarget(null)}
+        title="Record payment"
+      >
+        {invoiceGroupTarget !== null && (
+          <InvoicePayForm
+            group={invoiceGroupTarget}
+            contractId={c._id}
+            busy={bulkRecord.isPending || partialRecord.isPending}
+            onSubmitFull={(body) => bulkRecord.mutate(body, { onSuccess: () => setInvoiceGroupTarget(null) })}
+            onSubmitPartial={(body) => partialRecord.mutate(body)}
           />
         )}
       </Modal>

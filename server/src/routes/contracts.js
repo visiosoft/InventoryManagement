@@ -75,9 +75,20 @@ async function deleteContractRecord(contract) {
     throw new Error('Cannot delete an active contract. End or cancel it first.');
   }
 
+  // Block deletion if any paid payments exist — financial history must be preserved.
+  const paidCount = await Payment.countDocuments({ contract: contract._id, status: 'paid' });
+  if (paidCount > 0) {
+    throw new Error(
+      `Cannot delete contract ${contract.contractNo}: it has ${paidCount} recorded payment(s). ` +
+      `Financial records must be retained. Archive or keep this contract instead.`
+    );
+  }
+
   const allUnitIds = contract.units?.length ? contract.units : [contract.unit];
   await Payment.deleteMany({ contract: contract._id });
   await Document.deleteMany({ contract: contract._id });
+  // Also remove invoices linked to this contract (only reachable here since no paid payments exist)
+  await Invoice.deleteMany({ orderNumber: contract.contractNo });
   await contract.deleteOne();
   await Promise.all(allUnitIds.map((uid) => syncUnitStatus(uid)));
 }
@@ -138,10 +149,15 @@ router.get('/:id', async (req, res) => {
   const contract = await populateAll(Contract.findById(req.params.id));
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
 
-  // Fill in any missing invoices (e.g. the deposit-covered last period that has no
-  // payment record and so gets skipped by the payment-record-only exists check).
+  // Auto-generate invoices ONLY for brand-new contracts that have no invoices yet.
+  // Once any invoice exists, do NOT auto-generate on GET — the user controls generation
+  // via the explicit "Auto-generate" button. This prevents deleted invoices from being
+  // recreated on every page load.
   if (!['ended', 'cancelled'].includes(contract.status)) {
-    try { await generateMissingPeriodInvoices(contract, new Date(contract.endDate)); } catch (_) { }
+    const existingInvoiceCount = await Invoice.countDocuments({ orderNumber: contract.contractNo });
+    if (existingInvoiceCount === 0) {
+      try { await generateMissingPeriodInvoices(contract, new Date(contract.endDate)); } catch (_) { }
+    }
   }
 
   // Sync payment record statuses from their linked invoices — fixes cases where payment
@@ -158,16 +174,57 @@ router.get('/:id', async (req, res) => {
     );
   }
 
-  const payments = await Payment.find({ contract: contract._id })
+  let payments = await Payment.find({ contract: contract._id })
     .populate('invoice', 'invoiceNo status dueDate total')
     .sort({ dueDate: 1 });
   const documents = await Document.find({ contract: contract._id }).sort({ createdAt: -1 });
   // Include all invoices so the payment schedule can show deposit-covered (net-0) ones
   // that have no payment records attached.
   const invoices = await Invoice.find({ orderNumber: contract.contractNo })
-    .select('invoiceNo status dueDate total paymentMade items subject')
+    .select('invoiceNo status dueDate invoiceDate total paymentMade items subject createdAt')
     .sort({ dueDate: 1 });
-  res.json({ contract, payments, documents, invoices });
+
+  // Reconcile: if an invoice's total exceeds the sum of its linked payment records
+  // (e.g. a Lock or extra item was added manually), create/update an adjustment record.
+  const unitNo = contract.unit?.unitNumber || '-';
+  const paymentsArr = [...payments];
+  for (const inv of invoices) {
+    const invId = String(inv._id);
+    const linked = paymentsArr.filter(p => {
+      const pid = p.invoice?._id ? String(p.invoice._id) : String(p.invoice);
+      return pid === invId;
+    });
+    const linkedSum = Math.round(linked.reduce((s, p) => s + p.amount, 0) * 100) / 100;
+    const diff = Math.round((inv.total - linkedSum) * 100) / 100;
+    const adjRecord = linked.find(p => /^Invoice adjustment/i.test(p.notes || ''));
+
+    if (diff > 0.01) {
+      if (adjRecord) {
+        if (Math.abs(adjRecord.amount - diff) > 0.01) {
+          await Payment.findByIdAndUpdate(adjRecord._id, { amount: diff, status: inv.status === 'paid' ? 'paid' : 'pending' });
+          adjRecord.amount = diff;
+        }
+      } else {
+        const newAdj = await Payment.create({
+          contract: contract._id,
+          invoice: inv._id,
+          amount: diff,
+          dueDate: linked[0]?.dueDate || inv.dueDate,
+          status: inv.status === 'paid' ? 'paid' : 'pending',
+          notes: `Invoice adjustment · Unit ${unitNo}`,
+        });
+        const populated = await Payment.findById(newAdj._id).populate('invoice', 'invoiceNo status dueDate total');
+        paymentsArr.push(populated);
+      }
+    } else if (diff < -0.01 && adjRecord) {
+      // Invoice total dropped — remove the stale adjustment
+      await Payment.findByIdAndDelete(adjRecord._id);
+      const idx = paymentsArr.findIndex(p => String(p._id) === String(adjRecord._id));
+      if (idx !== -1) paymentsArr.splice(idx, 1);
+    }
+  }
+
+  res.json({ contract, payments: paymentsArr, documents, invoices });
 });
 
 // Create a contract (draft). Generates the payment schedule and reserves the unit(s).
@@ -448,9 +505,25 @@ async function closeContract(req, res, status) {
   if (['ended', 'cancelled'].includes(contract.status)) {
     return res.status(409).json({ error: `Contract is already ${contract.status}` });
   }
+
+  const { endDate, reason } = req.body ?? {};
+  const effectiveEnd = endDate ? new Date(endDate) : new Date();
+
   contract.status = status;
+  // If an early end date was provided, update the stored end date
+  if (endDate && new Date(endDate) < new Date(contract.endDate)) {
+    contract.endDate = effectiveEnd;
+  }
+  // Record reason as a timeline note
+  if (reason) {
+    if (!contract.timeline) contract.timeline = [];
+    const actor = req.user?.name || req.user?.email || '';
+    contract.timeline.push({ at: new Date(), text: `Contract ${status}: ${reason}`, author: actor });
+  }
   await contract.save();
-  await Payment.deleteMany({ contract: contract._id, status: 'pending', dueDate: { $gt: new Date() } });
+
+  // Invoices and payments are intentionally left untouched — they remain as
+  // unpaid/overdue records until staff explicitly cancel or write them off.
 
   const nextContract = await Contract.findOne({
     unit: contract.unit,
@@ -600,7 +673,7 @@ router.delete('/:id', async (req, res) => {
 // ── Auto-invoice generator ────────────────────────────────────────────────────
 // Walks 4-week periods from contract start, skips periods that already have an
 // invoiced payment, creates Invoice + Payment records for the rest.
-async function generateMissingPeriodInvoices(contract, cutoffDate) {
+async function generateMissingPeriodInvoices(contract, cutoffDate, createdBy = '') {
   const fmt = (d) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   const contractStart = new Date(contract.startDate);
   const contractEnd = new Date(contract.endDate);
@@ -646,16 +719,52 @@ async function generateMissingPeriodInvoices(contract, cutoffDate) {
     const periodEnd = new Date(periodStart);
     periodEnd.setDate(periodEnd.getDate() + 28);
 
-    // Skip if any payment record OR invoice already covers this period
-    // (deposit-covered invoices have no payment record, so check both)
-    const existingPayment = await Payment.findOne({
+    // Skip if any payment record OR invoice already covers this period.
+    // Also verify the referenced invoice still exists — orphaned payment records
+    // (invoice was deleted) must not block re-generation.
+    const existingPaymentRaw = await Payment.findOne({
       contract: contract._id,
       invoice: { $ne: null },
       dueDate: { $gte: periodStart, $lt: periodEnd },
     });
+    const existingPayment = existingPaymentRaw
+      ? (await Invoice.exists({ _id: existingPaymentRaw.invoice }) ? existingPaymentRaw : null)
+      : null;
     const existingInvoice = !existingPayment
       ? await Invoice.findOne({ orderNumber: contract.contractNo, dueDate: { $gte: periodStart, $lt: periodEnd } })
       : null;
+
+    // Invoice exists but has no linked payment records → recreate the missing payment entries
+    // so the client can display and interact with the invoice.
+    if (!existingPayment && existingInvoice) {
+      const linkedPayment = await Payment.findOne({ contract: contract._id, invoice: existingInvoice._id });
+      if (!linkedPayment && existingInvoice.total > 0) {
+        const rentItem = (existingInvoice.items || []).find(it => /^Storage Rent/i.test(it.itemDetails || ''));
+        const depItem  = (existingInvoice.items || []).find(it => /^(Security deposit|Advance Rent)/i.test(it.itemDetails || ''));
+        const rentAmt  = rentItem ? Math.round(Number(rentItem.amount) * 100) / 100 : existingInvoice.total;
+        const unitNoLocal = contract.unit?.unitNumber || '-';
+        const fmt2 = (d) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+        const displayEnd2 = new Date(Math.min(periodEnd, contractEnd)); displayEnd2.setDate(displayEnd2.getDate() - 1);
+        if (rentAmt > 0) {
+          await Payment.create({
+            contract: contract._id, invoice: existingInvoice._id,
+            amount: rentAmt, dueDate: periodStart, status: existingInvoice.status === 'paid' ? 'paid' : 'pending',
+            notes: `Storage Rent ${fmt2(periodStart)} – ${fmt2(displayEnd2)} · Unit ${unitNoLocal}`,
+          });
+          generated++;
+        }
+        if (depItem && Number(depItem.amount) > 0) {
+          await Payment.create({
+            contract: contract._id, invoice: existingInvoice._id,
+            amount: Math.round(Number(depItem.amount) * 100) / 100, dueDate: periodStart,
+            status: existingInvoice.status === 'paid' ? 'paid' : 'pending',
+            notes: `Security deposit · Unit ${unitNoLocal}`,
+          });
+        }
+      }
+      periodStart.setDate(periodStart.getDate() + 28);
+      continue;
+    }
 
     if (!existingPayment && !existingInvoice) {
       const effectiveEnd = periodEnd < contractEnd ? periodEnd : contractEnd;
@@ -746,6 +855,7 @@ async function generateMissingPeriodInvoices(contract, cutoffDate) {
         total: invoiceTotal,
         paymentMade: 0,
         status: fullyByDeposit ? 'paid' : 'sent',
+        createdBy,
       });
 
       // One monthly payment record per invoice (not per week).
@@ -758,6 +868,7 @@ async function generateMissingPeriodInvoices(contract, cutoffDate) {
           dueDate: periodStart,
           status: 'pending',
           notes: `Storage Rent ${fmt(periodStart)} – ${fmt(displayEnd)} · Unit ${unitNo}`,
+          recordedBy: createdBy,
         });
       }
 
@@ -770,6 +881,7 @@ async function generateMissingPeriodInvoices(contract, cutoffDate) {
           dueDate: periodStart,
           status: 'pending',
           notes: `Security deposit · Unit ${unitNo}`,
+          recordedBy: createdBy,
         });
       }
 
@@ -796,8 +908,9 @@ router.post('/auto-invoices', async (req, res) => {
 
   let totalGenerated = 0;
   const results = [];
+  const actor = req.user?.name || req.user?.email || '';
   for (const contract of contracts) {
-    const n = await generateMissingPeriodInvoices(contract, cutoff);
+    const n = await generateMissingPeriodInvoices(contract, cutoff, actor);
     if (n > 0) { results.push({ contractNo: contract.contractNo, generated: n }); totalGenerated += n; }
   }
   res.json({ generated: totalGenerated, results });

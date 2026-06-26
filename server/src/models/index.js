@@ -313,6 +313,7 @@ const invoiceSchema = new Schema(
     terms: { type: String, default: '' },
     dueDate: { type: Date, required: true },
     salesperson: { type: String, default: '' },
+    createdBy: { type: String, default: '' },
     bankInformation: { type: String, default: '' },
     subject: { type: String, default: '' },
     customer: { type: Schema.Types.ObjectId, ref: 'Customer', required: true },
@@ -495,6 +496,7 @@ const paymentSchema = new Schema(
     method: { type: String, enum: ['cash', 'bank_transfer', 'card', 'other', ''], default: '' },
     status: { type: String, enum: ['pending', 'paid', 'overdue'], default: 'pending' },
     notes: { type: String, default: '' },
+    recordedBy: { type: String, default: '' },
   },
   { timestamps: true }
 );

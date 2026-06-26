@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { Pencil, Plus, Upload, ShieldCheck, Trash2 } from 'lucide-react'
+import { Pencil, Plus, Upload, ShieldCheck, Trash2, FileText, Receipt } from 'lucide-react'
 import { api, apiError } from '../lib/api'
-import type { AccessPerson, AppDocument, Contract, Customer } from '../lib/types'
+import type { AccessPerson, AppDocument, Contract, Customer, Invoice } from '../lib/types'
 import {
   Badge, Button, Card, CardBody, CardHeader, EmptyState,
   Modal, PageHeader, Spinner, Table, Td, Th,
@@ -48,7 +48,11 @@ export default function CustomerDetail() {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
 
-  const { data, isLoading } = useQuery<{ customer: Customer; contracts: Contract[]; documents: AppDocument[] }>({
+  type PaymentSummary = { contractId: string; contractNo: string; totalPaid: number; totalUnpaid: number }
+  const { data, isLoading } = useQuery<{
+    customer: Customer; contracts: Contract[]; documents: AppDocument[]
+    invoices: Invoice[]; paymentSummary: PaymentSummary[]
+  }>({
     queryKey: ['customer', id],
     queryFn: () => api.get(`/customers/${id}`).then((r) => r.data),
   })
@@ -81,7 +85,10 @@ export default function CustomerDetail() {
   }
 
   if (isLoading || !data) return <Spinner />
-  const { customer, contracts, documents } = data
+  const { customer, contracts, documents, invoices = [], paymentSummary = [] } = data
+
+  const totalPaidAll  = Math.round(paymentSummary.reduce((s, p) => s + p.totalPaid, 0) * 100) / 100
+  const totalUnpaidAll = Math.round(paymentSummary.reduce((s, p) => s + p.totalUnpaid, 0) * 100) / 100
 
   const allPhones = customer.phones?.filter(Boolean).length
     ? customer.phones!
@@ -168,8 +175,26 @@ export default function CustomerDetail() {
 
         {/* ── Right content ── */}
         <div className="space-y-4">
+          {/* Financial summary */}
+          {paymentSummary.length > 0 && (
+            <div className="grid grid-cols-2 gap-3">
+              <Card>
+                <CardBody>
+                  <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1"><Receipt size={11} /> Total collected</div>
+                  <div className="text-xl font-bold text-emerald-600">{formatMoney(totalPaidAll)}</div>
+                </CardBody>
+              </Card>
+              <Card>
+                <CardBody>
+                  <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1"><FileText size={11} /> Outstanding</div>
+                  <div className={`text-xl font-bold ${totalUnpaidAll > 0 ? 'text-amber-600' : 'text-muted-foreground'}`}>{formatMoney(totalUnpaidAll)}</div>
+                </CardBody>
+              </Card>
+            </div>
+          )}
+
           <Card>
-            <CardHeader title="Contracts" subtitle={`${contracts.length} total`} />
+            <CardHeader title="Contracts" subtitle={`${contracts.length} total · all periods`} />
             {contracts.length === 0 ? (
               <EmptyState message="No contracts for this customer yet." />
             ) : (
@@ -178,25 +203,71 @@ export default function CustomerDetail() {
                   <tr>
                     <Th>Contract</Th>
                     <Th>Unit</Th>
-                    <Th>Billing</Th>
-                    <Th>Rate</Th>
+                    <Th>Rate/mo</Th>
                     <Th>Term</Th>
+                    <Th>Collected</Th>
+                    <Th>Outstanding</Th>
                     <Th>Status</Th>
                   </tr>
                 </thead>
                 <tbody>
-                  {contracts.map((c) => (
-                    <tr key={c._id} className="hover:bg-muted/50">
+                  {contracts.map((c) => {
+                    const ps = paymentSummary.find(p => p.contractNo === c.contractNo)
+                    return (
+                      <tr key={c._id} className="hover:bg-muted/50">
+                        <Td>
+                          <Link to={`/contracts/${c._id}`} className="font-medium text-primary hover:underline">
+                            {c.contractNo}
+                          </Link>
+                        </Td>
+                        <Td>{c.unit?.unitNumber}{c.unit?.sizeSqf != null ? ` · ${c.unit.sizeSqf} sqft` : ''}</Td>
+                        <Td>{formatMoney(c.rate)}</Td>
+                        <Td className="whitespace-nowrap text-xs">{formatDate(c.startDate)} → {formatDate(c.endDate)}</Td>
+                        <Td className="text-emerald-700 font-medium">{ps ? formatMoney(ps.totalPaid) : '—'}</Td>
+                        <Td className={ps?.totalUnpaid ? 'text-amber-700 font-medium' : 'text-muted-foreground'}>{ps ? formatMoney(ps.totalUnpaid) : '—'}</Td>
+                        <Td><Badge tone={contractStatusTone[c.status]}>{statusLabel(c.status)}</Badge></Td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </Table>
+            )}
+          </Card>
+
+          {/* Invoice history across all contracts */}
+          <Card>
+            <CardHeader title="Invoice history" subtitle={`${invoices.length} invoice${invoices.length !== 1 ? 's' : ''} across all contracts`} />
+            {invoices.length === 0 ? (
+              <EmptyState message="No invoices yet." />
+            ) : (
+              <Table>
+                <thead>
+                  <tr>
+                    <Th>Invoice</Th>
+                    <Th>Contract</Th>
+                    <Th>Due</Th>
+                    <Th>Total</Th>
+                    <Th>Paid</Th>
+                    <Th>Status</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {invoices.map((inv) => (
+                    <tr key={inv._id} className="hover:bg-muted/50">
                       <Td>
-                        <Link to={`/contracts/${c._id}`} className="font-medium text-primary hover:underline">
-                          {c.contractNo}
+                        <Link to={`/invoices/${inv._id}`} className="font-medium text-primary hover:underline text-sm">
+                          {inv.invoiceNo}
                         </Link>
                       </Td>
-                      <Td>{c.unit?.unitNumber}{c.unit?.sizeSqf != null ? ` (${c.unit.sizeSqf} sqft)` : ''}</Td>
-                      <Td className="capitalize">{c.billingPeriod}</Td>
-                      <Td>{formatMoney(c.rate)}</Td>
-                      <Td className="whitespace-nowrap text-xs">{formatDate(c.startDate)} → {formatDate(c.endDate)}</Td>
-                      <Td><Badge tone={contractStatusTone[c.status]}>{statusLabel(c.status)}</Badge></Td>
+                      <Td className="text-xs text-muted-foreground">{inv.orderNumber}</Td>
+                      <Td className="text-xs">{formatDate(inv.dueDate)}</Td>
+                      <Td className="font-medium">{formatMoney(inv.total)}</Td>
+                      <Td className="text-emerald-700">{formatMoney(inv.paymentMade ?? 0)}</Td>
+                      <Td>
+                        <Badge tone={inv.status === 'paid' ? 'green' : inv.status === 'partial' ? 'amber' : inv.status === 'cancelled' ? 'gray' : 'blue'}>
+                          {inv.status}
+                        </Badge>
+                      </Td>
                     </tr>
                   ))}
                 </tbody>

@@ -70,15 +70,63 @@ router.get('/', async (req, res) => {
   res.json(payments);
 });
 
+// Partial payment against a single invoice:
+// Replaces all unpaid records with: one paid record (partial) + one pending record (remainder).
+router.post('/invoice-partial', async (req, res) => {
+  const { invoiceId, contractId, amount, method, paidDate, notes } = req.body;
+  if (!invoiceId || !contractId || !amount)
+    return res.status(400).json({ error: 'invoiceId, contractId, amount are required' });
+
+  const invoice = await Invoice.findById(invoiceId);
+  if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+
+  const partialAmt = Math.round(Number(amount) * 100) / 100;
+  const remaining  = Math.round((invoice.total - partialAmt) * 100) / 100;
+  if (partialAmt <= 0) return res.status(400).json({ error: 'Amount must be greater than 0' });
+
+  const existing = await Payment.find({ contract: contractId, invoice: invoiceId, status: { $ne: 'paid' } });
+  const dueDate = existing[0]?.dueDate || invoice.dueDate;
+  const unitNote = existing.find(p => p.notes)?.notes || '';
+  const unitMatch = unitNote.match(/Unit (.+)$/);
+  const unitNo = unitMatch ? unitMatch[1] : '-';
+
+  await Payment.deleteMany({ contract: contractId, invoice: invoiceId, status: { $ne: 'paid' } });
+
+  const actor = req.user?.name || req.user?.email || '';
+  await Payment.create({
+    contract: contractId, invoice: invoiceId,
+    amount: partialAmt, dueDate,
+    status: 'paid', method: method || 'cash',
+    paidDate: paidDate ? new Date(paidDate) : new Date(),
+    notes: notes || `Partial payment · Unit ${unitNo}`,
+    recordedBy: actor,
+  });
+
+  if (remaining > 0.01) {
+    await Payment.create({
+      contract: contractId, invoice: invoiceId,
+      amount: remaining, dueDate,
+      status: new Date(dueDate) < new Date() ? 'overdue' : 'pending',
+      notes: `Remaining balance · Unit ${unitNo}`,
+    });
+  }
+
+  const newStatus = remaining > 0.01 ? 'partial' : 'paid';
+  await Invoice.findByIdAndUpdate(invoiceId, { status: newStatus, paymentMade: partialAmt });
+
+  res.json({ ok: true, paid: partialAmt, remaining });
+});
+
 // Record multiple payments at once (bulk pay)
 router.post('/bulk-record', async (req, res) => {
   const { paymentIds, method, paidDate, notes } = req.body;
   if (!Array.isArray(paymentIds) || paymentIds.length === 0)
     return res.status(400).json({ error: 'paymentIds array is required' });
   const date = paidDate ? new Date(paidDate) : new Date();
+  const actor = req.user?.name || req.user?.email || '';
   const result = await Payment.updateMany(
     { _id: { $in: paymentIds }, status: { $ne: 'paid' } },
-    { $set: { status: 'paid', method: method || 'cash', paidDate: date, ...(notes ? { notes } : {}) } }
+    { $set: { status: 'paid', method: method || 'cash', paidDate: date, recordedBy: actor, ...(notes ? { notes } : {}) } }
   );
   res.json({ ok: true, updated: result.modifiedCount });
 });
@@ -108,6 +156,7 @@ router.post('/:id/record', async (req, res) => {
   payment.status = 'paid';
   payment.method = method || 'cash';
   payment.paidDate = paidDate ? new Date(paidDate) : new Date();
+  payment.recordedBy = req.user?.name || req.user?.email || '';
   if (notes) payment.notes = notes;
   await payment.save();
   res.json(await populateAll(Payment.findById(payment._id)));
