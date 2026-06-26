@@ -1,10 +1,10 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { Download, Plus, Upload } from 'lucide-react'
 import { api, apiError, invoiceApi, productApi } from '../lib/api'
 import type { Customer, Invoice, InvoiceAttachment, InvoiceItem, InvoicePaymentEntry, InvoiceStatus, Product, Unit } from '../lib/types'
-import { Badge, Button, Card, CornerRibbon, EmptyState, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, Th, statusLabel } from '../components/ui'
+import { Badge, Button, Card, CornerRibbon, EmptyState, Field, Input, Modal, PageHeader, Pagination, Select, Spinner, Table, Td, Th, statusLabel } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
 
 const INVOICE_STATUSES: InvoiceStatus[] = ['draft', 'sent', 'partial', 'paid', 'overdue', 'cancelled']
@@ -553,21 +553,29 @@ export default function Invoices() {
     const qc = useQueryClient()
     const [search, setSearch] = useState('')
     const [status, setStatus] = useState('')
+    const [page, setPage]     = useState(1)
+    const [limit, setLimit]   = useState(25)
     const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([])
     const [adding, setAdding] = useState(false)
     const [editing, setEditing] = useState<Invoice | null>(null)
     const [paying, setPaying] = useState<Invoice | null>(null)
     const [error, setError] = useState('')
 
+    useEffect(() => { setPage(1) }, [search, status, limit])
+
     const { data: customers } = useQuery<Customer[]>({
         queryKey: ['customers', ''],
-        queryFn: () => api.get('/customers').then((r) => r.data),
+        queryFn: () => api.get('/customers', { params: { limit: 500 } }).then((r) => r.data.data ?? r.data),
     })
 
-    const { data: invoices, isLoading } = useQuery<Invoice[]>({
-        queryKey: ['invoices', search, status],
-        queryFn: () => invoiceApi.list({ search: search || undefined, status: status || undefined }),
+    type PagedInvoices = { data: Invoice[]; total: number; page: number; pages: number; limit: number }
+    const { data: invoiceData, isLoading } = useQuery<PagedInvoices>({
+        queryKey: ['invoices', search, status, page, limit],
+        queryFn: () => invoiceApi.list({ search: search || undefined, status: status || undefined, page, limit }),
+        staleTime: 30_000,
+        placeholderData: (prev) => prev,
     })
+    const invoices = invoiceData?.data ?? []
 
     const createInvoice = useMutation({
         mutationFn: (body: Record<string, unknown>) => invoiceApi.create(body),
@@ -606,7 +614,7 @@ export default function Invoices() {
         onError: (e) => setError(apiError(e)),
     })
 
-    const visibleInvoiceIds = (invoices || []).map((inv) => inv._id)
+    const visibleInvoiceIds = invoices.map((inv) => inv._id)
     const allVisibleSelected = visibleInvoiceIds.length > 0 && visibleInvoiceIds.every((id) => selectedInvoiceIds.includes(id))
 
     function toggleInvoiceSelection(invoiceId: string) {
@@ -651,7 +659,7 @@ export default function Invoices() {
         <div>
             <PageHeader
                 title="Invoices & Quotes"
-                subtitle={`${invoices?.length ?? 0} records`}
+                subtitle={invoiceData ? `${invoiceData.total} record${invoiceData.total !== 1 ? 's' : ''}` : ''}
                 action={
                     <div className="flex gap-2">
                         {selectedInvoiceIds.length > 0 && (
@@ -700,7 +708,7 @@ export default function Invoices() {
                             </tr>
                         </thead>
                         <tbody>
-                            {(invoices || []).map((inv) => (
+                            {invoices.map((inv) => (
                                 <tr key={inv._id} className="hover:bg-muted/50">
                                     <Td>
                                         <input
@@ -738,7 +746,11 @@ export default function Invoices() {
                             ))}
                         </tbody>
                     </Table>
-                    {(invoices || []).length === 0 && <EmptyState message="No invoices found." />}
+                    {invoices.length === 0 && <EmptyState message="No invoices found." />}
+                    {invoiceData && invoiceData.pages > 1 && (
+                      <Pagination page={invoiceData.page} pages={invoiceData.pages} total={invoiceData.total} limit={limit}
+                        onPage={setPage} onLimit={setLimit} />
+                    )}
                 </Card>
             )}
 

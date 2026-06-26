@@ -4,7 +4,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { FileText, FileBadge, Receipt, Plus, Search, Trash2, UserCheck } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import type { Customer } from '../lib/types'
-import { Button, Card, EmptyState, Input, Modal, PageHeader, Spinner, Table, Td, Th } from '../components/ui'
+import { Button, Card, EmptyState, Input, Modal, PageHeader, Pagination, Spinner, Table, Td, Th } from '../components/ui'
 import { AddCustomerModal } from '../components/AddCustomerModal'
 import { formatDate } from '../lib/utils'
 
@@ -16,7 +16,9 @@ export default function Customers() {
   const location = useLocation()
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
-  const [sort, setSort] = useState('date_added_desc')
+  const [sort, setSort]   = useState('date_added_desc')
+  const [page, setPage]   = useState(1)
+  const [limit, setLimit] = useState(25)
   const [adding, setAdding] = useState(false)
   const [prefill, setPrefill] = useState<Partial<Customer> | null>(null)
   const [newCustomer, setNewCustomer] = useState<Customer | null>(null)
@@ -32,10 +34,16 @@ export default function Customers() {
     }
   }, [location.state])
 
-  const { data: customers, isLoading } = useQuery<Customer[]>({
-    queryKey: ['customers', search, sort],
-    queryFn: () => api.get('/customers', { params: { search, sort } }).then((r) => r.data),
+  useEffect(() => { setPage(1) }, [search, sort, limit])
+
+  type PagedCustomers = { data: Customer[]; total: number; page: number; pages: number; limit: number }
+  const { data, isLoading } = useQuery<PagedCustomers>({
+    queryKey: ['customers', search, sort, page, limit],
+    queryFn: () => api.get('/customers', { params: { search, sort, page, limit } }).then((r) => r.data),
+    staleTime: 30_000,
+    placeholderData: (prev) => prev,
   })
+  const customers = data?.data ?? []
 
   async function onDeleteCustomer(c: Customer) {
     if (!window.confirm(`Delete customer ${c.fullName}? This cannot be undone.`)) return
@@ -60,7 +68,7 @@ export default function Customers() {
     <div>
       <PageHeader
         title="Customers"
-        subtitle={`${customers?.length ?? 0} customers`}
+        subtitle={data ? `${data.total} customer${data.total !== 1 ? 's' : ''}` : ''}
         action={<Button onClick={() => { setPrefill(null); setAdding(true) }}><Plus size={15} /> Add customer</Button>}
       />
 
@@ -96,7 +104,7 @@ export default function Customers() {
           <Table>
             <thead><tr><Th>Name</Th><Th>Client ID</Th><Th>Email</Th><Th>Phone</Th><Th>Nationality</Th><Th>Since</Th><Th /></tr></thead>
             <tbody>
-              {(customers || []).map((c) => (
+              {customers.map((c) => (
                 <tr key={c._id} className="hover:bg-muted/50">
                   <Td>
                     <Link to={`/customers/${c._id}`} className="font-medium text-primary hover:underline">{c.fullName}</Link>
@@ -121,7 +129,11 @@ export default function Customers() {
               ))}
             </tbody>
           </Table>
-          {(customers || []).length === 0 && <EmptyState message="No customers yet. Add your first customer." />}
+          {customers.length === 0 && <EmptyState message="No customers yet. Add your first customer." />}
+          {data && data.pages > 1 && (
+            <Pagination page={data.page} pages={data.pages} total={data.total} limit={limit}
+              onPage={setPage} onLimit={setLimit} />
+          )}
         </Card>
       )}
 

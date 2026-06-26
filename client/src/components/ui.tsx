@@ -273,6 +273,60 @@ export function Spinner() {
   )
 }
 
+export function Pagination({
+  page, pages, total, limit, onPage, onLimit,
+}: {
+  page: number; pages: number; total: number; limit: number
+  onPage: (p: number) => void; onLimit?: (l: number) => void
+}) {
+  if (pages <= 0) return null
+  const from = total === 0 ? 0 : (page - 1) * limit + 1
+  const to   = Math.min(page * limit, total)
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t text-sm">
+      <span className="text-muted-foreground text-xs">
+        {total === 0 ? 'No results' : `${from}–${to} of ${total}`}
+      </span>
+      <div className="flex items-center gap-2">
+        {onLimit && (
+          <select
+            value={limit}
+            onChange={e => onLimit(Number(e.target.value))}
+            className="h-7 rounded border border-border bg-background px-1.5 text-xs focus:outline-none"
+          >
+            {[25, 50, 100].map(n => <option key={n} value={n}>{n} / page</option>)}
+          </select>
+        )}
+        <button
+          onClick={() => onPage(page - 1)} disabled={page <= 1}
+          className="h-7 w-7 rounded border border-border bg-background text-xs disabled:opacity-40 hover:bg-muted transition-colors"
+        >‹</button>
+        {Array.from({ length: pages }, (_, i) => i + 1)
+          .filter(p => p === 1 || p === pages || Math.abs(p - page) <= 1)
+          .reduce<(number | '…')[]>((acc, p, i, arr) => {
+            if (i > 0 && p - (arr[i - 1] as number) > 1) acc.push('…')
+            acc.push(p); return acc
+          }, [])
+          .map((p, i) =>
+            p === '…'
+              ? <span key={`e${i}`} className="px-1 text-muted-foreground text-xs">…</span>
+              : <button key={p} onClick={() => onPage(p as number)}
+                  className={`h-7 w-7 rounded border text-xs transition-colors ${
+                    p === page
+                      ? 'border-primary bg-primary text-primary-foreground font-medium'
+                      : 'border-border bg-background hover:bg-muted'
+                  }`}>{p}</button>
+          )
+        }
+        <button
+          onClick={() => onPage(page + 1)} disabled={page >= pages}
+          className="h-7 w-7 rounded border border-border bg-background text-xs disabled:opacity-40 hover:bg-muted transition-colors"
+        >›</button>
+      </div>
+    </div>
+  )
+}
+
 export function PageHeader({ title, subtitle, action }: { title: string; subtitle?: ReactNode; action?: ReactNode }) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3 pb-5">

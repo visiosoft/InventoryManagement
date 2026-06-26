@@ -34,8 +34,15 @@ router.get('/', async (req, res) => {
   else if (sortKey === 'name_desc') sort = { fullName: -1, _id: -1 };
   else if (sortKey === 'date_added_asc') sort = { createdAt: 1, _id: 1 };
 
-  const customers = await Customer.find(filter).sort(sort);
-  res.json(customers);
+  const page  = Math.max(1, Number(req.query.page)  || 1);
+  const limit = Math.min(Math.max(1, Number(req.query.limit) || 25), 100);
+  const skip  = (page - 1) * limit;
+
+  const [customers, total] = await Promise.all([
+    Customer.find(filter).sort(sort).skip(skip).limit(limit),
+    Customer.countDocuments(filter),
+  ]);
+  res.json({ data: customers, total, page, pages: Math.ceil(total / limit), limit });
 });
 
 router.get('/:id', async (req, res) => {

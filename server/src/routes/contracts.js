@@ -114,8 +114,15 @@ router.get('/', async (req, res) => {
     if (matchedCustomers.length) or.push({ customer: { $in: matchedCustomers.map((c) => c._id) } });
     filter.$or = or;
   }
-  const contracts = await populateAll(Contract.find(filter)).sort({ createdAt: -1 });
-  res.json(contracts);
+  const page  = Math.max(1, Number(req.query.page)  || 1);
+  const limit = Math.min(Math.max(1, Number(req.query.limit) || 25), 100);
+  const skip  = (page - 1) * limit;
+
+  const [contracts, total] = await Promise.all([
+    populateAll(Contract.find(filter)).sort({ createdAt: -1 }).skip(skip).limit(limit),
+    Contract.countDocuments(filter),
+  ]);
+  res.json({ data: contracts, total, page, pages: Math.ceil(total / limit), limit });
 });
 
 // Latest notes across all contracts (for dashboard)

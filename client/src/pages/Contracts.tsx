@@ -1,64 +1,48 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { Plus, Search, Trash2, X } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import type { Contract } from '../lib/types'
 import {
-  Badge, Button, Card, EmptyState, Input, Modal, PageHeader,
+  Badge, Button, Card, EmptyState, Input, Modal, PageHeader, Pagination,
   Select, Spinner, Table, Td, Th,
   contractStatusTone, statusLabel,
 } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
 
 const STATUSES = ['draft', 'pending_signature', 'active', 'ended', 'cancelled']
+type PagedContracts = { data: Contract[]; total: number; page: number; pages: number; limit: number }
 
 export default function Contracts() {
   const qc = useQueryClient()
 
-  // Filters
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
   const [billing, setBilling] = useState('')
   const [floor, setFloor] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
+  const [page, setPage]   = useState(1)
+  const [limit, setLimit] = useState(25)
 
-  // Delete state
+  // Reset to page 1 when any filter changes
+  useEffect(() => { setPage(1) }, [search, status, billing, floor, from, to, limit])
+
   const [deleteTarget, setDeleteTarget] = useState<Contract | null>(null)
   const [deleteError, setDeleteError] = useState('')
   const [selectedContractIds, setSelectedContractIds] = useState<string[]>([])
 
-  const { data: contracts, isLoading } = useQuery<Contract[]>({
-    queryKey: ['contracts'],
-    queryFn: () => api.get('/contracts').then((r) => r.data),
+  const params = { search: search || undefined, status: status || undefined, billing: billing || undefined, floor: floor || undefined, from: from || undefined, to: to || undefined, page, limit }
+
+  const { data, isLoading } = useQuery<PagedContracts>({
+    queryKey: ['contracts', params],
+    queryFn: () => api.get('/contracts', { params }).then((r) => r.data),
+    staleTime: 30_000,
+    placeholderData: (prev) => prev,
   })
 
-  // All filtering done client-side so every filter combination is instant
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    const fromD = from ? new Date(from) : null
-    const toD = to ? new Date(to + 'T23:59:59') : null
-    return (contracts || []).filter((c) => {
-      if (status && c.status !== status) return false
-      if (billing && c.billingPeriod !== billing) return false
-      if (floor && c.unit?.floor !== floor) return false
-      if (fromD && new Date(c.startDate) < fromD) return false
-      if (toD && new Date(c.startDate) > toD) return false
-      if (q) {
-        const haystack = [
-          c.contractNo,
-          c.customer?.fullName,
-          c.unit?.unitNumber,
-          String(c.unit?.sizeSqf ?? ''),
-          ...(c.units || []).map((u) => u.unitNumber),
-        ].join(' ').toLowerCase()
-        if (!haystack.includes(q)) return false
-      }
-      return true
-    })
-  }, [contracts, search, status, billing, floor, from, to])
-
+  const contracts = data?.data ?? []
   const hasFilters = search || status || billing || floor || from || to
   const clearFilters = () => {
     setSearch(''); setStatus(''); setBilling(''); setFloor(''); setFrom(''); setTo('')
@@ -85,7 +69,7 @@ export default function Contracts() {
     onError: (e) => setDeleteError(apiError(e)),
   })
 
-  const visibleContractIds = filtered.map((contract) => contract._id)
+  const visibleContractIds = contracts.map((c) => c._id)
   const allVisibleSelected = visibleContractIds.length > 0 && visibleContractIds.every((id) => selectedContractIds.includes(id))
 
   function toggleContractSelection(contractId: string) {
@@ -118,7 +102,7 @@ export default function Contracts() {
     <div>
       <PageHeader
         title="Contracts"
-        subtitle={`${filtered.length}${hasFilters ? ` of ${contracts?.length ?? 0}` : ''} contracts`}
+        subtitle={data ? `${data.total} contract${data.total !== 1 ? 's' : ''}${hasFilters ? ' (filtered)' : ''}` : ''}
         action={
           <div className="flex gap-2">
             {selectedContractIds.length > 0 && (
@@ -201,7 +185,7 @@ export default function Contracts() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((c) => {
+              {contracts.map((c) => {
                 const allUnits = c.units?.length ? c.units : [c.unit]
                 return (
                   <tr key={c._id} className="hover:bg-muted/50">
@@ -256,8 +240,12 @@ export default function Contracts() {
               })}
             </tbody>
           </Table>
-          {filtered.length === 0 && (
+          {contracts.length === 0 && (
             <EmptyState message={hasFilters ? 'No contracts match the filters.' : 'No contracts yet. Create your first contract.'} />
+          )}
+          {data && data.pages > 1 && (
+            <Pagination page={data.page} pages={data.pages} total={data.total} limit={limit}
+              onPage={setPage} onLimit={(l) => setLimit(l)} />
           )}
         </Card>
       )}

@@ -152,8 +152,15 @@ router.get('/', async (req, res) => {
         const re = new RegExp(escRegex(String(req.query.search)), 'i');
         filter.$or = [{ invoiceNo: re }, { orderNumber: re }, { subject: re }, { salesperson: re }];
     }
-    const invoices = await Invoice.find(filter).populate('customer', 'fullName email').sort({ createdAt: -1 });
-    res.json(invoices);
+    const page  = Math.max(1, Number(req.query.page)  || 1);
+    const limit = Math.min(Math.max(1, Number(req.query.limit) || 25), 100);
+    const skip  = (page - 1) * limit;
+
+    const [invoices, total] = await Promise.all([
+      Invoice.find(filter).populate('customer', 'fullName email').sort({ createdAt: -1 }).skip(skip).limit(limit),
+      Invoice.countDocuments(filter),
+    ]);
+    res.json({ data: invoices, total, page, pages: Math.ceil(total / limit), limit });
 });
 
 router.get('/:id', async (req, res) => {

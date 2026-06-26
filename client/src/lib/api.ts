@@ -83,7 +83,7 @@ export const integrationApi = {
 }
 
 export type QuoteQuery = { search?: string; status?: string; customer?: string }
-export type InvoiceQuery = { search?: string; status?: string; customer?: string }
+export type InvoiceQuery = { search?: string; status?: string; customer?: string; page?: number; limit?: number }
 
 export const quoteApi = {
   list: (params: QuoteQuery) => api.get<Quote[]>('/quotes', { params }).then((r) => r.data),
@@ -95,7 +95,7 @@ export const quoteApi = {
 }
 
 export const invoiceApi = {
-  list: (params: InvoiceQuery) => api.get<Invoice[]>('/invoices', { params }).then((r) => r.data),
+  list: (params: InvoiceQuery) => api.get<{ data: Invoice[]; total: number; page: number; pages: number; limit: number }>('/invoices', { params }).then((r) => r.data),
   get: (id: string) => api.get<Invoice>(`/invoices/${id}`).then((r) => r.data),
   create: (body: Record<string, unknown>) => api.post<Invoice>('/invoices', body).then((r) => r.data),
   update: (id: string, body: Record<string, unknown>) => api.put<Invoice>(`/invoices/${id}`, body).then((r) => r.data),
