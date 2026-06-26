@@ -123,27 +123,32 @@ export interface VendorSummary {
   monthlyData: { month: string; bills: number; paid: number }[]
 }
 
-export type VendorQuery = { search?: string; status?: string; category?: string }
-export type PurchaseQuery = { search?: string; status?: string; vendor?: string }
+export type PagedResponse<T> = { data: T[]; total: number; page: number; pages: number; limit: number }
+
+export type VendorQuery = { search?: string; status?: string; category?: string; page?: number; limit?: number }
+export type PurchaseQuery = { search?: string; status?: string; vendor?: string; page?: number; limit?: number }
 export type ExpenseQuery = {
   search?: string
   status?: string
   vendor?: string
+  vendorName?: string
   expenseAccount?: string
   from?: string
   to?: string
+  page?: number
+  limit?: number
 }
 
 export const vendorApi = {
-  list: (params: VendorQuery) => api.get<Vendor[]>('/vendors', { params }).then((r) => r.data),
+  list: (params: VendorQuery) => api.get<PagedResponse<Vendor>>('/vendors', { params }).then((r) => r.data),
   get: (id: string) => api.get<Vendor>(`/vendors/${id}`).then((r) => r.data),
   create: (body: Record<string, unknown>) => api.post<Vendor>('/vendors', body).then((r) => r.data),
   update: (id: string, body: Record<string, unknown>) => api.put<Vendor>(`/vendors/${id}`, body).then((r) => r.data),
   remove: (id: string) => api.delete<{ ok: true }>(`/vendors/${id}`).then((r) => r.data),
-  importCsv: (form: FormData) =>
+  importCsv: (form: FormData, mode: 'skip' | 'update' = 'skip') =>
     api
       .post<{ ok: boolean; summary: { created: number; updated: number; skipped: number; errors: number; total: number } }>(
-        '/vendors/import/csv',
+        `/vendors/import/csv?mode=${mode}`,
         form,
         { headers: { 'Content-Type': 'multipart/form-data' } }
       )
@@ -153,7 +158,7 @@ export const vendorApi = {
 }
 
 export const purchaseApi = {
-  list: (params: PurchaseQuery) => api.get<Purchase[]>('/purchases', { params }).then((r) => r.data),
+  list: (params: PurchaseQuery) => api.get<PagedResponse<Purchase>>('/purchases', { params }).then((r) => r.data),
   get: (id: string) => api.get<Purchase>(`/purchases/${id}`).then((r) => r.data),
   create: (body: Record<string, unknown>) => api.post<Purchase>('/purchases', body).then((r) => r.data),
   update: (id: string, body: Record<string, unknown>) => api.put<Purchase>(`/purchases/${id}`, body).then((r) => r.data),
@@ -166,23 +171,37 @@ export const purchaseApi = {
     api.post<Purchase>(`/purchases/${id}/record-payment`, body).then((r) => r.data),
   deletePayment: (id: string, idx: number) =>
     api.delete<Purchase>(`/purchases/${id}/payments/${idx}`).then((r) => r.data),
+  importCsv: (form: FormData, mode: 'skip' | 'update' = 'skip') =>
+    api
+      .post<{ ok: boolean; summary: { created: number; updated: number; skipped: number; errors: number; vendorLinked: number; total: number } }>(
+        `/purchases/import/csv?mode=${mode}`,
+        form,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      )
+      .then((r) => r.data),
 }
 
 export const expenseApi = {
-  list: (params: ExpenseQuery) => api.get<Expense[]>('/expenses', { params }).then((r) => r.data),
+  list: (params: ExpenseQuery) => api.get<PagedResponse<Expense>>('/expenses', { params }).then((r) => r.data),
   get: (id: string) => api.get<Expense>(`/expenses/${id}`).then((r) => r.data),
   create: (body: Record<string, unknown>) => api.post<Expense>('/expenses', body).then((r) => r.data),
   update: (id: string, body: Record<string, unknown>) => api.put<Expense>(`/expenses/${id}`, body).then((r) => r.data),
   updateStatus: (id: string, status: string) => api.patch<Expense>(`/expenses/${id}/status`, { status }).then((r) => r.data),
   remove: (id: string) => api.delete<{ ok: true }>(`/expenses/${id}`).then((r) => r.data),
-  importCsv: (form: FormData) =>
+  importCsv: (form: FormData, mode: 'skip' | 'update' = 'skip') =>
     api
       .post<{ ok: boolean; summary: { created: number; updated: number; skipped: number; errors: number; vendorLinked: number; total: number } }>(
-        '/expenses/import/csv',
+        `/expenses/import/csv?mode=${mode}`,
         form,
         { headers: { 'Content-Type': 'multipart/form-data' } }
       )
       .then((r) => r.data),
+  relinkVendors: () =>
+    api.post<{ ok: boolean; linked: number; checked: number }>('/expenses/relink-vendors').then((r) => r.data),
+  uploadAttachments: (id: string, form: FormData) =>
+    api.post(`/expenses/${id}/attachments`, form, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
+  removeAttachment: (id: string, index: number) =>
+    api.delete(`/expenses/${id}/attachments/${index}`).then((r) => r.data),
 }
 
 export type WhatsAppMsg = {

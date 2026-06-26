@@ -230,7 +230,15 @@ export interface PurchaseItem {
   quantity: number
   rate: number
   discountPct: number
+  discountType?: string
+  discount?: number
+  discountAmount?: number
   amount: number
+  taxAmount?: number
+  account?: string
+  accountCode?: string
+  sku?: string
+  isBillable?: boolean
 }
 
 export interface PurchaseAttachment {
@@ -245,14 +253,17 @@ export interface PurchaseAttachment {
 export interface Purchase {
   _id: string
   purchaseNo: string
+  billId?: string
   orderNumber?: string
+  purchaseOrderRef?: string
   purchaseDate: string
   terms?: string
-  dueDate: string
+  dueDate?: string
   purchaser?: string
   bankInformation?: string
   subject?: string
-  vendor: { _id: string; contactName: string; companyName?: string; email?: string; phone?: string }
+  vendor?: { _id: string; contactName: string; companyName?: string; email?: string; phone?: string }
+  vendorName?: string
   items: PurchaseItem[]
   vendorNotes?: string
   subTotal: number
@@ -262,6 +273,28 @@ export interface Purchase {
   termsAndConditions?: string
   attachments: PurchaseAttachment[]
   status: PurchaseStatus
+  categories?: string[]
+  source?: string
+  currencyCode?: string
+  exchangeRate?: number
+  taxAmount?: number
+  taxName?: string
+  taxPercentage?: number
+  taxType?: string
+  adjustment?: number
+  adjustmentDescription?: string
+  billType?: string
+  isInclusiveTax?: boolean
+  entityDiscountPercent?: number
+  entityDiscountAmount?: number
+  customerName?: string
+  projectName?: string
+  submittedBy?: string
+  approvedBy?: string
+  submittedDate?: string
+  approvedDate?: string
+  tinNumber?: string
+  legalName?: string
   createdAt?: string
 }
 
@@ -305,6 +338,7 @@ export interface Expense {
   categories?: string[]
   status: ExpenseStatus
   source?: 'manual' | 'import_csv'
+  attachments?: PurchaseAttachment[]
   importedAt?: string
   createdAt?: string
 }

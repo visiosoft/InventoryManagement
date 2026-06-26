@@ -44,26 +44,24 @@ function driveClient() {
   return google.drive({ version: 'v3', auth });
 }
 
-// In-memory cache: customerName → Drive folder ID
+// In-memory cache: key → Drive folder ID
 const folderCache = new Map();
 
 function safeFolderName(name) {
   return String(name || 'Unknown').replace(/[/\\?%*:|"<>]/g, '-').trim() || 'Unknown';
 }
 
-async function getOrCreateCustomerFolder(drive, customerName) {
-  const key = safeFolderName(customerName);
+async function getOrCreateFolder(drive, name, parentId) {
+  const key = `${parentId}::${name}`;
   if (folderCache.has(key)) return folderCache.get(key);
 
-  const parentId = process.env.GOOGLE_DRIVE_FOLDER_ID;
-  const q = `name='${key.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`;
-
+  const q = `name='${name.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`;
   const list = await drive.files.list({ q, fields: 'files(id)', spaces: 'drive' });
   let folderId = list.data.files?.[0]?.id;
 
   if (!folderId) {
     const folder = await drive.files.create({
-      requestBody: { name: key, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] },
+      requestBody: { name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] },
       fields: 'id',
     });
     folderId = folder.data.id;
@@ -71,6 +69,19 @@ async function getOrCreateCustomerFolder(drive, customerName) {
 
   folderCache.set(key, folderId);
   return folderId;
+}
+
+async function getOrCreateCustomerFolder(drive, customerName) {
+  const key = safeFolderName(customerName);
+  return getOrCreateFolder(drive, key, process.env.GOOGLE_DRIVE_FOLDER_ID);
+}
+
+// Returns the ID of: <root>/Vendors/<vendorName>/
+async function getOrCreateVendorFolder(drive, vendorName) {
+  const rootId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+  const vendorRootId = await getOrCreateFolder(drive, 'Vendors', rootId);
+  const safeVendor = safeFolderName(vendorName || 'Unknown');
+  return getOrCreateFolder(drive, safeVendor, vendorRootId);
 }
 
 // Uploads an image and makes it publicly readable.
@@ -132,4 +143,28 @@ export async function uploadFile({ buffer, filename, mimeType, customerName }) {
   const safeName = `${Date.now()}-${filename.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
   fs.writeFileSync(path.join(UPLOADS_DIR, safeName), buffer);
   return { storage: 'local', driveFileId: '', url: `/uploads/${safeName}` };
+}
+
+// Uploads into <root>/Vendors/<vendorName>/ on Drive.
+// Returns { storage, driveFileId, url, viewUrl }.
+export async function uploadToVendorFolder({ buffer, filename, mimeType, vendorName }) {
+  if (driveConfigured()) {
+    const drive = driveClient();
+    const parentId = await getOrCreateVendorFolder(drive, vendorName || 'Unknown');
+
+    const { data } = await drive.files.create({
+      requestBody: { name: filename, parents: [parentId] },
+      media: { mimeType, body: Readable.from(buffer) },
+      fields: 'id, webViewLink',
+      supportsAllDrives: true,
+    });
+    return { storage: 'drive', driveFileId: data.id, url: data.webViewLink, viewUrl: data.webViewLink };
+  }
+
+  // Local fallback
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  const safeName = `${Date.now()}-${filename.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+  fs.writeFileSync(path.join(UPLOADS_DIR, safeName), buffer);
+  const url = `/uploads/${safeName}`;
+  return { storage: 'local', driveFileId: '', url, viewUrl: url };
 }

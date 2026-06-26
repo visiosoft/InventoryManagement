@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { Expense, Vendor } from '../models/index.js';
 import { parseCsv } from '../services/csv.js';
+import { uploadToVendorFolder } from '../services/drive.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
@@ -150,7 +151,14 @@ function normalizeBody(body) {
 router.get('/', async (req, res) => {
     const filter = {};
     if (req.query.status) filter.status = String(req.query.status);
-    if (req.query.vendor) filter.vendor = String(req.query.vendor);
+    if (req.query.vendor || req.query.vendorName) {
+        const conditions = [];
+        if (req.query.vendor) conditions.push({ vendor: req.query.vendor });
+        if (req.query.vendorName) {
+            conditions.push({ vendorName: new RegExp(`^${escRegex(String(req.query.vendorName))}$`, 'i') });
+        }
+        filter.$or = conditions;
+    }
     if (req.query.expenseAccount) filter.expenseAccount = String(req.query.expenseAccount);
     if (req.query.from || req.query.to) {
         filter.expenseDate = {};
@@ -169,10 +177,14 @@ router.get('/', async (req, res) => {
         ];
     }
 
-    const expenses = await Expense.find(filter)
-        .populate('vendor', 'contactName companyName email phone')
-        .sort({ expenseDate: -1, createdAt: -1 });
-    res.json(expenses);
+    const page  = Math.max(1, parseInt(req.query.page)  || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50));
+    const skip  = (page - 1) * limit;
+    const [data, total] = await Promise.all([
+        Expense.find(filter).populate('vendor', 'contactName companyName email phone').sort({ createdAt: -1 }).skip(skip).limit(limit),
+        Expense.countDocuments(filter),
+    ]);
+    res.json({ data, total, page, pages: Math.ceil(total / limit), limit });
 });
 
 router.get('/:id', async (req, res) => {
@@ -237,12 +249,75 @@ router.delete('/:id', async (req, res) => {
     res.json({ ok: true });
 });
 
+router.post('/:id/attachments', upload.array('files', 10), async (req, res) => {
+    const expense = await Expense.findById(req.params.id).populate('vendor', 'contactName companyName');
+    if (!expense) return res.status(404).json({ error: 'Expense not found' });
+
+    const files = req.files || [];
+    if (!files.length) return res.status(400).json({ error: 'No files provided' });
+    if ((expense.attachments?.length || 0) + files.length > 10) {
+        return res.status(400).json({ error: 'Maximum 10 attachments per expense' });
+    }
+
+    const vendorName = expense.vendor?.companyName || expense.vendor?.contactName || expense.vendorName || 'Unknown Vendor';
+
+    for (const file of files) {
+        const stored = await uploadToVendorFolder({
+            buffer: file.buffer,
+            filename: file.originalname,
+            mimeType: file.mimetype,
+            vendorName,
+        });
+        expense.attachments.push({
+            name: file.originalname,
+            mimeType: file.mimetype,
+            size: file.size,
+            ...stored,
+        });
+    }
+
+    await expense.save();
+    res.json(await expense.populate('vendor', 'contactName companyName email phone'));
+});
+
+router.delete('/:id/attachments/:index', async (req, res) => {
+    const expense = await Expense.findById(req.params.id);
+    if (!expense) return res.status(404).json({ error: 'Expense not found' });
+    const idx = Number(req.params.index);
+    if (!Number.isInteger(idx) || idx < 0 || idx >= expense.attachments.length) {
+        return res.status(400).json({ error: 'Invalid attachment index' });
+    }
+    expense.attachments.splice(idx, 1);
+    await expense.save();
+    res.json(await expense.populate('vendor', 'contactName companyName email phone'));
+});
+
+router.post('/relink-vendors', async (req, res) => {
+    const vendorIdByName = await buildVendorLookup();
+    const unlinked = await Expense.find({ vendor: { $exists: false }, vendorName: { $ne: '' } })
+        .select('_id vendorName');
+
+    let linked = 0;
+    for (const exp of unlinked) {
+        const key = normalizeVendorName(exp.vendorName);
+        const vendorId = vendorIdByName.get(key);
+        if (vendorId) {
+            await Expense.updateOne({ _id: exp._id }, { vendor: vendorId });
+            linked += 1;
+        }
+    }
+
+    res.json({ ok: true, linked, checked: unlinked.length });
+});
+
 router.post('/import/csv', upload.single('file'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'CSV file is required' });
 
     const content = req.file.buffer.toString('utf8');
     const rows = parseCsv(content);
     const vendorIdByName = await buildVendorLookup();
+
+    const mode = String(req.query.mode || 'skip'); // 'skip' | 'update'
 
     let created = 0;
     let updated = 0;
@@ -269,10 +344,12 @@ router.post('/import/csv', upload.single('file'), async (req, res) => {
                 if (!existing) {
                     await Expense.create(mapped);
                     created += 1;
-                } else {
+                } else if (mode === 'update') {
                     Object.assign(existing, mapped);
                     await existing.save();
                     updated += 1;
+                } else {
+                    skipped += 1;
                 }
             } else {
                 await Expense.create(mapped);

@@ -75,8 +75,14 @@ router.get('/', async (req, res) => {
         filter.$or = [{ contactName: re }, { companyName: re }, { displayName: re }, { email: re }, { phone: re }];
     }
     if (req.query.category) filter.categories = String(req.query.category);
-    const vendors = await Vendor.find(filter).sort({ contactName: 1, createdAt: -1 });
-    res.json(vendors);
+    const page  = Math.max(1, parseInt(req.query.page)  || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50));
+    const skip  = (page - 1) * limit;
+    const [data, total] = await Promise.all([
+        Vendor.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
+        Vendor.countDocuments(filter),
+    ]);
+    res.json({ data, total, page, pages: Math.ceil(total / limit), limit });
 });
 
 router.get('/:id', async (req, res) => {
@@ -159,6 +165,8 @@ router.post('/import/csv', upload.single('file'), async (req, res) => {
     let skipped = 0;
     let errors = 0;
 
+    const mode = String(req.query.mode || 'skip'); // 'skip' | 'update'
+
     for (const row of rows) {
         const mapped = mapVendor(row);
         if (!mapped.contactId || !mapped.contactName) {
@@ -170,10 +178,12 @@ router.post('/import/csv', upload.single('file'), async (req, res) => {
             if (!existing) {
                 await Vendor.create(mapped);
                 created += 1;
-            } else {
+            } else if (mode === 'update') {
                 Object.assign(existing, mapped);
                 await existing.save();
                 updated += 1;
+            } else {
+                skipped += 1;
             }
         } catch {
             errors += 1;

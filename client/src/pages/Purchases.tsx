@@ -1,9 +1,13 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { Plus, Upload } from 'lucide-react'
 import { apiError, purchaseApi, vendorApi } from '../lib/api'
+
+type ImportSummary = { created: number; updated: number; skipped: number; errors: number; vendorLinked: number; total: number }
+import type { PagedResponse } from '../lib/api'
 import type { Purchase, PurchaseAttachment, PurchaseItem, PurchaseStatus, Vendor } from '../lib/types'
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, Textarea, Th, statusLabel } from '../components/ui'
+import { Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, Pagination, Select, Spinner, Table, Td, Textarea, Th, statusLabel } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
 
 const PURCHASE_STATUSES: PurchaseStatus[] = ['draft', 'sent', 'received', 'partial', 'cancelled']
@@ -228,19 +232,27 @@ export default function Purchases() {
     const qc = useQueryClient()
     const [search, setSearch] = useState('')
     const [status, setStatus] = useState('')
+    const [page, setPage] = useState(1)
+    const [limit, setLimit] = useState(50)
     const [adding, setAdding] = useState(false)
     const [editing, setEditing] = useState<Purchase | null>(null)
     const [error, setError] = useState('')
+    const [importOpen, setImportOpen] = useState(false)
+    const [importMode, setImportMode] = useState<'skip' | 'update'>('skip')
+    const [importFile, setImportFile] = useState<File | null>(null)
+    const [importResult, setImportResult] = useState<ImportSummary | null>(null)
 
     const { data: vendors } = useQuery<Vendor[]>({
-        queryKey: ['vendors', '', '', ''],
-        queryFn: () => vendorApi.list({}),
+        queryKey: ['vendors-all'],
+        queryFn: () => vendorApi.list({ limit: 500 }).then((r) => r.data),
     })
 
-    const { data: purchases, isLoading } = useQuery<Purchase[]>({
-        queryKey: ['purchases', search, status],
-        queryFn: () => purchaseApi.list({ search: search || undefined, status: status || undefined }),
+    const { data: purchasesPage, isLoading } = useQuery<PagedResponse<Purchase>>({
+        queryKey: ['purchases', search, status, page, limit],
+        queryFn: () => purchaseApi.list({ search: search || undefined, status: status || undefined, page, limit }),
+        placeholderData: (prev) => prev,
     })
+    const purchases = purchasesPage?.data ?? []
 
     const createPurchase = useMutation({
         mutationFn: (body: Record<string, unknown>) => purchaseApi.create(body),
@@ -267,17 +279,49 @@ export default function Purchases() {
         onSuccess: () => qc.invalidateQueries({ queryKey: ['purchases'] }),
     })
 
+    const runImport = useMutation({
+        mutationFn: () => {
+            if (!importFile) throw new Error('No file selected')
+            const form = new FormData()
+            form.append('file', importFile)
+            return purchaseApi.importCsv(form, importMode)
+        },
+        onSuccess: (res) => {
+            setImportResult(res.summary)
+            setImportFile(null)
+            qc.invalidateQueries({ queryKey: ['purchases'] })
+        },
+    })
+
+    function openImportModal() {
+        setImportFile(null)
+        setImportResult(null)
+        runImport.reset()
+        setImportOpen(true)
+    }
+
+    function onFilePick(e: React.ChangeEvent<HTMLInputElement>) {
+        const f = e.target.files?.[0]
+        if (f) { setImportFile(f); setImportResult(null); runImport.reset() }
+        e.target.value = ''
+    }
+
     return (
         <div>
             <PageHeader
                 title="Purchases"
-                subtitle={`${purchases?.length ?? 0} purchase records`}
-                action={<Button onClick={() => setAdding(true)}><Plus size={15} /> New purchase</Button>}
+                subtitle={`${purchasesPage?.total ?? 0} purchase records`}
+                action={
+                    <div className="flex gap-2">
+                        <Button variant="outline" onClick={openImportModal}><Upload size={15} /> Import CSV</Button>
+                        <Button onClick={() => setAdding(true)}><Plus size={15} /> New purchase</Button>
+                    </div>
+                }
             />
 
             <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-2">
-                <Input placeholder="Search PO #, order #, subject" value={search} onChange={(e) => setSearch(e.target.value)} />
-                <Select value={status} onChange={(e) => setStatus(e.target.value)}>
+                <Input placeholder="Search PO #, order #, subject, vendor" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
+                <Select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }}>
                     <option value="">All statuses</option>
                     {PURCHASE_STATUSES.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
                 </Select>
@@ -302,8 +346,15 @@ export default function Purchases() {
                         <tbody>
                             {(purchases || []).map((p) => (
                                 <tr key={p._id} className="hover:bg-muted/50">
-                                    <Td className="font-medium">{p.purchaseNo}</Td>
-                                    <Td>{p.vendor?.contactName || '—'}</Td>
+                                    <Td className="font-medium">
+                                        <Link to={`/purchases/${p._id}`} className="text-primary hover:underline">{p.purchaseNo}</Link>
+                                    </Td>
+                                    <Td>
+                                        {p.vendor?._id
+                                            ? <Link to={`/vendors/${p.vendor._id}`} className="text-primary hover:underline">{p.vendor.contactName}</Link>
+                                            : (p.vendorName || '—')
+                                        }
+                                    </Td>
                                     <Td>{formatDate(p.purchaseDate)}</Td>
                                     <Td>{formatDate(p.dueDate)}</Td>
                                     <Td>{formatMoney(p.total)}</Td>
@@ -318,7 +369,17 @@ export default function Purchases() {
                             ))}
                         </tbody>
                     </Table>
-                    {(purchases || []).length === 0 && <EmptyState message="No purchases found." />}
+                    {purchases.length === 0 && <EmptyState message="No purchases found." />}
+                    {purchasesPage && purchasesPage.pages > 1 && (
+                        <Pagination
+                            page={purchasesPage.page}
+                            pages={purchasesPage.pages}
+                            total={purchasesPage.total}
+                            limit={purchasesPage.limit}
+                            onPage={setPage}
+                            onLimit={(l) => { setLimit(l); setPage(1) }}
+                        />
+                    )}
                 </Card>
             )}
 
@@ -346,6 +407,57 @@ export default function Purchases() {
                         </Card>
                     </div>
                 )}
+            </Modal>
+
+            <Modal open={importOpen} onClose={() => { setImportOpen(false); setImportResult(null); runImport.reset() }} title="Import Bills CSV">
+                <div className="space-y-4">
+                    <div className="flex gap-2">
+                        {(['skip', 'update'] as const).map((m) => (
+                            <button
+                                key={m}
+                                type="button"
+                                onClick={() => setImportMode(m)}
+                                className={`px-3 py-1.5 rounded text-sm font-medium border transition-colors ${importMode === m ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted'}`}
+                            >
+                                {m === 'skip' ? 'Skip duplicates' : 'Update duplicates'}
+                            </button>
+                        ))}
+                    </div>
+
+                    <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-border rounded-lg p-8 cursor-pointer hover:bg-muted/40 transition-colors">
+                        <Upload size={28} className="text-muted-foreground" />
+                        <span className="text-sm font-medium">{importFile ? importFile.name : 'Click or drop a Zoho Bills CSV'}</span>
+                        <span className="text-xs text-muted-foreground">Deduplicates by Bill ID</span>
+                        <input type="file" accept=".csv" className="sr-only" onChange={onFilePick} />
+                    </label>
+
+                    {runImport.error && <p className="text-sm text-destructive">{apiError(runImport.error)}</p>}
+
+                    {importResult && (
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                            {([
+                                ['Created', importResult.created, 'text-green-600'],
+                                ['Updated', importResult.updated, 'text-blue-600'],
+                                ['Skipped', importResult.skipped, 'text-muted-foreground'],
+                                ['Vendor linked', importResult.vendorLinked, 'text-indigo-600'],
+                                ['Errors', importResult.errors, 'text-destructive'],
+                                ['Total', importResult.total, 'text-foreground'],
+                            ] as const).map(([label, val, cls]) => (
+                                <div key={label} className="rounded border border-border p-2">
+                                    <div className={`text-lg font-bold ${cls}`}>{val}</div>
+                                    <div className="text-xs text-muted-foreground">{label}</div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    <div className="flex justify-end gap-2">
+                        <Button variant="outline" onClick={() => { setImportOpen(false); setImportResult(null); runImport.reset() }}>Close</Button>
+                        <Button onClick={() => runImport.mutate()} disabled={!importFile || runImport.isPending}>
+                            {runImport.isPending ? 'Importing…' : 'Import'}
+                        </Button>
+                    </div>
+                </div>
             </Modal>
         </div>
     )

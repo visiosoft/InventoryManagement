@@ -906,9 +906,9 @@ export default function VendorDetail() {
     })
 
     const { data: expenses, isLoading: expensesLoading } = useQuery<Expense[]>({
-        queryKey: ['expenses', '', '', id],
-        queryFn: () => expenseApi.list({ vendor: id }),
-        enabled: !!id,
+        queryKey: ['expenses', 'vendor', id, vendor?.contactName],
+        queryFn: () => expenseApi.list({ vendor: id, vendorName: vendor?.contactName }),
+        enabled: !!id && !!vendor,
     })
 
     const invalidateVendor = () => {

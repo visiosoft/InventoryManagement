@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { Plus, Search, Users } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingLead, MovingLeadSource, MovingLeadStatus } from '../../lib/types'
@@ -74,7 +74,9 @@ function LeadForm({ initial, busy, error, onSubmit, onCancel }: {
 
 export default function MovingLeads() {
   const qc = useQueryClient()
-  const [modal, setModal] = useState<null | 'create'>(null)
+  const location = useLocation()
+  const prefill = (location.state as any)?.prefill as Partial<MovingLead> | undefined
+  const [modal, setModal] = useState<null | 'create'>(prefill ? 'create' : null)
   const [filterStatus, setFilterStatus] = useState<MovingLeadStatus | ''>('')
   const [search, setSearch] = useState('')
   const [err, setErr] = useState('')
@@ -204,7 +206,7 @@ export default function MovingLeads() {
 
       <Modal open={modal !== null} title="Add Moving Lead" onClose={() => setModal(null)}>
         {modal !== null && (
-          <LeadForm busy={createMut.isPending} error={err} onSubmit={body => { setErr(''); createMut.mutate(body) }} onCancel={() => setModal(null)} />
+          <LeadForm initial={prefill} busy={createMut.isPending} error={err} onSubmit={body => { setErr(''); createMut.mutate(body) }} onCancel={() => setModal(null)} />
         )}
       </Modal>
     </div>

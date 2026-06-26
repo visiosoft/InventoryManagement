@@ -1,10 +1,11 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FileUp, Plus, Search } from 'lucide-react'
+import { CheckCircle2, FileUp, Plus, Search, Upload } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { apiError, vendorApi } from '../lib/api'
+import type { PagedResponse } from '../lib/api'
 import type { Vendor } from '../lib/types'
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, Th } from '../components/ui'
+import { Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, Pagination, Select, Spinner, Table, Td, Th } from '../components/ui'
 
 function VendorForm({
     initial,
@@ -85,20 +86,31 @@ function VendorForm({
     )
 }
 
+type ImportSummary = { created: number; updated: number; skipped: number; errors: number; total: number }
+
 export default function Vendors() {
     const qc = useQueryClient()
     const [search, setSearch] = useState('')
     const [status, setStatus] = useState('')
     const [category, setCategory] = useState('')
+    const [page, setPage] = useState(1)
+    const [limit, setLimit] = useState(50)
     const [adding, setAdding] = useState(false)
     const [editing, setEditing] = useState<Vendor | null>(null)
     const [error, setError] = useState('')
-    const [importResult, setImportResult] = useState('')
 
-    const { data: vendors, isLoading } = useQuery<Vendor[]>({
-        queryKey: ['vendors', search, status, category],
-        queryFn: () => vendorApi.list({ search: search || undefined, status: status || undefined, category: category || undefined }),
+    // Import modal state
+    const [importOpen, setImportOpen] = useState(false)
+    const [importMode, setImportMode] = useState<'skip' | 'update'>('skip')
+    const [importFile, setImportFile] = useState<File | null>(null)
+    const [importResult, setImportResult] = useState<ImportSummary | null>(null)
+
+    const { data: vendorsPage, isLoading } = useQuery<PagedResponse<Vendor>>({
+        queryKey: ['vendors', search, status, category, page, limit],
+        queryFn: () => vendorApi.list({ search: search || undefined, status: status || undefined, category: category || undefined, page, limit }),
+        placeholderData: (prev) => prev,
     })
+    const vendors = vendorsPage?.data ?? []
 
     const createVendor = useMutation({
         mutationFn: (body: Record<string, unknown>) => vendorApi.create(body),
@@ -126,52 +138,59 @@ export default function Vendors() {
     })
 
     const importCsv = useMutation({
-        mutationFn: (form: FormData) => vendorApi.importCsv(form),
+        mutationFn: ({ form, mode }: { form: FormData; mode: 'skip' | 'update' }) =>
+            vendorApi.importCsv(form, mode),
         onSuccess: (data) => {
             qc.invalidateQueries({ queryKey: ['vendors'] })
-            setImportResult(`Imported: created ${data.summary.created}, updated ${data.summary.updated}, skipped ${data.summary.skipped}, errors ${data.summary.errors}`)
+            setImportResult(data.summary)
         },
-        onError: (e) => setImportResult(apiError(e)),
+        onError: (e) => { setError(apiError(e)) },
     })
 
-    function onCsvPick(e: React.ChangeEvent<HTMLInputElement>) {
-        const file = e.target.files?.[0]
-        if (!file) return
+    function openImportModal() {
+        setImportFile(null)
+        setImportResult(null)
+        setImportMode('skip')
+        setError('')
+        setImportOpen(true)
+    }
+
+    function onFilePick(e: React.ChangeEvent<HTMLInputElement>) {
+        setImportFile(e.target.files?.[0] ?? null)
+        setImportResult(null)
+    }
+
+    function runImport() {
+        if (!importFile) return
         const form = new FormData()
-        form.append('file', file)
-        importCsv.mutate(form)
-        e.currentTarget.value = ''
+        form.append('file', importFile)
+        importCsv.mutate({ form, mode: importMode })
     }
 
     return (
         <div>
             <PageHeader
                 title="Vendors"
-                subtitle={`${vendors?.length ?? 0} vendors`}
+                subtitle={`${vendorsPage?.total ?? 0} vendors`}
                 action={
                     <div className="flex gap-2">
-                        <label className="inline-flex">
-                            <input type="file" accept=".csv" className="hidden" onChange={onCsvPick} />
-                            <Button type="button" variant="outline"><FileUp size={15} /> Import CSV</Button>
-                        </label>
+                        <Button variant="outline" onClick={openImportModal}><FileUp size={15} /> Import CSV</Button>
                         <Button onClick={() => setAdding(true)}><Plus size={15} /> Add vendor</Button>
                     </div>
                 }
             />
 
-            {importResult && <p className="mb-3 text-xs text-muted-foreground">{importResult}</p>}
-
             <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-2">
                 <div className="relative">
                     <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                    <Input className="pl-9" placeholder="Search vendor name/email/phone" value={search} onChange={(e) => setSearch(e.target.value)} />
+                    <Input className="pl-9" placeholder="Search vendor name/email/phone" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
                 </div>
-                <Select value={status} onChange={(e) => setStatus(e.target.value)}>
+                <Select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }}>
                     <option value="">All statuses</option>
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
                 </Select>
-                <Input placeholder="Filter by category (Steel, Fire Alarm...)" value={category} onChange={(e) => setCategory(e.target.value)} />
+                <Input placeholder="Filter by category (Steel, Fire Alarm...)" value={category} onChange={(e) => { setCategory(e.target.value); setPage(1) }} />
             </div>
 
             {isLoading ? (
@@ -212,7 +231,17 @@ export default function Vendors() {
                             ))}
                         </tbody>
                     </Table>
-                    {(vendors || []).length === 0 && <EmptyState message="No vendors found." />}
+                    {vendors.length === 0 && <EmptyState message="No vendors found." />}
+                    {vendorsPage && vendorsPage.pages > 1 && (
+                        <Pagination
+                            page={vendorsPage.page}
+                            pages={vendorsPage.pages}
+                            total={vendorsPage.total}
+                            limit={vendorsPage.limit}
+                            onPage={setPage}
+                            onLimit={(l) => { setLimit(l); setPage(1) }}
+                        />
+                    )}
                 </Card>
             )}
 
@@ -229,6 +258,96 @@ export default function Vendors() {
                         onSubmit={(body) => updateVendor.mutate({ id: editing._id, body })}
                     />
                 )}
+            </Modal>
+
+            {/* ── Import CSV modal ───────────────────────────────────── */}
+            <Modal
+                open={importOpen}
+                onClose={() => { if (!importCsv.isPending) { setImportOpen(false); setImportFile(null); setImportResult(null) } }}
+                title="Import vendors from CSV"
+                wide
+            >
+                <div className="space-y-5">
+                    {/* File picker */}
+                    <label className="flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-border py-8 cursor-pointer hover:bg-muted/40 transition-colors">
+                        <Upload size={28} className="text-muted-foreground" />
+                        <div className="text-center">
+                            <p className="text-sm font-medium">{importFile ? importFile.name : 'Click to choose a CSV file'}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">Zoho-format vendor CSV</p>
+                        </div>
+                        <input
+                            type="file"
+                            accept=".csv"
+                            className="hidden"
+                            onChange={onFilePick}
+                        />
+                    </label>
+
+                    {/* Mode toggle */}
+                    <div className="space-y-2">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">If vendor already exists (matched by Contact ID)</p>
+                        <div className="grid grid-cols-2 gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setImportMode('skip')}
+                                className={`rounded-lg border px-4 py-3 text-left transition-colors ${importMode === 'skip' ? 'border-primary bg-primary/8 text-primary' : 'border-border hover:bg-muted/50'}`}
+                            >
+                                <p className="text-sm font-semibold">Skip</p>
+                                <p className="text-xs text-muted-foreground mt-0.5">Leave existing vendor unchanged</p>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setImportMode('update')}
+                                className={`rounded-lg border px-4 py-3 text-left transition-colors ${importMode === 'update' ? 'border-primary bg-primary/8 text-primary' : 'border-border hover:bg-muted/50'}`}
+                            >
+                                <p className="text-sm font-semibold">Update</p>
+                                <p className="text-xs text-muted-foreground mt-0.5">Overwrite existing vendor data</p>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Result summary */}
+                    {importResult && (
+                        <div className="rounded-lg border bg-muted/40 p-4 space-y-3">
+                            <div className="flex items-center gap-2 text-sm font-semibold text-emerald-600">
+                                <CheckCircle2 size={16} /> Import complete
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                                <div className="rounded-lg bg-emerald-500/10 py-2">
+                                    <div className="text-xl font-bold text-emerald-700 dark:text-emerald-400">{importResult.created}</div>
+                                    <div className="text-xs text-muted-foreground">Created</div>
+                                </div>
+                                <div className="rounded-lg bg-blue-500/10 py-2">
+                                    <div className="text-xl font-bold text-blue-700 dark:text-blue-400">{importResult.updated}</div>
+                                    <div className="text-xs text-muted-foreground">Updated</div>
+                                </div>
+                                <div className="rounded-lg bg-muted py-2">
+                                    <div className="text-xl font-bold">{importResult.skipped}</div>
+                                    <div className="text-xs text-muted-foreground">Skipped</div>
+                                </div>
+                                <div className={`rounded-lg py-2 ${importResult.errors > 0 ? 'bg-red-500/10' : 'bg-muted'}`}>
+                                    <div className={`text-xl font-bold ${importResult.errors > 0 ? 'text-destructive' : ''}`}>{importResult.errors}</div>
+                                    <div className="text-xs text-muted-foreground">Errors</div>
+                                </div>
+                            </div>
+                            <p className="text-xs text-center text-muted-foreground">{importResult.total} row{importResult.total !== 1 ? 's' : ''} processed</p>
+                        </div>
+                    )}
+
+                    {error && <p className="text-xs text-destructive">{error}</p>}
+
+                    <div className="flex gap-2 justify-end">
+                        <Button variant="outline" onClick={() => { setImportOpen(false); setImportFile(null); setImportResult(null) }} disabled={importCsv.isPending}>
+                            {importResult ? 'Close' : 'Cancel'}
+                        </Button>
+                        {!importResult && (
+                            <Button onClick={runImport} disabled={!importFile || importCsv.isPending}>
+                                <FileUp size={14} />
+                                {importCsv.isPending ? 'Importing…' : 'Import vendors'}
+                            </Button>
+                        )}
+                    </div>
+                </div>
             </Modal>
         </div>
     )

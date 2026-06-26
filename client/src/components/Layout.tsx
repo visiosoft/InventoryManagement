@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Box, Users, FileText, CreditCard, BarChart3, Building2, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, FileSpreadsheet, Truck, ShoppingCart, Wallet, TrendingUp, UserCheck, UserCog, X, MessageCircle, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup } from 'lucide-react'
+import { LayoutDashboard, Box, Users, FileText, CreditCard, BarChart3, Building2, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, FileSpreadsheet, Truck, ShoppingCart, Wallet, TrendingUp, UserCheck, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { cn } from '../lib/utils'
@@ -23,14 +23,15 @@ const navGroups = [
     items: [
       { to: '/customers', label: 'Customers', icon: Users,         perm: 'customers' },
       { to: '/invoices',  label: 'Invoices',  icon: ReceiptText,   perm: 'invoices' },
-      { to: '/whatsapp',  label: 'WhatsApp',  icon: MessageCircle, perm: undefined },
+      { to: '/leads',     label: 'Leads',     icon: UserPlus,      perm: 'leads' },
     ],
   },
   {
     title: 'Purchases',
     items: [
-      { to: '/vendors',  label: 'Vendors',  icon: Truck,  perm: 'vendors' },
-      { to: '/expenses', label: 'Expenses', icon: Wallet, perm: 'expenses' },
+      { to: '/vendors',   label: 'Vendors',        icon: Truck,        perm: 'vendors' },
+      { to: '/purchases', label: 'Purchases/Bill', icon: ShoppingCart, perm: 'purchases' },
+      { to: '/expenses',  label: 'Expenses',       icon: Wallet,       perm: 'expenses' },
     ],
   },
 ]
@@ -47,8 +48,6 @@ const reportItems = [
 ]
 
 const navBottom = [
-  { to: '/leads',     label: 'Leads',     icon: UserPlus,    perm: 'leads' as string | undefined },
-  { to: '/purchases', label: 'Purchases', icon: ShoppingCart, perm: 'purchases' },
   { to: '/payments',  label: 'Payments',  icon: CreditCard,  perm: 'payments' },
   { to: '/settings',  label: 'Settings',  icon: Settings,    perm: 'settings' },
 ]

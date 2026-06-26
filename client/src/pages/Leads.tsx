@@ -297,12 +297,12 @@ function ContactDetailPanel({ row, onUpdateLead }: { row: WhatsAppLeadRow; onUpd
                         <p className="text-sm text-muted-foreground">{phone || 'No phone'}</p>
                     </div>
                 </div>
-                {row.whatsappWebLink && (
-                    <a href={row.whatsappWebLink} target="_blank" rel="noreferrer"
-                        className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400">
-                        Open in WhatsApp
-                    </a>
-                )}
+                <button
+                    onClick={() => navigate('/moving/leads', { state: { prefill: { prospectName: name, prospectPhone: phone, source: 'phone' } } })}
+                    className="rounded-lg border border-purple-300 bg-purple-50 px-3 py-1.5 text-xs font-semibold text-purple-700 hover:bg-purple-100 dark:border-purple-700 dark:bg-purple-900/20 dark:text-purple-400"
+                >
+                    Move Lead →
+                </button>
             </div>
 
             {/* Action bar */}

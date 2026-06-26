@@ -41,6 +41,7 @@ import InvoiceDetail from './pages/InvoiceDetail'
 import Vendors from './pages/Vendors'
 import VendorDetail from './pages/VendorDetail'
 import Purchases from './pages/Purchases'
+import PurchaseDetail from './pages/PurchaseDetail'
 import Expenses from './pages/Expenses'
 import MovingInventory from './pages/MovingInventory'
 import UserManagement from './pages/UserManagement'
@@ -99,6 +100,7 @@ export default function App() {
         <Route path="/vendors" element={<Vendors />} />
         <Route path="/vendors/:id" element={<VendorDetail />} />
         <Route path="/purchases" element={<Purchases />} />
+        <Route path="/purchases/:id" element={<PurchaseDetail />} />
         <Route path="/expenses" element={<Expenses />} />
         <Route path="/moving-inventory" element={<MovingInventory />} />
         <Route path="/contracts" element={<Contracts />} />
