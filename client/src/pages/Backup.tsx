@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, CloudUpload, Database, ExternalLink, HardDrive, RefreshCw, XCircle } from 'lucide-react'
+import { CheckCircle2, CloudUpload, ExternalLink, HardDrive, RefreshCw, XCircle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { Badge, Button, Card, CardBody, CardHeader, EmptyState, Spinner, Table, Td, Th } from '../components/ui'
 import { formatDate } from '../lib/utils'
@@ -49,7 +49,7 @@ function logColor(level: string) {
 export default function Backup() {
   const qc = useQueryClient()
   const [runError, setRunError] = useState('')
-  const [tick, setTick]         = useState(0)   // drives elapsed timer re-render
+  const [, setTick]            = useState(0)   // drives elapsed timer re-render
   const logRef = useRef<HTMLDivElement>(null)
 
   // Poll status (fast when running, slow otherwise)
