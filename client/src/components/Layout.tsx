@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Box, Users, FileText, CreditCard, BarChart3, Building2, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, FileSpreadsheet, Truck, ShoppingCart, Wallet, TrendingUp, UserCheck, UserCog, X, MessageCircle, Package, CalendarDays, ClipboardList, Users2, Menu } from 'lucide-react'
+import { LayoutDashboard, Box, Users, FileText, CreditCard, BarChart3, Building2, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, FileSpreadsheet, Truck, ShoppingCart, Wallet, TrendingUp, UserCheck, UserCog, X, MessageCircle, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { cn } from '../lib/utils'
@@ -210,6 +210,11 @@ export default function Layout() {
         {isAdmin && (
           <NavLink to="/users" className={({ isActive }) => navLinkCls(isActive)}>
             <UserCog size={15} />Users
+          </NavLink>
+        )}
+        {isAdmin && (
+          <NavLink to="/backup" className={({ isActive }) => navLinkCls(isActive)}>
+            <DatabaseBackup size={15} />Backup
           </NavLink>
         )}
 

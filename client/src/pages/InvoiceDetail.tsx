@@ -11,7 +11,7 @@ import {
 import { formatDate, formatMoney } from '../lib/utils'
 
 const invoiceStatusTone: Record<InvoiceStatus, string> = {
-    draft: 'gray', sent: 'blue', paid: 'green', overdue: 'red', cancelled: 'amber',
+    draft: 'gray', sent: 'blue', paid: 'green', partial: 'amber', overdue: 'red', cancelled: 'amber',
 }
 
 // Merge legacy "Week N: DD Mon YYYY · Unit X" line items into one monthly line

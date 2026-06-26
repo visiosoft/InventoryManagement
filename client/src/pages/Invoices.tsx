@@ -7,7 +7,7 @@ import type { Customer, Invoice, InvoiceAttachment, InvoiceItem, InvoicePaymentE
 import { Badge, Button, Card, CornerRibbon, EmptyState, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, Th, statusLabel } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
 
-const INVOICE_STATUSES: InvoiceStatus[] = ['draft', 'sent', 'paid', 'overdue', 'cancelled']
+const INVOICE_STATUSES: InvoiceStatus[] = ['draft', 'sent', 'partial', 'paid', 'overdue', 'cancelled']
 
 const DEFAULT_BANK_INFORMATION =
     'Account Number: 019101745789\n' +
@@ -17,6 +17,7 @@ const DEFAULT_BANK_INFORMATION =
 const invoiceStatusTone: Record<InvoiceStatus, string> = {
     draft: 'gray',
     sent: 'blue',
+    partial: 'amber',
     paid: 'green',
     overdue: 'red',
     cancelled: 'amber',

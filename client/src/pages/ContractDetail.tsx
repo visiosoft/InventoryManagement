@@ -616,9 +616,8 @@ function EditPaymentForm({ payment, busy, onSubmit }: {
 }
 
 // ── Bulk pay modal (multiple periods OR all at once) ───────────────────────────
-function BulkPayForm({ unpaid, billingPeriod, busy, onSubmit }: {
+function BulkPayForm({ unpaid, busy, onSubmit }: {
   unpaid: Payment[]       // overdue + pending sorted by due date
-  billingPeriod: string
   busy: boolean
   onSubmit: (body: { paymentIds: string[]; method: string; paidDate: string; notes: string }) => void
 }) {
@@ -1303,7 +1302,6 @@ export default function ContractDetail() {
   const totalPaid = paid.reduce((s, p) => s + p.amount, 0)
   // Exclude deposit/advance-rent records from rent totals
   const isDepositPayment = (p: Payment) => /^(security deposit|advance rent)/i.test(p.notes || '')
-  const totalPending = pending.filter(p => !isDepositPayment(p)).reduce((s, p) => s + p.amount, 0)
   const totalOverdue = overdue.filter(p => !isDepositPayment(p)).reduce((s, p) => s + p.amount, 0)
   // Group payments by invoice → one display row per invoice
   const groupMap = new Map<string, Payment[]>()
@@ -1467,7 +1465,8 @@ export default function ContractDetail() {
     const method = group.find(p => (p as any).method)?.method ?? ''
     const methodLabel = method === 'bank_transfer' ? 'Bank transfer' : method ? method.charAt(0).toUpperCase() + method.slice(1) : 'Cash'
     const invoiceRef = inv?.invoiceNo ? ` · ${inv.invoiceNo}` : ''
-    const recorder = group.find(p => (p as any).recordedBy)?.recordedBy as string | undefined
+    const recorderPayment = group.find((p) => Boolean((p as any).recordedBy)) as (Payment & { recordedBy?: string }) | undefined
+    const recorder = recorderPayment?.recordedBy
     const byLabel = recorder ? ` · by ${recorder}` : ''
     const invDoc = allInvoices.find(i => String(i._id) === invId)
     const totalPaidForInv = Math.round((totalPaidPerInvoice.get(invId) ?? 0) * 100) / 100
@@ -2149,7 +2148,6 @@ export default function ContractDetail() {
         {bulkTarget !== null && bulkTarget.length > 0 && (
           <BulkPayForm
             unpaid={bulkTarget}
-            billingPeriod={c.billingPeriod}
             busy={bulkRecord.isPending}
             onSubmit={(body) => bulkRecord.mutate(body)}
           />

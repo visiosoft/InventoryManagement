@@ -33,6 +33,8 @@ import movingInvoiceRoutes from './routes/movingInvoices.js';
 import movingReportRoutes from './routes/movingReports.js';
 import movingSurveyRoutes from './routes/movingSurveys.js';
 import productRoutes from './routes/products.js';
+import backupRoutes from './routes/backup.js';
+import { runBackup } from './services/backup.js';
 import { runGoogleContactsSync } from './services/syncContacts.js';
 import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
 
@@ -101,6 +103,7 @@ app.use(
 );
 
 app.use('/api/users', requireAuth, userRoutes);
+app.use('/api/backup', requireAuth, backupRoutes);
 app.use('/api/whatsapp', requireAuth, whatsappRoutes);
 
 // Central error handler
@@ -156,6 +159,25 @@ async function start() {
       setInterval(runWhatsAppLabelReconciliation, WHATSAPP_RECONCILE_INTERVAL);
     }, 7000);
   }
+
+  // Daily database backup — runs every day at 02:00 server time.
+  // BACKUP_HOUR env var overrides the hour (0-23, default 2).
+  function scheduleDailyBackup() {
+    const hour = Number(process.env.BACKUP_HOUR ?? 2);
+    const now  = new Date();
+    const next = new Date(now);
+    next.setHours(hour, 0, 0, 0);
+    if (next <= now) next.setDate(next.getDate() + 1); // already past today's slot → tomorrow
+    const msUntil = next.getTime() - now.getTime();
+    console.log(`[Backup] Next scheduled backup at ${next.toLocaleString()} (in ${Math.round(msUntil / 60000)} min)`);
+    setTimeout(async () => {
+      try { await runBackup('scheduler'); } catch (e) { console.error('[Backup] Scheduled backup failed:', e.message); }
+      setInterval(async () => {
+        try { await runBackup('scheduler'); } catch (e) { console.error('[Backup] Scheduled backup failed:', e.message); }
+      }, 24 * 60 * 60 * 1000);
+    }, msUntil);
+  }
+  scheduleDailyBackup();
 }
 
 start().catch((err) => {

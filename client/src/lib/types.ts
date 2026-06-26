@@ -83,7 +83,7 @@ export interface IntegrationStatus {
 }
 
 export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired'
-export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled'
+export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'partial' | 'overdue' | 'cancelled'
 
 export interface QuoteItem {
   sortOrder: number
