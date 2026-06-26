@@ -10,6 +10,24 @@ import mongoose from 'mongoose';
 const gzip = promisify(zlib.gzip);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOCAL_BACKUP_DIR = path.resolve(__dirname, '../../backups');
+const TIMEOUT_MS = 5 * 60 * 1000; // 5-minute hard timeout
+
+// ── In-memory progress state (exported so routes can read it) ─────────────────
+export const backupState = {
+  running:     false,
+  startedAt:   null,
+  triggeredBy: '',
+  logs:        [],   // [{ at: ISO, msg: string, level: 'info'|'ok'|'error' }]
+  lastResult:  null, // { filename, storage, driveUrl, sizeKb, collections, documents, durationMs, backedUpAt }
+  lastError:   '',
+};
+
+function log(msg, level = 'info') {
+  const entry = { at: new Date().toISOString(), msg, level };
+  backupState.logs.push(entry);
+  const prefix = level === 'error' ? '[Backup ERROR]' : '[Backup]';
+  console.log(`${prefix} ${msg}`);
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -44,12 +62,10 @@ function driveClient() {
   return google.drive({ version: 'v3', auth });
 }
 
-// Returns/creates the "PurpleBox Backups" folder inside the root Drive folder.
 let backupFolderCache = null;
 async function getBackupFolder(drive) {
   if (backupFolderCache) return backupFolderCache;
 
-  // Allow an explicit override env var for the backup folder
   if (process.env.GOOGLE_DRIVE_BACKUP_FOLDER_ID) {
     backupFolderCache = process.env.GOOGLE_DRIVE_BACKUP_FOLDER_ID;
     return backupFolderCache;
@@ -64,6 +80,7 @@ async function getBackupFolder(drive) {
   let folderId = list.data.files?.[0]?.id;
 
   if (!folderId) {
+    log(`Creating Drive folder "${folderName}"…`);
     const created = await drive.files.create({
       requestBody: { name: folderName, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] },
       fields: 'id',
@@ -75,123 +92,147 @@ async function getBackupFolder(drive) {
   return folderId;
 }
 
-// ── Core export ──────────────────────────────────────────────────────────────
+// ── Core backup logic ─────────────────────────────────────────────────────────
 
-async function exportAllCollections() {
+async function _doBackup(triggeredBy) {
+  const startedAt = Date.now();
+  const filename  = buildFilename();
+
+  log(`Starting backup: ${filename}`);
+  log(`Triggered by: ${triggeredBy}`);
+
+  // 1. Export all collections
   const db = mongoose.connection.db;
+  log('Listing database collections…');
   const collectionInfos = await db.listCollections().toArray();
-  const collections = {};
+  log(`Found ${collectionInfos.length} collections`);
 
+  const collections = {};
+  let totalDocs = 0;
   for (const info of collectionInfos) {
     const docs = await db.collection(info.name).find({}).toArray();
     collections[info.name] = docs;
+    totalDocs += docs.length;
+    log(`  ${info.name}: ${docs.length} docs`);
   }
+  log(`Export complete — ${totalDocs} total documents`);
 
-  return collections;
-}
-
-// ── Main backup function ─────────────────────────────────────────────────────
-
-export async function runBackup(triggeredBy = 'scheduler') {
-  const startedAt = new Date();
-  const filename  = buildFilename();
-
-  console.log(`[Backup] Starting backup: ${filename} (triggered by: ${triggeredBy})`);
-
-  // Dump all collections
-  const collections = await exportAllCollections();
-  const collectionNames = Object.keys(collections);
-  const totalDocs = collectionNames.reduce((s, k) => s + collections[k].length, 0);
-
+  // 2. Compress
+  log('Compressing data (gzip)…');
   const payload = {
-    name:        'PurpleBox',
-    backedUpAt:  startedAt.toISOString(),
-    triggeredBy,
-    version:     '1.0',
-    collections,
+    name: 'PurpleBox', backedUpAt: new Date().toISOString(),
+    triggeredBy, version: '1.0', collections,
   };
-
-  const jsonBuffer = Buffer.from(JSON.stringify(payload));
-  const compressed = await gzip(jsonBuffer);
+  const compressed = await gzip(Buffer.from(JSON.stringify(payload)));
   const sizeKb = Math.round(compressed.length / 1024);
+  log(`Compressed: ${sizeKb} KB`);
 
+  // 3. Save local copy first (always)
+  fs.mkdirSync(LOCAL_BACKUP_DIR, { recursive: true });
+  const localPath = path.join(LOCAL_BACKUP_DIR, filename);
+  fs.writeFileSync(localPath, compressed);
+  log(`Saved locally: ${localPath}`);
+
+  // 4. Upload to Drive
   let storage = 'local';
   let driveFileId = '';
   let driveUrl = '';
 
-  // Try Google Drive first
   const drive = driveClient();
   const driveReady = drive && (process.env.GOOGLE_DRIVE_FOLDER_ID || process.env.GOOGLE_DRIVE_BACKUP_FOLDER_ID);
 
   if (driveReady) {
     try {
+      log('Connecting to Google Drive…');
       const folderId = await getBackupFolder(drive);
       if (folderId) {
+        log(`Uploading ${filename} to Drive folder…`);
         const { data } = await drive.files.create({
-          requestBody: {
-            name:    filename,
-            parents: [folderId],
-          },
-          media: {
-            mimeType: 'application/gzip',
-            body: Readable.from(compressed),
-          },
+          requestBody: { name: filename, parents: [folderId] },
+          media: { mimeType: 'application/gzip', body: Readable.from(compressed) },
           fields: 'id, webViewLink',
           supportsAllDrives: true,
         });
         driveFileId = data.id;
         driveUrl    = data.webViewLink;
         storage     = 'drive';
-        console.log(`[Backup] Uploaded to Drive: ${driveUrl}`);
+        log(`Uploaded to Drive: ${driveUrl}`, 'ok');
+      } else {
+        log('Drive folder not available — kept local only', 'error');
       }
     } catch (err) {
-      console.error('[Backup] Drive upload failed, falling back to local:', err.message);
+      log(`Drive upload failed: ${err.message} — kept local only`, 'error');
     }
+  } else {
+    log('Google Drive not configured — saved locally only');
   }
 
-  // Local fallback (also keep a local copy always for quick restore)
-  fs.mkdirSync(LOCAL_BACKUP_DIR, { recursive: true });
-  const localPath = path.join(LOCAL_BACKUP_DIR, filename);
-  fs.writeFileSync(localPath, compressed);
-
-  const durationMs = Date.now() - startedAt.getTime();
+  const durationMs = Date.now() - startedAt;
   const result = {
     filename,
-    backedUpAt: startedAt.toISOString(),
+    backedUpAt: new Date(startedAt).toISOString(),
     triggeredBy,
     storage,
     driveFileId,
     driveUrl,
-    localPath: localPath,
     sizeKb,
-    collections: collectionNames.length,
+    collections: collectionInfos.length,
     documents: totalDocs,
     durationMs,
   };
 
-  console.log(`[Backup] Done in ${durationMs}ms — ${collectionNames.length} collections, ${totalDocs} docs, ${sizeKb} KB`);
+  log(`Backup complete in ${(durationMs / 1000).toFixed(1)}s — ${collectionInfos.length} collections, ${totalDocs} docs, ${sizeKb} KB`, 'ok');
   return result;
 }
 
-// ── List local backups ───────────────────────────────────────────────────────
+// ── Public entry point (fire-and-forget safe) ─────────────────────────────────
+
+export async function runBackup(triggeredBy = 'scheduler') {
+  if (backupState.running) {
+    throw new Error('A backup is already in progress');
+  }
+
+  backupState.running     = true;
+  backupState.startedAt   = new Date().toISOString();
+  backupState.triggeredBy = triggeredBy;
+  backupState.logs        = [];
+  backupState.lastError   = '';
+
+  const timeout = setTimeout(() => {
+    if (backupState.running) {
+      log('Backup timed out after 5 minutes', 'error');
+      backupState.running   = false;
+      backupState.lastError = 'Backup timed out after 5 minutes';
+    }
+  }, TIMEOUT_MS);
+
+  try {
+    const result = await _doBackup(triggeredBy);
+    backupState.lastResult = result;
+    backupState.lastError  = '';
+    return result;
+  } catch (err) {
+    log(`Backup failed: ${err.message}`, 'error');
+    backupState.lastError = err.message;
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+    backupState.running = false;
+  }
+}
+
+// ── List helpers ──────────────────────────────────────────────────────────────
 
 export function listLocalBackups() {
   if (!fs.existsSync(LOCAL_BACKUP_DIR)) return [];
   return fs.readdirSync(LOCAL_BACKUP_DIR)
     .filter(f => f.startsWith('purplebox-backup-') && f.endsWith('.json.gz'))
-    .sort()
-    .reverse()
+    .sort().reverse()
     .map(filename => {
       const stat = fs.statSync(path.join(LOCAL_BACKUP_DIR, filename));
-      return {
-        filename,
-        sizeKb: Math.round(stat.size / 1024),
-        createdAt: stat.mtime.toISOString(),
-      };
+      return { filename, sizeKb: Math.round(stat.size / 1024), createdAt: stat.mtime.toISOString() };
     });
 }
-
-// ── List Drive backups ───────────────────────────────────────────────────────
 
 export async function listDriveBackups() {
   const drive = driveClient();
@@ -214,7 +255,7 @@ export async function listDriveBackups() {
       driveUrl:    f.webViewLink,
     }));
   } catch (err) {
-    console.error('[Backup] listDriveBackups error:', err.message);
+    log(`listDriveBackups error: ${err.message}`, 'error');
     return [];
   }
 }
