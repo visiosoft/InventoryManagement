@@ -193,10 +193,11 @@ export default function Quotes() {
     const [editing, setEditing] = useState<Quote | null>(null)
     const [error, setError] = useState('')
 
-    const { data: customers } = useQuery<Customer[]>({
-        queryKey: ['customers', ''],
-        queryFn: () => api.get('/customers').then((r) => r.data),
+    const { data: customersPage } = useQuery<{ data: Customer[] }>({
+        queryKey: ['customers-all'],
+        queryFn: () => api.get('/customers', { params: { limit: 500 } }).then((r) => r.data),
     })
+    const customers = customersPage?.data ?? []
 
     const { data: quotes, isLoading } = useQuery<Quote[]>({
         queryKey: ['quotes', search, status],

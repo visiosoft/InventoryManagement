@@ -341,18 +341,20 @@ export default function NewContract() {
   const [floorFilter, setFloorFilter] = useState('')
   const [showBooked, setShowBooked] = useState(false)
 
-  const { data: customers = [] } = useQuery<Customer[]>({
-    queryKey: ['customers', ''],
-    queryFn: () => api.get('/customers').then((r) => r.data),
+  const { data: customersPage } = useQuery<{ data: Customer[] }>({
+    queryKey: ['customers-all'],
+    queryFn: () => api.get('/customers', { params: { limit: 500 } }).then((r) => r.data),
   })
+  const customers = customersPage?.data ?? []
   const { data: units = [], isLoading: unitsLoading } = useQuery<Unit[]>({
     queryKey: ['units'],
     queryFn: () => api.get('/units').then((r) => r.data),
   })
-  const { data: contracts = [] } = useQuery<Contract[]>({
-    queryKey: ['contracts'],
-    queryFn: () => api.get('/contracts').then((r) => r.data),
+  const { data: contractsPage } = useQuery<{ data: Contract[] }>({
+    queryKey: ['contracts-all'],
+    queryFn: () => api.get('/contracts', { params: { limit: 1000 } }).then((r) => r.data),
   })
+  const contracts = contractsPage?.data ?? []
   const { data: unitTypes = [] } = useQuery<UnitType[]>({
     queryKey: ['unit-types'],
     queryFn: () => unitTypeApi.list(),

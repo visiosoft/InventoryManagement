@@ -108,6 +108,21 @@ export const invoiceApi = {
   recordPayment: (id: string, body: { amount: number; method: string; date: string; notes?: string }) =>
     api.post<Invoice>(`/invoices/${id}/record-payment`, body).then((r) => r.data),
   deletePayment: (id: string, idx: number) => api.delete<Invoice>(`/invoices/${id}/payments/${idx}`).then((r) => r.data),
+  importCsv: (form: FormData, mode: 'skip' | 'update' = 'skip') =>
+    api
+      .post<{ ok: boolean; batch: string; summary: { created: number; updated: number; skipped: number; errors: number; stubsCreated: number; total: number }; stubs: string[]; errors: string[] }>(
+        `/invoices/import/csv?mode=${mode}`, form, { headers: { 'Content-Type': 'multipart/form-data' } }
+      )
+      .then((r) => r.data),
+  rollbackImport: (batch: string) =>
+    api.delete<{ ok: boolean; invoicesDeleted: number; customersDeleted: number }>(`/invoices/import/rollback/${encodeURIComponent(batch)}`).then((r) => r.data),
+}
+
+export const customerApi = {
+  bulkDelete: (ids: string[]) =>
+    api.post<{ ok: boolean; deleted: number; skipped: number }>('/customers/bulk-delete', { ids }).then((r) => r.data),
+  mergeInto: (sourceId: string, targetId: string) =>
+    api.post<{ ok: boolean; invoicesMoved: number; deletedCustomer: string; intoCustomer: string }>(`/customers/${sourceId}/merge-into/${targetId}`).then((r) => r.data),
 }
 
 export interface VendorSummary {

@@ -93,4 +93,34 @@ router.delete('/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
+// Merge sourceId into targetId: move all invoices, then delete source
+router.post('/:id/merge-into/:targetId', async (req, res) => {
+  const { id, targetId } = req.params;
+  if (id === targetId) return res.status(400).json({ error: 'Cannot merge a customer into itself' });
+  const [source, target] = await Promise.all([
+    Customer.findById(id),
+    Customer.findById(targetId),
+  ]);
+  if (!source) return res.status(404).json({ error: 'Source customer not found' });
+  if (!target) return res.status(404).json({ error: 'Target customer not found' });
+
+  const result = await Invoice.updateMany({ customer: id }, { $set: { customer: targetId } });
+  await Customer.findByIdAndDelete(id);
+  res.json({ ok: true, invoicesMoved: result.modifiedCount, deletedCustomer: source.fullName, intoCustomer: target.fullName });
+});
+
+router.post('/bulk-delete', async (req, res) => {
+  const ids = Array.isArray(req.body.ids) ? req.body.ids : [];
+  if (!ids.length) return res.status(400).json({ error: 'No ids provided' });
+  let deleted = 0;
+  const skipped = [];
+  for (const id of ids) {
+    const hasContracts = await Contract.exists({ customer: id });
+    if (hasContracts) { skipped.push(id); continue; }
+    await Customer.findByIdAndDelete(id);
+    deleted++;
+  }
+  res.json({ ok: true, deleted, skipped: skipped.length });
+});
+
 export default router;

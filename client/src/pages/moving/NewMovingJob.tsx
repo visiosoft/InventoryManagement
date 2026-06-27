@@ -28,10 +28,11 @@ export default function NewMovingJob() {
   const [customerId, setCustomerId] = useState('')
   const [customerName, setCustomerName] = useState('')
 
-  const { data: customers = [] } = useQuery<Customer[]>({
+  const { data: customersPage } = useQuery<{ data: Customer[] }>({
     queryKey: ['customers-search', customerSearch],
-    queryFn: () => api.get('/customers', { params: { q: customerSearch, limit: 20 } }).then(r => r.data.customers ?? r.data),
+    queryFn: () => api.get('/customers', { params: { search: customerSearch, limit: 20 } }).then(r => r.data),
   })
+  const customers = customersPage?.data ?? []
 
   const createCustomerMut = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.post('/customers', body).then(r => r.data),

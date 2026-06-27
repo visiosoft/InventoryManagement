@@ -1,4 +1,7 @@
 export function parseCsv(content) {
+    if (Buffer.isBuffer(content)) content = content.toString('utf8');
+    content = String(content);
+
     const rows = [];
     let row = [];
     let value = '';

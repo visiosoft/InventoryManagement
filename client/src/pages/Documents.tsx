@@ -10,11 +10,12 @@ import { formatDate } from '../lib/utils'
 export function UploadDocumentForm({ contractId, customerId, onDone }: { contractId?: string; customerId?: string; onDone: () => void }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const { data: customers } = useQuery<Customer[]>({
-    queryKey: ['customers', ''],
-    queryFn: () => api.get('/customers').then((r) => r.data),
+  const { data: customersPage } = useQuery<{ data: Customer[] }>({
+    queryKey: ['customers-all'],
+    queryFn: () => api.get('/customers', { params: { limit: 500 } }).then((r) => r.data),
     enabled: !customerId,
   })
+  const customers = customersPage?.data ?? []
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()

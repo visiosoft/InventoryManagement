@@ -90,6 +90,8 @@ const customerSchema = new Schema(
     passportExpiry: { type: Date },
     accessPersons: [accessPersonSchema],
     notes: { type: String, default: '' },
+    source: { type: String, enum: ['manual', 'import_csv'], default: 'manual' },
+    importBatch: { type: String, default: null },
   },
   { timestamps: true }
 );
@@ -327,6 +329,8 @@ const invoiceSchema = new Schema(
     attachments: { type: [invoiceAttachmentSchema], default: [] },
     status: { type: String, enum: ['draft', 'sent', 'paid', 'overdue', 'cancelled'], default: 'draft' },
     shareToken: { type: String, default: null },
+    source: { type: String, enum: ['manual', 'import_csv'], default: 'manual' },
+    importBatch: { type: String, default: null },
   },
   { timestamps: true }
 );

@@ -160,10 +160,11 @@ function AddPaymentForm({
   error: string
   onSubmit: (body: { contract: string; amount: string; dueDate: string; notes: string }) => void
 }) {
-  const { data: contracts } = useQuery<Contract[]>({
-    queryKey: ['contracts', ''],
-    queryFn: () => api.get('/contracts', { params: { status: 'active' } }).then((r) => r.data),
+  const { data: contractsPage } = useQuery<{ data: Contract[] }>({
+    queryKey: ['contracts-active'],
+    queryFn: () => api.get('/contracts', { params: { status: 'active', limit: 500 } }).then((r) => r.data),
   })
+  const contracts = contractsPage?.data
   const [contract, setContract] = useState('')
   const [amount, setAmount] = useState('')
   const [dueDate, setDueDate] = useState(new Date().toISOString().slice(0, 10))

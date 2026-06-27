@@ -558,6 +558,32 @@ export default function Invoices() {
     const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([])
     const [adding, setAdding] = useState(false)
     const [editing, setEditing] = useState<Invoice | null>(null)
+
+    type ImportSummary = { created: number; updated: number; skipped: number; errors: number; stubsCreated: number; total: number }
+    const [importOpen, setImportOpen]     = useState(false)
+    const [importMode, setImportMode]     = useState<'skip' | 'update'>('skip')
+    const [importFile, setImportFile]     = useState<File | null>(null)
+    const [importResult, setImportResult] = useState<{ batch: string; summary: ImportSummary; stubs: string[]; errors: string[] } | null>(null)
+
+    const runImport = useMutation({
+        mutationFn: () => {
+            if (!importFile) throw new Error('No file selected')
+            const form = new FormData()
+            form.append('file', importFile)
+            return invoiceApi.importCsv(form, importMode)
+        },
+        onSuccess: (res) => {
+            setImportResult({ batch: res.batch, summary: res.summary, stubs: res.stubs, errors: res.errors })
+            setImportFile(null)
+            qc.invalidateQueries({ queryKey: ['invoices'] })
+        },
+    })
+
+    const rollbackImport = useMutation({
+        mutationFn: (batch: string) => invoiceApi.rollbackImport(batch),
+        onSuccess: () => { setImportResult(null); qc.invalidateQueries({ queryKey: ['invoices'] }) },
+    })
+
     const [paying, setPaying] = useState<Invoice | null>(null)
     const [error, setError] = useState('')
 
@@ -667,6 +693,9 @@ export default function Invoices() {
                                 {removeManyInvoices.isPending ? 'Deleting…' : `Delete selected (${selectedInvoiceIds.length})`}
                             </Button>
                         )}
+                        <Button variant="outline" onClick={() => { setImportFile(null); setImportResult(null); runImport.reset(); setImportOpen(true) }}>
+                            <Upload size={15} /> Import CSV
+                        </Button>
                         <Button onClick={() => setAdding(true)}><Plus size={15} /> New</Button>
                     </div>
                 }
@@ -782,6 +811,87 @@ export default function Invoices() {
                         </Card>
                     </div>
                 )}
+            </Modal>
+
+            {/* Invoice CSV Import Modal */}
+            <Modal open={importOpen} onClose={() => setImportOpen(false)} title="Import Invoices from Zoho CSV" wide>
+                <div className="space-y-4">
+                    {/* File drop zone */}
+                    <label className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-muted/30 py-10 cursor-pointer hover:bg-muted/50 transition-colors">
+                        <Upload size={28} className="text-muted-foreground" />
+                        <span className="text-sm font-medium">{importFile ? importFile.name : 'Click to select CSV file'}</span>
+                        <span className="text-xs text-muted-foreground">Zoho "Invoices" CSV export — columns: Invoice#, Date, Customer Name, Status, Amount, Balance Due</span>
+                        <input type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) { setImportFile(f); setImportResult(null); runImport.reset() } e.target.value = '' }} />
+                    </label>
+
+                    {/* Skip / Update toggle */}
+                    <div className="space-y-2">
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">If invoice already exists (matched by Invoice#)</p>
+                        <div className="grid grid-cols-2 gap-2">
+                            <button type="button" onClick={() => setImportMode('skip')} className={`rounded-lg border px-4 py-3 text-left transition-colors ${importMode === 'skip' ? 'border-primary bg-primary/8 text-primary' : 'border-border hover:bg-muted/50'}`}>
+                                <p className="text-sm font-semibold">Skip</p>
+                                <p className="text-xs text-muted-foreground mt-0.5">Leave existing invoice unchanged</p>
+                            </button>
+                            <button type="button" onClick={() => setImportMode('update')} className={`rounded-lg border px-4 py-3 text-left transition-colors ${importMode === 'update' ? 'border-primary bg-primary/8 text-primary' : 'border-border hover:bg-muted/50'}`}>
+                                <p className="text-sm font-semibold">Update</p>
+                                <p className="text-xs text-muted-foreground mt-0.5">Overwrite existing invoice data</p>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Result summary */}
+                    {importResult && (
+                        <div className="rounded-lg border bg-muted/40 p-4 space-y-3">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2 text-sm font-semibold text-emerald-600">
+                                    <Download size={16} /> Import complete — batch {new Date(importResult.batch).toLocaleTimeString()}
+                                </div>
+                                <button
+                                    className="text-xs text-destructive hover:underline cursor-pointer"
+                                    onClick={() => { if (confirm('Roll back this entire import? This deletes all invoices created in this batch.')) rollbackImport.mutate(importResult.batch) }}
+                                    disabled={rollbackImport.isPending}
+                                >
+                                    {rollbackImport.isPending ? 'Rolling back…' : '↩ Rollback this import'}
+                                </button>
+                            </div>
+                            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 text-center">
+                                {([
+                                    ['Created', importResult.summary.created, 'emerald'],
+                                    ['Updated', importResult.summary.updated, 'blue'],
+                                    ['Skipped', importResult.summary.skipped, 'gray'],
+                                    ['Stubs', importResult.summary.stubsCreated, 'amber'],
+                                    ['Errors', importResult.summary.errors, 'red'],
+                                ] as [string, number, string][]).map(([label, val, color]) => (
+                                    <div key={label} className={`rounded-lg bg-${color}-500/10 py-2`}>
+                                        <div className={`text-xl font-bold text-${color}-700 dark:text-${color}-400`}>{val}</div>
+                                        <div className="text-xs text-muted-foreground">{label}</div>
+                                    </div>
+                                ))}
+                            </div>
+                            {importResult.stubs.length > 0 && (
+                                <div className="space-y-1">
+                                    <p className="text-xs font-semibold text-amber-700">
+                                        These names had no match — stub customers were created. Go to Customers and use "Merge into…" to link them to the real customer.
+                                    </p>
+                                    <div className="max-h-32 overflow-y-auto rounded border bg-background p-2 space-y-0.5">
+                                        {importResult.stubs.map((name, i) => <div key={i} className="text-xs text-muted-foreground">{name}</div>)}
+                                    </div>
+                                </div>
+                            )}
+                            {importResult.errors.length > 0 && (
+                                <div className="text-xs text-destructive space-y-0.5">
+                                    {importResult.errors.map((e, i) => <div key={i}>{e}</div>)}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {runImport.error && <p className="text-sm text-destructive">{apiError(runImport.error)}</p>}
+
+                    <Button className="w-full" disabled={!importFile || runImport.isPending} onClick={() => runImport.mutate()}>
+                        {runImport.isPending ? 'Importing…' : 'Import'}
+                    </Button>
+                </div>
             </Modal>
         </div>
     )

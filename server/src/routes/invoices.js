@@ -2,6 +2,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import multer from 'multer';
 import { Customer, Invoice, Payment, nextInvoiceNo } from '../models/index.js';
+import { parseCsv } from '../services/csv.js';
 import { renderInvoicePdf } from '../services/invoicePdf.js';
 import { uploadFile } from '../services/drive.js';
 import { sendWhatsAppText, whatsappSendConfigured, whatsappSendMissing } from '../services/whatsapp.js';
@@ -111,6 +112,229 @@ async function detachLinkedPayment(invoiceId) {
     linked.method = '';
     await linked.save();
 }
+
+// ── CSV import helpers ────────────────────────────────────────────────────────
+function parseZohoMoney(v) {
+    return parseFloat(String(v || '0').replace(/[^0-9.]/g, '')) || 0;
+}
+
+function parseZohoDate(v) {
+    if (!v) return null;
+    // "13-Feb-26" → "Feb 13 2026"
+    const m = String(v).match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2})$/);
+    if (m) { const d = new Date(`${m[2]} ${m[1]} 20${m[3]}`); return isNaN(d.getTime()) ? null : d; }
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? null : d;
+}
+
+function mapZohoInvoiceStatus(v) {
+    switch (String(v || '').trim().toLowerCase()) {
+        case 'paid':    return 'paid';
+        case 'overdue': return 'overdue';
+        case 'sent':    return 'sent';
+        case 'draft':   return 'draft';
+        case 'void':    return 'cancelled';
+        default:        return 'draft';
+    }
+}
+
+// Build lookup: normalized fullName → { _id, fullName }
+async function buildCustomerNameLookup() {
+    const customers = await Customer.find({}).select('_id fullName');
+    // Store as array for fuzzy scanning
+    return customers.map(c => ({ _id: c._id, name: String(c.fullName || '').trim(), lower: String(c.fullName || '').trim().toLowerCase() }));
+}
+
+// Multi-tier name matching:
+// 1. Exact (case-insensitive)
+// 2. System name STARTS WITH csv name  (e.g. "Katya" → "Katya Ekaterini De Nysschen")
+// 3. CSV name STARTS WITH system name
+// 4. First word of csv name matches first word of system name (min 3 chars)
+function matchCustomer(csvName, customers) {
+    const needle = csvName.toLowerCase().trim();
+    const needleWords = needle.split(/\s+/);
+
+    // Tier 1: exact
+    const exact = customers.find(c => c.lower === needle);
+    if (exact) return exact._id;
+
+    // Tier 2: system name starts with full csv name
+    const fwd = customers.find(c => c.lower.startsWith(needle + ' ') || c.lower === needle);
+    if (fwd) return fwd._id;
+
+    // Tier 3: csv name starts with system name
+    const rev = customers.find(c => needle.startsWith(c.lower + ' '));
+    if (rev) return rev._id;
+
+    // Tier 4: first word of csv matches first word of system (min 3 chars)
+    const needleFirst = needleWords[0];
+    if (needleFirst.length >= 3) {
+        const firstWord = customers.find(c => {
+            const sysFirst = c.lower.split(/\s+/)[0];
+            return sysFirst === needleFirst;
+        });
+        if (firstWord) return firstWord._id;
+    }
+
+    return null;
+}
+
+// Rollback all invoices + customers created by a specific import batch
+router.delete('/import/rollback/:batch', async (req, res) => {
+    const batch = req.params.batch;
+    const invoices = await Invoice.find({ importBatch: batch }).select('_id');
+    const invoiceIds = invoices.map(i => i._id);
+    await Invoice.deleteMany({ importBatch: batch });
+    const customers = await Customer.deleteMany({ importBatch: batch });
+    res.json({ ok: true, invoicesDeleted: invoiceIds.length, customersDeleted: customers.deletedCount });
+});
+
+// List import batches
+router.get('/import/batches', async (req, res) => {
+    const batches = await Invoice.distinct('importBatch', { importBatch: { $ne: null } });
+    res.json(batches.filter(Boolean));
+});
+
+// One-time cleanup: delete stub customers (source=import_csv OR recently created with no contracts/units)
+// and their linked invoices, created within the last N hours
+router.delete('/import/cleanup-stubs', async (req, res) => {
+    const hours = Math.min(72, Math.max(1, parseInt(req.query.hours) || 24));
+    const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+
+    // Find customers created recently with source=import_csv
+    const stubCustomers = await Customer.find({
+        source: 'import_csv',
+        createdAt: { $gte: since },
+    }).select('_id fullName');
+
+    // Also find customers created recently that have no contracts/units
+    // (These are the ones from the first bad import that had no source tag)
+    const recentNoSource = await Customer.find({
+        createdAt: { $gte: since },
+        source: { $in: ['manual', null, undefined] },
+    }).select('_id fullName');
+
+    // Filter: only delete if they have no contracts, no units, and invoices only from recent import
+    const { Contract, Unit } = await import('../models/index.js');
+    const stubIds = [];
+    for (const c of recentNoSource) {
+        const hasContract = await Contract.exists({ customer: c._id });
+        const hasUnit = await Unit.exists({ customer: c._id });
+        if (!hasContract && !hasUnit) {
+            stubIds.push(c._id);
+        }
+    }
+
+    const allStubIds = [...stubCustomers.map(c => c._id), ...stubIds];
+
+    // Delete invoices linked to stub customers
+    const invResult = await Invoice.deleteMany({ customer: { $in: allStubIds } });
+    // Delete stub customers
+    const custResult = await Customer.deleteMany({ _id: { $in: allStubIds } });
+
+    res.json({
+        ok: true,
+        customersDeleted: custResult.deletedCount,
+        invoicesDeleted: invResult.deletedCount,
+        names: [...stubCustomers.map(c => c.fullName), ...recentNoSource.filter(c => stubIds.some(id => id.equals(c._id))).map(c => c.fullName)],
+    });
+});
+
+router.post('/import/csv', upload.single('file'), async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const mode  = String(req.query.mode || 'skip');
+    const batch = new Date().toISOString(); // unique batch ID per run
+
+    let rows;
+    try { rows = parseCsv(req.file.buffer); }
+    catch (e) { return res.status(400).json({ error: `CSV parse error: ${e.message}` }); }
+
+    const customers = await buildCustomerNameLookup();
+    // in-run cache so we only create one stub per unique unmatched name
+    const stubCache = new Map(); // lowerName → _id
+    const summary = { created: 0, updated: 0, skipped: 0, errors: 0, stubsCreated: 0, total: rows.length };
+    const errorLines = [];
+    const stubNames = []; // names that became stubs
+
+    for (const row of rows) {
+        try {
+            const invoiceNo    = String(row['Invoice#'] || '').trim();
+            const customerName = String(row['Customer Name'] || '').trim();
+            if (!invoiceNo || !customerName) { summary.errors++; continue; }
+
+            const amount      = parseZohoMoney(row['Amount']);
+            const balanceDue  = parseZohoMoney(row['Balance Due']);
+            const paymentMade = Math.max(0, Math.round((amount - balanceDue) * 100) / 100);
+            const invoiceDate = parseZohoDate(row['Date']) || new Date();
+            const dueDate     = parseZohoDate(row['Due Date']) || invoiceDate;
+            const status      = mapZohoInvoiceStatus(row['Status']);
+            const orderNumber = String(row['Order Number'] || '').trim();
+
+            // Match customer — create a tagged stub if no match so user can merge later
+            let customerId = matchCustomer(customerName, customers);
+            if (!customerId) {
+                const key = customerName.toLowerCase();
+                if (stubCache.has(key)) {
+                    customerId = stubCache.get(key);
+                } else {
+                    // Check if a stub for this name already exists from a prior run
+                    const existing = await Customer.findOne({ fullName: customerName, source: 'import_csv' });
+                    if (existing) {
+                        customerId = existing._id;
+                    } else {
+                        const stub = await Customer.create({ fullName: customerName, source: 'import_csv', importBatch: batch });
+                        customerId = stub._id;
+                        customers.push({ _id: stub._id, name: customerName, lower: key });
+                        summary.stubsCreated++;
+                        stubNames.push(customerName);
+                    }
+                    stubCache.set(key, customerId);
+                }
+            }
+
+            const existing = await Invoice.findOne({ invoiceNo });
+
+            if (existing) {
+                if (mode === 'skip') { summary.skipped++; continue; }
+                existing.customer     = customerId;
+                existing.invoiceDate  = invoiceDate;
+                existing.dueDate      = dueDate;
+                existing.status       = status;
+                existing.orderNumber  = orderNumber;
+                existing.total        = amount;
+                existing.subTotal     = amount;
+                existing.paymentMade  = paymentMade;
+                if (paymentMade > 0 && existing.paymentHistory.length === 0) {
+                    existing.paymentHistory.push({ date: invoiceDate, amount: paymentMade, method: 'bank_transfer', notes: 'Imported from Zoho' });
+                }
+                existing.source      = 'import_csv';
+                existing.importBatch = batch;
+                await existing.save();
+                summary.updated++;
+            } else {
+                const items = [{ itemDetails: 'Moving / Storage Service', quantity: 1, rate: amount, discountPct: 0, amount }];
+                const paymentHistory = paymentMade > 0
+                    ? [{ date: invoiceDate, amount: paymentMade, method: 'bank_transfer', notes: 'Imported from Zoho' }]
+                    : [];
+                await Invoice.create({
+                    invoiceNo, orderNumber, invoiceDate, dueDate,
+                    customer: customerId,
+                    items, subTotal: amount, total: amount, paymentMade,
+                    paymentHistory, status,
+                    bankInformation: DEFAULT_BANK_INFORMATION,
+                    source: 'import_csv',
+                    importBatch: batch,
+                });
+                summary.created++;
+            }
+        } catch (err) {
+            summary.errors++;
+            errorLines.push(`${row['Invoice#'] || '?'}: ${err.message}`);
+        }
+    }
+
+    res.json({ ok: true, batch, summary, stubs: stubNames, errors: errorLines.slice(0, 20) });
+});
 
 // Public: view invoice PDF by share token (no auth required)
 router.get('/public/:token/pdf', async (req, res) => {
