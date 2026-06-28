@@ -236,7 +236,7 @@ export default function MovingDashboard() {
                     <Pie data={statusPie} cx="50%" cy="50%" innerRadius={42} outerRadius={68} paddingAngle={2} dataKey="value">
                       {statusPie.map((e, i) => <Cell key={i} fill={e.color} />)}
                     </Pie>
-                    <Tooltip formatter={(v: number, name: string) => [v + ' jobs', name]} contentStyle={{ borderRadius: 8, fontSize: 12 }} />
+                    <Tooltip formatter={(v) => [v + ' jobs', '']} contentStyle={{ borderRadius: 8, fontSize: 12 }} />
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="flex flex-wrap gap-x-3 gap-y-1.5 justify-center">
@@ -266,7 +266,7 @@ export default function MovingDashboard() {
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(0,0,0,0.06)" />
                   <XAxis type="number" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} allowDecimals={false} />
                   <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={100} />
-                  <Tooltip formatter={(v: number) => [v + ' jobs', 'Count']} contentStyle={{ borderRadius: 8, fontSize: 12 }} />
+                  <Tooltip formatter={(v) => [v + ' jobs', 'Count']} contentStyle={{ borderRadius: 8, fontSize: 12 }} />
                   <Bar dataKey="count" radius={[0, 4, 4, 0]} maxBarSize={22}>
                     {typeBars.map((e, i) => <Cell key={i} fill={e.fill} />)}
                   </Bar>

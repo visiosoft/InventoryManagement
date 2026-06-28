@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { Plus, Search, ArrowRight, MapPin } from 'lucide-react'
 import { api } from '../../lib/api'
 import type { MovingJob, MovingJobStatus } from '../../lib/types'
-import { Badge, Button, Card, CardBody, Input, PageHeader, Select, Spinner, Table, Td, Th } from '../../components/ui'
+import { Badge, Button, Card, CardBody, Input, PageHeader, Spinner, Table, Td, Th } from '../../components/ui'
 import { cn } from '../../lib/utils'
 
 interface JobsBreakdown {

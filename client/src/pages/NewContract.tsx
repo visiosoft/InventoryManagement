@@ -281,7 +281,7 @@ function ModePicker({ onPick }: { onPick: (m: Mode) => void }) {
 // ── Unit availability card ────────────────────────────────────────────────────
 type UnitAvail = 'available' | 'prebookable' | 'booked' | 'maintenance'
 
-function unitAvailability(u: Unit, contracts: Contract[], startDate: string, endDate: string): UnitAvail {
+function unitAvailability(u: Unit, _contracts: Contract[], _startDate: string, _endDate: string): UnitAvail {
   if (u.status === 'maintenance') return 'maintenance'
   // Units can be booked by multiple customers — never block as 'booked'
   if (u.status === 'available') return 'available'

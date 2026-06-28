@@ -457,7 +457,7 @@ export default function MovingJobDetail() {
     e.preventDefault()
     const f = new FormData(e.currentTarget)
     const packing = Number(f.get('packing') || 0)
-    updateMut.mutate({ costs: { ...job.costs, packing, total: (job.costs?.labor || 0) + (job.costs?.truck || 0) + (job.costs?.materials || 0) + packing + (job.costs?.extras || 0) + (job.costs?.externalHires || 0) } })
+    updateMut.mutate({ costs: { ...job!.costs, packing, total: (job!.costs?.labor || 0) + (job!.costs?.truck || 0) + (job!.costs?.materials || 0) + packing + (job!.costs?.extras || 0) + (job!.costs?.externalHires || 0) } })
   }
 
   const addedWorkerIds = new Set(crewList.map(c => c.worker._id))
