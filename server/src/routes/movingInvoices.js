@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import crypto from 'crypto';
-import { MovingInvoice, nextMovingInvoiceNo } from '../models/index.js';
+import { MovingInvoice, Customer, MovingJob, nextMovingInvoiceNo } from '../models/index.js';
 import { generateMovingInvoicePdf } from '../services/movingInvoicePdf.js';
+import { notifyInvoiceReady, notifyPaymentReceived } from '../services/movingNotifications.js';
 
 const router = Router();
 
@@ -9,6 +10,30 @@ const POPULATE_INV = [
   { path: 'customer', select: 'fullName phone email address' },
   { path: 'job', select: 'jobNo status scheduledDate pickupAddress deliveryAddress' },
 ];
+
+// Public payment page data (no auth — uses share token)
+// MUST be before /:id to prevent Express matching "pay" as an ObjectId
+router.get('/pay/:token', async (req, res) => {
+  try {
+    const invoice = await MovingInvoice.findOne({ shareToken: req.params.token })
+      .populate('customer', 'fullName email phone')
+      .populate('job', 'jobNo pickupAddress deliveryAddress scheduledDate');
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+    res.json({
+      invoiceNo: invoice.invoiceNo,
+      customer: invoice.customer?.fullName,
+      jobNo: invoice.job?.jobNo,
+      items: invoice.items,
+      total: invoice.total,
+      depositPaid: invoice.depositPaid,
+      balanceDue: invoice.balanceDue,
+      status: invoice.status,
+      bankInformation: invoice.bankInformation,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // List invoices
 router.get('/', async (req, res) => {
@@ -96,6 +121,9 @@ router.post('/:id/record-payment', async (req, res) => {
     invoice.status = invoice.balanceDue <= 0 ? 'paid' : 'partial';
     await invoice.save();
 
+    const customer = await Customer.findById(invoice.customer).select('fullName phone');
+    if (customer) notifyPaymentReceived(customer, invoice.invoiceNo, Number(amount));
+
     res.json(invoice);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -133,9 +161,104 @@ router.post('/:id/share-token', async (req, res) => {
     const token = crypto.randomUUID();
     const invoice = await MovingInvoice.findByIdAndUpdate(req.params.id, { shareToken: token }, { new: true });
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+
+    const customer = await Customer.findById(invoice.customer).select('fullName phone');
+    const job = invoice.job ? await MovingJob.findById(invoice.job).select('jobNo') : null;
+    if (customer && job) {
+      const baseUrl = process.env.APP_URL || req.headers.origin || '';
+      const invoiceUrl = `${baseUrl}/moving/invoices/${invoice._id}/pdf?token=${token}`;
+      notifyInvoiceReady(job, customer, invoiceUrl);
+    }
+
     res.json({ token });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Generate payment link — sends WhatsApp with pay URL
+router.post('/:id/payment-link', async (req, res) => {
+  try {
+    const invoice = await MovingInvoice.findById(req.params.id).populate('customer', 'fullName phone email').populate('job', 'jobNo');
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+    if (invoice.balanceDue <= 0) return res.status(400).json({ error: 'Invoice already fully paid' });
+
+    if (!invoice.shareToken) {
+      invoice.shareToken = crypto.randomUUID();
+      await invoice.save();
+    }
+
+    const baseUrl = process.env.APP_URL || req.headers.origin || '';
+    const payUrl = `${baseUrl}/pay/moving/${invoice.shareToken}`;
+
+    const customer = invoice.customer;
+    if (customer?.phone) {
+      const { sendWhatsAppText, whatsappSendConfigured } = await import('../services/whatsapp.js');
+      if (whatsappSendConfigured()) {
+        const msg = [
+          `Hi ${customer.fullName},`,
+          ``,
+          `Your invoice *${invoice.invoiceNo}* is ready.`,
+          `Balance due: *AED ${invoice.balanceDue.toLocaleString()}*`,
+          ``,
+          `💳 Pay online: ${payUrl}`,
+          ``,
+          `You can also pay via bank transfer. Contact us for bank details.`,
+          ``,
+          `Thank you! — PurpleBox Moving`,
+        ].filter(Boolean).join('\n');
+        try { await sendWhatsAppText({ to: customer.phone, body: msg }); } catch {}
+      }
+    }
+
+    res.json({ payUrl, token: invoice.shareToken, balanceDue: invoice.balanceDue });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Revise invoice and resend (supervisor adds extra work after job)
+router.post('/:id/revise', async (req, res) => {
+  try {
+    const { items, supervisorNote } = req.body;
+    const invoice = await MovingInvoice.findById(req.params.id);
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+    if (invoice.status === 'paid') return res.status(400).json({ error: 'Cannot revise a fully paid invoice' });
+
+    const total = (items || []).reduce((s, i) => s + (i.amount || 0), 0);
+    const totalPaid = (invoice.depositPaid || 0) + (invoice.paymentHistory || []).reduce((s, p) => s + p.amount, 0);
+    const balanceDue = Math.max(0, total - totalPaid);
+
+    invoice.items = items;
+    invoice.total = total;
+    invoice.balanceDue = balanceDue;
+    invoice.status = 'sent';
+    if (supervisorNote) invoice.notes = [invoice.notes, `[Revision] ${supervisorNote}`].filter(Boolean).join('\n\n');
+    await invoice.save();
+
+    const customer = await Customer.findById(invoice.customer).select('fullName phone');
+    if (customer?.phone) {
+      const { sendWhatsAppText, whatsappSendConfigured } = await import('../services/whatsapp.js');
+      if (whatsappSendConfigured()) {
+        const msg = [
+          `Hi ${customer.fullName},`,
+          ``,
+          `Your invoice *${invoice.invoiceNo}* has been revised.`,
+          supervisorNote ? `Note: ${supervisorNote}` : ``,
+          ``,
+          `New total: *AED ${total.toLocaleString()}*`,
+          `Balance due: *AED ${balanceDue.toLocaleString()}*`,
+          ``,
+          `Thank you! — PurpleBox Moving`,
+        ].filter(l => l !== undefined).join('\n');
+        try { await sendWhatsAppText({ to: customer.phone, body: msg }); } catch {}
+      }
+    }
+
+    await invoice.populate(POPULATE_INV);
+    res.json(invoice);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 

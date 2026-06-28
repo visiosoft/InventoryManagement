@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Download, Share2, Edit, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, Download, Share2, Edit, Plus, Trash2, RefreshCw } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingInvoice, MovingInvoiceStatus } from '../../lib/types'
 import { Badge, Button, Card, CardBody, CardHeader, Field, Input, Modal, Select, Spinner, Table, Td, Th } from '../../components/ui'
@@ -34,6 +34,7 @@ export default function MovingInvoiceDetail() {
   const [err, setErr] = useState('')
   const [payModal, setPayModal] = useState(false)
   const [itemsModal, setItemsModal] = useState(false)
+  const [reviseModal, setReviseModal] = useState(false)
   const [items, setItems] = useState<Array<{ description: string; qty: number; rate: number; amount: number }>>([])
   const [_editIdx, setEditIdx] = useState<number | null>(null)
   const [shareToken, setShareToken] = useState<string>('')
@@ -54,7 +55,8 @@ export default function MovingInvoiceDetail() {
   const updateItemsMut = useMutation({
     mutationFn: (newItems: typeof items) => {
       const total = newItems.reduce((s, i) => s + i.amount, 0)
-      return api.put(`/moving-invoices/${id}`, { items: newItems, total, balanceDue: total }).then(r => r.data)
+      const paid = (invoice?.depositPaid ?? 0) + (invoice?.paymentHistory ?? []).reduce((s, p) => s + p.amount, 0)
+      return api.put(`/moving-invoices/${id}`, { items: newItems, total, balanceDue: Math.max(0, total - paid) }).then(r => r.data)
     },
     onSuccess: () => { invalidate(); setItemsModal(false); setEditIdx(null) },
     onError: (e) => setErr(apiError(e)),
@@ -66,13 +68,22 @@ export default function MovingInvoiceDetail() {
     onError: (e) => setErr(apiError(e)),
   })
 
+  const reviseMut = useMutation({
+    mutationFn: (body: { items: typeof items; supervisorNote: string }) =>
+      api.post(`/moving-invoices/${id}/revise`, body).then(r => r.data),
+    onSuccess: () => { invalidate(); setReviseModal(false); setErr('') },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  useEffect(() => {
+    if (invoice?.items && invoice.items.length > 0) {
+      setItems(invoice.items as typeof items)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoice?._id])
+
   if (isLoading) return <div className="p-8"><Spinner /></div>
   if (!invoice) return <div className="p-8 text-muted-foreground">Invoice not found</div>
-
-  // Initialize items from invoice
-  if (items.length === 0 && invoice.items && invoice.items.length > 0) {
-    setItems(invoice.items as typeof items)
-  }
 
   const transitions = STATUS_TRANSITIONS[invoice.status] ?? []
   const total = items.reduce((s, i) => s + i.amount, 0)
@@ -106,6 +117,16 @@ export default function MovingInvoiceDetail() {
         ))}
         {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
           <Button size="sm" onClick={() => setPayModal(true)}>Record Payment</Button>
+        )}
+        {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => { setItems(invoice.items as typeof items); setReviseModal(true) }}
+            title="Add extra charges or adjust items, then resend via WhatsApp"
+          >
+            <RefreshCw size={13} className="mr-1" />Revise &amp; Resend
+          </Button>
         )}
         <Button
           size="sm"
@@ -144,6 +165,20 @@ export default function MovingInvoiceDetail() {
           <Share2 size={13} className="mr-1" />
           WhatsApp
         </Button>
+        {invoice.balanceDue > 0 && (
+          <Button
+            size="sm"
+            onClick={async () => {
+              try {
+                const res = await api.post(`/moving-invoices/${id}/payment-link`, {})
+                setErr('')
+                alert(`Payment link sent via WhatsApp!\n\nLink: ${res.data.payUrl}\nBalance: AED ${res.data.balanceDue}`)
+              } catch (e) { setErr(apiError(e)) }
+            }}
+          >
+            💳 Send Payment Link
+          </Button>
+        )}
       </div>
 
       {err && <p className="text-sm text-red-600">{err}</p>}
@@ -190,7 +225,7 @@ export default function MovingInvoiceDetail() {
       <Card>
         <CardHeader
           title="Line Items"
-          action={invoice.status === 'draft' ? <Button size="sm" onClick={() => setItemsModal(true)}><Edit size={13} className="mr-1" />Edit</Button> : undefined}
+          action={invoice.status !== 'paid' && invoice.status !== 'cancelled' ? <Button size="sm" variant="outline" onClick={() => { setItems(invoice.items as typeof items); setItemsModal(true) }}><Edit size={13} className="mr-1" />Edit Items</Button> : undefined}
         />
         <CardBody>
           <Table>
@@ -277,6 +312,91 @@ export default function MovingInvoiceDetail() {
             <Button type="submit" disabled={payMut.isPending}>{payMut.isPending ? 'Recording…' : 'Record'}</Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Revise & Resend Modal */}
+      <Modal open={reviseModal} title="Revise Invoice & Resend to Customer" onClose={() => { setReviseModal(false); setErr('') }} className="max-w-4xl w-[90vw]">
+        <div className="space-y-4">
+          <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-sm text-amber-800">
+            <p className="font-semibold mb-1">Supervisor Revision</p>
+            <p className="text-xs">Update line items to reflect actual work done on site. The customer will receive a WhatsApp notification with the revised total and balance due.</p>
+          </div>
+
+          {items.map((item, i) => (
+            <div key={i} className="grid grid-cols-5 gap-2 items-end p-3 border rounded-xl">
+              <Field label="Description" className="col-span-2">
+                <input
+                  className="w-full h-9 rounded-lg border bg-card px-3 text-sm"
+                  value={item.description}
+                  onChange={e => {
+                    const updated = [...items]; updated[i] = { ...updated[i], description: e.target.value }; setItems(updated)
+                  }}
+                />
+              </Field>
+              <Field label="Qty">
+                <input type="number" className="w-full h-9 rounded-lg border bg-card px-3 text-sm" value={item.qty}
+                  onChange={e => {
+                    const updated = [...items]; const qty = Number(e.target.value)
+                    updated[i] = { ...updated[i], qty, amount: qty * updated[i].rate }; setItems(updated)
+                  }}
+                />
+              </Field>
+              <Field label="Rate (AED)">
+                <input type="number" step="0.01" className="w-full h-9 rounded-lg border bg-card px-3 text-sm" value={item.rate}
+                  onChange={e => {
+                    const updated = [...items]; const rate = Number(e.target.value)
+                    updated[i] = { ...updated[i], rate, amount: updated[i].qty * rate }; setItems(updated)
+                  }}
+                />
+              </Field>
+              <button onClick={() => setItems(items.filter((_, idx) => idx !== i))}
+                className="h-9 px-2 rounded-lg border text-red-500 hover:bg-red-500/10 transition-colors text-xs">
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+
+          <button onClick={() => setItems([...items, { description: '', qty: 1, rate: 0, amount: 0 }])}
+            className="w-full py-2.5 border-2 border-dashed rounded-xl text-sm text-muted-foreground hover:bg-muted/30 transition-colors flex items-center justify-center gap-1.5">
+            <Plus size={14} /> Add Line Item (Extra Work / Charge)
+          </button>
+
+          <div className="border-t pt-3">
+            <div className="flex justify-end gap-8 text-sm">
+              <span className="text-muted-foreground">New Total:</span>
+              <span className="font-bold text-primary text-base">AED {fmt(items.reduce((s, i) => s + i.amount, 0))}</span>
+            </div>
+            {invoice.depositPaid > 0 && (
+              <div className="flex justify-end gap-8 text-sm mt-1">
+                <span className="text-muted-foreground">Less Deposit:</span>
+                <span>AED {fmt(invoice.depositPaid)}</span>
+              </div>
+            )}
+            <div className="flex justify-end gap-8 text-sm font-semibold mt-1">
+              <span>New Balance Due:</span>
+              <span className="text-red-600">AED {fmt(Math.max(0, items.reduce((s, i) => s + i.amount, 0) - (invoice.depositPaid || 0) - ((invoice.paymentHistory ?? []).reduce((s, p) => s + p.amount, 0))))}</span>
+            </div>
+          </div>
+
+          <Field label="Revision Note (sent to customer via WhatsApp)">
+            <textarea id="revise-note" rows={2} className="w-full rounded-lg border bg-card px-3 py-2 text-sm resize-none" placeholder="e.g. Additional floor carry charged, extra heavy items required additional manpower…" />
+          </Field>
+
+          {err && <p className="text-sm text-red-600">{err}</p>}
+
+          <div className="flex justify-end gap-2 border-t pt-3">
+            <Button variant="outline" onClick={() => { setReviseModal(false); setErr('') }}>Cancel</Button>
+            <Button
+              onClick={() => {
+                const note = (document.getElementById('revise-note') as HTMLTextAreaElement)?.value ?? ''
+                reviseMut.mutate({ items, supervisorNote: note })
+              }}
+              disabled={reviseMut.isPending}
+            >
+              {reviseMut.isPending ? 'Saving & Sending…' : '✓ Save & Resend to Customer'}
+            </Button>
+          </div>
+        </div>
       </Modal>
 
       {/* Edit Items Modal */}

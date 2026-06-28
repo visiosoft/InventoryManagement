@@ -300,7 +300,7 @@ export default function Units() {
 
 function UnitDetail({ unit, onUpdate, onDelete, error, busy }: { unit: Unit; onUpdate: (b: Partial<UnitBody>) => void; onDelete: () => void; error: string; busy: boolean }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const { data } = useQuery<{ unit: Unit; contracts: Contract[] }>({
+  const { data, isLoading: contractsLoading } = useQuery<{ unit: Unit; contracts: Contract[] }>({
     queryKey: ['unit', unit._id],
     queryFn: () => api.get(`/units/${unit._id}`).then((r) => r.data),
   })
@@ -314,15 +314,51 @@ function UnitDetail({ unit, onUpdate, onDelete, error, busy }: { unit: Unit; onU
     onUpdate(body)
   }
 
+  const allContracts = (data?.contracts ?? []).filter(c => !['expired', 'terminated', 'cancelled'].includes(c.status))
+  const contractStatusTone: Record<string, string> = {
+    active: 'green', draft: 'blue', pending_signature: 'amber',
+    expired: 'default', terminated: 'red', cancelled: 'red',
+  }
+
   return (
     <form onSubmit={submit} className="space-y-4">
-      {openContract && (
-        <div className="rounded-lg border bg-muted/40 px-3 py-2 text-sm">
-          <div className="text-xs text-muted-foreground mb-0.5">Current contract</div>
-          <Link to={`/contracts/${openContract._id}`} className="font-medium text-primary hover:underline">{openContract.contractNo}</Link>
-          {' — '}{openContract.customer?.fullName} · until {formatDate(openContract.endDate)}
+      {/* Contracts section — all contracts for this unit */}
+      <div className="rounded-lg border">
+        <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
+          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            Contracts{allContracts.length > 0 ? ` · ${allContracts.length}` : ''}
+          </span>
+          <Link to={`/contracts/new?unit=${unit._id}`} onClick={e => e.stopPropagation()}>
+            <button type="button" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+              <Plus size={12} /> New contract
+            </button>
+          </Link>
         </div>
-      )}
+        {contractsLoading ? (
+          <p className="px-3 py-3 text-xs text-muted-foreground animate-pulse">Loading contracts…</p>
+        ) : allContracts.length === 0 ? (
+          <p className="px-3 py-3 text-xs text-muted-foreground">No contracts yet.</p>
+        ) : (
+          <ul className="divide-y">
+            {allContracts.map(c => (
+              <li key={c._id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm hover:bg-muted/20">
+                <div className="min-w-0">
+                  <Link to={`/contracts/${c._id}`} className="font-medium text-primary hover:underline text-sm">
+                    {c.contractNo}
+                  </Link>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {c.customer?.fullName}
+                    {c.endDate ? ` · until ${formatDate(c.endDate)}` : ''}
+                  </p>
+                </div>
+                <Badge tone={contractStatusTone[c.status] as Parameters<typeof Badge>[0]['tone'] ?? 'default'} className="shrink-0 text-xs capitalize">
+                  {c.status.replace(/_/g, ' ')}
+                </Badge>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       <UnitFormFields initial={unit} />
 
@@ -335,11 +371,6 @@ function UnitDetail({ unit, onUpdate, onDelete, error, busy }: { unit: Unit; onU
       <Field label="Notes"><Textarea name="notes" defaultValue={unit.notes} /></Field>
       {error && <p className="text-xs text-destructive">{error}</p>}
       <Button type="submit" className="w-full" disabled={busy}>Save changes</Button>
-      {unit.status === 'available' && (
-        <Link to={`/contracts/new?unit=${unit._id}`}>
-          <Button type="button" variant="outline" className="w-full mt-1">New contract for this unit</Button>
-        </Link>
-      )}
       {!openContract && (
         confirmDelete ? (
           <div className="flex gap-2 mt-2">

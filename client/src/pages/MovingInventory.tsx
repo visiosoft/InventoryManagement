@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Plus, RefreshCw } from 'lucide-react'
+import { AlertTriangle, Pencil, Plus, RefreshCw } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { Badge, Button, Card, CardHeader, EmptyState, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, Th, Textarea } from '../components/ui'
 import { formatDate } from '../lib/utils'
@@ -12,6 +12,7 @@ type MovingItem = {
     category: string
     sizeLabel?: string
     unit: string
+    retailPrice: number
     onHand: number
     reorderLevel: number
     active: boolean
@@ -46,6 +47,7 @@ export default function MovingInventory() {
     const [search, setSearch] = useState('')
     const [showLow, setShowLow] = useState(false)
     const [addOpen, setAddOpen] = useState(false)
+    const [editItem, setEditItem] = useState<MovingItem | null>(null)
     const [txnOpen, setTxnOpen] = useState(false)
     const [error, setError] = useState('')
 
@@ -73,6 +75,12 @@ export default function MovingInventory() {
     const addItem = useMutation({
         mutationFn: (body: object) => api.post('/moving-inventory/items', body),
         onSuccess: () => { invalidate(); setAddOpen(false); setError('') },
+        onError: (e) => setError(apiError(e)),
+    })
+
+    const updateItem = useMutation({
+        mutationFn: ({ id, body }: { id: string; body: object }) => api.put(`/moving-inventory/items/${id}`, body),
+        onSuccess: () => { invalidate(); setEditItem(null); setError('') },
         onError: (e) => setError(apiError(e)),
     })
 
@@ -114,7 +122,7 @@ export default function MovingInventory() {
                 <Card>
                     <CardHeader title="Stock on hand" subtitle={`${items?.length ?? 0} items`} />
                     <Table>
-                        <thead><tr><Th>SKU</Th><Th>Item</Th><Th>Category</Th><Th>Size</Th><Th>On hand</Th><Th>Reorder</Th><Th>Status</Th></tr></thead>
+                        <thead><tr><Th>SKU</Th><Th>Item</Th><Th>Category</Th><Th>Size</Th><Th>Price</Th><Th>On hand</Th><Th>Reorder</Th><Th>Status</Th><Th></Th></tr></thead>
                         <tbody>
                             {(items || []).map((it) => (
                                 <tr key={it._id} className="hover:bg-muted/40">
@@ -122,9 +130,11 @@ export default function MovingInventory() {
                                     <Td className="font-medium">{it.name}</Td>
                                     <Td>{it.category}</Td>
                                     <Td>{it.sizeLabel || '—'}</Td>
+                                    <Td className="font-medium">{it.retailPrice ? `AED ${it.retailPrice.toFixed(2)}` : '—'}</Td>
                                     <Td>{it.onHand} {it.unit}</Td>
                                     <Td>{it.reorderLevel} {it.unit}</Td>
                                     <Td><Badge tone={tone(it)}>{it.onHand <= 0 ? 'Out' : it.onHand <= it.reorderLevel ? 'Low' : 'OK'}</Badge></Td>
+                                    <Td><button onClick={() => { setError(''); setEditItem(it) }} className="p-1 rounded hover:bg-muted"><Pencil size={14} /></button></Td>
                                 </tr>
                             ))}
                         </tbody>
@@ -161,11 +171,67 @@ export default function MovingInventory() {
             <Modal open={txnOpen} onClose={() => setTxnOpen(false)} title="Record stock movement">
                 <TxnForm items={items || []} busy={addTxn.isPending} error={error} onSubmit={(body) => addTxn.mutate(body)} />
             </Modal>
+
+            {editItem && (
+                <Modal open={!!editItem} onClose={() => setEditItem(null)} title={`Edit — ${editItem.name}`}>
+                    <EditItemForm item={editItem} busy={updateItem.isPending} error={error} onSubmit={(body) => updateItem.mutate({ id: editItem._id, body })} />
+                </Modal>
+            )}
         </div>
     )
 }
 
+const PRESETS = [
+    { sku: 'BOX-SM', name: 'Small Box', category: 'box', sizeLabel: 'Small / 45×45×45 cm', unit: 'pcs' },
+    { sku: 'BOX-MD', name: 'Medium Box', category: 'box', sizeLabel: 'Medium / 60×45×45 cm', unit: 'pcs' },
+    { sku: 'BOX-LG', name: 'Large Box', category: 'box', sizeLabel: 'Large / 60×60×60 cm', unit: 'pcs' },
+    { sku: 'BOX-XL', name: 'Extra Large Box', category: 'box', sizeLabel: 'XL / 75×60×60 cm', unit: 'pcs' },
+    { sku: 'BOX-WR', name: 'Wardrobe Box', category: 'box', sizeLabel: 'Wardrobe / 60×50×120 cm', unit: 'pcs' },
+    { sku: 'BOX-DISH', name: 'Dish Pack Box', category: 'box', sizeLabel: 'Dish / 45×45×50 cm', unit: 'pcs' },
+    { sku: 'BOX-PIC', name: 'Picture / Mirror Box', category: 'box', sizeLabel: 'Flat / 100×75×15 cm', unit: 'pcs' },
+    { sku: 'BUB-RL', name: 'Bubble Wrap Roll', category: 'wrap', sizeLabel: '100 m × 50 cm', unit: 'rolls' },
+    { sku: 'BUB-SM', name: 'Bubble Wrap Sheet', category: 'wrap', sizeLabel: '50×50 cm', unit: 'pcs' },
+    { sku: 'SHRINK-RL', name: 'Shrink Wrap Roll', category: 'wrap', sizeLabel: '500 m', unit: 'rolls' },
+    { sku: 'STRCH-RL', name: 'Stretch Wrap Roll', category: 'wrap', sizeLabel: '300 m', unit: 'rolls' },
+    { sku: 'TAPE-BR', name: 'Brown Packing Tape', category: 'tape', sizeLabel: '48 mm × 66 m', unit: 'rolls' },
+    { sku: 'TAPE-CL', name: 'Clear Packing Tape', category: 'tape', sizeLabel: '48 mm × 66 m', unit: 'rolls' },
+    { sku: 'TAPE-FR', name: 'Fragile Tape', category: 'tape', sizeLabel: '48 mm × 66 m', unit: 'rolls' },
+    { sku: 'TAPE-MSK', name: 'Masking Tape', category: 'tape', sizeLabel: '24 mm × 50 m', unit: 'rolls' },
+    { sku: 'PAD-FRN', name: 'Furniture Pad / Blanket', category: 'protection', sizeLabel: '180×150 cm', unit: 'pcs' },
+    { sku: 'FOAM-SH', name: 'Foam Sheet', category: 'protection', sizeLabel: '100×100 cm', unit: 'pcs' },
+    { sku: 'PAPER-PK', name: 'Packing Paper', category: 'paper', sizeLabel: '10 kg pack', unit: 'packs' },
+    { sku: 'PAPER-NW', name: 'Newsprint Paper', category: 'paper', sizeLabel: '5 kg pack', unit: 'packs' },
+    { sku: 'TISSUE-RL', name: 'Tissue Paper Roll', category: 'paper', sizeLabel: '50 m', unit: 'rolls' },
+    { sku: 'LABEL-FRG', name: 'Fragile Labels', category: 'label', sizeLabel: 'Roll of 500', unit: 'rolls' },
+    { sku: 'LABEL-HU', name: 'This Side Up Labels', category: 'label', sizeLabel: 'Roll of 500', unit: 'rolls' },
+    { sku: 'LABEL-RM', name: 'Room Labels (Color)', category: 'label', sizeLabel: 'Pack of 100', unit: 'packs' },
+    { sku: 'STRAP-RT', name: 'Ratchet Strap', category: 'strap', sizeLabel: '5 m × 25 mm', unit: 'pcs' },
+    { sku: 'ROPE-NY', name: 'Nylon Rope', category: 'strap', sizeLabel: '50 m', unit: 'rolls' },
+    { sku: 'ZIP-TIE', name: 'Cable Ties / Zip Ties', category: 'strap', sizeLabel: 'Pack of 100', unit: 'packs' },
+    { sku: 'TOOL-CTR', name: 'Box Cutter / Knife', category: 'tool', sizeLabel: '', unit: 'pcs' },
+    { sku: 'TOOL-MRK', name: 'Marker Pen', category: 'tool', sizeLabel: 'Black', unit: 'pcs' },
+    { sku: 'TOOL-DISP', name: 'Tape Dispenser', category: 'tool', sizeLabel: '', unit: 'pcs' },
+    { sku: 'CORNER-PR', name: 'Corner Protectors', category: 'protection', sizeLabel: 'Set of 4', unit: 'sets' },
+    { sku: 'MATTBAG', name: 'Mattress Bag', category: 'cover', sizeLabel: 'King Size', unit: 'pcs' },
+    { sku: 'SOFACOV', name: 'Sofa Cover', category: 'cover', sizeLabel: '3-Seater', unit: 'pcs' },
+    { sku: 'DUST-SH', name: 'Dust Sheet / Drop Cloth', category: 'cover', sizeLabel: '4×5 m', unit: 'pcs' },
+]
+
 function ItemForm({ busy, error, onSubmit }: { busy: boolean; error: string; onSubmit: (body: object) => void }) {
+    const formRef = useRef<HTMLFormElement>(null)
+
+    function applyPreset(idx: string) {
+        const form = formRef.current
+        if (!form || idx === '') return
+        const p = PRESETS[Number(idx)]
+        if (!p) return
+        ;(form.elements.namedItem('sku') as HTMLInputElement).value = p.sku
+        ;(form.elements.namedItem('name') as HTMLInputElement).value = p.name
+        ;(form.elements.namedItem('category') as HTMLInputElement).value = p.category
+        ;(form.elements.namedItem('sizeLabel') as HTMLInputElement).value = p.sizeLabel
+        ;(form.elements.namedItem('unit') as HTMLSelectElement).value = p.unit
+    }
+
     function submit(e: FormEvent<HTMLFormElement>) {
         e.preventDefault()
         const f = new FormData(e.currentTarget)
@@ -175,6 +241,7 @@ function ItemForm({ busy, error, onSubmit }: { busy: boolean; error: string; onS
             category: f.get('category'),
             sizeLabel: f.get('sizeLabel'),
             unit: f.get('unit'),
+            retailPrice: Number(f.get('retailPrice') || 0),
             onHand: Number(f.get('onHand') || 0),
             reorderLevel: Number(f.get('reorderLevel') || 0),
             notes: f.get('notes'),
@@ -182,7 +249,40 @@ function ItemForm({ busy, error, onSubmit }: { busy: boolean; error: string; onS
     }
 
     return (
-        <form onSubmit={submit} className="space-y-3">
+        <form ref={formRef} onSubmit={submit} className="space-y-3">
+            <Field label="Quick fill from preset">
+                <Select onChange={(e) => applyPreset(e.target.value)} defaultValue="">
+                    <option value="">— Select a preset or fill manually —</option>
+                    <optgroup label="Boxes">
+                        {PRESETS.map((p, i) => p.category === 'box' && <option key={i} value={i}>{p.name} — {p.sizeLabel}</option>)}
+                    </optgroup>
+                    <optgroup label="Wrapping">
+                        {PRESETS.map((p, i) => p.category === 'wrap' && <option key={i} value={i}>{p.name} — {p.sizeLabel}</option>)}
+                    </optgroup>
+                    <optgroup label="Tape">
+                        {PRESETS.map((p, i) => p.category === 'tape' && <option key={i} value={i}>{p.name} — {p.sizeLabel}</option>)}
+                    </optgroup>
+                    <optgroup label="Paper & Tissue">
+                        {PRESETS.map((p, i) => p.category === 'paper' && <option key={i} value={i}>{p.name} — {p.sizeLabel}</option>)}
+                    </optgroup>
+                    <optgroup label="Protection">
+                        {PRESETS.map((p, i) => p.category === 'protection' && <option key={i} value={i}>{p.name} — {p.sizeLabel}</option>)}
+                    </optgroup>
+                    <optgroup label="Covers">
+                        {PRESETS.map((p, i) => p.category === 'cover' && <option key={i} value={i}>{p.name} — {p.sizeLabel}</option>)}
+                    </optgroup>
+                    <optgroup label="Labels">
+                        {PRESETS.map((p, i) => p.category === 'label' && <option key={i} value={i}>{p.name} — {p.sizeLabel}</option>)}
+                    </optgroup>
+                    <optgroup label="Straps & Ties">
+                        {PRESETS.map((p, i) => p.category === 'strap' && <option key={i} value={i}>{p.name} — {p.sizeLabel}</option>)}
+                    </optgroup>
+                    <optgroup label="Tools">
+                        {PRESETS.map((p, i) => p.category === 'tool' && <option key={i} value={i}>{p.name}{p.sizeLabel ? ` — ${p.sizeLabel}` : ''}</option>)}
+                    </optgroup>
+                </Select>
+            </Field>
+            <hr className="border-border" />
             <div className="grid grid-cols-2 gap-3">
                 <Field label="SKU *"><Input name="sku" required placeholder="BOX-SM-001" /></Field>
                 <Field label="Name *"><Input name="name" required placeholder="Cardboard Box" /></Field>
@@ -200,6 +300,9 @@ function ItemForm({ busy, error, onSubmit }: { busy: boolean; error: string; onS
                     </Select>
                 </Field>
             </div>
+            <Field label="Retail Price (AED) — charged to customer per unit">
+                <Input name="retailPrice" type="number" min={0} step="0.01" defaultValue={0} placeholder="0.00" />
+            </Field>
             <div className="grid grid-cols-2 gap-3">
                 <Field label="Opening stock"><Input name="onHand" type="number" min={0} step="1" defaultValue={0} /></Field>
                 <Field label="Reorder level"><Input name="reorderLevel" type="number" min={0} step="1" defaultValue={0} /></Field>
@@ -234,7 +337,7 @@ function TxnForm({ items, busy, error, onSubmit }: { items: MovingItem[]; busy: 
                 <Select name="item" required>
                     <option value="">Select item</option>
                     {items.map((i) => (
-                        <option key={i._id} value={i._id}>{i.sku} - {i.name}{i.sizeLabel ? ` (${i.sizeLabel})` : ''} [{i.onHand} {i.unit}]</option>
+                        <option key={i._id} value={i._id}>{i.sku} - {i.name}{i.sizeLabel ? ` (${i.sizeLabel})` : ''} [{i.onHand} {i.unit}] — AED {(i.retailPrice || 0).toFixed(2)}</option>
                     ))}
                 </Select>
             </Field>
@@ -258,6 +361,54 @@ function TxnForm({ items, busy, error, onSubmit }: { items: MovingItem[]; busy: 
             <Field label="Notes"><Textarea name="notes" /></Field>
             {error && <p className="text-xs text-destructive">{error}</p>}
             <Button type="submit" className="w-full" disabled={busy}>{busy ? 'Saving...' : 'Record movement'}</Button>
+        </form>
+    )
+}
+
+function EditItemForm({ item, busy, error, onSubmit }: { item: MovingItem; busy: boolean; error: string; onSubmit: (body: object) => void }) {
+    function submit(e: FormEvent<HTMLFormElement>) {
+        e.preventDefault()
+        const f = new FormData(e.currentTarget)
+        onSubmit({
+            sku: f.get('sku'),
+            name: f.get('name'),
+            category: f.get('category'),
+            sizeLabel: f.get('sizeLabel'),
+            unit: f.get('unit'),
+            retailPrice: Number(f.get('retailPrice') || 0),
+            reorderLevel: Number(f.get('reorderLevel') || 0),
+            notes: f.get('notes'),
+        })
+    }
+
+    return (
+        <form onSubmit={submit} className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+                <Field label="SKU *"><Input name="sku" required defaultValue={item.sku} /></Field>
+                <Field label="Name *"><Input name="name" required defaultValue={item.name} /></Field>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+                <Field label="Category"><Input name="category" defaultValue={item.category} /></Field>
+                <Field label="Size"><Input name="sizeLabel" defaultValue={item.sizeLabel} /></Field>
+                <Field label="Unit">
+                    <Select name="unit" defaultValue={item.unit}>
+                        <option value="pcs">pcs</option>
+                        <option value="packs">packs</option>
+                        <option value="rolls">rolls</option>
+                        <option value="sets">sets</option>
+                        <option value="other">other</option>
+                    </Select>
+                </Field>
+            </div>
+            <Field label="Retail Price (AED) — charged to customer per unit">
+                <Input name="retailPrice" type="number" min={0} step="0.01" defaultValue={item.retailPrice || 0} />
+            </Field>
+            <Field label="Reorder level">
+                <Input name="reorderLevel" type="number" min={0} step="1" defaultValue={item.reorderLevel} />
+            </Field>
+            <Field label="Notes"><Textarea name="notes" defaultValue={item.notes} /></Field>
+            {error && <p className="text-xs text-destructive">{error}</p>}
+            <Button type="submit" className="w-full" disabled={busy}>{busy ? 'Saving...' : 'Save changes'}</Button>
         </form>
     )
 }

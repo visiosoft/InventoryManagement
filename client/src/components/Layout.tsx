@@ -60,8 +60,10 @@ const movingNavItems = [
   { to: '/moving/dispatch', label: 'Dispatch', icon: Package, perm: 'moving_dispatch' },
   { to: '/moving/workers', label: 'Workers', icon: Users2, perm: 'moving_workers' },
   { to: '/moving/fleet', label: 'Fleet', icon: Truck, perm: 'moving_fleet' },
+  { to: '/moving-inventory', label: 'Inventory', icon: Box, perm: 'moving_inventory' },
   { to: '/moving/quotes', label: 'Quotes', icon: FileSpreadsheet, perm: 'moving_quotes' },
   { to: '/moving/invoices', label: 'Invoices', icon: ReceiptText, perm: 'moving_invoices' },
+  { to: '/moving/claims', label: 'Claims', icon: AlertTriangle, perm: 'moving_claims' },
 ]
 
 const movingReportItems = [
@@ -69,6 +71,8 @@ const movingReportItems = [
   { to: '/moving/reports/jobs', label: 'Jobs', icon: BarChart3, perm: 'reports_moving_jobs' },
   { to: '/moving/reports/crew', label: 'Crew', icon: Users, perm: 'reports_moving_crew' },
   { to: '/moving/reports/fleet', label: 'Fleet', icon: Truck, perm: 'reports_moving_fleet' },
+  { to: '/moving/reports/profitability', label: 'Profitability', icon: TrendingUp, perm: 'reports_moving_profitability' },
+  { to: '/moving/reports/payroll', label: 'Payroll', icon: Wallet, perm: 'reports_moving_payroll' },
 ]
 
 const navLinkCls = (isActive: boolean) => cn(

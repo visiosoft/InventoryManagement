@@ -64,6 +64,9 @@ import MovingRevenueReport from './pages/moving/reports/MovingRevenueReport'
 import MovingJobsReport from './pages/moving/reports/MovingJobsReport'
 import MovingCrewReport from './pages/moving/reports/MovingCrewReport'
 import MovingFleetReport from './pages/moving/reports/MovingFleetReport'
+import MovingProfitabilityReport from './pages/moving/reports/MovingProfitabilityReport'
+import MovingPayrollReport from './pages/moving/reports/MovingPayrollReport'
+import MovingClaims from './pages/moving/MovingClaims'
 import MovingSurveyDetail from './pages/moving/MovingSurveyDetail'
 import FieldLogin from './pages/field/FieldLogin'
 import FieldApp from './pages/field/FieldApp'
@@ -142,6 +145,9 @@ export default function App() {
         <Route path="/moving/reports/jobs" element={<PermGuard module="reports_moving_jobs"><MovingJobsReport /></PermGuard>} />
         <Route path="/moving/reports/crew" element={<PermGuard module="reports_moving_crew"><MovingCrewReport /></PermGuard>} />
         <Route path="/moving/reports/fleet" element={<PermGuard module="reports_moving_fleet"><MovingFleetReport /></PermGuard>} />
+        <Route path="/moving/reports/profitability" element={<PermGuard module="reports_moving_profitability"><MovingProfitabilityReport /></PermGuard>} />
+        <Route path="/moving/reports/payroll" element={<PermGuard module="reports_moving_payroll"><MovingPayrollReport /></PermGuard>} />
+        <Route path="/moving/claims" element={<PermGuard module="moving_claims"><MovingClaims /></PermGuard>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

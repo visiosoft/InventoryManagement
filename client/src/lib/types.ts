@@ -441,6 +441,7 @@ export interface Truck {
   plateNumber?: string
   type: TruckType
   capacityCbm?: number
+  dailyRate?: number
   status: TruckStatus
   lastServiceDate?: string
   nextServiceDate?: string
@@ -475,10 +476,35 @@ export interface MovingJobCrewMember {
   worker: Worker | { _id: string; name: string; phone?: string; role: string }
   role?: string
   dailyRate?: number
+  days?: number
+  extraHours?: number
+  extraHourRate?: number
+  isSupervisor?: boolean
+}
+
+export type ExternalHireDuration = 'quarter_day' | 'half_day' | 'full_day' | 'custom'
+
+export interface MovingJobExternalHire {
+  title: string
+  name?: string
+  duration: ExternalHireDuration
+  hours: number
+  rate: number
+  cost: number
+  notes?: string
+}
+
+export interface MovingJobMaterial {
+  item: { _id: string; name: string; sku?: string } | string
+  qty: number
+  unitCost: number
+  notes?: string
 }
 
 export interface MovingJobTruck {
   truck: Truck | { _id: string; name: string; plateNumber?: string; type: string }
+  dailyRate?: number
+  days?: number
   notes?: string
 }
 
@@ -486,9 +512,19 @@ export interface MovingJobCosts {
   labor?: number
   truck?: number
   materials?: number
+  externalHires?: number
   packing?: number
   extras?: number
   total?: number
+}
+
+export interface MovingJobImage {
+  _id?: string
+  url: string
+  filename?: string
+  originalName?: string
+  size?: number
+  uploadedAt?: string
 }
 
 export interface MovingJob {
@@ -510,10 +546,22 @@ export interface MovingJob {
   crew?: MovingJobCrewMember[]
   trucks?: MovingJobTruck[]
   teamLead?: Worker | { _id: string; name: string }
+  materialUsage?: MovingJobMaterial[]
+  externalHires?: MovingJobExternalHire[]
+  extraCharges?: Array<{ description: string; amount: number; notes?: string }>
   costs?: MovingJobCosts
   survey?: { _id: string; totalEstimatedVolumeCbm?: number; recommendedTruckType?: string }
   quote?: { _id: string; quoteNo: string; status: string; total: number }
   invoice?: { _id: string; invoiceNo: string; status: string; total: number; balanceDue: number }
+  images?: MovingJobImage[]
+  fieldPriceOverride?: { amount?: number; notes?: string; supervisorName?: string; adjustedAt?: string }
+  clientPackage?: {
+    packageType?: string
+    label?: string
+    agreedPrice?: number
+    additionalCharges?: Array<{ description: string; amount: number }>
+    notes?: string
+  }
   notes?: string
   timeline?: ContractNote[]
   dispatchNotes?: string

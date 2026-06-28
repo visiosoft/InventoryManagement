@@ -53,6 +53,7 @@ router.post('/items', async (req, res) => {
         widthCm: req.body.widthCm != null && req.body.widthCm !== '' ? Number(req.body.widthCm) : null,
         heightCm: req.body.heightCm != null && req.body.heightCm !== '' ? Number(req.body.heightCm) : null,
         unit: String(req.body.unit || 'pcs').trim(),
+        retailPrice: Number(req.body.retailPrice || 0),
         onHand: Number(req.body.onHand || 0),
         reorderLevel: Number(req.body.reorderLevel || 0),
         active: req.body.active !== false,
@@ -76,6 +77,7 @@ router.put('/items/:id', async (req, res) => {
     if (req.body.lengthCm !== undefined) patch.lengthCm = req.body.lengthCm === '' ? null : Number(req.body.lengthCm);
     if (req.body.widthCm !== undefined) patch.widthCm = req.body.widthCm === '' ? null : Number(req.body.widthCm);
     if (req.body.heightCm !== undefined) patch.heightCm = req.body.heightCm === '' ? null : Number(req.body.heightCm);
+    if (req.body.retailPrice !== undefined) patch.retailPrice = Number(req.body.retailPrice);
     if (req.body.reorderLevel !== undefined) patch.reorderLevel = Number(req.body.reorderLevel);
     if (req.body.active !== undefined) patch.active = Boolean(req.body.active);
 

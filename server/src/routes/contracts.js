@@ -114,9 +114,9 @@ router.get('/', async (req, res) => {
     if (matchedCustomers.length) or.push({ customer: { $in: matchedCustomers.map((c) => c._id) } });
     filter.$or = or;
   }
-  const page  = Math.max(1, Number(req.query.page)  || 1);
+  const page = Math.max(1, Number(req.query.page) || 1);
   const limit = Math.min(Math.max(1, Number(req.query.limit) || 25), 100);
-  const skip  = (page - 1) * limit;
+  const skip = (page - 1) * limit;
 
   const [contracts, total] = await Promise.all([
     populateAll(Contract.find(filter)).sort({ createdAt: -1 }).skip(skip).limit(limit),
@@ -256,16 +256,7 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'End date must be after start date' });
   }
 
-  // Check overlap for every unit
-  for (const uid of allUnitIds) {
-    const overlap = await findOverlappingUnitContract({ unit: uid, startDate: start, endDate: end });
-    if (overlap) {
-      const u = await Unit.findById(uid).select('unitNumber');
-      return res.status(409).json({
-        error: `Unit ${u?.unitNumber ?? uid} is already booked for this period (${overlap.contractNo})`,
-      });
-    }
-  }
+  // Units can be booked for multiple customers simultaneously — no overlap check needed.
 
   const contract = await Contract.create({
     contractNo: await nextContractNo(),
@@ -376,16 +367,6 @@ async function markSigned(contractId) {
     throw new Error(`Contract is ${contract.status}`);
   }
 
-  const overlap = await findOverlappingUnitContract({
-    unit: contract.unit._id,
-    startDate: contract.startDate,
-    endDate: contract.endDate,
-    excludeId: contract._id,
-  });
-  if (overlap) {
-    throw new Error(`Unit ${contract.unit.unitNumber} is already booked for this period (${overlap.contractNo})`);
-  }
-
   // Archive the signed PDF (real Zoho download, or regenerate locally in mock mode).
   let pdfBuffer = null;
   if (zohoConfigured() && contract.zohoRequestId && !contract.zohoRequestId.startsWith('MOCK-')) {
@@ -442,16 +423,6 @@ router.post('/:id/activate', async (req, res) => {
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
   if (!['draft', 'pending_signature'].includes(contract.status)) {
     return res.status(409).json({ error: `Cannot activate a ${contract.status} contract` });
-  }
-
-  const overlap = await findOverlappingUnitContract({
-    unit: contract.unit,
-    startDate: contract.startDate,
-    endDate: contract.endDate,
-    excludeId: contract._id,
-  });
-  if (overlap) {
-    return res.status(409).json({ error: `Unit is already booked for this period (${overlap.contractNo})` });
   }
 
   contract.status = 'active';
@@ -563,18 +534,6 @@ router.post('/:id/sign-inperson', async (req, res) => {
     if (!contract) return res.status(404).json({ error: 'Contract not found' });
     if (!['draft', 'pending_signature'].includes(contract.status)) {
       return res.status(409).json({ error: `Cannot sign a ${contract.status} contract` });
-    }
-
-    const overlap = await findOverlappingUnitContract({
-      unit: contract.unit._id,
-      startDate: contract.startDate,
-      endDate: contract.endDate,
-      excludeId: contract._id,
-    });
-    if (overlap) {
-      return res.status(409).json({
-        error: `Unit ${contract.unit.unitNumber} is already booked for this period (${overlap.contractNo})`,
-      });
     }
 
     const now = new Date();
@@ -747,8 +706,8 @@ async function generateMissingPeriodInvoices(contract, cutoffDate, createdBy = '
       const linkedPayment = await Payment.findOne({ contract: contract._id, invoice: existingInvoice._id });
       if (!linkedPayment && existingInvoice.total > 0) {
         const rentItem = (existingInvoice.items || []).find(it => /^Storage Rent/i.test(it.itemDetails || ''));
-        const depItem  = (existingInvoice.items || []).find(it => /^(Security deposit|Advance Rent)/i.test(it.itemDetails || ''));
-        const rentAmt  = rentItem ? Math.round(Number(rentItem.amount) * 100) / 100 : existingInvoice.total;
+        const depItem = (existingInvoice.items || []).find(it => /^(Security deposit|Advance Rent)/i.test(it.itemDetails || ''));
+        const rentAmt = rentItem ? Math.round(Number(rentItem.amount) * 100) / 100 : existingInvoice.total;
         const unitNoLocal = contract.unit?.unitNumber || '-';
         const fmt2 = (d) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
         const displayEnd2 = new Date(Math.min(periodEnd, contractEnd)); displayEnd2.setDate(displayEnd2.getDate() - 1);
@@ -828,7 +787,7 @@ async function generateMissingPeriodInvoices(contract, cutoffDate, createdBy = '
       if (!hasExistingInvoices && generated === 0) {
         // Show the PERIOD the deposit covers (last full 4-week period) rather than "Security Deposit"
         const depPeriodStart = new Date(contractStart.getTime() + depositStartWeek * 7 * 86400000);
-        const depPeriodEnd   = new Date(depPeriodStart.getTime() + 28 * 86400000);
+        const depPeriodEnd = new Date(depPeriodStart.getTime() + 28 * 86400000);
         const depPeriodDisplayEnd = new Date(depPeriodEnd.getTime() - 86400000);
         items.push({ sortOrder: items.length, itemDetails: `Advance Rent ${fmt(depPeriodStart)} – ${fmt(depPeriodDisplayEnd)} · Unit ${unitNo}`, quantity: 1, rate: monthlyRate, discountPct: 0, amount: monthlyRate });
       }

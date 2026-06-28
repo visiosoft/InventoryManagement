@@ -32,6 +32,7 @@ import movingQuoteRoutes from './routes/movingQuotes.js';
 import movingInvoiceRoutes from './routes/movingInvoices.js';
 import movingReportRoutes from './routes/movingReports.js';
 import movingSurveyRoutes from './routes/movingSurveys.js';
+import movingClaimRoutes from './routes/movingClaims.js';
 import productRoutes from './routes/products.js';
 import backupRoutes from './routes/backup.js';
 import { runBackup } from './services/backup.js';
@@ -97,9 +98,14 @@ app.use('/api/trucks', requireAuth, truckRoutes);
 app.use('/api/moving-jobs', requireAuth, movingJobRoutes);
 app.use('/api/moving-leads', requireAuth, movingLeadRoutes);
 app.use('/api/moving-quotes', requireAuth, movingQuoteRoutes);
-app.use('/api/moving-invoices', requireAuth, movingInvoiceRoutes);
+app.use(
+  '/api/moving-invoices',
+  (req, res, next) => req.path.startsWith('/pay/') ? next() : requireAuth(req, res, next),
+  movingInvoiceRoutes
+);
 app.use('/api/moving-reports', requireAuth, movingReportRoutes);
 app.use('/api/moving-surveys', requireAuth, movingSurveyRoutes);
+app.use('/api/moving-claims', requireAuth, movingClaimRoutes);
 app.use('/api/products', requireAuth, productRoutes);
 app.use('/api/unit-types', requireAuth, unitTypeRoutes);
 app.use(
