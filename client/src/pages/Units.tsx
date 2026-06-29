@@ -25,6 +25,7 @@ type UnitBody = {
   widthFt: number | null
   status: string
   discountPct: number | null
+  shared: boolean
   notes: string
 }
 
@@ -48,6 +49,15 @@ function UnitFormFields({ initial }: { initial?: Partial<Unit> }) {
             defaultValue={initial?.discountPct ?? ''} placeholder="0" />
         </Field>
       </div>
+      <label className="flex items-center gap-2.5 cursor-pointer mt-1">
+        <input
+          type="checkbox"
+          name="shared"
+          defaultChecked={initial?.shared ?? false}
+          className="h-4 w-4 rounded"
+        />
+        <span className="text-sm text-foreground">Shared unit</span>
+      </label>
     </>
   )
 }
@@ -62,6 +72,7 @@ function readUnitForm(f: FormData): UnitBody {
     widthFt: num(f.get('widthFt')),
     status: String(f.get('status') || 'available'),
     discountPct: num(f.get('discountPct')),
+    shared: f.get('shared') === 'on',
     notes: String(f.get('notes') || ''),
   }
 }
@@ -234,6 +245,7 @@ export default function Units() {
                     <div className="text-xs font-bold">{u.unitNumber}</div>
                     <div className="text-[10px] opacity-70 mt-0.5">{u.sizeSqf != null ? `${u.sizeSqf} sqf` : '—'}</div>
                     {u.discountPct ? <div className="text-[9px] mt-0.5 font-medium text-amber-600">{u.discountPct}% 1st mo</div> : null}
+                    {u.shared ? <div className="text-[9px] mt-0.5 font-medium text-sky-600 dark:text-sky-400">Shared</div> : null}
                   </button>
                 ))}
               </div>
@@ -244,7 +256,7 @@ export default function Units() {
       ) : (
         <Card>
           <Table>
-            <thead><tr><Th>Unit</Th><Th>Floor</Th><Th>Size</Th><Th>L × W (ft)</Th><Th>Monthly (AED)</Th><Th>1st Month Discount</Th><Th>Status</Th><Th>Notes</Th></tr></thead>
+            <thead><tr><Th>Unit</Th><Th>Floor</Th><Th>Size</Th><Th>L × W (ft)</Th><Th>Monthly (AED)</Th><Th>1st Month Discount</Th><Th>Status</Th><Th>Shared</Th><Th>Notes</Th></tr></thead>
             <tbody>
               {filtered.map((u) => (
                 <tr key={u._id} className="hover:bg-muted/50 cursor-pointer" onClick={() => setSelected(u)}>
@@ -255,6 +267,7 @@ export default function Units() {
                   <Td>{u.price != null ? formatMoney(u.price) : '—'}</Td>
                   <Td>{u.discountPct ? <span className="text-amber-600 font-medium">{u.discountPct}%</span> : <span className="text-muted-foreground">—</span>}</Td>
                   <Td><Badge tone={unitStatusTone[u.status]}>{statusLabel(u.status)}</Badge></Td>
+                  <Td>{u.shared ? <Badge tone="blue">Shared</Badge> : <span className="text-muted-foreground">—</span>}</Td>
                   <Td className="text-muted-foreground max-w-60 truncate">{u.notes}</Td>
                 </tr>
               ))}
