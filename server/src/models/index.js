@@ -58,7 +58,6 @@ const unitSchema = new Schema(
       default: 'available',
     },
     discountPct: { type: Number, default: 0, min: 0, max: 100 },
-    shared: { type: Boolean, default: false },
     notes: { type: String, default: '' },
   },
   { timestamps: true }

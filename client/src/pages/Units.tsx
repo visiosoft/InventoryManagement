@@ -25,7 +25,6 @@ type UnitBody = {
   widthFt: number | null
   status: string
   discountPct: number | null
-  shared: boolean
   notes: string
 }
 
@@ -49,16 +48,6 @@ function UnitFormFields({ initial }: { initial?: Partial<Unit> }) {
             defaultValue={initial?.discountPct ?? ''} placeholder="0" />
         </Field>
       </div>
-      <label className="flex items-center gap-2.5 cursor-pointer select-none mt-1">
-        <input
-          type="checkbox"
-          name="shared"
-          defaultChecked={initial?.shared ?? false}
-          className="h-4 w-4 rounded border-input accent-primary"
-        />
-        <span className="text-sm font-medium">Shared unit</span>
-        <span className="text-xs text-muted-foreground">(no key, business-hours access only)</span>
-      </label>
     </>
   )
 }
@@ -73,7 +62,6 @@ function readUnitForm(f: FormData): UnitBody {
     widthFt: num(f.get('widthFt')),
     status: String(f.get('status') || 'available'),
     discountPct: num(f.get('discountPct')),
-    shared: f.get('shared') === 'on',
     notes: String(f.get('notes') || ''),
   }
 }
@@ -246,7 +234,6 @@ export default function Units() {
                     <div className="text-xs font-bold">{u.unitNumber}</div>
                     <div className="text-[10px] opacity-70 mt-0.5">{u.sizeSqf != null ? `${u.sizeSqf} sqf` : '—'}</div>
                     {u.discountPct ? <div className="text-[9px] mt-0.5 font-medium text-amber-600">{u.discountPct}% 1st mo</div> : null}
-                    {u.shared ? <div className="text-[9px] mt-0.5 font-medium text-violet-600">Shared</div> : null}
                   </button>
                 ))}
               </div>
