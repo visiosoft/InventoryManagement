@@ -44,13 +44,7 @@ import { runPaymentReminders } from './services/paymentReminders.js';
 const app = express();
 
 // Wildcard CORS — allow any origin for all routes including preflight OPTIONS
-const corsOptions = {
-  origin: '*',
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-};
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+app.use(cors({ origin: '*' }));
 
 app.use(
   express.json({
