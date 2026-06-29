@@ -72,8 +72,24 @@ export function renderContractPdf({ contract, customer, unit }) {
       ],
       { bulletRadius: 1.5, textIndent: 14 }
     );
+    doc.moveDown(0.8);
 
-    doc.moveDown(2);
+    // Shared unit — include licence agreement clause
+    const isShared = allUnits.some((u) => u.shared);
+    if (isShared) {
+      doc.fontSize(13).font('Helvetica-Bold').text('5. Licence Agreement');
+      doc.moveDown(0.5);
+      doc.fontSize(10).font('Helvetica').fillColor('#222').text(
+        'For shared storage units, clients will not have 24/7 access, and no key will be provided. ' +
+        'Access to the facility and shared storage unit is permitted only during business hours, ' +
+        'from 10:00 AM to 6:00 PM, by prior appointment and while accompanied by a Purplebox staff member. ' +
+        'Clients must contact us in advance to schedule their visit.',
+        { lineGap: 3 }
+      );
+      doc.moveDown(0.8);
+    }
+
+    doc.moveDown(1);
     doc.fontSize(10).font('Helvetica');
     const y = doc.y;
     doc.text('_________________________', 56, y);

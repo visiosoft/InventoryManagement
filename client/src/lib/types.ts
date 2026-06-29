@@ -20,6 +20,7 @@ export interface Unit {
   widthFt: number | null
   status: UnitStatus
   discountPct?: number
+  shared?: boolean
   notes?: string
 }
 
