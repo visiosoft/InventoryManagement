@@ -1,6 +1,5 @@
 import 'dotenv/config';
 import express from 'express';
-import cors from 'cors';
 import mongoose from 'mongoose';
 import { connectDb } from './db.js';
 import { requireAuth } from './middleware/auth.js';
@@ -42,9 +41,6 @@ import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
 import { runPaymentReminders } from './services/paymentReminders.js';
 
 const app = express();
-
-// Wildcard CORS — allow any origin for all routes including preflight OPTIONS
-app.use(cors({ origin: '*' }));
 
 app.use(
   express.json({
@@ -176,7 +172,7 @@ async function start() {
   // BACKUP_HOUR env var overrides the hour (0-23, default 2).
   function scheduleDailyBackup() {
     const hour = Number(process.env.BACKUP_HOUR ?? 2);
-    const now  = new Date();
+    const now = new Date();
     const next = new Date(now);
     next.setHours(hour, 0, 0, 0);
     if (next <= now) next.setDate(next.getDate() + 1); // already past today's slot → tomorrow
