@@ -54,51 +54,5 @@ export async function fillAgreementPdf({ contract, customer, unit, signedDate })
     draw(last, fmtDate(signedDate), 190, 964);                    // Date Signed
   }
 
-  // --- Shared unit: append Licence Agreement page ---
-  const isShared = allUnits.some((u) => u.shared);
-  if (isShared) {
-    const boldFont = await doc.embedFont(StandardFonts.HelveticaBold);
-    const extraPage = doc.addPage([595, 842]); // A4
-    const { width, height } = extraPage.getSize();
-    const margin = 56;
-    let y = height - margin;
-
-    extraPage.drawText('LICENCE AGREEMENT — SHARED STORAGE UNIT', {
-      x: margin, y, size: 13, font: boldFont, color: ink,
-    });
-    y -= 28;
-
-    const clauseText =
-      'For shared storage units, clients will not have 24/7 access, and no key will be provided. ' +
-      'Access to the facility and shared storage unit is permitted only during business hours, ' +
-      'from 10:00 AM to 6:00 PM, by prior appointment and while accompanied by a Purplebox staff ' +
-      'member. Clients must contact us in advance to schedule their visit.';
-
-    // Word-wrap the clause text at ~75 chars per line
-    const words = clauseText.split(' ');
-    let line = '';
-    const lineHeight = 18;
-    for (const word of words) {
-      const test = line ? `${line} ${word}` : word;
-      if (test.length > 78 && line) {
-        extraPage.drawText(line, { x: margin, y, size: 11, font, color: ink });
-        y -= lineHeight;
-        line = word;
-      } else {
-        line = test;
-      }
-    }
-    if (line) {
-      extraPage.drawText(line, { x: margin, y, size: 11, font, color: ink });
-      y -= lineHeight * 2;
-    }
-
-    // Signature block
-    extraPage.drawText('Tenant Signature: _______________________________', { x: margin, y, size: 11, font, color: ink });
-    extraPage.drawText('Date: _______________________________', { x: margin + 350, y, size: 11, font, color: ink });
-    y -= 22;
-    extraPage.drawText(customer.fullName || '', { x: margin, y, size: 10, font, color: ink });
-  }
-
   return Buffer.from(await doc.save());
 }
