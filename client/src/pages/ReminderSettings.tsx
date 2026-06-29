@@ -50,7 +50,7 @@ export default function ReminderSettings() {
   const runMutation = useMutation({
     mutationFn: reminderConfigApi.runNow,
     onSuccess: (res) => setRunResult(res),
-    onError: (e) => setRunResult(null),
+    onError: () => setRunResult(null),
   })
 
   if (isLoading || !config) {
@@ -93,6 +93,7 @@ export default function ReminderSettings() {
   }
 
   function insertPlaceholder(idx: number, placeholder: string) {
+    if (!config) return
     updateStage(idx, { message: (config.stages[idx]?.message ?? '') + placeholder })
   }
 
