@@ -134,8 +134,8 @@ export default function MovingInvoiceDetail() {
           onClick={async () => {
             if (!shareToken) {
               const res = await api.post(`/moving-invoices/${id}/share-token`, {})
-              setShareToken(res.data.shareToken)
-              window.open(`/api/moving-invoices/${id}/pdf?token=${res.data.shareToken}`, '_blank')
+              setShareToken(res.data.token)
+              window.open(`/api/moving-invoices/${id}/pdf?token=${res.data.token}`, '_blank')
             } else {
               window.open(`/api/moving-invoices/${id}/pdf?token=${shareToken}`, '_blank')
             }
@@ -149,8 +149,8 @@ export default function MovingInvoiceDetail() {
           onClick={async () => {
             if (!shareToken) {
               const res = await api.post(`/moving-invoices/${id}/share-token`, {})
-              setShareToken(res.data.shareToken)
-              const pdfUrl = `${window.location.origin}/api/moving-invoices/${id}/pdf?token=${res.data.shareToken}`
+              setShareToken(res.data.token)
+              const pdfUrl = `${window.location.origin}/api/moving-invoices/${id}/pdf?token=${res.data.token}`
               const msg = `Hi ${invoice.customer?.fullName}, here's your invoice ${invoice.invoiceNo} for AED ${invoice.total}. Please review and let me know if you have any questions. ${pdfUrl}`
               const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`
               window.open(whatsappUrl, '_blank')
