@@ -70,6 +70,7 @@ import MovingClaims from './pages/moving/MovingClaims'
 import MovingSurveyDetail from './pages/moving/MovingSurveyDetail'
 import FieldLogin from './pages/field/FieldLogin'
 import FieldApp from './pages/field/FieldApp'
+import ReminderSettings from './pages/ReminderSettings'
 
 export default function App() {
   const { user } = useAuth()
@@ -123,6 +124,7 @@ export default function App() {
         <Route path="/users" element={<AdminGuard><UserManagement /></AdminGuard>} />
         <Route path="/backup" element={<AdminGuard><Backup /></AdminGuard>} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/settings/reminders" element={<AdminGuard><ReminderSettings /></AdminGuard>} />
         <Route path="/whatsapp" element={<WhatsApp />} />
 
         {/* ── Moving Business ── */}

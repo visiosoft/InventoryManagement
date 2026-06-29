@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
-import { CalendarDays, CheckCircle2, Download, FileText, FilePlus, MessageSquare, PenLine, Plus, ShieldCheck, Upload, X, XCircle, Receipt, Clock, FolderOpen } from 'lucide-react'
-import { api, apiError } from '../lib/api'
+import { CalendarDays, CheckCircle2, Download, FileText, FilePlus, MessageSquare, PenLine, Plus, ShieldCheck, Upload, X, XCircle, Receipt, Clock, FolderOpen, Bell, ChevronDown, ChevronUp } from 'lucide-react'
+import { api, apiError, reminderConfigApi } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { AppDocument, Contract, ContractNote, Invoice, Payment } from '../lib/types'
 import {
@@ -1086,6 +1086,74 @@ function ContractTimeline({ notes, onAdd, onDelete, addBusy }: {
   )
 }
 
+// ── Reminder logs panel ────────────────────────────────────────────────────────
+function ReminderLogsPanel({ contractId }: { contractId: string }) {
+  const [open, setOpen] = useState(false)
+  const { data, isLoading } = useQuery({
+    queryKey: ['reminder-logs', contractId],
+    queryFn: () => reminderConfigApi.logs({ contract: contractId, limit: 50 }),
+    enabled: open,
+  })
+
+  const fmtAt = (d: string) =>
+    new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) +
+    ' · ' + new Date(d).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+
+  return (
+    <Card>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex w-full items-center gap-3 px-5 py-4 cursor-pointer hover:bg-muted/30 transition-colors rounded-xl text-left"
+      >
+        <Bell size={15} className="text-muted-foreground shrink-0" />
+        <span className="flex-1 font-semibold text-sm text-foreground">Reminder Logs</span>
+        {open ? <ChevronUp size={14} className="text-muted-foreground" /> : <ChevronDown size={14} className="text-muted-foreground" />}
+      </button>
+      {open && (
+        <CardBody className="pt-0">
+          {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+          {!isLoading && (!data || data.logs.length === 0) && (
+            <p className="text-sm text-muted-foreground">No reminders sent for this contract yet.</p>
+          )}
+          {data && data.logs.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="text-left pb-2 pr-4 font-semibold text-muted-foreground">Date</th>
+                    <th className="text-left pb-2 pr-4 font-semibold text-muted-foreground">Stage</th>
+                    <th className="text-left pb-2 pr-4 font-semibold text-muted-foreground">Channel</th>
+                    <th className="text-left pb-2 pr-4 font-semibold text-muted-foreground">Message</th>
+                    <th className="text-left pb-2 font-semibold text-muted-foreground">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.logs.map((log) => (
+                    <tr key={log._id} className="border-b border-border/50 last:border-0">
+                      <td className="py-2 pr-4 text-muted-foreground whitespace-nowrap">{fmtAt(log.sentAt)}</td>
+                      <td className="py-2 pr-4 text-foreground">Stage {log.stage + 1}</td>
+                      <td className="py-2 pr-4 capitalize text-foreground">{log.channel}</td>
+                      <td className="py-2 pr-4 text-muted-foreground max-w-xs truncate" title={log.message}>{log.message}</td>
+                      <td className="py-2">
+                        {log.success
+                          ? <span className="text-green-600 font-medium">✓ Sent</span>
+                          : <span className="text-red-500 font-medium" title={log.error}>✗ Failed</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {data.total > data.logs.length && (
+                <p className="mt-2 text-xs text-muted-foreground">Showing {data.logs.length} of {data.total} entries.</p>
+              )}
+            </div>
+          )}
+        </CardBody>
+      )}
+    </Card>
+  )
+}
+
 // ── Section divider row ────────────────────────────────────────────────────────
 function SectionRow({ label, count, total, tone, action }: {
   label: string; count: number; total: number; tone: string; action?: React.ReactNode
@@ -2048,20 +2116,23 @@ export default function ContractDetail() {
 
           {/* ACTIVITY */}
           {activeTab === 'activity' && (
-            <Card>
-              <CardHeader title="Notes & Activity"
-                subtitle={c.timeline?.length ? `${c.timeline.length} note${c.timeline.length !== 1 ? 's' : ''}` : 'Track conversations and follow-ups'}
-                action={<MessageSquare size={15} className="text-muted-foreground" />}
-              />
-              <CardBody className="pt-0 space-y-4">
-                <ContractTimeline
-                  notes={c.timeline || []}
-                  onAdd={(text) => addNote.mutate(text)}
-                  onDelete={(idx) => deleteNote.mutate(idx)}
-                  addBusy={addNote.isPending}
+            <div className="space-y-4">
+              <Card>
+                <CardHeader title="Notes & Activity"
+                  subtitle={c.timeline?.length ? `${c.timeline.length} note${c.timeline.length !== 1 ? 's' : ''}` : 'Track conversations and follow-ups'}
+                  action={<MessageSquare size={15} className="text-muted-foreground" />}
                 />
-              </CardBody>
-            </Card>
+                <CardBody className="pt-0 space-y-4">
+                  <ContractTimeline
+                    notes={c.timeline || []}
+                    onAdd={(text) => addNote.mutate(text)}
+                    onDelete={(idx) => deleteNote.mutate(idx)}
+                    addBusy={addNote.isPending}
+                  />
+                </CardBody>
+              </Card>
+              <ReminderLogsPanel contractId={c._id} />
+            </div>
           )}
         </div>
       </div>

@@ -35,9 +35,11 @@ import movingSurveyRoutes from './routes/movingSurveys.js';
 import movingClaimRoutes from './routes/movingClaims.js';
 import productRoutes from './routes/products.js';
 import backupRoutes from './routes/backup.js';
+import reminderConfigRoutes from './routes/reminderConfig.js';
 import { runBackup } from './services/backup.js';
 import { runGoogleContactsSync } from './services/syncContacts.js';
 import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
+import { runPaymentReminders } from './services/paymentReminders.js';
 
 const app = express();
 
@@ -120,6 +122,7 @@ app.use(
 app.use('/api/users', requireAuth, userRoutes);
 app.use('/api/backup', requireAuth, backupRoutes);
 app.use('/api/whatsapp', requireAuth, whatsappRoutes);
+app.use('/api/reminder-config', requireAuth, reminderConfigRoutes);
 
 // Central error handler
 app.use((err, _req, res, _next) => {
@@ -193,6 +196,15 @@ async function start() {
     }, msUntil);
   }
   scheduleDailyBackup();
+
+  // Payment reminders — run every 6 hours
+  const REMINDER_INTERVAL = 6 * 60 * 60 * 1000;
+  setTimeout(async () => {
+    try { await runPaymentReminders(); } catch (e) { console.error('[Reminders]', e.message); }
+    setInterval(async () => {
+      try { await runPaymentReminders(); } catch (e) { console.error('[Reminders]', e.message); }
+    }, REMINDER_INTERVAL);
+  }, 15_000);
 }
 
 start().catch((err) => {

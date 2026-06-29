@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Box, Users, FileText, CreditCard, BarChart3, Building2, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, FileSpreadsheet, Truck, ShoppingCart, Wallet, TrendingUp, UserCheck, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup } from 'lucide-react'
+import { LayoutDashboard, Box, Users, FileText, CreditCard, BarChart3, Building2, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, FileSpreadsheet, Truck, ShoppingCart, Wallet, TrendingUp, UserCheck, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, Bell } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { cn } from '../lib/utils'
@@ -50,6 +50,7 @@ const reportItems = [
 
 const navBottom = [
   { to: '/settings', label: 'Settings', icon: Settings, perm: 'settings' },
+  { to: '/settings/reminders', label: 'Reminders', icon: Bell, perm: undefined as string | undefined },
 ]
 
 const movingNavItems = [

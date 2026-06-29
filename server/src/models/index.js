@@ -969,6 +969,36 @@ movingClaimSchema.index({ job: 1 });
 movingClaimSchema.index({ customer: 1 });
 movingClaimSchema.index({ status: 1, createdAt: -1 });
 
+const reminderStageSchema = new Schema({
+  name:          { type: String, default: '' },
+  daysBeforeDue: { type: Number, default: 0 },
+  frequencyDays: { type: Number, default: 1, min: 1 },
+  message:       { type: String, default: '' },
+  channel:       { type: String, enum: ['both', 'whatsapp', 'email'], default: 'both' },
+}, { _id: false });
+
+const reminderConfigSchema = new Schema({
+  enabled:         { type: Boolean, default: true },
+  startDay:        { type: Number, default: 15, min: 1, max: 28 },
+  emailEnabled:    { type: Boolean, default: false },
+  whatsappEnabled: { type: Boolean, default: true },
+  stages:          { type: [reminderStageSchema], default: [] },
+}, { timestamps: true });
+
+const reminderLogSchema = new Schema({
+  payment:  { type: Schema.Types.ObjectId, ref: 'Payment', required: true },
+  contract: { type: Schema.Types.ObjectId, ref: 'Contract', required: true },
+  customer: { type: Schema.Types.ObjectId, ref: 'Customer', required: true },
+  channel:  { type: String, enum: ['whatsapp', 'email'], required: true },
+  stage:    { type: Number, required: true },
+  sentAt:   { type: Date, default: Date.now },
+  message:  { type: String, default: '' },
+  success:  { type: Boolean, required: true },
+  error:    { type: String, default: '' },
+}, { timestamps: true });
+reminderLogSchema.index({ payment: 1, sentAt: -1 });
+reminderLogSchema.index({ contract: 1, sentAt: -1 });
+
 const counterSchema = new Schema({
   key: { type: String, required: true, unique: true },
   seq: { type: Number, default: 0 },
@@ -1000,6 +1030,8 @@ export const MovingInvoice = model('MovingInvoice', movingInvoiceSchema);
 export const MovingSurvey = model('MovingSurvey', movingSurveySchema);
 export const MovingDocument = model('MovingDocument', movingDocumentSchema);
 export const MovingClaim = model('MovingClaim', movingClaimSchema);
+export const ReminderConfig = model('ReminderConfig', reminderConfigSchema);
+export const ReminderLog = model('ReminderLog', reminderLogSchema);
 
 const productSchema = new Schema(
   {

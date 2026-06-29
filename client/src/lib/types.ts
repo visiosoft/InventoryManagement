@@ -607,6 +607,38 @@ export interface MovingPaymentEntry {
 
 export type MovingInvoiceStatus = 'draft' | 'sent' | 'paid' | 'partial' | 'cancelled'
 
+// ── Payment Reminder Types ────────────────────────────────────────────────────
+
+export interface ReminderStage {
+  name: string
+  daysBeforeDue: number
+  frequencyDays: number
+  message: string
+  channel: 'both' | 'whatsapp' | 'email'
+}
+
+export interface ReminderConfig {
+  _id?: string
+  enabled: boolean
+  startDay: number
+  emailEnabled: boolean
+  whatsappEnabled: boolean
+  stages: ReminderStage[]
+}
+
+export interface ReminderLog {
+  _id: string
+  payment: string
+  contract: string
+  customer: string | { _id: string; fullName: string }
+  channel: 'whatsapp' | 'email'
+  stage: number
+  sentAt: string
+  message: string
+  success: boolean
+  error?: string
+}
+
 export interface MovingInvoice {
   _id: string
   invoiceNo: string

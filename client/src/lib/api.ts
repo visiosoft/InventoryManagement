@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { Customer, Expense, IntegrationStatus, Invoice, Lead, Product, Purchase, Quote, UnitType, Vendor } from './types'
+import type { Customer, Expense, IntegrationStatus, Invoice, Lead, Product, Purchase, Quote, ReminderConfig, ReminderLog, UnitType, Vendor } from './types'
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || '/api'
 
@@ -244,4 +244,16 @@ export const whatsappApi = {
   messages: (phone?: string) =>
     api.get<WhatsAppMsg[]>('/whatsapp/messages', { params: phone ? { phone } : {} }).then((r) => r.data),
   send: (to: string, body: string) => api.post<{ ok: boolean }>('/whatsapp/send', { to, body }).then((r) => r.data),
+}
+
+export const reminderConfigApi = {
+  get: () => api.get<ReminderConfig>('/reminder-config').then((r) => r.data),
+  save: (body: Partial<ReminderConfig>) => api.put<ReminderConfig>('/reminder-config', body).then((r) => r.data),
+  logs: (params?: { contract?: string; payment?: string; limit?: number; skip?: number }) =>
+    api.get<{ logs: ReminderLog[]; total: number }>('/reminder-config/logs', { params }).then((r) => r.data),
+  test: (paymentId: string) =>
+    api.post<{ ok: boolean; stageName: string; message: string; results: { channel: string; success: boolean; error?: string }[] }>(
+      `/reminder-config/test/${paymentId}`, {}
+    ).then((r) => r.data),
+  runNow: () => api.post<{ ok: boolean; sent: number; skipped: number; errors: number }>('/reminder-config/run', {}).then((r) => r.data),
 }
