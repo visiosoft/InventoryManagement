@@ -783,13 +783,18 @@ async function generateMissingPeriodInvoices(contract, cutoffDate, createdBy = '
         items.push({ sortOrder: 0, itemDetails: `Storage Rent ${fmt(periodStart)} – ${fmt(chargeableDisplayEnd)} · Unit ${unitNo}`, quantity: 1, rate: chargeableMonthlyRate, discountPct: hasDiscount ? discountPct : 0, amount: chargeableSubTotal });
       }
 
-      // First invoice ever for this contract → add advance rent line for the deposit period
+      // First invoice ever for this contract → add security deposit / advance rent line
       if (!hasExistingInvoices && generated === 0) {
-        // Show the PERIOD the deposit covers (last full 4-week period) rather than "Security Deposit"
-        const depPeriodStart = new Date(contractStart.getTime() + depositStartWeek * 7 * 86400000);
-        const depPeriodEnd = new Date(depPeriodStart.getTime() + 28 * 86400000);
-        const depPeriodDisplayEnd = new Date(depPeriodEnd.getTime() - 86400000);
-        items.push({ sortOrder: items.length, itemDetails: `Advance Rent ${fmt(depPeriodStart)} – ${fmt(depPeriodDisplayEnd)} · Unit ${unitNo}`, quantity: 1, rate: monthlyRate, discountPct: 0, amount: monthlyRate });
+        if (totalFullPeriods <= 1) {
+          // Contract is ≤ 4 weeks — no future period exists, label as Security Deposit
+          items.push({ sortOrder: items.length, itemDetails: `Security Deposit · Unit ${unitNo}`, quantity: 1, rate: monthlyRate, discountPct: 0, amount: monthlyRate });
+        } else {
+          // Longer contract — show the future period the advance rent covers
+          const depPeriodStart = new Date(contractStart.getTime() + depositStartWeek * 7 * 86400000);
+          const depPeriodEnd = new Date(depPeriodStart.getTime() + 28 * 86400000);
+          const depPeriodDisplayEnd = new Date(depPeriodEnd.getTime() - 86400000);
+          items.push({ sortOrder: items.length, itemDetails: `Advance Rent ${fmt(depPeriodStart)} – ${fmt(depPeriodDisplayEnd)} · Unit ${unitNo}`, quantity: 1, rate: monthlyRate, discountPct: 0, amount: monthlyRate });
+        }
       }
 
       // Double-check right before writing — closes the race window between concurrent requests
