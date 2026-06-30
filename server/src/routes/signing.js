@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { Contract, Unit, Document } from '../models/index.js';
+import { Contract, Unit, Document, Payment } from '../models/index.js';
 import { uploadFile } from '../services/drive.js';
 import { fillAgreementPdf, agreementTemplateExists } from '../services/agreementPdf.js';
 import { renderContractPdf } from '../services/contractPdf.js';
@@ -50,6 +50,17 @@ router.get('/:token', async (req, res) => {
   const { contract, error, status } = await findByToken(req.params.token);
   if (error) return res.status(status).json({ error });
 
+  // Sum all payments due on the earliest due date — that is the true first invoice total
+  const firstPayment = await Payment.findOne({ contract: contract._id }).sort({ dueDate: 1 }).lean();
+  let firstInvoiceTotal = null;
+  if (firstPayment) {
+    const sameDayPayments = await Payment.find({
+      contract: contract._id,
+      dueDate: firstPayment.dueDate,
+    }).lean();
+    firstInvoiceTotal = sameDayPayments.reduce((s, p) => s + (p.amount || 0), 0);
+  }
+
   // A token on an active contract means admin has explicitly allowed re-signing
   const alreadySigned = !['draft', 'pending_signature', 'active'].includes(contract.status);
   res.json({
@@ -60,6 +71,7 @@ router.get('/:token', async (req, res) => {
     rate: contract.rate,
     billingPeriod: contract.billingPeriod,
     deposit: contract.deposit,
+    firstInvoiceTotal,
     alreadySigned,
     expiresAt: contract.signingTokenExpiry,
   });
