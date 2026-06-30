@@ -244,8 +244,8 @@ export default function SignContract() {
             ['Contract No', info.contractNo],
             ['Start Date', fmt(info.startDate)],
             ['End Date', fmt(info.endDate)],
-            ['Rate', `${fmtMoney(info.rate)} / month`],
-            ['Security Deposit', fmtMoney(info.deposit)],
+            ['Rate', `${fmtMoney(info.rate)} / ${info.billingPeriod === 'weekly' ? 'week' : 'month'}`],
+            ['Security Deposit', info.deposit ? fmtMoney(info.deposit) : '—'],
           ].map(([label, val]) => (
             <div key={label} style={{ background: '#f9f9fb', borderRadius: 8, padding: '10px 14px', border: '1px solid #e5e5e5' }}>
               <div style={{ fontSize: 11, color: '#888', marginBottom: 2 }}>{label}</div>
@@ -254,17 +254,33 @@ export default function SignContract() {
           ))}
         </div>
 
-        {/* PDF viewer */}
+        {/* PDF viewer — iframe on desktop, open-link on mobile (iOS/Android can't embed PDFs) */}
         <div style={{ marginBottom: 24, borderRadius: 8, overflow: 'hidden', border: '1px solid #e5e5e5', background: '#f5f5f5' }}>
           <div style={{ padding: '8px 14px', background: '#f0f0f4', borderBottom: '1px solid #e5e5e5', fontSize: 13, color: '#555', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>Contract Document</span>
             <a href={pdfUrl} target="_blank" rel="noreferrer" style={{ color: '#4f46e5', fontSize: 12, textDecoration: 'none' }}>Open in new tab ↗</a>
           </div>
-          <iframe
-            src={pdfUrl}
-            title="Contract PDF"
-            style={{ width: '100%', height: 'calc(100vh - 180px)', minHeight: 700, border: 'none', display: 'block' }}
-          />
+          {/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? (
+            <div style={{ padding: '32px 16px', textAlign: 'center', background: '#fafafa' }}>
+              <p style={{ color: '#555', fontSize: 14, marginBottom: 16 }}>
+                PDF preview is not supported in mobile browsers. Please open it in a new tab to read the contract before signing.
+              </p>
+              <a
+                href={pdfUrl}
+                target="_blank"
+                rel="noreferrer"
+                style={{ display: 'inline-block', padding: '10px 24px', background: '#4f46e5', color: '#fff', borderRadius: 8, textDecoration: 'none', fontWeight: 600, fontSize: 14 }}
+              >
+                📄 Open Contract PDF
+              </a>
+            </div>
+          ) : (
+            <iframe
+              src={pdfUrl}
+              title="Contract PDF"
+              style={{ width: '100%', height: 'calc(100vh - 180px)', minHeight: 700, border: 'none', display: 'block' }}
+            />
+          )}
         </div>
 
         {/* ── Full signature section ─────────────────────────────────────── */}
