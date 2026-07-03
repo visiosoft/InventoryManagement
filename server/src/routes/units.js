@@ -16,7 +16,7 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   const unit = await Unit.findById(req.params.id);
   if (!unit) return res.status(404).json({ error: 'Unit not found' });
-  const contracts = await Contract.find({ unit: unit._id })
+  const contracts = await Contract.find({ $or: [{ unit: unit._id }, { units: unit._id }] })
     .populate('customer')
     .sort({ createdAt: -1 })
     .limit(10);

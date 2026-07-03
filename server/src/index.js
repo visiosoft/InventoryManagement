@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import cors from 'cors';
 import mongoose from 'mongoose';
 import { connectDb } from './db.js';
 import { requireAuth } from './middleware/auth.js';
@@ -41,6 +42,7 @@ import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
 import { runPaymentReminders } from './services/paymentReminders.js';
 
 const app = express();
+app.use(cors({ origin: '*' }));
 
 app.use(
   express.json({

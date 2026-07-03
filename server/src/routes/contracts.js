@@ -156,17 +156,6 @@ router.get('/:id', async (req, res) => {
   const contract = await populateAll(Contract.findById(req.params.id));
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
 
-  // Auto-generate invoices ONLY for brand-new contracts that have no invoices yet.
-  // Once any invoice exists, do NOT auto-generate on GET — the user controls generation
-  // via the explicit "Auto-generate" button. This prevents deleted invoices from being
-  // recreated on every page load.
-  if (!['ended', 'cancelled'].includes(contract.status)) {
-    const existingInvoiceCount = await Invoice.countDocuments({ orderNumber: contract.contractNo });
-    if (existingInvoiceCount === 0) {
-      try { await generateMissingPeriodInvoices(contract, new Date(contract.endDate)); } catch (_) { }
-    }
-  }
-
   // Sync payment record statuses from their linked invoices — fixes cases where payment
   // was recorded via the Invoice page (which updates the Invoice doc) but the Payment
   // records for that invoice were not all updated (e.g. deposit record still 'overdue').
@@ -270,15 +259,7 @@ router.post('/', async (req, res) => {
 
   await Promise.all(allUnitIds.map((uid) => syncUnitStatus(uid)));
 
-  // Generate invoices synchronously so they're ready when the client lands on the detail page.
-  // Errors here must not fail the contract creation itself.
   const populated = await populateAll(Contract.findById(contract._id));
-  try {
-    await generateMissingPeriodInvoices(populated, new Date(Date.now() + 90 * 86400000));
-  } catch (e) {
-    console.error('Invoice pre-generation failed for', contract.contractNo, e.message);
-  }
-
   res.status(201).json(populated);
 });
 
@@ -343,21 +324,6 @@ router.post('/:id/send-signature', async (req, res) => {
   }
 });
 
-// Fire-and-forget: generate all missing 4-week invoices for a contract.
-// Works for draft, pending_signature, and active contracts.
-async function autoInvoiceAfterActivation(contractId) {
-  try {
-    const c = await Contract.findById(contractId)
-      .populate('customer', '_id fullName email')
-      .populate('unit', 'unitNumber');
-    if (c && !['ended', 'cancelled'].includes(c.status)) {
-      await generateMissingPeriodInvoices(c, new Date(Date.now() + 90 * 86400000));
-    }
-  } catch (e) {
-    console.error('Auto-invoice generation error:', e.message);
-  }
-}
-
 // Marks the contract signed → active. Called by the Zoho webhook, or manually
 // ("simulate signed" in mock mode / paper signature).
 async function markSigned(contractId) {
@@ -394,7 +360,6 @@ async function markSigned(contractId) {
   await contract.save();
   const signedUnitIds = contract.units?.length ? contract.units.map((u) => u._id ?? u) : [contract.unit._id];
   await Promise.all(signedUnitIds.map((uid) => syncUnitStatus(uid)));
-  autoInvoiceAfterActivation(contract._id); // non-blocking
   return contract;
 }
 
@@ -430,7 +395,6 @@ router.post('/:id/activate', async (req, res) => {
 
   const activateUnitIds = contract.units?.length ? contract.units : [contract.unit];
   await Promise.all(activateUnitIds.map((uid) => syncUnitStatus(uid)));
-  autoInvoiceAfterActivation(contract._id); // non-blocking
   res.json(await populateAll(Contract.findById(contract._id)));
 });
 
@@ -562,8 +526,7 @@ router.post('/:id/sign-inperson', async (req, res) => {
       ? contract.units.map((u) => u._id ?? u)
       : [contract.unit._id];
     await Promise.all(signedUnitIds.map((uid) => syncUnitStatus(uid)));
-    autoInvoiceAfterActivation(contract._id); // non-blocking
-
+  
     res.json(await populateAll(Contract.findById(contract._id)));
   } catch (err) {
     console.error('sign-inperson error:', err);
@@ -572,7 +535,7 @@ router.post('/:id/sign-inperson', async (req, res) => {
 });
 
 // Update editable fields on a contract (rate, deposit, dates, notes, payment method, auto-renew).
-// Does NOT allow changing customer or unit — those require a new contract.
+// Primary unit cannot be changed, but the additional units[] array can be updated here.
 router.put('/:id', async (req, res) => {
   try {
     const contract = await Contract.findById(req.params.id);
@@ -585,9 +548,58 @@ router.put('/:id', async (req, res) => {
       }
     }
 
+    // Allow updating the full units array (primary unit stays in contract.unit, array holds all)
+    if (Array.isArray(req.body.units)) {
+      contract.units = req.body.units.filter(Boolean);
+    }
+
     await contract.save();
     const populated = await populateAll(Contract.findById(contract._id));
     res.json(populated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Extend an active contract to a new end date and generate invoices for the new period.
+// Optionally creates a fresh signing token so the customer can re-sign the extended agreement.
+router.post('/:id/extend', async (req, res) => {
+  try {
+    const contract = await populateAll(Contract.findById(req.params.id));
+    if (!contract) return res.status(404).json({ error: 'Contract not found' });
+    if (['ended', 'cancelled'].includes(contract.status)) {
+      return res.status(409).json({ error: 'Cannot extend an ended or cancelled contract' });
+    }
+
+    const { newEndDate, generateInvoices = true, allowReSign = false } = req.body;
+    if (!newEndDate) return res.status(400).json({ error: 'newEndDate is required' });
+
+    const newEnd = new Date(newEndDate);
+    if (contract.endDate && newEnd <= new Date(contract.endDate)) {
+      return res.status(400).json({ error: 'New end date must be after the current end date' });
+    }
+
+    contract.endDate = newEnd;
+
+    let signingUrl = null;
+    let signingTokenExpiry = null;
+    if (allowReSign) {
+      const token = crypto.randomBytes(32).toString('hex');
+      contract.signingToken = token;
+      contract.signingTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      signingTokenExpiry = contract.signingTokenExpiry;
+      const baseUrl = (process.env.CLIENT_ORIGIN || 'http://localhost:5173').replace(/\/$/, '');
+      signingUrl = `${baseUrl}/sign/${token}`;
+    }
+
+    await contract.save();
+
+    let generated = 0;
+    if (generateInvoices) {
+      generated = await generateMissingPeriodInvoices(contract, newEnd);
+    }
+
+    res.json({ extended: true, generated, signingUrl, signingTokenExpiry });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

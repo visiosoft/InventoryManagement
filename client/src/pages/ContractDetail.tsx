@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
-import { CalendarDays, CheckCircle2, Download, FileText, FilePlus, MessageSquare, PenLine, Plus, ShieldCheck, Upload, X, XCircle, Receipt, Clock, FolderOpen, Bell, ChevronDown, ChevronUp } from 'lucide-react'
+import { CalendarDays, CalendarPlus, CheckCircle2, Download, FileText, FilePlus, MessageSquare, PenLine, Plus, ShieldCheck, Upload, X, XCircle, Receipt, Clock, FolderOpen, Bell, ChevronDown, ChevronUp } from 'lucide-react'
 import { api, apiError, reminderConfigApi } from '../lib/api'
 import { useAuth } from '../lib/auth'
-import type { AppDocument, Contract, ContractNote, Invoice, Payment } from '../lib/types'
+import type { AppDocument, Contract, ContractNote, Invoice, Payment, Unit } from '../lib/types'
 import {
   Badge, Button, Card, CardBody, CardHeader, EmptyState,
   Field, Input, Modal, Select, Spinner,
@@ -30,13 +30,14 @@ function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, 
   onDone: () => void
 }) {
   const monthlyRate = Number(contract.rate || 0)
-  const weeklyRate = Math.round((monthlyRate / 4) * 100) / 100
   const depositAmt = Number(contract.deposit || 0)
-
   const toISO = (d: Date) => d.toISOString().slice(0, 10)
 
-  // If caller provides specific dates (e.g. "generate for remaining weeks"), use those.
-  // Otherwise default to the next uninvoiced period (day after the latest payment due date).
+  // Build unit label from all units on the contract
+  const allContractUnits = contract.units?.length ? contract.units : contract.unit ? [contract.unit] : []
+  const unitLabel = allContractUnits.map((u: any) => u?.unitNumber ?? u).filter(Boolean).join(', ')
+
+  // Next uninvoiced period start
   const latestDueDate = payments.length > 0
     ? new Date(Math.max(...payments.map(p => new Date(p.dueDate).getTime())))
     : null
@@ -44,81 +45,47 @@ function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, 
     ? new Date(latestDueDate.getTime() + 7 * 86400000)
     : new Date(contract.startDate)
 
-  // Smart end date: if the next period has already started, default end to today (bill elapsed time).
-  // If the contract has an end date sooner than +28 days, use that.
-  // Otherwise fall back to nextStart + 28 days (one month).
-  const today = new Date(); today.setHours(0, 0, 0, 0)
   const contractEnd = contract.endDate ? new Date(contract.endDate) : null
   const nextEnd28 = new Date(nextStart); nextEnd28.setDate(nextEnd28.getDate() + 28)
-  const smartEnd = (() => {
-    if (today > nextStart) return today         // next period already started → invoice up to today
-    if (contractEnd && contractEnd < nextEnd28) return contractEnd  // contract ends sooner
-    return nextEnd28
-  })()
+  const smartEnd = contractEnd && contractEnd < nextEnd28 ? contractEnd : nextEnd28
 
   const defaultStart = overrideStart ?? toISO(nextStart)
-  const defaultEnd = overrideEnd ?? toISO(smartEnd)
-
-  const unitDiscountPct = Number(contract.unit?.discountPct ?? 0)
+  const defaultEnd   = overrideEnd   ?? toISO(smartEnd)
 
   type ExtraItem = { id: number; description: string; amount: string; type: 'charge' | 'credit' }
 
-  const [preset, setPreset] = useState<Preset>('month')
+  const [isDeposit, setIsDeposit] = useState(false)
   const [startDate, setStartDate] = useState(defaultStart)
-  const [endDate, setEndDate] = useState(defaultEnd)
-  const [dueDate, setDueDate] = useState(toISO(new Date()))
-  const [discountPct, setDiscountPct] = useState(unitDiscountPct)
+  const [endDate, setEndDate]     = useState(defaultEnd)
+  const [dueDate, setDueDate]     = useState(toISO(new Date()))
+  const [notes, setNotes]         = useState('')
   const [extraItems, setExtraItems] = useState<ExtraItem[]>([])
-  const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState('')
-  const nextExtraId = useRef(0)
+  const [err, setErr]   = useState('')
+  const nextId = useRef(0)
 
-  function addExtraItem() {
-    setExtraItems(prev => [...prev, { id: nextExtraId.current++, description: '', amount: '', type: 'charge' }])
-  }
-  function removeExtraItem(id: number) { setExtraItems(prev => prev.filter(x => x.id !== id)) }
-  function updateExtraItem(id: number, patch: Partial<ExtraItem>) {
-    setExtraItems(prev => prev.map(x => x.id === id ? { ...x, ...patch } : x))
-  }
+  const fmtD = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+
+  // Rent total for the selected period (4-week = monthly rate, proportional otherwise)
+  const rentTotal = useMemo(() => {
+    if (isDeposit) return 0
+    const s = new Date(startDate), e = new Date(endDate)
+    const days = Math.round((e.getTime() - s.getTime()) / 86400000)
+    if (days <= 0) return 0
+    const weeks = Math.ceil(days / 7)
+    return Math.round((monthlyRate / 4) * weeks * 100) / 100
+  }, [isDeposit, startDate, endDate, monthlyRate])
 
   const extrasTotal = extraItems.reduce((s, x) => {
     const v = Math.round(Number(x.amount || 0) * 100) / 100
     return s + (x.type === 'charge' ? v : -v)
   }, 0)
 
-  const defaultEnd2 = toISO(new Date(new Date(defaultStart).setDate(new Date(defaultStart).getDate() + 56)))
+  const grandTotal = isDeposit ? depositAmt : Math.round((rentTotal + extrasTotal) * 100) / 100
 
-  function applyPreset(p: Preset) {
-    setPreset(p)
-    if (p === 'month') { setStartDate(defaultStart); setEndDate(defaultEnd) }
-    if (p === 'month2') { setStartDate(defaultStart); setEndDate(defaultEnd2) }
-  }
-
-  // Live calculation — full-week billing, discount on first 4 weeks of the contract (not per-invoice)
-  const calc = useMemo(() => {
-    if (preset === 'deposit') return null
-    const s = new Date(startDate), e = new Date(endDate)
-    const totalDays = Math.round((e.getTime() - s.getTime()) / 86400000)
-    if (totalDays <= 0) return null
-    const totalWeeks = Math.ceil(totalDays / 7)
-    const contractStart = new Date(contract.startDate)
-    const daysSinceStart = Math.round((s.getTime() - contractStart.getTime()) / 86400000)
-    const globalWeekOffset = Math.max(0, Math.floor(daysSinceStart / 7))
-    const weeks: { num: number; start: Date; amount: number; discounted: boolean }[] = []
-    for (let i = 0; i < totalWeeks; i++) {
-      const ws = new Date(s); ws.setDate(ws.getDate() + i * 7)
-      const discounted = discountPct > 0 && (globalWeekOffset + i) < 4
-      const amount = discounted
-        ? Math.round(weeklyRate * (1 - discountPct / 100) * 100) / 100
-        : weeklyRate
-      weeks.push({ num: i + 1, start: ws, amount, discounted })
-    }
-    const total = Math.round(weeks.reduce((s, w) => s + w.amount, 0) * 100) / 100
-    return { totalWeeks, weeks, total }
-  }, [preset, startDate, endDate, weeklyRate, discountPct])
-
-  const fmtDay = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+  function addExtra() { setExtraItems(p => [...p, { id: nextId.current++, description: '', amount: '', type: 'charge' }]) }
+  function removeExtra(id: number) { setExtraItems(p => p.filter(x => x.id !== id)) }
+  function updateExtra(id: number, patch: Partial<ExtraItem>) { setExtraItems(p => p.map(x => x.id === id ? { ...x, ...patch } : x)) }
 
   async function submit() {
     setBusy(true); setErr('')
@@ -127,219 +94,116 @@ function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, 
         .filter(x => x.description.trim() && Number(x.amount) > 0)
         .map(x => ({ description: x.description.trim(), amount: Number(x.amount), type: x.type }))
       await api.post(`/contracts/${contract._id}/generate-custom-invoice`, {
-        isDeposit: preset === 'deposit',
-        startDate: preset !== 'deposit' ? startDate : undefined,
-        endDate: preset !== 'deposit' ? endDate : undefined,
-        dueDate, notes,
-        discountPct: preset !== 'deposit' ? discountPct : 0,
-        extraItems: validExtras,
+        isDeposit,
+        startDate: !isDeposit ? startDate : undefined,
+        endDate:   !isDeposit ? endDate   : undefined,
+        dueDate, notes, discountPct: 0, extraItems: validExtras,
       })
       onDone()
     } catch (e) { setErr(apiError(e)) }
     finally { setBusy(false) }
   }
 
-  // ── Past invoice history (group payments by invoice) ──────────────────────
-  const pastInvoices = useMemo(() => {
-    const map = new Map<string, Payment[]>()
-    for (const p of payments) {
-      const id = (p.invoice as any)?._id ?? (p.invoice as any)
-      if (!id) continue
-      if (!map.has(id)) map.set(id, [])
-      map.get(id)!.push(p)
-    }
-    return Array.from(map.entries())
-      .map(([id, ps]) => {
-        const ref = (ps[0].invoice as any)
-        const invoiceNo = typeof ref === 'object' ? ref.invoiceNo : '—'
-        const dates = ps.map(p => new Date(p.dueDate).getTime())
-        const earliest = new Date(Math.min(...dates))
-        const latest = new Date(Math.max(...dates))
-        const paidAmt = ps.filter(p => p.status === 'paid').reduce((s, p) => s + Number(p.amount ?? 0), 0)
-        const totalAmt = ps.reduce((s, p) => s + Number(p.amount ?? 0), 0)
-        const status = paidAmt >= totalAmt ? 'paid' : paidAmt > 0 ? 'partial' : 'pending'
-        return { id, invoiceNo, earliest, latest, totalAmt, paidAmt, status }
-      })
-      .sort((a, b) => a.earliest.getTime() - b.earliest.getTime())
-  }, [payments])
-
-  const fmtShort = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })
-
   return (
     <div className="space-y-4">
-      {/* Past invoice history */}
-      {pastInvoices.length > 0 && (
-        <div className="rounded-lg border overflow-hidden text-xs">
-          <div className="bg-muted/50 px-3 py-1.5 font-semibold uppercase tracking-wide text-muted-foreground text-[11px]">
-            Invoice History
-          </div>
-          <div className="divide-y">
-            {pastInvoices.map((inv) => (
-              <div key={inv.id} className="flex items-center justify-between px-3 py-2 gap-2">
-                <span className="text-muted-foreground shrink-0">{inv.invoiceNo}</span>
-                <span className="text-muted-foreground flex-1 text-center">
-                  {fmtShort(inv.earliest)} → {fmtShort(inv.latest)}
-                </span>
-                <span className="font-medium shrink-0">{formatMoney(inv.totalAmt)}</span>
-                <span className={`shrink-0 rounded-full px-2 py-0.5 font-semibold
-                  ${inv.status === 'paid' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
-                    inv.status === 'partial' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
-                      'bg-muted text-muted-foreground'}`}>
-                  {inv.status === 'paid' ? 'Paid' : inv.status === 'partial' ? 'Partial' : 'Pending'}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
-      {/* Preset picker */}
-      <div className="grid grid-cols-2 gap-2 text-sm">
-        {([
-          ['month', '1 Month (4 wks)'],
-          ['month2', '2 Months (8 wks)'],
-          ['custom', 'Custom Period'],
-          ['deposit', 'Security Deposit'],
-        ] as [Preset, string][]).map(([p, label]) => (
-          <button key={p} type="button" onClick={() => applyPreset(p)}
-            className={`rounded-lg border py-2 font-medium transition-colors cursor-pointer
-              ${preset === p ? 'border-primary bg-primary/10 text-primary' : 'hover:bg-muted text-foreground'}`}>
-            {label}
-          </button>
-        ))}
+      {/* Type toggle */}
+      <div className="flex gap-2">
+        <button type="button" onClick={() => setIsDeposit(false)}
+          className={`flex-1 rounded-lg border py-2 text-sm font-medium transition-colors cursor-pointer
+            ${!isDeposit ? 'border-primary bg-primary/10 text-primary' : 'hover:bg-muted text-foreground'}`}>
+          Rent payment
+        </button>
+        <button type="button" onClick={() => setIsDeposit(true)}
+          className={`flex-1 rounded-lg border py-2 text-sm font-medium transition-colors cursor-pointer
+            ${isDeposit ? 'border-primary bg-primary/10 text-primary' : 'hover:bg-muted text-foreground'}`}>
+          Security deposit
+        </button>
       </div>
 
-      {/* Deposit preview */}
-      {preset === 'deposit' && (
-        <div className="rounded-lg border bg-muted/40 px-4 py-3 space-y-1">
-          <div className="text-xs text-muted-foreground">Security deposit</div>
-          <div className="text-2xl font-bold">{formatMoney(depositAmt)}</div>
-          {!depositAmt && <p className="text-xs text-destructive">No deposit amount set on this contract.</p>}
-        </div>
-      )}
-
-      {/* Date range */}
-      {preset !== 'deposit' && (
-        <>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Period start">
-              <Input type="date" value={startDate}
-                onChange={(e) => { setStartDate(e.target.value); setPreset('custom') }} />
-            </Field>
-            <Field label="Period end">
-              <Input type="date" value={endDate} min={startDate}
-                onChange={(e) => { setEndDate(e.target.value); setPreset('custom') }} />
-            </Field>
-          </div>
-
-          {/* Live calculation breakdown */}
-          {calc ? (
-            <div className="rounded-lg border overflow-hidden text-sm">
-              <div className="bg-muted/60 px-3 py-2 text-xs text-muted-foreground flex justify-between">
-                <span>{calc.totalWeeks} wk{calc.totalWeeks !== 1 ? 's' : ''}</span>
-                <span>{formatMoney(weeklyRate)}/wk &nbsp;({formatMoney(monthlyRate)}/mo ÷ 4)</span>
-              </div>
-              <div className="divide-y">
-                {calc.weeks.map((w) => (
-                  <div key={w.num} className={`flex items-center justify-between px-3 py-2 ${w.discounted ? 'bg-amber-50 dark:bg-amber-950/20' : ''}`}>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium w-14">Week {w.num}</span>
-                      <span className="text-muted-foreground text-xs">{fmtDay(w.start)}</span>
-                      {w.discounted && <span className="text-xs text-amber-600 font-medium">{discountPct}% off</span>}
-                    </div>
-                    <div className="text-right">
-                      <span className="font-medium">{formatMoney(w.amount)}</span>
-                      {w.discounted && <span className="text-xs text-muted-foreground line-through ml-2">{formatMoney(weeklyRate)}</span>}
-                    </div>
-                  </div>
-                ))}
-                {extrasTotal !== 0 && (
-                  <div className="flex justify-between px-3 py-2 text-sm text-muted-foreground">
-                    <span>Rent subtotal</span>
-                    <span>{formatMoney(calc.total)}</span>
-                  </div>
-                )}
-                {extraItems.filter(x => x.description && Number(x.amount) > 0).map(x => (
-                  <div key={x.id} className={`flex items-center justify-between px-3 py-2 text-sm ${x.type === 'credit' ? 'bg-emerald-50/60 dark:bg-emerald-950/20' : 'bg-blue-50/40 dark:bg-blue-950/20'}`}>
-                    <span className="text-muted-foreground">{x.description}</span>
-                    <span className={x.type === 'credit' ? 'text-emerald-700 font-medium' : 'font-medium'}>
-                      {x.type === 'credit' ? '−' : '+'} {formatMoney(Number(x.amount))}
-                    </span>
-                  </div>
-                ))}
-                <div className="flex justify-between px-3 py-2.5 bg-accent/60 font-semibold">
-                  <span>Total</span>
-                  <span>{formatMoney(Math.round((calc.total + extrasTotal) * 100) / 100)}</span>
-                </div>
-              </div>
+      {/* Main line item */}
+      <div className="rounded-lg border divide-y overflow-hidden">
+        {!isDeposit ? (
+          <>
+            {/* Period row */}
+            <div className="grid grid-cols-2 gap-3 p-3">
+              <Field label="Period start">
+                <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+              </Field>
+              <Field label="Period end">
+                <Input type="date" value={endDate} min={startDate} onChange={e => setEndDate(e.target.value)} />
+              </Field>
             </div>
-          ) : (
-            <p className="text-xs text-destructive">End date must be after start date.</p>
-          )}
-        </>
-      )}
-
-      <div className="grid grid-cols-3 gap-3">
-        <Field label="Due date">
-          <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-        </Field>
-        <Field label="1st month discount (%)">
-          <Input type="number" min={0} max={100} value={discountPct}
-            onChange={(e) => setDiscountPct(Number(e.target.value))} placeholder="0" />
-        </Field>
-        <Field label="Notes (optional)">
-          <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. Month 1 rent" />
-        </Field>
-      </div>
-
-      {/* Additional charges / credits */}
-      <div className="rounded-lg border overflow-hidden">
-        <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b">
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Additional items (optional)</span>
-          <button type="button" onClick={addExtraItem}
-            className="text-xs text-primary hover:underline cursor-pointer font-medium flex items-center gap-1">
-            <Plus size={11} /> Add item
-          </button>
-        </div>
-        {extraItems.length === 0 ? (
-          <div className="px-3 py-3 text-xs text-muted-foreground text-center">
-            No extra items. Click "Add item" to include locks, cleaning fees, credits, etc.
-          </div>
-        ) : (
-          <div className="divide-y">
-            {extraItems.map((x) => (
-              <div key={x.id} className="flex items-center gap-2 px-3 py-2">
-                <Input
-                  value={x.description} placeholder="e.g. Lock deposit"
-                  onChange={(e) => updateExtraItem(x.id, { description: e.target.value })}
-                  className="flex-1 text-sm"
-                />
-                <select
-                  value={x.type}
-                  onChange={(e) => updateExtraItem(x.id, { type: e.target.value as 'charge' | 'credit' })}
-                  className="rounded-md border bg-background px-2 py-1.5 text-sm w-24"
-                >
-                  <option value="charge">+ Charge</option>
-                  <option value="credit">− Credit</option>
-                </select>
-                <Input
-                  type="number" min={0} step="0.01" value={x.amount} placeholder="0.00"
-                  onChange={(e) => updateExtraItem(x.id, { amount: e.target.value })}
-                  className="w-24 text-right text-sm"
-                />
-                <button type="button" onClick={() => removeExtraItem(x.id)}
-                  className="text-muted-foreground hover:text-destructive cursor-pointer shrink-0">
-                  <X size={14} />
-                </button>
+            {/* Rent summary row */}
+            <div className="flex items-center justify-between px-4 py-3 bg-muted/30">
+              <div>
+                <p className="text-sm font-medium">Rent payment · Unit {unitLabel}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {startDate && endDate
+                    ? `${fmtD(new Date(startDate))} – ${fmtD(new Date(endDate))}`
+                    : '—'}
+                </p>
               </div>
-            ))}
+              <span className="text-base font-semibold">{formatMoney(rentTotal)}</span>
+            </div>
+          </>
+        ) : (
+          <div className="flex items-center justify-between px-4 py-3 bg-muted/30">
+            <p className="text-sm font-medium">Security deposit</p>
+            <span className="text-base font-semibold">{formatMoney(depositAmt)}</span>
           </div>
         )}
+
+        {/* Extra items */}
+        {extraItems.map((x) => (
+          <div key={x.id} className="flex items-center gap-2 px-3 py-2">
+            <Input value={x.description} placeholder="e.g. Lock deposit, Cleaning fee…"
+              onChange={e => updateExtra(x.id, { description: e.target.value })}
+              className="flex-1 text-sm" />
+            <select value={x.type} onChange={e => updateExtra(x.id, { type: e.target.value as 'charge' | 'credit' })}
+              className="rounded-md border bg-background px-2 py-1.5 text-sm w-24">
+              <option value="charge">+ Charge</option>
+              <option value="credit">− Credit</option>
+            </select>
+            <Input type="number" min={0} step="0.01" value={x.amount} placeholder="0.00"
+              onChange={e => updateExtra(x.id, { amount: e.target.value })}
+              className="w-24 text-right text-sm" />
+            <button type="button" onClick={() => removeExtra(x.id)}
+              className="text-muted-foreground hover:text-destructive cursor-pointer shrink-0">
+              <X size={14} />
+            </button>
+          </div>
+        ))}
+
+        {/* Add item + Total */}
+        <div className="flex items-center justify-between px-3 py-2 bg-muted/20">
+          <button type="button" onClick={addExtra}
+            className="text-xs text-primary hover:underline font-medium flex items-center gap-1 cursor-pointer">
+            <Plus size={11} /> Add item (lock, fee, credit…)
+          </button>
+          <span className="text-xs text-muted-foreground">{extraItems.length > 0 ? `${extraItems.length} extra item${extraItems.length > 1 ? 's' : ''}` : ''}</span>
+        </div>
+
+        {/* Grand total */}
+        <div className="flex items-center justify-between px-4 py-3 font-semibold bg-accent/40">
+          <span>Total</span>
+          <span className="text-lg">{formatMoney(grandTotal)}</span>
+        </div>
+      </div>
+
+      {/* Due date + notes */}
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Due date">
+          <Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+        </Field>
+        <Field label="Notes (optional)">
+          <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="e.g. Month 1 rent" />
+        </Field>
       </div>
 
       {err && <p className="text-xs text-destructive">{err}</p>}
 
-      <Button className="w-full" disabled={busy || (preset === 'deposit' && !depositAmt) || (preset !== 'deposit' && !calc)}
+      <Button className="w-full" disabled={busy || (isDeposit && !depositAmt) || (!isDeposit && rentTotal <= 0)}
         onClick={submit}>
         {busy ? 'Generating…' : 'Generate Invoice'}
       </Button>
@@ -1154,6 +1018,132 @@ function ReminderLogsPanel({ contractId }: { contractId: string }) {
   )
 }
 
+// ── Edit contract form (extracted to honour Rules of Hooks) ───────────────────
+function EditContractForm({ contract, availableUnits, onSubmit, onCancel, busy, error }: {
+  contract: Contract
+  availableUnits: Unit[]
+  onSubmit: (body: Record<string, unknown>) => void
+  onCancel: () => void
+  busy: boolean
+  error: string
+}) {
+  const primaryUnitId = contract.unit?._id ?? ''
+  const initialIds = (contract.units?.length ? contract.units : contract.unit ? [contract.unit] : []).map((u: Unit) => u._id ?? '')
+  const [selectedUnitIds, setSelectedUnitIds] = useState<string[]>(initialIds)
+
+  const toggleUnit = (uid: string) => {
+    if (uid === primaryUnitId) return
+    setSelectedUnitIds((prev) => prev.includes(uid) ? prev.filter((x) => x !== uid) : [...prev, uid])
+  }
+
+  const assignedIds = new Set(initialIds)
+  // Show ALL units — admin can assign any unit regardless of current status
+  const units = availableUnits
+    .sort((a, b) => a.unitNumber.localeCompare(b.unitNumber, undefined, { numeric: true }))
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        const f = new FormData(e.currentTarget)
+        onSubmit({
+          rate: Number(f.get('rate')),
+          deposit: Number(f.get('deposit')),
+          billingPeriod: String(f.get('billingPeriod')),
+          startDate: String(f.get('startDate')),
+          endDate: String(f.get('endDate')),
+          autoRenew: f.get('autoRenew') === 'true',
+          paymentMethod: String(f.get('paymentMethod') || ''),
+          firstPaymentDate: f.get('firstPaymentDate') ? String(f.get('firstPaymentDate')) : undefined,
+          notes: String(f.get('notes') || ''),
+          units: selectedUnitIds,
+        })
+      }}
+      className="space-y-4"
+    >
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Monthly Rate (AED)">
+          <Input name="rate" type="number" min="0" step="0.01" defaultValue={contract.rate} required />
+        </Field>
+        <Field label="Deposit (AED)">
+          <Input name="deposit" type="number" min="0" step="0.01" defaultValue={contract.deposit} />
+        </Field>
+        <Field label="Billing Period">
+          <Select name="billingPeriod" defaultValue={contract.billingPeriod}>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </Select>
+        </Field>
+        <Field label="Payment Method">
+          <Select name="paymentMethod" defaultValue={contract.paymentMethod || ''}>
+            <option value="">— Select —</option>
+            <option value="cash">Cash</option>
+            <option value="bank_transfer">Bank Transfer</option>
+            <option value="cheque">Cheque</option>
+            <option value="card">Card</option>
+          </Select>
+        </Field>
+        <Field label="Start Date">
+          <Input name="startDate" type="date" defaultValue={contract.startDate?.slice(0, 10)} required />
+        </Field>
+        <Field label="End Date">
+          <Input name="endDate" type="date" defaultValue={contract.endDate?.slice(0, 10)} required />
+        </Field>
+        <Field label="First Payment Date">
+          <Input name="firstPaymentDate" type="date" defaultValue={contract.firstPaymentDate?.slice(0, 10)} />
+        </Field>
+        <Field label="Auto Renew">
+          <Select name="autoRenew" defaultValue={contract.autoRenew ? 'true' : 'false'}>
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+          </Select>
+        </Field>
+        <Field label="Notes" className="col-span-2">
+          <Textarea name="notes" rows={3} defaultValue={contract.notes || ''} placeholder="Internal notes about this contract" />
+        </Field>
+      </div>
+
+      <div>
+        <p className="text-sm font-medium mb-1">Units covered by this contract</p>
+        <p className="text-xs text-muted-foreground mb-2">Primary unit is locked. Check any free unit below to add it to this contract.</p>
+        <div className="border rounded-lg divide-y max-h-52 overflow-y-auto">
+          {units.map((u) => {
+            const isPrimary = u._id === primaryUnitId
+            const isAssigned = assignedIds.has(u._id)
+            const checked = selectedUnitIds.includes(u._id)
+            const statusLabel = u.status === 'available' ? null : u.status
+            return (
+              <label key={u._id} className={`flex items-center gap-3 px-3 py-2 ${isPrimary ? 'cursor-default opacity-60' : 'cursor-pointer hover:bg-muted/50'}`}>
+                <input type="checkbox" checked={checked} disabled={isPrimary} onChange={() => toggleUnit(u._id)}
+                  className="h-4 w-4 rounded border-input accent-primary shrink-0" />
+                <span className="text-sm flex-1 min-w-0">
+                  <span className="font-medium">{u.unitNumber}</span>
+                  {u.sizeSqf ? <span className="text-muted-foreground ml-2">{u.sizeSqf} sq ft{u.price ? ` · AED ${u.price.toLocaleString()}/mo` : ''}</span> : null}
+                </span>
+                {isPrimary
+                  ? <span className="text-xs text-muted-foreground shrink-0">Primary</span>
+                  : isAssigned
+                    ? <span className="text-xs text-blue-600 dark:text-blue-400 shrink-0">On contract</span>
+                    : statusLabel
+                      ? <span className="text-xs text-amber-600 dark:text-amber-400 shrink-0 capitalize">{statusLabel}</span>
+                      : null
+                }
+              </label>
+            )
+          })}
+          {units.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">No units found.</p>}
+        </div>
+      </div>
+
+      {error && <p className="text-xs text-destructive">{error}</p>}
+      <div className="flex justify-end gap-2 pt-2 border-t">
+        <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
+        <Button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save Changes'}</Button>
+      </div>
+    </form>
+  )
+}
+
 // ── Section divider row ────────────────────────────────────────────────────────
 function SectionRow({ label, count, total, tone, action }: {
   label: string; count: number; total: number; tone: string; action?: React.ReactNode
@@ -1199,11 +1189,22 @@ export default function ContractDetail() {
   const [endModal, setEndModal] = useState(false)
   const [endDate, setEndDate] = useState('')
   const [endReason, setEndReason] = useState('')
+  const [extendModal, setExtendModal] = useState(false)
+  const [extendDate, setExtendDate] = useState('')
+  const [extendReSign, setExtendReSign] = useState(false)
+  const [extendResult, setExtendResult] = useState<{ generated: number; signingUrl?: string | null; signingTokenExpiry?: string | null } | null>(null)
+  const [extendLinkCopied, setExtendLinkCopied] = useState(false)
   const [activeTab, setActiveTab] = useState<'overview' | 'payments' | 'documents' | 'activity'>('overview')
 
   const { data, isLoading } = useQuery<ContractDetailData>({
     queryKey: ['contract', id],
     queryFn: () => api.get(`/contracts/${id}`).then((r) => r.data),
+  })
+
+  const { data: availableUnits = [] } = useQuery<Unit[]>({
+    queryKey: ['units'],
+    queryFn: () => api.get('/units').then((r) => r.data),
+    enabled: editModal,
   })
 
   const autoInvoice = useMutation({
@@ -1310,6 +1311,13 @@ export default function ContractDetail() {
   const updateContract = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.put(`/contracts/${id}`, body),
     onSuccess: () => { invalidate(); setEditModal(false); setError('') },
+    onError: (e) => setError(apiError(e)),
+  })
+
+  const extendContract = useMutation({
+    mutationFn: (body: { newEndDate: string; generateInvoices: boolean; allowReSign: boolean }) =>
+      api.post(`/contracts/${id}/extend`, body).then((r) => r.data),
+    onSuccess: (data) => { invalidate(); setExtendResult(data) },
     onError: (e) => setError(apiError(e)),
   })
 
@@ -1481,28 +1489,24 @@ export default function ContractDetail() {
     })
   }
 
-  // Invoice generated events
-  for (const inv of allInvoices) {
-    const at = new Date(inv.invoiceDate || inv.createdAt || inv.dueDate)
-    const byLabel = (inv as any).createdBy ? ` · by ${(inv as any).createdBy}` : ''
-    activityEvents.push({
-      id: `inv-${inv._id}`,
-      type: 'invoice',
-      at,
-      title: 'Invoice generated',
-      subtitle: `${inv.invoiceNo} · ${formatMoney(inv.total)}${byLabel}`,
-    })
-  }
-
-  // Overdue payments
+  // Overdue payments — one event per invoice (group all payment records for the same invoice)
+  const overdueByInvoice = new Map<string, typeof overdue>()
   for (const p of overdue) {
-    const daysLate = Math.round((today2.getTime() - new Date(p.dueDate).getTime()) / 86400000)
+    const invId = String((p.invoice as any)?._id ?? (p.invoice as any) ?? p.dueDate)
+    if (!overdueByInvoice.has(invId)) overdueByInvoice.set(invId, [])
+    overdueByInvoice.get(invId)!.push(p)
+  }
+  for (const [, group] of overdueByInvoice) {
+    const earliest = group.reduce((min, p) => new Date(p.dueDate) < min ? new Date(p.dueDate) : min, new Date(group[0].dueDate))
+    const total = Math.round(group.reduce((s, p) => s + Number(p.amount ?? 0), 0) * 100) / 100
+    const inv = (group[0].invoice as any)
+    const daysLate = Math.round((today2.getTime() - earliest.getTime()) / 86400000)
     activityEvents.push({
-      id: `ovd-${p._id}`,
+      id: `ovd-${group[0]._id}`,
       type: 'overdue',
-      at: new Date(p.dueDate),
+      at: earliest,
       title: 'Payment overdue',
-      subtitle: `${(p.invoice as any)?.invoiceNo ?? ''} · due ${formatDate(p.dueDate)} · ${daysLate}d late`,
+      subtitle: `${inv?.invoiceNo ?? ''} · due ${formatDate(earliest.toISOString())} · ${daysLate}d late · ${formatMoney(total)}`,
     })
   }
 
@@ -1583,6 +1587,17 @@ export default function ContractDetail() {
           <Button variant="outline" size="sm" onClick={() => { setError(''); setEditModal(true) }}>
             <PenLine size={14} /> Edit
           </Button>
+          {!['ended', 'cancelled'].includes(c.status) && (
+            <Button variant="outline" size="sm" onClick={() => {
+              setExtendDate(c.endDate?.slice(0, 10) ?? '')
+              setExtendReSign(false)
+              setExtendResult(null)
+              setError('')
+              setExtendModal(true)
+            }}>
+              <CalendarPlus size={14} /> Extend
+            </Button>
+          )}
           {['draft', 'pending_signature'].includes(c.status) && (
             <Button size="sm" variant="outline" onClick={() => { setSignError(''); setSigningInPerson(true) }}>
               <PenLine size={14} /> Sign in person
@@ -2188,6 +2203,79 @@ export default function ContractDetail() {
         </div>
       </Modal>
 
+      {/* ── Extend Contract Modal ── */}
+      <Modal open={extendModal} onClose={() => { setExtendModal(false); setExtendResult(null) }} title="Extend Contract">
+        {extendResult ? (
+          <div className="space-y-4">
+            <div className="rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 px-4 py-3 text-sm text-green-800 dark:text-green-300">
+              <p className="font-medium mb-1">Contract extended successfully</p>
+              <p>{extendResult.generated} invoice{extendResult.generated !== 1 ? 's' : ''} generated for the extended period.</p>
+            </div>
+            {extendResult.signingUrl && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Signing link for customer</p>
+                <div className="flex gap-2">
+                  <Input value={extendResult.signingUrl} readOnly className="text-xs font-mono" />
+                  <Button size="sm" onClick={() => {
+                    navigator.clipboard.writeText(extendResult.signingUrl!)
+                    setExtendLinkCopied(true)
+                    setTimeout(() => setExtendLinkCopied(false), 2500)
+                  }}>{extendLinkCopied ? '✓ Copied' : 'Copy'}</Button>
+                </div>
+                {extendResult.signingTokenExpiry && (
+                  <p className="text-xs text-muted-foreground">Expires: {new Date(extendResult.signingTokenExpiry).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                )}
+                {c.customer?.phone && (
+                  <a
+                    href={`https://wa.me/${c.customer.phone.replace(/\D/g, '').replace(/^00/, '')}?text=${encodeURIComponent(`Hi ${c.customer?.fullName}, your storage contract (${c.contractNo}) has been extended. Please sign the updated agreement: ${extendResult.signingUrl}`)}`}
+                    target="_blank" rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-md bg-[#25D366] text-white text-sm font-medium px-3 py-1.5 hover:opacity-90"
+                  >
+                    Share via WhatsApp
+                  </a>
+                )}
+              </div>
+            )}
+            <div className="flex justify-end pt-2 border-t">
+              <Button onClick={() => { setExtendModal(false); setExtendResult(null) }}>Done</Button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <Field label="New end date">
+              <Input
+                type="date"
+                value={extendDate}
+                min={c.endDate ? (() => { const d = new Date(c.endDate); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10) })() : undefined}
+                onChange={(e) => setExtendDate(e.target.value)}
+                required
+              />
+              {c.endDate && <p className="text-xs text-muted-foreground mt-1">Current end date: {new Date(c.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</p>}
+            </Field>
+
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input type="checkbox" checked={extendReSign} onChange={(e) => setExtendReSign(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-input accent-primary" />
+              <div>
+                <p className="text-sm font-medium">Generate new signing link</p>
+                <p className="text-xs text-muted-foreground">Customer will be asked to re-sign the extended agreement. Link is valid for 7 days.</p>
+              </div>
+            </label>
+
+            {error && <p className="text-xs text-destructive">{error}</p>}
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <Button type="button" variant="outline" onClick={() => setExtendModal(false)}>Cancel</Button>
+              <Button
+                disabled={!extendDate || extendContract.isPending}
+                onClick={() => extendContract.mutate({ newEndDate: extendDate, generateInvoices: true, allowReSign: extendReSign })}
+              >
+                {extendContract.isPending ? 'Extending…' : 'Extend Contract'}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
       {/* ── Modals ── */}
       <Modal open={!!recordingPayment} onClose={() => setRecordingPayment(null)} title="Record payment">
         {recordingPayment && (
@@ -2335,76 +2423,14 @@ export default function ContractDetail() {
       {/* ── Edit Contract Modal ── */}
       <Modal open={editModal} onClose={() => setEditModal(false)} title="Edit Contract" wide>
         {editModal && (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault()
-              const f = new FormData(e.currentTarget)
-              updateContract.mutate({
-                rate: Number(f.get('rate')),
-                deposit: Number(f.get('deposit')),
-                billingPeriod: String(f.get('billingPeriod')),
-                startDate: String(f.get('startDate')),
-                endDate: String(f.get('endDate')),
-                autoRenew: f.get('autoRenew') === 'true',
-                paymentMethod: String(f.get('paymentMethod') || ''),
-                firstPaymentDate: f.get('firstPaymentDate') ? String(f.get('firstPaymentDate')) : undefined,
-                notes: String(f.get('notes') || ''),
-              })
-            }}
-            className="space-y-4"
-          >
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Monthly Rate (AED)">
-                <Input name="rate" type="number" min="0" step="0.01" defaultValue={c.rate} required />
-              </Field>
-              <Field label="Deposit (AED)">
-                <Input name="deposit" type="number" min="0" step="0.01" defaultValue={c.deposit} />
-              </Field>
-              <Field label="Billing Period">
-                <Select name="billingPeriod" defaultValue={c.billingPeriod}>
-                  <option value="weekly">Weekly</option>
-                  <option value="monthly">Monthly</option>
-                </Select>
-              </Field>
-              <Field label="Payment Method">
-                <Select name="paymentMethod" defaultValue={c.paymentMethod || ''}>
-                  <option value="">— Select —</option>
-                  <option value="cash">Cash</option>
-                  <option value="bank_transfer">Bank Transfer</option>
-                  <option value="cheque">Cheque</option>
-                  <option value="card">Card</option>
-                </Select>
-              </Field>
-              <Field label="Start Date">
-                <Input name="startDate" type="date" defaultValue={c.startDate?.slice(0, 10)} required />
-              </Field>
-              <Field label="End Date">
-                <Input name="endDate" type="date" defaultValue={c.endDate?.slice(0, 10)} required />
-              </Field>
-              <Field label="First Payment Date">
-                <Input name="firstPaymentDate" type="date" defaultValue={c.firstPaymentDate?.slice(0, 10)} />
-              </Field>
-              <Field label="Auto Renew">
-                <Select name="autoRenew" defaultValue={c.autoRenew ? 'true' : 'false'}>
-                  <option value="true">Yes</option>
-                  <option value="false">No</option>
-                </Select>
-              </Field>
-              <Field label="Notes" className="col-span-2">
-                <Textarea name="notes" rows={3} defaultValue={c.notes || ''} placeholder="Internal notes about this contract" />
-              </Field>
-            </div>
-            <div className="rounded-lg bg-muted/50 border px-3 py-2 text-xs text-muted-foreground">
-              <strong>Note:</strong> Customer and unit cannot be changed here. To change these, end this contract and create a new one.
-            </div>
-            {error && <p className="text-xs text-destructive">{error}</p>}
-            <div className="flex justify-end gap-2 pt-2 border-t">
-              <Button type="button" variant="outline" onClick={() => setEditModal(false)}>Cancel</Button>
-              <Button type="submit" disabled={updateContract.isPending}>
-                {updateContract.isPending ? 'Saving…' : 'Save Changes'}
-              </Button>
-            </div>
-          </form>
+          <EditContractForm
+            contract={c}
+            availableUnits={availableUnits}
+            onSubmit={(body) => updateContract.mutate(body)}
+            onCancel={() => setEditModal(false)}
+            busy={updateContract.isPending}
+            error={error}
+          />
         )}
       </Modal>
     </div>
