@@ -42,7 +42,10 @@ import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
 import { runPaymentReminders } from './services/paymentReminders.js';
 
 const app = express();
+// Allow any origin to access the API. Single source of CORS — do NOT also set
+// CORS headers in nginx, or the browser will see duplicate Access-Control-Allow-Origin.
 app.use(cors({ origin: '*' }));
+app.options('*', cors({ origin: '*' }));
 
 app.use(
   express.json({
