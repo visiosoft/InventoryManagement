@@ -365,6 +365,7 @@ export interface Contract {
   endDate: string
   autoRenew: boolean
   status: ContractStatus
+  archived?: boolean
   zohoRequestId?: string
   signedDocUrl?: string
   paymentMethod?: string

@@ -95,6 +95,8 @@ async function deleteContractRecord(contract) {
 
 router.get('/', async (req, res) => {
   const filter = {};
+  if (req.query.archived === 'true') filter.archived = true;
+  else if (req.query.archived !== 'all') filter.archived = { $ne: true };
   if (req.query.status) filter.status = req.query.status;
   if (req.query.customer) filter.customer = req.query.customer;
   if (req.query.billing) filter.billingPeriod = req.query.billing;
@@ -646,6 +648,20 @@ router.delete('/:id', async (req, res) => {
   }
 
   res.json({ ok: true });
+});
+
+// Archive/unarchive a contract. Hides it from the default contracts list without
+// deleting its payment/document history — used when deletion is blocked because
+// paid payments must be retained.
+router.patch('/:id/archive', async (req, res) => {
+  const archived = req.body?.archived !== false;
+  const contract = await Contract.findByIdAndUpdate(
+    req.params.id,
+    { archived },
+    { new: true }
+  );
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  res.json({ ok: true, contract });
 });
 
 // ── Auto-invoice generator ────────────────────────────────────────────────────

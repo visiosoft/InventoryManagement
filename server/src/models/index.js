@@ -226,6 +226,7 @@ const contractSchema = new Schema(
     authorizedPersons: [accessPersonSchema],
     signingToken: { type: String, default: null },
     signingTokenExpiry: { type: Date, default: null },
+    archived: { type: Boolean, default: false },
     timeline: [
       {
         at: { type: Date, default: Date.now },

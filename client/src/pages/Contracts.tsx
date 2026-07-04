@@ -25,15 +25,16 @@ export default function Contracts() {
   const [to, setTo] = useState('')
   const [page, setPage]   = useState(1)
   const [limit, setLimit] = useState(25)
+  const [showArchived, setShowArchived] = useState(false)
 
   // Reset to page 1 when any filter changes
-  useEffect(() => { setPage(1) }, [search, status, billing, floor, from, to, limit])
+  useEffect(() => { setPage(1) }, [search, status, billing, floor, from, to, limit, showArchived])
 
   const [deleteTarget, setDeleteTarget] = useState<Contract | null>(null)
   const [deleteError, setDeleteError] = useState('')
   const [selectedContractIds, setSelectedContractIds] = useState<string[]>([])
 
-  const params = { search: search || undefined, status: status || undefined, billing: billing || undefined, floor: floor || undefined, from: from || undefined, to: to || undefined, page, limit }
+  const params = { search: search || undefined, status: status || undefined, billing: billing || undefined, floor: floor || undefined, from: from || undefined, to: to || undefined, page, limit, archived: showArchived ? 'true' : undefined }
 
   const { data, isLoading } = useQuery<PagedContracts>({
     queryKey: ['contracts', params],
@@ -64,6 +65,17 @@ export default function Contracts() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['contracts'] })
       setSelectedContractIds([])
+      setDeleteError('')
+    },
+    onError: (e) => setDeleteError(apiError(e)),
+  })
+
+  const archiveContract = useMutation({
+    mutationFn: ({ id, archived }: { id: string; archived: boolean }) =>
+      api.patch(`/contracts/${id}/archive`, { archived }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['contracts'] })
+      setDeleteTarget(null)
       setDeleteError('')
     },
     onError: (e) => setDeleteError(apiError(e)),
@@ -149,6 +161,11 @@ export default function Contracts() {
           </div>
         </div>
 
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground pb-2">
+          <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+          Show archived
+        </label>
+
         {hasFilters && (
           <Button variant="outline" size="sm" onClick={clearFilters} className="flex items-center gap-1">
             <X size={12} /> Clear
@@ -224,9 +241,22 @@ export default function Contracts() {
                     <Td>{formatDate(c.startDate)}</Td>
                     <Td>{formatDate(c.endDate)}</Td>
                     <Td>
-                      <Badge tone={contractStatusTone[c.status]}>{statusLabel(c.status)}</Badge>
+                      <div className="flex items-center gap-1">
+                        <Badge tone={contractStatusTone[c.status]}>{statusLabel(c.status)}</Badge>
+                        {c.archived && <Badge tone="gray">Archived</Badge>}
+                      </div>
                     </Td>
                     <Td>
+                      {c.archived && (
+                        <button
+                          onClick={() => archiveContract.mutate({ id: c._id, archived: false })}
+                          className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
+                          title="Unarchive contract"
+                          disabled={archiveContract.isPending}
+                        >
+                          Unarchive
+                        </button>
+                      )}
                       <button
                         onClick={() => { setDeleteTarget(c); setDeleteError('') }}
                         className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
@@ -280,6 +310,15 @@ export default function Contracts() {
               <Button variant="outline" onClick={() => { setDeleteTarget(null); setDeleteError('') }}>
                 Cancel
               </Button>
+              {deleteError.includes('recorded payment') && (
+                <Button
+                  variant="outline"
+                  disabled={archiveContract.isPending}
+                  onClick={() => archiveContract.mutate({ id: deleteTarget._id, archived: true })}
+                >
+                  {archiveContract.isPending ? 'Archiving…' : 'Archive instead'}
+                </Button>
+              )}
               <Button
                 variant="destructive"
                 disabled={deleteContract.isPending || deleteTarget.status === 'active'}
