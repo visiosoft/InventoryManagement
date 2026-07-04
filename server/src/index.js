@@ -1,6 +1,5 @@
 import 'dotenv/config';
 import express from 'express';
-import cors from 'cors';
 import mongoose from 'mongoose';
 import { connectDb } from './db.js';
 import { requireAuth } from './middleware/auth.js';
@@ -42,10 +41,15 @@ import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
 import { runPaymentReminders } from './services/paymentReminders.js';
 
 const app = express();
-// Allow any origin to access the API. Single source of CORS — do NOT also set
-// CORS headers in nginx, or the browser will see duplicate Access-Control-Allow-Origin.
-app.use(cors({ origin: '*' }));
-app.options('*', cors({ origin: '*' }));
+// CORS is handled entirely by the nginx layer, which injects
+// Access-Control-Allow-Origin: * (and related headers). Express must NOT set any
+// CORS headers itself, or the browser sees duplicate values ("*, *") and blocks it.
+// We only short-circuit preflight so nginx's headers attach to a 2xx response
+// instead of a 404 (which would fail the preflight check).
+app.use((req, res, next) => {
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
 
 app.use(
   express.json({
