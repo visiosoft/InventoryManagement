@@ -15,8 +15,6 @@ import { formatDate, formatMoney } from '../lib/utils'
 import { UploadDocumentForm } from './Documents'
 
 // ── Custom invoice generator modal ────────────────────────────────────────────
-type Preset = 'month' | 'month2' | 'custom' | 'deposit'
-
 type ContractDetailData = {
   contract: Contract
   payments: Payment[]
