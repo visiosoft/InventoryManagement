@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import cors from 'cors';
 import mongoose from 'mongoose';
 import { connectDb } from './db.js';
 import { requireAuth } from './middleware/auth.js';
@@ -41,15 +42,19 @@ import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
 import { runPaymentReminders } from './services/paymentReminders.js';
 
 const app = express();
-// CORS is handled entirely by the nginx layer, which injects
-// Access-Control-Allow-Origin: * (and related headers). Express must NOT set any
-// CORS headers itself, or the browser sees duplicate values ("*, *") and blocks it.
-// We only short-circuit preflight so nginx's headers attach to a 2xx response
-// instead of a 404 (which would fail the preflight check).
-app.use((req, res, next) => {
-  if (req.method === 'OPTIONS') return res.sendStatus(204);
-  next();
-});
+// In production this server sits behind an nginx layer that already injects
+// Access-Control-Allow-Origin (and related headers) on every response, so Express
+// must not add its own or the browser sees duplicate values ("*, *") and blocks it.
+// Local dev has no such proxy, so Express handles CORS itself there.
+// Set CORS_HANDLED_BY_PROXY=true in the production .env to disable Express's CORS headers.
+if (process.env.CORS_HANDLED_BY_PROXY === 'true') {
+  app.use((req, res, next) => {
+    if (req.method === 'OPTIONS') return res.sendStatus(204);
+    next();
+  });
+} else {
+  app.use(cors({ origin: '*' }));
+}
 
 app.use(
   express.json({
