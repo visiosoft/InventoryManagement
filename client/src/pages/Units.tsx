@@ -299,7 +299,7 @@ export default function Units() {
           <UnitFormFields />
           <Field label="Status">
             <Select name="status" defaultValue="available">
-              {['available', 'maintenance'].map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
+              {['available', 'reserved', 'occupied', 'maintenance'].map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
             </Select>
           </Field>
           <Field label="Notes"><Textarea name="notes" /></Field>
@@ -318,7 +318,7 @@ function UnitDetail({ unit, onUpdate, onDelete, error, busy }: { unit: Unit; onU
     queryFn: () => api.get(`/units/${unit._id}`).then((r) => r.data),
   })
   const openContract = data?.contracts.find((c) => ['active', 'pending_signature', 'draft'].includes(c.status))
-  const statusLocked = ['occupied', 'reserved'].includes(unit.status) && !!openContract
+  const statusLocked = unit.status === 'occupied' && !!openContract
 
   function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
