@@ -1638,6 +1638,13 @@ export default function ContractDetail() {
               End contract
             </Button>
           )}
+          {['ended', 'cancelled'].includes(c.status) && isAdmin && (
+            <Button size="sm" variant="success"
+              onClick={() => { if (confirm('Reactivate this contract? It will be set back to active.')) action.mutate('reactivate') }}
+              disabled={action.isPending}>
+              <CheckCircle2 size={14} /> Reactivate
+            </Button>
+          )}
         </div>
       </div>
 

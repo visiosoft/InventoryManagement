@@ -489,6 +489,31 @@ async function closeContract(req, res, status) {
 router.post('/:id/end', (req, res) => closeContract(req, res, 'ended'));
 router.post('/:id/cancel', (req, res) => closeContract(req, res, 'cancelled'));
 
+// Reactivate an ended or cancelled contract — sets status back to active and updates unit.
+router.post('/:id/reactivate', async (req, res) => {
+  try {
+    const contract = await Contract.findById(req.params.id);
+    if (!contract) return res.status(404).json({ error: 'Contract not found' });
+    if (!['ended', 'cancelled'].includes(contract.status)) {
+      return res.status(409).json({ error: `Only ended or cancelled contracts can be reactivated` });
+    }
+
+    contract.status = 'active';
+    // If the end date is in the past, optionally extend it (caller can edit after)
+    if (!contract.timeline) contract.timeline = [];
+    const actor = req.user?.name || req.user?.email || '';
+    contract.timeline.push({ at: new Date(), text: `Contract reactivated`, author: actor });
+    await contract.save();
+
+    const unitIds = contract.units?.length ? contract.units : [contract.unit];
+    await Promise.all(unitIds.map((uid) => syncUnitStatus(uid)));
+
+    res.json(await populateAll(Contract.findById(contract._id)));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Sign a contract in person — capture a drawn or typed signature, stamp it on the PDF,
 // archive the signed copy, and activate the contract.
 router.post('/:id/sign-inperson', async (req, res) => {
