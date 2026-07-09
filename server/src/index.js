@@ -37,7 +37,6 @@ import productRoutes from './routes/products.js';
 import backupRoutes from './routes/backup.js';
 import reminderConfigRoutes from './routes/reminderConfig.js';
 import { runBackup } from './services/backup.js';
-import { runGoogleContactsSync } from './services/syncContacts.js';
 import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
 import { runPaymentReminders } from './services/paymentReminders.js';
 
@@ -95,9 +94,9 @@ app.use(
   (req, res, next) => req.path.startsWith('/public/') ? next() : requireAuth(req, res, next),
   invoiceRoutes
 );
-app.use('/api/vendors', requireAuth, vendorRoutes);
+app.use('/api/vendors', vendorRoutes);
 app.use('/api/purchases', requireAuth, purchaseRoutes);
-app.use('/api/expenses', requireAuth, expenseRoutes);
+app.use('/api/expenses', expenseRoutes);
 app.use('/api/moving-inventory', requireAuth, movingInventoryRoutes);
 app.use('/api/workers', requireAuth, workerRoutes);
 app.use('/api/trucks', requireAuth, truckRoutes);
@@ -165,13 +164,6 @@ async function start() {
   await seedUnitTypes();
   console.log(`Connected to MongoDB (db: ${process.env.DB_NAME})`);
   app.listen(PORT, () => console.log(`PurpleBox API listening on http://localhost:${PORT}`));
-
-  // Auto-sync Google Contacts every 10 minutes
-  const SYNC_INTERVAL = 10 * 60 * 1000;
-  setTimeout(async () => {
-    await runGoogleContactsSync();
-    setInterval(runGoogleContactsSync, SYNC_INTERVAL);
-  }, 5000); // 5s delay so DB is fully ready
 
   // Reconcile WhatsApp label-driven lead state every 15 minutes.
   const WHATSAPP_RECONCILE_INTERVAL = 15 * 60 * 1000;

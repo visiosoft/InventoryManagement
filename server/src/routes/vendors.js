@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { Vendor, Purchase, Expense } from '../models/index.js';
 import { parseCsv } from '../services/csv.js';
+import { zohoBooksConfigured, fetchZohoVendors } from '../services/zohoBooks.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
@@ -75,9 +76,9 @@ router.get('/', async (req, res) => {
         filter.$or = [{ contactName: re }, { companyName: re }, { displayName: re }, { email: re }, { phone: re }];
     }
     if (req.query.category) filter.categories = String(req.query.category);
-    const page  = Math.max(1, parseInt(req.query.page)  || 1);
+    const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50));
-    const skip  = (page - 1) * limit;
+    const skip = (page - 1) * limit;
     const [data, total] = await Promise.all([
         Vendor.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
         Vendor.countDocuments(filter),
@@ -243,6 +244,65 @@ router.get('/:id/summary', async (req, res) => {
             paid: Number(mPaid[m].toFixed(2)),
         })),
     });
+});
+
+// --- Zoho Books vendor import ---
+router.get('/zoho-books/status', async (req, res) => {
+    res.json({ configured: zohoBooksConfigured() });
+});
+
+router.get('/import/zoho-books', async (req, res) => {
+    try {
+        if (!zohoBooksConfigured()) {
+            return res.status(400).json({ error: 'Zoho Books is not configured. Set ZOHO_BOOKS_* env vars.' });
+        }
+
+        const { vendors } = await fetchZohoVendors();
+
+        const data = vendors.map(zv => ({
+            contactId: String(zv.contact_id || '').trim(),
+            contactName: String(zv.contact_name || '').trim(),
+            companyName: String(zv.company_name || '').trim(),
+            displayName: String(zv.contact_name || '').trim(),
+            email: String(zv.email || '').trim(),
+            phone: String(zv.phone || '').trim(),
+            mobilePhone: String(zv.mobile || '').trim(),
+            currencyCode: String(zv.currency_code || 'AED').trim(),
+            status: zv.status === 'active' ? 'active' : 'inactive',
+            notes: String(zv.notes || '').trim(),
+            website: String(zv.website || '').trim(),
+            paymentTermsLabel: String(zv.payment_terms_label || '').trim(),
+            paymentTerms: Number(zv.payment_terms) || 0,
+            openingBalance: Number(zv.opening_balance) || 0,
+            source: 'zoho-books',
+            billingAddress: {
+                attention: String(zv.billing_address?.attention || '').trim(),
+                address: String(zv.billing_address?.address || '').trim(),
+                street2: String(zv.billing_address?.street2 || '').trim(),
+                city: String(zv.billing_address?.city || '').trim(),
+                state: String(zv.billing_address?.state || '').trim(),
+                country: String(zv.billing_address?.country || '').trim(),
+                code: String(zv.billing_address?.zip || '').trim(),
+                phone: String(zv.billing_address?.phone || '').trim(),
+                fax: String(zv.billing_address?.fax || '').trim(),
+            },
+            shippingAddress: {
+                attention: String(zv.shipping_address?.attention || '').trim(),
+                address: String(zv.shipping_address?.address || '').trim(),
+                street2: String(zv.shipping_address?.street2 || '').trim(),
+                city: String(zv.shipping_address?.city || '').trim(),
+                state: String(zv.shipping_address?.state || '').trim(),
+                country: String(zv.shipping_address?.country || '').trim(),
+                code: String(zv.shipping_address?.zip || '').trim(),
+                phone: String(zv.shipping_address?.phone || '').trim(),
+                fax: String(zv.shipping_address?.fax || '').trim(),
+            },
+        }));
+
+        res.json({ total: data.length, vendors: data });
+    } catch (err) {
+        res.status(500).json({ error: err.message || 'Failed to fetch vendors from Zoho Books' });
+    }
 });
 
 export default router;

@@ -107,8 +107,7 @@ export async function uploadPublicImage({ buffer, filename, mimeType, customerNa
       supportsAllDrives: true,
     });
 
-    // thumbnail URL works in <img> for public files; viewUrl for "open in Drive"
-    const url = `https://drive.google.com/thumbnail?id=${data.id}&sz=w800`;
+    const url = `https://lh3.googleusercontent.com/d/${data.id}=w800`;
     return { storage: 'drive', driveFileId: data.id, url, viewUrl: data.webViewLink };
   }
 

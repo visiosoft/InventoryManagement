@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 import mongoose from 'mongoose';
 
-const GOOGLE_DNS_SERVERS = ['8.8.8.8', '8.8.4.4'];
+const GOOGLE_DNS_SERVERS = ['1.1.1.1', '1.0.0.1'];
 let mongoLookupPatched = false;
 
 function shouldUseGoogleResolver(host) {

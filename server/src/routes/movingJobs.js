@@ -3,18 +3,17 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
+import { google } from 'googleapis';
 import { MovingJob, MovingItem, MovingStockTxn, Customer, nextMovingJobNo } from '../models/index.js';
 import { notifyJobConfirmed, notifyCrewOnTheWay, notifyJobCompleted } from '../services/movingNotifications.js';
+import { uploadPublicImage, driveConfigured } from '../services/drive.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const JOBS_UPLOADS = path.resolve(__dirname, '../../../uploads/moving-jobs');
 fs.mkdirSync(JOBS_UPLOADS, { recursive: true });
 
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: JOBS_UPLOADS,
-    filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname.replace(/\s+/g, '_')}`),
-  }),
+  storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (file.mimetype.startsWith('image/')) cb(null, true);
@@ -251,6 +250,45 @@ router.post('/:id/materials', async (req, res) => {
   }
 });
 
+// Edit material usage (update qty / notes, adjusting stock accordingly)
+router.put('/:id/materials/:idx', async (req, res) => {
+  try {
+    const job = await MovingJob.findById(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    const idx = Number(req.params.idx);
+    if (idx < 0 || idx >= job.materialUsage.length) return res.status(400).json({ error: 'Invalid index' });
+
+    const entry = job.materialUsage[idx];
+    const { qty, notes } = req.body;
+    const newQty = Number(qty);
+    const diff = newQty - entry.qty;
+
+    if (diff !== 0) {
+      const item = await MovingItem.findById(entry.item);
+      if (!item) return res.status(404).json({ error: 'Item not found' });
+      if (diff > 0 && item.onHand < diff) return res.status(400).json({ error: `Only ${item.onHand} in stock` });
+
+      const prev = item.onHand;
+      item.onHand -= diff;
+      await item.save();
+      await MovingStockTxn.create({
+        item: entry.item, txnType: diff > 0 ? 'out' : 'in', qty: Math.abs(diff), previousOnHand: prev,
+        reason: `Adjusted on job ${job.jobNo}`, movingJob: job._id,
+      });
+    }
+
+    entry.qty = newQty;
+    if (notes !== undefined) entry.notes = notes;
+    recalcCosts(job);
+    await job.save();
+
+    const populated = await MovingJob.findById(job._id).populate(POPULATE_JOB);
+    res.json(populated);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 router.delete('/:id/materials/:idx', async (req, res) => {
   try {
     const job = await MovingJob.findById(req.params.id);
@@ -384,16 +422,29 @@ router.delete('/:id', async (req, res) => {
 // ── Image upload ───────────────────────────────────────────────────────────
 router.post('/:id/images', upload.array('images', 20), async (req, res) => {
   try {
-    const job = await MovingJob.findById(req.params.id);
+    const job = await MovingJob.findById(req.params.id).populate('customer', 'fullName');
     if (!job) return res.status(404).json({ error: 'Job not found' });
 
-    const newImages = (req.files || []).map(f => ({
-      url: `/uploads/moving-jobs/${f.filename}`,
-      filename: f.filename,
-      originalName: f.originalname,
-      size: f.size,
-      uploadedAt: new Date(),
-    }));
+    const customerName = job.customer?.fullName || 'MovingJobs';
+    const newImages = [];
+
+    for (const file of (req.files || [])) {
+      const result = await uploadPublicImage({
+        buffer: file.buffer,
+        mimeType: file.mimetype,
+        filename: `job-${job.jobNo}-${Date.now()}-${file.originalname}`,
+        customerName,
+      });
+      newImages.push({
+        url: result.url,
+        filename: file.originalname.replace(/\s+/g, '_'),
+        originalName: file.originalname,
+        size: file.size,
+        storage: result.storage,
+        driveFileId: result.driveFileId || '',
+        uploadedAt: new Date(),
+      });
+    }
 
     if (!job.images) job.images = [];
     job.images.push(...newImages);
@@ -404,6 +455,15 @@ router.post('/:id/images', upload.array('images', 20), async (req, res) => {
   }
 });
 
+function buildDriveClient() {
+  const clientId = process.env.GOOGLE_DRIVE_CLIENT_ID || process.env.GOOGLE_CONTACTS_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_DRIVE_CLIENT_SECRET || process.env.GOOGLE_CONTACTS_CLIENT_SECRET;
+  const refreshToken = process.env.GOOGLE_DRIVE_REFRESH_TOKEN || process.env.GOOGLE_CONTACTS_REFRESH_TOKEN;
+  const oauth2Client = new google.auth.OAuth2(clientId, clientSecret);
+  oauth2Client.setCredentials({ refresh_token: refreshToken });
+  return google.drive({ version: 'v3', auth: oauth2Client });
+}
+
 router.delete('/:id/images/:idx', async (req, res) => {
   try {
     const job = await MovingJob.findById(req.params.id);
@@ -413,12 +473,36 @@ router.delete('/:id/images/:idx', async (req, res) => {
     const img = job.images?.[idx];
     if (!img) return res.status(404).json({ error: 'Image not found' });
 
-    const filePath = path.join(JOBS_UPLOADS, img.filename);
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    if (img.storage === 'drive' && img.driveFileId) {
+      try {
+        const drive = buildDriveClient();
+        await drive.files.delete({ fileId: img.driveFileId, supportsAllDrives: true });
+      } catch (e) { /* ignore Drive delete errors */ }
+    } else {
+      const filePath = path.join(JOBS_UPLOADS, img.filename);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    }
 
     job.images.splice(idx, 1);
     await job.save();
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/:id/images/broken', async (req, res) => {
+  try {
+    const job = await MovingJob.findById(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    const before = job.images?.length || 0;
+    job.images = (job.images || []).filter(img => {
+      if (img.storage === 'drive' && img.driveFileId) return true;
+      const filePath = path.join(JOBS_UPLOADS, path.basename(img.url || ''));
+      return fs.existsSync(filePath);
+    });
+    await job.save();
+    res.json({ removed: before - job.images.length, remaining: job.images.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

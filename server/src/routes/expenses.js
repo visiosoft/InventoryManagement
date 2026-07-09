@@ -3,7 +3,7 @@ import multer from 'multer';
 import { Expense, Vendor } from '../models/index.js';
 import { parseCsv } from '../services/csv.js';
 import { uploadToVendorFolder } from '../services/drive.js';
-import { zohoBooksConfigured, createZohoExpense } from '../services/zohoBooks.js';
+import { zohoBooksConfigured, createZohoExpense, createZohoExpenseWithReceipt, fetchZohoExpenses } from '../services/zohoBooks.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
@@ -187,6 +187,81 @@ router.get('/', async (req, res) => {
         Expense.countDocuments(filter),
     ]);
     res.json({ data, total, page, pages: Math.ceil(total / limit), limit });
+});
+
+// --- Zoho Books: Get recent expenses ---
+router.get('/zoho-books', async (req, res) => {
+    try {
+        if (!zohoBooksConfigured()) {
+            return res.status(400).json({ error: 'Zoho Books is not configured.' });
+        }
+        const result = await fetchZohoExpenses(50);
+        res.json({ total: result.expenses.length, expenses: result.expenses });
+    } catch (err) {
+        res.status(500).json({ error: err.message || 'Failed to fetch expenses from Zoho Books' });
+    }
+});
+
+// --- Zoho Books: Current month expense total ---
+router.get('/zoho-books/monthly-total', async (req, res) => {
+    try {
+        if (!zohoBooksConfigured()) {
+            return res.status(400).json({ error: 'Zoho Books is not configured.' });
+        }
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const fromDate = `${year}-${month}-01`;
+        const lastDay = new Date(year, now.getMonth() + 1, 0).getDate();
+        const toDate = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
+
+        const result = await fetchZohoExpenses(200, { fromDate, toDate });
+        const totalAmount = result.expenses.reduce((sum, e) => sum + (Number(e.total) || 0), 0);
+
+        res.json({
+            month: `${year}-${month}`,
+            fromDate,
+            toDate,
+            totalExpenses: result.expenses.length,
+            totalAmount: Number(totalAmount.toFixed(2)),
+            expenses: result.expenses,
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message || 'Failed to fetch monthly expenses' });
+    }
+});
+
+// --- Zoho Books: Create expense with optional receipt upload ---
+router.post('/zoho-books', upload.single('receipt'), async (req, res) => {
+    try {
+        if (!zohoBooksConfigured()) {
+            return res.status(400).json({ error: 'Zoho Books is not configured. Set ZOHO_BOOKS_* env vars.' });
+        }
+
+        const expense = {
+            expenseDate: req.body.date || req.body.expenseDate,
+            total: toNumber(req.body.amount || req.body.total),
+            description: String(req.body.description || '').trim(),
+            expenseAccount: String(req.body.expenseAccount || req.body.account || '').trim(),
+            referenceNo: String(req.body.referenceNo || '').trim(),
+            isBillable: toBool(req.body.isBillable, false),
+            currencyCode: String(req.body.currencyCode || 'AED').trim(),
+            vendorName: String(req.body.vendorName || req.body.vendor || '').trim(),
+        };
+
+        if (!expense.total) {
+            return res.status(400).json({ error: 'Amount is required' });
+        }
+
+        const result = await createZohoExpenseWithReceipt(expense, req.file || null);
+
+        res.json({
+            success: true,
+            zohoExpenseId: result.zohoExpenseId,
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message || 'Failed to create expense in Zoho Books' });
+    }
 });
 
 router.get('/:id', async (req, res) => {

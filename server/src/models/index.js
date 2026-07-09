@@ -715,6 +715,8 @@ const movingJobImageSchema = new Schema({
   filename: { type: String },
   originalName: { type: String },
   size: { type: Number },
+  storage: { type: String, enum: ['local', 'drive'], default: 'local' },
+  driveFileId: { type: String, default: '' },
   uploadedAt: { type: Date, default: Date.now },
 });
 

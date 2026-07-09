@@ -265,3 +265,87 @@ export async function createZohoExpense(expense) {
         zohoExpenseId: data.expense?.expense_id,
     };
 }
+
+// Create expense in Zoho Books and attach a receipt file.
+export async function createZohoExpenseWithReceipt(expense, file) {
+    if (!zohoBooksConfigured()) {
+        return { configured: false };
+    }
+
+    // First create the expense
+    const result = await createZohoExpense(expense);
+    if (!result.configured || !result.zohoExpenseId) return result;
+
+    // If a file is provided, upload it as a receipt
+    if (file && file.buffer) {
+        const token = await getAccessToken();
+        const headers = { Authorization: `Zoho-oauthtoken ${token}` };
+
+        const FormData = (await import('form-data')).default;
+        const form = new FormData();
+        form.append('receipt', file.buffer, {
+            filename: file.originalname || 'receipt',
+            contentType: file.mimetype || 'application/octet-stream',
+        });
+
+        await axios.post(
+            `${API_BASE}/expenses/${result.zohoExpenseId}/receipt`,
+            form,
+            {
+                headers: { ...headers, ...form.getHeaders() },
+                params: orgParam(),
+            }
+        );
+    }
+
+    return result;
+}
+
+// Fetch all vendors from Zoho Books (paginated, fetches all pages).
+export async function fetchZohoVendors() {
+    if (!zohoBooksConfigured()) {
+        return { configured: false, vendors: [] };
+    }
+
+    const token = await getAccessToken();
+    const headers = { Authorization: `Zoho-oauthtoken ${token}` };
+
+    let allVendors = [];
+    let page = 1;
+    let hasMore = true;
+
+    while (hasMore) {
+        const { data } = await axios.get(`${API_BASE}/contacts`, {
+            headers,
+            params: { ...orgParam(), contact_type: 'vendor', page, per_page: 200 },
+        });
+
+        const contacts = data.contacts || [];
+        allVendors = allVendors.concat(contacts);
+        hasMore = data.page_context?.has_more_page || false;
+        page++;
+    }
+
+    return { configured: true, vendors: allVendors };
+}
+
+// Fetch recent expenses from Zoho Books.
+export async function fetchZohoExpenses(limit = 50, { fromDate, toDate } = {}) {
+    if (!zohoBooksConfigured()) {
+        return { configured: false, expenses: [] };
+    }
+
+    const token = await getAccessToken();
+    const headers = { Authorization: `Zoho-oauthtoken ${token}` };
+
+    const params = { ...orgParam(), per_page: limit, sort_column: 'date', sort_order: 'D' };
+    if (fromDate) params.date_start = fromDate;
+    if (toDate) params.date_end = toDate;
+
+    const { data } = await axios.get(`${API_BASE}/expenses`, {
+        headers,
+        params,
+    });
+
+    return { configured: true, expenses: data.expenses || [] };
+}
