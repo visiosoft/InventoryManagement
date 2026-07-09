@@ -553,7 +553,7 @@ router.post('/:id/sign-inperson', async (req, res) => {
       ? contract.units.map((u) => u._id ?? u)
       : [contract.unit._id];
     await Promise.all(signedUnitIds.map((uid) => syncUnitStatus(uid)));
-  
+
     res.json(await populateAll(Contract.findById(contract._id)));
   } catch (err) {
     console.error('sign-inperson error:', err);

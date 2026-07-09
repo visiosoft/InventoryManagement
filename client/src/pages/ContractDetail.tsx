@@ -48,18 +48,18 @@ function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, 
   const smartEnd = contractEnd && contractEnd < nextEnd28 ? contractEnd : nextEnd28
 
   const defaultStart = overrideStart ?? toISO(nextStart)
-  const defaultEnd   = overrideEnd   ?? toISO(smartEnd)
+  const defaultEnd = overrideEnd ?? toISO(smartEnd)
 
   type ExtraItem = { id: number; description: string; amount: string; type: 'charge' | 'credit' }
 
   const [isDeposit, setIsDeposit] = useState(false)
   const [startDate, setStartDate] = useState(defaultStart)
-  const [endDate, setEndDate]     = useState(defaultEnd)
-  const [dueDate, setDueDate]     = useState(toISO(new Date()))
-  const [notes, setNotes]         = useState('')
+  const [endDate, setEndDate] = useState(defaultEnd)
+  const [dueDate, setDueDate] = useState(toISO(new Date()))
+  const [notes, setNotes] = useState('')
   const [extraItems, setExtraItems] = useState<ExtraItem[]>([])
   const [busy, setBusy] = useState(false)
-  const [err, setErr]   = useState('')
+  const [err, setErr] = useState('')
   const nextId = useRef(0)
 
   const fmtD = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -94,7 +94,7 @@ function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, 
       await api.post(`/contracts/${contract._id}/generate-custom-invoice`, {
         isDeposit,
         startDate: !isDeposit ? startDate : undefined,
-        endDate:   !isDeposit ? endDate   : undefined,
+        endDate: !isDeposit ? endDate : undefined,
         dueDate, notes, discountPct: 0, extraItems: validExtras,
       })
       onDone()

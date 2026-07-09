@@ -3,6 +3,7 @@ import multer from 'multer';
 import { Expense, Vendor } from '../models/index.js';
 import { parseCsv } from '../services/csv.js';
 import { uploadToVendorFolder } from '../services/drive.js';
+import { zohoBooksConfigured, createZohoExpense } from '../services/zohoBooks.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
@@ -177,9 +178,9 @@ router.get('/', async (req, res) => {
         ];
     }
 
-    const page  = Math.max(1, parseInt(req.query.page)  || 1);
+    const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50));
-    const skip  = (page - 1) * limit;
+    const skip = (page - 1) * limit;
     const [data, total] = await Promise.all([
         Expense.find(filter).populate('vendor', 'contactName companyName email phone').sort({ createdAt: -1 }).skip(skip).limit(limit),
         Expense.countDocuments(filter),
@@ -364,6 +365,70 @@ router.post('/import/csv', upload.single('file'), async (req, res) => {
         ok: true,
         summary: { created, updated, skipped, errors, vendorLinked, total: rows.length },
     });
+});
+
+// ── Zoho Books sync ───────────────────────────────────────────────────────────
+
+router.post('/:id/sync-zoho-books', async (req, res) => {
+    try {
+        if (!zohoBooksConfigured()) {
+            return res.status(400).json({ error: 'Zoho Books is not configured. Add credentials in .env' });
+        }
+        const expense = await Expense.findById(req.params.id).populate('vendor');
+        if (!expense) return res.status(404).json({ error: 'Expense not found' });
+
+        const result = await createZohoExpense(expense);
+        expense.zohoBooksSyncId = result.zohoExpenseId;
+        expense.zohoBooksSyncedAt = new Date();
+        expense.zohoBooksSyncError = null;
+        await expense.save();
+
+        res.json({ ok: true, zohoExpenseId: result.zohoExpenseId });
+    } catch (err) {
+        try {
+            await Expense.findByIdAndUpdate(req.params.id, {
+                zohoBooksSyncError: err.response?.data?.message || err.message,
+            });
+        } catch { /* ignore */ }
+        res.status(502).json({ error: err.response?.data?.message || err.message || 'Zoho Books sync failed' });
+    }
+});
+
+router.post('/zoho-books/bulk-sync', async (req, res) => {
+    try {
+        if (!zohoBooksConfigured()) {
+            return res.status(400).json({ error: 'Zoho Books is not configured' });
+        }
+        const { ids } = req.body;
+        if (!Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ error: 'Provide an array of expense ids' });
+        }
+
+        const results = { synced: 0, failed: 0, errors: [] };
+        for (const expenseId of ids) {
+            try {
+                const expense = await Expense.findById(expenseId).populate('vendor');
+                if (!expense) { results.failed++; continue; }
+                const result = await createZohoExpense(expense);
+                expense.zohoBooksSyncId = result.zohoExpenseId;
+                expense.zohoBooksSyncedAt = new Date();
+                expense.zohoBooksSyncError = null;
+                await expense.save();
+                results.synced++;
+            } catch (err) {
+                results.failed++;
+                results.errors.push({ id: expenseId, error: err.response?.data?.message || err.message });
+                try {
+                    await Expense.findByIdAndUpdate(expenseId, {
+                        zohoBooksSyncError: err.response?.data?.message || err.message,
+                    });
+                } catch { /* ignore */ }
+            }
+        }
+        res.json(results);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 export default router;

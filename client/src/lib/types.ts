@@ -165,6 +165,10 @@ export interface Invoice {
   attachments: InvoiceAttachment[]
   status: InvoiceStatus
   createdAt?: string
+  // Zoho Books sync
+  zohoBooksSyncId?: string | null
+  zohoBooksSyncedAt?: string | null
+  zohoBooksSyncError?: string | null
 }
 
 export interface Product {
@@ -342,6 +346,10 @@ export interface Expense {
   attachments?: PurchaseAttachment[]
   importedAt?: string
   createdAt?: string
+  // Zoho Books sync
+  zohoBooksSyncId?: string | null
+  zohoBooksSyncedAt?: string | null
+  zohoBooksSyncError?: string | null
 }
 
 export type ContractStatus = 'draft' | 'pending_signature' | 'active' | 'ended' | 'cancelled'

@@ -335,6 +335,10 @@ const invoiceSchema = new Schema(
     shareToken: { type: String, default: null },
     source: { type: String, enum: ['manual', 'import_csv'], default: 'manual' },
     importBatch: { type: String, default: null },
+    // Zoho Books sync
+    zohoBooksSyncId: { type: String, default: null },
+    zohoBooksSyncedAt: { type: Date, default: null },
+    zohoBooksSyncError: { type: String, default: null },
   },
   { timestamps: true }
 );
@@ -518,6 +522,10 @@ const expenseSchema = new Schema(
     attachments: { type: [purchaseAttachmentSchema], default: [] },
     importedAt: { type: Date },
     raw: { type: Schema.Types.Mixed },
+    // Zoho Books sync
+    zohoBooksSyncId: { type: String, default: null },
+    zohoBooksSyncedAt: { type: Date, default: null },
+    zohoBooksSyncError: { type: String, default: null },
   },
   { timestamps: true }
 );
@@ -972,31 +980,31 @@ movingClaimSchema.index({ customer: 1 });
 movingClaimSchema.index({ status: 1, createdAt: -1 });
 
 const reminderStageSchema = new Schema({
-  name:          { type: String, default: '' },
+  name: { type: String, default: '' },
   daysBeforeDue: { type: Number, default: 0 },
   frequencyDays: { type: Number, default: 1, min: 1 },
-  message:       { type: String, default: '' },
-  channel:       { type: String, enum: ['both', 'whatsapp', 'email'], default: 'both' },
+  message: { type: String, default: '' },
+  channel: { type: String, enum: ['both', 'whatsapp', 'email'], default: 'both' },
 }, { _id: false });
 
 const reminderConfigSchema = new Schema({
-  enabled:         { type: Boolean, default: true },
-  startDay:        { type: Number, default: 15, min: 1, max: 28 },
-  emailEnabled:    { type: Boolean, default: false },
+  enabled: { type: Boolean, default: true },
+  startDay: { type: Number, default: 15, min: 1, max: 28 },
+  emailEnabled: { type: Boolean, default: false },
   whatsappEnabled: { type: Boolean, default: true },
-  stages:          { type: [reminderStageSchema], default: [] },
+  stages: { type: [reminderStageSchema], default: [] },
 }, { timestamps: true });
 
 const reminderLogSchema = new Schema({
-  payment:  { type: Schema.Types.ObjectId, ref: 'Payment', required: true },
+  payment: { type: Schema.Types.ObjectId, ref: 'Payment', required: true },
   contract: { type: Schema.Types.ObjectId, ref: 'Contract', required: true },
   customer: { type: Schema.Types.ObjectId, ref: 'Customer', required: true },
-  channel:  { type: String, enum: ['whatsapp', 'email'], required: true },
-  stage:    { type: Number, required: true },
-  sentAt:   { type: Date, default: Date.now },
-  message:  { type: String, default: '' },
-  success:  { type: Boolean, required: true },
-  error:    { type: String, default: '' },
+  channel: { type: String, enum: ['whatsapp', 'email'], required: true },
+  stage: { type: Number, required: true },
+  sentAt: { type: Date, default: Date.now },
+  message: { type: String, default: '' },
+  success: { type: Boolean, required: true },
+  error: { type: String, default: '' },
 }, { timestamps: true });
 reminderLogSchema.index({ payment: 1, sentAt: -1 });
 reminderLogSchema.index({ contract: 1, sentAt: -1 });

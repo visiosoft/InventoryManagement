@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Download, Plus, Upload } from 'lucide-react'
+import { Download, Plus, Upload, RefreshCw } from 'lucide-react'
 import { api, apiError, invoiceApi, productApi } from '../lib/api'
 import type { Customer, Invoice, InvoiceAttachment, InvoiceItem, InvoicePaymentEntry, InvoiceStatus, Product, Unit } from '../lib/types'
 import { Badge, Button, Card, CornerRibbon, EmptyState, Field, Input, Modal, PageHeader, Pagination, Select, Spinner, Table, Td, Th, statusLabel } from '../components/ui'
@@ -560,9 +560,9 @@ export default function Invoices() {
     const [editing, setEditing] = useState<Invoice | null>(null)
 
     type ImportSummary = { created: number; updated: number; skipped: number; errors: number; stubsCreated: number; total: number }
-    const [importOpen, setImportOpen]     = useState(false)
-    const [importMode, setImportMode]     = useState<'skip' | 'update'>('skip')
-    const [importFile, setImportFile]     = useState<File | null>(null)
+    const [importOpen, setImportOpen] = useState(false)
+    const [importMode, setImportMode] = useState<'skip' | 'update'>('skip')
+    const [importFile, setImportFile] = useState<File | null>(null)
     const [importResult, setImportResult] = useState<{ batch: string; summary: ImportSummary; stubs: string[]; errors: string[] } | null>(null)
 
     const runImport = useMutation({
@@ -640,6 +640,18 @@ export default function Invoices() {
         onError: (e) => setError(apiError(e)),
     })
 
+    const bulkSyncZoho = useMutation({
+        mutationFn: (ids: string[]) => api.post('/invoices/zoho-books/bulk-sync', { ids }).then(r => r.data),
+        onSuccess: (data) => {
+            qc.invalidateQueries({ queryKey: ['invoices'] })
+            setSelectedInvoiceIds([])
+            if (data.failed > 0) {
+                setError(`Synced ${data.synced}, failed ${data.failed}`)
+            }
+        },
+        onError: (e) => setError(apiError(e)),
+    })
+
     const visibleInvoiceIds = invoices.map((inv) => inv._id)
     const allVisibleSelected = visibleInvoiceIds.length > 0 && visibleInvoiceIds.every((id) => selectedInvoiceIds.includes(id))
 
@@ -693,6 +705,12 @@ export default function Invoices() {
                                 {removeManyInvoices.isPending ? 'Deleting…' : `Delete selected (${selectedInvoiceIds.length})`}
                             </Button>
                         )}
+                        {selectedInvoiceIds.length > 0 && (
+                            <Button variant="outline" onClick={() => bulkSyncZoho.mutate(selectedInvoiceIds)} disabled={bulkSyncZoho.isPending}>
+                                <RefreshCw size={14} className={bulkSyncZoho.isPending ? 'animate-spin' : ''} />
+                                {bulkSyncZoho.isPending ? 'Syncing…' : `Sync to Zoho (${selectedInvoiceIds.length})`}
+                            </Button>
+                        )}
                         <Button variant="outline" onClick={() => { setImportFile(null); setImportResult(null); runImport.reset(); setImportOpen(true) }}>
                             <Upload size={15} /> Import CSV
                         </Button>
@@ -733,6 +751,7 @@ export default function Invoices() {
                                 <Th>Paid</Th>
                                 <Th>Balance</Th>
                                 <Th>Status</Th>
+                                <Th>Zoho</Th>
                                 <Th />
                             </tr>
                         </thead>
@@ -763,6 +782,14 @@ export default function Invoices() {
                                         {formatMoney(Math.max(0, inv.total - (inv.paymentMade ?? 0)))}
                                     </Td>
                                     <Td><Badge tone={invoiceStatusTone[inv.status]}>{invoiceLabel(inv.status)}</Badge></Td>
+                                    <Td>
+                                        {inv.zohoBooksSyncId
+                                            ? <span className="text-emerald-600" title={`Synced ${inv.zohoBooksSyncedAt ? new Date(inv.zohoBooksSyncedAt).toLocaleDateString() : ''}`}>✓</span>
+                                            : inv.zohoBooksSyncError
+                                                ? <span className="text-red-500" title={inv.zohoBooksSyncError}>✗</span>
+                                                : <span className="text-muted-foreground">—</span>
+                                        }
+                                    </Td>
                                     <Td>
                                         <div className="flex gap-2 text-xs">
                                             <button className="text-primary hover:underline cursor-pointer" onClick={() => setEditing(inv)}>Edit</button>

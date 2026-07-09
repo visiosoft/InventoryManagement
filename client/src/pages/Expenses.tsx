@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, FileUp, Link2, Paperclip, Plus, Upload } from 'lucide-react'
-import { apiError, expenseApi, vendorApi } from '../lib/api'
+import { CheckCircle2, FileUp, Link2, Paperclip, Plus, RefreshCw, Upload } from 'lucide-react'
+import { api, apiError, expenseApi, vendorApi } from '../lib/api'
 import type { PagedResponse } from '../lib/api'
 import type { Expense, ExpenseStatus, PurchaseAttachment, Vendor } from '../lib/types'
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, Pagination, Select, Spinner, Table, Td, Textarea, Th, statusLabel } from '../components/ui'
@@ -55,15 +55,15 @@ function ExpenseForm({
         e.preventDefault()
         const f = new FormData(e.currentTarget)
         onSubmit({
-            expenseDate:    f.get('expenseDate'),
-            expenseType:    f.get('expenseType'),
+            expenseDate: f.get('expenseDate'),
+            expenseType: f.get('expenseType'),
             expenseAccount: f.get('expenseAccount'),
-            description:    f.get('description'),
-            vendor:         f.get('vendor') || undefined,
-            paidThrough:    f.get('paidThrough'),
-            total:          Number(f.get('total') || 0),
-            referenceNo:    f.get('referenceNo'),
-            status:         f.get('status') || 'recorded',
+            description: f.get('description'),
+            vendor: f.get('vendor') || undefined,
+            paidThrough: f.get('paidThrough'),
+            total: Number(f.get('total') || 0),
+            referenceNo: f.get('referenceNo'),
+            status: f.get('status') || 'recorded',
         })
     }
 
@@ -211,9 +211,9 @@ export default function Expenses() {
     const [error, setError] = useState('')
 
     type ImportSummary = { created: number; updated: number; skipped: number; errors: number; vendorLinked: number; total: number }
-    const [importOpen, setImportOpen]     = useState(false)
-    const [importMode, setImportMode]     = useState<'skip' | 'update'>('skip')
-    const [importFile, setImportFile]     = useState<File | null>(null)
+    const [importOpen, setImportOpen] = useState(false)
+    const [importMode, setImportMode] = useState<'skip' | 'update'>('skip')
+    const [importFile, setImportFile] = useState<File | null>(null)
     const [importResult, setImportResult] = useState<ImportSummary | null>(null)
 
     const { data: vendors } = useQuery<Vendor[]>({
@@ -258,6 +258,21 @@ export default function Expenses() {
     const removeExpense = useMutation({
         mutationFn: (id: string) => expenseApi.remove(id),
         onSuccess: () => qc.invalidateQueries({ queryKey: ['expenses'] }),
+    })
+
+    const syncZohoExpense = useMutation({
+        mutationFn: (id: string) => api.post(`/expenses/${id}/sync-zoho-books`).then(r => r.data),
+        onSuccess: () => qc.invalidateQueries({ queryKey: ['expenses'] }),
+        onError: (e) => setError(apiError(e)),
+    })
+
+    const bulkSyncZohoExpenses = useMutation({
+        mutationFn: (ids: string[]) => api.post('/expenses/zoho-books/bulk-sync', { ids }).then(r => r.data),
+        onSuccess: (data) => {
+            qc.invalidateQueries({ queryKey: ['expenses'] })
+            if (data.failed > 0) setError(`Synced ${data.synced}, failed ${data.failed}`)
+        },
+        onError: (e) => setError(apiError(e)),
     })
 
     const importCsv = useMutation({
@@ -317,6 +332,18 @@ export default function Expenses() {
                             {relinkVendors.isPending ? 'Linking…' : 'Link vendors'}
                         </Button>
                         <Button variant="outline" onClick={openImportModal}><FileUp size={15} /> Import CSV</Button>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                const unsynced = expenses.filter(e => !e.zohoBooksSyncId).map(e => e._id)
+                                if (unsynced.length === 0) { setError('All expenses are already synced'); return }
+                                bulkSyncZohoExpenses.mutate(unsynced)
+                            }}
+                            disabled={bulkSyncZohoExpenses.isPending}
+                        >
+                            <RefreshCw size={15} className={bulkSyncZohoExpenses.isPending ? 'animate-spin' : ''} />
+                            {bulkSyncZohoExpenses.isPending ? 'Syncing…' : 'Sync to Zoho'}
+                        </Button>
                         <Button onClick={() => setAdding(true)}><Plus size={15} /> Add expense</Button>
                     </div>
                 }
@@ -347,6 +374,7 @@ export default function Expenses() {
                                 <Th>Vendor</Th>
                                 <Th>Total</Th>
                                 <Th>Status</Th>
+                                <Th>Zoho</Th>
                                 <Th />
                             </tr>
                         </thead>
@@ -363,8 +391,23 @@ export default function Expenses() {
                                     <Td>{formatMoney(e.total)}</Td>
                                     <Td><Badge tone={expenseStatusTone[e.status]}>{statusLabel(e.status)}</Badge></Td>
                                     <Td>
+                                        {e.zohoBooksSyncId
+                                            ? <span className="text-emerald-600" title={`Synced ${e.zohoBooksSyncedAt ? new Date(e.zohoBooksSyncedAt).toLocaleDateString() : ''}`}>✓</span>
+                                            : e.zohoBooksSyncError
+                                                ? <span className="text-red-500" title={e.zohoBooksSyncError}>✗</span>
+                                                : <span className="text-muted-foreground">—</span>
+                                        }
+                                    </Td>
+                                    <Td>
                                         <div className="flex gap-2 text-xs">
                                             <button className="text-primary hover:underline cursor-pointer" onClick={() => setEditing(e)}>Edit</button>
+                                            <button
+                                                className="text-blue-600 hover:underline cursor-pointer"
+                                                onClick={() => syncZohoExpense.mutate(e._id)}
+                                                disabled={syncZohoExpense.isPending}
+                                            >
+                                                {e.zohoBooksSyncId ? 'Re-sync' : 'Sync'}
+                                            </button>
                                             <button className="text-destructive hover:underline cursor-pointer" onClick={() => { if (confirm('Delete this expense?')) removeExpense.mutate(e._id) }}>Delete</button>
                                         </div>
                                     </Td>

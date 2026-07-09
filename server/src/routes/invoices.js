@@ -6,6 +6,7 @@ import { parseCsv } from '../services/csv.js';
 import { renderInvoicePdf } from '../services/invoicePdf.js';
 import { uploadFile } from '../services/drive.js';
 import { sendWhatsAppText, whatsappSendConfigured, whatsappSendMissing } from '../services/whatsapp.js';
+import { zohoBooksConfigured, createZohoInvoice, recordZohoPayment } from '../services/zohoBooks.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -129,12 +130,12 @@ function parseZohoDate(v) {
 
 function mapZohoInvoiceStatus(v) {
     switch (String(v || '').trim().toLowerCase()) {
-        case 'paid':    return 'paid';
+        case 'paid': return 'paid';
         case 'overdue': return 'overdue';
-        case 'sent':    return 'sent';
-        case 'draft':   return 'draft';
-        case 'void':    return 'cancelled';
-        default:        return 'draft';
+        case 'sent': return 'sent';
+        case 'draft': return 'draft';
+        case 'void': return 'cancelled';
+        default: return 'draft';
     }
 }
 
@@ -242,7 +243,7 @@ router.delete('/import/cleanup-stubs', async (req, res) => {
 
 router.post('/import/csv', upload.single('file'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    const mode  = String(req.query.mode || 'skip');
+    const mode = String(req.query.mode || 'skip');
     const batch = new Date().toISOString(); // unique batch ID per run
 
     let rows;
@@ -258,16 +259,16 @@ router.post('/import/csv', upload.single('file'), async (req, res) => {
 
     for (const row of rows) {
         try {
-            const invoiceNo    = String(row['Invoice#'] || '').trim();
+            const invoiceNo = String(row['Invoice#'] || '').trim();
             const customerName = String(row['Customer Name'] || '').trim();
             if (!invoiceNo || !customerName) { summary.errors++; continue; }
 
-            const amount      = parseZohoMoney(row['Amount']);
-            const balanceDue  = parseZohoMoney(row['Balance Due']);
+            const amount = parseZohoMoney(row['Amount']);
+            const balanceDue = parseZohoMoney(row['Balance Due']);
             const paymentMade = Math.max(0, Math.round((amount - balanceDue) * 100) / 100);
             const invoiceDate = parseZohoDate(row['Date']) || new Date();
-            const dueDate     = parseZohoDate(row['Due Date']) || invoiceDate;
-            const status      = mapZohoInvoiceStatus(row['Status']);
+            const dueDate = parseZohoDate(row['Due Date']) || invoiceDate;
+            const status = mapZohoInvoiceStatus(row['Status']);
             const orderNumber = String(row['Order Number'] || '').trim();
 
             // Match customer — create a tagged stub if no match so user can merge later
@@ -296,18 +297,18 @@ router.post('/import/csv', upload.single('file'), async (req, res) => {
 
             if (existing) {
                 if (mode === 'skip') { summary.skipped++; continue; }
-                existing.customer     = customerId;
-                existing.invoiceDate  = invoiceDate;
-                existing.dueDate      = dueDate;
-                existing.status       = status;
-                existing.orderNumber  = orderNumber;
-                existing.total        = amount;
-                existing.subTotal     = amount;
-                existing.paymentMade  = paymentMade;
+                existing.customer = customerId;
+                existing.invoiceDate = invoiceDate;
+                existing.dueDate = dueDate;
+                existing.status = status;
+                existing.orderNumber = orderNumber;
+                existing.total = amount;
+                existing.subTotal = amount;
+                existing.paymentMade = paymentMade;
                 if (paymentMade > 0 && existing.paymentHistory.length === 0) {
                     existing.paymentHistory.push({ date: invoiceDate, amount: paymentMade, method: 'bank_transfer', notes: 'Imported from Zoho' });
                 }
-                existing.source      = 'import_csv';
+                existing.source = 'import_csv';
                 existing.importBatch = batch;
                 await existing.save();
                 summary.updated++;
@@ -376,13 +377,13 @@ router.get('/', async (req, res) => {
         const re = new RegExp(escRegex(String(req.query.search)), 'i');
         filter.$or = [{ invoiceNo: re }, { orderNumber: re }, { subject: re }, { salesperson: re }];
     }
-    const page  = Math.max(1, Number(req.query.page)  || 1);
+    const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.min(Math.max(1, Number(req.query.limit) || 25), 100);
-    const skip  = (page - 1) * limit;
+    const skip = (page - 1) * limit;
 
     const [invoices, total] = await Promise.all([
-      Invoice.find(filter).populate('customer', 'fullName email').sort({ createdAt: -1 }).skip(skip).limit(limit),
-      Invoice.countDocuments(filter),
+        Invoice.find(filter).populate('customer', 'fullName email').sort({ createdAt: -1 }).skip(skip).limit(limit),
+        Invoice.countDocuments(filter),
     ]);
     res.json({ data: invoices, total, page, pages: Math.ceil(total / limit), limit });
 });
@@ -638,6 +639,80 @@ router.post('/:id/whatsapp-send', async (req, res) => {
         res.json({ ok: true, to: customerPhone, result });
     } catch (err) {
         res.status(502).json({ error: err.message || 'Failed to send invoice via WhatsApp' });
+    }
+});
+
+// ── Zoho Books sync ───────────────────────────────────────────────────────────
+
+// GET sync status config
+router.get('/zoho-books/status', (req, res) => {
+    res.json({ configured: zohoBooksConfigured() });
+});
+
+// POST sync a single invoice to Zoho Books
+router.post('/:id/sync-zoho-books', async (req, res) => {
+    try {
+        if (!zohoBooksConfigured()) {
+            return res.status(400).json({ error: 'Zoho Books is not configured. Add credentials in server .env file.' });
+        }
+        const invoice = await Invoice.findById(req.params.id).populate('customer');
+        if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+        if (!invoice.customer) return res.status(400).json({ error: 'Invoice has no customer linked. Please assign a customer first.' });
+        if (!invoice.customer.fullName) return res.status(400).json({ error: 'Customer has no name. Please update customer details.' });
+        if (!invoice.items?.length) return res.status(400).json({ error: 'Invoice has no line items. Cannot sync an empty invoice.' });
+
+        const result = await createZohoInvoice(invoice);
+        invoice.zohoBooksSyncId = result.zohoInvoiceId;
+        invoice.zohoBooksSyncedAt = new Date();
+        invoice.zohoBooksSyncError = null;
+        await invoice.save();
+
+        res.json({ ok: true, zohoInvoiceId: result.zohoInvoiceId });
+    } catch (err) {
+        const msg = err.response?.data?.message || err.message || 'Zoho Books sync failed';
+        // Save the error on the invoice for visibility
+        try {
+            await Invoice.findByIdAndUpdate(req.params.id, { zohoBooksSyncError: msg });
+        } catch { /* ignore */ }
+        res.status(502).json({ error: msg });
+    }
+});
+
+// POST bulk sync multiple invoices
+router.post('/zoho-books/bulk-sync', async (req, res) => {
+    try {
+        if (!zohoBooksConfigured()) {
+            return res.status(400).json({ error: 'Zoho Books is not configured' });
+        }
+        const { ids } = req.body;
+        if (!Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ error: 'Provide an array of invoice ids' });
+        }
+
+        const results = { synced: 0, failed: 0, errors: [] };
+        for (const invoiceId of ids) {
+            try {
+                const invoice = await Invoice.findById(invoiceId).populate('customer');
+                if (!invoice) { results.failed++; continue; }
+                const result = await createZohoInvoice(invoice);
+                invoice.zohoBooksSyncId = result.zohoInvoiceId;
+                invoice.zohoBooksSyncedAt = new Date();
+                invoice.zohoBooksSyncError = null;
+                await invoice.save();
+                results.synced++;
+            } catch (err) {
+                results.failed++;
+                results.errors.push({ id: invoiceId, error: err.response?.data?.message || err.message });
+                try {
+                    await Invoice.findByIdAndUpdate(invoiceId, {
+                        zohoBooksSyncError: err.response?.data?.message || err.message,
+                    });
+                } catch { /* ignore */ }
+            }
+        }
+        res.json(results);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 

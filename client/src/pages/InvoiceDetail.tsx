@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Download, AlertCircle, CheckCircle2, Clock, Pencil, MessageCircle } from 'lucide-react'
+import { ArrowLeft, Download, AlertCircle, CheckCircle2, Clock, Pencil, MessageCircle, RefreshCw } from 'lucide-react'
 import { api, apiError, invoiceApi } from '../lib/api'
 import type { Invoice, InvoicePaymentEntry, InvoiceStatus } from '../lib/types'
 import {
@@ -502,6 +502,15 @@ export default function InvoiceDetail() {
         },
     })
 
+    const syncZoho = useMutation({
+        mutationFn: () => api.post(`/invoices/${id}/sync-zoho-books`).then(r => r.data),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['invoice', id] })
+            qc.invalidateQueries({ queryKey: ['invoices'] })
+        },
+        onError: (e) => { /* error shown inline via syncZoho.error */ },
+    })
+
     const openPdf = async () => {
         try {
             const response = await api.get(`/invoices/${id}/pdf`, { responseType: 'blob' })
@@ -582,6 +591,17 @@ export default function InvoiceDetail() {
                     <Button size="sm" variant="outline" onClick={openPdf}>
                         <Download size={14} /> PDF
                     </Button>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => syncZoho.mutate()}
+                        disabled={syncZoho.isPending}
+                        className={invoice.zohoBooksSyncId ? 'text-emerald-600 border-emerald-300' : invoice.zohoBooksSyncError ? 'text-red-600 border-red-300' : ''}
+                        title={invoice.zohoBooksSyncId ? `Synced to Zoho Books on ${new Date(invoice.zohoBooksSyncedAt!).toLocaleDateString()}` : invoice.zohoBooksSyncError ? `Sync failed: ${invoice.zohoBooksSyncError}` : 'Sync to Zoho Books'}
+                    >
+                        <RefreshCw size={13} className={syncZoho.isPending ? 'animate-spin' : ''} />
+                        {syncZoho.isPending ? 'Syncing…' : invoice.zohoBooksSyncId ? 'Synced' : 'Sync to Zoho'}
+                    </Button>
                     {canPay && (
                         <Button size="sm" variant="success" onClick={() => setPaying(true)}>
                             Record Payment
@@ -589,6 +609,17 @@ export default function InvoiceDetail() {
                     )}
                 </div>
             </div>
+
+            {/* Zoho sync error */}
+            {(syncZoho.error || (invoice.zohoBooksSyncError && !invoice.zohoBooksSyncId)) && (
+                <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 dark:bg-red-950/20 dark:border-red-900 px-4 py-3">
+                    <AlertCircle className="text-red-600 shrink-0 mt-0.5" size={15} />
+                    <div className="text-xs text-red-700 dark:text-red-400">
+                        <span className="font-semibold">Zoho Books sync failed: </span>
+                        {syncZoho.error ? apiError(syncZoho.error) : invoice.zohoBooksSyncError}
+                    </div>
+                </div>
+            )}
 
             {/* What's Next banner */}
             <WhatNext invoice={invoice} onRecordPayment={() => setPaying(true)} />
