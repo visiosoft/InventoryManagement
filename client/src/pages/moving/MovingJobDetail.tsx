@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, FileText, MapPin, Users, Truck as TruckIcon, AlertCircle, ClipboardList, Package, Star, Wrench, Camera, X, Upload, Tag, CheckCircle2, Pencil } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, FileText, MapPin, Users, Truck as TruckIcon, AlertCircle, ClipboardList, Package, Star, Wrench, Camera, X, Upload, Tag, CheckCircle2, Pencil, Calendar, Clock, RotateCcw } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingJob, MovingJobStatus, Worker, Truck, MovingJobImage } from '../../lib/types'
 
@@ -9,6 +9,16 @@ type MovingItemOption = { _id: string; name: string; sku?: string; onHand: numbe
 import { Badge, Button, Card, CardBody, CardHeader, EmptyState, Field, Input, Modal, Select, Spinner, Table, Td, Th, Textarea, InfoGrid, InfoItem } from '../../components/ui'
 import { useAuth } from '../../lib/auth'
 import { cn } from '../../lib/utils'
+
+// ── Job types ─────────────────────────────────────────────────────────────────
+const JOB_TYPES: Array<{ value: string; label: string }> = [
+  { value: 'local', label: 'Local (same emirate)' },
+  { value: 'inter_emirate', label: 'Inter-Emirate' },
+  { value: 'international', label: 'International' },
+  { value: 'office', label: 'Office Move' },
+  { value: 'storage_to_home', label: 'Storage to Home' },
+  { value: 'other', label: 'Other' },
+]
 
 // ── Package types ─────────────────────────────────────────────────────────────
 const PACKAGES: Array<{ value: string; label: string; group: string }> = [
@@ -212,7 +222,7 @@ const STATUS_TRANSITIONS: Record<MovingJobStatus, MovingJobStatus[]> = {
   in_progress: ['completed', 'cancelled'],
   completed: ['invoiced'],
   invoiced: [],
-  cancelled: [],
+  cancelled: ['draft'],
 }
 
 function dt(d?: string) {
@@ -236,6 +246,9 @@ export default function MovingJobDetail() {
   const [err, setErr] = useState('')
   const [lightboxImg, setLightboxImg] = useState<MovingJobImage | null>(null)
   const [uploadingImages, setUploadingImages] = useState(false)
+  const [editDetailsModal, setEditDetailsModal] = useState(false)
+  const [editMaterialModal, setEditMaterialModal] = useState<{ idx: number; item: string; qty: number; notes: string } | null>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState(false)
 
   const { data: job, isLoading } = useQuery<MovingJob>({
     queryKey: ['moving-job', id],
@@ -325,7 +338,20 @@ export default function MovingJobDetail() {
 
   const updateMut = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.put(`/moving-jobs/${id}`, body).then(r => r.data),
-    onSuccess: () => { invalidate(); setCrewModal(false); setTruckModal(false); setCostsModal(false) },
+    onSuccess: () => { invalidate(); setCrewModal(false); setTruckModal(false); setCostsModal(false); setEditDetailsModal(false) },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  const deleteMut = useMutation({
+    mutationFn: () => api.delete(`/moving-jobs/${id}`).then(r => r.data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['moving-jobs'] }); navigate('/moving/jobs') },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  const editMaterialMut = useMutation({
+    mutationFn: (body: { idx: number; qty: number; notes?: string }) =>
+      api.put(`/moving-jobs/${id}/materials/${body.idx}`, { qty: body.qty, notes: body.notes }).then(r => r.data),
+    onSuccess: () => { invalidate(); setEditMaterialModal(null) },
     onError: (e) => setErr(apiError(e)),
   })
 
@@ -492,6 +518,29 @@ export default function MovingJobDetail() {
 
         {/* Action Buttons */}
         <div className="flex gap-2 shrink-0">
+          {!['invoiced'].includes(job.status) && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setEditDetailsModal(true)}
+              title="Edit job details"
+            >
+              <Pencil size={16} className="mr-1" />
+              Edit
+            </Button>
+          )}
+          {!['in_progress', 'invoiced'].includes(job.status) && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setDeleteConfirm(true)}
+              title="Delete this job"
+              className="text-red-600 hover:text-red-700 border-red-200 hover:border-red-300 hover:bg-red-50 dark:border-red-800 dark:hover:border-red-700 dark:hover:bg-red-950"
+            >
+              <Trash2 size={16} className="mr-1" />
+              Delete
+            </Button>
+          )}
           <Button
             size="sm"
             variant="outline"
@@ -565,7 +614,17 @@ export default function MovingJobDetail() {
 
       {/* Job Details Grid */}
       <Card>
-        <CardHeader title="Job Details" subtitle="Core information about this moving job" />
+        <CardHeader
+          title="Job Details"
+          subtitle="Core information about this moving job"
+          action={
+            !['invoiced'].includes(job.status) ? (
+              <Button size="sm" variant="outline" onClick={() => setEditDetailsModal(true)}>
+                <Pencil size={13} className="mr-1" />Edit Details
+              </Button>
+            ) : undefined
+          }
+        />
         <CardBody>
           <InfoGrid cols={4}>
             <InfoItem
@@ -865,10 +924,18 @@ export default function MovingJobDetail() {
                       <Td className="font-semibold">AED {(m.qty * m.unitCost).toLocaleString()}</Td>
                       <Td className="text-xs text-muted-foreground">{m.notes || '—'}</Td>
                       <Td className="text-right">
-                        <button onClick={() => removeMaterialMut.mutate(i)}
-                          className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-500/10 transition-colors">
-                          <Trash2 size={14} />
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          <button onClick={() => setEditMaterialModal({ idx: i, item: name, qty: m.qty, notes: m.notes || '' })}
+                            className="text-muted-foreground hover:text-primary p-1 rounded hover:bg-primary/10 transition-colors"
+                            title="Edit material">
+                            <Pencil size={14} />
+                          </button>
+                          <button onClick={() => removeMaterialMut.mutate(i)}
+                            className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-500/10 transition-colors"
+                            title="Remove material">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </Td>
                     </tr>
                   )
@@ -1048,14 +1115,27 @@ export default function MovingJobDetail() {
             </label>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-              {imageList.map((img, i) => (
+              {imageList.map((img, i) => {
+                const thumbUrl = img.storage === 'drive' && img.driveFileId
+                  ? `https://lh3.googleusercontent.com/d/${img.driveFileId}=w400`
+                  : img.url
+                return (
                 <div key={i} className="relative group aspect-square rounded-xl overflow-hidden border bg-muted">
                   <img
-                    src={img.url}
+                    src={thumbUrl}
                     alt={img.originalName || `Photo ${i + 1}`}
                     className="w-full h-full object-cover cursor-pointer"
                     onClick={() => setLightboxImg(img)}
+                    onError={e => {
+                      const t = e.currentTarget
+                      t.style.display = 'none'
+                      t.parentElement!.querySelector('.img-fallback')?.classList.remove('hidden')
+                    }}
                   />
+                  <div className="img-fallback hidden absolute inset-0 flex flex-col items-center justify-center text-muted-foreground gap-1">
+                    <AlertCircle size={20} className="opacity-40" />
+                    <span className="text-[10px]">Image unavailable</span>
+                  </div>
                   <button
                     onClick={() => deleteImageMut.mutate(i)}
                     className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
@@ -1067,7 +1147,8 @@ export default function MovingJobDetail() {
                     <p className="text-[10px] text-white truncate">{img.originalName || `Photo ${i + 1}`}</p>
                   </div>
                 </div>
-              ))}
+                )
+              })}
               {/* Add more button */}
               <label className="aspect-square rounded-xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer hover:bg-muted/50 transition-colors">
                 <Plus size={20} className="text-muted-foreground mb-1" />
@@ -1086,7 +1167,9 @@ export default function MovingJobDetail() {
             <X size={20} />
           </button>
           <img
-            src={lightboxImg.url}
+            src={lightboxImg.storage === 'drive' && lightboxImg.driveFileId
+              ? `https://lh3.googleusercontent.com/d/${lightboxImg.driveFileId}=w1600`
+              : lightboxImg.url}
             alt={lightboxImg.originalName || 'Photo'}
             className="max-w-full max-h-full rounded-xl shadow-2xl"
             onClick={e => e.stopPropagation()}
@@ -1322,6 +1405,135 @@ export default function MovingJobDetail() {
         onSave={(pkg) => savePackageMut.mutate(pkg)}
         onClose={() => { setPackageModal(false); setErr('') }}
       />
+
+      {/* Edit Job Details Modal */}
+      <Modal open={editDetailsModal} title="Edit Job Details" onClose={() => setEditDetailsModal(false)} className="max-w-2xl w-[90vw]">
+        <form onSubmit={(e) => {
+          e.preventDefault()
+          const f = new FormData(e.currentTarget)
+          updateMut.mutate({
+            jobType: f.get('jobType'),
+            scheduledDate: f.get('scheduledDate') || undefined,
+            scheduledTimeSlot: f.get('scheduledTimeSlot'),
+            estimatedDurationHours: Number(f.get('estimatedDurationHours')) || undefined,
+            pickupAddress: f.get('pickupAddress'),
+            pickupFloor: f.get('pickupFloor'),
+            pickupHasElevator: f.get('pickupHasElevator') === 'on',
+            deliveryAddress: f.get('deliveryAddress'),
+            deliveryFloor: f.get('deliveryFloor'),
+            deliveryHasElevator: f.get('deliveryHasElevator') === 'on',
+            notes: f.get('notes'),
+          })
+        }} className="space-y-5">
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Job Type">
+              <Select name="jobType" defaultValue={job.jobType || 'local'}>
+                {JOB_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </Select>
+            </Field>
+            <Field label="Scheduled Date">
+              <Input name="scheduledDate" type="date" defaultValue={job.scheduledDate ? new Date(job.scheduledDate).toISOString().split('T')[0] : ''} />
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Time Slot">
+              <Input name="scheduledTimeSlot" placeholder="e.g. 08:00-12:00" defaultValue={job.scheduledTimeSlot || ''} />
+            </Field>
+            <Field label="Estimated Duration (hours)">
+              <Input name="estimatedDurationHours" type="number" min="0.5" step="0.5" defaultValue={job.estimatedDurationHours || ''} />
+            </Field>
+          </div>
+
+          <div className="border-t pt-4">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Pickup Location</p>
+            <Field label="Pickup Address">
+              <Textarea name="pickupAddress" rows={2} defaultValue={job.pickupAddress || ''} placeholder="Full pickup address" />
+            </Field>
+            <div className="grid grid-cols-2 gap-4 mt-3">
+              <Field label="Floor">
+                <Input name="pickupFloor" defaultValue={job.pickupFloor || ''} placeholder="e.g. Ground, 3rd" />
+              </Field>
+              <Field label="">
+                <label className="flex items-center gap-2 mt-6 cursor-pointer">
+                  <input type="checkbox" name="pickupHasElevator" defaultChecked={!!job.pickupHasElevator} className="rounded" />
+                  <span className="text-sm">Has Elevator</span>
+                </label>
+              </Field>
+            </div>
+          </div>
+
+          <div className="border-t pt-4">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Delivery Location</p>
+            <Field label="Delivery Address">
+              <Textarea name="deliveryAddress" rows={2} defaultValue={job.deliveryAddress || ''} placeholder="Full delivery address" />
+            </Field>
+            <div className="grid grid-cols-2 gap-4 mt-3">
+              <Field label="Floor">
+                <Input name="deliveryFloor" defaultValue={job.deliveryFloor || ''} placeholder="e.g. Ground, 3rd" />
+              </Field>
+              <Field label="">
+                <label className="flex items-center gap-2 mt-6 cursor-pointer">
+                  <input type="checkbox" name="deliveryHasElevator" defaultChecked={!!job.deliveryHasElevator} className="rounded" />
+                  <span className="text-sm">Has Elevator</span>
+                </label>
+              </Field>
+            </div>
+          </div>
+
+          <Field label="Notes">
+            <Textarea name="notes" rows={2} defaultValue={job.notes || ''} placeholder="General notes about the job" />
+          </Field>
+
+          {err && <p className="text-sm text-red-600">{err}</p>}
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            <Button type="button" variant="outline" onClick={() => setEditDetailsModal(false)}>Cancel</Button>
+            <Button type="submit" disabled={updateMut.isPending}>{updateMut.isPending ? 'Saving…' : 'Save Changes'}</Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Edit Material Modal */}
+      <Modal open={!!editMaterialModal} title={`Edit Material — ${editMaterialModal?.item ?? ''}`} onClose={() => setEditMaterialModal(null)}>
+        {editMaterialModal && (
+          <form onSubmit={(e) => {
+            e.preventDefault()
+            const f = new FormData(e.currentTarget)
+            editMaterialMut.mutate({ idx: editMaterialModal.idx, qty: Number(f.get('qty') || 1), notes: String(f.get('notes') || '') })
+          }} className="space-y-4">
+            <Field label="Quantity">
+              <Input name="qty" type="number" min="1" defaultValue={editMaterialModal.qty} required />
+            </Field>
+            <Field label="Notes">
+              <Input name="notes" defaultValue={editMaterialModal.notes} placeholder="Optional" />
+            </Field>
+            {err && <p className="text-sm text-red-600">{err}</p>}
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button type="button" variant="outline" onClick={() => setEditMaterialModal(null)}>Cancel</Button>
+              <Button type="submit" disabled={editMaterialMut.isPending}>{editMaterialMut.isPending ? 'Saving…' : 'Save'}</Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal open={deleteConfirm} title="Delete Job" onClose={() => setDeleteConfirm(false)}>
+        <div className="space-y-4">
+          <p className="text-sm text-foreground">
+            Are you sure you want to delete job <strong>{job.jobNo}</strong>? This action cannot be undone.
+          </p>
+          {err && <p className="text-sm text-red-600">{err}</p>}
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            <Button variant="outline" onClick={() => setDeleteConfirm(false)}>Cancel</Button>
+            <Button
+              onClick={() => deleteMut.mutate()}
+              disabled={deleteMut.isPending}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {deleteMut.isPending ? 'Deleting…' : 'Delete Job'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

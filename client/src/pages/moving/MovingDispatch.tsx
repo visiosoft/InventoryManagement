@@ -27,10 +27,16 @@ function JobDispatchCard({ job, index, onPriceOverride }: { job: MovingJob; inde
     ? pkg.agreedPrice + (pkg.additionalCharges ?? []).reduce((s, a) => s + (a.amount || 0), 0)
     : null
 
+  function imgUrl(img: typeof images[number], size = 800) {
+    return img.storage === 'drive' && img.driveFileId
+      ? `https://lh3.googleusercontent.com/d/${img.driveFileId}=w${size}`
+      : img.url
+  }
+
   function goLightbox(dir: 1 | -1) {
     if (!lightbox) return
     const next = (lightbox.idx + dir + images.length) % images.length
-    setLightbox({ url: images[next].url, name: images[next].originalName || `Photo ${next + 1}`, idx: next })
+    setLightbox({ url: imgUrl(images[next], 1600), name: images[next].originalName || `Photo ${next + 1}`, idx: next })
   }
 
   return (
@@ -88,11 +94,11 @@ function JobDispatchCard({ job, index, onPriceOverride }: { job: MovingJob; inde
               <button
                 key={ii}
                 type="button"
-                onClick={() => setLightbox({ url: img.url, name: img.originalName || `Photo ${ii + 1}`, idx: ii })}
+                onClick={() => setLightbox({ url: imgUrl(img, 1600), name: img.originalName || `Photo ${ii + 1}`, idx: ii })}
                 className="shrink-0 relative group"
               >
                 <img
-                  src={img.url}
+                  src={imgUrl(img, 400)}
                   alt={img.originalName || `Photo ${ii + 1}`}
                   className="h-28 w-28 sm:h-32 sm:w-32 object-cover rounded-xl border shadow-sm group-hover:opacity-90 transition-opacity"
                 />
@@ -263,12 +269,12 @@ function JobDispatchCard({ job, index, onPriceOverride }: { job: MovingJob; inde
             {images.map((img, ii) => (
               <button
                 key={ii}
-                onClick={e => { e.stopPropagation(); setLightbox({ url: img.url, name: img.originalName || `Photo ${ii + 1}`, idx: ii }) }}
+                onClick={e => { e.stopPropagation(); setLightbox({ url: imgUrl(img, 1600), name: img.originalName || `Photo ${ii + 1}`, idx: ii }) }}
                 className={`shrink-0 h-12 w-12 rounded-lg overflow-hidden border-2 transition-all ${
                   ii === lightbox.idx ? 'border-white scale-110' : 'border-white/20 opacity-60 hover:opacity-100'
                 }`}
               >
-                <img src={img.url} alt="" className="w-full h-full object-cover" />
+                <img src={imgUrl(img, 200)} alt="" className="w-full h-full object-cover" />
               </button>
             ))}
           </div>

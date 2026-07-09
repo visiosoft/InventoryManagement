@@ -534,6 +534,8 @@ export interface MovingJobImage {
   filename?: string
   originalName?: string
   size?: number
+  storage?: 'local' | 'drive'
+  driveFileId?: string
   uploadedAt?: string
 }
 

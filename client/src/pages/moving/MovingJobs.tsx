@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Plus, Search, ArrowRight, MapPin } from 'lucide-react'
-import { api } from '../../lib/api'
+import { Plus, Search, ArrowRight, MapPin, Trash2 } from 'lucide-react'
+import { api, apiError } from '../../lib/api'
 import type { MovingJob, MovingJobStatus } from '../../lib/types'
-import { Badge, Button, Card, CardBody, Input, PageHeader, Spinner, Table, Td, Th } from '../../components/ui'
+import { Badge, Button, Card, CardBody, Input, Modal, PageHeader, Spinner, Table, Td, Th } from '../../components/ui'
 import { cn } from '../../lib/utils'
 
 interface JobsBreakdown {
@@ -45,6 +45,20 @@ function truncate(s?: string, max = 32) {
 export default function MovingJobs() {
   const [status, setStatus] = useState<MovingJobStatus | ''>('')
   const [search, setSearch] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<{ _id: string; jobNo: string } | null>(null)
+  const [deleteErr, setDeleteErr] = useState('')
+  const qc = useQueryClient()
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => api.delete(`/moving-jobs/${id}`).then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['moving-jobs'] })
+      qc.invalidateQueries({ queryKey: ['moving-jobs-breakdown'] })
+      setDeleteTarget(null)
+      setDeleteErr('')
+    },
+    onError: (e) => setDeleteErr(apiError(e)),
+  })
 
   const { data, isLoading } = useQuery<{ jobs: MovingJob[]; total: number }>({
     queryKey: ['moving-jobs', status],
@@ -134,10 +148,8 @@ export default function MovingJobs() {
           {/* Mobile card list */}
           <div className="space-y-2 md:hidden">
             {filtered.map(j => (
-              <Link key={j._id} to={`/moving/jobs/${j._id}`}
-                className="flex items-start gap-3 p-4 bg-card rounded-xl border hover:border-muted-foreground transition-colors"
-              >
-                <div className="flex-1 min-w-0">
+              <div key={j._id} className="flex items-start gap-3 p-4 bg-card rounded-xl border hover:border-muted-foreground transition-colors">
+                <Link to={`/moving/jobs/${j._id}`} className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-xs font-mono font-bold text-primary">{j.jobNo}</span>
                     <Badge tone={statusTone[j.status]} className="text-xs py-0 h-4">{j.status.replace(/_/g, ' ')}</Badge>
@@ -152,9 +164,22 @@ export default function MovingJobs() {
                       <span className="truncate">{truncate(j.pickupAddress, 28)} → {truncate(j.deliveryAddress, 28)}</span>
                     </div>
                   )}
+                </Link>
+                <div className="flex items-center gap-1 shrink-0">
+                  {!['in_progress', 'invoiced'].includes(j.status) && (
+                    <button
+                      onClick={() => { setDeleteTarget({ _id: j._id, jobNo: j.jobNo }); setDeleteErr('') }}
+                      className="p-1.5 rounded text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                      title="Delete job"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                  <Link to={`/moving/jobs/${j._id}`}>
+                    <ArrowRight size={14} className="text-muted-foreground" />
+                  </Link>
                 </div>
-                <ArrowRight size={14} className="text-muted-foreground shrink-0 mt-0.5" />
-              </Link>
+              </div>
             ))}
           </div>
 
@@ -190,9 +215,20 @@ export default function MovingJobs() {
                           <Badge tone={statusTone[j.status]} className="text-xs">{j.status.replace(/_/g, ' ')}</Badge>
                         </Td>
                         <Td className="py-3 pr-4 text-right">
-                          <Link to={`/moving/jobs/${j._id}`} className="text-muted-foreground hover:text-foreground transition-colors">
-                            <ArrowRight size={14} />
-                          </Link>
+                          <div className="flex items-center justify-end gap-1">
+                            {!['in_progress', 'invoiced'].includes(j.status) && (
+                              <button
+                                onClick={() => { setDeleteTarget({ _id: j._id, jobNo: j.jobNo }); setDeleteErr('') }}
+                                className="p-1 rounded text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                                title="Delete job"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                            <Link to={`/moving/jobs/${j._id}`} className="text-muted-foreground hover:text-foreground transition-colors p-1">
+                              <ArrowRight size={14} />
+                            </Link>
+                          </div>
                         </Td>
                       </tr>
                     ))}
@@ -205,6 +241,28 @@ export default function MovingJobs() {
           <p className="text-xs text-muted-foreground text-right">{filtered.length} job{filtered.length !== 1 ? 's' : ''}</p>
         </>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <Modal open={!!deleteTarget} title="Delete Job" onClose={() => setDeleteTarget(null)}>
+        {deleteTarget && (
+          <div className="space-y-4">
+            <p className="text-sm text-foreground">
+              Are you sure you want to delete job <strong>{deleteTarget.jobNo}</strong>? This action cannot be undone.
+            </p>
+            {deleteErr && <p className="text-sm text-red-600">{deleteErr}</p>}
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+              <Button
+                onClick={() => deleteMut.mutate(deleteTarget._id)}
+                disabled={deleteMut.isPending}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                {deleteMut.isPending ? 'Deleting…' : 'Delete Job'}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }
