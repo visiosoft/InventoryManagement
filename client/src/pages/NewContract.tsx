@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Check, ChevronDown, FileText, Files, Layers, Plus, X } from 'lucide-react'
 import { api, apiError, unitTypeApi } from '../lib/api'
@@ -313,6 +313,7 @@ const availOrder: Record<UnitAvail, number> = { available: 0, prebookable: 1, bo
 export default function NewContract() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
+  const qc = useQueryClient()
 
   const [mode, setMode] = useState<Mode | null>(params.get('unit') ? 'single' : null)
   const [step, setStep] = useState(0)
@@ -500,16 +501,29 @@ export default function NewContract() {
       if (results.length === 1) navigate(`/contracts/${results[0].data._id}`)
       else navigate('/contracts')
     },
-    onError: (e) => { setError(apiError(e)); setStep(2) },
+    onError: (e) => { setError(apiError(e)); setStep(skipUnitStep ? 1 : 2) },
   })
 
-  const steps = ['Customer', mode === 'single' ? 'Unit' : 'Units', 'Terms', 'Review']
-  const canNext = [
-    Boolean(customerId),
-    unitIds.length > 0,
-    Boolean(startDate && endDate > startDate && selectedUnits.every((u) => getUnitRate(u) > 0)),
-    true,
-  ][step]
+  // Skip unit step in single mode when unit is pre-selected via URL
+  const skipUnitStep = mode === 'single' && Boolean(params.get('unit'))
+  const steps = skipUnitStep
+    ? ['Customer', 'Terms', 'Review']
+    : ['Customer', mode === 'single' ? 'Unit' : 'Units', 'Terms', 'Review']
+  const canNext = skipUnitStep
+    ? [
+      Boolean(customerId),
+      Boolean(startDate && endDate > startDate && selectedUnits.every((u) => getUnitRate(u) > 0)),
+      true,
+    ][step]
+    : [
+      Boolean(customerId),
+      unitIds.length > 0,
+      Boolean(startDate && endDate > startDate && selectedUnits.every((u) => getUnitRate(u) > 0)),
+      true,
+    ][step]
+
+  // Map internal step index to logical content step (0=Customer, 1=Unit, 2=Terms, 3=Review)
+  const contentStep = skipUnitStep ? (step === 0 ? 0 : step + 1) : step
 
   // Availability counts
   const availCount = useMemo(() => [...unitAvailMap.values()].filter((v) => v === 'available').length, [unitAvailMap])
@@ -583,7 +597,7 @@ export default function NewContract() {
         <CardBody className="pt-4 space-y-4">
 
           {/* ── Step 0: Customer ─────────────────────────────────── */}
-          {step === 0 && (
+          {contentStep === 0 && (
             <>
               <Field label="Customer">
                 <CustomerCombobox customers={customers} value={customerId} onChange={setCustomerId} onAddNew={() => setAddCustOpen(true)} />
@@ -604,7 +618,7 @@ export default function NewContract() {
           )}
 
           {/* ── Step 1: Unit(s) ──────────────────────────────────── */}
-          {step === 1 && (
+          {contentStep === 1 && (
             <>
               {/* Date range for availability check */}
               <div className="rounded-lg border bg-muted/40 px-3 py-2.5 space-y-2">
@@ -790,7 +804,7 @@ export default function NewContract() {
           )}
 
           {/* ── Step 2: Terms ────────────────────────────────────── */}
-          {step === 2 && (() => {
+          {contentStep === 2 && (() => {
             const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : ''
             const firstUnit = selectedUnits[0] ?? ({} as Unit)
             const displayRate = mode === 'combined'
@@ -1013,7 +1027,7 @@ export default function NewContract() {
           })()}
 
           {/* ── Step 3: Review ───────────────────────────────────── */}
-          {step === 3 && (
+          {contentStep === 3 && (
             <div className="space-y-3 text-sm">
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -1134,7 +1148,7 @@ export default function NewContract() {
             <Button variant="outline" onClick={() => step === 0 ? navigate(-1) : setStep(step - 1)}>
               {step === 0 ? 'Cancel' : 'Back'}
             </Button>
-            {step < 3 ? (
+            {step < steps.length - 1 ? (
               <Button disabled={!canNext} onClick={() => setStep(step + 1)}>Continue</Button>
             ) : (
               <Button disabled={create.isPending || overlappingUnitIds.length > 0} onClick={() => create.mutate()}>
@@ -1151,7 +1165,7 @@ export default function NewContract() {
       <AddCustomerModal
         open={addCustOpen}
         onClose={() => setAddCustOpen(false)}
-        onCreated={(customer) => { setCustomerId(customer._id) }}
+        onCreated={(customer) => { qc.invalidateQueries({ queryKey: ['customers-all'] }); setCustomerId(customer._id) }}
       />
     </div>
   )
