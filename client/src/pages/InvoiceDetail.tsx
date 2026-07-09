@@ -602,6 +602,16 @@ export default function InvoiceDetail() {
                         <RefreshCw size={13} className={syncZoho.isPending ? 'animate-spin' : ''} />
                         {syncZoho.isPending ? 'Syncing…' : invoice.zohoBooksSyncId ? 'Synced' : 'Sync to Zoho'}
                     </Button>
+                    {invoice.zohoBooksSyncId && (
+                        <a
+                            href={`https://books.zoho.com/app/908459713#/invoices/${invoice.zohoBooksSyncId}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 rounded-md border border-emerald-300 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
+                        >
+                            Open in Zoho ↗
+                        </a>
+                    )}
                     {canPay && (
                         <Button size="sm" variant="success" onClick={() => setPaying(true)}>
                             Record Payment

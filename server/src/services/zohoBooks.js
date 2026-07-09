@@ -168,14 +168,10 @@ export async function recordZohoPayment(zohoInvoiceId, amount, date, method) {
 
 // Get expense account ID from env or fetch from Zoho
 let cachedExpenseAccountId = null;
+let cachedExpenseAccounts = null;
 
-async function getExpenseAccountId() {
-    // Use env var if set (preferred — no extra API call)
-    if (process.env.ZOHO_BOOKS_EXPENSE_ACCOUNT_ID) {
-        return process.env.ZOHO_BOOKS_EXPENSE_ACCOUNT_ID;
-    }
-    if (cachedExpenseAccountId) return cachedExpenseAccountId;
-    // Fallback: try fetching from chart of accounts
+async function fetchExpenseAccounts() {
+    if (cachedExpenseAccounts) return cachedExpenseAccounts;
     const token = await getAccessToken();
     const headers = { Authorization: `Zoho-oauthtoken ${token}` };
     try {
@@ -183,11 +179,31 @@ async function getExpenseAccountId() {
             headers,
             params: { ...orgParam(), account_type: 'expense' },
         });
-        const accounts = data.chartofaccounts || [];
-        cachedExpenseAccountId = accounts[0]?.account_id || null;
+        cachedExpenseAccounts = data.chartofaccounts || [];
     } catch {
-        cachedExpenseAccountId = null;
+        cachedExpenseAccounts = [];
     }
+    return cachedExpenseAccounts;
+}
+
+async function getExpenseAccountId(expenseAccountName) {
+    // Try to match by name first
+    if (expenseAccountName) {
+        const accounts = await fetchExpenseAccounts();
+        const normalizedName = expenseAccountName.toLowerCase().trim();
+        const match = accounts.find(a =>
+            a.account_name.toLowerCase().trim() === normalizedName
+        );
+        if (match) return match.account_id;
+    }
+    // Use env var as default fallback
+    if (process.env.ZOHO_BOOKS_EXPENSE_ACCOUNT_ID) {
+        return process.env.ZOHO_BOOKS_EXPENSE_ACCOUNT_ID;
+    }
+    if (cachedExpenseAccountId) return cachedExpenseAccountId;
+    // Last resort: fetch and use first expense account
+    const accounts = await fetchExpenseAccounts();
+    cachedExpenseAccountId = accounts[0]?.account_id || null;
     return cachedExpenseAccountId;
 }
 
@@ -200,9 +216,9 @@ export async function createZohoExpense(expense) {
     const token = await getAccessToken();
     const headers = { Authorization: `Zoho-oauthtoken ${token}` };
 
-    const accountId = await getExpenseAccountId();
+    const accountId = await getExpenseAccountId(expense.expenseAccount);
     if (!accountId) {
-        throw new Error('No expense account configured. Set ZOHO_BOOKS_EXPENSE_ACCOUNT_ID in .env');
+        throw new Error('No expense account configured. Set ZOHO_BOOKS_EXPENSE_ACCOUNT_ID in .env or ensure a matching Zoho expense account exists');
     }
 
     const body = {

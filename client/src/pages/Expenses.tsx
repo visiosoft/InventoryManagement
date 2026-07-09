@@ -392,7 +392,7 @@ export default function Expenses() {
                                     <Td><Badge tone={expenseStatusTone[e.status]}>{statusLabel(e.status)}</Badge></Td>
                                     <Td>
                                         {e.zohoBooksSyncId
-                                            ? <span className="text-emerald-600" title={`Synced ${e.zohoBooksSyncedAt ? new Date(e.zohoBooksSyncedAt).toLocaleDateString() : ''}`}>✓</span>
+                                            ? <a href={`https://books.zoho.com/app/908459713#/expenses/${e.zohoBooksSyncId}`} target="_blank" rel="noreferrer" className="text-emerald-600 hover:underline" title={`Synced ${e.zohoBooksSyncedAt ? new Date(e.zohoBooksSyncedAt).toLocaleDateString() : ''} — Click to open in Zoho`}>✓ View</a>
                                             : e.zohoBooksSyncError
                                                 ? <span className="text-red-500" title={e.zohoBooksSyncError}>✗</span>
                                                 : <span className="text-muted-foreground">—</span>

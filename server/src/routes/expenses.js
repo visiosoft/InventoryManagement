@@ -110,6 +110,7 @@ function normalizeBody(body) {
 
     return {
         expenseDate: body.expenseDate ? new Date(body.expenseDate) : new Date(),
+        expenseType: String(body.expenseType || '').trim() || undefined,
         description: String(body.description || '').trim(),
         expenseAccount: String(body.expenseAccount || '').trim(),
         expenseAccountCode: String(body.expenseAccountCode || '').trim(),

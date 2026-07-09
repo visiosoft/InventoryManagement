@@ -784,7 +784,7 @@ export default function Invoices() {
                                     <Td><Badge tone={invoiceStatusTone[inv.status]}>{invoiceLabel(inv.status)}</Badge></Td>
                                     <Td>
                                         {inv.zohoBooksSyncId
-                                            ? <span className="text-emerald-600" title={`Synced ${inv.zohoBooksSyncedAt ? new Date(inv.zohoBooksSyncedAt).toLocaleDateString() : ''}`}>✓</span>
+                                            ? <a href={`https://books.zoho.com/app/908459713#/invoices/${inv.zohoBooksSyncId}`} target="_blank" rel="noreferrer" className="text-emerald-600 hover:underline" title={`Synced ${inv.zohoBooksSyncedAt ? new Date(inv.zohoBooksSyncedAt).toLocaleDateString() : ''} — Click to open in Zoho`}>✓ View</a>
                                             : inv.zohoBooksSyncError
                                                 ? <span className="text-red-500" title={inv.zohoBooksSyncError}>✗</span>
                                                 : <span className="text-muted-foreground">—</span>
