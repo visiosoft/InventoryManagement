@@ -508,7 +508,7 @@ export default function InvoiceDetail() {
             qc.invalidateQueries({ queryKey: ['invoice', id] })
             qc.invalidateQueries({ queryKey: ['invoices'] })
         },
-        onError: (e) => { /* error shown inline via syncZoho.error */ },
+        onError: () => { /* error shown inline via syncZoho.error */ },
     })
 
     const openPdf = async () => {
