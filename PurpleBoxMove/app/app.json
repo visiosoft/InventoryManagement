@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "PurpleBox Move",
+    "slug": "purplebox-move",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#FBF8F2",
+    "splash": {
+      "backgroundColor": "#5B2BC9",
+      "resizeMode": "contain"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.purplebox.move"
+    },
+    "android": {
+      "package": "com.purplebox.move",
+      "adaptiveIcon": {
+        "backgroundColor": "#5B2BC9"
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "PurpleBox needs access to your photos so you can add images of your items for an accurate moving quote.",
+          "cameraPermission": "PurpleBox needs camera access so you can capture photos and a walkthrough video of your home."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "0b7852de-4bc7-43f9-b000-dc85b2b58f7a"
+      }
+    },
+    "owner": "xulfi"
+  }
+}
