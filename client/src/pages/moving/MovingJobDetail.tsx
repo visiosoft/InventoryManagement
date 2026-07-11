@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useParams, Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, FileText, MapPin, Users, Truck as TruckIcon, AlertCircle, ClipboardList, Package, Star, Wrench, Camera, X, Tag, CheckCircle2, Pencil, Calendar, Clock, RotateCcw, Image as ImageIcon, Check } from 'lucide-react'
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { ArrowLeft, Plus, Trash2, FileText, MapPin, Users, Truck as TruckIcon, AlertCircle, ClipboardList, Package, Star, Wrench, Camera, X, Tag, CheckCircle2, Pencil, Image as ImageIcon, Check } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingJob, MovingJobStatus, Worker, Truck, MovingJobImage } from '../../lib/types'
 
@@ -237,6 +237,7 @@ export default function MovingJobDetail() {
   const { id } = useParams<{ id: string }>()
   const qc = useQueryClient()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { user } = useAuth()
   const [noteText, setNoteText] = useState('')
   const [packageModal, setPackageModal] = useState(false)
@@ -260,6 +261,15 @@ export default function MovingJobDetail() {
     queryKey: ['moving-job', id],
     queryFn: () => api.get(`/moving-jobs/${id}`).then(r => r.data),
   })
+
+  // Auto-open the Edit Details modal when arriving from the jobs list with ?edit=1
+  useEffect(() => {
+    if (searchParams.get('edit') === '1') {
+      setEditDetailsModal(true)
+      searchParams.delete('edit')
+      setSearchParams(searchParams, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
 
   const { data: workers = [] } = useQuery<Worker[]>({
     queryKey: ['workers'],

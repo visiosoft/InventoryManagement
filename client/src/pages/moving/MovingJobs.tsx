@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Plus, Search, ArrowRight, MapPin, Trash2 } from 'lucide-react'
+import { Plus, Search, ArrowRight, MapPin, Trash2, Pencil } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingJob, MovingJobStatus } from '../../lib/types'
 import { Badge, Button, Card, CardBody, Input, Modal, PageHeader, Spinner, Table, Td, Th, movingJobStatusLabel } from '../../components/ui'
@@ -166,6 +166,15 @@ export default function MovingJobs() {
                   )}
                 </Link>
                 <div className="flex items-center gap-1 shrink-0">
+                  {!['invoiced'].includes(j.status) && (
+                    <Link
+                      to={`/moving/jobs/${j._id}?edit=1`}
+                      className="p-1.5 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                      title="Edit job"
+                    >
+                      <Pencil size={14} />
+                    </Link>
+                  )}
                   {!['in_progress', 'invoiced'].includes(j.status) && (
                     <button
                       onClick={() => { setDeleteTarget({ _id: j._id, jobNo: j.jobNo }); setDeleteErr('') }}
@@ -216,6 +225,15 @@ export default function MovingJobs() {
                         </Td>
                         <Td className="py-3 pr-4 text-right">
                           <div className="flex items-center justify-end gap-1">
+                            {!['invoiced'].includes(j.status) && (
+                              <Link
+                                to={`/moving/jobs/${j._id}?edit=1`}
+                                className="p-1 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                                title="Edit job"
+                              >
+                                <Pencil size={14} />
+                              </Link>
+                            )}
                             {!['in_progress', 'invoiced'].includes(j.status) && (
                               <button
                                 onClick={() => { setDeleteTarget({ _id: j._id, jobNo: j.jobNo }); setDeleteErr('') }}
