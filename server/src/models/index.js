@@ -1103,13 +1103,14 @@ export async function nextPurchaseNo() {
 }
 
 export async function nextMovingJobNo() {
-  const year = new Date().getFullYear();
+  const now = new Date();
+  const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
   const counter = await Counter.findOneAndUpdate(
-    { key: `moving-job-${year}` },
+    { key: `moving-job-${date}` },
     { $inc: { seq: 1 } },
     { new: true, upsert: true }
   );
-  return `MJ-${year}-${String(counter.seq).padStart(4, '0')}`;
+  return `PB-${date}-${String(counter.seq).padStart(3, '0')}`;
 }
 
 export async function nextMovingQuoteNo() {

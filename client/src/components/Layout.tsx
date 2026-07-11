@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Box, Users, FileText, CreditCard, BarChart3, Building2, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, FileSpreadsheet, Truck, ShoppingCart, Wallet, TrendingUp, UserCheck, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, Bell } from 'lucide-react'
+import { LayoutDashboard, Box, Users, FileText, CreditCard, BarChart3, Building2, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, ShoppingCart, Wallet, TrendingUp, UserCheck, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, Bell } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { cn } from '../lib/utils'
@@ -62,7 +62,6 @@ const movingNavItems = [
   { to: '/moving/workers', label: 'Workers', icon: Users2, perm: 'moving_workers' },
   { to: '/moving/fleet', label: 'Fleet', icon: Truck, perm: 'moving_fleet' },
   { to: '/moving-inventory', label: 'Inventory', icon: Box, perm: 'moving_inventory' },
-  { to: '/moving/quotes', label: 'Quotes', icon: FileSpreadsheet, perm: 'moving_quotes' },
   { to: '/moving/invoices', label: 'Invoices', icon: ReceiptText, perm: 'moving_invoices' },
   { to: '/moving/claims', label: 'Claims', icon: AlertTriangle, perm: 'moving_claims' },
 ]

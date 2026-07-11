@@ -371,19 +371,6 @@ export default function MovingJobDetail() {
     onError: (e) => setErr(apiError(e)),
   })
 
-  const createQuoteMut = useMutation({
-    mutationFn: () => api.post('/moving-quotes', {
-      job: id,
-      customer: job?.customer?._id,
-      status: 'draft',
-      items: [],
-      total: 0,
-      notes: `Quote for job ${job?.jobNo}`,
-    }).then(r => r.data),
-    onSuccess: (quote) => navigate(`/moving/quotes/${quote._id}`),
-    onError: (e) => setErr(apiError(e)),
-  })
-
   const createInvoiceMut = useMutation({
     mutationFn: () => {
       const pkg = job?.clientPackage
@@ -589,18 +576,6 @@ export default function MovingJobDetail() {
             <ClipboardList size={16} className="mr-1" />
             Survey
           </Button>
-          {!job.quote && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => createQuoteMut.mutate()}
-              disabled={createQuoteMut.isPending}
-              title="Create a quote for this job"
-            >
-              <FileText size={16} className="mr-1" />
-              {createQuoteMut.isPending ? 'Creating…' : 'Quote'}
-            </Button>
-          )}
           {!job.invoice && (
             <Button
               size="sm"
@@ -688,12 +663,6 @@ export default function MovingJobDetail() {
                 ? <Badge tone="amber">Required</Badge>
                 : <span className="text-muted-foreground">Not required</span>}
             />
-            {job.quote && (
-              <InfoItem
-                label="Quote"
-                value={<Link to={`/moving/quotes/${job.quote._id}`} className="text-primary hover:underline font-medium">{job.quote.quoteNo}</Link>}
-              />
-            )}
             {job.invoice && (
               <InfoItem
                 label="Invoice"
