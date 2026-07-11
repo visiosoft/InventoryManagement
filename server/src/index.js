@@ -36,8 +36,6 @@ import movingClaimRoutes from './routes/movingClaims.js';
 import productRoutes from './routes/products.js';
 import backupRoutes from './routes/backup.js';
 import reminderConfigRoutes from './routes/reminderConfig.js';
-import customerAuthRoutes from './routes/customerAuth.js';
-import customerPortalRoutes from './routes/customerPortal.js';
 import { runBackup } from './services/backup.js';
 import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
 import { runPaymentReminders } from './services/paymentReminders.js';
@@ -75,8 +73,6 @@ app.get('/api/health', (_req, res) => res.json({ ok: true, db: mongoose.connecti
 app.use('/api/sign', signingRoutes);
 
 app.use('/api/auth', authRoutes);
-app.use('/api/customer-auth', customerAuthRoutes);
-app.use('/api/customer-portal', customerPortalRoutes);
 // Zoho webhook must be reachable without a JWT.
 app.use('/api/contracts/zoho-webhook', (req, _res, next) => next());
 // WhatsApp webhook verification and events must be reachable without a JWT.
