@@ -609,6 +609,10 @@ const workerSchema = new Schema(
     status: { type: String, enum: ['active', 'inactive', 'on_leave'], default: 'active' },
     emergencyContact: { type: String, default: '' },
     notes: { type: String, default: '' },
+    timeLog: [{
+      type: { type: String, enum: ['clock_in', 'clock_out', 'break_start', 'break_end'] },
+      time: { type: Date, default: Date.now },
+    }],
   },
   { timestamps: true }
 );
@@ -785,6 +789,16 @@ const movingJobSchema = new Schema(
       }],
       notes: { type: String, default: '' },
     },
+    checklist: [{
+      label: { type: String },
+      done: { type: Boolean, default: false },
+    }],
+    completionPhotos: [{
+      url: { type: String },
+      area: { type: String, default: 'General' },
+      uploadedAt: { type: Date, default: Date.now },
+      uploadedBy: { type: Schema.Types.ObjectId, ref: 'Worker' },
+    }],
   },
   { timestamps: true }
 );

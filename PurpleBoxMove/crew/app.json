@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "Safa Crew",
+    "slug": "safa-crew",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#FDFCFA",
+    "splash": { "backgroundColor": "#14081F", "resizeMode": "contain" },
+    "assetBundlePatterns": ["**/*"],
+    "ios": { "supportsTablet": false, "bundleIdentifier": "com.purplebox.crew" },
+    "android": { "package": "com.purplebox.crew", "adaptiveIcon": { "backgroundColor": "#14081F" } },
+    "plugins": [
+      ["expo-image-picker", {
+        "photosPermission": "Safa Crew needs access to your photos to upload job completion proof.",
+        "cameraPermission": "Safa Crew needs camera access to take completion photos."
+      }]
+    ]
+  }
+}
