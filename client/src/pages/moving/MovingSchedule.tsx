@@ -1,24 +1,26 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { ChevronLeft, ChevronRight, Plus, Search, CalendarDays, CircleCheck, Clock, Truck } from 'lucide-react'
 import { api } from '../../lib/api'
 import type { MovingJob, MovingJobStatus } from '../../lib/types'
-import { Badge, Button, Card, CardBody, PageHeader, Spinner } from '../../components/ui'
+import { Spinner, movingJobStatusLabel } from '../../components/ui'
 
-const statusTone: Record<MovingJobStatus, string> = {
-  draft: 'gray', confirmed: 'blue', survey_done: 'purple',
-  in_progress: 'yellow', completed: 'green', invoiced: 'teal', cancelled: 'red',
-}
+// ── Purple/cream design tokens (matches the dashboard mockup) ──────────────────
+const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
+const INK = '#14081F'
+const MUTED = '#756E80'
+const PURPLE = '#5B2BC9'
 
-const statusBg: Record<MovingJobStatus, string> = {
-  draft: 'bg-gray-100 dark:bg-gray-900',
-  confirmed: 'bg-blue-100 dark:bg-blue-900',
-  survey_done: 'bg-purple-100 dark:bg-purple-900',
-  in_progress: 'bg-yellow-100 dark:bg-yellow-900',
-  completed: 'bg-green-100 dark:bg-green-900',
-  invoiced: 'bg-cyan-100 dark:bg-cyan-900',
-  cancelled: 'bg-red-100 dark:bg-red-900',
+// Soft event pill styles per status
+const eventStyle: Record<MovingJobStatus, { bg: string; color: string }> = {
+  draft: { bg: '#F3F0EA', color: '#756E80' },
+  confirmed: { bg: '#F7F3FF', color: '#5B2BC9' },
+  survey_done: { bg: '#EDE5FF', color: '#5B2BC9' },
+  in_progress: { bg: '#FFF7ED', color: '#EA580C' },
+  completed: { bg: '#ECFDF5', color: '#059669' },
+  invoiced: { bg: '#EFF6FF', color: '#2563EB' },
+  cancelled: { bg: '#FEF2F2', color: '#EF4444' },
 }
 
 function getDaysInMonth(date: Date) {
@@ -36,8 +38,28 @@ function isoDate(d: Date) {
   return `${year}-${month}-${day}`
 }
 
+// ── Small building blocks ──────────────────────────────────────────────────────
+function StatCard({ label, value, sub, icon, iconBg, iconColor }: {
+  label: string; value: string | number; sub?: string; icon: React.ReactNode; iconBg: string; iconColor: string
+}) {
+  return (
+    <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 20 }}>
+      <div className="flex justify-between items-start">
+        <div style={{ fontSize: 13, color: MUTED, fontWeight: 500 }}>{label}</div>
+        <div style={{ width: 36, height: 36, borderRadius: 10, background: iconBg, display: 'grid', placeItems: 'center', color: iconColor }}>
+          {icon}
+        </div>
+      </div>
+      <div style={{ ...HEADING, fontSize: 32, fontWeight: 700, color: INK, marginTop: 8 }}>{value}</div>
+      {sub && <div style={{ fontSize: 12, color: MUTED, marginTop: 6 }}>{sub}</div>}
+    </div>
+  )
+}
+
 export default function MovingSchedule() {
+  const navigate = useNavigate()
   const [currentMonth, setCurrentMonth] = useState(new Date())
+  const [search, setSearch] = useState('')
 
   const startDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1)
   const endDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0, 23, 59, 59)
@@ -49,8 +71,13 @@ export default function MovingSchedule() {
     }).then(r => r.data),
   })
 
+  const q = search.trim().toLowerCase()
+  const visibleJobs = q
+    ? jobs.filter(j => (j.jobNo || '').toLowerCase().includes(q) || (j.customer?.fullName || '').toLowerCase().includes(q))
+    : jobs
+
   const byDate: Record<string, MovingJob[]> = {}
-  for (const j of jobs) {
+  for (const j of visibleJobs) {
     if (!j.scheduledDate) continue
     const key = isoDate(new Date(j.scheduledDate))
     if (!byDate[key]) byDate[key] = []
@@ -66,115 +93,152 @@ export default function MovingSchedule() {
 
   const monthLabel = currentMonth.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
   const today = isoDate(new Date())
+  const todayLabel = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
   const prevMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))
   const nextMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))
   const goToday = () => setCurrentMonth(new Date())
 
+  // Stats for the visible month
+  const confirmedCount = jobs.filter(j => j.status === 'confirmed').length
+  const completedCount = jobs.filter(j => j.status === 'completed').length
+  const todayCount = (byDate[today] ?? []).length
+
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between gap-4">
-        <PageHeader title="Schedule" subtitle="Month view" />
-        <div className="flex items-center gap-3 shrink-0">
-          <Button variant="outline" size="sm" onClick={prevMonth}>
-            <ChevronLeft size={16} />
-          </Button>
-          <span className="text-sm font-medium min-w-[160px] text-center">{monthLabel}</span>
-          <Button variant="outline" size="sm" onClick={nextMonth}>
-            <ChevronRight size={16} />
-          </Button>
-          <Button variant="outline" size="sm" onClick={goToday}>
+    <div style={{ background: '#FDFCFA', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+      {/* Top bar */}
+      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-7">
+        <div>
+          <div style={{ ...HEADING, fontSize: 26, fontWeight: 700, color: INK }}>Schedule</div>
+          <div style={{ fontSize: 14, color: MUTED, marginTop: 4 }}>{todayLabel} · Dubai</div>
+        </div>
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {/* Search */}
+          <div style={{ height: 40, borderRadius: 10, background: '#F3F0EA' }} className="flex items-center gap-2 px-3">
+            <Search size={16} color={MUTED} />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search jobs…"
+              style={{ background: 'transparent', outline: 'none', border: 'none', fontSize: 13, color: INK, width: 130 }}
+            />
+          </div>
+          {/* Month nav pill */}
+          <div style={{ height: 40, borderRadius: 10, background: '#F3F0EA' }} className="flex items-center px-1">
+            <button onClick={prevMonth} className="h-8 w-8 grid place-items-center rounded-lg hover:bg-white/70 transition-colors" title="Previous month">
+              <ChevronLeft size={16} color={MUTED} />
+            </button>
+            <span style={{ fontSize: 13, fontWeight: 600, color: INK, minWidth: 108, textAlign: 'center' }}>{monthLabel}</span>
+            <button onClick={nextMonth} className="h-8 w-8 grid place-items-center rounded-lg hover:bg-white/70 transition-colors" title="Next month">
+              <ChevronRight size={16} color={MUTED} />
+            </button>
+          </div>
+          <button onClick={goToday} style={{ height: 40, borderRadius: 10, background: '#F3F0EA', fontSize: 13, fontWeight: 600, color: MUTED }} className="px-4 hover:brightness-95 transition">
             Today
-          </Button>
-          <Link to="/moving/jobs/new">
-            <Button size="sm"><Plus size={14} className="mr-1" />New Job</Button>
+          </button>
+          <Link to="/moving/jobs/new" style={{ height: 40, borderRadius: 10, background: PURPLE, color: 'white', fontSize: 13, fontWeight: 600 }} className="px-4 flex items-center gap-1.5 hover:brightness-110 transition">
+            <Plus size={15} />New Job
           </Link>
         </div>
+      </div>
+
+      {/* Stats cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-7">
+        <StatCard label={`Jobs in ${currentMonth.toLocaleDateString('en-GB', { month: 'long' })}`} value={jobs.length} sub="scheduled this month"
+          icon={<CalendarDays size={18} />} iconBg="#F7F3FF" iconColor={PURPLE} />
+        <StatCard label="Confirmed" value={confirmedCount} sub="ready to dispatch"
+          icon={<CircleCheck size={18} />} iconBg="#ECFDF5" iconColor="#059669" />
+        <StatCard label="Completed" value={completedCount} sub="finished this month"
+          icon={<Truck size={18} />} iconBg="#EFF6FF" iconColor="#2563EB" />
+        <StatCard label="Today" value={todayCount} sub={todayCount === 1 ? '1 job today' : `${todayCount} jobs today`}
+          icon={<Clock size={18} />} iconBg="#FFF7ED" iconColor="#EA580C" />
       </div>
 
       {isLoading ? (
         <div className="flex justify-center py-16"><Spinner /></div>
       ) : (
-        <Card>
-          <CardBody>
-            {/* Weekday headers */}
-            <div className="grid grid-cols-7 gap-1 mb-2">
-              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                <div key={day} className="text-center text-xs font-semibold text-muted-foreground py-2">
-                  {day}
-                </div>
-              ))}
-            </div>
+        <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 20 }}>
+          {/* Weekday headers */}
+          <div className="grid grid-cols-7 gap-1.5 mb-2">
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+              <div key={day} style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: MUTED }} className="text-center py-2">
+                {day}
+              </div>
+            ))}
+          </div>
 
-            {/* Calendar grid */}
-            <div className="grid grid-cols-7 gap-1 auto-rows-[120px]">
-              {days.map((day, idx) => {
-                const dayKey = day ? isoDate(day) : null
-                const dayJobs = dayKey ? (byDate[dayKey] ?? []) : []
-                const isToday = dayKey === today
-                const isCurrentMonth = day?.getMonth() === currentMonth.getMonth()
+          {/* Calendar grid */}
+          <div className="grid grid-cols-7 gap-1.5 auto-rows-[118px]">
+            {days.map((day, idx) => {
+              const dayKey = day ? isoDate(day) : null
+              const dayJobs = dayKey ? (byDate[dayKey] ?? []) : []
+              const isToday = dayKey === today
+              const isCurrentMonth = day?.getMonth() === currentMonth.getMonth()
 
-                return (
-                  <Link
-                    key={idx}
-                    to={day && isCurrentMonth ? `/moving/jobs/new?date=${isoDate(day)}` : '#'}
-                    onClick={e => {
-                      if (!day || !isCurrentMonth) e.preventDefault()
-                    }}
-                    className={`border rounded-lg p-1.5 text-xs overflow-hidden transition-colors cursor-pointer block ${
-                      !isCurrentMonth
-                        ? 'bg-muted/30 opacity-50 cursor-default'
-                        : isToday
-                          ? 'bg-primary/5 border-primary/30 hover:bg-primary/10'
-                          : 'bg-card hover:bg-muted/50'
-                    }`}
-                  >
-                    {day && (
-                      <>
-                        <div className={`font-semibold ${isToday ? 'text-primary' : 'text-foreground'}`}>
-                          {day.getDate()}
-                        </div>
-                        <div className="space-y-0.5 mt-1">
-                          {dayJobs.slice(0, 2).map(job => (
+              return (
+                <div
+                  key={idx}
+                  onClick={() => { if (day && isCurrentMonth) navigate(`/moving/jobs/new?date=${isoDate(day)}`) }}
+                  style={{
+                    borderRadius: 12,
+                    border: isToday ? `1px solid ${PURPLE}40` : '1px solid rgba(20,8,31,0.06)',
+                    background: !isCurrentMonth ? 'transparent' : isToday ? '#F7F3FF' : 'white',
+                    opacity: !isCurrentMonth ? 0.4 : 1,
+                  }}
+                  className={`p-1.5 text-xs overflow-hidden transition-colors block ${isCurrentMonth ? 'cursor-pointer hover:brightness-[0.98]' : 'cursor-default'}`}
+                >
+                  {day && (
+                    <>
+                      <div style={{ fontWeight: 700, fontSize: 12, color: isToday ? PURPLE : INK }}>
+                        {day.getDate()}
+                      </div>
+                      <div className="space-y-1 mt-1">
+                        {dayJobs.slice(0, 2).map(job => {
+                          const st = eventStyle[job.status] ?? eventStyle.draft
+                          return (
                             <Link
                               key={job._id}
                               to={`/moving/jobs/${job._id}`}
                               onClick={e => e.stopPropagation()}
-                              className={`block rounded px-1 py-0.5 text-[10px] font-medium truncate hover:underline ${statusBg[job.status]} text-foreground`}
-                              title={`${job.jobNo} - ${job.customer?.fullName}`}
+                              style={{ background: st.bg, color: st.color, borderRadius: 6 }}
+                              className="block px-1.5 py-0.5 text-[10px] font-semibold truncate hover:brightness-95"
+                              title={`${job.jobNo} — ${job.customer?.fullName ?? ''} · ${movingJobStatusLabel(job.status)}`}
                             >
                               {job.jobNo}
                             </Link>
-                          ))}
-                          {dayJobs.length > 2 && (
-                            <div className="text-[9px] text-muted-foreground px-1">
-                              +{dayJobs.length - 2} more
-                            </div>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </Link>
-                )
-              })}
-            </div>
-          </CardBody>
-        </Card>
+                          )
+                        })}
+                        {dayJobs.length > 2 && (
+                          <div style={{ fontSize: 9, color: MUTED }} className="px-1">
+                            +{dayJobs.length - 2} more
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
       )}
 
       {/* Legend */}
-      <Card>
-        <CardBody>
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            {(Object.entries(statusTone) as [MovingJobStatus, string][]).map(([status, tone]) => (
+      <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 20 }} className="mt-4">
+        <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: MUTED }} className="mb-3">Status legend</div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {(Object.keys(eventStyle) as MovingJobStatus[]).map(status => {
+            const st = eventStyle[status]
+            return (
               <div key={status} className="flex items-center gap-2">
-                <Badge tone={tone}>{status.replace('_', ' ')}</Badge>
-                <span className="text-muted-foreground">= {status.replace('_', ' ')}</span>
+                <span style={{ background: st.bg, color: st.color, borderRadius: 6, fontSize: 11, fontWeight: 600 }} className="px-2 py-0.5 capitalize">
+                  {movingJobStatusLabel(status)}
+                </span>
               </div>
-            ))}
-          </div>
-        </CardBody>
-      </Card>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
 }

@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { Printer, DollarSign, Camera, X } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingJob } from '../../lib/types'
-import { Badge, Button, Card, CardBody, CardHeader, EmptyState, Field, Input, Modal, PageHeader, Spinner, Textarea } from '../../components/ui'
+import { Badge, Button, Card, CardBody, CardHeader, EmptyState, Field, Input, Modal, PageHeader, Spinner, Textarea, movingJobStatusLabel } from '../../components/ui'
 
 function getLocalDateString(d: Date) {
   const year = d.getFullYear()
@@ -49,7 +49,7 @@ function JobDispatchCard({ job, index, onPriceOverride }: { job: MovingJob; inde
             <Link to={`/moving/jobs/${job._id}`} className="hover:underline print:no-underline font-semibold">
               {job.jobNo}
             </Link>
-            <Badge tone="blue">{job.status.replace(/_/g, ' ')}</Badge>
+            <Badge tone="blue">{movingJobStatusLabel(job.status)}</Badge>
             {override?.amount != null && (
               <span className="text-xs bg-amber-500/10 text-amber-700 border border-amber-500/20 px-2 py-0.5 rounded-full font-medium">
                 Field Price: AED {override.amount.toLocaleString()}

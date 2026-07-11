@@ -154,6 +154,11 @@ export function statusLabel(s: string) {
   return s.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
 }
 
+/** Display label for a moving-job status. 'draft' is surfaced to users as "Coming Soon". */
+export function movingJobStatusLabel(s: string) {
+  return s === 'draft' ? 'Coming Soon' : s.replace(/_/g, ' ')
+}
+
 /* ---------- Modal ---------- */
 export function Modal({
   open,

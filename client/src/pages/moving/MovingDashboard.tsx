@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import { api } from '../../lib/api'
 import type { MovingJob } from '../../lib/types'
-import { Badge, Button, Card, CardBody, CardHeader, Spinner, Table, Td, Th } from '../../components/ui'
+import { Badge, Button, Card, CardBody, CardHeader, Spinner, Table, Td, Th, movingJobStatusLabel } from '../../components/ui'
 import { cn } from '../../lib/utils'
 
 interface MovingSummary {
@@ -149,7 +149,7 @@ export default function MovingDashboard() {
 
   const statusPie = (jobsBreakdown?.byStatus ?? [])
     .filter(s => s._id && s.count > 0)
-    .map(s => ({ name: s._id.replace(/_/g, ' '), value: s.count, color: STATUS_COLORS[s._id] ?? '#94a3b8' }))
+    .map(s => ({ name: movingJobStatusLabel(s._id), value: s.count, color: STATUS_COLORS[s._id] ?? '#94a3b8' }))
 
   const typeBars = (jobsBreakdown?.byType ?? [])
     .filter(t => t._id)
@@ -299,7 +299,7 @@ export default function MovingDashboard() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-0.5">
                           <span className="text-xs font-mono font-bold text-primary">{j.jobNo}</span>
-                          <Badge tone={statusTone[j.status]} className="text-xs py-0 h-4">{j.status.replace(/_/g, ' ')}</Badge>
+                          <Badge tone={statusTone[j.status]} className="text-xs py-0 h-4">{movingJobStatusLabel(j.status)}</Badge>
                         </div>
                         <p className="text-sm font-medium truncate">{j.customer?.fullName}</p>
                         <p className="text-xs text-muted-foreground">
@@ -352,7 +352,7 @@ export default function MovingDashboard() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 mb-0.5">
                       <span className="text-xs font-mono font-bold text-primary">{j.jobNo}</span>
-                      <Badge tone={statusTone[j.status]} className="text-xs py-0 h-4">{j.status.replace(/_/g, ' ')}</Badge>
+                      <Badge tone={statusTone[j.status]} className="text-xs py-0 h-4">{movingJobStatusLabel(j.status)}</Badge>
                     </div>
                     <p className="text-sm font-medium truncate">{j.customer?.fullName}</p>
                     {j.scheduledDate && <p className="text-xs text-muted-foreground">{new Date(j.scheduledDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</p>}
@@ -391,7 +391,7 @@ export default function MovingDashboard() {
                         </Td>
                         <Td className="text-sm text-muted-foreground">{j.scheduledTimeSlot || '—'}</Td>
                         <Td className="text-sm text-muted-foreground">{trucks[0]?.truck?.name || '—'}</Td>
-                        <Td><Badge tone={statusTone[j.status]} className="text-xs">{j.status.replace(/_/g, ' ')}</Badge></Td>
+                        <Td><Badge tone={statusTone[j.status]} className="text-xs">{movingJobStatusLabel(j.status)}</Badge></Td>
                       </tr>
                     )
                   })}

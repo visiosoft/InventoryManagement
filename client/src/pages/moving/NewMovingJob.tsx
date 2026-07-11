@@ -69,6 +69,7 @@ export default function NewMovingJob() {
       scheduledDate: scheduledDate || undefined,
       scheduledTimeSlot: String(f.get('scheduledTimeSlot') || ''),
       estimatedDurationHours: f.get('estimatedDurationHours') ? Number(f.get('estimatedDurationHours')) : undefined,
+      moveOutPermitRequired: f.get('moveOutPermitRequired') === 'on',
       notes: String(f.get('notes') || ''),
     })
   }
@@ -150,6 +151,12 @@ export default function NewMovingJob() {
               </Field>
               <Field label="Estimated Duration (hours)">
                 <Input name="estimatedDurationHours" type="number" min="0" step="0.5" />
+              </Field>
+              <Field label="Move-out Permit" className="col-span-2">
+                <label className="flex items-center gap-2 mt-1 text-sm">
+                  <input type="checkbox" name="moveOutPermitRequired" />
+                  Required Move-out Permit
+                </label>
               </Field>
             </div>
           </CardBody>

@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { Plus, Search, ArrowRight, MapPin, Trash2 } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingJob, MovingJobStatus } from '../../lib/types'
-import { Badge, Button, Card, CardBody, Input, Modal, PageHeader, Spinner, Table, Td, Th } from '../../components/ui'
+import { Badge, Button, Card, CardBody, Input, Modal, PageHeader, Spinner, Table, Td, Th, movingJobStatusLabel } from '../../components/ui'
 import { cn } from '../../lib/utils'
 
 interface JobsBreakdown {
@@ -13,7 +13,7 @@ interface JobsBreakdown {
 
 const STATUSES: { value: MovingJobStatus | ''; label: string }[] = [
   { value: '', label: 'All' },
-  { value: 'draft', label: 'Draft' },
+  { value: 'draft', label: 'Coming Soon' },
   { value: 'confirmed', label: 'Confirmed' },
   { value: 'survey_done', label: 'Survey Done' },
   { value: 'in_progress', label: 'In Progress' },
@@ -152,7 +152,7 @@ export default function MovingJobs() {
                 <Link to={`/moving/jobs/${j._id}`} className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-xs font-mono font-bold text-primary">{j.jobNo}</span>
-                    <Badge tone={statusTone[j.status]} className="text-xs py-0 h-4">{j.status.replace(/_/g, ' ')}</Badge>
+                    <Badge tone={statusTone[j.status]} className="text-xs py-0 h-4">{movingJobStatusLabel(j.status)}</Badge>
                   </div>
                   <p className="text-sm font-semibold text-foreground mb-1">{j.customer?.fullName}</p>
                   {j.scheduledDate && (
@@ -212,7 +212,7 @@ export default function MovingJobs() {
                         <Td className="py-3 text-sm text-muted-foreground max-w-[180px] truncate">{j.pickupAddress || '—'}</Td>
                         <Td className="py-3 text-sm text-muted-foreground max-w-[180px] truncate">{j.deliveryAddress || '—'}</Td>
                         <Td className="py-3">
-                          <Badge tone={statusTone[j.status]} className="text-xs">{j.status.replace(/_/g, ' ')}</Badge>
+                          <Badge tone={statusTone[j.status]} className="text-xs">{movingJobStatusLabel(j.status)}</Badge>
                         </Td>
                         <Td className="py-3 pr-4 text-right">
                           <div className="flex items-center justify-end gap-1">

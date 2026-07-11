@@ -55,9 +55,9 @@ const navBottom = [
 
 const movingNavItems = [
   { to: '/moving', label: 'Dashboard', icon: LayoutDashboard, perm: 'moving_dashboard' as string },
+  { to: '/moving/schedule', label: 'Schedule Jobs', icon: CalendarDays, perm: 'moving_schedule' },
+  { to: '/moving/jobs', label: 'Jobs List', icon: ClipboardList, perm: 'moving_jobs' },
   { to: '/moving/leads', label: 'Leads', icon: UserPlus, perm: 'moving_leads' },
-  { to: '/moving/jobs', label: 'Jobs', icon: ClipboardList, perm: 'moving_jobs' },
-  { to: '/moving/schedule', label: 'Schedule', icon: CalendarDays, perm: 'moving_schedule' },
   { to: '/moving/dispatch', label: 'Dispatch', icon: Package, perm: 'moving_dispatch' },
   { to: '/moving/workers', label: 'Workers', icon: Users2, perm: 'moving_workers' },
   { to: '/moving/fleet', label: 'Fleet', icon: Truck, perm: 'moving_fleet' },

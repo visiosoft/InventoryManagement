@@ -426,6 +426,7 @@ router.post('/:id/images', upload.array('images', 20), async (req, res) => {
     if (!job) return res.status(404).json({ error: 'Job not found' });
 
     const customerName = job.customer?.fullName || 'MovingJobs';
+    const category = String(req.body?.category || '');
     const newImages = [];
 
     for (const file of (req.files || [])) {
@@ -440,6 +441,7 @@ router.post('/:id/images', upload.array('images', 20), async (req, res) => {
         filename: file.originalname.replace(/\s+/g, '_'),
         originalName: file.originalname,
         size: file.size,
+        category,
         storage: result.storage,
         driveFileId: result.driveFileId || '',
         uploadedAt: new Date(),

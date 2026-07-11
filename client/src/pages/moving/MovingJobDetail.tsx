@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, FileText, MapPin, Users, Truck as TruckIcon, AlertCircle, ClipboardList, Package, Star, Wrench, Camera, X, Upload, Tag, CheckCircle2, Pencil, Calendar, Clock, RotateCcw } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, FileText, MapPin, Users, Truck as TruckIcon, AlertCircle, ClipboardList, Package, Star, Wrench, Camera, X, Tag, CheckCircle2, Pencil, Calendar, Clock, RotateCcw, Image as ImageIcon, Check } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingJob, MovingJobStatus, Worker, Truck, MovingJobImage } from '../../lib/types'
 
 type MovingItemOption = { _id: string; name: string; sku?: string; onHand: number; retailPrice: number }
-import { Badge, Button, Card, CardBody, CardHeader, EmptyState, Field, Input, Modal, Select, Spinner, Table, Td, Th, Textarea, InfoGrid, InfoItem } from '../../components/ui'
+import { Badge, Button, Card, CardBody, CardHeader, EmptyState, Field, Input, Modal, Select, Spinner, Table, Td, Th, Textarea, InfoGrid, InfoItem, movingJobStatusLabel } from '../../components/ui'
 import { useAuth } from '../../lib/auth'
 import { cn } from '../../lib/utils'
 
@@ -19,6 +19,9 @@ const JOB_TYPES: Array<{ value: string; label: string }> = [
   { value: 'storage_to_home', label: 'Storage to Home' },
   { value: 'other', label: 'Other' },
 ]
+
+// ── Estimation photo categories (room-by-room, like the field completion grid) ──
+const PHOTO_CATEGORIES = ['Living Room', 'Bedrooms', 'Kitchen', 'Bathrooms', 'Balcony', 'Storage / Boxes', 'Other'] as const
 
 // ── Package types ─────────────────────────────────────────────────────────────
 const PACKAGES: Array<{ value: string; label: string; group: string }> = [
@@ -246,8 +249,11 @@ export default function MovingJobDetail() {
   const [err, setErr] = useState('')
   const [lightboxImg, setLightboxImg] = useState<MovingJobImage | null>(null)
   const [uploadingImages, setUploadingImages] = useState(false)
+  const [uploadingCategory, setUploadingCategory] = useState<string | null>(null)
   const [editDetailsModal, setEditDetailsModal] = useState(false)
   const [editMaterialModal, setEditMaterialModal] = useState<{ idx: number; item: string; qty: number; notes: string } | null>(null)
+  const [editCrewModal, setEditCrewModal] = useState<{ idx: number; name: string; role: string; dailyRate: number; days: number; extraHours: number; extraHourRate: number } | null>(null)
+  const [editTruckModal, setEditTruckModal] = useState<{ idx: number; name: string; dailyRate: number; days: number; notes: string } | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
 
   const { data: job, isLoading } = useQuery<MovingJob>({
@@ -338,7 +344,7 @@ export default function MovingJobDetail() {
 
   const updateMut = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.put(`/moving-jobs/${id}`, body).then(r => r.data),
-    onSuccess: () => { invalidate(); setCrewModal(false); setTruckModal(false); setCostsModal(false); setEditDetailsModal(false) },
+    onSuccess: () => { invalidate(); setCrewModal(false); setTruckModal(false); setCostsModal(false); setEditDetailsModal(false); setEditCrewModal(null); setEditTruckModal(null) },
     onError: (e) => setErr(apiError(e)),
   })
 
@@ -423,19 +429,22 @@ export default function MovingJobDetail() {
     onError: (e) => setErr(apiError(e)),
   })
 
-  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>, category = '') {
     const files = e.target.files
     if (!files || files.length === 0) return
     setUploadingImages(true)
+    setUploadingCategory(category)
     try {
       const form = new FormData()
       Array.from(files).forEach(f => form.append('images', f))
+      if (category) form.append('category', category)
       await api.post(`/moving-jobs/${id}/images`, form, { headers: { 'Content-Type': 'multipart/form-data' } })
       invalidate()
     } catch (e) {
       setErr(apiError(e))
     } finally {
       setUploadingImages(false)
+      setUploadingCategory(null)
       // Reset input so same files can be re-added
       e.target.value = ''
     }
@@ -465,6 +474,16 @@ export default function MovingJobDetail() {
     updateMut.mutate({ crew: updated })
   }
 
+  function handleEditCrew(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    if (!editCrewModal) return
+    const f = new FormData(e.currentTarget)
+    const updated = crewList.map((c, i) => i === editCrewModal.idx
+      ? { worker: c.worker._id, role: String(f.get('role') || c.role), dailyRate: Number(f.get('dailyRate') || 0), days: Number(f.get('days') || 1), extraHours: Number(f.get('extraHours') || 0), extraHourRate: Number(f.get('extraHourRate') || 0), isSupervisor: c.isSupervisor }
+      : { worker: c.worker._id, role: c.role, dailyRate: c.dailyRate, days: c.days ?? 1, extraHours: c.extraHours, extraHourRate: c.extraHourRate, isSupervisor: c.isSupervisor })
+    updateMut.mutate({ crew: updated })
+  }
+
   function handleAddTruck(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const f = new FormData(e.currentTarget)
@@ -476,6 +495,16 @@ export default function MovingJobDetail() {
 
   function handleRemoveTruck(idx: number) {
     const updated = truckList.filter((_, i) => i !== idx).map(t => ({ truck: t.truck._id, dailyRate: t.dailyRate, days: t.days ?? 1, notes: t.notes }))
+    updateMut.mutate({ trucks: updated })
+  }
+
+  function handleEditTruck(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    if (!editTruckModal) return
+    const f = new FormData(e.currentTarget)
+    const updated = truckList.map((t, i) => i === editTruckModal.idx
+      ? { truck: t.truck._id, dailyRate: Number(f.get('dailyRate') || 0), days: Number(f.get('days') || 1), notes: String(f.get('notes') || '') }
+      : { truck: t.truck._id, dailyRate: t.dailyRate, days: t.days ?? 1, notes: t.notes })
     updateMut.mutate({ trucks: updated })
   }
 
@@ -507,7 +536,7 @@ export default function MovingJobDetail() {
             <div className="flex items-center gap-3 mb-2">
               <h1 className="text-3xl font-bold text-foreground">{job.jobNo}</h1>
               <Badge tone={statusTone[job.status]} className="text-sm px-3 py-1.5">
-                {job.status.replace(/_/g, ' ')}
+                {movingJobStatusLabel(job.status)}
               </Badge>
             </div>
             <p className="text-sm text-muted-foreground">
@@ -592,7 +621,7 @@ export default function MovingJobDetail() {
                     disabled={statusMut.isPending}
                     className="text-xs"
                   >
-                    {s.replace(/_/g, ' ')}
+                    {movingJobStatusLabel(s)}
                   </Button>
                 ))}
               </div>
@@ -642,6 +671,12 @@ export default function MovingJobDetail() {
             <InfoItem
               label="Estimated Duration"
               value={job.estimatedDurationHours ? `${job.estimatedDurationHours}h` : '—'}
+            />
+            <InfoItem
+              label="Move-out Permit"
+              value={job.moveOutPermitRequired
+                ? <Badge tone="amber">Required</Badge>
+                : <span className="text-muted-foreground">Not required</span>}
             />
             {job.quote && (
               <InfoItem
@@ -824,6 +859,13 @@ export default function MovingJobDetail() {
                               </button>
                             )}
                             <button
+                              onClick={() => setEditCrewModal({ idx: i, name: c.worker.name, role: c.role || c.worker.role || '', dailyRate: c.dailyRate ?? 0, days: c.days ?? 1, extraHours: c.extraHours ?? 0, extraHourRate: c.extraHourRate ?? 0 })}
+                              className="text-muted-foreground hover:text-primary p-1 rounded hover:bg-primary/10 transition-colors"
+                              title="Edit crew member"
+                            >
+                              <Pencil size={14} />
+                            </button>
+                            <button
                               onClick={() => handleRemoveCrew(i)}
                               className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-500/10 transition-colors"
                               title="Remove crew member"
@@ -873,13 +915,22 @@ export default function MovingJobDetail() {
                         <Td className="text-sm">{t.days ?? 1}</Td>
                         <Td className="text-right text-sm font-bold">AED {((t.dailyRate || 0) * (t.days || 1)).toLocaleString()}</Td>
                         <Td className="text-right">
-                          <button
-                            onClick={() => handleRemoveTruck(i)}
-                            className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-500/10 transition-colors"
-                            title="Remove truck"
-                          >
-                            <Trash2 size={16} />
-                          </button>
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => setEditTruckModal({ idx: i, name: t.truck.name, dailyRate: t.dailyRate ?? 0, days: t.days ?? 1, notes: t.notes || '' })}
+                              className="text-muted-foreground hover:text-primary p-1 rounded hover:bg-primary/10 transition-colors"
+                              title="Edit truck"
+                            >
+                              <Pencil size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleRemoveTruck(i)}
+                              className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-500/10 transition-colors"
+                              title="Remove truck"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
                         </Td>
                       </tr>
                     ))}
@@ -1089,74 +1140,122 @@ export default function MovingJobDetail() {
         </Card>
       )}
 
-      {/* Estimation Photos */}
+      {/* Estimation Photos — room-by-room tile grid */}
       <Card>
         <CardHeader
           title={<span className="flex items-center gap-2"><Camera size={15} />Estimation Photos</span>}
-          subtitle={`${imageList.length} photo${imageList.length !== 1 ? 's' : ''}`}
-          action={
-            <label className={cn('inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border cursor-pointer transition-colors',
-              'border-border bg-card hover:bg-muted text-foreground',
-              uploadingImages && 'opacity-50 pointer-events-none'
-            )}>
-              <Upload size={13} />
-              {uploadingImages ? 'Uploading…' : 'Upload Photos'}
-              <input type="file" accept="image/*" multiple className="sr-only" onChange={handleImageUpload} disabled={uploadingImages} />
-            </label>
-          }
+          subtitle={`${imageList.length} photo${imageList.length !== 1 ? 's' : ''} · take photos of each area for an accurate estimate`}
         />
         <CardBody>
-          {imageList.length === 0 ? (
-            <label className="flex flex-col items-center justify-center py-12 border-2 border-dashed rounded-xl cursor-pointer hover:bg-muted/30 transition-colors">
-              <Camera size={28} className="text-muted-foreground mb-2 opacity-40" />
-              <p className="text-sm text-muted-foreground">Upload photos of items to be moved for accurate estimation</p>
-              <p className="text-xs text-muted-foreground mt-1">Click to select · Supports JPG, PNG, HEIC · Up to 15 MB each</p>
-              <input type="file" accept="image/*" multiple className="sr-only" onChange={handleImageUpload} disabled={uploadingImages} />
-            </label>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-              {imageList.map((img, i) => {
-                const thumbUrl = img.storage === 'drive' && img.driveFileId
-                  ? `https://lh3.googleusercontent.com/d/${img.driveFileId}=w400`
-                  : img.url
-                return (
-                <div key={i} className="relative group aspect-square rounded-xl overflow-hidden border bg-muted">
-                  <img
-                    src={thumbUrl}
-                    alt={img.originalName || `Photo ${i + 1}`}
-                    className="w-full h-full object-cover cursor-pointer"
-                    onClick={() => setLightboxImg(img)}
-                    onError={e => {
-                      const t = e.currentTarget
-                      t.style.display = 'none'
-                      t.parentElement!.querySelector('.img-fallback')?.classList.remove('hidden')
-                    }}
-                  />
-                  <div className="img-fallback hidden absolute inset-0 flex flex-col items-center justify-center text-muted-foreground gap-1">
-                    <AlertCircle size={20} className="opacity-40" />
-                    <span className="text-[10px]">Image unavailable</span>
-                  </div>
-                  <button
-                    onClick={() => deleteImageMut.mutate(i)}
-                    className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
-                    title="Delete photo"
-                  >
-                    <X size={11} />
-                  </button>
-                  <div className="absolute bottom-0 left-0 right-0 p-1.5 bg-gradient-to-t from-black/60 to-transparent">
-                    <p className="text-[10px] text-white truncate">{img.originalName || `Photo ${i + 1}`}</p>
-                  </div>
+          {(() => {
+            const catOf = (img: MovingJobImage) =>
+              img.category && (PHOTO_CATEGORIES as readonly string[]).includes(img.category) ? img.category : 'Other'
+            const grouped: Record<string, Array<{ img: MovingJobImage; idx: number }>> = {}
+            imageList.forEach((img, idx) => {
+              const c = catOf(img)
+              ;(grouped[c] ??= []).push({ img, idx })
+            })
+            const firstEmpty = PHOTO_CATEGORIES.find(c => !(grouped[c]?.length))
+
+            return (
+              <div className="space-y-6">
+                {/* Category tiles */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  {PHOTO_CATEGORIES.map(cat => {
+                    const count = grouped[cat]?.length ?? 0
+                    const done = count > 0
+                    const isUploading = uploadingCategory === cat
+                    const isNext = !done && cat === firstEmpty
+                    return (
+                      <label
+                        key={cat}
+                        className={cn(
+                          'relative aspect-square rounded-2xl border-2 flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors text-center px-2',
+                          uploadingImages && 'pointer-events-none',
+                          done
+                            ? 'border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30'
+                            : isNext
+                              ? 'border-violet-400 dark:border-violet-700 bg-violet-50 dark:bg-violet-950/30'
+                              : 'border-dashed border-border bg-muted/20 hover:bg-muted/40'
+                        )}
+                      >
+                        {done && (
+                          <span className="absolute top-2 right-2 h-5 w-5 rounded-full bg-emerald-500 text-white grid place-items-center">
+                            <Check size={12} strokeWidth={3} />
+                          </span>
+                        )}
+                        {isUploading ? (
+                          <span className="h-7 w-7 rounded-full border-2 border-current border-t-transparent animate-spin text-emerald-600" />
+                        ) : done ? (
+                          <ImageIcon size={26} className="text-emerald-600" />
+                        ) : (
+                          <Camera size={26} className={isNext ? 'text-violet-600' : 'text-muted-foreground'} />
+                        )}
+                        <span className={cn(
+                          'text-[13px] font-semibold',
+                          done ? 'text-emerald-700 dark:text-emerald-400' : isNext ? 'text-violet-700 dark:text-violet-400' : 'text-muted-foreground'
+                        )}>
+                          {cat}{done && ` (${count})`}
+                        </span>
+                        <input type="file" accept="image/*" multiple className="sr-only" disabled={uploadingImages}
+                          onChange={e => handleImageUpload(e, cat)} />
+                      </label>
+                    )
+                  })}
                 </div>
-                )
-              })}
-              {/* Add more button */}
-              <label className="aspect-square rounded-xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer hover:bg-muted/50 transition-colors">
-                <Plus size={20} className="text-muted-foreground mb-1" />
-                <span className="text-xs text-muted-foreground">Add more</span>
-                <input type="file" accept="image/*" multiple className="sr-only" onChange={handleImageUpload} disabled={uploadingImages} />
-              </label>
-            </div>
-          )}
+
+                {/* Photos grouped by category */}
+                {imageList.length > 0 && (
+                  <div className="space-y-5 border-t pt-5">
+                    {PHOTO_CATEGORIES.filter(c => grouped[c]?.length).map(cat => (
+                      <div key={cat}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{cat}</span>
+                          <span className="text-xs text-muted-foreground">· {grouped[cat].length}</span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                          {grouped[cat].map(({ img, idx }) => {
+                            const thumbUrl = img.storage === 'drive' && img.driveFileId
+                              ? `https://lh3.googleusercontent.com/d/${img.driveFileId}=w400`
+                              : img.url
+                            return (
+                              <div key={idx} className="relative group aspect-square rounded-xl overflow-hidden border bg-muted">
+                                <img
+                                  src={thumbUrl}
+                                  alt={img.originalName || `Photo ${idx + 1}`}
+                                  className="w-full h-full object-cover cursor-pointer"
+                                  onClick={() => setLightboxImg(img)}
+                                  onError={e => {
+                                    const t = e.currentTarget
+                                    t.style.display = 'none'
+                                    t.parentElement!.querySelector('.img-fallback')?.classList.remove('hidden')
+                                  }}
+                                />
+                                <div className="img-fallback hidden absolute inset-0 flex flex-col items-center justify-center text-muted-foreground gap-1">
+                                  <AlertCircle size={20} className="opacity-40" />
+                                  <span className="text-[10px]">Image unavailable</span>
+                                </div>
+                                <button
+                                  onClick={() => deleteImageMut.mutate(idx)}
+                                  className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                                  title="Delete photo"
+                                >
+                                  <X size={11} />
+                                </button>
+                                <div className="absolute bottom-0 left-0 right-0 p-1.5 bg-gradient-to-t from-black/60 to-transparent">
+                                  <p className="text-[10px] text-white truncate">{img.originalName || `Photo ${idx + 1}`}</p>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
         </CardBody>
       </Card>
 
@@ -1416,6 +1515,7 @@ export default function MovingJobDetail() {
             scheduledDate: f.get('scheduledDate') || undefined,
             scheduledTimeSlot: f.get('scheduledTimeSlot'),
             estimatedDurationHours: Number(f.get('estimatedDurationHours')) || undefined,
+            moveOutPermitRequired: f.get('moveOutPermitRequired') === 'on',
             pickupAddress: f.get('pickupAddress'),
             pickupFloor: f.get('pickupFloor'),
             pickupHasElevator: f.get('pickupHasElevator') === 'on',
@@ -1443,6 +1543,10 @@ export default function MovingJobDetail() {
               <Input name="estimatedDurationHours" type="number" min="0.5" step="0.5" defaultValue={job.estimatedDurationHours || ''} />
             </Field>
           </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" name="moveOutPermitRequired" defaultChecked={!!job.moveOutPermitRequired} className="rounded" />
+            <span className="text-sm">Required Move-out Permit</span>
+          </label>
 
           <div className="border-t pt-4">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Pickup Location</p>
@@ -1490,6 +1594,46 @@ export default function MovingJobDetail() {
             <Button type="submit" disabled={updateMut.isPending}>{updateMut.isPending ? 'Saving…' : 'Save Changes'}</Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Edit Crew Modal */}
+      <Modal open={!!editCrewModal} title={`Edit Crew — ${editCrewModal?.name ?? ''}`} onClose={() => setEditCrewModal(null)}>
+        {editCrewModal && (
+          <form onSubmit={handleEditCrew} className="space-y-4">
+            <Field label="Role"><Input name="role" defaultValue={editCrewModal.role} placeholder="e.g. Driver, Helper" /></Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Daily Rate (AED)"><Input name="dailyRate" type="number" min="0" step="0.01" defaultValue={editCrewModal.dailyRate} /></Field>
+              <Field label="Days"><Input name="days" type="number" min="1" step="1" defaultValue={editCrewModal.days} /></Field>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Extra Hours"><Input name="extraHours" type="number" min="0" step="0.5" defaultValue={editCrewModal.extraHours} /></Field>
+              <Field label="Extra Hour Rate (AED)"><Input name="extraHourRate" type="number" min="0" step="0.01" defaultValue={editCrewModal.extraHourRate} /></Field>
+            </div>
+            {err && <p className="text-sm text-red-600">{err}</p>}
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button type="button" variant="outline" onClick={() => setEditCrewModal(null)}>Cancel</Button>
+              <Button type="submit" disabled={updateMut.isPending}>{updateMut.isPending ? 'Saving…' : 'Save Changes'}</Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* Edit Truck Modal */}
+      <Modal open={!!editTruckModal} title={`Edit Truck — ${editTruckModal?.name ?? ''}`} onClose={() => setEditTruckModal(null)}>
+        {editTruckModal && (
+          <form onSubmit={handleEditTruck} className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Daily Rate (AED)"><Input name="dailyRate" type="number" min="0" step="0.01" defaultValue={editTruckModal.dailyRate} /></Field>
+              <Field label="Days"><Input name="days" type="number" min="1" step="1" defaultValue={editTruckModal.days} /></Field>
+            </div>
+            <Field label="Notes"><Input name="notes" defaultValue={editTruckModal.notes} placeholder="Optional notes about this truck assignment" /></Field>
+            {err && <p className="text-sm text-red-600">{err}</p>}
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button type="button" variant="outline" onClick={() => setEditTruckModal(null)}>Cancel</Button>
+              <Button type="submit" disabled={updateMut.isPending}>{updateMut.isPending ? 'Saving…' : 'Save Changes'}</Button>
+            </div>
+          </form>
+        )}
       </Modal>
 
       {/* Edit Material Modal */}

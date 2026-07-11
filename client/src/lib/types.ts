@@ -534,6 +534,7 @@ export interface MovingJobImage {
   filename?: string
   originalName?: string
   size?: number
+  category?: string
   storage?: 'local' | 'drive'
   driveFileId?: string
   uploadedAt?: string
@@ -555,6 +556,7 @@ export interface MovingJob {
   scheduledDate?: string
   scheduledTimeSlot?: string
   estimatedDurationHours?: number
+  moveOutPermitRequired?: boolean
   crew?: MovingJobCrewMember[]
   trucks?: MovingJobTruck[]
   teamLead?: Worker | { _id: string; name: string }
