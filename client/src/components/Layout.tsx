@@ -85,9 +85,7 @@ export default function Layout() {
   const navigate = useNavigate()
   const location = useLocation()
   const onReportsRoute = location.pathname.startsWith('/reports')
-  const onMovingRoute = location.pathname.startsWith('/moving')
   const [reportsOpen, setReportsOpen] = useState(onReportsRoute)
-  const [movingOpen, setMovingOpen] = useState(onMovingRoute)
   const [dark, setDark] = useState(() => localStorage.getItem('pb_theme') === 'dark')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const isAdmin = user?.role === 'admin'
@@ -218,28 +216,15 @@ export default function Layout() {
           if (visibleMoving.length === 0) return null
           return (
             <div className="pt-3">
-              <div className="mb-2 border-t border-white/10" />
-              <button
-                onClick={() => setMovingOpen(o => !o)}
-                className={cn(
-                  'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-all cursor-pointer',
-                  onMovingRoute ? 'text-sidebar-foreground' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8'
-                )}
-              >
-                <Truck size={15} />
-                <span className="flex-1 text-left">Moving</span>
-                <ChevronDown size={13} className={cn('transition-transform duration-200', movingOpen ? 'rotate-180' : '')} />
-              </button>
-              {movingOpen && (
-                <div className="space-y-0.5">
-                  {visibleMoving.map(({ to, label, icon: Icon }) => (
-                    <NavLink key={to} to={to} end={to === '/moving'}
-                      className={({ isActive }) => navLinkCls(isActive)}>
-                      <Icon size={15} />{label}
-                    </NavLink>
-                  ))}
-                </div>
-              )}
+              <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-sidebar-muted/60">Moving</div>
+              <div className="space-y-0.5">
+                {visibleMoving.map(({ to, label, icon: Icon }) => (
+                  <NavLink key={to} to={to} end={to === '/moving'}
+                    className={({ isActive }) => navLinkCls(isActive)}>
+                    <Icon size={15} />{label}
+                  </NavLink>
+                ))}
+              </div>
             </div>
           )
         })()}

@@ -114,7 +114,7 @@ app.use('/api/moving-leads', requireAuth, movingLeadRoutes);
 app.use('/api/moving-quotes', requireAuth, movingQuoteRoutes);
 app.use(
   '/api/moving-invoices',
-  (req, res, next) => req.path.startsWith('/pay/') ? next() : requireAuth(req, res, next),
+  (req, res, next) => (req.path.startsWith('/pay/') || (req.path.endsWith('/pdf') && req.query.token)) ? next() : requireAuth(req, res, next),
   movingInvoiceRoutes
 );
 app.use('/api/moving-reports', requireAuth, movingReportRoutes);

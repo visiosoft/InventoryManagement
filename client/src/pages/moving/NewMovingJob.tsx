@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Plus, ChevronRight, ChevronLeft, Check, User, Briefcase, MapPin, FileText, Search, Tag, Trash2, Camera, X, Image as ImageIcon } from 'lucide-react'
+import { Plus, ChevronRight, ChevronLeft, Check, User, Briefcase, MapPin, FileText, Search, Tag, Trash2, Camera, X, Loader2, Upload } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { Customer, MovingJobType } from '../../lib/types'
 import { Button, Field, Input, Select, Textarea, Modal } from '../../components/ui'
@@ -68,6 +68,7 @@ export default function NewMovingJob() {
   const [err, setErr] = useState('')
   const [showCustomerModal, setShowCustomerModal] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [uploadPhase, setUploadPhase] = useState<'creating' | 'uploading' | null>(null)
 
   // Step 1 – Customer
   const [customerSearch, setCustomerSearch] = useState('')
@@ -194,11 +195,13 @@ export default function NewMovingJob() {
   async function submit(action: 'save' | 'invoice') {
     setSubmitting(true)
     setErr('')
+    setUploadPhase('creating')
     try {
       const job = await api.post('/moving-jobs', buildJobBody()).then(r => r.data)
 
       // Upload staged photos by category
       if (stagedPhotos.length > 0) {
+        setUploadPhase('uploading')
         const byCategory = new Map<string, File[]>()
         for (const p of stagedPhotos) {
           const arr = byCategory.get(p.category) || []
@@ -242,6 +245,7 @@ export default function NewMovingJob() {
       setErr(apiError(e))
     } finally {
       setSubmitting(false)
+      setUploadPhase(null)
     }
   }
 
@@ -318,6 +322,26 @@ export default function NewMovingJob() {
             minHeight: 320,
           }}
         >
+          {/* Upload overlay */}
+          {uploadPhase && (
+            <div className="flex flex-col items-center justify-center py-16 gap-5">
+              <div style={{ width: 64, height: 64, borderRadius: 20, background: `${PURPLE}12`, display: 'grid', placeItems: 'center' }}>
+                {uploadPhase === 'uploading'
+                  ? <Upload size={28} style={{ color: PURPLE }} className="animate-bounce" />
+                  : <Loader2 size={28} style={{ color: PURPLE }} className="animate-spin" />}
+              </div>
+              <div className="text-center">
+                <p style={{ fontFamily: "'Bricolage Grotesque', sans-serif", color: INK, fontSize: '1.125rem', fontWeight: 700 }}>
+                  {uploadPhase === 'creating' ? 'Creating job…' : `Uploading ${stagedPhotos.length} photo${stagedPhotos.length !== 1 ? 's' : ''}…`}
+                </p>
+                <p style={{ color: MUTED, fontSize: '0.8rem', marginTop: 6 }}>
+                  {uploadPhase === 'creating' ? 'Setting up your moving job' : 'Please wait while photos are being uploaded'}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {!uploadPhase && <>
           {/* Step 1 – Customer */}
           {step === 0 && (
             <div className="space-y-5">
@@ -604,56 +628,73 @@ export default function NewMovingJob() {
                         }
                       }}
                       className={cn(
-                        'relative aspect-square rounded-2xl border-2 flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors text-center px-2',
+                        'relative rounded-2xl border-2 overflow-hidden cursor-pointer transition-colors text-center',
                         done
-                          ? 'border-emerald-300 bg-emerald-50'
-                          : 'border-dashed hover:bg-gray-50'
+                          ? 'border-emerald-300'
+                          : 'border-dashed hover:bg-gray-50 aspect-square flex flex-col items-center justify-center gap-2 px-2'
                       )}
                       style={!done ? { borderColor: 'rgba(20,8,31,0.15)' } : undefined}
                     >
-                      {done && (
-                        <span className="absolute top-2 right-2 h-5 w-5 rounded-full bg-emerald-500 text-white grid place-items-center">
-                          <Check size={12} strokeWidth={3} />
-                        </span>
-                      )}
                       {done ? (
-                        <ImageIcon size={24} className="text-emerald-600" />
+                        <>
+                          <div className={cn(
+                            'w-full gap-0.5',
+                            count === 1 ? 'aspect-square' : 'aspect-square grid',
+                            count === 2 ? 'grid-cols-2' : count >= 3 ? 'grid-cols-2 grid-rows-2' : ''
+                          )}>
+                            {photos.slice(0, 4).map((p, pi) => (
+                              <div key={pi} className={cn('relative overflow-hidden', count === 1 ? 'w-full h-full' : '')}>
+                                <img src={p.preview} alt="" className="w-full h-full object-cover" />
+                                {pi === 3 && count > 4 && (
+                                  <div className="absolute inset-0 bg-black/50 grid place-items-center">
+                                    <span className="text-white text-sm font-bold">+{count - 4}</span>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex items-center justify-between px-3 py-2" style={{ background: '#ECFDF5' }}>
+                            <span className="text-[12px] font-semibold text-emerald-700">{cat} ({count})</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] font-medium text-emerald-600">+ Add</span>
+                              <span className="h-4 w-4 rounded-full bg-emerald-500 text-white grid place-items-center">
+                                <Check size={10} strokeWidth={3} />
+                              </span>
+                            </div>
+                          </div>
+                        </>
                       ) : (
-                        <Camera size={24} style={{ color: MUTED }} />
+                        <>
+                          <Camera size={24} style={{ color: MUTED }} />
+                          <span className="text-[13px] font-semibold" style={{ color: MUTED }}>{cat}</span>
+                        </>
                       )}
-                      <span className={cn('text-[13px] font-semibold', done ? 'text-emerald-700' : '')} style={!done ? { color: MUTED } : undefined}>
-                        {cat}{done && ` (${count})`}
-                      </span>
                     </button>
                   )
                 })}
               </div>
 
-              {/* Preview of staged photos */}
+              {/* All photos with delete */}
               {totalPhotos > 0 && (
-                <div className="space-y-4 border-t pt-4" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
-                  {PHOTO_CATEGORIES.filter(c => photosForCategory(c).length > 0).map(cat => (
-                    <div key={cat}>
-                      <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: MUTED }}>{cat}</p>
-                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                        {stagedPhotos.map((p, i) => p.category !== cat ? null : (
-                          <div key={i} className="relative group aspect-square rounded-xl overflow-hidden border" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
-                            <img src={p.preview} alt={p.file.name} className="w-full h-full object-cover" />
-                            <button
-                              type="button"
-                              onClick={() => removePhoto(i)}
-                              className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
-                            >
-                              <X size={11} />
-                            </button>
-                            <div className="absolute bottom-0 left-0 right-0 p-1 bg-gradient-to-t from-black/50 to-transparent">
-                              <p className="text-[9px] text-white truncate">{p.file.name}</p>
-                            </div>
-                          </div>
-                        ))}
+                <div className="space-y-3 border-t pt-4" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
+                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: MUTED }}>All photos ({totalPhotos})</p>
+                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                    {stagedPhotos.map((p, i) => (
+                      <div key={i} className="relative group aspect-square rounded-xl overflow-hidden border" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
+                        <img src={p.preview} alt={p.file.name} className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); removePhoto(i) }}
+                          className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                        >
+                          <X size={11} />
+                        </button>
+                        <div className="absolute bottom-0 left-0 right-0 px-1.5 py-1 bg-gradient-to-t from-black/60 to-transparent">
+                          <p className="text-[9px] text-white truncate">{p.category}</p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -728,6 +769,7 @@ export default function NewMovingJob() {
               )}
             </div>
           </div>
+          </>}
         </div>
       </div>
 
