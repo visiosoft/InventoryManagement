@@ -93,8 +93,9 @@ const customerSchema = new Schema(
     passportExpiry: { type: Date },
     accessPersons: [accessPersonSchema],
     notes: { type: String, default: '' },
-    source: { type: String, enum: ['manual', 'import_csv'], default: 'manual' },
+    source: { type: String, enum: ['manual', 'import_csv', 'google'], default: 'manual' },
     importBatch: { type: String, default: null },
+    googleId: { type: String, default: '' },
   },
   { timestamps: true }
 );
@@ -639,6 +640,17 @@ const movingTimelineEntrySchema = new Schema(
   { _id: false }
 );
 
+const movingJobImageSchema = new Schema({
+  url: { type: String },
+  filename: { type: String },
+  originalName: { type: String },
+  size: { type: Number },
+  category: { type: String, default: '' },
+  storage: { type: String, enum: ['local', 'drive'], default: 'local' },
+  driveFileId: { type: String, default: '' },
+  uploadedAt: { type: Date, default: Date.now },
+});
+
 const movingLeadSchema = new Schema(
   {
     customer: { type: Schema.Types.ObjectId, ref: 'Customer' },
@@ -651,7 +663,24 @@ const movingLeadSchema = new Schema(
     pickupAddress: { type: String, default: '' },
     deliveryAddress: { type: String, default: '' },
     estimatedVolumeCbm: { type: Number, default: 0 },
+    serviceType: { type: String, default: '' },
+    propertyType: { type: String, default: '' },
     notes: { type: String, default: '' },
+    images: [movingJobImageSchema],
+    quotation: {
+      items: [{
+        description: { type: String, default: '' },
+        qty: { type: Number, default: 1 },
+        rate: { type: Number, default: 0 },
+        amount: { type: Number, default: 0 },
+      }],
+      subTotal: { type: Number, default: 0 },
+      discount: { type: Number, default: 0 },
+      total: { type: Number, default: 0 },
+      notes: { type: String, default: '' },
+      quotedAt: { type: Date },
+      quotedBy: { type: String, default: '' },
+    },
     timeline: [movingTimelineEntrySchema],
   },
   { timestamps: true }
@@ -713,17 +742,6 @@ const movingMaterialUsageSchema = new Schema(
   },
   { _id: false }
 );
-
-const movingJobImageSchema = new Schema({
-  url: { type: String },
-  filename: { type: String },
-  originalName: { type: String },
-  size: { type: Number },
-  category: { type: String, default: '' },
-  storage: { type: String, enum: ['local', 'drive'], default: 'local' },
-  driveFileId: { type: String, default: '' },
-  uploadedAt: { type: Date, default: Date.now },
-});
 
 const movingJobSchema = new Schema(
   {
@@ -881,6 +899,9 @@ const movingInvoiceSchema = new Schema(
     notes: { type: String, default: '' },
     termsAndConditions: { type: String, default: '' },
     bankInformation: { type: String, default: '' },
+    zohoBooksSyncId: { type: String, default: null },
+    zohoBooksSyncedAt: { type: Date, default: null },
+    zohoBooksSyncError: { type: String, default: null },
   },
   { timestamps: true }
 );

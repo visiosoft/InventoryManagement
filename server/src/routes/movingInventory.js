@@ -90,6 +90,23 @@ router.put('/items/:id', async (req, res) => {
     res.json(item);
 });
 
+router.delete('/items/:id', async (req, res) => {
+    try {
+        const item = await MovingItem.findById(req.params.id);
+        if (!item) return res.status(404).json({ error: 'Item not found' });
+        const recentTxns = await MovingStockTxn.countDocuments({ item: item._id });
+        if (recentTxns > 0) {
+            item.active = false;
+            await item.save();
+            return res.json({ ok: true, deactivated: true });
+        }
+        await item.deleteOne();
+        res.json({ ok: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 router.post('/transactions', async (req, res) => {
     const item = await MovingItem.findById(req.body.item);
     if (!item) return res.status(404).json({ error: 'Item not found' });

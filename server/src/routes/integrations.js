@@ -14,7 +14,13 @@ const router = Router();
 router.get('/status', (_req, res) => {
     res.json({
         zoho: { configured: zohoConfigured() },
-        drive: { configured: driveConfigured() },
+        drive: {
+            configured: driveConfigured(),
+            folderId: process.env.GOOGLE_DRIVE_FOLDER_ID || '',
+            method: driveConfigured()
+                ? (process.env.GOOGLE_SERVICE_ACCOUNT_FILE ? 'service_account' : 'oauth')
+                : '',
+        },
         whatsapp: { configured: whatsappConfigured(), missing: whatsappMissing() },
         whatsappLabelSync: getWhatsAppLabelSyncStatus(),
         googleContacts: { configured: googleContactsConfigured(), missing: googleContactsMissing() },

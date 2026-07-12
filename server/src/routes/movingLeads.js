@@ -100,6 +100,38 @@ router.delete('/:id/notes/:idx', async (req, res) => {
   }
 });
 
+// Send quote to lead
+router.patch('/:id/quote', async (req, res) => {
+  try {
+    const { items, discount, notes, quotedBy } = req.body;
+    if (!items?.length) return res.status(400).json({ error: 'At least one quote item is required' });
+    const subTotal = items.reduce((sum, it) => sum + (it.amount || it.qty * it.rate), 0);
+    const total = Math.max(0, subTotal - (discount || 0));
+    const quotation = {
+      items: items.map(it => ({ description: it.description, qty: it.qty || 1, rate: it.rate || 0, amount: it.amount || it.qty * it.rate })),
+      subTotal,
+      discount: discount || 0,
+      total,
+      notes: notes || '',
+      quotedAt: new Date(),
+      quotedBy: quotedBy || '',
+    };
+    const lead = await MovingLead.findByIdAndUpdate(
+      req.params.id,
+      {
+        quotation,
+        status: 'quoted',
+        $push: { timeline: { text: `Quote sent — AED ${total.toLocaleString()}`, author: quotedBy || 'System', at: new Date() } },
+      },
+      { new: true }
+    ).populate('customer', 'fullName phone email');
+    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    res.json(lead);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // Convert lead to job
 router.post('/:id/convert', async (req, res) => {
   try {

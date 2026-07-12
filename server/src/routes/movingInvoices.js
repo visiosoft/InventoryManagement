@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { MovingInvoice, Customer, MovingJob, nextMovingInvoiceNo } from '../models/index.js';
 import { generateMovingInvoicePdf } from '../services/movingInvoicePdf.js';
 import { notifyInvoiceReady, notifyPaymentReceived } from '../services/movingNotifications.js';
+import { zohoBooksConfigured, createZohoInvoice } from '../services/zohoBooks.js';
 
 const router = Router();
 
@@ -62,6 +63,49 @@ router.post('/', async (req, res) => {
     res.status(201).json(invoice);
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+// ── Zoho Books sync (static routes before /:id) ──────────────────────────────
+
+router.get('/zoho-books/status', (_req, res) => {
+  res.json({ configured: zohoBooksConfigured() });
+});
+
+router.post('/zoho-books/bulk-sync', async (req, res) => {
+  try {
+    if (!zohoBooksConfigured()) {
+      return res.status(400).json({ error: 'Zoho Books is not configured' });
+    }
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'Provide an array of invoice ids' });
+    }
+
+    const results = { synced: 0, failed: 0, errors: [] };
+    for (const invoiceId of ids) {
+      try {
+        const invoice = await MovingInvoice.findById(invoiceId).populate('customer');
+        if (!invoice) { results.failed++; continue; }
+        const result = await createZohoInvoice(invoice);
+        invoice.zohoBooksSyncId = result.zohoInvoiceId;
+        invoice.zohoBooksSyncedAt = new Date();
+        invoice.zohoBooksSyncError = null;
+        await invoice.save();
+        results.synced++;
+      } catch (err) {
+        results.failed++;
+        results.errors.push({ id: invoiceId, error: err.response?.data?.message || err.message });
+        try {
+          await MovingInvoice.findByIdAndUpdate(invoiceId, {
+            zohoBooksSyncError: err.response?.data?.message || err.message,
+          });
+        } catch { /* ignore */ }
+      }
+    }
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -272,6 +316,33 @@ router.delete('/:id', async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/sync-zoho-books', async (req, res) => {
+  try {
+    if (!zohoBooksConfigured()) {
+      return res.status(400).json({ error: 'Zoho Books is not configured. Add credentials in server .env file.' });
+    }
+    const invoice = await MovingInvoice.findById(req.params.id).populate('customer');
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+    if (!invoice.customer) return res.status(400).json({ error: 'Invoice has no customer linked.' });
+    if (!invoice.customer.fullName) return res.status(400).json({ error: 'Customer has no name.' });
+    if (!invoice.items?.length) return res.status(400).json({ error: 'Invoice has no line items.' });
+
+    const result = await createZohoInvoice(invoice);
+    invoice.zohoBooksSyncId = result.zohoInvoiceId;
+    invoice.zohoBooksSyncedAt = new Date();
+    invoice.zohoBooksSyncError = null;
+    await invoice.save();
+
+    res.json({ ok: true, zohoInvoiceId: result.zohoInvoiceId });
+  } catch (err) {
+    const msg = err.response?.data?.message || err.message || 'Zoho Books sync failed';
+    try {
+      await MovingInvoice.findByIdAndUpdate(req.params.id, { zohoBooksSyncError: msg });
+    } catch { /* ignore */ }
+    res.status(502).json({ error: msg });
   }
 });
 
