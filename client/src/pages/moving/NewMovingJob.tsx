@@ -251,53 +251,55 @@ export default function NewMovingJob() {
   const totalPhotos = stagedPhotos.length
 
   return (
-    <div style={{ background: CREAM, minHeight: '100vh', margin: '-1.5rem', padding: '2rem 1.5rem' }}>
-      <div className="max-w-2xl mx-auto">
+    <div style={{ background: CREAM, minHeight: '100vh', margin: '-1.5rem', padding: '2.5rem 1.5rem' }}>
+      <div className="max-w-3xl mx-auto">
 
         {/* Header */}
-        <div className="mb-8">
-          <h1 style={{ fontFamily: "'Bricolage Grotesque', sans-serif", color: INK, fontSize: '1.75rem', fontWeight: 700 }}>
+        <div className="mb-6">
+          <h1 style={{ fontFamily: "'Bricolage Grotesque', sans-serif", color: INK, fontSize: '2rem', fontWeight: 700, letterSpacing: '-0.02em' }}>
             New Moving Job
           </h1>
-          <p style={{ color: MUTED, fontSize: '0.875rem', marginTop: '0.25rem' }}>Fill in the details step by step</p>
+          <p style={{ color: MUTED, fontSize: '0.875rem', marginTop: '0.375rem' }}>Fill in the details step by step</p>
         </div>
 
         {/* Stepper */}
-        <div className="flex items-center gap-0 mb-8">
+        <div className="flex items-center mb-8 gap-1">
           {STEPS.map((s, i) => {
             const done = i < step
             const active = i === step
+            const future = i > step
             const Icon = s.icon
             return (
               <div key={s.key} className="flex items-center" style={{ flex: i < STEPS.length - 1 ? 1 : undefined }}>
                 <button
                   type="button"
                   onClick={() => { if (i < step) setStep(i) }}
-                  className="flex items-center gap-2 shrink-0"
+                  className="flex flex-col sm:flex-row items-center gap-1.5 sm:gap-2 shrink-0"
                   style={{ cursor: i < step ? 'pointer' : 'default' }}
                 >
                   <div
                     className="flex items-center justify-center rounded-full transition-all"
                     style={{
-                      width: 32, height: 32,
-                      background: done ? PURPLE : active ? PURPLE : CHIP_BG,
+                      width: 36, height: 36,
+                      background: done ? PURPLE : active ? PURPLE : '#fff',
+                      border: future ? `2px solid ${CHIP_BG}` : done || active ? 'none' : `2px solid ${CHIP_BG}`,
                       color: done || active ? '#fff' : MUTED,
                       fontSize: '0.75rem', fontWeight: 600,
                     }}
                   >
-                    {done ? <Check size={14} /> : <Icon size={14} />}
+                    {done ? <Check size={15} /> : <Icon size={15} />}
                   </div>
                   <span
-                    className="text-xs font-medium hidden lg:block"
-                    style={{ color: active ? INK : MUTED }}
+                    className="text-[10px] sm:text-xs font-medium"
+                    style={{ color: active ? INK : done ? PURPLE : MUTED, whiteSpace: 'nowrap' }}
                   >
                     {s.label}
                   </span>
                 </button>
                 {i < STEPS.length - 1 && (
                   <div
-                    className="flex-1 mx-2 hidden sm:block"
-                    style={{ height: 2, background: done ? PURPLE : CHIP_BG, borderRadius: 1 }}
+                    className="flex-1 mx-1 sm:mx-3 hidden sm:block"
+                    style={{ height: 2, background: done ? PURPLE : CHIP_BG, borderRadius: 1, transition: 'background 0.3s' }}
                   />
                 )}
               </div>
@@ -309,9 +311,11 @@ export default function NewMovingJob() {
         <div
           style={{
             background: '#fff',
-            borderRadius: 16,
-            border: '1px solid rgba(20,8,31,0.08)',
-            padding: '2rem',
+            borderRadius: 18,
+            border: '1px solid rgba(20,8,31,0.06)',
+            padding: '2rem 2.25rem',
+            boxShadow: '0 1px 3px rgba(20,8,31,0.04)',
+            minHeight: 320,
           }}
         >
           {/* Step 1 – Customer */}
@@ -676,36 +680,26 @@ export default function NewMovingJob() {
           )}
 
           {/* Navigation */}
-          <div className="flex items-center justify-between mt-8 pt-6" style={{ borderTop: '1px solid rgba(20,8,31,0.06)' }}>
+          <div className="flex items-center justify-between mt-8 pt-5" style={{ borderTop: '1px solid rgba(20,8,31,0.06)' }}>
             <div>
               {step > 0 ? (
-                <button type="button" onClick={back} className="flex items-center gap-1 text-sm font-medium transition-colors" style={{ color: MUTED }}>
+                <button type="button" onClick={back} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-colors hover:bg-gray-50" style={{ color: MUTED }}>
                   <ChevronLeft size={16} /> Back
                 </button>
               ) : (
-                <button type="button" onClick={() => navigate(-1)} className="text-sm font-medium transition-colors" style={{ color: MUTED }}>
+                <button type="button" onClick={() => navigate(-1)} className="px-4 py-2 rounded-xl text-sm font-medium transition-colors hover:bg-gray-50" style={{ color: MUTED }}>
                   Cancel
                 </button>
               )}
             </div>
 
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5 mr-2">
-                {STEPS.map((_, i) => (
-                  <div
-                    key={i}
-                    className="rounded-full transition-all"
-                    style={{
-                      width: i === step ? 16 : 5, height: 5,
-                      background: i === step ? PURPLE : i < step ? PURPLE : CHIP_BG,
-                      opacity: i < step ? 0.4 : 1,
-                    }}
-                  />
-                ))}
-              </div>
+              <span className="text-xs font-medium hidden sm:block" style={{ color: MUTED }}>
+                Step {step + 1} of {STEPS.length}
+              </span>
 
               {step < STEPS.length - 1 ? (
-                <button type="button" onClick={next} className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors" style={{ background: PURPLE }}>
+                <button type="button" onClick={next} className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors hover:opacity-90" style={{ background: PURPLE }}>
                   Next <ChevronRight size={16} />
                 </button>
               ) : (
@@ -714,7 +708,7 @@ export default function NewMovingJob() {
                     type="button"
                     onClick={() => submit('save')}
                     disabled={submitting}
-                    className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors disabled:opacity-60 border"
+                    className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors disabled:opacity-60 border hover:bg-gray-50"
                     style={{ color: INK, borderColor: 'rgba(20,8,31,0.15)' }}
                   >
                     {submitting ? 'Creating…' : 'Save Job'}
@@ -724,7 +718,7 @@ export default function NewMovingJob() {
                       type="button"
                       onClick={() => submit('invoice')}
                       disabled={submitting}
-                      className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors disabled:opacity-60"
+                      className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors disabled:opacity-60 hover:opacity-90"
                       style={{ background: PURPLE }}
                     >
                       {submitting ? 'Creating…' : 'Create & Invoice'}
