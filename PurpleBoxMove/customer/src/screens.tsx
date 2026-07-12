@@ -1003,7 +1003,7 @@ const ss = StyleSheet.create({
   heroBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start', marginTop: 18, paddingHorizontal: 22, paddingVertical: 12, borderRadius: 999, backgroundColor: C.purple },
   sectionTitle: { fontFamily: F.display, fontSize: 16, color: C.ink, letterSpacing: -0.2, marginBottom: 14, marginTop: 18 },
   servicesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  serviceCard: { width: (W - 60) / 3, backgroundColor: C.white, borderWidth: 1, borderColor: C.line2, borderRadius: 16, padding: 14, alignItems: 'center', gap: 8 },
+  serviceCard: { width: (W - 50) / 2, backgroundColor: C.white, borderWidth: 1, borderColor: C.line2, borderRadius: 16, padding: 14, alignItems: 'center', gap: 8 },
   serviceIcon: { width: 44, height: 44, borderRadius: 13, backgroundColor: C.purpleLite, alignItems: 'center', justifyContent: 'center' },
   serviceLabel: { fontFamily: F.semi, fontSize: 12, color: C.ink, textAlign: 'center', lineHeight: 15 },
 
