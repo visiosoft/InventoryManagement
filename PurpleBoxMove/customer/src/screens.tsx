@@ -19,6 +19,7 @@ export function Router() {
   const { s } = useApp();
   switch (s.screen) {
     case 'login': return <LoginScreen />;
+    case 'signup': return <SignupScreen />;
     case 'phoneSetup': return <PhoneSetupScreen />;
     case 'home': return <HomeScreen />;
     case 'booking': return <BookingScreen />;
@@ -115,6 +116,72 @@ function LoginScreen() {
             disabled={loading || phone.length < 8}
             style={[ss.btnPrimary, (loading || phone.length < 8) && { opacity: 0.5 }, { marginTop: 16 }]}>
             <Text style={ss.btnPrimaryTxt}>{loading ? 'Signing in...' : 'Continue with Phone'}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity activeOpacity={0.7} onPress={() => go('signup')} style={{ marginTop: 20, alignItems: 'center' }}>
+            <Text style={{ fontFamily: F.med, fontSize: 14, color: C.ink3 }}>
+              Don't have an account? <Text style={{ color: C.purple, fontFamily: F.bold }}>Sign Up</Text>
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+/* ═══════════════════ SIGNUP ═══════════════════ */
+function SignupScreen() {
+  const { login, go } = useApp();
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const insets = useSafeAreaInsets();
+
+  const canSubmit = name.trim().length >= 2 && phone.length >= 8;
+
+  const handleSignup = async () => {
+    if (!canSubmit) return;
+    setLoading(true); setError('');
+    try {
+      const otpRes = await api.requestOtp(phone);
+      const res = await api.verifyOtp(phone, otpRes.code, name.trim());
+      setToken(res.token);
+      login({ id: res.customer.id, fullName: res.customer.fullName, phone: res.customer.phone, email: res.customer.email || '' }, res.token);
+    } catch (e: any) { setError(e.message); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <View style={[ss.fill, { paddingTop: insets.top + 60 }]}>
+      <View style={ss.loginWrap}>
+        <View style={ss.logoCircle}><Icon name="user-plus" size={28} color={C.white} /></View>
+        <Text style={ss.loginTitle}>Create Account</Text>
+        <Text style={ss.loginSub}>Join PurpleBox to get started</Text>
+
+        <View style={{ marginTop: 32, width: '100%' }}>
+          <Text style={ss.label}>Full Name</Text>
+          <TextInput style={ss.input} value={name} onChangeText={setName}
+            placeholder="Your full name" placeholderTextColor={C.faint}
+            autoCapitalize="words" autoFocus />
+
+          <Text style={[ss.label, { marginTop: 16 }]}>Phone Number</Text>
+          <TextInput style={ss.input} value={phone} onChangeText={setPhone}
+            placeholder="+971 50 123 4567" placeholderTextColor={C.faint}
+            keyboardType="phone-pad" />
+
+          {!!error && <Text style={ss.errorTxt}>{error}</Text>}
+
+          <TouchableOpacity activeOpacity={0.85} onPress={handleSignup}
+            disabled={loading || !canSubmit}
+            style={[ss.btnPrimary, (loading || !canSubmit) && { opacity: 0.5 }, { marginTop: 20 }]}>
+            <Text style={ss.btnPrimaryTxt}>{loading ? 'Creating account...' : 'Sign Up'}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity activeOpacity={0.7} onPress={() => go('login')} style={{ marginTop: 20, alignItems: 'center' }}>
+            <Text style={{ fontFamily: F.med, fontSize: 14, color: C.ink3 }}>
+              Already have an account? <Text style={{ color: C.purple, fontFamily: F.bold }}>Sign In</Text>
+            </Text>
           </TouchableOpacity>
         </View>
       </View>

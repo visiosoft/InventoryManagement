@@ -58,10 +58,14 @@ router.post('/verify-otp', async (req, res) => {
     otpStore.delete(phone);
 
     let customer = await Customer.findOne({ $or: [{ phone }, { phones: phone }] });
-    if (!customer) customer = await Customer.create({ fullName: phone, phone, phones: [phone] });
+    const isNew = !customer;
+    if (!customer) {
+      const { fullName } = req.body;
+      customer = await Customer.create({ fullName: fullName || phone, phone, phones: [phone] });
+    }
 
     const token = signCustomerToken(customer);
-    res.json({ token, customer: customerPayload(customer) });
+    res.json({ token, customer: customerPayload(customer), isNew });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

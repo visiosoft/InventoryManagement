@@ -39,7 +39,7 @@ export const F = {
 };
 
 export type Screen =
-  | 'login' | 'phoneSetup'
+  | 'login' | 'phoneSetup' | 'signup'
   | 'home' | 'booking' | 'quote' | 'tracking' | 'history' | 'profile'
   | 'moveDetail';
 

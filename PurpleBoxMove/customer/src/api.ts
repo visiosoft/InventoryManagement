@@ -1,8 +1,6 @@
 import { Platform } from 'react-native';
 
-const API_BASE = Platform.OS === 'android'
-  ? 'http://10.0.2.2:5010/api'
-  : 'http://localhost:5010/api';
+const API_BASE = 'https://office.purplebox.ae/api';
 
 async function appendFile(form: FormData, fieldName: string, uri: string, name: string, type?: string) {
   if (Platform.OS === 'web') {
@@ -37,9 +35,9 @@ export const api = {
     req<{ message: string; code: string }>('/customer-auth/request-otp', {
       method: 'POST', body: JSON.stringify({ phone }),
     }),
-  verifyOtp: (phone: string, code: string) =>
-    req<{ token: string; customer: any }>('/customer-auth/verify-otp', {
-      method: 'POST', body: JSON.stringify({ phone, code }),
+  verifyOtp: (phone: string, code: string, fullName?: string) =>
+    req<{ token: string; customer: any; isNew: boolean }>('/customer-auth/verify-otp', {
+      method: 'POST', body: JSON.stringify({ phone, code, fullName }),
     }),
   googleAuth: (accessToken: string) =>
     req<{ token: string; customer: any; needsPhone: boolean }>('/customer-auth/google', {
