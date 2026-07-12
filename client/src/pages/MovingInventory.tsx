@@ -1,6 +1,6 @@
 import { useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Pencil, Plus, RefreshCw, Trash2, Search, Package, ArrowDownUp, AlertCircle, Activity } from 'lucide-react'
+import { AlertTriangle, Pencil, Plus, RefreshCw, Trash2, Search, Package, AlertCircle, Activity } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { Badge, Button, Field, Input, Modal, Select, Spinner, Textarea } from '../components/ui'
 import { formatDate } from '../lib/utils'

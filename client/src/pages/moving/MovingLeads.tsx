@@ -5,7 +5,7 @@ import { Plus, Search, Trash2, Users, Phone, Calendar, MapPin, UserPlus } from '
 import { api, apiError } from '../../lib/api'
 import type { MovingLead, MovingLeadSource, MovingLeadStatus } from '../../lib/types'
 import { Badge, Button, Field, Input, Modal, Select, Spinner, Textarea } from '../../components/ui'
-import { cn, formatDate } from '../../lib/utils'
+import { formatDate } from '../../lib/utils'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
 const INK = '#14081F'

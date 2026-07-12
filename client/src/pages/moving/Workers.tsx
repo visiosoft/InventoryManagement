@@ -1,10 +1,9 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Pencil, Trash2, Users, DollarSign, TrendingUp, Phone } from 'lucide-react'
+import { Plus, Search, Pencil, Trash2, Users, Briefcase, Phone, ClipboardList } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { Worker, WorkerRole, WorkerStatus } from '../../lib/types'
 import { Badge, Button, Field, Input, Modal, Select, Spinner, Textarea } from '../../components/ui'
-import { cn } from '../../lib/utils'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
 const INK = '#14081F'
@@ -89,16 +88,18 @@ function WorkerForm({ initial, busy, error, onSubmit, onCancel }: {
   )
 }
 
+type WorkerWithJobs = Worker & { jobCount?: { total: number; active: number } }
+
 export default function Workers() {
   const qc = useQueryClient()
-  const [modal, setModal] = useState<null | 'create' | Worker>(null)
+  const [modal, setModal] = useState<null | 'create' | WorkerWithJobs>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [err, setErr] = useState('')
   const [search, setSearch] = useState('')
   const [filterRole, setFilterRole] = useState<WorkerRole | ''>('')
   const [filterStatus, setFilterStatus] = useState<WorkerStatus | ''>('')
 
-  const { data: workers = [], isLoading } = useQuery<Worker[]>({
+  const { data: workers = [], isLoading } = useQuery<WorkerWithJobs[]>({
     queryKey: ['workers'],
     queryFn: () => api.get('/workers').then(r => r.data),
   })
@@ -131,8 +132,8 @@ export default function Workers() {
   const busy = createMut.isPending || updateMut.isPending
 
   const activeWorkers = workers.filter(w => w.status === 'active')
-  const avgRate = activeWorkers.length > 0 ? activeWorkers.reduce((s, w) => s + (w.dailyRate || 0), 0) / activeWorkers.length : 0
-  const dailyCost = activeWorkers.reduce((s, w) => s + (w.dailyRate || 0), 0)
+  const totalJobs = workers.reduce((s, w) => s + (w.jobCount?.total ?? 0), 0)
+  const activeJobs = workers.reduce((s, w) => s + (w.jobCount?.active ?? 0), 0)
 
   const filtered = workers.filter(w => {
     const matchSearch = !search || w.name.toLowerCase().includes(search.toLowerCase()) || (w.phone ?? '').includes(search)
@@ -161,8 +162,8 @@ export default function Workers() {
       {/* Stat cards */}
       <div className="grid grid-cols-3 gap-4 mb-7">
         <StatCard label="Active Crew" value={activeWorkers.length} sub={`${workers.filter(w => w.status === 'on_leave').length} on leave`} icon={<Users size={18} />} iconBg="#ECFDF5" iconColor="#059669" />
-        <StatCard label="Avg Daily Rate" value={`AED ${avgRate.toFixed(0)}`} sub="per active worker" icon={<TrendingUp size={18} />} iconBg="#FFF7ED" iconColor="#EA580C" />
-        <StatCard label="Daily Crew Cost" value={`AED ${dailyCost.toLocaleString()}`} sub="active workers only" icon={<DollarSign size={18} />} iconBg="#F7F3FF" iconColor={PURPLE} />
+        <StatCard label="Total Jobs" value={totalJobs} sub="assigned across all crew" icon={<ClipboardList size={18} />} iconBg="#F7F3FF" iconColor={PURPLE} />
+        <StatCard label="Active Jobs" value={activeJobs} sub="confirmed + in progress" icon={<Briefcase size={18} />} iconBg="#FFF7ED" iconColor="#EA580C" />
       </div>
 
       {/* Search + filters */}
@@ -268,7 +269,10 @@ export default function Workers() {
                     <div className="flex items-center gap-3 text-xs" style={{ color: MUTED }}>
                       <Badge tone={roleTone[w.role as WorkerRole]} className="text-xs">{w.role}</Badge>
                       {w.phone && <span className="flex items-center gap-1"><Phone size={10} />{w.phone}</span>}
-                      <span className="ml-auto" style={{ fontWeight: 600, color: INK }}>AED {w.dailyRate?.toLocaleString()}/day</span>
+                      <span className="ml-auto flex items-center gap-1" style={{ fontWeight: 600, color: INK }}>
+                        <Briefcase size={11} />{w.jobCount?.total ?? 0} jobs
+                        {(w.jobCount?.active ?? 0) > 0 && <span style={{ color: '#EA580C', fontWeight: 700 }}>({w.jobCount!.active} active)</span>}
+                      </span>
                     </div>
                   </div>
                   <div className="flex flex-col gap-1 shrink-0">
@@ -290,8 +294,8 @@ export default function Workers() {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(20,8,31,0.06)' }}>
-                    {['Name', 'Role', 'Phone', 'Daily Rate', 'Status', ''].map(h => (
-                      <th key={h} style={{ padding: '12px 16px', fontSize: 12, fontWeight: 600, color: MUTED, textAlign: h === 'Daily Rate' ? 'right' : 'left', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
+                    {['Name', 'Role', 'Phone', 'Jobs', 'Active', 'Status', ''].map(h => (
+                      <th key={h} style={{ padding: '12px 16px', fontSize: 12, fontWeight: 600, color: MUTED, textAlign: ['Jobs', 'Active'].includes(h) ? 'center' : 'left', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -315,7 +319,12 @@ export default function Workers() {
                         <Badge tone={roleTone[w.role as WorkerRole]} className="text-xs">{w.role}</Badge>
                       </td>
                       <td style={{ padding: '14px 16px', fontSize: 13, color: MUTED, fontFamily: 'monospace' }}>{w.phone || '—'}</td>
-                      <td style={{ padding: '14px 16px', fontSize: 14, fontWeight: 600, color: INK, textAlign: 'right' }}>AED {w.dailyRate?.toLocaleString()}</td>
+                      <td style={{ padding: '14px 16px', fontSize: 14, fontWeight: 600, color: INK, textAlign: 'center' }}>{w.jobCount?.total ?? 0}</td>
+                      <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                        {(w.jobCount?.active ?? 0) > 0
+                          ? <span style={{ fontSize: 13, fontWeight: 700, color: '#EA580C', background: '#FFF7ED', padding: '2px 10px', borderRadius: 20 }}>{w.jobCount!.active}</span>
+                          : <span style={{ fontSize: 13, color: MUTED }}>0</span>}
+                      </td>
                       <td style={{ padding: '14px 16px' }}>
                         <Badge tone={statusTone[w.status]} className="text-xs">{w.status.replace(/_/g, ' ')}</Badge>
                       </td>

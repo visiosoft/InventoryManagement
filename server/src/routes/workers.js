@@ -14,7 +14,13 @@ router.get('/', async (req, res) => {
     const filter = {};
     if (status) filter.status = status;
     if (q) filter.name = { $regex: escRegex(q), $options: 'i' };
-    const workers = await Worker.find(filter).sort({ name: 1 });
+    const workers = await Worker.find(filter).sort({ name: 1 }).lean();
+    const jobCounts = await MovingJob.aggregate([
+      { $unwind: '$crew' },
+      { $group: { _id: '$crew.worker', total: { $sum: 1 }, active: { $sum: { $cond: [{ $in: ['$status', ['confirmed', 'in_progress']] }, 1, 0] } } } },
+    ]);
+    const countMap = Object.fromEntries(jobCounts.map(j => [String(j._id), { total: j.total, active: j.active }]));
+    workers.forEach(w => { w.jobCount = countMap[String(w._id)] || { total: 0, active: 0 }; });
     res.json(workers);
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -687,13 +687,6 @@ function ProfileScreen() {
   const initial = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
   const role = s.worker?.role ? s.worker.role.charAt(0).toUpperCase() + s.worker.role.slice(1) : 'Staff';
 
-  const SKILLS = [
-    { label: 'Home Cleaning', bg: C.purpleLite, color: C.purple },
-    { label: 'Deep Cleaning', bg: C.greenBg, color: C.green },
-    { label: 'Office Cleaning', bg: C.orangeBg, color: '#EA580C' },
-    { label: 'Carpet Care', bg: C.blueBg, color: C.blue },
-  ];
-
   const MENU = [
     { icon: 'calendar', label: 'My Schedule', bg: C.purpleLite, color: C.purple },
     { icon: 'dollar-sign', label: 'Earnings History', bg: C.greenBg, color: C.green },
@@ -731,18 +724,6 @@ function ProfileScreen() {
               <Text style={{ fontSize: 11, color: C.ink3, marginTop: 2 }}>{stat.label}</Text>
             </View>
           ))}
-        </View>
-
-        {/* Skills */}
-        <View style={ss.px}>
-          <Text style={{ fontFamily: F.bold, fontSize: 15, color: C.ink, marginBottom: 10 }}>Skills</Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            {SKILLS.map(sk => (
-              <View key={sk.label} style={[ss.skillTag, { backgroundColor: sk.bg }]}>
-                <Text style={{ fontSize: 12, fontFamily: F.semi, color: sk.color }}>{sk.label}</Text>
-              </View>
-            ))}
-          </View>
         </View>
 
         {/* Menu */}
@@ -895,7 +876,6 @@ const ss = StyleSheet.create({
   profileAvatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: C.purpleBg, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: 'rgba(255,255,255,0.2)' },
   statsCard: { marginHorizontal: 20, marginTop: -20, backgroundColor: C.white, borderRadius: 18, padding: 18, flexDirection: 'row', elevation: 4, shadowColor: C.ink, shadowOpacity: 0.08, shadowRadius: 12 },
   statCell: { flex: 1, alignItems: 'center' },
-  skillTag: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
   menuCard: { backgroundColor: C.white, borderWidth: 1, borderColor: C.line, borderRadius: 16, overflow: 'hidden' },
   menuRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, paddingHorizontal: 16 },
   menuIcon: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },

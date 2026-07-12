@@ -6,7 +6,6 @@ import { api, apiError } from '../../lib/api'
 import type { MovingInvoice, MovingInvoiceStatus } from '../../lib/types'
 import { Badge, Button, Modal, Spinner } from '../../components/ui'
 import { formatDate } from '../../lib/utils'
-import { cn } from '../../lib/utils'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
 const INK = '#14081F'
@@ -239,7 +238,7 @@ export default function MovingInvoices() {
                         {inv.zohoBooksSyncId ? (
                           <Badge tone="green" className="text-xs">Synced</Badge>
                         ) : inv.zohoBooksSyncError ? (
-                          <Badge tone="red" className="text-xs" title={inv.zohoBooksSyncError}>Error</Badge>
+                          <Badge tone="red" className="text-xs">Error</Badge>
                         ) : (
                           <span style={{ fontSize: 12, color: MUTED }}>—</span>
                         )}

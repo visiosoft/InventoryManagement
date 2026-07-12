@@ -5,7 +5,6 @@ import { Plus, Search, ArrowRight, MapPin, Trash2, Pencil, Briefcase, CheckCircl
 import { api, apiError } from '../../lib/api'
 import type { MovingJob, MovingJobStatus } from '../../lib/types'
 import { Badge, Button, Modal, Spinner, movingJobStatusLabel } from '../../components/ui'
-import { cn } from '../../lib/utils'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
 const INK = '#14081F'
