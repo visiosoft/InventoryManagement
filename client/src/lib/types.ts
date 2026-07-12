@@ -78,7 +78,7 @@ export interface Lead {
 
 export interface IntegrationStatus {
   zoho: { configured: boolean }
-  drive: { configured: boolean }
+  drive: { configured: boolean; folderId?: string; method?: string }
   whatsapp: { configured: boolean; missing?: string[] }
   googleContacts: { configured: boolean; missing?: string[] }
 }
@@ -459,8 +459,8 @@ export interface Truck {
   createdAt?: string
 }
 
-export type MovingLeadStatus = 'new' | 'contacted' | 'quoted' | 'won' | 'lost'
-export type MovingLeadSource = 'phone' | 'web_form' | 'whatsapp' | 'referral' | 'walk_in' | 'other'
+export type MovingLeadStatus = 'new' | 'contacted' | 'quoted' | 'client_approved' | 'won' | 'lost'
+export type MovingLeadSource = 'phone' | 'web_form' | 'mobile_app' | 'whatsapp' | 'referral' | 'walk_in' | 'other'
 
 export interface MovingLead {
   _id: string
@@ -470,11 +470,23 @@ export interface MovingLead {
   prospectEmail?: string
   source: MovingLeadSource
   status: MovingLeadStatus
+  serviceType?: string
+  propertyType?: string
   moveDate?: string
   pickupAddress?: string
   deliveryAddress?: string
   estimatedVolumeCbm?: number
   notes?: string
+  images?: { url: string; filename?: string; originalName?: string; size?: number; category?: string }[]
+  quotation?: {
+    items: { description: string; qty: number; rate: number; amount: number }[]
+    subTotal: number
+    discount: number
+    total: number
+    notes?: string
+    quotedAt?: string
+    quotedBy?: string
+  }
   timeline?: ContractNote[]
   createdAt?: string
 }
@@ -671,5 +683,8 @@ export interface MovingInvoice {
   notes?: string
   termsAndConditions?: string
   shareToken?: string
+  zohoBooksSyncId?: string
+  zohoBooksSyncedAt?: string
+  zohoBooksSyncError?: string
   createdAt?: string
 }

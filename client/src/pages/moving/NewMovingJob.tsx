@@ -252,7 +252,7 @@ export default function NewMovingJob() {
 
   return (
     <div style={{ background: CREAM, minHeight: '100vh', margin: '-1.5rem', padding: '2.5rem 1.5rem' }}>
-      <div className="max-w-3xl mx-auto">
+      <div className="max-w-3xl">
 
         {/* Header */}
         <div className="mb-6">

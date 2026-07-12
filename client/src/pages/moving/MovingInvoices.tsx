@@ -1,12 +1,17 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { useState } from 'react'
-import { Search, Receipt, ArrowRight, AlertCircle, CheckCircle2, Clock } from 'lucide-react'
-import { api } from '../../lib/api'
+import { Search, Receipt, ArrowRight, AlertCircle, CheckCircle2, Clock, Trash2 } from 'lucide-react'
+import { api, apiError } from '../../lib/api'
 import type { MovingInvoice, MovingInvoiceStatus } from '../../lib/types'
-import { Badge, Card, CardBody, Input, PageHeader, Spinner, Table, Td, Th } from '../../components/ui'
+import { Badge, Button, Modal, Spinner } from '../../components/ui'
 import { formatDate } from '../../lib/utils'
 import { cn } from '../../lib/utils'
+
+const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
+const INK = '#14081F'
+const MUTED = '#756E80'
+const PURPLE = '#5B2BC9'
 
 const STATUSES: { value: MovingInvoiceStatus | ''; label: string }[] = [
   { value: '', label: 'All' },
@@ -22,8 +27,24 @@ const statusTone: Record<MovingInvoiceStatus, string> = {
 }
 
 const statusDot: Record<string, string> = {
-  draft: 'bg-slate-400', sent: 'bg-blue-400', partial: 'bg-amber-400',
-  paid: 'bg-emerald-400', cancelled: 'bg-red-400',
+  draft: '#94A3B8', sent: '#3B82F6', partial: '#F59E0B', paid: '#10B981', cancelled: '#EF4444',
+}
+
+function StatCard({ label, value, sub, icon, iconBg, iconColor }: {
+  label: string; value: string | number; sub?: string; icon: React.ReactNode; iconBg: string; iconColor: string
+}) {
+  return (
+    <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 20 }}>
+      <div className="flex justify-between items-start">
+        <div style={{ fontSize: 13, color: MUTED, fontWeight: 500 }}>{label}</div>
+        <div style={{ width: 36, height: 36, borderRadius: 10, background: iconBg, display: 'grid', placeItems: 'center', color: iconColor }}>
+          {icon}
+        </div>
+      </div>
+      <div style={{ ...HEADING, fontSize: 32, fontWeight: 700, color: INK, marginTop: 8 }}>{value}</div>
+      {sub && <div style={{ fontSize: 12, color: MUTED, marginTop: 6 }}>{sub}</div>}
+    </div>
+  )
 }
 
 function fmtAed(n: number) {
@@ -37,15 +58,17 @@ function fmtAedShort(n: number) {
 }
 
 export default function MovingInvoices() {
+  const qc = useQueryClient()
   const [filterStatus, setFilterStatus] = useState<MovingInvoiceStatus | ''>('')
   const [search, setSearch] = useState('')
+  const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [err, setErr] = useState('')
 
   const { data: allInvoices = [], isLoading } = useQuery<MovingInvoice[]>({
     queryKey: ['moving-invoices'],
     queryFn: () => api.get('/moving-invoices').then(r => r.data),
   })
 
-  // Summary stats always from the unfiltered list
   const now = new Date()
   const outstanding = allInvoices
     .filter(inv => !['paid', 'cancelled'].includes(inv.status))
@@ -67,7 +90,12 @@ export default function MovingInvoices() {
     return acc
   }, {} as Record<string, number>)
 
-  // Client-side filter
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => api.delete(`/moving-invoices/${id}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['moving-invoices'] }); setDeleteId(null) },
+    onError: (e) => setErr(apiError(e)),
+  })
+
   const filtered = allInvoices.filter(inv => {
     const matchStatus = !filterStatus || inv.status === filterStatus
     const matchSearch = !search ||
@@ -77,203 +105,180 @@ export default function MovingInvoices() {
   })
 
   return (
-    <div className="space-y-5">
-      <PageHeader title="Moving Invoices" subtitle={`${allInvoices.length} invoices total`} />
-
-      {/* Summary cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card>
-          <CardBody className="p-4 flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-red-500/10 shrink-0">
-              <AlertCircle size={18} className="text-red-600" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-0.5">Outstanding</p>
-              <p className="text-lg font-bold text-foreground truncate">{fmtAedShort(outstanding)}</p>
-              <p className="text-xs text-muted-foreground">
-                {allInvoices.filter(inv => !['paid', 'cancelled'].includes(inv.status)).length} unpaid invoices
-              </p>
-            </div>
-          </CardBody>
-        </Card>
-        <Card>
-          <CardBody className="p-4 flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-amber-500/10 shrink-0">
-              <Clock size={18} className="text-amber-600" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-0.5">Collected This Month</p>
-              <p className="text-lg font-bold text-foreground truncate">{fmtAedShort(paidThisMonth)}</p>
-              <p className="text-xs text-muted-foreground">
-                {now.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
-              </p>
-            </div>
-          </CardBody>
-        </Card>
-        <Card>
-          <CardBody className="p-4 flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-emerald-500/10 shrink-0">
-              <CheckCircle2 size={18} className="text-emerald-600" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-0.5">Total Revenue</p>
-              <p className="text-lg font-bold text-foreground truncate">{fmtAedShort(totalRevenue)}</p>
-              <p className="text-xs text-muted-foreground">
-                {allInvoices.filter(inv => inv.status === 'paid').length} fully paid
-              </p>
-            </div>
-          </CardBody>
-        </Card>
+    <div style={{ background: '#FDFCFA', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+      {/* Top bar */}
+      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-7">
+        <div>
+          <div style={{ ...HEADING, fontSize: 26, fontWeight: 700, color: INK }}>Moving Invoices</div>
+          <div style={{ fontSize: 14, color: MUTED, marginTop: 4 }}>{allInvoices.length} invoices total</div>
+        </div>
       </div>
 
-      {/* Status filter pills */}
-      <div className="flex flex-wrap gap-2">
-        <button
-          onClick={() => setFilterStatus('')}
-          className={cn(
-            'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors border',
-            filterStatus === ''
-              ? 'bg-primary text-primary-foreground border-primary'
-              : 'bg-card text-muted-foreground border-muted hover:border-muted-foreground hover:text-foreground'
-          )}
-        >
-          All <span className={cn('tabular-nums', filterStatus === '' ? 'opacity-70' : 'text-muted-foreground')}>{allInvoices.length}</span>
-        </button>
-        {STATUSES.slice(1).map(s => {
-          const active = filterStatus === s.value
-          return (
-            <button
-              key={s.value}
-              onClick={() => setFilterStatus(s.value)}
-              className={cn(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors border',
-                active
-                  ? 'bg-primary text-primary-foreground border-primary'
-                  : 'bg-card text-muted-foreground border-muted hover:border-muted-foreground hover:text-foreground'
-              )}
-            >
-              <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', statusDot[s.value as string])} />
-              {s.label}
-              <span className={cn('tabular-nums', active ? 'opacity-70' : 'text-muted-foreground')}>
-                {counts[s.value as string] ?? 0}
-              </span>
-            </button>
-          )
-        })}
+      {/* Stat cards */}
+      <div className="grid grid-cols-3 gap-4 mb-7">
+        <StatCard label="Outstanding" value={fmtAedShort(outstanding)} sub={`${allInvoices.filter(inv => !['paid', 'cancelled'].includes(inv.status)).length} unpaid`} icon={<AlertCircle size={18} />} iconBg="#FEF2F2" iconColor="#EF4444" />
+        <StatCard label="Collected This Month" value={fmtAedShort(paidThisMonth)} sub={now.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })} icon={<Clock size={18} />} iconBg="#FFF7ED" iconColor="#EA580C" />
+        <StatCard label="Total Revenue" value={fmtAedShort(totalRevenue)} sub={`${allInvoices.filter(inv => inv.status === 'paid').length} fully paid`} icon={<CheckCircle2 size={18} />} iconBg="#ECFDF5" iconColor="#059669" />
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Search by invoice number or customer…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="pl-9"
-        />
+      {/* Search + status pills */}
+      <div className="flex flex-col gap-2.5 mb-5">
+        <div style={{ height: 40, borderRadius: 10, background: '#F3F0EA' }} className="flex items-center gap-2 px-3">
+          <Search size={16} color={MUTED} />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search by invoice number or customer…"
+            style={{ background: 'transparent', border: 'none', outline: 'none', flex: 1, fontSize: 14, color: INK }}
+          />
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          {STATUSES.map(s => {
+            const count = s.value === '' ? allInvoices.length : (counts[s.value as string] ?? 0)
+            const active = filterStatus === s.value
+            return (
+              <button
+                key={s.value}
+                onClick={() => setFilterStatus(s.value)}
+                style={{
+                  height: 36,
+                  borderRadius: 10,
+                  background: active ? PURPLE : '#F3F0EA',
+                  color: active ? 'white' : MUTED,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  padding: '0 12px',
+                  border: 'none',
+                }}
+                className="flex items-center gap-1.5 hover:opacity-90 transition-opacity whitespace-nowrap"
+              >
+                {s.value && <span style={{ width: 6, height: 6, borderRadius: 3, background: active ? 'white' : statusDot[s.value as string] }} />}
+                {s.label}
+                <span style={{ fontSize: 11, opacity: 0.7 }}>{count}</span>
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {/* Results */}
       {isLoading ? (
         <div className="flex justify-center py-16"><Spinner /></div>
       ) : filtered.length === 0 ? (
-        <Card>
-          <CardBody className="py-14 text-center">
-            <Receipt size={32} className="mx-auto mb-3 text-muted-foreground opacity-30" />
-            <p className="text-sm font-medium text-foreground mb-1">No invoices found</p>
-            <p className="text-sm text-muted-foreground">
-              {search ? 'Try a different search term' : 'No invoices match the selected filter'}
-            </p>
-          </CardBody>
-        </Card>
+        <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: '60px 20px', textAlign: 'center' }}>
+          <Receipt size={32} style={{ margin: '0 auto 12px', color: MUTED, opacity: 0.3 }} />
+          <div style={{ fontSize: 14, fontWeight: 600, color: INK, marginBottom: 4 }}>No invoices found</div>
+          <div style={{ fontSize: 13, color: MUTED }}>
+            {search ? 'Try a different search term' : 'No invoices match the selected filter'}
+          </div>
+        </div>
       ) : (
         <>
           {/* Mobile cards */}
-          <div className="space-y-2 md:hidden">
+          <div className="space-y-2.5 md:hidden">
             {filtered.map(inv => (
               <Link key={inv._id} to={`/moving/invoices/${inv._id}`}
-                className="flex items-start gap-3 p-4 bg-card rounded-xl border hover:border-muted-foreground transition-colors"
+                style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 14, padding: 16 }}
+                className="block hover:shadow-sm transition-shadow"
               >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-mono font-bold text-primary">{inv.invoiceNo}</span>
-                    <Badge tone={statusTone[inv.status]} className="text-xs py-0 h-4">{inv.status}</Badge>
-                  </div>
-                  <p className="text-sm font-semibold text-foreground mb-1">{inv.customer?.fullName}</p>
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs text-muted-foreground">{formatDate(inv.invoiceDate)}</p>
-                    <div className="text-right">
-                      <p className="text-sm font-bold text-foreground">AED {inv.total.toLocaleString()}</p>
-                      {inv.balanceDue > 0 && (
-                        <p className="text-xs text-red-600 font-medium">Due: AED {inv.balanceDue.toLocaleString()}</p>
-                      )}
+                <div className="flex items-start gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span style={{ fontSize: 13, fontWeight: 700, color: PURPLE, fontFamily: 'monospace' }}>{inv.invoiceNo}</span>
+                      <Badge tone={statusTone[inv.status]} className="text-xs py-0 h-4">{inv.status}</Badge>
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: INK, marginBottom: 4 }}>{inv.customer?.fullName}</div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span style={{ fontSize: 12, color: MUTED }}>{formatDate(inv.invoiceDate)}</span>
+                      <div className="text-right">
+                        <div style={{ fontSize: 14, fontWeight: 700, color: INK }}>AED {inv.total.toLocaleString()}</div>
+                        {inv.balanceDue > 0 && (
+                          <div style={{ fontSize: 11, color: '#EF4444', fontWeight: 600 }}>Due: AED {inv.balanceDue.toLocaleString()}</div>
+                        )}
+                      </div>
                     </div>
                   </div>
+                  <ArrowRight size={14} style={{ color: MUTED, flexShrink: 0, marginTop: 2 }} />
                 </div>
-                <ArrowRight size={14} className="text-muted-foreground shrink-0 mt-0.5" />
               </Link>
             ))}
           </div>
 
           {/* Desktop table */}
-          <Card className="hidden md:block">
-            <CardBody className="p-0">
-              <div className="overflow-x-auto">
-                <Table>
-                  <thead>
-                    <tr className="border-b border-muted">
-                      <Th className="py-3 pl-4">Invoice No</Th>
-                      <Th className="py-3">Customer</Th>
-                      <Th className="py-3">Job</Th>
-                      <Th className="py-3">Date</Th>
-                      <Th className="py-3 text-right">Total</Th>
-                      <Th className="py-3 text-right">Balance Due</Th>
-                      <Th className="py-3">Status</Th>
-                      <Th className="py-3 pr-4" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map(inv => (
-                      <tr key={inv._id} className="hover:bg-muted/40 transition-colors border-b border-muted/50 last:border-0">
-                        <Td className="py-3 pl-4">
-                          <Link to={`/moving/invoices/${inv._id}`} className="font-mono font-bold text-primary hover:text-primary/80 text-sm">
-                            {inv.invoiceNo}
-                          </Link>
-                        </Td>
-                        <Td className="py-3 font-medium text-sm">{inv.customer?.fullName}</Td>
-                        <Td className="py-3 text-sm">
-                          {inv.job
-                            ? <Link to={`/moving/jobs/${inv.job._id}`} className="text-primary hover:underline font-mono">{inv.job.jobNo}</Link>
-                            : <span className="text-muted-foreground">—</span>}
-                        </Td>
-                        <Td className="py-3 text-sm text-muted-foreground whitespace-nowrap">{formatDate(inv.invoiceDate)}</Td>
-                        <Td className="py-3 text-right">
-                          <span className="text-sm font-semibold tabular-nums">{fmtAed(inv.total)}</span>
-                        </Td>
-                        <Td className="py-3 text-right">
-                          <span className={cn('text-sm font-semibold tabular-nums', inv.balanceDue > 0 ? 'text-red-600' : 'text-emerald-600')}>
-                            {fmtAed(inv.balanceDue)}
-                          </span>
-                        </Td>
-                        <Td className="py-3">
-                          <Badge tone={statusTone[inv.status]} className="text-xs">{inv.status}</Badge>
-                        </Td>
-                        <Td className="py-3 pr-4 text-right">
-                          <Link to={`/moving/invoices/${inv._id}`} className="text-muted-foreground hover:text-foreground transition-colors">
+          <div className="hidden md:block" style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, overflow: 'hidden' }}>
+            <div className="overflow-x-auto">
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid rgba(20,8,31,0.06)' }}>
+                    {['Invoice No', 'Customer', 'Job', 'Date', 'Total', 'Balance Due', 'Status', 'Zoho', ''].map((h, i) => (
+                      <th key={h || i} style={{ padding: '12px 16px', fontSize: 12, fontWeight: 600, color: MUTED, textAlign: ['Total', 'Balance Due'].includes(h) ? 'right' : 'left', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(inv => (
+                    <tr key={inv._id} style={{ borderBottom: '1px solid rgba(20,8,31,0.04)' }} className="hover:bg-[#FAF8F5] transition-colors">
+                      <td style={{ padding: '14px 16px' }}>
+                        <Link to={`/moving/invoices/${inv._id}`} style={{ fontSize: 13, fontWeight: 700, color: PURPLE, fontFamily: 'monospace' }} className="hover:opacity-80 transition-opacity">
+                          {inv.invoiceNo}
+                        </Link>
+                      </td>
+                      <td style={{ padding: '14px 16px', fontSize: 14, fontWeight: 500, color: INK }}>{inv.customer?.fullName}</td>
+                      <td style={{ padding: '14px 16px', fontSize: 13 }}>
+                        {inv.job
+                          ? <Link to={`/moving/jobs/${inv.job._id}`} style={{ color: PURPLE, fontFamily: 'monospace' }} className="hover:opacity-80">{inv.job.jobNo}</Link>
+                          : <span style={{ color: MUTED }}>—</span>}
+                      </td>
+                      <td style={{ padding: '14px 16px', fontSize: 13, color: MUTED, whiteSpace: 'nowrap' }}>{formatDate(inv.invoiceDate)}</td>
+                      <td style={{ padding: '14px 16px', fontSize: 14, fontWeight: 600, color: INK, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtAed(inv.total)}</td>
+                      <td style={{ padding: '14px 16px', fontSize: 14, fontWeight: 600, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: inv.balanceDue > 0 ? '#EF4444' : '#059669' }}>{fmtAed(inv.balanceDue)}</td>
+                      <td style={{ padding: '14px 16px' }}>
+                        <Badge tone={statusTone[inv.status]} className="text-xs">{inv.status}</Badge>
+                      </td>
+                      <td style={{ padding: '14px 16px' }}>
+                        {inv.zohoBooksSyncId ? (
+                          <Badge tone="green" className="text-xs">Synced</Badge>
+                        ) : inv.zohoBooksSyncError ? (
+                          <Badge tone="red" className="text-xs" title={inv.zohoBooksSyncError}>Error</Badge>
+                        ) : (
+                          <span style={{ fontSize: 12, color: MUTED }}>—</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                        <div className="flex items-center justify-end gap-1">
+                          <Link to={`/moving/invoices/${inv._id}`} className="p-1 transition-colors hover:opacity-70" style={{ color: MUTED }}>
                             <ArrowRight size={14} />
                           </Link>
-                        </Td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </Table>
-              </div>
-            </CardBody>
-          </Card>
+                          {inv.status !== 'paid' && (
+                            <button onClick={() => setDeleteId(inv._id)} className="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors" style={{ color: MUTED }}>
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
 
-          <p className="text-xs text-muted-foreground text-right">{filtered.length} invoice{filtered.length !== 1 ? 's' : ''}</p>
+          <div style={{ fontSize: 12, color: MUTED, textAlign: 'right', marginTop: 12 }}>{filtered.length} invoice{filtered.length !== 1 ? 's' : ''}</div>
         </>
       )}
+
+      <Modal open={!!deleteId} title="Delete Invoice" onClose={() => setDeleteId(null)}>
+        <div className="space-y-4">
+          <p className="text-sm">Are you sure you want to delete this invoice? Paid invoices cannot be deleted.</p>
+          {err && <p className="text-sm text-red-600">{err}</p>}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setDeleteId(null)}>Cancel</Button>
+            <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={() => deleteId && deleteMut.mutate(deleteId)} disabled={deleteMut.isPending}>
+              {deleteMut.isPending ? 'Deleting…' : 'Delete Invoice'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

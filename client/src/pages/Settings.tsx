@@ -410,14 +410,50 @@ export default function Settings() {
               {integrations?.zoho?.configured ? 'Connected' : 'Not configured'}
             </span>
           </div>
-          <div className="flex items-center justify-between rounded-lg border px-4 py-3">
-            <div>
-              <div className="font-medium">Google Drive</div>
-              <div className="text-xs text-muted-foreground">Enabled automatically when Google Contacts + Drive is connected above</div>
+          <div className="rounded-lg border px-4 py-3 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="font-medium">Google Drive (Customer Photos)</div>
+                <div className="text-xs text-muted-foreground">
+                  Customer-uploaded photos are stored in Google Drive and displayed from Drive URLs
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className={integrations?.drive?.configured ? 'text-xs text-emerald-600 font-medium' : 'text-xs text-amber-600 font-medium'}>
+                  {integrations?.drive?.configured ? 'Active — using Google Drive' : 'Not connected'}
+                </span>
+                <Button
+                  size="sm"
+                  variant={integrations?.drive?.configured ? 'outline' : 'default'}
+                  onClick={async () => {
+                    try {
+                      const { url } = await integrationApi.connectDrive()
+                      window.location.href = url
+                    } catch (e) {
+                      setDriveMsg({ ok: false, text: apiError(e) })
+                    }
+                  }}
+                >
+                  {integrations?.drive?.configured ? 'Reconnect Drive' : 'Connect Google Drive'}
+                </Button>
+              </div>
             </div>
-            <span className={integrations?.drive?.configured ? 'text-xs text-emerald-600 font-medium' : 'text-xs text-muted-foreground'}>
-              {integrations?.drive?.configured ? 'Active — using Google Drive' : 'Using local storage'}
-            </span>
+            {integrations?.drive?.configured && integrations.drive.folderId && (
+              <div className="text-xs text-muted-foreground border-t pt-2">
+                Folder ID: <code className="bg-muted px-1 rounded">{integrations.drive.folderId}</code>
+                {integrations.drive.method && <span className="ml-2">· Auth: {integrations.drive.method === 'service_account' ? 'Service Account' : 'OAuth'}</span>}
+              </div>
+            )}
+            {driveMsg && (
+              <p className={`text-xs ${driveMsg.ok ? 'text-emerald-700 dark:text-emerald-400' : 'text-destructive'}`}>
+                {driveMsg.text}
+              </p>
+            )}
+            {!integrations?.drive?.configured && (
+              <p className="text-xs text-muted-foreground">
+                Before connecting, add <code className="bg-muted px-1 rounded">http://localhost:5010/api/integrations/drive/callback</code> to your OAuth client's authorized redirect URIs in Google Cloud Console.
+              </p>
+            )}
           </div>
           <div className="flex items-center justify-between rounded-lg border px-4 py-3">
             <div>
@@ -459,11 +495,6 @@ export default function Settings() {
             {contactsMsg && (
               <p className={`text-xs ${contactsMsg.ok ? 'text-emerald-700 dark:text-emerald-400' : 'text-destructive'}`}>
                 {contactsMsg.text}
-              </p>
-            )}
-            {driveMsg && (
-              <p className={`text-xs ${driveMsg.ok ? 'text-emerald-700 dark:text-emerald-400' : 'text-destructive'}`}>
-                {driveMsg.text}
               </p>
             )}
             {!integrations?.googleContacts?.configured && (

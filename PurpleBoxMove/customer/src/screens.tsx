@@ -5,9 +5,13 @@ import {
   KeyboardAvoidingView, Platform, Dimensions,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, F, Icon, TabBar, BackButton, useApp } from './core';
 import { api, setToken } from './api';
+
+WebBrowser.maybeCompleteAuthSession();
 
 const W = Dimensions.get('window').width;
 
@@ -15,6 +19,7 @@ export function Router() {
   const { s } = useApp();
   switch (s.screen) {
     case 'login': return <LoginScreen />;
+    case 'phoneSetup': return <PhoneSetupScreen />;
     case 'home': return <HomeScreen />;
     case 'booking': return <BookingScreen />;
     case 'quote': return <QuoteScreen />;
@@ -27,12 +32,42 @@ export function Router() {
 }
 
 /* ═══════════════════ LOGIN ═══════════════════ */
+const GOOGLE_CLIENT_ID = '249289984785-625vj3md7p6hdtvuh8u678boidul9bul.apps.googleusercontent.com';
+
 function LoginScreen() {
-  const { login } = useApp();
+  const { login, go } = useApp();
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
+  const [gLoading, setGLoading] = useState(false);
   const [error, setError] = useState('');
   const insets = useSafeAreaInsets();
+
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    clientId: GOOGLE_CLIENT_ID,
+    webClientId: GOOGLE_CLIENT_ID,
+  });
+
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const accessToken = response.authentication?.accessToken;
+      if (accessToken) handleGoogleLogin(accessToken);
+    }
+  }, [response]);
+
+  const handleGoogleLogin = async (accessToken: string) => {
+    setGLoading(true); setError('');
+    try {
+      const res = await api.googleAuth(accessToken);
+      setToken(res.token);
+      if (res.needsPhone) {
+        login({ id: res.customer.id, fullName: res.customer.fullName, phone: '', email: res.customer.email || '' }, res.token);
+        go('phoneSetup');
+      } else {
+        login({ id: res.customer.id, fullName: res.customer.fullName, phone: res.customer.phone, email: res.customer.email || '' }, res.token);
+      }
+    } catch (e: any) { setError(e.message); }
+    finally { setGLoading(false); }
+  };
 
   const handleLogin = async () => {
     if (phone.length < 8) { setError('Enter a valid phone number'); return; }
@@ -52,16 +87,78 @@ function LoginScreen() {
         <View style={ss.logoCircle}><Icon name="truck" size={32} color={C.white} /></View>
         <Text style={ss.loginTitle}>PurpleBox</Text>
         <Text style={ss.loginSub}>Moving made simple</Text>
-        <View style={{ marginTop: 40, width: '100%' }}>
+
+        {/* Google Sign-In */}
+        <TouchableOpacity activeOpacity={0.85}
+          disabled={!request || gLoading}
+          onPress={() => promptAsync()}
+          style={[ss.googleBtn, (!request || gLoading) && { opacity: 0.5 }, { marginTop: 36 }]}>
+          <Text style={{ fontSize: 20 }}>G</Text>
+          <Text style={ss.googleBtnTxt}>{gLoading ? 'Signing in...' : 'Continue with Google'}</Text>
+        </TouchableOpacity>
+
+        {/* Divider */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 24, marginBottom: 24, width: '100%' }}>
+          <View style={{ flex: 1, height: 1, backgroundColor: C.line }} />
+          <Text style={{ marginHorizontal: 14, fontFamily: F.reg, fontSize: 12, color: C.ink3 }}>or</Text>
+          <View style={{ flex: 1, height: 1, backgroundColor: C.line }} />
+        </View>
+
+        {/* Phone login */}
+        <View style={{ width: '100%' }}>
+          <Text style={ss.label}>Phone Number</Text>
+          <TextInput style={ss.input} value={phone} onChangeText={setPhone}
+            placeholder="+971 50 123 4567" placeholderTextColor={C.faint}
+            keyboardType="phone-pad" />
+          {!!error && <Text style={ss.errorTxt}>{error}</Text>}
+          <TouchableOpacity activeOpacity={0.85} onPress={handleLogin}
+            disabled={loading || phone.length < 8}
+            style={[ss.btnPrimary, (loading || phone.length < 8) && { opacity: 0.5 }, { marginTop: 16 }]}>
+            <Text style={ss.btnPrimaryTxt}>{loading ? 'Signing in...' : 'Continue with Phone'}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+/* ═══════════════════ PHONE SETUP (one-time after Google sign-in) ═══════════════════ */
+function PhoneSetupScreen() {
+  const { s, login } = useApp();
+  const [phone, setPhone] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const insets = useSafeAreaInsets();
+
+  const handleSave = async () => {
+    if (phone.length < 8) { setError('Enter a valid phone number'); return; }
+    setLoading(true); setError('');
+    try {
+      const res = await api.setPhone(phone);
+      setToken(res.token);
+      login({ id: res.customer.id, fullName: res.customer.fullName, phone: res.customer.phone, email: res.customer.email || '' }, res.token);
+    } catch (e: any) { setError(e.message); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <View style={[ss.fill, { paddingTop: insets.top + 60 }]}>
+      <View style={ss.loginWrap}>
+        <View style={ss.logoCircle}><Icon name="phone" size={28} color={C.white} /></View>
+        <Text style={ss.loginTitle}>Almost there!</Text>
+        <Text style={[ss.loginSub, { textAlign: 'center' }]}>
+          Welcome{s.customer?.fullName ? `, ${s.customer.fullName.split(' ')[0]}` : ''}! We need your phone number to keep you updated on your moves.
+        </Text>
+        <View style={{ marginTop: 32, width: '100%' }}>
           <Text style={ss.label}>Phone Number</Text>
           <TextInput style={ss.input} value={phone} onChangeText={setPhone}
             placeholder="+971 50 123 4567" placeholderTextColor={C.faint}
             keyboardType="phone-pad" autoFocus />
           {!!error && <Text style={ss.errorTxt}>{error}</Text>}
-          <TouchableOpacity activeOpacity={0.85} onPress={handleLogin}
+          <TouchableOpacity activeOpacity={0.85} onPress={handleSave}
             disabled={loading || phone.length < 8}
             style={[ss.btnPrimary, (loading || phone.length < 8) && { opacity: 0.5 }, { marginTop: 16 }]}>
-            <Text style={ss.btnPrimaryTxt}>{loading ? 'Signing in...' : 'Continue'}</Text>
+            <Text style={ss.btnPrimaryTxt}>{loading ? 'Saving...' : 'Continue'}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -83,10 +180,11 @@ function HomeScreen() {
   const { s, go, selectService } = useApp();
   const [moves, setMoves] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const insets = useSafeAreaInsets();
 
-  useEffect(() => {
-    api.getMoves()
+  const loadMoves = useCallback(() => {
+    return api.getMoves()
       .then(r => {
         const all = [
           ...r.jobs.map((j: any) => ({ ...j, _t: 'job' })),
@@ -94,24 +192,39 @@ function HomeScreen() {
         ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         setMoves(all);
       })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+      .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    loadMoves().finally(() => setLoading(false));
+    const interval = setInterval(loadMoves, 30000);
+    return () => clearInterval(interval);
+  }, [loadMoves]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadMoves().finally(() => setRefreshing(false));
+  }, [loadMoves]);
 
   const name = s.customer?.fullName && s.customer.fullName !== s.customer.phone
     ? s.customer.fullName.split(' ')[0] : null;
   const activeMove = moves.find(m => m._t === 'job' && ['confirmed', 'in_progress'].includes(m.status));
-  const recentMoves = moves.filter(m => m !== activeMove).slice(0, 2);
+  const quotedMoves = moves.filter(m => m.quotation?.total > 0 && !['confirmed', 'completed', 'cancelled', 'won'].includes(m.status));
+  const recentMoves = moves.filter(m => m !== activeMove && !quotedMoves.includes(m)).slice(0, 2);
 
   return (
     <View style={ss.fill}>
-      <ScrollView contentContainerStyle={{ paddingTop: insets.top + 16, paddingBottom: 100 }}>
+      <ScrollView contentContainerStyle={{ paddingTop: insets.top + 16, paddingBottom: 100 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.purple} colors={[C.purple]} />}>
+
         {/* Header */}
         <View style={[ss.px, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
           <View>
-            <Text style={{ fontFamily: F.med, fontSize: 13, color: C.ink3 }}>Good morning</Text>
+            <Text style={{ fontFamily: F.med, fontSize: 13, color: C.ink3 }}>
+              {name ? `Hi, ${name}` : 'Good morning'}
+            </Text>
             <Text style={{ fontFamily: F.display, fontSize: 22, color: C.ink, letterSpacing: -0.4 }}>
-              {name ? `Welcome back 👋` : 'Welcome back 👋'}
+              Welcome back 👋
             </Text>
           </View>
           <View style={ss.avatar}>
@@ -154,11 +267,49 @@ function HomeScreen() {
           </View>
         </View>
 
+        {/* Quote Received Cards */}
+        {quotedMoves.length > 0 && (
+          <View style={ss.px}>
+            <Text style={ss.sectionTitle}>Quotes Received</Text>
+            {quotedMoves.map((ql: any) => (
+              <TouchableOpacity key={ql._id} activeOpacity={0.85} onPress={() => go('moveDetail', ql._id)}
+                style={{ marginBottom: 12, borderRadius: 20, overflow: 'hidden', backgroundColor: C.ink }}>
+                <View style={{ padding: 20 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontFamily: F.reg, fontSize: 11, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: 0.6 }}>Your Quote</Text>
+                      <Text style={{ fontFamily: F.displayXB, fontSize: 28, color: C.white, letterSpacing: -1, marginTop: 2 }}>
+                        AED {ql.quotation.total.toLocaleString()}
+                      </Text>
+                    </View>
+                    <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: 'rgba(34,197,94,0.2)' }}>
+                      <Text style={{ color: C.green, fontSize: 11, fontFamily: F.semi }}>Fixed Price</Text>
+                    </View>
+                  </View>
+                  <View style={{ marginTop: 10, gap: 4 }}>
+                    {ql.quotation.items.slice(0, 2).map((item: any, i: number) => (
+                      <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                        <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>{item.description}</Text>
+                        <Text style={{ fontSize: 13, fontFamily: F.semi, color: 'rgba(255,255,255,0.8)' }}>AED {item.amount.toLocaleString()}</Text>
+                      </View>
+                    ))}
+                  </View>
+                  <TouchableOpacity activeOpacity={0.85} onPress={() => go('moveDetail', ql._id)}
+                    style={{ marginTop: 14, height: 42, borderRadius: 12, backgroundColor: C.purple, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 }}>
+                    <Text style={{ color: C.white, fontFamily: F.bold, fontSize: 14 }}>View & Accept Quote</Text>
+                    <Text style={{ color: C.white, fontSize: 16 }}>→</Text>
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
         {/* Active Move */}
         {activeMove && (
           <View style={ss.px}>
             <Text style={ss.sectionTitle}>Active Move</Text>
-            <TouchableOpacity activeOpacity={0.8} onPress={() => go('tracking', activeMove._id)} style={ss.activeCard}>
+            <TouchableOpacity activeOpacity={0.8} onPress={() => go('moveDetail', activeMove._id)} style={ss.activeCard}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <View>
                   <View style={ss.statusChip}>
@@ -206,9 +357,9 @@ function HomeScreen() {
                     {new Date(m.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                   </Text>
                 </View>
-                <View style={[ss.statusPill, { backgroundColor: m.status === 'completed' ? C.greenBg : C.purpleBg }]}>
-                  <Text style={{ fontSize: 11, fontFamily: F.semi, color: m.status === 'completed' ? C.green : C.purple }}>
-                    {m.status === 'completed' ? 'Completed' : m.status === 'new' ? 'Submitted' : m.status}
+                <View style={[ss.statusPill, { backgroundColor: m.status === 'completed' ? C.greenBg : m.status === 'confirmed' ? C.greenBg : (m.quotation?.total > 0) ? '#dcfce7' : C.purpleBg }]}>
+                  <Text style={{ fontSize: 11, fontFamily: F.semi, color: m.status === 'completed' ? C.green : m.status === 'confirmed' ? C.green : (m.quotation?.total > 0) ? C.green : C.purple }}>
+                    {m.status === 'completed' ? 'Completed' : m.status === 'confirmed' ? 'Confirmed' : (m.quotation?.total > 0) ? 'Quote Ready' : m.status === 'new' ? 'Submitted' : m.status}
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -233,15 +384,20 @@ const BOOKING_SERVICES = [
   { icon: '🚚', label: 'Furniture Delivery', desc: 'New purchase pickup & delivery' },
 ];
 
-const PROPERTY_TYPES = ['Studio', '1 BHK', '2 BHK', '3 BHK', 'Villa'];
+const PROPERTY_CATEGORIES: Record<string, string[]> = {
+  'Apartment': ['Studio', '1 BHK', '2 BHK', '3 BHK', '4 BHK', '5 BHK'],
+  'Villa': ['Villa — 1 Room', 'Villa — 2 Rooms', 'Villa — 3 Rooms', 'Villa — 4 Rooms', 'Villa — 5 Rooms', 'Villa — Full'],
+};
 const TIME_SLOTS = ['8:00 AM', '10:00 AM', '12:00 PM', '2:00 PM'];
-const STEPS = ['Service', 'Details', 'Photos', 'Schedule'];
+const STEPS = ['Service', 'Info', 'Details', 'Photos', 'Schedule'];
 
 function BookingScreen() {
   const { s, go, setBookingStep, selectService } = useApp();
   const step = s.bookingStep;
   const insets = useSafeAreaInsets();
 
+  const [customerName, setCustomerName] = useState(s.customer?.fullName && s.customer.fullName !== s.customer.phone ? s.customer.fullName : '');
+  const [customerEmail, setCustomerEmail] = useState(s.customer?.email || '');
   const [pickupAddr, setPickupAddr] = useState('');
   const [deliveryAddr, setDeliveryAddr] = useState('');
   const [propertyType, setPropertyType] = useState('');
@@ -253,8 +409,26 @@ function BookingScreen() {
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const LAST_STEP = STEPS.length - 1;
+
+  const stepValid = (() => {
+    switch (step) {
+      case 0: return !!s.selectedService;
+      case 1: return customerName.trim().length >= 2 && customerEmail.trim().length >= 3;
+      case 2: return pickupAddr.trim().length > 0 && deliveryAddr.trim().length > 0 && propertyType.length > 0;
+      case 3: return photos.length > 0;
+      case 4: return selectedDate !== null && selectedTime !== null;
+      default: return true;
+    }
+  })();
+
+  const [uploadMsg, setUploadMsg] = useState('');
+
   const submit = async () => {
     setSubmitting(true);
+    if (photos.length > 0) {
+      setUploadMsg('Uploading images, please don\'t close the app...');
+    }
     try {
       await api.requestMove({
         serviceType: s.selectedService,
@@ -266,9 +440,12 @@ function BookingScreen() {
         moveDate: selectedDate ? `2026-07-${String(selectedDate).padStart(2, '0')}` : undefined,
         timeSlot: selectedTime || undefined,
         instructions: notes,
-      });
+        customerName: customerName || undefined,
+        customerEmail: customerEmail || undefined,
+      }, photos.length > 0 ? photos : undefined);
+      setUploadMsg('');
       go('quote');
-    } catch (e: any) { Alert.alert('Error', e.message); }
+    } catch (e: any) { setUploadMsg(''); Alert.alert('Error', e.message); }
     finally { setSubmitting(false); }
   };
 
@@ -293,9 +470,10 @@ function BookingScreen() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 120 }}>
           {step === 0 && <StepService selected={s.selectedService} onSelect={selectService} />}
-          {step === 1 && <StepDetails pickupAddr={pickupAddr} setPickupAddr={setPickupAddr} deliveryAddr={deliveryAddr} setDeliveryAddr={setDeliveryAddr} propertyType={propertyType} setPropertyType={setPropertyType} floor={floor} setFloor={setFloor} hasElevator={hasElevator} setHasElevator={setHasElevator} />}
-          {step === 2 && <StepPhotos photos={photos} setPhotos={setPhotos} notes={notes} setNotes={setNotes} />}
-          {step === 3 && <StepSchedule selectedDate={selectedDate} setSelectedDate={setSelectedDate} selectedTime={selectedTime} setSelectedTime={setSelectedTime} />}
+          {step === 1 && <StepInfo customerName={customerName} setCustomerName={setCustomerName} customerEmail={customerEmail} setCustomerEmail={setCustomerEmail} phone={s.customer?.phone || ''} />}
+          {step === 2 && <StepDetails pickupAddr={pickupAddr} setPickupAddr={setPickupAddr} deliveryAddr={deliveryAddr} setDeliveryAddr={setDeliveryAddr} propertyType={propertyType} setPropertyType={setPropertyType} floor={floor} setFloor={setFloor} hasElevator={hasElevator} setHasElevator={setHasElevator} />}
+          {step === 3 && <StepPhotos photos={photos} setPhotos={setPhotos} notes={notes} setNotes={setNotes} />}
+          {step === 4 && <StepSchedule selectedDate={selectedDate} setSelectedDate={setSelectedDate} selectedTime={selectedTime} setSelectedTime={setSelectedTime} />}
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -307,12 +485,23 @@ function BookingScreen() {
           </TouchableOpacity>
         )}
         <TouchableOpacity activeOpacity={0.85}
-          onPress={() => step < 3 ? setBookingStep(step + 1) : submit()}
-          style={[ss.btnPrimary, { flex: 1, borderRadius: 16 }]}
-          disabled={submitting}>
-          <Text style={ss.btnPrimaryTxt}>{step === 3 ? (submitting ? 'Submitting...' : 'Submit Request') : 'Continue'}</Text>
+          onPress={() => step < LAST_STEP ? setBookingStep(step + 1) : submit()}
+          style={[ss.btnPrimary, { flex: 1, borderRadius: 16 }, (!stepValid || submitting) && { opacity: 0.4 }]}
+          disabled={!stepValid || submitting}>
+          <Text style={ss.btnPrimaryTxt}>{step === LAST_STEP ? (submitting ? 'Submitting...' : 'Submit Request') : 'Continue'}</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Upload overlay */}
+      {submitting && uploadMsg !== '' && (
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
+          <View style={{ backgroundColor: C.white, borderRadius: 20, padding: 32, alignItems: 'center', marginHorizontal: 40, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 8 }}>
+            <ActivityIndicator size="large" color={C.purple} style={{ marginBottom: 16 }} />
+            <Text style={{ fontFamily: F.bold, fontSize: 16, color: C.ink, textAlign: 'center', marginBottom: 8 }}>Uploading Photos</Text>
+            <Text style={{ fontFamily: F.reg, fontSize: 14, color: '#666', textAlign: 'center', lineHeight: 20 }}>{uploadMsg}</Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -343,7 +532,47 @@ function StepService({ selected, onSelect }: { selected: string | null; onSelect
   );
 }
 
+function StepInfo({ customerName, setCustomerName, customerEmail, setCustomerEmail, phone }: any) {
+  return (
+    <View>
+      <Text style={ss.stepTitle}>Your Information</Text>
+      <Text style={ss.stepSub}>Help us know you better</Text>
+
+      <View style={{ marginTop: 24, gap: 18 }}>
+        <View>
+          <Text style={ss.fieldLabel}>FULL NAME</Text>
+          <View style={ss.addressRow}>
+            <View style={ss.addressIcon}><Text style={{ fontSize: 16 }}>👤</Text></View>
+            <TextInput style={[ss.addressInput, { flex: 1 }]} value={customerName}
+              onChangeText={setCustomerName} placeholder="Enter your full name" placeholderTextColor={C.faint} autoCapitalize="words" />
+          </View>
+        </View>
+
+        <View>
+          <Text style={ss.fieldLabel}>EMAIL ADDRESS</Text>
+          <View style={ss.addressRow}>
+            <View style={ss.addressIcon}><Text style={{ fontSize: 16 }}>✉️</Text></View>
+            <TextInput style={[ss.addressInput, { flex: 1 }]} value={customerEmail}
+              onChangeText={setCustomerEmail} placeholder="email@example.com" placeholderTextColor={C.faint}
+              keyboardType="email-address" autoCapitalize="none" />
+          </View>
+        </View>
+
+        <View>
+          <Text style={ss.fieldLabel}>PHONE NUMBER</Text>
+          <View style={[ss.addressRow, { backgroundColor: C.line3 }]}>
+            <View style={ss.addressIcon}><Text style={{ fontSize: 16 }}>📱</Text></View>
+            <Text style={{ fontFamily: F.med, fontSize: 15, color: C.ink3 }}>{phone}</Text>
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 function StepDetails({ pickupAddr, setPickupAddr, deliveryAddr, setDeliveryAddr, propertyType, setPropertyType, floor, setFloor, hasElevator, setHasElevator }: any) {
+  const initCat = Object.entries(PROPERTY_CATEGORIES).find(([, vals]) => vals.includes(propertyType))?.[0] || '';
+  const [_propCat, _setPropCat] = useState(initCat);
   return (
     <View>
       <Text style={ss.stepTitle}>Move details</Text>
@@ -368,14 +597,27 @@ function StepDetails({ pickupAddr, setPickupAddr, deliveryAddr, setDeliveryAddr,
       </View>
 
       <Text style={[ss.fieldLabel, { marginTop: 20 }]}>PROPERTY TYPE</Text>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
-        {PROPERTY_TYPES.map(t => (
-          <TouchableOpacity key={t} onPress={() => setPropertyType(t)}
-            style={[ss.chip, propertyType === t && ss.chipOn]}>
-            <Text style={[ss.chipTxt, propertyType === t && ss.chipTxtOn]}>{t}</Text>
-          </TouchableOpacity>
-        ))}
+      <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+        {Object.keys(PROPERTY_CATEGORIES).map(cat => {
+          const isActive = PROPERTY_CATEGORIES[cat].includes(propertyType) || (!propertyType && cat === _propCat);
+          return (
+            <TouchableOpacity key={cat} onPress={() => { _setPropCat(cat); setPropertyType(''); }}
+              style={[ss.chip, (cat === _propCat) && ss.chipOn]}>
+              <Text style={[ss.chipTxt, (cat === _propCat) && ss.chipTxtOn]}>{cat === 'Apartment' ? '🏢 Apartment' : '🏡 Villa'}</Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
+      {_propCat ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+          {PROPERTY_CATEGORIES[_propCat].map(t => (
+            <TouchableOpacity key={t} onPress={() => setPropertyType(t)}
+              style={[ss.chip, propertyType === t && ss.chipOn]}>
+              <Text style={[ss.chipTxt, propertyType === t && ss.chipTxtOn]}>{t}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      ) : null}
 
       <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
         <View style={{ flex: 1 }}>
@@ -397,35 +639,55 @@ function StepDetails({ pickupAddr, setPickupAddr, deliveryAddr, setDeliveryAddr,
   );
 }
 
+const PHOTO_CATEGORIES = ['Living Room', 'Bedrooms', 'Kitchen', 'Bathrooms', 'Balcony', 'Storage / Boxes', 'Other'];
+const TILE_W = (W - 60) / 3;
+
 function StepPhotos({ photos, setPhotos, notes, setNotes }: any) {
-  const pickImage = async () => {
+  const pickForCategory = async (category: string) => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsMultipleSelection: true, quality: 0.7,
     });
     if (result.canceled) return;
     const newPhotos = result.assets.map((a, i) => ({
-      uri: a.uri, name: `photo_${Date.now()}_${i}.jpg`, category: 'General',
+      uri: a.uri, name: `photo_${Date.now()}_${i}.jpg`, category,
     }));
     setPhotos([...photos, ...newPhotos]);
   };
 
-  const ROOMS = ['Living Room', 'Bedroom', 'Kitchen'];
-  const ROOM_EMOJI = ['🛋', '🛏', '🍳'];
-  const ROOM_BG = ['#EDE5FF', '#DDD0FF', '#F7F3FF'];
+  const countByCategory = (cat: string) => photos.filter((p: any) => p.category === cat).length;
 
   return (
     <View>
-      <Text style={ss.stepTitle}>Upload photos</Text>
-      <Text style={ss.stepSub}>Take photos of the items you need moved. This helps us give you an accurate quote.</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <Text style={{ fontSize: 16 }}>📷</Text>
+        <Text style={ss.stepTitle}>Estimation Photos</Text>
+      </View>
+      <Text style={ss.stepSub}>{photos.length} photo{photos.length !== 1 ? 's' : ''} — take photos of each area for an accurate estimate</Text>
 
-      <TouchableOpacity activeOpacity={0.8} onPress={pickImage} style={ss.uploadArea}>
-        <View style={ss.uploadIcon}><Text style={{ fontSize: 24 }}>📸</Text></View>
-        <Text style={{ fontFamily: F.semi, fontSize: 15, color: C.ink }}>Tap to upload photos</Text>
-        <Text style={{ fontFamily: F.reg, fontSize: 13, color: C.ink3 }}>or take new ones with camera</Text>
-        <View style={[ss.btnSmallPurple, { marginTop: 8 }]}>
-          <Text style={{ color: C.white, fontFamily: F.semi, fontSize: 13 }}>Choose Files</Text>
-        </View>
-      </TouchableOpacity>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 16 }}>
+        {PHOTO_CATEGORIES.map(cat => {
+          const count = countByCategory(cat);
+          const hasPhotos = count > 0;
+          return (
+            <TouchableOpacity key={cat} activeOpacity={0.8} onPress={() => pickForCategory(cat)}
+              style={{
+                width: TILE_W, height: TILE_W * 0.85, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 4,
+                backgroundColor: hasPhotos ? '#ECFDF5' : '#F9F7FC',
+                borderWidth: 1.5, borderColor: hasPhotos ? '#6EE7B7' : '#E9E4F0', borderStyle: hasPhotos ? 'solid' : 'dashed',
+              }}>
+              {hasPhotos && (
+                <View style={{ position: 'absolute', top: 6, right: 6, width: 18, height: 18, borderRadius: 9, backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>✓</Text>
+                </View>
+              )}
+              <Icon name={hasPhotos ? 'image' : 'camera'} size={18} color={hasPhotos ? '#10B981' : C.purple} />
+              <Text style={{ fontFamily: F.semi, fontSize: 11, color: hasPhotos ? '#10B981' : C.purple, textAlign: 'center' }}>
+                {hasPhotos ? `${cat} (${count})` : cat}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
 
       {photos.length > 0 && (
         <View style={{ marginTop: 16 }}>
@@ -433,7 +695,7 @@ function StepPhotos({ photos, setPhotos, notes, setNotes }: any) {
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {photos.map((p: any, i: number) => (
               <View key={i} style={{ marginRight: 8, position: 'relative' }}>
-                <Image source={{ uri: p.uri }} style={{ width: 80, height: 80, borderRadius: 14 }} />
+                <Image source={{ uri: p.uri }} style={{ width: 56, height: 56, borderRadius: 10 }} />
                 <TouchableOpacity onPress={() => setPhotos(photos.filter((_: any, idx: number) => idx !== i))}
                   style={ss.photoRemove}>
                   <Text style={{ color: C.white, fontSize: 10, fontWeight: '700' }}>✕</Text>
@@ -444,19 +706,12 @@ function StepPhotos({ photos, setPhotos, notes, setNotes }: any) {
         </View>
       )}
 
-      {photos.length === 0 && (
-        <View style={{ marginTop: 16 }}>
-          <Text style={{ fontFamily: F.semi, fontSize: 13, color: C.ink, marginBottom: 10 }}>Room guide</Text>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {ROOMS.map((r, i) => (
-              <View key={i} style={[ss.roomGuide, { backgroundColor: ROOM_BG[i] }]}>
-                <Text style={{ fontSize: 28 }}>{ROOM_EMOJI[i]}</Text>
-                <Text style={{ fontFamily: F.semi, fontSize: 11, color: C.purple }}>{r}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      )}
+      <View style={{ marginTop: 14, backgroundColor: '#FEF9C3', borderRadius: 12, padding: 12, flexDirection: 'row', gap: 8 }}>
+        <Text style={{ fontSize: 16 }}>⚠️</Text>
+        <Text style={{ flex: 1, fontFamily: F.reg, fontSize: 12, color: '#92400E', lineHeight: 17 }}>
+          If any items are more than the images provided, the quote will be revised on the spot.
+        </Text>
+      </View>
 
       <Text style={[ss.fieldLabel, { marginTop: 20 }]}>ADDITIONAL NOTES</Text>
       <TextInput style={[ss.fieldInput, { minHeight: 80, textAlignVertical: 'top' }]}
@@ -531,67 +786,40 @@ function QuoteScreen() {
     <View style={ss.fill}>
       <View style={[ss.topBar, { paddingTop: insets.top + 8 }]}>
         <BackButton onPress={() => go('home')} />
-        <Text style={ss.topBarTitle}>Your Quote</Text>
+        <Text style={ss.topBarTitle}>Request Submitted</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
-        {/* Success header */}
-        <View style={{ alignItems: 'center', paddingVertical: 24 }}>
+        <View style={{ alignItems: 'center', paddingVertical: 32 }}>
           <View style={ss.successCircle}><Text style={{ fontSize: 28, color: C.white }}>✓</Text></View>
-          <Text style={[ss.stepTitle, { marginTop: 16, textAlign: 'center' }]}>Quote Ready!</Text>
-          <Text style={{ fontFamily: F.reg, fontSize: 14, color: C.ink3, marginTop: 6 }}>We reviewed your photos and details</Text>
+          <Text style={[ss.stepTitle, { marginTop: 16, textAlign: 'center' }]}>Request Submitted!</Text>
+          <Text style={{ fontFamily: F.reg, fontSize: 14, color: C.ink3, marginTop: 6, textAlign: 'center', lineHeight: 20 }}>
+            Our team will review your photos and details and send you a quote shortly.
+          </Text>
         </View>
 
-        {/* Price card - dark */}
-        <View style={ss.quoteCard}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <View>
-              <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', fontFamily: F.semi, textTransform: 'uppercase', letterSpacing: 0.8 }}>Total estimate</Text>
-              <Text style={{ fontSize: 40, fontFamily: F.displayXB, color: C.white, letterSpacing: -1.2, marginTop: 4 }}>AED 2,800</Text>
-            </View>
-            <View style={ss.fixedPriceBadge}>
-              <Text style={{ color: C.lavender, fontSize: 12, fontFamily: F.semi }}>Fixed Price</Text>
-            </View>
-          </View>
-          <View style={{ marginTop: 20, gap: 10 }}>
+        <View style={[ss.quoteCard, { alignItems: 'center', paddingVertical: 32 }]}>
+          <Text style={{ fontSize: 40 }}>📋</Text>
+          <Text style={{ fontSize: 18, fontFamily: F.display, color: C.white, marginTop: 12 }}>What happens next?</Text>
+          <View style={{ marginTop: 20, gap: 16, width: '100%' }}>
             {[
-              { label: 'Packing & wrapping', price: 'AED 800' },
-              { label: 'Loading & transport', price: 'AED 1,200' },
-              { label: 'Unloading & placement', price: 'AED 600' },
-              { label: 'Furniture disassembly/assembly', price: 'AED 200' },
+              { step: '1', text: 'We review your photos and move details' },
+              { step: '2', text: 'Our team prepares a detailed quote for you' },
+              { step: '3', text: 'You get notified when your quote is ready' },
             ].map((item, i) => (
-              <View key={i} style={[ss.quoteRow, i > 0 && { borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)', paddingTop: 10 }]}>
-                <Text style={{ fontSize: 14, color: 'rgba(255,255,255,0.7)' }}>{item.label}</Text>
-                <Text style={{ fontSize: 14, fontFamily: F.semi, color: C.white }}>{item.price}</Text>
+              <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: C.purple, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ color: C.white, fontFamily: F.bold, fontSize: 13 }}>{item.step}</Text>
+                </View>
+                <Text style={{ flex: 1, fontSize: 14, color: 'rgba(255,255,255,0.8)', fontFamily: F.reg }}>{item.text}</Text>
               </View>
             ))}
           </View>
         </View>
 
-        {/* Details */}
-        <View style={ss.detailsCard}>
-          <Text style={{ fontFamily: F.bold, fontSize: 14, color: C.ink, marginBottom: 14 }}>Move Details</Text>
-          {[
-            { label: 'Service', value: 'Home Shifting' },
-            { label: 'From', value: 'Pickup address' },
-            { label: 'To', value: 'Delivery address' },
-            { label: 'Date', value: 'Selected date' },
-            { label: 'Time', value: '8:00 AM' },
-            { label: 'Crew', value: '4 members + 1 truck' },
-          ].map((d, i) => (
-            <View key={i} style={[ss.detailRow, i > 0 && { borderTopWidth: 1, borderTopColor: C.line3, paddingTop: 9 }]}>
-              <Text style={{ fontSize: 13, color: C.ink3 }}>{d.label}</Text>
-              <Text style={{ fontSize: 13, fontFamily: F.semi, color: C.ink, textAlign: 'right', maxWidth: '60%' }}>{d.value}</Text>
-            </View>
-          ))}
-        </View>
-
-        <TouchableOpacity activeOpacity={0.85} onPress={() => go('tracking')}
-          style={[ss.btnPrimary, { borderRadius: 16, marginTop: 16 }]}>
-          <Text style={ss.btnPrimaryTxt}>Accept & Pay</Text>
-        </TouchableOpacity>
-        <TouchableOpacity activeOpacity={0.85} style={ss.btnOutline}>
-          <Text style={ss.btnOutlineTxt}>Chat with us about this quote</Text>
+        <TouchableOpacity activeOpacity={0.85} onPress={() => go('home')}
+          style={[ss.btnPrimary, { borderRadius: 16, marginTop: 20 }]}>
+          <Text style={ss.btnPrimaryTxt}>Back to Home</Text>
         </TouchableOpacity>
       </ScrollView>
     </View>
@@ -718,7 +946,7 @@ function HistoryScreen() {
   useEffect(() => { load(); }, [load]);
 
   const filtered = moves.filter(m => {
-    if (filter === 'Active') return ['new', 'contacted', 'confirmed', 'in_progress'].includes(m.status);
+    if (filter === 'Active') return ['new', 'contacted', 'quoted', 'draft', 'confirmed', 'in_progress'].includes(m.status);
     if (filter === 'Completed') return m.status === 'completed';
     return true;
   });
@@ -757,12 +985,27 @@ function HistoryScreen() {
             <TouchableOpacity activeOpacity={0.7} onPress={() => go('moveDetail', m._id)}
               style={ss.bookingCard}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
-                <View style={[ss.statusPill, { backgroundColor: m.status === 'completed' ? C.greenBg : m.status === 'in_progress' ? `${C.purple}15` : C.line3 }]}>
-                  <Text style={{ fontSize: 11, fontFamily: F.semi, color: m.status === 'completed' ? C.green : m.status === 'in_progress' ? C.purple : C.ink3 }}>
-                    {m.status === 'completed' ? 'Completed' : m.status === 'in_progress' ? 'In Progress' : m.status === 'new' ? 'Submitted' : m.status}
+                <View style={[ss.statusPill, {
+                  backgroundColor: m.status === 'completed' ? C.greenBg
+                    : (m.status === 'quoted' || (m.quotation?.total > 0 && m.status === 'draft')) ? '#dcfce7'
+                    : m.status === 'confirmed' ? C.greenBg
+                    : m.status === 'in_progress' ? `${C.purple}15`
+                    : C.line3
+                }]}>
+                  <Text style={{ fontSize: 11, fontFamily: F.semi,
+                    color: m.status === 'completed' ? C.green
+                      : (m.status === 'quoted' || (m.quotation?.total > 0 && m.status === 'draft')) ? C.green
+                      : m.status === 'confirmed' ? C.green
+                      : m.status === 'in_progress' ? C.purple
+                      : C.ink3
+                  }}>
+                    {m.status === 'completed' ? 'Completed' : (m.status === 'quoted' || (m.quotation?.total > 0 && m.status === 'draft')) ? 'Quote Ready' : m.status === 'confirmed' ? 'Confirmed' : m.status === 'in_progress' ? 'In Progress' : m.status === 'new' ? 'Submitted' : m.status}
                   </Text>
                 </View>
-                {m._t === 'job' && m.clientPackage?.agreedPrice > 0 && (
+                {m.quotation?.total > 0 && (
+                  <Text style={{ fontFamily: F.display, fontSize: 16, color: C.green }}>AED {m.quotation.total.toLocaleString()}</Text>
+                )}
+                {!m.quotation?.total && m.clientPackage?.agreedPrice > 0 && (
                   <Text style={{ fontFamily: F.display, fontSize: 16, color: C.ink }}>AED {m.clientPackage.agreedPrice.toLocaleString()}</Text>
                 )}
               </View>
@@ -803,6 +1046,8 @@ function MoveDetailScreen() {
   const [data, setData] = useState<any>(null);
   const [type, setType] = useState<string>('lead');
   const [loading, setLoading] = useState(true);
+  const [accepting, setAccepting] = useState(false);
+  const [uploadingPermit, setUploadingPermit] = useState(false);
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
@@ -833,16 +1078,171 @@ function MoveDetailScreen() {
         <View style={ss.detailsCard}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
             <Text style={{ fontFamily: F.bold, fontSize: 14, color: C.ink }}>Status</Text>
-            <View style={[ss.statusPill, { backgroundColor: data.status === 'completed' ? C.greenBg : C.purpleBg }]}>
-              <Text style={{ fontSize: 11, fontFamily: F.semi, color: data.status === 'completed' ? C.green : C.purple }}>{data.status}</Text>
+            <View style={[ss.statusPill, {
+              backgroundColor: data.status === 'completed' ? C.greenBg
+                : (data.status === 'quoted' || data.quotation?.total > 0) ? '#dcfce7'
+                : data.status === 'confirmed' ? C.greenBg
+                : C.purpleBg
+            }]}>
+              <Text style={{ fontSize: 11, fontFamily: F.semi,
+                color: data.status === 'completed' ? C.green
+                  : (data.status === 'quoted' || data.quotation?.total > 0) ? C.green
+                  : data.status === 'confirmed' ? C.green
+                  : C.purple
+              }}>{data.status === 'completed' ? 'Completed' : (data.status === 'quoted' || (data.quotation?.total > 0 && data.status === 'draft')) ? 'Quote Ready' : data.status === 'confirmed' ? 'Confirmed' : data.status === 'in_progress' ? 'In Progress' : data.status === 'new' ? 'Submitted' : data.status}</Text>
             </View>
           </View>
           {data.pickupAddress && <DetailRow label="From" value={data.pickupAddress} />}
           {data.deliveryAddress && <DetailRow label="To" value={data.deliveryAddress} />}
           {(data.scheduledDate || data.moveDate) && <DetailRow label="Date" value={new Date(data.scheduledDate || data.moveDate).toLocaleDateString()} />}
+          {data.serviceType && <DetailRow label="Service" value={data.serviceType} />}
           {data.notes && <DetailRow label="Notes" value={data.notes} />}
         </View>
+
+        {/* Customer photos */}
+        {data.images?.length > 0 && (
+          <View style={{ marginTop: 16 }}>
+            <Text style={{ fontFamily: F.bold, fontSize: 14, color: C.ink, marginBottom: 10 }}>Your Photos</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {data.images.map((img: any, i: number) => (
+                <Image key={i} source={{ uri: img.url }} style={{ width: 90, height: 90, borderRadius: 14, marginRight: 8 }} />
+              ))}
+            </ScrollView>
+            <View style={{ marginTop: 10, backgroundColor: '#FEF9C3', borderRadius: 12, padding: 12, flexDirection: 'row', gap: 8 }}>
+              <Text style={{ fontSize: 16 }}>⚠️</Text>
+              <Text style={{ flex: 1, fontFamily: F.reg, fontSize: 12, color: '#92400E', lineHeight: 17 }}>
+                If any items are more than the images provided, the quote will be revised on the spot.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Quote from admin */}
+        {data.quotation?.total > 0 && (
+          <>
+            <View style={[ss.quoteCard, { marginTop: 16 }]}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <View>
+                  <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', fontFamily: F.semi, textTransform: 'uppercase', letterSpacing: 0.8 }}>Your Quote</Text>
+                  <Text style={{ fontSize: 36, fontFamily: F.displayXB, color: C.white, letterSpacing: -1, marginTop: 4 }}>
+                    AED {data.quotation.total.toLocaleString()}
+                  </Text>
+                </View>
+                <View style={ss.fixedPriceBadge}>
+                  <Text style={{ color: C.lavender, fontSize: 12, fontFamily: F.semi }}>Fixed Price</Text>
+                </View>
+              </View>
+              <View style={{ marginTop: 20, gap: 10 }}>
+                {data.quotation.items.map((item: any, i: number) => (
+                  <View key={i} style={[ss.quoteRow, i > 0 && { borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)', paddingTop: 10 }]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 14, color: 'rgba(255,255,255,0.7)' }}>{item.description}</Text>
+                      {item.qty > 1 && <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>{item.qty} × AED {item.rate.toLocaleString()}</Text>}
+                    </View>
+                    <Text style={{ fontSize: 14, fontFamily: F.semi, color: C.white }}>AED {item.amount.toLocaleString()}</Text>
+                  </View>
+                ))}
+              </View>
+              {data.quotation.discount > 0 && (
+                <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)', flexDirection: 'row', justifyContent: 'space-between' }}>
+                  <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>Discount</Text>
+                  <Text style={{ fontSize: 13, fontFamily: F.semi, color: '#86efac' }}>- AED {data.quotation.discount.toLocaleString()}</Text>
+                </View>
+              )}
+              {data.quotation.notes ? (
+                <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)' }}>
+                  <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>{data.quotation.notes}</Text>
+                </View>
+              ) : null}
+            </View>
+
+            <TouchableOpacity
+              activeOpacity={0.85}
+              disabled={accepting || data.status === 'confirmed'}
+              style={[ss.btnPrimary, { borderRadius: 16, marginTop: 16, opacity: accepting || data.status === 'confirmed' ? 0.6 : 1 }]}
+              onPress={async () => {
+                setAccepting(true);
+                try {
+                  await api.acceptQuote(data._id);
+                  setData({ ...data, status: 'confirmed' });
+                  Alert.alert('Quote Accepted', 'Your move has been confirmed. We will be in touch shortly!');
+                } catch (e: any) { Alert.alert('Error', e.message); }
+                finally { setAccepting(false); }
+              }}
+            >
+              <Text style={ss.btnPrimaryTxt}>{accepting ? 'Processing…' : data.status === 'confirmed' ? 'Quote Accepted ✓' : 'Accept & Proceed'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity activeOpacity={0.85} style={[ss.btnOutline, { marginTop: 8 }]}>
+              <Text style={ss.btnOutlineTxt}>Chat with us about this quote</Text>
+            </TouchableOpacity>
+          </>
+        )}
+
+        {/* Move Permit Upload */}
+        <View style={{ marginTop: 24, backgroundColor: C.white, borderRadius: 20, padding: 20, borderWidth: 1, borderColor: C.line3 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+            <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: C.purpleBg, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 18 }}>📋</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontFamily: F.bold, fontSize: 15, color: C.ink }}>Move Permit</Text>
+              <Text style={{ fontFamily: F.reg, fontSize: 12, color: C.ink3, marginTop: 1 }}>Upload your building move permit</Text>
+            </View>
+          </View>
+
+          {/* Show existing permits */}
+          {data.images?.filter((img: any) => img.category === 'Move Permit').length > 0 && (
+            <View style={{ marginTop: 14 }}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {data.images.filter((img: any) => img.category === 'Move Permit').map((img: any, i: number) => (
+                  <Image key={i} source={{ uri: img.url }} style={{ width: 80, height: 80, borderRadius: 12, marginRight: 8, borderWidth: 1, borderColor: C.line3 }} />
+                ))}
+              </ScrollView>
+              <Text style={{ fontFamily: F.reg, fontSize: 11, color: C.green, marginTop: 8 }}>✓ Permit uploaded</Text>
+            </View>
+          )}
+
+          <TouchableOpacity
+            activeOpacity={0.85}
+            disabled={uploadingPermit}
+            onPress={async () => {
+              const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsMultipleSelection: true,
+                quality: 0.8,
+              });
+              if (result.canceled || !result.assets?.length) return;
+              setUploadingPermit(true);
+              try {
+                const imgs = result.assets.map(a => ({
+                  uri: a.uri,
+                  name: a.fileName || `permit-${Date.now()}.jpg`,
+                  type: a.mimeType || 'image/jpeg',
+                }));
+                const res = await api.uploadPhotos(data._id, imgs, 'Move Permit');
+                setData({ ...data, images: [...(data.images || []), ...res.images] });
+                Alert.alert('Uploaded', 'Move permit uploaded successfully.');
+              } catch (e: any) { Alert.alert('Error', e.message); }
+              finally { setUploadingPermit(false); }
+            }}
+            style={{ marginTop: 14, height: 44, borderRadius: 12, borderWidth: 1.5, borderColor: C.purple, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, opacity: uploadingPermit ? 0.5 : 1 }}
+          >
+            <Text style={{ fontSize: 16 }}>📎</Text>
+            <Text style={{ color: C.purple, fontFamily: F.semi, fontSize: 14 }}>{uploadingPermit ? 'Uploading…' : 'Upload Permit Photo'}</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
+
+      {/* Upload overlay */}
+      {uploadingPermit && (
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
+          <View style={{ backgroundColor: C.white, borderRadius: 20, padding: 32, alignItems: 'center', marginHorizontal: 40, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 8 }}>
+            <ActivityIndicator size="large" color={C.purple} style={{ marginBottom: 16 }} />
+            <Text style={{ fontFamily: F.bold, fontSize: 16, color: C.ink, textAlign: 'center', marginBottom: 8 }}>Uploading Photos</Text>
+            <Text style={{ fontFamily: F.reg, fontSize: 14, color: '#666', textAlign: 'center', lineHeight: 20 }}>Uploading images, please don't close the app...</Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -983,6 +1383,8 @@ const ss = StyleSheet.create({
   label: { fontFamily: F.semi, fontSize: 13, color: C.ink2, marginBottom: 6 },
   input: { height: 52, borderRadius: 14, borderWidth: 1.5, borderColor: C.line, backgroundColor: C.white, paddingHorizontal: 16, fontFamily: F.reg, fontSize: 15, color: C.ink },
   errorTxt: { fontFamily: F.med, fontSize: 13, color: C.red, marginTop: 6 },
+  googleBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, height: 52, borderRadius: 14, borderWidth: 1.5, borderColor: C.line, backgroundColor: C.white, width: '100%' },
+  googleBtnTxt: { fontFamily: F.semi, fontSize: 15, color: C.ink },
 
   // Buttons
   btnPrimary: { height: 52, borderRadius: 14, backgroundColor: C.purple, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
@@ -1003,7 +1405,7 @@ const ss = StyleSheet.create({
   heroBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start', marginTop: 18, paddingHorizontal: 22, paddingVertical: 12, borderRadius: 999, backgroundColor: C.purple },
   sectionTitle: { fontFamily: F.display, fontSize: 16, color: C.ink, letterSpacing: -0.2, marginBottom: 14, marginTop: 18 },
   servicesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  serviceCard: { width: (W - 50) / 2, backgroundColor: C.white, borderWidth: 1, borderColor: C.line2, borderRadius: 16, padding: 14, alignItems: 'center', gap: 8 },
+  serviceCard: { width: '48%' as any, backgroundColor: C.white, borderWidth: 1, borderColor: C.line2, borderRadius: 16, padding: 14, alignItems: 'center', gap: 8 },
   serviceIcon: { width: 44, height: 44, borderRadius: 13, backgroundColor: C.purpleLite, alignItems: 'center', justifyContent: 'center' },
   serviceLabel: { fontFamily: F.semi, fontSize: 12, color: C.ink, textAlign: 'center', lineHeight: 15 },
 

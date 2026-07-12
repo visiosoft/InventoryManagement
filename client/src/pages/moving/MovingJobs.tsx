@@ -1,11 +1,16 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Plus, Search, ArrowRight, MapPin, Trash2, Pencil } from 'lucide-react'
+import { Plus, Search, ArrowRight, MapPin, Trash2, Pencil, Briefcase, CheckCircle, Clock, Truck } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingJob, MovingJobStatus } from '../../lib/types'
-import { Badge, Button, Card, CardBody, Input, Modal, PageHeader, Spinner, Table, Td, Th, movingJobStatusLabel } from '../../components/ui'
+import { Badge, Button, Modal, Spinner, movingJobStatusLabel } from '../../components/ui'
 import { cn } from '../../lib/utils'
+
+const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
+const INK = '#14081F'
+const MUTED = '#756E80'
+const PURPLE = '#5B2BC9'
 
 interface JobsBreakdown {
   byStatus: Array<{ _id: string; count: number }>
@@ -28,8 +33,25 @@ const statusTone: Record<MovingJobStatus, string> = {
 }
 
 const statusDot: Record<string, string> = {
-  draft: 'bg-slate-400', confirmed: 'bg-blue-400', survey_done: 'bg-purple-400',
-  in_progress: 'bg-amber-400', completed: 'bg-emerald-400', invoiced: 'bg-teal-400', cancelled: 'bg-red-400',
+  draft: '#94A3B8', confirmed: '#3B82F6', survey_done: '#8B5CF6',
+  in_progress: '#F59E0B', completed: '#10B981', invoiced: '#14B8A6', cancelled: '#EF4444',
+}
+
+function StatCard({ label, value, sub, icon, iconBg, iconColor }: {
+  label: string; value: string | number; sub?: string; icon: React.ReactNode; iconBg: string; iconColor: string
+}) {
+  return (
+    <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 20 }}>
+      <div className="flex justify-between items-start">
+        <div style={{ fontSize: 13, color: MUTED, fontWeight: 500 }}>{label}</div>
+        <div style={{ width: 36, height: 36, borderRadius: 10, background: iconBg, display: 'grid', placeItems: 'center', color: iconColor }}>
+          {icon}
+        </div>
+      </div>
+      <div style={{ ...HEADING, fontSize: 32, fontWeight: 700, color: INK, marginTop: 8 }}>{value}</div>
+      {sub && <div style={{ fontSize: 12, color: MUTED, marginTop: 6 }}>{sub}</div>}
+    </div>
+  )
 }
 
 function fmtDate(s?: string) {
@@ -82,181 +104,186 @@ export default function MovingJobs() {
     (j.pickupAddress ?? '').toLowerCase().includes(search.toLowerCase())
   )
 
-  return (
-    <div className="space-y-5">
-      <PageHeader
-        title="Moving Jobs"
-        subtitle={`${data?.total ?? 0} jobs`}
-        action={
-          <Link to="/moving/jobs/new">
-            <Button size="sm" className="gap-1.5"><Plus size={14} />New Job</Button>
-          </Link>
-        }
-      />
+  const confirmedCount = counts['confirmed'] ?? 0
+  const inProgressCount = counts['in_progress'] ?? 0
+  const completedCount = counts['completed'] ?? 0
 
-      {/* Status filter pills */}
-      <div className="flex flex-wrap gap-2">
-        {STATUSES.map(s => {
-          const count = s.value === '' ? allCount : (counts[s.value] ?? 0)
-          const active = status === s.value
-          return (
-            <button
-              key={s.value}
-              onClick={() => setStatus(s.value)}
-              className={cn(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors border',
-                active
-                  ? 'bg-primary text-primary-foreground border-primary'
-                  : 'bg-card text-muted-foreground border-muted hover:border-muted-foreground hover:text-foreground'
-              )}
-            >
-              {s.value && <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', statusDot[s.value])} />}
-              {s.label}
-              <span className={cn('text-xs tabular-nums', active ? 'opacity-70' : 'text-muted-foreground')}>
-                {count}
-              </span>
-            </button>
-          )
-        })}
+  return (
+    <div style={{ background: '#FDFCFA', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+      {/* Top bar */}
+      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-7">
+        <div>
+          <div style={{ ...HEADING, fontSize: 26, fontWeight: 700, color: INK }}>Jobs List</div>
+          <div style={{ fontSize: 14, color: MUTED, marginTop: 4 }}>{data?.total ?? 0} total jobs</div>
+        </div>
+        <Link to="/moving/jobs/new">
+          <button
+            style={{ height: 40, borderRadius: 10, background: PURPLE, color: 'white', fontSize: 14, fontWeight: 600, padding: '0 20px' }}
+            className="flex items-center gap-2 hover:opacity-90 transition-opacity"
+          >
+            <Plus size={16} />New Job
+          </button>
+        </Link>
       </div>
 
-      {/* Search bar */}
-      <div className="relative">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Search by job number, customer, or address…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="pl-9"
-        />
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-7">
+        <StatCard label="Total Jobs" value={allCount} sub="all statuses" icon={<Briefcase size={18} />} iconBg="#F3F0EA" iconColor={MUTED} />
+        <StatCard label="Confirmed" value={confirmedCount} sub="ready to go" icon={<CheckCircle size={18} />} iconBg="#EFF6FF" iconColor="#3B82F6" />
+        <StatCard label="In Progress" value={inProgressCount} sub="currently active" icon={<Truck size={18} />} iconBg="#FFF7ED" iconColor="#EA580C" />
+        <StatCard label="Completed" value={completedCount} sub="finished" icon={<Clock size={18} />} iconBg="#ECFDF5" iconColor="#059669" />
+      </div>
+
+      {/* Search + status pills */}
+      <div className="flex flex-col gap-2.5 mb-5">
+        <div style={{ height: 40, borderRadius: 10, background: '#F3F0EA' }} className="flex items-center gap-2 px-3">
+          <Search size={16} color={MUTED} />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search by job number, customer, or address…"
+            style={{ background: 'transparent', border: 'none', outline: 'none', flex: 1, fontSize: 14, color: INK }}
+          />
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          {STATUSES.map(s => {
+            const count = s.value === '' ? allCount : (counts[s.value] ?? 0)
+            const active = status === s.value
+            return (
+              <button
+                key={s.value}
+                onClick={() => setStatus(s.value)}
+                style={{
+                  height: 36,
+                  borderRadius: 10,
+                  background: active ? PURPLE : '#F3F0EA',
+                  color: active ? 'white' : MUTED,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  padding: '0 12px',
+                  border: 'none',
+                }}
+                className="flex items-center gap-1.5 hover:opacity-90 transition-opacity whitespace-nowrap"
+              >
+                {s.value && <span style={{ width: 6, height: 6, borderRadius: 3, background: active ? 'white' : statusDot[s.value] }} />}
+                {s.label}
+                <span style={{ fontSize: 11, opacity: 0.7 }}>{count}</span>
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {/* Results */}
       {isLoading ? (
         <div className="flex justify-center py-16"><Spinner /></div>
       ) : filtered.length === 0 ? (
-        <Card>
-          <CardBody className="py-14 text-center">
-            <p className="text-sm font-medium text-foreground mb-1">No jobs found</p>
-            <p className="text-sm text-muted-foreground">
-              {search ? 'Try a different search term' : 'No jobs match the selected filter'}
-            </p>
-          </CardBody>
-        </Card>
+        <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: '60px 20px', textAlign: 'center' }}>
+          <Briefcase size={32} style={{ margin: '0 auto 12px', color: MUTED, opacity: 0.3 }} />
+          <div style={{ fontSize: 14, fontWeight: 600, color: INK, marginBottom: 4 }}>No jobs found</div>
+          <div style={{ fontSize: 13, color: MUTED }}>
+            {search ? 'Try a different search term' : 'No jobs match the selected filter'}
+          </div>
+        </div>
       ) : (
         <>
-          {/* Mobile card list */}
-          <div className="space-y-2 md:hidden">
+          {/* Mobile cards */}
+          <div className="space-y-2.5 md:hidden">
             {filtered.map(j => (
-              <div key={j._id} className="flex items-start gap-3 p-4 bg-card rounded-xl border hover:border-muted-foreground transition-colors">
-                <Link to={`/moving/jobs/${j._id}`} className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-mono font-bold text-primary">{j.jobNo}</span>
-                    <Badge tone={statusTone[j.status]} className="text-xs py-0 h-4">{movingJobStatusLabel(j.status)}</Badge>
-                  </div>
-                  <p className="text-sm font-semibold text-foreground mb-1">{j.customer?.fullName}</p>
-                  {j.scheduledDate && (
-                    <p className="text-xs text-muted-foreground mb-1">{fmtDate(j.scheduledDate)}</p>
-                  )}
-                  {(j.pickupAddress || j.deliveryAddress) && (
-                    <div className="flex items-start gap-1 text-xs text-muted-foreground">
-                      <MapPin size={11} className="shrink-0 mt-0.5" />
-                      <span className="truncate">{truncate(j.pickupAddress, 28)} → {truncate(j.deliveryAddress, 28)}</span>
+              <div key={j._id}
+                style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 14, padding: 16 }}
+                className="hover:shadow-sm transition-shadow"
+              >
+                <div className="flex items-start gap-3">
+                  <Link to={`/moving/jobs/${j._id}`} className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span style={{ fontSize: 13, fontWeight: 700, color: PURPLE, fontFamily: 'monospace' }}>{j.jobNo}</span>
+                      <Badge tone={statusTone[j.status]} className="text-xs py-0 h-4">{movingJobStatusLabel(j.status)}</Badge>
                     </div>
-                  )}
-                </Link>
-                <div className="flex items-center gap-1 shrink-0">
-                  {!['invoiced'].includes(j.status) && (
-                    <Link
-                      to={`/moving/jobs/${j._id}?edit=1`}
-                      className="p-1.5 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
-                      title="Edit job"
-                    >
-                      <Pencil size={14} />
-                    </Link>
-                  )}
-                  {!['in_progress', 'invoiced'].includes(j.status) && (
-                    <button
-                      onClick={() => { setDeleteTarget({ _id: j._id, jobNo: j.jobNo }); setDeleteErr('') }}
-                      className="p-1.5 rounded text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition-colors"
-                      title="Delete job"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  )}
-                  <Link to={`/moving/jobs/${j._id}`}>
-                    <ArrowRight size={14} className="text-muted-foreground" />
+                    <div style={{ fontSize: 14, fontWeight: 600, color: INK, marginBottom: 4 }}>{j.customer?.fullName}</div>
+                    {j.scheduledDate && (
+                      <div className="text-xs" style={{ color: MUTED, marginBottom: 4 }}>{fmtDate(j.scheduledDate)}</div>
+                    )}
+                    {(j.pickupAddress || j.deliveryAddress) && (
+                      <div className="flex items-start gap-1 text-xs" style={{ color: MUTED }}>
+                        <MapPin size={11} className="shrink-0 mt-0.5" />
+                        <span className="truncate">{truncate(j.pickupAddress, 28)} → {truncate(j.deliveryAddress, 28)}</span>
+                      </div>
+                    )}
                   </Link>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {!['invoiced'].includes(j.status) && (
+                      <Link to={`/moving/jobs/${j._id}?edit=1`} className="p-1.5 rounded-lg hover:bg-purple-500/10 transition-colors" style={{ color: MUTED }}>
+                        <Pencil size={14} />
+                      </Link>
+                    )}
+                    {!['in_progress', 'invoiced'].includes(j.status) && (
+                      <button onClick={() => { setDeleteTarget({ _id: j._id, jobNo: j.jobNo }); setDeleteErr('') }}
+                        className="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors" style={{ color: MUTED }}>
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                    <Link to={`/moving/jobs/${j._id}`} className="p-1 transition-colors" style={{ color: MUTED }}>
+                      <ArrowRight size={14} />
+                    </Link>
+                  </div>
                 </div>
               </div>
             ))}
           </div>
 
           {/* Desktop table */}
-          <Card className="hidden md:block">
-            <CardBody className="p-0">
-              <div className="overflow-x-auto">
-                <Table>
-                  <thead>
-                    <tr className="border-b border-muted">
-                      <Th className="py-3 pl-4">Job No</Th>
-                      <Th className="py-3">Customer</Th>
-                      <Th className="py-3">Date</Th>
-                      <Th className="py-3">Pickup</Th>
-                      <Th className="py-3">Delivery</Th>
-                      <Th className="py-3">Status</Th>
-                      <Th className="py-3 pr-4" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map(j => (
-                      <tr key={j._id} className="hover:bg-muted/40 transition-colors border-b border-muted/50 last:border-0">
-                        <Td className="py-3 pl-4">
-                          <Link to={`/moving/jobs/${j._id}`} className="font-mono font-bold text-primary hover:text-primary/80 text-sm">
-                            {j.jobNo}
-                          </Link>
-                        </Td>
-                        <Td className="py-3 font-medium text-sm">{j.customer?.fullName}</Td>
-                        <Td className="py-3 text-sm text-muted-foreground whitespace-nowrap">{fmtDate(j.scheduledDate)}</Td>
-                        <Td className="py-3 text-sm text-muted-foreground max-w-[180px] truncate">{j.pickupAddress || '—'}</Td>
-                        <Td className="py-3 text-sm text-muted-foreground max-w-[180px] truncate">{j.deliveryAddress || '—'}</Td>
-                        <Td className="py-3">
-                          <Badge tone={statusTone[j.status]} className="text-xs">{movingJobStatusLabel(j.status)}</Badge>
-                        </Td>
-                        <Td className="py-3 pr-4 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            {!['invoiced'].includes(j.status) && (
-                              <Link
-                                to={`/moving/jobs/${j._id}?edit=1`}
-                                className="p-1 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
-                                title="Edit job"
-                              >
-                                <Pencil size={14} />
-                              </Link>
-                            )}
-                            {!['in_progress', 'invoiced'].includes(j.status) && (
-                              <button
-                                onClick={() => { setDeleteTarget({ _id: j._id, jobNo: j.jobNo }); setDeleteErr('') }}
-                                className="p-1 rounded text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition-colors"
-                                title="Delete job"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            )}
-                            <Link to={`/moving/jobs/${j._id}`} className="text-muted-foreground hover:text-foreground transition-colors p-1">
-                              <ArrowRight size={14} />
-                            </Link>
-                          </div>
-                        </Td>
-                      </tr>
+          <div className="hidden md:block" style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, overflow: 'hidden' }}>
+            <div className="overflow-x-auto">
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid rgba(20,8,31,0.06)' }}>
+                    {['Job No', 'Customer', 'Date', 'Pickup', 'Delivery', 'Status', ''].map(h => (
+                      <th key={h} style={{ padding: '12px 16px', fontSize: 12, fontWeight: 600, color: MUTED, textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
                     ))}
-                  </tbody>
-                </Table>
-              </div>
-            </CardBody>
-          </Card>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(j => (
+                    <tr key={j._id} style={{ borderBottom: '1px solid rgba(20,8,31,0.04)' }} className="hover:bg-[#FAF8F5] transition-colors">
+                      <td style={{ padding: '14px 16px' }}>
+                        <Link to={`/moving/jobs/${j._id}`} style={{ fontSize: 13, fontWeight: 700, color: PURPLE, fontFamily: 'monospace' }} className="hover:opacity-80 transition-opacity">
+                          {j.jobNo}
+                        </Link>
+                      </td>
+                      <td style={{ padding: '14px 16px', fontSize: 14, fontWeight: 500, color: INK }}>{j.customer?.fullName}</td>
+                      <td style={{ padding: '14px 16px', fontSize: 13, color: MUTED, whiteSpace: 'nowrap' }}>{fmtDate(j.scheduledDate)}</td>
+                      <td style={{ padding: '14px 16px', fontSize: 13, color: MUTED, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.pickupAddress || '—'}</td>
+                      <td style={{ padding: '14px 16px', fontSize: 13, color: MUTED, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.deliveryAddress || '—'}</td>
+                      <td style={{ padding: '14px 16px' }}>
+                        <Badge tone={statusTone[j.status]} className="text-xs">{movingJobStatusLabel(j.status)}</Badge>
+                      </td>
+                      <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                        <div className="flex items-center justify-end gap-1">
+                          {!['invoiced'].includes(j.status) && (
+                            <Link to={`/moving/jobs/${j._id}?edit=1`} className="p-1.5 rounded-lg hover:bg-purple-500/10 transition-colors" style={{ color: MUTED }}>
+                              <Pencil size={14} />
+                            </Link>
+                          )}
+                          {!['in_progress', 'invoiced'].includes(j.status) && (
+                            <button onClick={() => { setDeleteTarget({ _id: j._id, jobNo: j.jobNo }); setDeleteErr('') }}
+                              className="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors" style={{ color: MUTED }}>
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                          <Link to={`/moving/jobs/${j._id}`} className="p-1 transition-colors hover:opacity-70" style={{ color: MUTED }}>
+                            <ArrowRight size={14} />
+                          </Link>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
 
-          <p className="text-xs text-muted-foreground text-right">{filtered.length} job{filtered.length !== 1 ? 's' : ''}</p>
+          <div style={{ fontSize: 12, color: MUTED, textAlign: 'right', marginTop: 12 }}>{filtered.length} job{filtered.length !== 1 ? 's' : ''}</div>
         </>
       )}
 

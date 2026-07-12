@@ -1,10 +1,15 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Printer, DollarSign, Camera, X } from 'lucide-react'
+import { Printer, DollarSign, Camera, X, CalendarDays } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingJob } from '../../lib/types'
-import { Badge, Button, Card, CardBody, CardHeader, EmptyState, Field, Input, Modal, PageHeader, Spinner, Textarea, movingJobStatusLabel } from '../../components/ui'
+import { Badge, Button, Field, Input, Modal, Spinner, Textarea, movingJobStatusLabel } from '../../components/ui'
+
+const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
+const INK = '#14081F'
+const MUTED = '#756E80'
+const PURPLE = '#5B2BC9'
 
 function getLocalDateString(d: Date) {
   const year = d.getFullYear()
@@ -40,66 +45,59 @@ function JobDispatchCard({ job, index, onPriceOverride }: { job: MovingJob; inde
   }
 
   return (
-    <Card className="print:break-inside-avoid overflow-hidden">
+    <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, overflow: 'hidden' }} className="print:break-inside-avoid">
       {/* Card header */}
-      <CardHeader
-        title={
+      <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(20,8,31,0.06)' }}>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-sm text-muted-foreground font-normal">#{index + 1}</span>
-            <Link to={`/moving/jobs/${job._id}`} className="hover:underline print:no-underline font-semibold">
+            <span style={{ fontSize: 12, color: MUTED }}>#{index + 1}</span>
+            <Link to={`/moving/jobs/${job._id}`} style={{ fontSize: 15, fontWeight: 700, color: PURPLE, fontFamily: 'monospace' }} className="hover:opacity-80">
               {job.jobNo}
             </Link>
             <Badge tone="blue">{movingJobStatusLabel(job.status)}</Badge>
             {override?.amount != null && (
-              <span className="text-xs bg-amber-500/10 text-amber-700 border border-amber-500/20 px-2 py-0.5 rounded-full font-medium">
+              <span style={{ fontSize: 11, background: '#FFF7ED', color: '#9A3412', border: '1px solid rgba(234,88,12,0.15)', padding: '2px 8px', borderRadius: 20, fontWeight: 600 }}>
                 Field Price: AED {override.amount.toLocaleString()}
               </span>
             )}
             {clientPrice != null && override?.amount == null && (
-              <span className="text-xs bg-emerald-500/10 text-emerald-700 border border-emerald-500/20 px-2 py-0.5 rounded-full font-medium">
+              <span style={{ fontSize: 11, background: '#ECFDF5', color: '#065F46', border: '1px solid rgba(5,150,105,0.15)', padding: '2px 8px', borderRadius: 20, fontWeight: 600 }}>
                 Client: AED {clientPrice.toLocaleString()}
               </span>
             )}
           </div>
-        }
-        subtitle={
-          <span className="flex items-center gap-2 flex-wrap text-sm">
-            <span className="font-medium">{job.customer?.fullName}</span>
-            {job.customer?.phone && <span className="text-muted-foreground">· {job.customer.phone}</span>}
-            {pkg?.label && <span className="text-muted-foreground">· {pkg.label}</span>}
-          </span>
-        }
-        action={
           <button
             onClick={() => onPriceOverride({ jobId: job._id, jobNo: job.jobNo, currentCost: job.costs?.total ?? 0 })}
-            className="print:hidden inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 transition-colors border border-amber-500/20"
+            className="print:hidden flex items-center gap-1.5 hover:opacity-80 transition-opacity"
+            style={{ fontSize: 12, fontWeight: 600, color: '#9A3412', background: '#FFF7ED', border: '1px solid rgba(234,88,12,0.15)', padding: '6px 12px', borderRadius: 10 }}
           >
             <DollarSign size={13} />
             {override?.amount != null ? 'Revise Price' : 'Adjust Price'}
           </button>
-        }
-      />
+        </div>
+        <div className="flex items-center gap-2 flex-wrap mt-1" style={{ fontSize: 13 }}>
+          <span style={{ fontWeight: 500, color: INK }}>{job.customer?.fullName}</span>
+          {job.customer?.phone && <span style={{ color: MUTED }}>· {job.customer.phone}</span>}
+          {pkg?.label && <span style={{ color: MUTED }}>· {pkg.label}</span>}
+        </div>
+      </div>
 
-      {/* ── Photo gallery — always visible ───────────────────────────────── */}
+      {/* Photo gallery */}
       {images.length > 0 ? (
-        <div className="border-t border-b bg-muted/30">
+        <div style={{ borderBottom: '1px solid rgba(20,8,31,0.06)', background: '#FAF8F5' }}>
           <div className="px-4 pt-3 pb-1 flex items-center gap-2">
-            <Camera size={13} className="text-muted-foreground" />
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            <Camera size={13} style={{ color: MUTED }} />
+            <span style={{ fontSize: 11, fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               Estimation Photos · {images.length} photo{images.length !== 1 ? 's' : ''}
-            </p>
+            </span>
           </div>
           <div className="flex gap-2 px-4 pb-3 overflow-x-auto">
             {images.map((img, ii) => (
-              <button
-                key={ii}
-                type="button"
+              <button key={ii} type="button"
                 onClick={() => setLightbox({ url: imgUrl(img, 1600), name: img.originalName || `Photo ${ii + 1}`, idx: ii })}
                 className="shrink-0 relative group"
               >
-                <img
-                  src={imgUrl(img, 400)}
-                  alt={img.originalName || `Photo ${ii + 1}`}
+                <img src={imgUrl(img, 400)} alt={img.originalName || `Photo ${ii + 1}`}
                   className="h-28 w-28 sm:h-32 sm:w-32 object-cover rounded-xl border shadow-sm group-hover:opacity-90 transition-opacity"
                 />
                 {img.originalName && (
@@ -112,49 +110,43 @@ function JobDispatchCard({ job, index, onPriceOverride }: { job: MovingJob; inde
           </div>
         </div>
       ) : (
-        <div className="border-t px-4 py-3 flex items-center gap-2 bg-muted/20 print:hidden">
-          <Camera size={13} className="text-muted-foreground/50" />
-          <p className="text-xs text-muted-foreground">No estimation photos uploaded for this job</p>
+        <div className="print:hidden flex items-center gap-2 px-5 py-3" style={{ borderBottom: '1px solid rgba(20,8,31,0.06)', background: '#FAF8F5' }}>
+          <Camera size={13} style={{ color: MUTED, opacity: 0.5 }} />
+          <span style={{ fontSize: 12, color: MUTED }}>No estimation photos uploaded for this job</span>
         </div>
       )}
 
-      {/* ── Job details ───────────────────────────────────────────────────── */}
-      <CardBody className="space-y-4">
+      {/* Job details */}
+      <div style={{ padding: 20 }} className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 text-sm">
-          {/* Addresses */}
           <div className="space-y-3">
             <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Pickup</p>
-              <p className="leading-snug font-medium">{job.pickupAddress || '—'}</p>
-              {job.pickupFloor && <p className="text-muted-foreground text-xs mt-0.5">Floor: {job.pickupFloor}</p>}
-              {job.pickupHasElevator && <p className="text-xs text-emerald-600 font-medium mt-0.5">✓ Elevator available</p>}
+              <div style={{ fontSize: 11, fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Pickup</div>
+              <div style={{ fontWeight: 500, color: INK, lineHeight: 1.4 }}>{job.pickupAddress || '—'}</div>
+              {job.pickupFloor && <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>Floor: {job.pickupFloor}</div>}
+              {job.pickupHasElevator && <div style={{ fontSize: 12, color: '#059669', fontWeight: 500, marginTop: 2 }}>✓ Elevator available</div>}
             </div>
             <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Delivery</p>
-              <p className="leading-snug font-medium">{job.deliveryAddress || '—'}</p>
-              {job.deliveryFloor && <p className="text-muted-foreground text-xs mt-0.5">Floor: {job.deliveryFloor}</p>}
-              {job.deliveryHasElevator && <p className="text-xs text-emerald-600 font-medium mt-0.5">✓ Elevator available</p>}
+              <div style={{ fontSize: 11, fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Delivery</div>
+              <div style={{ fontWeight: 500, color: INK, lineHeight: 1.4 }}>{job.deliveryAddress || '—'}</div>
+              {job.deliveryFloor && <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>Floor: {job.deliveryFloor}</div>}
+              {job.deliveryHasElevator && <div style={{ fontSize: 12, color: '#059669', fontWeight: 500, marginTop: 2 }}>✓ Elevator available</div>}
             </div>
           </div>
 
-          {/* Crew */}
           <div>
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-              Crew ({crew.length})
-            </p>
+            <div style={{ fontSize: 11, fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Crew ({crew.length})</div>
             {crew.length === 0 ? (
-              <p className="text-muted-foreground text-sm">No crew assigned</p>
+              <div style={{ fontSize: 13, color: MUTED }}>No crew assigned</div>
             ) : (
               <ul className="space-y-1.5">
                 {crew.map((c, ci) => (
                   <li key={ci} className="flex items-start gap-1.5">
-                    {c.isSupervisor && <span className="text-amber-500 text-xs mt-0.5">★</span>}
+                    {c.isSupervisor && <span style={{ color: '#F59E0B', fontSize: 12, marginTop: 2 }}>★</span>}
                     <div>
-                      <span className="font-medium">{c.worker.name}</span>
-                      <span className="text-muted-foreground capitalize text-xs ml-1">({c.role || c.worker.role})</span>
-                      {c.worker.phone && (
-                        <p className="text-muted-foreground text-xs">{c.worker.phone}</p>
-                      )}
+                      <span style={{ fontWeight: 500, color: INK }}>{c.worker.name}</span>
+                      <span style={{ color: MUTED, fontSize: 12, marginLeft: 4, textTransform: 'capitalize' }}>({c.role || c.worker.role})</span>
+                      {c.worker.phone && <div style={{ fontSize: 12, color: MUTED }}>{c.worker.phone}</div>}
                     </div>
                   </li>
                 ))}
@@ -162,117 +154,71 @@ function JobDispatchCard({ job, index, onPriceOverride }: { job: MovingJob; inde
             )}
           </div>
 
-          {/* Trucks + timing + pricing */}
           <div className="space-y-3">
             <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                Trucks ({trucks.length})
-              </p>
+              <div style={{ fontSize: 11, fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Trucks ({trucks.length})</div>
               {trucks.length === 0 ? (
-                <p className="text-muted-foreground text-sm">No trucks assigned</p>
+                <div style={{ fontSize: 13, color: MUTED }}>No trucks assigned</div>
               ) : (
                 <ul className="space-y-1">
                   {trucks.map((t, ti) => (
-                    <li key={ti} className="font-medium">
+                    <li key={ti} style={{ fontWeight: 500, color: INK }}>
                       {t.truck.name}
-                      {t.truck.plateNumber && (
-                        <span className="text-muted-foreground font-normal ml-1 text-xs">({t.truck.plateNumber})</span>
-                      )}
+                      {t.truck.plateNumber && <span style={{ color: MUTED, fontWeight: 400, marginLeft: 4, fontSize: 12 }}>({t.truck.plateNumber})</span>}
                     </li>
                   ))}
                 </ul>
               )}
             </div>
             <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Time Slot</p>
-              <p className="font-medium">{job.scheduledTimeSlot || '—'}</p>
-              {job.estimatedDurationHours ? (
-                <p className="text-muted-foreground text-xs">{job.estimatedDurationHours}h estimated</p>
-              ) : null}
+              <div style={{ fontSize: 11, fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Time Slot</div>
+              <div style={{ fontWeight: 500, color: INK }}>{job.scheduledTimeSlot || '—'}</div>
+              {job.estimatedDurationHours ? <div style={{ fontSize: 12, color: MUTED }}>{job.estimatedDurationHours}h estimated</div> : null}
             </div>
             <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Pricing</p>
+              <div style={{ fontSize: 11, fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Pricing</div>
               {clientPrice != null ? (
-                <p className="font-bold text-emerald-700">Client: AED {clientPrice.toLocaleString()}</p>
+                <div style={{ fontWeight: 700, color: '#059669' }}>Client: AED {clientPrice.toLocaleString()}</div>
               ) : (
-                <p className="text-sm">Cost est.: <span className="font-semibold">AED {(job.costs?.total ?? 0).toLocaleString()}</span></p>
+                <div style={{ fontSize: 13, color: INK }}>Cost est.: <span style={{ fontWeight: 600 }}>AED {(job.costs?.total ?? 0).toLocaleString()}</span></div>
               )}
               {override?.amount != null && (
-                <p className="text-sm text-amber-700 font-bold mt-0.5">
-                  Field override: AED {override.amount.toLocaleString()}
-                </p>
+                <div style={{ fontSize: 13, color: '#9A3412', fontWeight: 700, marginTop: 2 }}>Field override: AED {override.amount.toLocaleString()}</div>
               )}
-              {override?.supervisorName && (
-                <p className="text-xs text-muted-foreground">by {override.supervisorName}</p>
-              )}
-              {override?.notes && (
-                <p className="text-xs text-muted-foreground italic mt-0.5">{override.notes}</p>
-              )}
+              {override?.supervisorName && <div style={{ fontSize: 12, color: MUTED }}>by {override.supervisorName}</div>}
+              {override?.notes && <div style={{ fontSize: 12, color: MUTED, fontStyle: 'italic', marginTop: 2 }}>{override.notes}</div>}
             </div>
           </div>
         </div>
 
         {job.dispatchNotes && (
-          <div className="pt-3 border-t text-sm">
-            <span className="font-semibold text-muted-foreground">Dispatch Notes: </span>
-            {job.dispatchNotes}
+          <div style={{ borderTop: '1px solid rgba(20,8,31,0.06)', paddingTop: 12, fontSize: 13 }}>
+            <span style={{ fontWeight: 600, color: MUTED }}>Dispatch Notes: </span>
+            <span style={{ color: INK }}>{job.dispatchNotes}</span>
           </div>
         )}
-      </CardBody>
+      </div>
 
-      {/* Lightbox with prev/next */}
+      {/* Lightbox */}
       {lightbox && (
-        <div
-          className="fixed inset-0 z-50 bg-black/95 flex flex-col items-center justify-center p-4 print:hidden"
-          onClick={() => setLightbox(null)}
-        >
-          {/* Close */}
-          <button
-            className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
-            onClick={() => setLightbox(null)}
-          >
+        <div className="fixed inset-0 z-50 bg-black/95 flex flex-col items-center justify-center p-4 print:hidden" onClick={() => setLightbox(null)}>
+          <button className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors" onClick={() => setLightbox(null)}>
             <X size={20} />
           </button>
-
-          {/* Counter */}
-          <p className="absolute top-4 left-1/2 -translate-x-1/2 text-xs text-white/60 font-medium">
-            {lightbox.idx + 1} / {images.length}
-          </p>
-
-          {/* Image */}
-          <img
-            src={lightbox.url}
-            alt={lightbox.name}
-            className="max-w-full max-h-[80vh] rounded-xl shadow-2xl object-contain"
-            onClick={e => e.stopPropagation()}
-          />
-
-          {/* Caption */}
+          <p className="absolute top-4 left-1/2 -translate-x-1/2 text-xs text-white/60 font-medium">{lightbox.idx + 1} / {images.length}</p>
+          <img src={lightbox.url} alt={lightbox.name} className="max-w-full max-h-[80vh] rounded-xl shadow-2xl object-contain" onClick={e => e.stopPropagation()} />
           <p className="mt-3 text-xs text-white/60">{lightbox.name}</p>
-
-          {/* Prev / Next */}
           {images.length > 1 && (
             <div className="absolute inset-y-0 left-0 right-0 flex items-center justify-between px-3 pointer-events-none">
-              <button
-                className="pointer-events-auto p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
-                onClick={e => { e.stopPropagation(); goLightbox(-1) }}
-              >‹</button>
-              <button
-                className="pointer-events-auto p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
-                onClick={e => { e.stopPropagation(); goLightbox(1) }}
-              >›</button>
+              <button className="pointer-events-auto p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors" onClick={e => { e.stopPropagation(); goLightbox(-1) }}>‹</button>
+              <button className="pointer-events-auto p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors" onClick={e => { e.stopPropagation(); goLightbox(1) }}>›</button>
             </div>
           )}
-
-          {/* Thumbnail strip */}
           <div className="absolute bottom-4 flex gap-1.5 overflow-x-auto max-w-[90vw]">
             {images.map((img, ii) => (
-              <button
-                key={ii}
+              <button key={ii}
                 onClick={e => { e.stopPropagation(); setLightbox({ url: imgUrl(img, 1600), name: img.originalName || `Photo ${ii + 1}`, idx: ii }) }}
-                className={`shrink-0 h-12 w-12 rounded-lg overflow-hidden border-2 transition-all ${
-                  ii === lightbox.idx ? 'border-white scale-110' : 'border-white/20 opacity-60 hover:opacity-100'
-                }`}
+                className={`shrink-0 h-12 w-12 rounded-lg overflow-hidden border-2 transition-all ${ii === lightbox.idx ? 'border-white scale-110' : 'border-white/20 opacity-60 hover:opacity-100'}`}
               >
                 <img src={imgUrl(img, 200)} alt="" className="w-full h-full object-cover" />
               </button>
@@ -280,7 +226,7 @@ function JobDispatchCard({ job, index, onPriceOverride }: { job: MovingJob; inde
           </div>
         </div>
       )}
-    </Card>
+    </div>
   )
 }
 
@@ -326,35 +272,45 @@ export default function MovingDispatch() {
           @page { margin: 0.4in; size: A4; }
         }
       `}</style>
-      <div className="space-y-5">
-        <div className="dispatch-header flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <PageHeader title="Dispatch" subtitle={dateLabel} />
-          <div className="flex items-center gap-2">
-            <input
-              type="date"
-              value={date}
-              onChange={e => setDate(e.target.value)}
-              className="h-9 rounded-lg border bg-card px-3 text-sm focus-visible:outline-2 focus-visible:outline-ring"
-            />
-            <Button variant="outline" size="sm" onClick={() => window.print()}>
-              <Printer size={14} className="mr-1" />Print
-            </Button>
+      <div style={{ background: '#FDFCFA', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+        {/* Top bar */}
+        <div className="dispatch-header flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-7">
+          <div>
+            <div style={{ ...HEADING, fontSize: 26, fontWeight: 700, color: INK }}>Dispatch</div>
+            <div style={{ fontSize: 14, color: MUTED, marginTop: 4 }}>{dateLabel}</div>
+          </div>
+          <div className="flex items-center gap-2.5">
+            <div style={{ height: 40, borderRadius: 10, background: '#F3F0EA' }} className="flex items-center gap-2 px-3">
+              <CalendarDays size={16} color={MUTED} />
+              <input
+                type="date"
+                value={date}
+                onChange={e => setDate(e.target.value)}
+                style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: 14, color: INK }}
+              />
+            </div>
+            <button
+              onClick={() => window.print()}
+              style={{ height: 40, borderRadius: 10, background: '#F3F0EA', color: MUTED, fontSize: 14, fontWeight: 600, padding: '0 16px' }}
+              className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+            >
+              <Printer size={14} />Print
+            </button>
           </div>
         </div>
 
         {isLoading ? (
           <div className="flex justify-center py-16"><Spinner /></div>
         ) : jobs.length === 0 ? (
-          <Card><CardBody><EmptyState message="No jobs scheduled for this date" /></CardBody></Card>
+          <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: '60px 20px', textAlign: 'center' }}>
+            <CalendarDays size={32} style={{ margin: '0 auto 12px', color: MUTED, opacity: 0.3 }} />
+            <div style={{ fontSize: 14, fontWeight: 600, color: INK, marginBottom: 4 }}>No jobs scheduled</div>
+            <div style={{ fontSize: 13, color: MUTED }}>No jobs are scheduled for this date</div>
+          </div>
         ) : (
           <div className="space-y-4 print:space-y-8">
             {jobs.map((job, i) => (
-              <JobDispatchCard
-                key={job._id}
-                job={job}
-                index={i}
-                onPriceOverride={setPriceModal}
-              />
+              <JobDispatchCard key={job._id} job={job} index={i} onPriceOverride={setPriceModal} />
             ))}
           </div>
         )}

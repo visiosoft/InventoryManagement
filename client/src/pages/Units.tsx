@@ -159,7 +159,7 @@ export default function Units() {
     <div>
       <PageHeader
         title="Units"
-        subtitle={`${filtered.length} units · ${filtered.filter((u) => u.status === 'available').length} available · ${filtered.filter((u) => u.status === 'maintenance').length} under construction`}
+        subtitle={`${filtered.length} units · ${filtered.filter((u) => u.status === 'available').length} available · ${filtered.filter((u) => u.status === 'maintenance').length} maintenance`}
         action={
           <div className="flex items-center gap-2">
             <div className="flex rounded-lg border bg-card p-0.5">

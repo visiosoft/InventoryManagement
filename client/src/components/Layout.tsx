@@ -50,7 +50,6 @@ const reportItems = [
 
 const navBottom = [
   { to: '/settings', label: 'Settings', icon: Settings, perm: 'settings' },
-  { to: '/settings/reminders', label: 'Reminders', icon: Bell, perm: undefined as string | undefined },
 ]
 
 const movingNavItems = [
@@ -58,22 +57,14 @@ const movingNavItems = [
   { to: '/moving/schedule', label: 'Schedule Jobs', icon: CalendarDays, perm: 'moving_schedule' },
   { to: '/moving/jobs', label: 'Jobs List', icon: ClipboardList, perm: 'moving_jobs' },
   { to: '/moving/leads', label: 'Leads', icon: UserPlus, perm: 'moving_leads' },
-  { to: '/moving/dispatch', label: 'Dispatch', icon: Package, perm: 'moving_dispatch' },
   { to: '/moving/workers', label: 'Workers', icon: Users2, perm: 'moving_workers' },
   { to: '/moving/fleet', label: 'Fleet', icon: Truck, perm: 'moving_fleet' },
-  { to: '/moving-inventory', label: 'Inventory', icon: Box, perm: 'moving_inventory' },
+  { to: '/moving-inventory', label: 'Inventory', icon: Box, perm: 'moving_dashboard' },
   { to: '/moving/invoices', label: 'Invoices', icon: ReceiptText, perm: 'moving_invoices' },
-  { to: '/moving/claims', label: 'Claims', icon: AlertTriangle, perm: 'moving_claims' },
+  { to: '/moving/dispatch', label: 'Dispatch', icon: Package, perm: 'moving_dispatch' },
+  { to: '/moving/claims', label: 'Claims', icon: AlertTriangle, perm: 'moving_dashboard' },
 ]
 
-const movingReportItems = [
-  { to: '/moving/reports/revenue', label: 'Revenue', icon: Wallet, perm: 'reports_moving_revenue' },
-  { to: '/moving/reports/jobs', label: 'Jobs', icon: BarChart3, perm: 'reports_moving_jobs' },
-  { to: '/moving/reports/crew', label: 'Crew', icon: Users, perm: 'reports_moving_crew' },
-  { to: '/moving/reports/fleet', label: 'Fleet', icon: Truck, perm: 'reports_moving_fleet' },
-  { to: '/moving/reports/profitability', label: 'Profitability', icon: TrendingUp, perm: 'reports_moving_profitability' },
-  { to: '/moving/reports/payroll', label: 'Payroll', icon: Wallet, perm: 'reports_moving_payroll' },
-]
 
 const navLinkCls = (isActive: boolean) => cn(
   'flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-all duration-150',
@@ -97,10 +88,10 @@ export default function Layout() {
   const onMovingRoute = location.pathname.startsWith('/moving')
   const [reportsOpen, setReportsOpen] = useState(onReportsRoute)
   const [movingOpen, setMovingOpen] = useState(onMovingRoute)
-  const [movingReportsOpen, setMovingReportsOpen] = useState(location.pathname.startsWith('/moving/reports'))
   const [dark, setDark] = useState(() => localStorage.getItem('pb_theme') === 'dark')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const isAdmin = user?.role === 'admin'
+  const isMovingOnly = !isAdmin && hasPermission('moving_dashboard') && !hasPermission('units')
   const [contactsToast, setContactsToast] = useState<{ created: number } | null>(null)
   const lastSeenAt = useRef<string | null>(null)
 
@@ -149,14 +140,14 @@ export default function Layout() {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-2.5 py-3 space-y-0.5">
-        {navTop.filter(({ perm }) => !perm || hasPermission(perm)).map(({ to, label, icon: Icon }) => (
+        {!isMovingOnly && navTop.filter(({ perm }) => !perm || hasPermission(perm)).map(({ to, label, icon: Icon }) => (
           <NavLink key={to} to={to} end={to === '/'}
             className={({ isActive }) => navLinkCls(isActive)}>
             <Icon size={15} />{label}
           </NavLink>
         ))}
 
-        {navGroups.map((group) => {
+        {!isMovingOnly && navGroups.map((group) => {
           const visibleItems = group.items.filter(({ perm }) => !perm || hasPermission(perm))
           if (visibleItems.length === 0) return null
           return (
@@ -174,7 +165,7 @@ export default function Layout() {
         })}
 
         {/* Reports */}
-        {(() => {
+        {!isMovingOnly && (() => {
           const visibleReports = reportItems.filter(({ perm }) => hasPermission(perm))
           if (visibleReports.length === 0) return null
           return (
@@ -204,7 +195,7 @@ export default function Layout() {
           )
         })()}
 
-        {navBottom.filter(({ perm }) => !perm || hasPermission(perm)).map(({ to, label, icon: Icon }) => (
+        {!isMovingOnly && navBottom.filter(({ perm }) => !perm || hasPermission(perm)).map(({ to, label, icon: Icon }) => (
           <NavLink key={to} to={to} className={({ isActive }) => navLinkCls(isActive)}>
             <Icon size={15} />{label}
           </NavLink>
@@ -224,8 +215,7 @@ export default function Layout() {
         {/* Moving Business */}
         {(() => {
           const visibleMoving = movingNavItems.filter(({ perm }) => hasPermission(perm))
-          const visibleMovingReports = movingReportItems.filter(({ perm }) => hasPermission(perm))
-          if (visibleMoving.length === 0 && visibleMovingReports.length === 0) return null
+          if (visibleMoving.length === 0) return null
           return (
             <div className="pt-3">
               <div className="mb-2 border-t border-white/10" />
@@ -248,30 +238,6 @@ export default function Layout() {
                       <Icon size={15} />{label}
                     </NavLink>
                   ))}
-                  {visibleMovingReports.length > 0 && (
-                    <>
-                      <button
-                        onClick={() => setMovingReportsOpen(o => !o)}
-                        className={cn(
-                          'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-all cursor-pointer',
-                          location.pathname.startsWith('/moving/reports') ? 'text-sidebar-foreground' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8'
-                        )}
-                      >
-                        <BarChart3 size={15} />
-                        <span className="flex-1 text-left">Reports</span>
-                        <ChevronDown size={13} className={cn('transition-transform duration-200', movingReportsOpen ? 'rotate-180' : '')} />
-                      </button>
-                      {movingReportsOpen && (
-                        <div className="ml-2.5 mt-0.5 border-l-2 border-[#467235]/40 pl-2 space-y-0.5">
-                          {visibleMovingReports.map(({ to, label, icon: Icon }) => (
-                            <NavLink key={to} to={to} className={({ isActive }) => subLinkCls(isActive)}>
-                              <Icon size={13} />{label}
-                            </NavLink>
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  )}
                 </div>
               )}
             </div>

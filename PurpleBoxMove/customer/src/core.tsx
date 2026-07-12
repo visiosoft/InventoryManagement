@@ -1,7 +1,9 @@
-import React, { createContext, useContext, useReducer } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { createContext, useContext, useReducer, useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { setToken } from './api';
 
 export const C = {
   purple: '#5B2BC9',
@@ -37,7 +39,7 @@ export const F = {
 };
 
 export type Screen =
-  | 'login'
+  | 'login' | 'phoneSetup'
   | 'home' | 'booking' | 'quote' | 'tracking' | 'history' | 'profile'
   | 'moveDetail';
 
@@ -67,7 +69,8 @@ type Action =
   | { type: 'GO'; screen: Screen; moveId?: string }
   | { type: 'UPDATE_PROFILE'; customer: CustomerUser }
   | { type: 'SET_BOOKING_STEP'; step: number }
-  | { type: 'SET_SERVICE'; service: string };
+  | { type: 'SET_SERVICE'; service: string }
+  | { type: 'RESTORE'; customer: CustomerUser; token: string };
 
 function reducer(s: AppState, a: Action): AppState {
   switch (a.type) {
@@ -77,9 +80,12 @@ function reducer(s: AppState, a: Action): AppState {
     case 'UPDATE_PROFILE': return { ...s, customer: a.customer };
     case 'SET_BOOKING_STEP': return { ...s, bookingStep: a.step };
     case 'SET_SERVICE': return { ...s, selectedService: a.service, bookingStep: 1, screen: 'booking' };
+    case 'RESTORE': return { ...s, customer: a.customer, token: a.token, screen: 'home' };
     default: return s;
   }
 }
+
+const SESSION_KEY = 'pb_customer_session';
 
 type Ctx = {
   s: AppState;
@@ -96,13 +102,61 @@ export const useApp = () => useContext(AppCtx);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [s, dispatch] = useReducer(reducer, initial);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    AsyncStorage.getItem(SESSION_KEY).then(raw => {
+      if (raw) {
+        try {
+          const { customer, token } = JSON.parse(raw);
+          if (customer && token) {
+            setToken(token);
+            dispatch({ type: 'RESTORE', customer, token });
+          }
+        } catch {}
+      }
+      setReady(true);
+    });
+  }, []);
+
+  const login = (customer: CustomerUser, token: string) => {
+    AsyncStorage.setItem(SESSION_KEY, JSON.stringify({ customer, token }));
+    dispatch({ type: 'LOGIN', customer, token });
+  };
+
+  const logout = () => {
+    AsyncStorage.removeItem(SESSION_KEY);
+    setToken(null);
+    dispatch({ type: 'LOGOUT' });
+  };
+
+  const updateProfile = (customer: CustomerUser) => {
+    AsyncStorage.getItem(SESSION_KEY).then(raw => {
+      if (raw) {
+        try {
+          const prev = JSON.parse(raw);
+          AsyncStorage.setItem(SESSION_KEY, JSON.stringify({ ...prev, customer }));
+        } catch {}
+      }
+    });
+    dispatch({ type: 'UPDATE_PROFILE', customer });
+  };
+
+  if (!ready) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.paper }}>
+        <ActivityIndicator color={C.purple} size="large" />
+      </View>
+    );
+  }
+
   return (
     <AppCtx.Provider value={{
       s,
       go: (screen, moveId) => dispatch({ type: 'GO', screen, moveId }),
-      login: (customer, token) => dispatch({ type: 'LOGIN', customer, token }),
-      logout: () => dispatch({ type: 'LOGOUT' }),
-      updateProfile: (customer) => dispatch({ type: 'UPDATE_PROFILE', customer }),
+      login,
+      logout,
+      updateProfile,
       setBookingStep: (step) => dispatch({ type: 'SET_BOOKING_STEP', step }),
       selectService: (service) => dispatch({ type: 'SET_SERVICE', service }),
     }}>
@@ -122,7 +176,6 @@ export function TabBar({ active }: { active: string }) {
   const tabs = [
     { id: 'home', icon: 'home', label: 'Home' },
     { id: 'history', icon: 'calendar', label: 'Bookings' },
-    { id: 'tracking', icon: 'map-pin', label: 'Track' },
     { id: 'profile', icon: 'user', label: 'Profile' },
   ];
   return (

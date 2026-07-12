@@ -26,6 +26,7 @@ const SERVICE_TO_JOB_TYPE = {
 
 router.post('/request-move', upload.array('images', 20), async (req, res) => {
   try {
+    console.log('[request-move] files received:', req.files?.length || 0, req.files?.map(f => ({ name: f.originalname, size: f.size, mime: f.mimetype })));
     const { serviceType, propertyType, pickupAddress, pickupFloor, pickupElevator, deliveryAddress, deliveryFloor, deliveryElevator, moveDate, timeSlot, notes, instructions, customerName, customerEmail } = req.body;
 
     if (customerName || customerEmail) {
@@ -46,32 +47,39 @@ router.post('/request-move', upload.array('images', 20), async (req, res) => {
     ].filter(Boolean).join('\n');
 
     const customerObj = await Customer.findById(req.customer.customerId).lean();
-    const customerFolder = customerObj?.fullName || customerName || req.customer.phone;
+    const customerFolder = `${customerObj?.fullName || customerName || req.customer.phone} - ${jobNo}`;
     const images = [];
     for (const file of (req.files || [])) {
-      const result = await uploadPublicImage({
-        buffer: file.buffer,
-        mimeType: file.mimetype,
-        filename: `move-${Date.now()}-${file.originalname}`,
-        customerName: customerFolder,
-      });
-      images.push({
-        url: result.url,
-        filename: file.originalname.replace(/\s+/g, '_'),
-        originalName: file.originalname,
-        size: file.size,
-        category: 'Customer Upload',
-        storage: result.storage,
-        driveFileId: result.driveFileId || '',
-      });
+      console.log('[request-move] uploading to Drive:', file.originalname, file.size, 'bytes');
+      try {
+        const result = await uploadPublicImage({
+          buffer: file.buffer,
+          mimeType: file.mimetype,
+          filename: `move-${Date.now()}-${file.originalname}`,
+          customerName: customerFolder,
+        });
+        console.log('[request-move] Drive upload OK:', result.url);
+        images.push({
+          url: result.url,
+          filename: file.originalname.replace(/\s+/g, '_'),
+          originalName: file.originalname,
+          size: file.size,
+          category: 'Customer Upload',
+          storage: result.storage,
+          driveFileId: result.driveFileId || '',
+        });
+      } catch (uploadErr) {
+        console.error('[request-move] Drive upload FAILED:', uploadErr.message);
+      }
     }
+    console.log('[request-move] total images saved:', images.length);
 
     const lead = await MovingLead.create({
       customer: req.customer.customerId,
       prospectName: customerName || req.customer.phone,
       prospectPhone: req.customer.phone,
       prospectEmail: customerEmail || '',
-      source: 'web_form',
+      source: 'mobile_app',
       status: 'new',
       serviceType: serviceType || '',
       propertyType: propertyType || '',
@@ -118,7 +126,22 @@ router.get('/moves', async (req, res) => {
       MovingLead.find({ customer: customerId }).sort({ createdAt: -1 }).lean(),
       MovingJob.find({ customer: customerId }).sort({ scheduledDate: -1 }).lean(),
     ]);
-    res.json({ leads, jobs });
+    const leadMap = new Map(leads.map(l => [l._id.toString(), l]));
+    const linkedLeadIds = new Set();
+    const enrichedJobs = jobs.map(j => {
+      if (!j.lead) return j;
+      const leadId = j.lead.toString();
+      linkedLeadIds.add(leadId);
+      const lead = leadMap.get(leadId);
+      if (!lead) return j;
+      if (lead.quotation?.total > 0 && !j.quotation?.total) {
+        j.quotation = lead.quotation;
+      }
+      if (lead.serviceType && !j.serviceType) j.serviceType = lead.serviceType;
+      return j;
+    });
+    const filteredLeads = leads.filter(l => !linkedLeadIds.has(l._id.toString()));
+    res.json({ leads: filteredLeads, jobs: enrichedJobs });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -129,10 +152,45 @@ router.get('/moves/:id', async (req, res) => {
     const customerId = req.customer.customerId;
     const { id } = req.params;
     let doc = await MovingJob.findOne({ _id: id, customer: customerId }).lean();
-    if (doc) return res.json({ type: 'job', data: doc });
+    if (doc) {
+      if (doc.lead) {
+        const lead = await MovingLead.findById(doc.lead).lean();
+        if (lead?.quotation?.total > 0 && !doc.quotation?.total) {
+          doc.quotation = lead.quotation;
+        }
+        if (lead?.serviceType && !doc.serviceType) doc.serviceType = lead.serviceType;
+      }
+      return res.json({ type: 'job', data: doc });
+    }
     doc = await MovingLead.findOne({ _id: id, customer: customerId }).lean();
     if (doc) return res.json({ type: 'lead', data: doc });
     return res.status(404).json({ error: 'Not found' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/moves/:id/accept-quote', async (req, res) => {
+  try {
+    const customerId = req.customer.customerId;
+    const { id } = req.params;
+    const job = await MovingJob.findOne({ _id: id, customer: customerId });
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    if (job.status === 'draft') {
+      job.status = 'confirmed';
+      job.timeline.push({ text: 'Customer accepted quote via app', at: new Date() });
+      await job.save();
+    }
+
+    if (job.lead) {
+      await MovingLead.findByIdAndUpdate(job.lead, {
+        status: 'client_approved',
+        $push: { timeline: { text: 'Customer accepted quote via app', at: new Date() } },
+      });
+    }
+
+    res.json({ ok: true, jobStatus: job.status });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -145,7 +203,7 @@ router.post('/moves/:id/photos', upload.array('images', 20), async (req, res) =>
     const category = req.body.category || 'Customer Upload';
     const job = await MovingJob.findOne({ _id: id, customer: customerId }).populate('customer', 'fullName');
     if (!job) return res.status(404).json({ error: 'Job not found' });
-    const customerFolder = job.customer?.fullName || 'MovingCustomers';
+    const customerFolder = `${job.customer?.fullName || 'MovingCustomers'} - ${job.jobNo || id}`;
     const images = [];
     for (const file of (req.files || [])) {
       const result = await uploadPublicImage({
@@ -166,6 +224,9 @@ router.post('/moves/:id/photos', upload.array('images', 20), async (req, res) =>
     }
     job.images.push(...images);
     await job.save();
+    if (job.lead) {
+      await MovingLead.findByIdAndUpdate(job.lead, { $push: { images: { $each: images } } });
+    }
     res.json({ images });
   } catch (err) {
     res.status(500).json({ error: err.message });

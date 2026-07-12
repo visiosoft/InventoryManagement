@@ -80,6 +80,8 @@ export const integrationApi = {
       .then((r) => r.data),
   connectContacts: () =>
     api.get<{ url: string }>('/integrations/contacts/connect').then((r) => r.data),
+  connectDrive: () =>
+    api.get<{ url: string }>('/integrations/drive/connect').then((r) => r.data),
 }
 
 export type QuoteQuery = { search?: string; status?: string; customer?: string }

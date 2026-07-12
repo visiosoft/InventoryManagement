@@ -153,6 +153,85 @@ router.post('/transactions', async (req, res) => {
     res.status(201).json(await txn.populate('item', 'sku name sizeLabel unit').populate('contract', 'contractNo').populate('customer', 'fullName'));
 });
 
+router.put('/transactions/:id', async (req, res) => {
+    try {
+        const txn = await MovingStockTxn.findById(req.params.id);
+        if (!txn) return res.status(404).json({ error: 'Transaction not found' });
+
+        const item = await MovingItem.findById(txn.item);
+        if (!item) return res.status(404).json({ error: 'Item not found' });
+
+        const oldDelta = txn.txnType === 'adjustment'
+            ? txn.qty
+            : (txn.txnType === 'in' || txn.txnType === 'return' ? Math.abs(txn.qty) : -Math.abs(txn.qty));
+
+        const fields = ['reason', 'takenBy', 'notes'];
+        for (const f of fields) {
+            if (req.body[f] !== undefined) txn[f] = String(req.body[f] || '').trim();
+        }
+        if (req.body.txnDate) txn.txnDate = new Date(req.body.txnDate);
+
+        if (req.body.qty !== undefined || req.body.txnType !== undefined) {
+            const newType = req.body.txnType || txn.txnType;
+            const newQty = req.body.qty !== undefined ? Number(req.body.qty) : txn.qty;
+            if (!Number.isFinite(newQty) || newQty === 0) {
+                return res.status(400).json({ error: 'qty must be a non-zero number' });
+            }
+            const newDelta = newType === 'adjustment'
+                ? newQty
+                : (newType === 'in' || newType === 'return' ? Math.abs(newQty) : -Math.abs(newQty));
+
+            const currentOnHand = Number(item.onHand || 0);
+            const adjustedOnHand = currentOnHand - oldDelta + newDelta;
+            if (adjustedOnHand < 0) {
+                return res.status(409).json({ error: `Not enough stock. Current: ${currentOnHand}, change would result in ${adjustedOnHand}` });
+            }
+            item.onHand = adjustedOnHand;
+            await item.save();
+
+            txn.txnType = newType;
+            txn.qty = newQty;
+            txn.resultingOnHand = adjustedOnHand;
+        }
+
+        await txn.save();
+        const populated = await txn.populate([
+            { path: 'item', select: 'sku name sizeLabel unit' },
+            { path: 'contract', select: 'contractNo' },
+            { path: 'customer', select: 'fullName' },
+        ]);
+        res.json(populated);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.delete('/transactions/:id', async (req, res) => {
+    try {
+        const txn = await MovingStockTxn.findById(req.params.id);
+        if (!txn) return res.status(404).json({ error: 'Transaction not found' });
+
+        const item = await MovingItem.findById(txn.item);
+        if (item) {
+            const delta = txn.txnType === 'adjustment'
+                ? txn.qty
+                : (txn.txnType === 'in' || txn.txnType === 'return' ? Math.abs(txn.qty) : -Math.abs(txn.qty));
+
+            const newOnHand = Number(item.onHand || 0) - delta;
+            if (newOnHand < 0) {
+                return res.status(409).json({ error: `Reversing this transaction would result in negative stock (${newOnHand}). Adjust stock first.` });
+            }
+            item.onHand = newOnHand;
+            await item.save();
+        }
+
+        await txn.deleteOne();
+        res.json({ ok: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 router.get('/transactions', async (req, res) => {
     const filter = {};
     if (req.query.item) filter.item = req.query.item;

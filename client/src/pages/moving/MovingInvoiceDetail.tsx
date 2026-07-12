@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Download, Share2, Edit, Plus, Trash2, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Download, Share2, Edit, Plus, Trash2, RefreshCw, AlertCircle } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingInvoice, MovingInvoiceStatus } from '../../lib/types'
 import { Badge, Button, Card, CardBody, CardHeader, Field, Input, Modal, Select, Spinner, Table, Td, Th } from '../../components/ui'
@@ -74,6 +74,23 @@ export default function MovingInvoiceDetail() {
     onSuccess: () => { invalidate(); setReviseModal(false); setErr('') },
     onError: (e) => setErr(apiError(e)),
   })
+
+  const deleteMut = useMutation({
+    mutationFn: () => api.delete(`/moving-invoices/${id}`),
+    onSuccess: () => navigate('/moving/invoices'),
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  const syncZoho = useMutation({
+    mutationFn: () => api.post(`/moving-invoices/${id}/sync-zoho-books`).then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['moving-invoice', id] })
+      qc.invalidateQueries({ queryKey: ['moving-invoices'] })
+    },
+    onError: () => { /* error shown inline via syncZoho.error */ },
+  })
+
+  const [deleteConfirm, setDeleteConfirm] = useState(false)
 
   useEffect(() => {
     if (invoice?.items && invoice.items.length > 0) {
@@ -179,9 +196,45 @@ export default function MovingInvoiceDetail() {
             💳 Send Payment Link
           </Button>
         )}
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => syncZoho.mutate()}
+          disabled={syncZoho.isPending}
+          className={invoice.zohoBooksSyncId ? 'text-emerald-600 border-emerald-300' : invoice.zohoBooksSyncError ? 'text-red-600 border-red-300' : ''}
+          title={invoice.zohoBooksSyncId ? `Synced to Zoho Books on ${new Date(invoice.zohoBooksSyncedAt!).toLocaleDateString()}` : invoice.zohoBooksSyncError ? `Sync failed: ${invoice.zohoBooksSyncError}` : 'Sync to Zoho Books'}
+        >
+          <RefreshCw size={13} className={syncZoho.isPending ? 'animate-spin' : ''} />
+          {syncZoho.isPending ? 'Syncing…' : invoice.zohoBooksSyncId ? 'Synced' : 'Sync to Zoho'}
+        </Button>
+        {invoice.zohoBooksSyncId && (
+          <a
+            href={`https://books.zoho.com/app/908459713#/invoices/${invoice.zohoBooksSyncId}`}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 rounded-md border border-emerald-300 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
+          >
+            Open in Zoho ↗
+          </a>
+        )}
+        {invoice.status !== 'paid' && (
+          <Button size="sm" variant="outline" className="text-red-600 border-red-300 hover:bg-red-50" onClick={() => setDeleteConfirm(true)}>
+            <Trash2 size={13} className="mr-1" />Delete
+          </Button>
+        )}
       </div>
 
       {err && <p className="text-sm text-red-600">{err}</p>}
+
+      {(syncZoho.error || (invoice.zohoBooksSyncError && !invoice.zohoBooksSyncId)) && (
+        <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 dark:bg-red-950/20 dark:border-red-900 px-4 py-3">
+          <AlertCircle className="text-red-600 shrink-0 mt-0.5" size={15} />
+          <div className="text-xs text-red-700 dark:text-red-400">
+            <span className="font-semibold">Zoho Books sync failed: </span>
+            {syncZoho.error ? apiError(syncZoho.error) : invoice.zohoBooksSyncError}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-6">
         <Card>
@@ -476,6 +529,19 @@ export default function MovingInvoiceDetail() {
             <Button variant="outline" onClick={() => setItemsModal(false)}>Cancel</Button>
             <Button onClick={() => updateItemsMut.mutate(items)} disabled={updateItemsMut.isPending}>
               {updateItemsMut.isPending ? 'Saving…' : 'Save Items'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={deleteConfirm} title="Delete Invoice" onClose={() => setDeleteConfirm(false)}>
+        <div className="space-y-4">
+          <p className="text-sm">Are you sure you want to delete invoice <strong>{invoice.invoiceNo}</strong>? This action cannot be undone.</p>
+          {err && <p className="text-sm text-red-600">{err}</p>}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setDeleteConfirm(false)}>Cancel</Button>
+            <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={() => deleteMut.mutate()} disabled={deleteMut.isPending}>
+              {deleteMut.isPending ? 'Deleting…' : 'Delete Invoice'}
             </Button>
           </div>
         </div>

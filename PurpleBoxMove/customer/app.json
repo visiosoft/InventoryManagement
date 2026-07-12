@@ -8,6 +8,7 @@
     "backgroundColor": "#FBF8F2",
     "splash": { "backgroundColor": "#5B2BC9", "resizeMode": "contain" },
     "assetBundlePatterns": ["**/*"],
+    "scheme": "purplebox-customer",
     "ios": { "supportsTablet": true, "bundleIdentifier": "com.purplebox.customer" },
     "android": { "package": "com.purplebox.customer", "adaptiveIcon": { "backgroundColor": "#5B2BC9" } },
     "plugins": [

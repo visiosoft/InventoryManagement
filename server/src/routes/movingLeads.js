@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { MovingLead, MovingJob, nextMovingJobNo } from '../models/index.js';
+import { MovingLead, MovingJob, Customer, nextMovingJobNo } from '../models/index.js';
 
 const router = Router();
 
@@ -39,7 +39,18 @@ router.get('/:id', async (req, res) => {
   try {
     const lead = await MovingLead.findById(req.params.id).populate('customer', 'fullName phone email address');
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
-    res.json(lead);
+    const obj = lead.toObject();
+    const job = await MovingJob.findOne({ lead: lead._id }).select('images _id jobNo').lean();
+    if (job?.images?.length && !obj.images?.length) {
+      obj.images = job.images;
+    } else if (job?.images?.length && obj.images?.length) {
+      const existingUrls = new Set(obj.images.map(i => i.url));
+      for (const img of job.images) {
+        if (!existingUrls.has(img.url)) obj.images.push(img);
+      }
+    }
+    if (job) obj.linkedJob = { _id: job._id, jobNo: job.jobNo };
+    res.json(obj);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -12,6 +12,15 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
   return user?.role === 'admin' ? <>{children}</> : <Navigate to="/" replace />
 }
+
+function SmartHome() {
+  const { user, hasPermission } = useAuth()
+  const isMovingOnly = user?.role !== 'admin' && hasPermission('moving_dashboard') && !hasPermission('units')
+  if (isMovingOnly) {
+    return <Navigate to="/moving" replace />
+  }
+  return <Dashboard />
+}
 import Layout from './components/Layout'
 import Login from './pages/Login'
 import SignContract from './pages/SignContract'
@@ -58,12 +67,6 @@ import Workers from './pages/moving/Workers'
 import Fleet from './pages/moving/Fleet'
 import MovingInvoices from './pages/moving/MovingInvoices'
 import MovingInvoiceDetail from './pages/moving/MovingInvoiceDetail'
-import MovingRevenueReport from './pages/moving/reports/MovingRevenueReport'
-import MovingJobsReport from './pages/moving/reports/MovingJobsReport'
-import MovingCrewReport from './pages/moving/reports/MovingCrewReport'
-import MovingFleetReport from './pages/moving/reports/MovingFleetReport'
-import MovingProfitabilityReport from './pages/moving/reports/MovingProfitabilityReport'
-import MovingPayrollReport from './pages/moving/reports/MovingPayrollReport'
 import MovingClaims from './pages/moving/MovingClaims'
 import MovingSurveyDetail from './pages/moving/MovingSurveyDetail'
 import FieldLogin from './pages/field/FieldLogin'
@@ -92,7 +95,7 @@ export default function App() {
       <Route path="/field/login" element={<Navigate to="/field" replace />} />
       <Route path="/field/*" element={<FieldApp />} />
       <Route element={<Layout />}>
-        <Route path="/" element={<Dashboard />} />
+        <Route path="/" element={<SmartHome />} />
         <Route path="/units" element={<Units />} />
         <Route path="/customers" element={<Customers />} />
         <Route path="/customers/:id" element={<CustomerDetail />} />
@@ -139,13 +142,7 @@ export default function App() {
         <Route path="/moving/fleet" element={<PermGuard module="moving_fleet"><Fleet /></PermGuard>} />
         <Route path="/moving/invoices" element={<PermGuard module="moving_invoices"><MovingInvoices /></PermGuard>} />
         <Route path="/moving/invoices/:id" element={<PermGuard module="moving_invoices"><MovingInvoiceDetail /></PermGuard>} />
-        <Route path="/moving/reports/revenue" element={<PermGuard module="reports_moving_revenue"><MovingRevenueReport /></PermGuard>} />
-        <Route path="/moving/reports/jobs" element={<PermGuard module="reports_moving_jobs"><MovingJobsReport /></PermGuard>} />
-        <Route path="/moving/reports/crew" element={<PermGuard module="reports_moving_crew"><MovingCrewReport /></PermGuard>} />
-        <Route path="/moving/reports/fleet" element={<PermGuard module="reports_moving_fleet"><MovingFleetReport /></PermGuard>} />
-        <Route path="/moving/reports/profitability" element={<PermGuard module="reports_moving_profitability"><MovingProfitabilityReport /></PermGuard>} />
-        <Route path="/moving/reports/payroll" element={<PermGuard module="reports_moving_payroll"><MovingPayrollReport /></PermGuard>} />
-        <Route path="/moving/claims" element={<PermGuard module="moving_claims"><MovingClaims /></PermGuard>} />
+        <Route path="/moving/claims" element={<PermGuard module="moving_dashboard"><MovingClaims /></PermGuard>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

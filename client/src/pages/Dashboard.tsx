@@ -179,7 +179,7 @@ export default function Dashboard() {
       return ({
         stats: (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-            <StatCard icon={TrendingUp} label="Occupancy" value={`${data.occupancyPct}%`} sub={`${data.byStatus.occupied + data.byStatus.reserved} of ${totalUnits} units`} tone="bg-[#111218]/10 text-[#111218] dark:text-[#8AAF82]" />
+            <StatCard icon={TrendingUp} label="Occupancy" value={`${data.occupancyPct}%`} sub={`${data.byStatus.occupied + data.byStatus.reserved} of ${data.byStatus.available + data.byStatus.occupied + data.byStatus.reserved} rentable units`} tone="bg-[#111218]/10 text-[#111218] dark:text-[#8AAF82]" />
             <StatCard icon={Box} label="Available units" value={String(data.byStatus.available)} sub="Ready to rent" tone="bg-[#4C8CE4]/15 text-[#4C8CE4] dark:text-[#8AAF82]" />
             <StatCard icon={Box} label="Reserved units" value={String(data.byStatus.reserved)} sub="Booked, not occupied" tone="bg-[#FFF799]/15 text-[#111218] dark:text-[#FFF799]" />
             <StatCard icon={Box} label="Maintenance" value={String(data.byStatus.maintenance)} sub="Unavailable stock" tone="bg-slate-500/15 text-slate-600 dark:text-slate-400" />

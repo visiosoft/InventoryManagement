@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+  <style>
+    body { margin: 0; background: #F0ECE4; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }
+    a { color: #5B2BC9; }
+    a:hover { color: #4A1FA0; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    @keyframes slideUp { from { opacity: 0; transform: translateY(100%); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</helmet>
+
+<div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 40px 20px; gap: 32px; flex-wrap: wrap; background: #F0ECE4;">
+
+  <!-- Mode Toggle -->
+  <div style="position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; gap: 4px; background: #14081F; border-radius: 999px; padding: 4px;">
+    <button onClick="{{ setCustomerMode }}" style="padding: 10px 24px; border-radius: 999px; border: none; cursor: pointer; font-family: Plus Jakarta Sans, sans-serif; font-weight: 600; font-size: 13px; transition: all 0.2s; background: {{ isCustomer }}; color: {{ isCustomerText }};">Customer App</button>
+    <button onClick="{{ setCrewMode }}" style="padding: 10px 24px; border-radius: 999px; border: none; cursor: pointer; font-family: Plus Jakarta Sans, sans-serif; font-weight: 600; font-size: 13px; transition: all 0.2s; background: {{ isCrew }}; color: {{ isCrewText }};">Crew App</button>
+  </div>
+
+  <!-- Phone -->
+  <div style="margin-top: 60px;">
+    <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" hint-size="375,812">
+      <div style="width: 375px; height: 812px; position: relative; overflow: hidden; background: #FBF8F2; padding-top: 54px;">
+        {{ currentScreen }}
+      </div>
+    </x-import>
+  </div>
+
+  <!-- Screen Navigation -->
+  <div style="margin-top: 60px; display: flex; flex-direction: column; gap: 8px; min-width: 200px;">
+    <div style="font-family: Bricolage Grotesque, serif; font-weight: 700; font-size: 18px; color: #14081F; margin-bottom: 8px; letter-spacing: -0.02em;">{{ navTitle }}</div>
+    {{ screenNav }}
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;$preview&quot;: { &quot;width&quot;: &quot;100%&quot;, &quot;height&quot;: &quot;100%&quot; },
+  &quot;appMode&quot;: {
+    &quot;editor&quot;: &quot;enum&quot;,
+    &quot;options&quot;: [&quot;customer&quot;, &quot;crew&quot;],
+    &quot;default&quot;: &quot;customer&quot;,
+    &quot;section&quot;: &quot;App&quot;
+  },
+  &quot;darkCrewUI&quot;: {
+    &quot;editor&quot;: &quot;boolean&quot;,
+    &quot;default&quot;: true,
+    &quot;section&quot;: &quot;App&quot;
+  }
+}">
+
+class Component extends DCLogic {
+  state = {
+    mode: 'customer', // 'customer' | 'crew'
+    screen: 'home',
+    bookingStep: 0,
+    selectedService: null,
+    selectedDate: null,
+    selectedTime: null,
+  };
+
+  renderVals() {
+    const { mode, screen, bookingStep, selectedService } = this.state;
+
+    const customerScreens = [
+      { id: 'home', label: 'Home' },
+      { id: 'booking', label: 'Book a Move' },
+      { id: 'quote', label: 'Quote Received' },
+      { id: 'tracking', label: 'Track Move' },
+      { id: 'history', label: 'My Bookings' },
+      { id: 'profile', label: 'Profile' },
+    ];
+
+    const crewScreens = [
+      { id: 'crew-jobs', label: 'My Jobs' },
+      { id: 'crew-detail', label: 'Job Detail' },
+      { id: 'crew-progress', label: 'In Progress' },
+    ];
+
+    const screens = mode === 'customer' ? customerScreens : crewScreens;
+
+    const navTitle = mode === 'customer' ? 'Customer Screens' : 'Crew Screens';
+
+    const goTo = (s) => () => this.setState({ screen: s });
+
+    const screenNav = React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
+      screens.map(s => React.createElement('button', {
+        key: s.id,
+        onClick: () => this.setState({ screen: s.id }),
+        style: {
+          padding: '10px 16px',
+          borderRadius: 12,
+          border: 'none',
+          cursor: 'pointer',
+          fontFamily: 'Plus Jakarta Sans, sans-serif',
+          fontSize: 14,
+          fontWeight: screen === s.id ? 700 : 500,
+          textAlign: 'left',
+          background: screen === s.id ? '#5B2BC9' : 'rgba(20,8,31,0.04)',
+          color: screen === s.id ? '#fff' : '#4A4357',
+          transition: 'all 0.2s',
+        }
+      }, s.label))
+    );
+
+    // Build screens
+    const currentScreen = this.buildScreen();
+
+    return {
+      currentScreen,
+      screenNav,
+      navTitle,
+      isCustomer: mode === 'customer' ? '#5B2BC9' : 'transparent',
+      isCustomerText: mode === 'customer' ? '#fff' : 'rgba(255,255,255,0.6)',
+      isCrew: mode === 'crew' ? '#5B2BC9' : 'transparent',
+      isCrewText: mode === 'crew' ? '#fff' : 'rgba(255,255,255,0.6)',
+      setCustomerMode: () => this.setState({ mode: 'customer', screen: 'home' }),
+      setCrewMode: () => this.setState({ mode: 'crew', screen: 'crew-jobs' }),
+    };
+  }
+
+  buildScreen() {
+    const { screen, bookingStep, selectedService } = this.state;
+    const h = React.createElement;
+    const goTo = (s) => () => this.setState({ screen: s });
+    const setService = (s) => () => this.setState({ selectedService: s, screen: 'booking', bookingStep: 1 });
+
+    const services = [
+      { icon: 'home', label: 'Home Shifting', desc: 'Apartment & villa moves', color: '#5B2BC9' },
+      { icon: 'building-2', label: 'Office Moving', desc: 'Commercial relocation', color: '#4A1FA0' },
+      { icon: 'package', label: 'Packing Only', desc: 'Professional packing service', color: '#7C4DFF' },
+      { icon: 'sofa', label: 'Single Items', desc: 'Furniture & appliance delivery', color: '#1A0B33' },
+      { icon: 'warehouse', label: 'Storage', desc: 'PurpleBox self-storage units', color: '#2D1259' },
+      { icon: 'truck', label: 'Furniture Delivery', desc: 'New purchases delivered', color: '#5B2BC9' },
+    ];
+
+    const tabBar = (active) => h('div', {
+      style: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 83, background: '#fff', borderTop: '1px solid rgba(20,8,31,0.08)', display: 'flex', justifyContent: 'space-around', alignItems: 'flex-start', paddingTop: 10, paddingBottom: 30, zIndex: 10 }
+    },
+      [
+        { emoji: '⌂', label: 'Home', id: 'home' },
+        { emoji: '📅', label: 'Bookings', id: 'history' },
+        { emoji: '📍', label: 'Track', id: 'tracking' },
+        { emoji: '👤', label: 'Profile', id: 'profile' },
+      ].map(t => h('button', {
+        key: t.id,
+        onClick: () => this.setState({ screen: t.id }),
+        style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 12px' }
+      },
+        h('div', { style: { fontSize: 20, lineHeight: 1, color: active === t.id ? '#5B2BC9' : '#756E80' } }, t.emoji
+        ),
+        h('span', { style: { fontSize: 10, fontWeight: active === t.id ? 700 : 500, color: active === t.id ? '#5B2BC9' : '#756E80', fontFamily: 'Plus Jakarta Sans, sans-serif' } }, t.label)
+      ))
+    );
+
+    // ========== CUSTOMER: HOME ==========
+    if (screen === 'home') {
+      return h('div', { style: { height: '100%', display: 'flex', flexDirection: 'column', background: '#FBF8F2' } },
+        // Header
+        h('div', { style: { padding: '16px 20px 0' } },
+          h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+            h('div', null,
+              h('div', { style: { fontSize: 13, color: '#756E80', fontWeight: 500 } }, 'Good morning'),
+              h('div', { style: { fontSize: 22, fontWeight: 700, fontFamily: 'Bricolage Grotesque, serif', letterSpacing: '-0.02em', color: '#14081F' } }, 'Welcome back 👋')
+            ),
+            h('div', { style: { width: 40, height: 40, borderRadius: 14, background: '#5B2BC9', display: 'grid', placeItems: 'center', color: '#fff', fontSize: 16, fontWeight: 700, fontFamily: 'Bricolage Grotesque, serif' } }, 'M')
+          ),
+        ),
+
+        // Scrollable content
+        h('div', { style: { flex: 1, overflow: 'auto', paddingBottom: 90 } },
+          // Hero card
+          h('div', { style: { margin: '16px 20px', padding: '28px 24px', background: '#14081F', borderRadius: 22, position: 'relative', overflow: 'hidden' } },
+            h('div', { style: { position: 'absolute', right: -40, top: -40, width: 180, height: 180, borderRadius: '50%', background: 'rgba(91,43,201,0.3)' } }),
+            h('div', { style: { position: 'absolute', right: 20, bottom: -20, width: 100, height: 100, borderRadius: '50%', border: '20px solid rgba(91,43,201,0.15)' } }),
+            h('div', { style: { position: 'relative', zIndex: 1 } },
+              h('div', { style: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 999, background: 'rgba(124,77,255,0.2)', color: '#A78BFA', fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 14 } }, '🚚 Moving made easy'),
+              h('div', { style: { fontSize: 26, fontWeight: 700, fontFamily: 'Bricolage Grotesque, serif', color: '#fff', lineHeight: 1.15, letterSpacing: '-0.02em', maxWidth: '16ch' } }, 'Need to move?', h('br'), h('span', { style: { color: '#A78BFA' } }, "We've got you.")),
+              h('button', { onClick: goTo('booking'), style: { marginTop: 18, padding: '12px 22px', borderRadius: 999, background: '#5B2BC9', color: '#fff', border: 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'Plus Jakarta Sans, sans-serif', display: 'flex', alignItems: 'center', gap: 8 } }, 'Get a free quote', h('span', { style: { fontSize: 16 } }, '→'))
+            )
+          ),
+
+          // Services
+          h('div', { style: { padding: '8px 20px' } },
+            h('div', { style: { fontSize: 16, fontWeight: 700, fontFamily: 'Bricolage Grotesque, serif', color: '#14081F', letterSpacing: '-0.01em', marginBottom: 14 } }, 'Our Services'),
+            h('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 } },
+              services.map((s, i) => h('button', {
+                key: i, onClick: setService(s.label),
+                style: { background: '#fff', border: '1px solid rgba(20,8,31,0.06)', borderRadius: 16, padding: '18px 10px 14px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, cursor: 'pointer', transition: 'all 0.2s' }
+              },
+                h('div', { style: { width: 44, height: 44, borderRadius: 13, background: i === 0 ? '#5B2BC9' : '#F7F3FF', color: i === 0 ? '#fff' : '#5B2BC9', display: 'grid', placeItems: 'center', fontSize: 20 } },
+                  s.icon === 'home' ? '🏠' : s.icon === 'building-2' ? '🏢' : s.icon === 'package' ? '📦' : s.icon === 'sofa' ? '🛋' : s.icon === 'warehouse' ? '📦' : '🚚'
+                ),
+                h('div', { style: { fontSize: 12, fontWeight: 600, color: '#14081F', textAlign: 'center', lineHeight: 1.3 } }, s.label)
+              ))
+            )
+          ),
+
+          // Active booking card
+          h('div', { style: { padding: '18px 20px' } },
+            h('div', { style: { fontSize: 16, fontWeight: 700, fontFamily: 'Bricolage Grotesque, serif', color: '#14081F', letterSpacing: '-0.01em', marginBottom: 14 } }, 'Active Move'),
+            h('button', {
+              onClick: goTo('tracking'),
+              style: { width: '100%', background: '#fff', border: '1px solid rgba(20,8,31,0.06)', borderRadius: 18, padding: '18px', cursor: 'pointer', textAlign: 'left' }
+            },
+              h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' } },
+                h('div', null,
+                  h('div', { style: { display: 'inline-flex', padding: '4px 10px', borderRadius: 999, background: '#EDE5FF', color: '#5B2BC9', fontSize: 11, fontWeight: 600, marginBottom: 8 } }, '● In Progress'),
+                  h('div', { style: { fontSize: 15, fontWeight: 700, color: '#14081F' } }, 'Villa → Apartment'),
+                  h('div', { style: { fontSize: 13, color: '#756E80', marginTop: 4 } }, 'JBR → Downtown Dubai')
+                ),
+                h('div', { style: { fontSize: 24 } }, '→')
+              ),
+              h('div', { style: { display: 'flex', gap: 16, marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(20,8,31,0.06)' } },
+                h('div', null,
+                  h('div', { style: { fontSize: 11, color: '#756E80', fontWeight: 500 } }, 'Date'),
+                  h('div', { style: { fontSize: 13, fontWeight: 600, color: '#14081F' } }, 'Jul 10, 2026')
+                ),
+                h('div', null,
+                  h('div', { style: { fontSize: 11, color: '#756E80', fontWeight: 500 } }, 'Crew'),
+                  h('div', { style: { fontSize: 13, fontWeight: 600, color: '#14081F' } }, '4 members')
+                ),
+                h('div', null,
+                  h('div', { style: { fontSize: 11, color: '#756E80', fontWeight: 500 } }, 'ETA'),
+                  h('div', { style: { fontSize: 13, fontWeight: 600, color: '#5B2BC9' } }, '~2 hours')
+                )
+              )
+            )
+          ),
+
+          // Recent
+          h('div', { style: { padding: '4px 20px 20px' } },
+            h('div', { style: { fontSize: 16, fontWeight: 700, fontFamily: 'Bricolage Grotesque, serif', color: '#14081F', letterSpacing: '-0.01em', marginBottom: 14 } }, 'Recent Bookings'),
+            h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } },
+              [
+                { from: 'Marina Apt 2204', to: 'PurpleBox Storage', date: 'Jun 28', status: 'Completed', color: '#22c55e' },
+                { from: 'DIFC Office 15B', to: 'JLT Office 802', date: 'Jun 15', status: 'Completed', color: '#22c55e' },
+              ].map((b, i) => h('div', { key: i, style: { background: '#fff', border: '1px solid rgba(20,8,31,0.06)', borderRadius: 14, padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+                h('div', null,
+                  h('div', { style: { fontSize: 14, fontWeight: 600, color: '#14081F' } }, `${b.from} → ${b.to}`),
+                  h('div', { style: { fontSize: 12, color: '#756E80', marginTop: 3 } }, b.date)
+                ),
+                h('div', { style: { padding: '4px 10px', borderRadius: 999, background: `${b.color}15`, color: b.color, fontSize: 11, fontWeight: 600 } }, b.status)
+              ))
+            )
+          )
+        ),
+
+        tabBar('home')
+      );
+    }
+
+    // ========== CUSTOMER: BOOKING ==========
+    if (screen === 'booking') {
+      const steps = ['Service', 'Details', 'Photos', 'Schedule'];
+      return h('div', { style: { height: '100%', display: 'flex', flexDirection: 'column', background: '#FBF8F2' } },
+        // Top bar
+        h('div', { style: { padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 14 } },
+          h('button', { onClick: goTo('home'), style: { width: 36, height: 36, borderRadius: 12, background: 'rgba(20,8,31,0.04)', border: 'none', cursor: 'pointer', fontSize: 18, display: 'grid', placeItems: 'center' } }, '←'),
+          h('div', { style: { fontSize: 17, fontWeight: 700, fontFamily: 'Bricolage Grotesque, serif', color: '#14081F' } }, 'Book a Move'),
+        ),
+
+        // Progress
+        h('div', { style: { padding: '0 20px 16px', display: 'flex', gap: 6 } },
+          steps.map((s, i) => h('div', { key: i, style: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 } },
+            h('div', { style: { width: '100%', height: 4, borderRadius: 99, background: i <= bookingStep ? '#5B2BC9' : 'rgba(20,8,31,0.08)', transition: 'background 0.3s' } }),
+            h('div', { style: { fontSize: 10, fontWeight: i === bookingStep ? 700 : 500, color: i <= bookingStep ? '#5B2BC9' : '#756E80' } }, s)
+          ))
+        ),
+
+        // Content
+        h('div', { style: { flex: 1, overflow: 'auto', padding: '0 20px 100px' } },
+
+          // Step 0: Service
+          bookingStep === 0 && h('div', { style: { animation: 'fadeIn 0.3s ease' } },
+            h('div', { style: { fontSize: 22, fontWeight: 700, fontFamily: 'Bricolage Grotesque, serif', color: '#14081F', letterSpacing: '-0.02em' } }, 'What do you need?'),
+            h('div', { style: { fontSize: 14, color: '#756E80', marginTop: 6, marginBottom: 20 } }, 'Select the type of service'),
+            h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } },
+              [
+                { icon: '🏠', label: 'Home / Apartment Shifting', desc: 'Full home move with packing' },
+                { icon: '🏡', label: 'Villa Moving', desc: 'Large moves with furniture disassembly' },
+                { icon: '🏢', label: 'Office Relocation', desc: 'Commercial moves, IT equipment' },
+                { icon: '📦', label: 'Packing & Unpacking', desc: 'Professional packing service only' },
+                { icon: '🛋', label: 'Single Item Move', desc: 'Individual furniture or appliance' },
+                { icon: '🚚', label: 'Furniture Delivery', desc: 'New purchase pickup & delivery' },
+              ].map((s, i) => h('button', {
+                key: i,
+                onClick: () => this.setState({ selectedService: s.label, bookingStep: 1 }),
+                style: { width: '100%', display: 'flex', alignItems: 'center', gap: 14, padding: '16px', borderRadius: 16, background: selectedService === s.label ? '#5B2BC9' : '#fff', border: `1px solid ${selectedService === s.label ? '#5B2BC9' : 'rgba(20,8,31,0.06)'}`, cursor: 'pointer', textAlign: 'left', transition: 'all 0.2s' }
+              },
+                h('div', { style: { width: 44, height: 44, borderRadius: 13, background: selectedService === s.label ? 'rgba(255,255,255,0.15)' : '#F7F3FF', display: 'grid', placeItems: 'center', fontSize: 20, flexShrink: 0 } }, s.icon),
+                h('div', null,
+                  h('div', { style: { fontSize: 15, fontWeight: 600, color: selectedService === s.label ? '#fff' : '#14081F' } }, s.label),
+                  h('div', { style: { fontSize: 13, color: selectedService === s.label ? 'rgba(255,255,255,0.7)' : '#756E80', marginTop: 2 } }, s.desc)
+                )
+              ))
+            )
+          ),
+
+          // Step 1: Details
+          bookingStep === 1 && h('div', { style: { animation: 'fadeIn 0.3s ease' } },
+            h('div', { style: { fontSize: 22, fontWeight: 700, fontFamily: 'Bricolage Grotesque, serif', color: '#14081F', letterSpacing: '-0.02em' } }, 'Move details'),
+            h('div', { style: { fontSize: 14, color: '#756E80', marginTop: 6, marginBottom: 20 } }, 'Where are we picking up and dropping off?'),
+
+            // From
+            h('div', { style: { marginBottom: 16 } },
+              h('div', { style: { fontSize: 12, fontWeight: 600, color: '#756E80', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 } }, 'Moving from'),
+              h('div', { style: { background: '#fff', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 14, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 } },
+                h('div', { style: { width: 36, height: 36, borderRadius: 10, background: '#F7F3FF', color: '#5B2BC9', display: 'grid', placeItems: 'center', fontSize: 16, flexShrink: 0 } }, '📍'),
+                h('div', null,
+                  h('div', { style: { fontSize: 15, fontWeight: 600, color: '#14081F' } }, 'JBR, Bahar 4, Apt 2204'),
+                  h('div', { style: { fontSize: 12, color: '#756E80', marginTop: 2 } }, 'Dubai Marina area')
+                )
+              )
+            ),
+
+            // Dotted line
+            h('div', { style: { display: 'flex', justifyContent: 'center', margin: '-4px 0' } },
+              h('div', { style: { width: 2, height: 24, background: 'repeating-linear-gradient(to bottom, #DDD0FF 0, #DDD0FF 4px, transparent 4px, transparent 8px)' } })
+            ),
+
+            // To
+            h('div', { style: { marginBottom: 20, marginTop: 4 } },
+              h('div', { style: { fontSize: 12, fontWeight: 600, color: '#756E80', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 } }, 'Moving to'),
+              h('div', { style: { background: '#fff', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 14, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 } },
+                h('div', { style: { width: 36, height: 36, borderRadius: 10, background: '#F7F3FF', color: '#5B2BC9', display: 'grid', placeItems: 'center', fontSize: 16, flexShrink: 0 } }, '🏠'),
+                h('div', null,
+                  h('div', { style: { fontSize: 15, fontWeight: 600, color: '#14081F' } }, 'Downtown, Blvd Heights T1'),
+                  h('div', { style: { fontSize: 12, color: '#756E80', marginTop: 2 } }, 'Downtown Dubai')
+                )
+              )
+            ),
+
+            // Property type
+            h('div', { style: { fontSize: 12, fontWeight: 600, color: '#756E80', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 } }, 'Property type'),
+            h('div', { style: { display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' } },
+              ['Studio', '1 BHK', '2 BHK', '3 BHK', 'Villa'].map((t, i) => h('button', {
+                key: i,
+                style: { padding: '10px 18px', borderRadius: 999, border: `1px solid ${i === 2 ? '#5B2BC9' : 'rgba(20,8,31,0.1)'}`, background: i === 2 ? '#5B2BC9' : '#fff', color: i === 2 ? '#fff' : '#14081F', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Plus Jakarta Sans, sans-serif' }
+              }, t))
+            ),
+
+            // Floor & elevator
+            h('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 } },
+              h('div', null,
+                h('div', { style: { fontSize: 12, fontWeight: 600, color: '#756E80', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 } }, 'Floor'),
+                h('div', { style: { background: '#fff', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 12, padding: '12px 14px', fontSize: 15, fontWeight: 600, color: '#14081F' } }, '22')
+              ),
+              h('div', null,
+                h('div', { style: { fontSize: 12, fontWeight: 600, color: '#756E80', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 } }, 'Elevator'),
+                h('div', { style: { background: '#fff', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 12, padding: '12px 14px', fontSize: 15, fontWeight: 600, color: '#22c55e' } }, '✓ Available')
+              )
+            ),
+          ),
+
+          // Step 2: Photos
+          bookingStep === 2 && h('div', { style: { animation: 'fadeIn 0.3s ease' } },
+            h('div', { style: { fontSize: 22, fontWeight: 700, fontFamily: 'Bricolage Grotesque, serif', color: '#14081F', letterSpacing: '-0.02em' } }, 'Upload photos'),
+            h('div', { style: { fontSize: 14, color: '#756E80', marginTop: 6, marginBottom: 24 } }, 'Take photos of the items you need moved. This helps us give you an accurate quote.'),
+
+            // Upload area
+            h('div', { style: { border: '2px dashed rgba(91,43,201,0.25)', borderRadius: 20, padding: '40px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, background: '#F7F3FF', marginBottom: 20 } },
+              h('div', { style: { width: 56, height: 56, borderRadius: 16, background: '#EDE5FF', display: 'grid', placeItems: 'center', fontSize: 24 } }, '📸'),
+              h('div', { style: { fontSize: 15, fontWeight: 600, color: '#14081F' } }, 'Tap to upload photos'),
+              h('div', { style: { fontSize: 13, color: '#756E80' } }, 'or take new ones with camera'),
+              h('button', { style: { marginTop: 8, padding: '10px 24px', borderRadius: 999, background: '#5B2BC9', color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Plus Jakarta Sans, sans-serif' } }, 'Choose Files')
+            ),
+
+            // Uploaded thumbnails
+            h('div', { style: { fontSize: 13, fontWeight: 600, color: '#14081F', marginBottom: 10 } }, '3 photos uploaded'),
+            h('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 } },
+              ['Living Room', 'Bedroom', 'Kitchen'].map((r, i) => h('div', { key: i, style: { aspectRatio: '1', borderRadius: 14, background: ['#EDE5FF', '#DDD0FF', '#F7F3FF'][i], display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6 } },
+                h('div', { style: { fontSize: 28 } }, ['🛋', '🛏', '🍳'][i]),
+                h('div', { style: { fontSize: 11, fontWeight: 600, color: '#5B2BC9' } }, r)
+              ))
+            ),
+
+            // Notes
+            h('div', { style: { marginTop: 20 } },
+              h('div', { style: { fontSize: 12, fontWeight: 600, color: '#756E80', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 } }, 'Additional notes'),
+              h('div', { style: { background: '#fff', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 14, padding: '14px 16px', minHeight: 80, fontSize: 14, color: '#756E80' } }, 'Large L-shaped sofa, needs disassembly. Glass dining table — handle with care...')
+            )
+          ),
+
+          // Step 3: Schedule
+          bookingStep === 3 && h('div', { style: { animation: 'fadeIn 0.3s ease' } },
+            h('div', { style: { fontSize: 22, fontWeight: 700, fontFamily: 'Bricolage Grotesque, serif', color: '#14081F', letterSpacing: '-0.02em' } }, 'Pick a date'),
+            h('div', { style: { fontSize: 14, color: '#756E80', marginTop: 6, marginBottom: 24 } }, 'When would you like us to come?'),
+
+            // Mini calendar
+            h('div', { style: { background: '#fff', borderRadius: 18, border: '1px solid rgba(20,8,31,0.06)', padding: '18px', marginBottom: 20 } },
+              h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 } },
+                h('div', { style: { fontSize: 16, fontWeight: 700, fontFamily: 'Bricolage Grotesque, serif', color: '#14081F' } }, 'July 2026'),
+                h('div', { style: { display: 'flex', gap: 8 } },
+                  h('div', { style: { width: 30, height: 30, borderRadius: 8, background: 'rgba(20,8,31,0.04)', display: 'grid', placeItems: 'center', fontSize: 12 } }, '‹'),
+                  h('div', { style: { width: 30, height: 30, borderRadius: 8, background: 'rgba(20,8,31,0.04)', display: 'grid', placeItems: 'center', fontSize: 12 } }, '›')
+                )
+              ),
+              h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, textAlign: 'center' } },
+                ['S','M','T','W','T','F','S'].map((d, i) => h('div', { key: 'h'+i, style: { fontSize: 11, fontWeight: 600, color: '#756E80', padding: '6px 0' } }, d)),
+                ...[...Array(31)].map((_, i) => {
+                  const day = i + 1;
+                  const offset = 2; // July 2026 starts Wednesday
+                  const isSelected = day === 10;
+                  const isPast = day < 8;
+                  if (i === 0) {
+                    const blanks = [];
+                    for (let b = 0; b < offset; b++) blanks.push(h('div', { key: 'b'+b }));
+                    return [
+                      ...blanks,
+                      h('div', { key: 'd'+day, style: { padding: '8px 0', fontSize: 13, fontWeight: isSelected ? 700 : 500, borderRadius: 10, background: isSelected ? '#5B2BC9' : 'transparent', color: isSelected ? '#fff' : isPast ? '#ccc' : '#14081F', cursor: isPast ? 'default' : 'pointer' } }, day)
+                    ];
+                  }
+                  return h('div', { key: 'd'+day, style: { padding: '8px 0', fontSize: 13, fontWeight: isSelected ? 700 : 500, borderRadius: 10, background: isSelected ? '#5B2BC9' : 'transparent', color: isSelected ? '#fff' : isPast ? '#ccc' : '#14081F', cursor: isPast ? 'default' : 'pointer' } }, day);
+                })
+              )
+            ),
+
+            // Time slots
+            h('div', { style: { fontSize: 12, fontWeight: 600, color: '#756E80', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 } }, 'Preferred time'),
+            h('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 } },
+              ['8:00 AM', '10:00 AM', '12:00 PM', '2:00 PM'].map((t, i) => h('button', {
+                key: i,
+                style: { padding: '14px', borderRadius: 14, border: `1px solid ${i === 0 ? '#5B2BC9' : 'rgba(20,8,31,0.08)'}`, background: i === 0 ? '#5B2BC9' : '#fff', color: i === 0 ? '#fff' : '#14081F', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'Plus Jakarta Sans, sans-serif' }
+              }, t))
+            )
+          ),
+        ),
+
+        // Bottom button
+        h('div', { style: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: '16px 20px 36px', background: 'linear-gradient(transparent, #FBF8F2 20%)', display: 'flex', gap: 10 } },
+          bookingStep > 0 && h('button', {
+            onClick: () => this.setState({ bookingStep: bookingStep - 1 }),
+            style: { width: 52, height: 52, borderRadius: 16, background: '#fff', border: '1px solid rgba(20,8,31,0.1)', fontSize: 18, cursor: 'pointer', display: 'grid', placeItems: 'center' }
+          }, '←'),
+          h('button', {
+            onClick: () => {
+              if (bookingStep < 3) this.setState({ bookingStep: bookingStep + 1 });
+              else this.setState({ screen: 'quote', bookingStep: 0 });
+            },
+            style: { flex: 1, height: 52, borderRadius: 16, background: '#5B2BC9', color: '#fff', border: 'none', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'Plus Jakarta Sans, sans-serif' }
+          }, bookingStep === 3 ? 'Submit Request' : 'Continue')
+        )
+      );
+    }
+
+    // ========== CUSTOMER: QUOTE ==========
+    if (screen === 'quote') {
+      return h('div', { style: { height: '100%', display: 'flex', flexDirection: 'column', background: '#FBF8F2' } },
+        h('div', { style: { padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 14 } },
+          h('button', { onClick: goTo('home'), style: { width: 36, height: 36, borderRadius: 12, background: 'rgba(20,8,31,0.04)', border: 'none', cursor: 'pointer', fontSize: 18, display: 'grid', placeItems: 'center' } }, '←'),
+          h('div', { style: { fontSize: 17, fontWeight: 700, fontFamily: 'Bricolage Grotesque, serif', color: '#14081F' } }, 'Your Quote'),
+        ),
+
+        h('div', { style: { flex: 1, overflow: 'auto', padding: '0 20px 40px' } },
+          // Success header
+          h('div', { style: { textAlign: 'center', padding: '24px 0' } },
+            h('div', { style: { width: 64, height: 64, borderRadius: 20, background: '#22c55e', display: 'grid', placeItems: 'center', margin: '0 auto 16px', fontSize: 28 } }, '✓'),
+            h('div', { style: { fontSize: 22, fontWeight: 700, fontFamily: 'Bricolage Grotesque, serif', color: '#14081F', letterSpacing: '-0.02em' } }, 'Quote Ready!'),
+            h('div', { style: { fontSize: 14, color: '#756E80', marginTop: 6 } }, 'We reviewed your photos and details'),
+          ),
+
+          // Quote card
+          h('div', { style: { background: '#14081F', borderRadius: 22, padding: '28px 24px', marginBottom: 16 } },
+            h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' } },
+              h('div', null,
+                h('div', { style: { fontSize: 12, color: 'rgba(255,255,255,0.5)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' } }, 'Total estimate'),
+                h('div', { style: { fontSize: 40, fontWeight: 800, fontFamily: 'Bricolage Grotesque, serif', color: '#fff', letterSpacing: '-0.03em', marginTop: 4 } }, 'AED 2,800'),
+              ),
+              h('div', { style: { padding: '6px 12px', borderRadius: 999, background: 'rgba(124,77,255,0.2)', color: '#A78BFA', fontSize: 12, fontWeight: 600 } }, 'Fixed Price')
+            ),
+            h('div', { style: { marginTop: 20, display: 'flex', flexDirection: 'column', gap: 10 } },
+              [
+                { label: 'Packing & wrapping', price: 'AED 800' },
+                { label: 'Loading & transport', price: 'AED 1,200' },
+                { label: 'Unloading & placement', price: 'AED 600' },
+                { label: 'Furniture disassembly/assembly', price: 'AED 200' },
+              ].map((item, i) => h('div', { key: i, style: { display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: i > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none' } },
+                h('div', { style: { fontSize: 14, color: 'rgba(255,255,255,0.7)' } }, item.label),
+                h('div', { style: { fontSize: 14, fontWeight: 600, color: '#fff' } }, item.price)
+              ))
+            )
+          ),
+
+          // Details
+          h('div', { style: { background: '#fff', borderRadius: 18, border: '1px solid rgba(20,8,31,0.06)', padding: '18px', marginBottom: 16 } },
+            h('div', { style: { fontSize: 14, fontWeight: 700, color: '#14081F', marginBottom: 14 } }, 'Move Details'),
+            [
+              { label: 'Service', value: 'Home Shifting' },
+              { label: 'From', value: 'JBR, Bahar 4, Apt 2204' },
+              { label: 'To', value: 'Downtown, Blvd Heights T1' },
+              { label: 'Date', value: 'Thu, Jul 10, 2026' },
+              { label: 'Time', value: '8:00 AM' },
+              { label: 'Crew', value: '4 members + 1 truck' },
+            ].map((d, i) => h('div', { key: i, style: { display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderTop: i > 0 ? '1px solid rgba(20,8,31,0.04)' : 'none' } },
+              h('div', { style: { fontSize: 13, color: '#756E80' } }, d.label),
+              h('div', { style: { fontSize: 13, fontWeight: 600, color: '#14081F', textAlign: 'right', maxWidth: '60%' } }, d.value)
+            ))
+          ),
+
+          // Buttons
+          h('button', {
+            onClick: goTo('tracking'),
+            style: { width: '100%', height: 52, borderRadius: 16, background: '#5B2BC9', color: '#fff', border: 'none', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'Plus Jakarta Sans, sans-serif', marginBottom: 10 }
+          }, 'Accept & Pay'),
+          h('button', {
+            style: { width: '100%', height: 48, borderRadius: 16, background: 'transparent', color: '#5B2BC9', border: '1px solid rgba(91,43,201,0.2)', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'Plus Jakarta Sans, sans-serif' }
+          }, 'Chat with us about this quote'),
+        )
+      );
+    }
+
+    // ========== CUSTOMER: TRACKING ==========
+    if (screen === 'tracking') {
+      const trackSteps = [
+        { label: 'Booking Confirmed', time: '8:00 AM', done: true },
+        { label: 'Crew Dispatched', time: '8:15 AM', done: true },
+        { label: 'Packing Started', time: '8:45 AM', done: true },
+        { label: 'Loading in Progress', time: '10:30 AM', done: true, active: true },
+        { label: 'In Transit', time: '—', done: false },
+        { label: 'Unloading & Setup', time: '—', done: false },
+        { label: 'Complete', time: '—', done: false },
+      ];
+
+      return h('div', { style: { height: '100%', display: 'flex', flexDirection: 'column', background: '#FBF8F2' } },
+        h('div', { style: { padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 14 } },
+          h('button', { onClick: goTo('home'), style: { width: 36, height: 36, borderRadius: 12, background: 'rgba(20,8,31,0.04)', border: 'none', cursor: 'pointer', fontSize: 18, display: 'grid', placeItems: 'center' } }, '←'),
+          h('div', { style: { fontSize: 17, fontWeight: 700, fontFamily: 'Bricolage Grotesque, serif', color: '#14081F' } }, 'Track Your Move'),
+        ),
+
+        h('div', { style: { flex: 1, overflow: 'auto', paddingBottom: 90 } },
+          // Status banner
+          h('div', { style: { margin: '0 20px 16px', padding: '20px', background: '#5B2BC9', borderRadius: 18, color: '#fff' } },
+            h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' } },
+              h('div', null,
+                h('div', { style: { fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.7 } }, 'Current Status'),
+                h('div', { style: { fontSize: 20, fontWeight: 700, fontFamily: 'Bricolage Grotesque, serif', marginTop: 4 } }, 'Loading in Progress'),
+              ),
+              h('div', { style: { width: 44, height: 44, borderRadius: 14, background: 'rgba(255,255,255,0.15)', display: 'grid', placeItems: 'center', fontSize: 20 } }, '📦')
+            ),
+            h('div', { style: { marginTop: 16, display: 'flex', gap: 20 } },
+              h('div', null,
+                h('div', { style: { fontSize: 11, opacity: 0.6 } }, 'ETA to finish'),
+                h('div', { style: { fontSize: 15, fontWeight: 700, marginTop: 2 } }, '~2 hours')
+              ),
+              h('div', null,
+                h('div', { style: { fontSize: 11, opacity: 0.6 } }, 'Items packed'),
+                h('div', { style: { fontSize: 15, fontWeight: 700, marginTop: 2 } }, '18 / 24')
+              )
+            )
+          ),
+
+          // Crew info
+          h('div', { style: { margin: '0 20px 16px', padding: '16px', background: '#fff', border: '1px solid rgba(20,8,31,0.06)', borderRadius: 16 } },
+            h('div', { style: { fontSize: 13, fontWeight: 600, color: '#756E80', marginBottom: 12 } }, 'Your Crew'),
+            h('div', { style: { display: 'flex', gap: 10 } },
+              ['Ahmed', 'Hassan', 'Omar', 'Ali'].map((n, i) => h('div', { key: i, style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 } },
+                h('div', { style: { width: 44, height: 44, borderRadius: 14, background: '#EDE5FF', display: 'grid', placeItems: 'center', fontSize: 13, fontWeight: 700, color: '#5B2BC9' } }, n[0]),
+                h('div', { style: { fontSize: 11, fontWeight: 500, color: '#14081F' } }, n)
+              ))
+            ),
+            h('div', { style: { display: 'flex', gap: 8, marginTop: 14 } },
+              h('button', { style: { flex: 1, padding: '10px', borderRadius: 12, background: '#5B2BC9', color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Plus Jakarta Sans, sans-serif' } }, '📞 Call Crew Lead'),
+              h('button', { style: { flex: 1, padding: '10px', borderRadius: 12, background: '#F7F3FF', color: '#5B2BC9', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Plus Jakarta Sans, sans-serif' } }, '💬 Chat')
+            )
+          ),
+
+          // Timeline
+          h('div', { style: { margin: '0 20px', padding: '18px', background: '#fff', border: '1px solid rgba(20,8,31,0.06)', borderRadius: 18 } },
+            h('div', { style: { fontSize: 14, fontWeight: 700, color: '#14081F', marginBottom: 16 } }, 'Timeline'),
+            h('div', { style: { display: 'flex', flexDirection: 'column' } },
+              trackSteps.map((s, i) => h('div', { key: i, style: { display: 'flex', gap: 14, paddingBottom: i < trackSteps.length - 1 ? 20 : 0, position: 'relative' } },
+                // Line
+                i < trackSteps.length - 1 && h('div', { style: { position: 'absolute', left: 11, top: 24, bottom: 0, width: 2, background: s.done ? '#5B2BC9' : 'rgba(20,8,31,0.08)' } }),
+                // Dot
+                h('div', { style: { width: 24, height: 24, borderRadius: 999, background: s.active ? '#5B2BC9' : s.done ? '#5B2BC9' : 'rgba(20,8,31,0.08)', display: 'grid', placeItems: 'center', flexShrink: 0, zIndex: 1, boxShadow: s.active ? '0 0 0 4px rgba(91,43,201,0.2)' : 'none' } },
+                  s.done && h('div', { style: { color: '#fff', fontSize: 12, fontWeight: 700 } }, '✓')
+                ),
+                h('div', { style: { flex: 1 } },
+                  h('div', { style: { fontSize: 14, fontWeight: s.active ? 700 : 500, color: s.done ? '#14081F' : '#756E80' } }, s.label),
+                  h('div', { style: { fontSize: 12, color: '#756E80', marginTop: 2 } }, s.time)
+                )
+              ))
+            )
+          ),
+        ),
+
+        tabBar('tracking')
+      );
+    }
+
+    // ========== CUSTOMER: HISTORY ==========
+    if (screen === 'history') {
+      const bookings = [
+        { from: 'JBR, Bahar 4', to: 'Downtown, Blvd Heights', date: 'Jul 10, 2026', status: 'In Progress', statusColor: '#5B2BC9', price: 'AED 2,800' },
+        { from: 'Marina Walk 7', to: 'PurpleBox Storage', date: 'Jun 28, 2026', status: 'Completed', statusColor: '#22c55e', price: 'AED 1,200' },
+        { from: 'DIFC Gate 5', to: 'JLT Cluster D', date: 'Jun 15, 2026', status: 'Completed', statusColor: '#22c55e', price: 'AED 3,500' },
+        { from: 'Business Bay', to: 'Dubai Hills', date: 'May 20, 2026', status: 'Completed', statusColor: '#22c55e', price: 'AED 4,200' },
+      ];
+
+      return h('div', { style: { height: '100%', display: 'flex', flexDirection: 'column', background: '#FBF8F2' } },
+        h('div', { style: { padding: '12px 20px 16px' } },
+          h('div', { style: { fontSize: 28, fontWeight: 700, fontFamily: 'Bricolage Grotesque, serif', color: '#14081F', letterSpacing: '-0.02em' } }, 'My Bookings'),
+          h('div', { style: { display: 'flex', gap: 8, marginTop: 14 } },
+            ['All', 'Active', 'Completed'].map((t, i) => h('button', {
+              key: i,
+              style: { padding: '8px 18px', borderRadius: 999, border: 'none', background: i === 0 ? '#14081F' : 'rgba(20,8,31,0.04)', color: i === 0 ? '#fff' : '#756E80', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Plus Jakarta Sans, sans-serif' }
+            }, t))
+          )
+        ),
+
+        h('div', { style: { flex: 1, overflow: 'auto', padding: '0 20px', paddingBottom: 90 } },
+          h('div', { style: { display: 'flex', flexDirection: 'column', gap: 12 } },
+            bookings.map((b, i) => h('div', {
+              key: i,
+              style: { background: '#fff', border: '1px solid rgba(20,8,31,0.06)', borderRadius: 18, padding: '18px', cursor: 'pointer' }
+            },
+              h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 } },
+                h('div', { style: { padding: '4px 10px', borderRadius: 999, background: `${b.statusColor}15`, color: b.statusColor, fontSize: 11, fontWeight: 600 } }, b.status),
+                h('div', { style: { fontSize: 16, fontWeight: 700, fontFamily: 'Bricolage Grotesque, serif', color: '#14081F' } }, b.price)
+              ),
+              h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 } },
+                h('div', { style: { width: 8, height: 8, borderRadius: 99, background: '#5B2BC9' } }),
+                h('div', { style: { fontSize: 14, fontWeight: 600, color: '#14081F' } }, b.from)
+              ),
+              h('div', { style: { width: 2, height: 12, background: 'rgba(91,43,201,0.2)', marginLeft: 3 } }),
+              h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, marginTop: 6 } },
+                h('div', { style: { width: 8, height: 8, borderRadius: 99, border: '2px solid #5B2BC9' } }),
+                h('div', { style: { fontSize: 14, fontWeight: 600, color: '#14081F' } }, b.to)
+              ),
+              h('div', { style: { fontSize: 12, color: '#756E80', marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(20,8,31,0.04)' } }, b.date)
+            ))
+          )
+        ),
+
+        tabBar('history')
+      );
+    }
+
+    // ========== CUSTOMER: PROFILE ==========
+    if (screen === 'profile') {
+      return h('div', { style: { height: '100%', display: 'flex', flexDirection: 'column', background: '#FBF8F2' } },
+        h('div', { style: { padding: '12px 20px 0' } },
+          h('div', { style: { fontSize: 28, fontWeight: 700, fontFamily: 'Bricolage Grotesque, serif', color: '#14081F', letterSpacing: '-0.02em' } }, 'Profile'),
+        ),
+
+        h('div', { style: { flex: 1, overflow: 'auto', padding: '20px', paddingBottom: 90 } },
+          // Avatar & name
+          h('div', { style: { display: 'flex', alignItems: 'center', gap: 16, marginBottom: 28 } },
+            h('div', { style: { width: 64, height: 64, borderRadius: 20, background: '#5B2BC9', display: 'grid', placeItems: 'center', color: '#fff', fontSize: 24, fontWeight: 700, fontFamily: 'Bricolage Grotesque, serif' } }, 'M'),
+            h('div', null,
+              h('div', { style: { fontSize: 20, fontWeight: 700, fontFamily: 'Bricolage Grotesque, serif', color: '#14081F' } }, 'Mohammed Al Rashid'),
+              h('div', { style: { fontSize: 13, color: '#756E80', marginTop: 2 } }, '+971 54 224 9946'),
+              h('div', { style: { fontSize: 13, color: '#756E80' } }, 'mohammed@email.com')
+            )
+          ),
+
+          // Stats
+          h('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 24 } },
+            [
+              { num: '8', label: 'Total Moves' },
+              { num: '4.9', label: 'Avg Rating' },
+              { num: '2y', label: 'Member Since' },
+            ].map((s, i) => h('div', { key: i, style: { background: '#fff', border: '1px solid rgba(20,8,31,0.06)', borderRadius: 16, padding: '16px 12px', textAlign: 'center' } },
+              h('div', { style: { fontSize: 24, fontWeight: 700, fontFamily: 'Bricolage Grotesque, serif', color: '#5B2BC9' } }, s.num),
+              h('div', { style: { fontSize: 11, color: '#756E80', fontWeight: 500, marginTop: 4 } }, s.label)
+            ))
+          ),
+
+          // Menu items
+          h('div', { style: { background: '#fff', borderRadius: 18, border: '1px solid rgba(20,8,31,0.06)', overflow: 'hidden' } },
+            [
+              { icon: '📍', label: 'Saved Addresses', sub: '3 addresses' },
+              { icon: '💳', label: 'Payment Methods', sub: 'Visa •••• 4242' },
+              { icon: '🔔', label: 'Notifications', sub: 'Push & SMS enabled' },
+              { icon: '📄', label: 'Documents', sub: 'Emirates ID, contracts' },
+              { icon: '🌐', label: 'Language', sub: 'English' },
+              { icon: '❓', label: 'Help & Support', sub: 'FAQ, contact us' },
+            ].map((item, i) => h('div', {
+              key: i,
+              style: { padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14, borderTop: i > 0 ? '1px solid rgba(20,8,31,0.04)' : 'none', cursor: 'pointer' }
+            },
+              h('div', { style: { width: 38, height: 38, borderRadius: 11, background: '#F7F3FF', display: 'grid', placeItems: 'center', fontSize: 18, flexShrink: 0 } }, item.icon),
+              h('div', { style: { flex: 1 } },
+                h('div', { style: { fontSize: 14, fontWeight: 600, color: '#14081F' } }, item.label),
+                h('div', { style: { fontSize: 12, color: '#756E80', marginTop: 1 } }, item.sub)
+              ),
+              h('div', { style: { fontSize: 16, color: '#756E80' } }, '›')
+            ))
+          ),
+
+          h('button', { style: { width: '100%', marginTop: 20, padding: '14px', borderRadius: 14, background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.12)', color: '#ef4444', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'Plus Jakarta Sans, sans-serif' } }, 'Sign Out'),
+        ),
+
+        tabBar('profile')
+      );
+    }
+
+    // ========== CREW: JOBS LIST ==========
+    if (screen === 'crew-jobs') {
+      const jobs = [
+        { id: '#MV-1847', from: 'JBR, Bahar 4', to: 'Downtown Blvd Heights', type: 'Home Shifting', time: '8:00 AM', status: 'Active', items: '24 items', crew: 4 },
+        { id: '#MV-1848', from: 'Business Bay T2', to: 'PurpleBox Storage', type: 'Packing Only', time: '2:00 PM', status: 'Upcoming', items: '12 items', crew: 2 },
+        { id: '#MV-1849', from: 'DIFC Gate Village', to: 'JLT Cluster N', type: 'Office Moving', time: 'Tomorrow 9 AM', status: 'Upcoming', items: '40+ items', crew: 6 },
+      ];
+
+      return h('div', { style: { height: '100%', display: 'flex', flexDirection: 'column', background: '#14081F' } },
+        // Header
+        h('div', { style: { padding: '16px 20px' } },
+          h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+            h('div', null,
+              h('div', { style: { fontSize: 13, color: 'rgba(255,255,255,0.5)', fontWeight: 500 } }, 'Crew Portal'),
+              h('div', { style: { fontSize: 24, fontWeight: 700, fontFamily: 'Bricolage Grotesque, serif', color: '#fff', letterSpacing: '-0.02em' } }, 'My Jobs')
+            ),
+            h('div', { style: { width: 40, height: 40, borderRadius: 14, background: 'rgba(255,255,255,0.08)', display: 'grid', placeItems: 'center', color: '#A78BFA', fontSize: 16, fontWeight: 700, fontFamily: 'Bricolage Grotesque, serif' } }, 'A')
+          ),
+
+          // Today summary
+          h('div', { style: { marginTop: 16, padding: '16px 18px', background: '#5B2BC9', borderRadius: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+            h('div', null,
+              h('div', { style: { fontSize: 12, color: 'rgba(255,255,255,0.7)', fontWeight: 500 } }, "Today's Schedule"),
+              h('div', { style: { fontSize: 18, fontWeight: 700, color: '#fff', marginTop: 2 } }, '2 Jobs Assigned')
+            ),
+            h('div', { style: { display: 'flex', gap: 12 } },
+              h('div', { style: { textAlign: 'center' } },
+                h('div', { style: { fontSize: 22, fontWeight: 700, color: '#fff', fontFamily: 'Bricolage Grotesque, serif' } }, '1'),
+                h('div', { style: { fontSize: 10, color: 'rgba(255,255,255,0.6)' } }, 'Active')
+              ),
+              h('div', { style: { textAlign: 'center' } },
+                h('div', { style: { fontSize: 22, fontWeight: 700, color: '#fff', fontFamily: 'Bricolage Grotesque, serif' } }, '1'),
+                h('div', { style: { fontSize: 10, color: 'rgba(255,255,255,0.6)' } }, 'Next')
+              )
+            )
+          ),
+        ),
+
+        // Jobs
+        h('div', { style: { flex: 1, overflow: 'auto', padding: '0 20px 20px' } },
+          h('div', { style: { display: 'flex', flexDirection: 'column', gap: 12 } },
+            jobs.map((j, i) => h('button', {
+              key: i,
+              onClick: i === 0 ? goTo('crew-detail') : undefined,
+              style: { width: '100%', background: i === 0 ? 'rgba(91,43,201,0.12)' : 'rgba(255,255,255,0.04)', border: `1px solid ${i === 0 ? 'rgba(91,43,201,0.3)' : 'rgba(255,255,255,0.06)'}`, borderRadius: 18, padding: '18px', textAlign: 'left', cursor: 'pointer' }
+            },
+              h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 } },
+                h('div', null,
+                  h('div', { style: { fontSize: 12, color: '#A78BFA', fontWeight: 600, marginBottom: 4 } }, `${j.id} · ${j.type}`),
+                  h('div', { style: { fontSize: 16, fontWeight: 700, color: '#fff', fontFamily: 'Bricolage Grotesque, serif' } }, `${j.from}`),
+                  h('div', { style: { fontSize: 13, color: 'rgba(255,255,255,0.5)', marginTop: 2 } }, `→ ${j.to}`)
+                ),
+                h('div', { style: { padding: '4px 10px', borderRadius: 999, background: j.status === 'Active' ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.06)', color: j.status === 'Active' ? '#22c55e' : 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: 600 } }, j.status)
+              ),
+              h('div', { style: { display: 'flex', gap: 16, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.06)' } },
+                h('div', null,
+                  h('div', { style: { fontSize: 10, color: 'rgba(255,255,255,0.4)' } }, 'Time'),
+                  h('div', { style: { fontSize: 13, fontWeight: 600, color: '#fff' } }, j.time)
+                ),
+                h('div', null,
+                  h('div', { style: { fontSize: 10, color: 'rgba(255,255,255,0.4)' } }, 'Items'),
+                  h('div', { style: { fontSize: 13, fontWeight: 600, color: '#fff' } }, j.items)
+                ),
+                h('div', null,
+                  h('div', { style: { fontSize: 10, color: 'rgba(255,255,255,0.4)' } }, 'Crew'),
+                  h('div', { style: { fontSize: 13, fontWeight: 600, color: '#fff' } }, `${j.crew} members`)
+                )
+              )
+            ))
+          )
+        ),
+      );
+    }
+
+    // ========== CREW: JOB DETAIL ==========
+    if (screen === 'crew-detail') {
+      return h('div', { style: { height: '100%', display: 'flex', flexDirection: 'column', background: '#14081F' } },
+        h('div', { style: { padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 14 } },
+          h('button', { onClick: goTo('crew-jobs'), style: { width: 36, height: 36, borderRadius: 12, background: 'rgba(255,255,255,0.06)', border: 'none', cursor: 'pointer', fontSize: 18, display: 'grid', placeItems: 'center', color: '#fff' } }, '←'),
+          h('div', null,
+            h('div', { style: { fontSize: 17, fontWeight: 700, fontFamily: 'Bricolage Grotesque, serif', color: '#fff' } }, 'Job #MV-1847'),
+            h('div', { style: { fontSize: 11, color: '#A78BFA' } }, 'Home Shifting')
+          )
+        ),
+
+        h('div', { style: { flex: 1, overflow: 'auto', padding: '0 20px 20px' } },
+          // Customer info
+          h('div', { style: { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 18, padding: '18px', marginBottom: 12 } },
+            h('div', { style: { fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 } }, 'Customer'),
+            h('div', { style: { display: 'flex', alignItems: 'center', gap: 14 } },
+              h('div', { style: { width: 48, height: 48, borderRadius: 14, background: '#5B2BC9', display: 'grid', placeItems: 'center', color: '#fff', fontSize: 18, fontWeight: 700, fontFamily: 'Bricolage Grotesque, serif' } }, 'M'),
+              h('div', { style: { flex: 1 } },
+                h('div', { style: { fontSize: 16, fontWeight: 700, color: '#fff' } }, 'Mohammed Al Rashid'),
+                h('div', { style: { fontSize: 13, color: 'rgba(255,255,255,0.5)', marginTop: 2 } }, '+971 54 224 9946')
+              ),
+              h('button', { style: { width: 40, height: 40, borderRadius: 12, background: '#22c55e', border: 'none', cursor: 'pointer', display: 'grid', placeItems: 'center', fontSize: 16 } }, '📞')
+            )
+          ),
+
+          // Addresses
+          h('div', { style: { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 18, padding: '18px', marginBottom: 12 } },
+            h('div', { style: { fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 } }, 'Route'),
+            h('div', { style: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 } },
+              h('div', { style: { width: 28, height: 28, borderRadius: 8, background: '#5B2BC9', display: 'grid', placeItems: 'center', color: '#fff', fontSize: 12, fontWeight: 700 } }, 'A'),
+              h('div', null,
+                h('div', { style: { fontSize: 14, fontWeight: 600, color: '#fff' } }, 'JBR, Bahar 4, Apt 2204'),
+                h('div', { style: { fontSize: 12, color: 'rgba(255,255,255,0.4)' } }, 'Floor 22 · Elevator available')
+              )
+            ),
+            h('div', { style: { width: 2, height: 16, background: 'rgba(91,43,201,0.3)', marginLeft: 13 } }),
+            h('div', { style: { display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 } },
+              h('div', { style: { width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,0.1)', display: 'grid', placeItems: 'center', color: '#fff', fontSize: 12, fontWeight: 700 } }, 'B'),
+              h('div', null,
+                h('div', { style: { fontSize: 14, fontWeight: 600, color: '#fff' } }, 'Downtown, Blvd Heights T1'),
+                h('div', { style: { fontSize: 12, color: 'rgba(255,255,255,0.4)' } }, 'Floor 15 · Elevator available')
+              )
+            ),
+            h('button', { style: { width: '100%', marginTop: 14, padding: '10px', borderRadius: 12, background: 'rgba(91,43,201,0.15)', border: '1px solid rgba(91,43,201,0.3)', color: '#A78BFA', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Plus Jakarta Sans, sans-serif' } }, '🗺 Open in Maps')
+          ),
+
+          // Checklist
+          h('div', { style: { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 18, padding: '18px', marginBottom: 12 } },
+            h('div', { style: { fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 } }, 'Items to Move — 24 total'),
+            h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
+              [
+                { item: 'L-shaped sofa (disassemble)', done: true },
+                { item: 'King bed frame + mattress', done: true },
+                { item: 'Glass dining table', note: '⚠ Fragile', done: false },
+                { item: 'Wardrobe contents (8 boxes)', done: false },
+                { item: 'TV 65" + stand', done: false },
+                { item: 'Kitchen appliances (4 boxes)', done: false },
+              ].map((item, i) => h('div', { key: i, style: { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 12, background: item.done ? 'rgba(34,197,94,0.08)' : 'rgba(255,255,255,0.02)', border: `1px solid ${item.done ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.04)'}` } },
+                h('div', { style: { width: 22, height: 22, borderRadius: 7, background: item.done ? '#22c55e' : 'rgba(255,255,255,0.06)', border: item.done ? 'none' : '1.5px solid rgba(255,255,255,0.15)', display: 'grid', placeItems: 'center', flexShrink: 0 } },
+                  item.done && h('span', { style: { color: '#fff', fontSize: 12 } }, '✓')
+                ),
+                h('div', { style: { flex: 1 } },
+                  h('div', { style: { fontSize: 13, fontWeight: 500, color: item.done ? 'rgba(255,255,255,0.5)' : '#fff', textDecoration: item.done ? 'line-through' : 'none' } }, item.item),
+                  item.note && h('div', { style: { fontSize: 11, color: '#f59e0b', marginTop: 2 } }, item.note)
+                )
+              ))
+            )
+          ),
+
+          // Action buttons
+          h('button', {
+            onClick: goTo('crew-progress'),
+            style: { width: '100%', padding: '16px', borderRadius: 16, background: '#5B2BC9', color: '#fff', border: 'none', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'Plus Jakarta Sans, sans-serif', marginBottom: 10 }
+          }, 'Start Job →'),
+          h('button', {
+            style: { width: '100%', padding: '14px', borderRadius: 14, background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.06)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Plus Jakarta Sans, sans-serif' }
+          }, 'Report an Issue'),
+        ),
+      );
+    }
+
+    // ========== CREW: IN PROGRESS ==========
+    if (screen === 'crew-progress') {
+      const progressSteps = [
+        { label: 'Arrived at pickup', done: true },
+        { label: 'Packing started', done: true },
+        { label: 'Loading truck', active: true, done: false },
+        { label: 'In transit', done: false },
+        { label: 'Arrived at drop-off', done: false },
+        { label: 'Unloading complete', done: false },
+      ];
+
+      return h('div', { style: { height: '100%', display: 'flex', flexDirection: 'column', background: '#14081F' } },
+        h('div', { style: { padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 14 } },
+          h('button', { onClick: goTo('crew-detail'), style: { width: 36, height: 36, borderRadius: 12, background: 'rgba(255,255,255,0.06)', border: 'none', cursor: 'pointer', fontSize: 18, display: 'grid', placeItems: 'center', color: '#fff' } }, '←'),
+          h('div', { style: { fontSize: 17, fontWeight: 700, fontFamily: 'Bricolage Grotesque, serif', color: '#fff' } }, 'In Progress'),
+        ),
+
+        h('div', { style: { flex: 1, overflow: 'auto', padding: '0 20px 20px' } },
+          // Progress ring visual
+          h('div', { style: { textAlign: 'center', padding: '24px 0' } },
+            h('div', { style: { width: 120, height: 120, borderRadius: '50%', border: '6px solid rgba(255,255,255,0.06)', borderTopColor: '#5B2BC9', borderRightColor: '#5B2BC9', display: 'grid', placeItems: 'center', margin: '0 auto', position: 'relative' } },
+              h('div', null,
+                h('div', { style: { fontSize: 32, fontWeight: 800, fontFamily: 'Bricolage Grotesque, serif', color: '#fff' } }, '42%'),
+                h('div', { style: { fontSize: 11, color: 'rgba(255,255,255,0.5)' } }, 'Complete')
+              )
+            ),
+            h('div', { style: { fontSize: 18, fontWeight: 700, color: '#fff', marginTop: 16, fontFamily: 'Bricolage Grotesque, serif' } }, 'Loading Truck'),
+            h('div', { style: { fontSize: 13, color: 'rgba(255,255,255,0.5)', marginTop: 4 } }, '10 of 24 items loaded'),
+          ),
+
+          // Steps
+          h('div', { style: { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 18, padding: '18px', marginBottom: 16 } },
+            progressSteps.map((s, i) => h('div', { key: i, style: { display: 'flex', gap: 14, paddingBottom: i < progressSteps.length - 1 ? 18 : 0, position: 'relative' } },
+              i < progressSteps.length - 1 && h('div', { style: { position: 'absolute', left: 11, top: 24, bottom: 0, width: 2, background: s.done ? '#5B2BC9' : 'rgba(255,255,255,0.06)' } }),
+              h('div', { style: { width: 24, height: 24, borderRadius: 999, background: s.active ? '#5B2BC9' : s.done ? '#5B2BC9' : 'rgba(255,255,255,0.06)', display: 'grid', placeItems: 'center', flexShrink: 0, zIndex: 1, boxShadow: s.active ? '0 0 0 4px rgba(91,43,201,0.3)' : 'none' } },
+                s.done && h('div', { style: { color: '#fff', fontSize: 12, fontWeight: 700 } }, '✓'),
+                s.active && h('div', { style: { width: 8, height: 8, borderRadius: 99, background: '#fff' } })
+              ),
+              h('div', { style: { flex: 1, paddingTop: 2 } },
+                h('div', { style: { fontSize: 14, fontWeight: s.active ? 700 : 500, color: s.done || s.active ? '#fff' : 'rgba(255,255,255,0.35)' } }, s.label),
+              )
+            ))
+          ),
+
+          // Update button
+          h('button', {
+            onClick: () => {},
+            style: { width: '100%', padding: '16px', borderRadius: 16, background: '#22c55e', color: '#fff', border: 'none', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'Plus Jakarta Sans, sans-serif', marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }
+          }, '✓ Mark Step Complete'),
+
+          // Quick actions
+          h('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 } },
+            h('button', { style: { padding: '14px', borderRadius: 14, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Plus Jakarta Sans, sans-serif' } }, '📸 Add Photo'),
+            h('button', { style: { padding: '14px', borderRadius: 14, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Plus Jakarta Sans, sans-serif' } }, '📞 Call Customer'),
+          ),
+
+          h('button', { style: { width: '100%', marginTop: 8, padding: '14px', borderRadius: 14, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.15)', color: '#ef4444', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Plus Jakarta Sans, sans-serif' } }, '⚠ Report Issue'),
+        ),
+      );
+    }
+
+    return h('div', { style: { padding: 40, textAlign: 'center', color: '#756E80' } }, 'Screen not found');
+  }
+}
+
+</script>
+</body>
+</html>
