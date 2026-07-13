@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView,
   FlatList, ActivityIndicator, Alert, RefreshControl, Image,
-  Dimensions, Modal,
+  Dimensions, Modal, Platform,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -398,21 +398,28 @@ function JobDetailScreen() {
     }
   }, [job, initialTabSet]);
 
-  const handleStatusChange = async (newStatus: string) => {
+  const doStatusChange = async (newStatus: string) => {
+    setStatusLoading(true);
+    try {
+      const res = await api.updateJobStatus(job._id, newStatus);
+      setJob(res.job);
+    } catch (e: any) {
+      if (Platform.OS === 'web') window.alert(e.message);
+      else Alert.alert('Error', e.message);
+    }
+    finally { setStatusLoading(false); }
+  };
+
+  const handleStatusChange = (newStatus: string) => {
     const msg = newStatus === 'in_progress' ? 'Start this job?' : 'Mark this job as completed?';
-    Alert.alert('Confirm', msg, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Yes', onPress: async () => {
-          setStatusLoading(true);
-          try {
-            const res = await api.updateJobStatus(job._id, newStatus);
-            setJob(res.job);
-          } catch (e: any) { Alert.alert('Error', e.message); }
-          finally { setStatusLoading(false); }
-        }
-      },
-    ]);
+    if (Platform.OS === 'web') {
+      doStatusChange(newStatus);
+    } else {
+      Alert.alert('Confirm', msg, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Yes', onPress: () => doStatusChange(newStatus) },
+      ]);
+    }
   };
 
   const handleUploadPhoto = async () => {
