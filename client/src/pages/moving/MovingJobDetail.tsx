@@ -662,7 +662,7 @@ export default function MovingJobDetail() {
             title="Share upload link with client"
           >
             <Share2 size={16} className="mr-1" />
-            {shareUploadMut.isPending ? 'Generating…' : 'Share'}
+            {shareUploadMut.isPending ? 'Generating…' : 'Share Upload Link'}
           </Button>
           {!job.invoice && (
             <Button
