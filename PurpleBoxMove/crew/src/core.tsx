@@ -1,7 +1,9 @@
-import React, { createContext, useContext, useReducer } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { createContext, useContext, useReducer, useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { setToken } from './api';
 
 export const C = {
   purple: '#5B2BC9',
@@ -30,8 +32,6 @@ export const C = {
   blueBg: '#EFF6FF',
   overlay: 'rgba(20,8,31,0.55)',
   lavender: '#A78BFA',
-  warmGray: '#F3F0EA',
-  warmBg: '#F0EDE6',
 };
 
 export const F = {
@@ -43,10 +43,7 @@ export const F = {
   displayXB: 'Bricolage-XB',
 };
 
-export type Screen =
-  | 'login'
-  | 'schedule' | 'jobDetail' | 'navigation' | 'clockInOut'
-  | 'photoProof' | 'earnings' | 'profile';
+export type Screen = 'login' | 'jobs' | 'jobDetail' | 'profile';
 
 export type CrewUser = {
   id: string; name: string; phone: string; role: string;
@@ -68,16 +65,20 @@ const initial: AppState = {
 type Action =
   | { type: 'LOGIN'; worker: CrewUser; token: string }
   | { type: 'LOGOUT' }
+  | { type: 'RESTORE'; worker: CrewUser; token: string }
   | { type: 'GO'; screen: Screen; jobId?: string };
 
 function reducer(s: AppState, a: Action): AppState {
   switch (a.type) {
-    case 'LOGIN': return { ...s, worker: a.worker, token: a.token, screen: 'schedule' };
+    case 'LOGIN': return { ...s, worker: a.worker, token: a.token, screen: 'jobs' };
     case 'LOGOUT': return { ...initial };
+    case 'RESTORE': return { ...s, worker: a.worker, token: a.token, screen: 'jobs' };
     case 'GO': return { ...s, screen: a.screen, selectedJobId: a.jobId ?? s.selectedJobId, prevScreen: s.screen };
     default: return s;
   }
 }
+
+const SESSION_KEY = 'pb_crew_session';
 
 type Ctx = {
   s: AppState;
@@ -91,12 +92,48 @@ export const useApp = () => useContext(AppCtx);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [s, dispatch] = useReducer(reducer, initial);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    AsyncStorage.getItem(SESSION_KEY).then(raw => {
+      if (raw) {
+        try {
+          const { worker, token } = JSON.parse(raw);
+          if (worker && token) {
+            setToken(token);
+            dispatch({ type: 'RESTORE', worker, token });
+          }
+        } catch {}
+      }
+      setReady(true);
+    });
+  }, []);
+
+  const login = (worker: CrewUser, token: string) => {
+    AsyncStorage.setItem(SESSION_KEY, JSON.stringify({ worker, token }));
+    dispatch({ type: 'LOGIN', worker, token });
+  };
+
+  const logout = () => {
+    AsyncStorage.removeItem(SESSION_KEY);
+    setToken(null);
+    dispatch({ type: 'LOGOUT' });
+  };
+
+  if (!ready) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.paper }}>
+        <ActivityIndicator color={C.purple} size="large" />
+      </View>
+    );
+  }
+
   return (
     <AppCtx.Provider value={{
       s,
       go: (screen, jobId) => dispatch({ type: 'GO', screen, jobId }),
-      login: (worker, token) => dispatch({ type: 'LOGIN', worker, token }),
-      logout: () => dispatch({ type: 'LOGOUT' }),
+      login,
+      logout,
     }}>
       {children}
     </AppCtx.Provider>
@@ -111,9 +148,7 @@ export function TabBar({ active }: { active: string }) {
   const { go } = useApp();
   const insets = useSafeAreaInsets();
   const tabs = [
-    { id: 'schedule', icon: 'calendar', label: 'Schedule' },
-    { id: 'jobDetail', icon: 'tool', label: 'Jobs' },
-    { id: 'earnings', icon: 'dollar-sign', label: 'Earnings' },
+    { id: 'jobs', icon: 'calendar', label: 'Jobs' },
     { id: 'profile', icon: 'user', label: 'Profile' },
   ];
   return (

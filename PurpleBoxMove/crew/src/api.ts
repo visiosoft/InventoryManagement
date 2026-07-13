@@ -1,8 +1,16 @@
 import { Platform } from 'react-native';
 
-const API_BASE = Platform.OS === 'android'
-  ? 'http://10.0.2.2:5010/api'
-  : 'http://localhost:5010/api';
+const API_BASE = 'https://purplebox.mypaperlessoffice.org/api';
+
+async function appendFile(form: FormData, fieldName: string, uri: string, name: string, type?: string) {
+  if (Platform.OS === 'web') {
+    const resp = await fetch(uri);
+    const blob = await resp.blob();
+    form.append(fieldName, blob, name);
+  } else {
+    form.append(fieldName, { uri, name, type: type || 'image/jpeg' } as any);
+  }
+}
 
 let TOKEN: string | null = null;
 export function setToken(t: string | null) { TOKEN = t; }
@@ -14,7 +22,9 @@ async function req<T = any>(path: string, opts: RequestInit = {}): Promise<T> {
     ...(opts.headers as Record<string, string> || {}),
   };
   if (TOKEN) headers['Authorization'] = `Bearer ${TOKEN}`;
-  const res = await fetch(`${API_BASE}${path}`, { ...opts, headers });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  const res = await fetch(`${API_BASE}${path}`, { ...opts, headers, signal: controller.signal }).finally(() => clearTimeout(timer));
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || body.message || `HTTP ${res.status}`);
@@ -33,16 +43,22 @@ export const api = {
     }),
   getMe: () => req<{ worker: any }>('/crew-auth/me'),
 
-  getTodayJobs: () => req<{ jobs: any[] }>('/crew-portal/today'),
+  getJobsByDate: (date: string) => req<{ jobs: any[] }>(`/crew-portal/jobs/by-date/${date}`),
   getJobs: () => req<{ jobs: any[] }>('/crew-portal/jobs'),
   getJob: (id: string) => req<{ job: any }>(`/crew-portal/jobs/${id}`),
+  updateJobStatus: (id: string, status: string) =>
+    req<{ job: any }>(`/crew-portal/jobs/${id}/status`, {
+      method: 'PATCH', body: JSON.stringify({ status }),
+    }),
   updateChecklist: (id: string, items: any[]) =>
     req<{ job: any }>(`/crew-portal/jobs/${id}/checklist`, {
       method: 'PATCH', body: JSON.stringify({ items }),
     }),
   uploadPhotos: async (jobId: string, images: { uri: string; name: string; type: string }[], area?: string) => {
     const form = new FormData();
-    images.forEach(img => form.append('images', img as any));
+    for (const img of images) {
+      await appendFile(form, 'images', img.uri, img.name, img.type);
+    }
     if (area) form.append('area', area);
     const headers: Record<string, string> = {};
     if (TOKEN) headers['Authorization'] = `Bearer ${TOKEN}`;
@@ -52,5 +68,4 @@ export const api = {
   },
   clockIn: () => req<{ status: string; time: string }>('/crew-portal/clock-in', { method: 'POST', body: '{}' }),
   clockOut: () => req<{ status: string; time: string }>('/crew-portal/clock-out', { method: 'POST', body: '{}' }),
-  getEarnings: () => req<{ totalEarnings: number; jobCount: number }>('/crew-portal/earnings'),
 };

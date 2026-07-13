@@ -22,6 +22,13 @@
       "runtimeArgs": ["expo", "start", "--web", "--port", "8081"],
       "port": 8081,
       "cwd": "PurpleBoxMove/customer"
+    },
+    {
+      "name": "crew-app",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["expo", "start", "--web", "--port", "8083"],
+      "port": 8083,
+      "cwd": "PurpleBoxMove/crew"
     }
   ]
 }

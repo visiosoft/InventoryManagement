@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView,
-  FlatList, ActivityIndicator, Alert, RefreshControl, Image, Dimensions,
+  FlatList, ActivityIndicator, Alert, RefreshControl, Image,
+  Dimensions, Modal,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,18 +15,15 @@ export function Router() {
   const { s } = useApp();
   switch (s.screen) {
     case 'login': return <LoginScreen />;
-    case 'schedule': return <ScheduleScreen />;
+    case 'jobs': return <DashboardScreen />;
     case 'jobDetail': return <JobDetailScreen />;
-    case 'navigation': return <NavigationScreen />;
-    case 'clockInOut': return <ClockScreen />;
-    case 'photoProof': return <PhotoProofScreen />;
-    case 'earnings': return <EarningsScreen />;
     case 'profile': return <ProfileScreen />;
-    default: return <ScheduleScreen />;
+    default: return <DashboardScreen />;
   }
 }
 
 /* ═══════════════════ LOGIN ═══════════════════ */
+
 function LoginScreen() {
   const { login } = useApp();
   const [phone, setPhone] = useState('');
@@ -46,726 +44,825 @@ function LoginScreen() {
   };
 
   return (
-    <View style={[ss.fill, { paddingTop: insets.top + 60 }]}>
-      <View style={ss.loginWrap}>
-        <View style={ss.logoCircle}>
-          <Icon name="users" size={28} color={C.lavender} />
-        </View>
-        <Text style={ss.loginTitle}>Safa Crew</Text>
-        <Text style={ss.loginSub}>For cleaning & moving staff</Text>
-        <View style={{ marginTop: 40, width: '100%' }}>
-          <Text style={ss.label}>Phone Number</Text>
-          <TextInput style={ss.input} value={phone} onChangeText={setPhone}
-            placeholder="+971 50 123 4567" placeholderTextColor={C.faint}
-            keyboardType="phone-pad" autoFocus />
-          {!!error && <Text style={ss.errorTxt}>{error}</Text>}
-          <TouchableOpacity activeOpacity={0.85} onPress={handleLogin}
-            disabled={loading || phone.length < 8}
-            style={[ss.btnPrimary, (loading || phone.length < 8) && { opacity: 0.5 }, { marginTop: 16 }]}>
-            <Text style={ss.btnPrimaryTxt}>{loading ? 'Signing in...' : 'Continue'}</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-/* ═══════════════════ TODAY'S SCHEDULE ═══════════════════ */
-function ScheduleScreen() {
-  const { s, go } = useApp();
-  const [jobs, setJobs] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [clockedIn, setClockedIn] = useState(false);
-  const insets = useSafeAreaInsets();
-
-  useEffect(() => {
-    api.getTodayJobs()
-      .then(r => setJobs(r.jobs))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
-
-  const completedJobs = jobs.filter(j => j.status === 'completed');
-  const activeJob = jobs.find(j => j.status === 'in_progress');
-  const upcomingJobs = jobs.filter(j => !['completed', 'in_progress'].includes(j.status));
-
-  const name = s.worker?.name?.split(' ')[0] || 'Crew';
-  const initial = s.worker?.name ? s.worker.name.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase() : 'CR';
-  const today = new Date();
-  const dateStr = today.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' });
-
-  return (
-    <View style={ss.fill}>
-      <ScrollView contentContainerStyle={{ paddingTop: insets.top + 16, paddingBottom: 100 }}>
-        {/* Header */}
-        <View style={[ss.px, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
-          <View>
-            <Text style={{ fontFamily: F.med, fontSize: 13, color: C.ink3 }}>{dateStr}</Text>
-            <Text style={{ fontFamily: F.display, fontSize: 24, color: C.ink, letterSpacing: -0.4 }}>Hi, {name}</Text>
+    <View style={[ss.fill, { paddingTop: insets.top + 40, backgroundColor: C.ink }]}>
+      <View style={{ flex: 1, backgroundColor: C.paper, borderTopLeftRadius: 32, borderTopRightRadius: 32, paddingTop: 48 }}>
+        <View style={ss.loginWrap}>
+          <View style={{ width: 72, height: 72, borderRadius: 22, backgroundColor: C.purple, alignItems: 'center', justifyContent: 'center', marginBottom: 20, shadowColor: C.purple, shadowOpacity: 0.35, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 8 }}>
+            <Icon name="truck" size={34} color={C.white} />
           </View>
-          <View style={ss.avatarCircle}>
-            <Text style={{ fontSize: 18, fontFamily: F.display, color: C.purple }}>{initial}</Text>
-          </View>
-        </View>
+          <Text style={{ fontFamily: F.displayXB, fontSize: 30, color: C.ink, letterSpacing: -0.5 }}>PurpleBox Crew</Text>
+          <Text style={{ fontFamily: F.reg, fontSize: 15, color: C.ink3, marginTop: 6 }}>Sign in to view your jobs</Text>
 
-        {/* Status bar */}
-        <View style={ss.statusBar}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <View>
-              <Text style={ss.statusLabel}>Today's status</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 }}>
-                <View style={[ss.statusDot, clockedIn && { backgroundColor: C.greenLight }]} />
-                <Text style={{ fontSize: 15, fontFamily: F.bold, color: C.white }}>{clockedIn ? 'Clocked In' : 'Not Clocked In'}</Text>
-              </View>
-              {clockedIn && <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 4 }}>Since 8:00 AM</Text>}
-            </View>
-            <View style={{ alignItems: 'flex-end' }}>
-              <Text style={[ss.statusLabel, { textAlign: 'right' }]}>Jobs today</Text>
-              <Text style={{ fontFamily: F.display, fontSize: 28, color: C.white, marginTop: 2 }}>{jobs.length}</Text>
-            </View>
-          </View>
-          {/* Progress bars */}
-          <View style={{ flexDirection: 'row', gap: 6, marginTop: 14 }}>
-            {jobs.map((j, i) => (
-              <View key={i} style={[ss.progressSeg,
-                j.status === 'completed' && { backgroundColor: C.green },
-                j.status === 'in_progress' && { backgroundColor: C.lavender },
-              ]} />
-            ))}
-            {jobs.length === 0 && <View style={[ss.progressSeg, { flex: 4 }]} />}
-          </View>
-          <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 6 }}>
-            {completedJobs.length} completed · {activeJob ? 1 : 0} active · {upcomingJobs.length} upcoming
-          </Text>
-        </View>
-
-        {/* Clock In/Out shortcut */}
-        {!clockedIn && (
-          <TouchableOpacity activeOpacity={0.85}
-            onPress={async () => { try { await api.clockIn(); setClockedIn(true); } catch {} }}
-            style={[ss.px, { marginBottom: 8 }]}>
-            <View style={ss.clockInBtn}>
-              <Icon name="clock" size={18} color={C.white} />
-              <Text style={{ fontFamily: F.bold, fontSize: 14, color: C.white }}>Clock In</Text>
-            </View>
-          </TouchableOpacity>
-        )}
-
-        {/* Current Job */}
-        {activeJob && (
-          <View style={ss.px}>
-            <Text style={ss.sectionLabel}>Current Job</Text>
-            <TouchableOpacity activeOpacity={0.8} onPress={() => go('jobDetail', activeJob._id)} style={ss.currentJobCard}>
-              <View style={ss.activeChip}><Text style={{ fontSize: 11, fontFamily: F.bold, color: C.green }}>In Progress</Text></View>
-              <Text style={{ fontSize: 17, fontFamily: F.bold, color: C.ink }}>{activeJob.jobType?.replace(/_/g, ' ') || 'Moving Job'}</Text>
-              <Text style={{ fontSize: 13, color: C.ink3, marginTop: 4 }}>{activeJob.clientName || 'Customer'}</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 14 }}>
-                <Icon name="clock" size={14} color={C.ink3} />
-                <Text style={{ fontSize: 13, color: C.ink2 }}>
-                  {activeJob.scheduledDate ? new Date(activeJob.scheduledDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : 'TBD'}
-                </Text>
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
-                <Icon name="map-pin" size={14} color={C.ink3} />
-                <Text style={{ fontSize: 13, color: C.ink2 }} numberOfLines={1}>{activeJob.pickupAddress || 'Address TBD'}</Text>
-              </View>
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
-                <TouchableOpacity activeOpacity={0.85} onPress={() => go('jobDetail', activeJob._id)} style={[ss.btnPrimary, { flex: 1, borderRadius: 12, height: 48 }]}>
-                  <Text style={ss.btnPrimaryTxt}>View Details</Text>
-                </TouchableOpacity>
-                <TouchableOpacity activeOpacity={0.7} onPress={() => go('navigation', activeJob._id)} style={ss.iconBtn}>
-                  <Icon name="map-pin" size={20} color={C.purple} />
-                </TouchableOpacity>
-                <TouchableOpacity activeOpacity={0.7} style={ss.iconBtn}>
-                  <Icon name="phone" size={20} color={C.purple} />
-                </TouchableOpacity>
-              </View>
+          <View style={{ marginTop: 40, width: '100%' }}>
+            <Text style={ss.label}>Phone Number</Text>
+            <TextInput style={ss.input} value={phone} onChangeText={setPhone}
+              placeholder="+971 50 123 4567" placeholderTextColor={C.faint}
+              keyboardType="phone-pad" autoFocus />
+            {!!error && <Text style={ss.errorTxt}>{error}</Text>}
+            <TouchableOpacity activeOpacity={0.85} onPress={handleLogin}
+              disabled={loading || phone.length < 8}
+              style={[ss.btnPrimary, (loading || phone.length < 8) && { opacity: 0.5 }, { marginTop: 18 }]}>
+              <Text style={ss.btnPrimaryTxt}>{loading ? 'Signing in...' : 'Continue'}</Text>
             </TouchableOpacity>
           </View>
-        )}
-
-        {/* Upcoming */}
-        {upcomingJobs.length > 0 && (
-          <View style={ss.px}>
-            <Text style={ss.sectionLabel}>Upcoming</Text>
-            {upcomingJobs.map(j => (
-              <TouchableOpacity key={j._id} activeOpacity={0.7} onPress={() => go('jobDetail', j._id)} style={ss.upcomingCard}>
-                <View style={ss.upcomingBar} />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontFamily: F.bold, color: C.ink }}>{j.jobType?.replace(/_/g, ' ') || 'Moving Job'}</Text>
-                  <Text style={{ fontSize: 12, color: C.ink3, marginTop: 2 }}>
-                    {j.clientName || 'Customer'} · {j.scheduledDate ? new Date(j.scheduledDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : 'TBD'} · {j.pickupAddress?.substring(0, 15) || ''}
-                  </Text>
-                </View>
-                <Icon name="chevron-right" size={16} color={C.ink3} />
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
-        {/* Completed */}
-        {completedJobs.length > 0 && (
-          <View style={ss.px}>
-            <Text style={ss.sectionLabel}>Completed</Text>
-            {completedJobs.map(j => (
-              <View key={j._id} style={[ss.upcomingCard, { opacity: 0.6 }]}>
-                <View style={[ss.upcomingBar, { backgroundColor: C.green }]} />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontFamily: F.bold, color: C.ink }}>{j.jobType?.replace(/_/g, ' ') || 'Job'}</Text>
-                  <Text style={{ fontSize: 12, color: C.ink3, marginTop: 2 }}>{j.clientName || 'Customer'}</Text>
-                </View>
-                <View style={ss.completedChip}><Text style={{ fontSize: 10, fontFamily: F.bold, color: C.green }}>Done</Text></View>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {loading && <ActivityIndicator color={C.purple} style={{ marginTop: 40 }} />}
-
-        {!loading && jobs.length === 0 && (
-          <View style={{ alignItems: 'center', marginTop: 40 }}>
-            <Icon name="calendar" size={48} color={C.faint} />
-            <Text style={{ fontFamily: F.med, fontSize: 16, color: C.ink3, marginTop: 12 }}>No jobs scheduled today</Text>
-          </View>
-        )}
-      </ScrollView>
-      <TabBar active="schedule" />
+        </View>
+      </View>
     </View>
   );
 }
 
-/* ═══════════════════ JOB DETAIL / CHECKLIST ═══════════════════ */
-function JobDetailScreen() {
-  const { s, go } = useApp();
-  const [job, setJob] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [checklist, setChecklist] = useState<{ label: string; done: boolean }[]>([]);
-  const insets = useSafeAreaInsets();
+/* ═══════════════════ DASHBOARD ═══════════════════ */
 
-  useEffect(() => {
-    if (!s.selectedJobId) return;
-    api.getJob(s.selectedJobId)
-      .then(r => {
-        setJob(r.job);
-        if (r.job.checklist?.length) {
-          setChecklist(r.job.checklist);
-        } else {
-          setChecklist([
-            { label: 'Kitchen — counters, stovetop, sink', done: false },
-            { label: 'Living room — vacuum, dust, mop', done: false },
-            { label: 'Bedrooms — dust, vacuum, change linens', done: false },
-            { label: 'Bathrooms — scrub, disinfect, mirrors', done: false },
-            { label: 'Balcony — sweep, wipe railings', done: false },
-            { label: 'Final walkthrough & photos', done: false },
-          ]);
-        }
-      })
-      .catch(() => Alert.alert('Error', 'Could not load job'))
-      .finally(() => setLoading(false));
-  }, [s.selectedJobId]);
+const STATUS_META: Record<string, { bg: string; fg: string; label: string; icon: string }> = {
+  draft: { bg: '#F1F0F3', fg: C.ink3, label: 'Draft', icon: 'edit-3' },
+  confirmed: { bg: '#EFF6FF', fg: '#2563EB', label: 'Confirmed', icon: 'check' },
+  survey_done: { bg: C.purpleLite, fg: C.purple, label: 'Survey Done', icon: 'clipboard' },
+  in_progress: { bg: '#FFF7ED', fg: '#D97706', label: 'In Progress', icon: 'loader' },
+  completed: { bg: '#ECFDF5', fg: '#059669', label: 'Completed', icon: 'check-circle' },
+  invoiced: { bg: '#ECFDF5', fg: '#059669', label: 'Invoiced', icon: 'file-text' },
+  cancelled: { bg: '#FEF2F2', fg: '#EF4444', label: 'Cancelled', icon: 'x-circle' },
+};
 
-  const toggleItem = (idx: number) => {
-    const updated = checklist.map((c, i) => i === idx ? { ...c, done: !c.done } : c);
-    setChecklist(updated);
-    if (s.selectedJobId) api.updateChecklist(s.selectedJobId, updated).catch(() => {});
-  };
-
-  const doneCount = checklist.filter(c => c.done).length;
-  const progress = checklist.length > 0 ? (doneCount / checklist.length) * 100 : 0;
-
-  if (loading || !job) return (
-    <View style={ss.fill}>
-      <View style={[ss.topBar, { paddingTop: insets.top + 8 }]}>
-        <BackButton onPress={() => go('schedule')} />
-        <Text style={ss.topBarTitle}>Job Details</Text>
-      </View>
-      <ActivityIndicator color={C.purple} style={{ marginTop: 40 }} />
+function StatusBadge({ status }: { status: string }) {
+  const m = STATUS_META[status] || STATUS_META.draft;
+  return (
+    <View style={{ backgroundColor: m.bg, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+      <Icon name={m.icon as any} size={11} color={m.fg} />
+      <Text style={{ fontFamily: F.semi, fontSize: 11, color: m.fg }}>{m.label}</Text>
     </View>
   );
+}
 
+function fmtJobDate(d: string) {
+  if (!d) return '';
+  const dt = new Date(d);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const jobDay = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+  const diff = Math.round((jobDay.getTime() - today.getTime()) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Tomorrow';
+  if (diff === -1) return 'Yesterday';
+  return dt.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+function getCountdown(scheduledDate: string, timeSlot?: string) {
+  if (!scheduledDate) return null;
+  const dt = new Date(scheduledDate);
+  if (timeSlot) {
+    const match = timeSlot.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+    if (match) {
+      let h = parseInt(match[1]);
+      const m = parseInt(match[2]);
+      if (match[3]?.toUpperCase() === 'PM' && h < 12) h += 12;
+      if (match[3]?.toUpperCase() === 'AM' && h === 12) h = 0;
+      dt.setHours(h, m, 0, 0);
+    }
+  }
+  const now = new Date();
+  const diffMs = dt.getTime() - now.getTime();
+  if (diffMs <= 0) return null;
+  const days = Math.floor(diffMs / 86400000);
+  const hours = Math.floor((diffMs % 86400000) / 3600000);
+  const mins = Math.floor((diffMs % 3600000) / 60000);
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
+}
+
+function JobCard({ job, onPress }: { job: any; onPress: () => void }) {
+  const isActive = job.status === 'in_progress';
+  const isUpcoming = job.status === 'confirmed';
+  const countdown = getCountdown(job.scheduledDate, job.scheduledTimeSlot);
   return (
-    <View style={ss.fill}>
-      <View style={[ss.topBar, { paddingTop: insets.top + 8 }]}>
-        <BackButton onPress={() => go(s.prevScreen as any || 'schedule')} />
-        <Text style={ss.topBarTitle}>Job Details</Text>
+    <TouchableOpacity activeOpacity={0.8} onPress={onPress}
+      style={[ss.jobCard, isActive && { borderColor: '#D97706', borderWidth: 1.5, backgroundColor: '#FFFBF5' }]}>
+      {/* Top row */}
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: isActive ? '#FFF7ED' : C.purpleLite, alignItems: 'center', justifyContent: 'center' }}>
+            <Icon name="package" size={18} color={isActive ? '#D97706' : C.purple} />
+          </View>
+          <View>
+            <Text style={{ fontFamily: F.bold, fontSize: 14, color: C.ink }}>{job.jobNo}</Text>
+            <Text style={{ fontFamily: F.reg, fontSize: 11, color: C.ink3 }}>{job.jobType?.replace(/_/g, ' ')}</Text>
+          </View>
+        </View>
+        <StatusBadge status={job.status} />
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
-        {/* Job info card */}
-        <View style={ss.card}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontFamily: F.display, fontSize: 18, color: C.ink }}>{job.jobType?.replace(/_/g, ' ') || 'Moving Job'}</Text>
-              <Text style={{ fontSize: 13, color: C.ink3, marginTop: 4 }}>{job.propertyType || ''}</Text>
-            </View>
-            <View style={ss.activeChip}><Text style={{ fontSize: 11, fontFamily: F.bold, color: C.green }}>Active</Text></View>
-          </View>
-          <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
-            <View style={ss.infoBox}>
-              <Text style={ss.infoLabel}>Customer</Text>
-              <Text style={ss.infoValue}>{job.clientName || 'Customer'}</Text>
-            </View>
-            <View style={ss.infoBox}>
-              <Text style={ss.infoLabel}>Time</Text>
-              <Text style={ss.infoValue}>{job.scheduledDate ? new Date(job.scheduledDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : 'TBD'}</Text>
-            </View>
-          </View>
-          <View style={[ss.infoBox, { marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
-            <Icon name="map-pin" size={14} color={C.purple} />
-            <Text style={{ fontSize: 13, color: C.ink2 }}>{job.pickupAddress || 'Address TBD'}</Text>
-          </View>
-          {job.instructions && (
-            <View style={ss.noteBox}>
-              <Text style={{ fontSize: 13, color: C.ink3, fontStyle: 'italic' }}>💬 "{job.instructions}"</Text>
-            </View>
+      {/* Customer & date */}
+      <View style={{ marginTop: 12, gap: 6 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Icon name="user" size={13} color={C.ink3} />
+          <Text style={{ fontFamily: F.med, fontSize: 13, color: C.ink }} numberOfLines={1}>
+            {job.customer?.fullName || job.customerName || '—'}
+          </Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Icon name="calendar" size={13} color={C.ink3} />
+          <Text style={{ fontFamily: F.med, fontSize: 12, color: C.purple }}>{fmtJobDate(job.scheduledDate)}</Text>
+          {job.scheduledTimeSlot && (
+            <Text style={{ fontFamily: F.reg, fontSize: 12, color: C.ink3 }}>• {job.scheduledTimeSlot}</Text>
           )}
         </View>
-
-        {/* Checklist */}
-        <View style={ss.px}>
-          <Text style={{ fontFamily: F.bold, fontSize: 15, color: C.ink, marginBottom: 12 }}>Checklist</Text>
-          <View style={ss.checklistCard}>
-            {checklist.map((item, i) => {
-              const isNext = !item.done && checklist.slice(0, i).every(c => c.done);
-              return (
-                <TouchableOpacity key={i} activeOpacity={0.7} onPress={() => toggleItem(i)}
-                  style={[ss.checkItem, isNext && { backgroundColor: C.purpleLite }, i < checklist.length - 1 && { borderBottomWidth: 1, borderBottomColor: C.line2 }]}>
-                  <View style={[ss.checkbox, item.done && ss.checkboxDone, !item.done && !isNext && { borderColor: 'rgba(20,8,31,0.15)' }]}>
-                    {item.done && <Icon name="check" size={14} color={C.white} />}
-                  </View>
-                  <Text style={[ss.checkLabel, item.done && ss.checkLabelDone, isNext && { fontFamily: F.semi, color: C.ink }]}>
-                    {item.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+        {countdown && isUpcoming && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+            <Icon name="clock" size={13} color="#D97706" />
+            <Text style={{ fontFamily: F.semi, fontSize: 12, color: '#D97706' }}>Starts in {countdown}</Text>
           </View>
-        </View>
-
-        {/* Progress */}
-        <View style={[ss.px, { marginTop: 16 }]}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-            <Text style={{ fontFamily: F.semi, fontSize: 13, color: C.ink2 }}>Progress</Text>
-            <Text style={{ fontFamily: F.bold, fontSize: 13, color: C.purple }}>{doneCount} of {checklist.length}</Text>
-          </View>
-          <View style={ss.progressTrack}>
-            <View style={[ss.progressFill, { width: `${progress}%` }]} />
-          </View>
-        </View>
-
-        {/* Action buttons */}
-        <View style={[ss.px, { flexDirection: 'row', gap: 10, marginTop: 20 }]}>
-          <TouchableOpacity activeOpacity={0.85} onPress={() => go('photoProof', job._id)}
-            style={[ss.btnPrimary, { flex: 1, borderRadius: 14 }]}>
-            <Icon name="camera" size={16} color={C.white} />
-            <Text style={ss.btnPrimaryTxt}>Take Photos</Text>
-          </TouchableOpacity>
-          <TouchableOpacity activeOpacity={0.85} onPress={() => go('navigation', job._id)}
-            style={[ss.btnOutline, { flex: 1, borderRadius: 14 }]}>
-            <Icon name="navigation" size={16} color={C.purple} />
-            <Text style={ss.btnOutlineTxt}>Navigate</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-      <TabBar active="jobDetail" />
-    </View>
-  );
-}
-
-/* ═══════════════════ NAVIGATION ═══════════════════ */
-function NavigationScreen() {
-  const { s, go } = useApp();
-  const [job, setJob] = useState<any>(null);
-  const insets = useSafeAreaInsets();
-
-  useEffect(() => {
-    if (!s.selectedJobId) return;
-    api.getJob(s.selectedJobId)
-      .then(r => setJob(r.job))
-      .catch(() => {});
-  }, [s.selectedJobId]);
-
-  return (
-    <View style={ss.fill}>
-      {/* Map placeholder */}
-      <View style={ss.mapArea}>
-        <View style={[ss.mapBack, { top: insets.top + 8 }]}>
-          <BackButton onPress={() => go(s.prevScreen as any || 'schedule')} />
-        </View>
-        {/* Roads */}
-        <View style={{ position: 'absolute', top: 80, left: 30, right: 30, height: 2, backgroundColor: 'rgba(20,8,31,0.1)' }} />
-        <View style={{ position: 'absolute', top: 160, left: 50, right: 50, height: 2, backgroundColor: 'rgba(20,8,31,0.1)' }} />
-        <View style={{ position: 'absolute', top: 240, left: 20, right: 80, height: 2, backgroundColor: 'rgba(20,8,31,0.1)' }} />
-        <View style={{ position: 'absolute', top: 100, left: 100, width: 2, height: 180, backgroundColor: 'rgba(20,8,31,0.1)' }} />
-        <View style={{ position: 'absolute', top: 80, left: 220, width: 2, height: 160, backgroundColor: 'rgba(20,8,31,0.1)' }} />
-        {/* My location dot */}
-        <View style={ss.myLocationDot} />
-        {/* Destination dot */}
-        <View style={ss.destDot}>
-          <Icon name="map-pin" size={14} color={C.red} />
-        </View>
-        {/* ETA badge */}
-        <View style={ss.etaBadge}>
-          <Text style={{ fontSize: 11, color: C.ink3, fontFamily: F.med }}>ETA</Text>
-          <Text style={{ fontFamily: F.display, fontSize: 20, color: C.ink }}>8 min</Text>
-        </View>
-      </View>
-
-      {/* Destination card */}
-      <View style={ss.destCard}>
-        <Text style={{ fontSize: 11, fontFamily: F.semi, textTransform: 'uppercase', letterSpacing: 0.8, color: C.purple, marginBottom: 8 }}>Next destination</Text>
-        <Text style={{ fontSize: 17, fontFamily: F.bold, color: C.ink }}>{job?.pickupAddress || 'Loading address...'}</Text>
-        <Text style={{ fontSize: 13, color: C.ink3, marginTop: 4 }}>{job?.clientName || ''} · {job?.jobType?.replace(/_/g, ' ') || ''}</Text>
-        <TouchableOpacity activeOpacity={0.85} style={[ss.btnPrimary, { borderRadius: 12, marginTop: 16 }]}>
-          <Icon name="navigation" size={18} color={C.white} />
-          <Text style={ss.btnPrimaryTxt}>Start Navigation</Text>
-        </TouchableOpacity>
-        <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 16, marginTop: 14 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Icon name="map" size={14} color={C.ink3} />
-            <Text style={{ fontSize: 13, color: C.ink2 }}>3.2 km</Text>
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Icon name="clock" size={14} color={C.ink3} />
-            <Text style={{ fontSize: 13, color: C.ink2 }}>8 min drive</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Arrived button */}
-      <View style={[ss.px, { marginTop: 16, marginBottom: insets.bottom + 16 }]}>
-        <TouchableOpacity activeOpacity={0.85} onPress={() => go('jobDetail', s.selectedJobId || undefined)}
-          style={ss.arrivedBtn}>
-          <Text style={{ fontFamily: F.bold, fontSize: 15, color: C.white }}>I've Arrived</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-}
-
-/* ═══════════════════ CLOCK IN/OUT ═══════════════════ */
-function ClockScreen() {
-  const { go } = useApp();
-  const [clockedIn, setClockedIn] = useState(true);
-  const [hours, setHours] = useState('6:15');
-  const insets = useSafeAreaInsets();
-  const today = new Date();
-  const dateStr = today.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-
-  const handleClockOut = async () => {
-    try { await api.clockOut(); setClockedIn(false); setHours('8:00'); } catch {}
-  };
-
-  return (
-    <View style={ss.fill}>
-      <ScrollView contentContainerStyle={{ paddingTop: insets.top + 20, paddingBottom: 100, alignItems: 'center' }}>
-        <Text style={{ fontFamily: F.display, fontSize: 24, color: C.ink }}>Time Tracker</Text>
-        <Text style={{ fontSize: 14, color: C.ink3, marginTop: 4 }}>{dateStr}</Text>
-
-        {/* Big clock circle */}
-        <View style={ss.bigClock}>
-          <Text style={{ fontFamily: F.display, fontSize: 42, color: C.white, letterSpacing: -0.4 }}>{hours}</Text>
-          <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>hours today</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 }}>
-            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: clockedIn ? C.greenLight : C.red }} />
-            <Text style={{ fontSize: 12, fontFamily: F.semi, color: clockedIn ? C.greenLight : C.red }}>{clockedIn ? 'Active' : 'Off'}</Text>
-          </View>
-        </View>
-
-        {/* Times */}
-        <View style={{ width: W - 40, flexDirection: 'row', gap: 12, marginTop: 32 }}>
-          <View style={ss.timeBox}>
-            <Text style={ss.timeLabel}>Clock in</Text>
-            <Text style={[ss.timeValue, { color: C.green }]}>8:00</Text>
-            <Text style={ss.timeSuffix}>AM</Text>
-          </View>
-          <View style={ss.timeBox}>
-            <Text style={ss.timeLabel}>Break</Text>
-            <Text style={[ss.timeValue, { color: C.orangeDark }]}>0:45</Text>
-            <Text style={ss.timeSuffix}>taken</Text>
-          </View>
-        </View>
-
-        {/* Today's summary */}
-        <View style={[ss.card, { width: W - 40, marginTop: 16, marginHorizontal: 0 }]}>
-          <Text style={{ fontFamily: F.bold, fontSize: 13, color: C.ink, marginBottom: 10 }}>Today's Summary</Text>
-          {[
-            { label: 'Jobs completed', value: '2' },
-            { label: 'Jobs remaining', value: '2' },
-            { label: 'Est. finish', value: '7:30 PM' },
-          ].map((row, i) => (
-            <View key={i} style={[ss.summaryRow, i < 2 && { borderBottomWidth: 1, borderBottomColor: C.line2 }]}>
-              <Text style={{ fontSize: 13, color: C.ink3 }}>{row.label}</Text>
-              <Text style={{ fontSize: 13, fontFamily: F.semi, color: C.ink }}>{row.value}</Text>
-            </View>
-          ))}
-        </View>
-
-        {/* Clock out button */}
-        {clockedIn && (
-          <TouchableOpacity activeOpacity={0.85} onPress={handleClockOut}
-            style={[ss.clockOutBtn, { width: W - 40 }]}>
-            <Text style={{ fontFamily: F.bold, fontSize: 15, color: C.white }}>Clock Out</Text>
-          </TouchableOpacity>
         )}
-      </ScrollView>
-      <TabBar active="schedule" />
-    </View>
-  );
-}
-
-/* ═══════════════════ PHOTO PROOF ═══════════════════ */
-const PHOTO_AREAS = ['Kitchen', 'Living Room', 'Bedrooms', 'Bathrooms', 'Balcony', 'Overall'];
-
-function PhotoProofScreen() {
-  const { s, go } = useApp();
-  const [photos, setPhotos] = useState<Record<string, string | null>>(
-    Object.fromEntries(PHOTO_AREAS.map(a => [a, null]))
-  );
-  const insets = useSafeAreaInsets();
-
-  const takePhoto = async (area: string) => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.7,
-    });
-    if (result.canceled) return;
-    const uri = result.assets[0].uri;
-    setPhotos(prev => ({ ...prev, [area]: uri }));
-    if (s.selectedJobId) {
-      api.uploadPhotos(s.selectedJobId, [{ uri, name: `${area}.jpg`, type: 'image/jpeg' }], area).catch(() => {});
-    }
-  };
-
-  const doneCount = Object.values(photos).filter(Boolean).length;
-  const allDone = doneCount === PHOTO_AREAS.length;
-
-  return (
-    <View style={ss.fill}>
-      <View style={[ss.topBar, { paddingTop: insets.top + 8 }]}>
-        <BackButton onPress={() => go(s.prevScreen as any || 'jobDetail')} />
-        <Text style={ss.topBarTitle}>Completion Photos</Text>
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
-        <Text style={{ fontSize: 14, color: C.ink3, marginBottom: 16 }}>Take photos of each completed area to confirm the job is done.</Text>
+      {/* Addresses */}
+      <View style={{ marginTop: 10, backgroundColor: '#F8F7FA', borderRadius: 10, padding: 10, gap: 6 }}>
+        {job.pickupAddress && (
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+            <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: '#DCFCE7', alignItems: 'center', justifyContent: 'center', marginTop: 1 }}>
+              <Text style={{ fontSize: 8, fontFamily: F.bold, color: '#16A34A' }}>A</Text>
+            </View>
+            <Text style={{ fontFamily: F.reg, fontSize: 12, color: C.ink2, flex: 1 }} numberOfLines={2}>{job.pickupAddress}</Text>
+          </View>
+        )}
+        {job.deliveryAddress && (
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+            <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: '#FEE2E2', alignItems: 'center', justifyContent: 'center', marginTop: 1 }}>
+              <Text style={{ fontSize: 8, fontFamily: F.bold, color: '#DC2626' }}>B</Text>
+            </View>
+            <Text style={{ fontFamily: F.reg, fontSize: 12, color: C.ink2, flex: 1 }} numberOfLines={2}>{job.deliveryAddress}</Text>
+          </View>
+        )}
+      </View>
 
-        {/* Photo grid */}
-        <View style={ss.photoGrid}>
-          {PHOTO_AREAS.map((area, i) => {
-            const photo = photos[area];
-            const isDone = !!photo;
-            const isNext = !isDone && Object.values(photos).filter(Boolean).length === i;
-            return (
-              <TouchableOpacity key={area} activeOpacity={0.8} onPress={() => takePhoto(area)}
-                style={[ss.photoCell,
-                  isDone && { backgroundColor: C.greenBg },
-                  isNext && { backgroundColor: C.purpleLite, borderColor: '#DDD0FF', borderWidth: 2, borderStyle: 'dashed' },
-                  !isDone && !isNext && { backgroundColor: C.warmGray, borderColor: 'rgba(20,8,31,0.12)', borderWidth: 2, borderStyle: 'dashed' },
-                ]}>
-                {isDone && (
-                  <>
-                    <View style={ss.photoDoneCheck}><Icon name="check" size={12} color={C.white} /></View>
-                    {photo && <Image source={{ uri: photo }} style={StyleSheet.absoluteFill} resizeMode="cover" />}
-                    <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(5,150,105,0.15)' }]} />
-                  </>
-                )}
-                {!isDone && <Icon name="camera" size={isNext ? 32 : 28} color={isNext ? C.purple : C.ink3} />}
-                <Text style={[ss.photoCellLabel,
-                  isDone && { color: C.green },
-                  isNext && { color: C.purple, fontFamily: F.semi },
-                ]}>
-                  {isDone ? `${area} ✓` : area}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+      {/* Footer chips */}
+      <View style={{ flexDirection: 'row', marginTop: 10, gap: 10, flexWrap: 'wrap' }}>
+        {job.crew?.length > 0 && (
+          <View style={ss.chip}>
+            <Icon name="users" size={12} color={C.ink3} />
+            <Text style={ss.chipTxt}>{job.crew.length} crew</Text>
+          </View>
+        )}
+        {job.trucks?.length > 0 && (
+          <View style={ss.chip}>
+            <Icon name="truck" size={12} color={C.ink3} />
+            <Text style={ss.chipTxt}>{job.trucks.length} truck{job.trucks.length > 1 ? 's' : ''}</Text>
+          </View>
+        )}
+        {job.images?.length > 0 && (
+          <View style={ss.chip}>
+            <Icon name="image" size={12} color={C.ink3} />
+            <Text style={ss.chipTxt}>{job.images.length}</Text>
+          </View>
+        )}
+        {job.moveOutPermitRequired && (
+          <View style={[ss.chip, { backgroundColor: '#FEF3C7' }]}>
+            <Icon name="alert-triangle" size={12} color="#D97706" />
+            <Text style={[ss.chipTxt, { color: '#D97706' }]}>Permit</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Action hint */}
+      {isActive && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 8 }}>
+          <Text style={{ fontFamily: F.semi, fontSize: 12, color: '#D97706' }}>Continue →</Text>
         </View>
-
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 }}>
-          <Icon name="info" size={14} color={C.purple} />
-          <Text style={{ fontSize: 13, color: C.ink2 }}>{doneCount} of {PHOTO_AREAS.length} areas photographed</Text>
+      )}
+      {isUpcoming && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 8 }}>
+          <Text style={{ fontFamily: F.semi, fontSize: 12, color: C.purple }}>View Details →</Text>
         </View>
-
-        <TouchableOpacity activeOpacity={0.85} disabled={!allDone}
-          onPress={() => { Alert.alert('Job Complete', 'Photos submitted successfully!'); go('schedule'); }}
-          style={[ss.completeBtn, !allDone && { opacity: 0.4 }]}>
-          <Text style={{ fontFamily: F.bold, fontSize: 15, color: C.white }}>
-            {allDone ? 'Complete Job' : `Complete Job (${PHOTO_AREAS.length - doneCount} photos remaining)`}
-          </Text>
-        </TouchableOpacity>
-      </ScrollView>
-    </View>
+      )}
+    </TouchableOpacity>
   );
 }
 
-/* ═══════════════════ EARNINGS ═══════════════════ */
-function EarningsScreen() {
-  const { go } = useApp();
-  const [period, setPeriod] = useState<'Today' | 'This Week' | 'Month'>('This Week');
-  const [earnings, setEarnings] = useState({ totalEarnings: 0, jobCount: 0 });
+function DashboardScreen() {
+  const { s, go } = useApp();
   const insets = useSafeAreaInsets();
+  const [jobs, setJobs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    api.getEarnings().then(setEarnings).catch(() => {});
+  const VISIBLE = ['confirmed', 'in_progress', 'completed'];
+
+  const load = useCallback(async () => {
+    try {
+      const res = await api.getJobs();
+      setJobs((res.jobs || []).filter(j => VISIBLE.includes(j.status)));
+    } catch { setJobs([]); }
+    finally { setLoading(false); setRefreshing(false); }
   }, []);
 
-  const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  const HEIGHTS = [50, 70, 60, 85, 30, 30, 30];
-  const todayIdx = 3;
+  useEffect(() => { load(); }, [load]);
+  const onRefresh = useCallback(() => { setRefreshing(true); load(); }, [load]);
+
+  const active = jobs.filter(j => j.status === 'in_progress');
+  const upcoming = jobs.filter(j => j.status === 'confirmed');
+  const past = jobs.filter(j => j.status === 'completed');
+
+  const firstName = s.worker?.name?.split(' ')[0] || '';
 
   return (
-    <View style={ss.fill}>
-      <ScrollView contentContainerStyle={{ paddingTop: insets.top + 12, paddingBottom: 100 }}>
-        <View style={ss.px}>
-          <Text style={{ fontFamily: F.display, fontSize: 28, color: C.ink, letterSpacing: -0.4 }}>Earnings</Text>
+    <View style={[ss.fill, { paddingTop: insets.top }]}>
+      {/* Header */}
+      <View style={{ backgroundColor: C.ink, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 24, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <View>
+            <Text style={{ fontFamily: F.display, fontSize: 24, color: C.white }}>
+              Hi, {firstName} 👋
+            </Text>
+            <Text style={{ fontFamily: F.reg, fontSize: 13, color: 'rgba(255,255,255,0.55)', marginTop: 2, textTransform: 'capitalize' }}>
+              {s.worker?.role} • {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}
+            </Text>
+          </View>
+          <TouchableOpacity onPress={() => go('profile')}
+            style={{ width: 42, height: 42, borderRadius: 14, backgroundColor: C.purple, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontFamily: F.bold, fontSize: 16, color: C.white }}>
+              {s.worker?.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+            </Text>
+          </TouchableOpacity>
         </View>
 
-        {/* Period toggle */}
-        <View style={ss.periodToggle}>
-          {(['Today', 'This Week', 'Month'] as const).map(p => (
-            <TouchableOpacity key={p} onPress={() => setPeriod(p)}
-              style={[ss.periodBtn, period === p && ss.periodBtnOn]}>
-              <Text style={[ss.periodTxt, period === p && ss.periodTxtOn]}>{p}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        {/* Stats row */}
+        {!loading && (
+          <View style={{ flexDirection: 'row', marginTop: 16, gap: 10 }}>
+            <View style={ss.statBox}>
+              <Text style={ss.statNum}>{active.length}</Text>
+              <Text style={ss.statLabel}>Active</Text>
+            </View>
+            <View style={ss.statBox}>
+              <Text style={ss.statNum}>{upcoming.length}</Text>
+              <Text style={ss.statLabel}>Upcoming</Text>
+            </View>
+            <View style={ss.statBox}>
+              <Text style={ss.statNum}>{past.length}</Text>
+              <Text style={ss.statLabel}>Done</Text>
+            </View>
+            <View style={ss.statBox}>
+              <Text style={ss.statNum}>{jobs.length}</Text>
+              <Text style={ss.statLabel}>Total</Text>
+            </View>
+          </View>
+        )}
+      </View>
 
-        {/* Big number */}
-        <View style={{ alignItems: 'center', paddingVertical: 8 }}>
-          <Text style={{ fontSize: 13, color: C.ink3, fontFamily: F.med }}>This week's earnings</Text>
-          <Text style={{ fontFamily: F.display, fontSize: 48, color: C.ink, letterSpacing: -0.4, marginTop: 4 }}>
-            AED {earnings.totalEarnings > 0 ? earnings.totalEarnings.toLocaleString() : '2,840'}
+      {loading ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator color={C.purple} size="large" />
+        </View>
+      ) : jobs.length === 0 ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 }}>
+          <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: C.purpleLite, alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+            <Icon name="calendar" size={36} color={C.purple} />
+          </View>
+          <Text style={{ fontFamily: F.semi, fontSize: 17, color: C.ink }}>No jobs assigned</Text>
+          <Text style={{ fontFamily: F.reg, fontSize: 14, color: C.ink3, marginTop: 6, textAlign: 'center' }}>
+            Pull down to refresh when new jobs are assigned to you
           </Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
-            <Text style={{ fontSize: 13, fontFamily: F.semi, color: C.green }}>↑ 18%</Text>
-            <Text style={{ fontSize: 13, color: C.ink3 }}>vs last week</Text>
+        </View>
+      ) : (
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.purple} />}>
+
+          {/* Active jobs */}
+          {active.length > 0 && (
+            <View style={{ marginBottom: 20 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#D97706' }} />
+                <Text style={ss.sectionTitle}>Active Jobs</Text>
+              </View>
+              {active.map(j => <JobCard key={j._id} job={j} onPress={() => go('jobDetail', j._id)} />)}
+            </View>
+          )}
+
+          {/* Upcoming jobs */}
+          {upcoming.length > 0 && (
+            <View style={{ marginBottom: 20 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: C.purple }} />
+                <Text style={ss.sectionTitle}>Upcoming</Text>
+                <View style={{ backgroundColor: C.purpleLite, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
+                  <Text style={{ fontFamily: F.semi, fontSize: 11, color: C.purple }}>{upcoming.length}</Text>
+                </View>
+              </View>
+              {upcoming.map(j => <JobCard key={j._id} job={j} onPress={() => go('jobDetail', j._id)} />)}
+            </View>
+          )}
+
+          {/* Past jobs */}
+          {past.length > 0 && (
+            <View style={{ marginBottom: 20 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: C.green }} />
+                <Text style={ss.sectionTitle}>Completed</Text>
+              </View>
+              {past.map(j => <JobCard key={j._id} job={j} onPress={() => go('jobDetail', j._id)} />)}
+            </View>
+          )}
+        </ScrollView>
+      )}
+
+      <TabBar active="jobs" />
+    </View>
+  );
+}
+
+/* ═══════════════════ JOB DETAIL ═══════════════════ */
+
+function JobDetailScreen() {
+  const { s, go } = useApp();
+  const insets = useSafeAreaInsets();
+  const [job, setJob] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [imageModal, setImageModal] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [activeTab, setActiveTab] = useState<'details' | 'images' | 'checklist' | 'photos'>('details');
+  const [initialTabSet, setInitialTabSet] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!s.selectedJobId) return;
+    try {
+      const res = await api.getJob(s.selectedJobId);
+      setJob(res.job);
+    } catch (e: any) { Alert.alert('Error', e.message); }
+    finally { setLoading(false); }
+  }, [s.selectedJobId]);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (job && !initialTabSet) {
+      if (job.status === 'in_progress') setActiveTab('photos');
+      setInitialTabSet(true);
+    }
+  }, [job, initialTabSet]);
+
+  const handleStatusChange = async (newStatus: string) => {
+    const msg = newStatus === 'in_progress' ? 'Start this job?' : 'Mark this job as completed?';
+    Alert.alert('Confirm', msg, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Yes', onPress: async () => {
+          setStatusLoading(true);
+          try {
+            const res = await api.updateJobStatus(job._id, newStatus);
+            setJob(res.job);
+          } catch (e: any) { Alert.alert('Error', e.message); }
+          finally { setStatusLoading(false); }
+        }
+      },
+    ]);
+  };
+
+  const handleUploadPhoto = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsMultipleSelection: true,
+      quality: 0.8,
+    });
+    if (result.canceled || !result.assets?.length) return;
+    setUploading(true);
+    try {
+      const imgs = result.assets.map((a, i) => ({
+        uri: a.uri, name: `crew-${Date.now()}-${i}.jpg`, type: a.mimeType || 'image/jpeg',
+      }));
+      await api.uploadPhotos(job._id, imgs);
+      await load();
+      Alert.alert('Uploaded', `${imgs.length} photo(s) uploaded`);
+    } catch (e: any) { Alert.alert('Error', e.message); }
+    finally { setUploading(false); }
+  };
+
+  const handleTakePhoto = async () => {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) { Alert.alert('Permission needed', 'Camera access is required'); return; }
+    const result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+    if (result.canceled || !result.assets?.length) return;
+    setUploading(true);
+    try {
+      const a = result.assets[0];
+      await api.uploadPhotos(job._id, [{ uri: a.uri, name: `crew-cam-${Date.now()}.jpg`, type: 'image/jpeg' }]);
+      await load();
+    } catch (e: any) { Alert.alert('Error', e.message); }
+    finally { setUploading(false); }
+  };
+
+  const handleChecklistToggle = async (idx: number) => {
+    const items = [...(job.checklist || [])];
+    items[idx] = { ...items[idx], done: !items[idx].done };
+    setJob({ ...job, checklist: items });
+    try { await api.updateChecklist(job._id, items); } catch {}
+  };
+
+  if (loading) {
+    return <View style={[ss.fill, { justifyContent: 'center', alignItems: 'center' }]}><ActivityIndicator color={C.purple} size="large" /></View>;
+  }
+  if (!job) {
+    return <View style={[ss.fill, { justifyContent: 'center', alignItems: 'center' }]}><Text style={{ fontFamily: F.semi, color: C.ink3 }}>Job not found</Text></View>;
+  }
+
+  const permitImages = (job.images || []).filter((img: any) => img.category?.toLowerCase().includes('permit'));
+  const completionPhotos = job.completionPhotos || [];
+  const canStart = job.status === 'confirmed' || job.status === 'survey_done';
+  const canComplete = job.status === 'in_progress';
+  const jobDate = job.scheduledDate ? fmtJobDate(job.scheduledDate) : '';
+
+  const imgUrl = (img: any) => {
+    if (!img?.url) return '';
+    if (img.url.startsWith('http')) return img.url;
+    return `https://purplebox.mypaperlessoffice.org${img.url}`;
+  };
+
+  const TABS = [
+    { key: 'details' as const, label: 'Details', icon: 'info' },
+    { key: 'images' as const, label: `Images (${(job.images || []).length})`, icon: 'image' },
+    { key: 'checklist' as const, label: 'Checklist', icon: 'check-square' },
+    { key: 'photos' as const, label: `Uploads (${completionPhotos.length})`, icon: 'camera' },
+  ];
+
+  return (
+    <View style={[ss.fill, { paddingTop: insets.top }]}>
+      {/* Header */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12 }}>
+        <BackButton onPress={() => go('jobs')} />
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontFamily: F.bold, fontSize: 18, color: C.ink }}>{job.jobNo}</Text>
+          <Text style={{ fontFamily: F.reg, fontSize: 12, color: C.ink3 }}>{jobDate}{job.scheduledTimeSlot ? ` • ${job.scheduledTimeSlot}` : ''}</Text>
+        </View>
+        <StatusBadge status={job.status} />
+      </View>
+
+      {/* Action buttons */}
+      {(canStart || canComplete) && (
+        <View style={{ paddingHorizontal: 16, paddingBottom: 10 }}>
+          {canStart && (
+            <TouchableOpacity activeOpacity={0.85} disabled={statusLoading}
+              onPress={() => handleStatusChange('in_progress')}
+              style={[ss.btnPrimary, { backgroundColor: '#059669' }, statusLoading && { opacity: 0.5 }]}>
+              <Icon name="play" size={16} color={C.white} />
+              <Text style={ss.btnPrimaryTxt}>{statusLoading ? 'Starting...' : 'Start Job'}</Text>
+            </TouchableOpacity>
+          )}
+          {canComplete && (
+            <TouchableOpacity activeOpacity={0.85} disabled={statusLoading}
+              onPress={() => handleStatusChange('completed')}
+              style={[ss.btnPrimary, statusLoading && { opacity: 0.5 }]}>
+              <Icon name="check-circle" size={16} color={C.white} />
+              <Text style={ss.btnPrimaryTxt}>{statusLoading ? 'Completing...' : 'Complete Job'}</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {/* Permit banner */}
+      {job.moveOutPermitRequired && (
+        <View style={{ marginHorizontal: 16, marginBottom: 8, backgroundColor: '#FEF3C7', borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <Icon name="alert-triangle" size={18} color="#D97706" />
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontFamily: F.semi, fontSize: 13, color: '#D97706' }}>Moving Permit Required</Text>
+            <Text style={{ fontFamily: F.reg, fontSize: 12, color: C.ink3, marginTop: 2 }}>
+              {permitImages.length > 0 ? `${permitImages.length} permit image(s) — check Images tab` : 'No permit uploaded yet'}
+            </Text>
           </View>
         </View>
+      )}
 
-        {/* Bar chart */}
-        <View style={ss.barChart}>
-          {DAYS.map((d, i) => (
-            <View key={d} style={{ flex: 1, alignItems: 'center', gap: 6 }}>
-              <View style={[ss.bar, { height: HEIGHTS[i] }, i === todayIdx && { backgroundColor: C.purple }, i > todayIdx && { backgroundColor: C.warmGray }]} />
-              <Text style={[ss.barLabel, i === todayIdx && { fontFamily: F.semi, color: C.purple }]}>{d}</Text>
+      {/* Tabs */}
+      <View style={{ flexDirection: 'row', paddingHorizontal: 16, gap: 6, paddingBottom: 8, flexWrap: 'nowrap', overflow: 'hidden' }}>
+        {TABS.map(t => (
+          <TouchableOpacity key={t.key} activeOpacity={0.7} onPress={() => setActiveTab(t.key)}
+            style={[ss.tabPill, activeTab === t.key && ss.tabPillOn]}>
+            <Icon name={t.icon as any} size={13} color={activeTab === t.key ? C.white : C.ink3} />
+            <Text style={[ss.tabPillTxt, activeTab === t.key && ss.tabPillTxtOn]}>{t.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Content */}
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 100 }}>
+        {activeTab === 'details' && <DetailsTab job={job} imgUrl={imgUrl} onImagePress={setImageModal} />}
+        {activeTab === 'images' && <ImagesTab job={job} imgUrl={imgUrl} onImagePress={setImageModal} />}
+        {activeTab === 'checklist' && <ChecklistTab job={job} onToggle={handleChecklistToggle} />}
+        {activeTab === 'photos' && <PhotosTab completionPhotos={completionPhotos} imgUrl={imgUrl}
+          onImagePress={setImageModal} onUpload={handleUploadPhoto} onCamera={handleTakePhoto} uploading={uploading} />}
+      </ScrollView>
+
+      {/* Floating upload button for in-progress jobs */}
+      {job.status === 'in_progress' && activeTab !== 'photos' && (
+        <TouchableOpacity activeOpacity={0.85} onPress={() => setActiveTab('photos')}
+          style={{ position: 'absolute', bottom: 90, right: 20, flexDirection: 'row', alignItems: 'center', gap: 8,
+            backgroundColor: C.purple, paddingHorizontal: 18, paddingVertical: 14, borderRadius: 16,
+            shadowColor: C.purple, shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 8 }}>
+          <Icon name="camera" size={18} color={C.white} />
+          <Text style={{ fontFamily: F.semi, fontSize: 14, color: C.white }}>Upload Photos</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* Image viewer */}
+      <Modal visible={!!imageModal} transparent animationType="fade" onRequestClose={() => setImageModal(null)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', alignItems: 'center' }}>
+          <TouchableOpacity onPress={() => setImageModal(null)}
+            style={{ position: 'absolute', top: insets.top + 16, right: 16, zIndex: 10, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon name="x" size={24} color={C.white} />
+          </TouchableOpacity>
+          {imageModal && <Image source={{ uri: imageModal }} style={{ width: W - 32, height: W - 32, borderRadius: 12 }} resizeMode="contain" />}
+        </View>
+      </Modal>
+
+      <TabBar active="jobs" />
+    </View>
+  );
+}
+
+/* ── Sub-tabs ── */
+
+function InfoRow({ icon, label, value }: { icon: string; label: string; value: string }) {
+  if (!value) return null;
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
+      <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: '#F5F3F7', alignItems: 'center', justifyContent: 'center' }}>
+        <Icon name={icon as any} size={14} color={C.ink3} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontFamily: F.reg, fontSize: 11, color: C.faint }}>{label}</Text>
+        <Text style={{ fontFamily: F.med, fontSize: 13, color: C.ink, marginTop: 1 }}>{value}</Text>
+      </View>
+    </View>
+  );
+}
+
+function DetailsTab({ job, imgUrl, onImagePress }: { job: any; imgUrl: (i: any) => string; onImagePress: (url: string) => void }) {
+  const permitImages = (job.images || []).filter((img: any) => img.category?.toLowerCase().includes('permit'));
+
+  return (
+    <View style={{ gap: 12 }}>
+      <View style={ss.card}>
+        <Text style={ss.cardTitle}>Customer</Text>
+        <InfoRow icon="user" label="Name" value={job.customer?.fullName || job.customerName || '—'} />
+        <InfoRow icon="phone" label="Phone" value={job.customer?.phone || job.customerPhone || ''} />
+        <InfoRow icon="briefcase" label="Job Type" value={job.jobType?.replace(/_/g, ' ')} />
+      </View>
+
+      <View style={ss.card}>
+        <Text style={ss.cardTitle}>Addresses</Text>
+        <View style={{ gap: 8 }}>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#DCFCE7', alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 9, fontFamily: F.bold, color: '#16A34A' }}>A</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontFamily: F.reg, fontSize: 11, color: C.faint }}>Pickup</Text>
+              <Text style={{ fontFamily: F.med, fontSize: 13, color: C.ink }}>{job.pickupAddress || '—'}</Text>
+              {job.pickupFloor != null && <Text style={{ fontFamily: F.reg, fontSize: 12, color: C.ink3 }}>Floor {job.pickupFloor} {job.pickupHasElevator ? '• Elevator' : '• No elevator'}</Text>}
+            </View>
+          </View>
+          <View style={{ borderLeftWidth: 1.5, borderColor: C.line, marginLeft: 11, height: 10, borderStyle: 'dashed' }} />
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#FEE2E2', alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 9, fontFamily: F.bold, color: '#DC2626' }}>B</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontFamily: F.reg, fontSize: 11, color: C.faint }}>Delivery</Text>
+              <Text style={{ fontFamily: F.med, fontSize: 13, color: C.ink }}>{job.deliveryAddress || '—'}</Text>
+              {job.deliveryFloor != null && <Text style={{ fontFamily: F.reg, fontSize: 12, color: C.ink3 }}>Floor {job.deliveryFloor} {job.deliveryHasElevator ? '• Elevator' : '• No elevator'}</Text>}
+            </View>
+          </View>
+        </View>
+      </View>
+
+      {job.moveOutPermitRequired && (
+        <View style={[ss.card, { borderColor: '#FCD34D', borderWidth: 1.5 }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <Icon name="file-text" size={16} color="#D97706" />
+            <Text style={[ss.cardTitle, { marginBottom: 0, color: '#D97706' }]}>Moving Permit</Text>
+          </View>
+          {permitImages.length > 0 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+              {permitImages.map((img: any, i: number) => (
+                <TouchableOpacity key={i} onPress={() => onImagePress(imgUrl(img))}>
+                  <Image source={{ uri: imgUrl(img) }} style={{ width: 120, height: 120, borderRadius: 10 }} />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          ) : (
+            <Text style={{ fontFamily: F.reg, fontSize: 13, color: C.red }}>No permit images uploaded yet</Text>
+          )}
+        </View>
+      )}
+
+      {(job.dispatchNotes || job.routeNotes || job.notes) && (
+        <View style={ss.card}>
+          <Text style={ss.cardTitle}>Notes & Instructions</Text>
+          {job.dispatchNotes && <InfoRow icon="clipboard" label="Dispatch" value={job.dispatchNotes} />}
+          {job.routeNotes && <InfoRow icon="navigation" label="Route" value={job.routeNotes} />}
+          {job.notes && <InfoRow icon="file-text" label="Notes" value={job.notes} />}
+        </View>
+      )}
+
+      {job.crew?.length > 0 && (
+        <View style={ss.card}>
+          <Text style={ss.cardTitle}>Crew ({job.crew.length})</Text>
+          {job.crew.map((c: any, i: number) => (
+            <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+              <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: C.purpleLite, alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="user" size={14} color={C.purple} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: F.med, fontSize: 13, color: C.ink }}>{c.worker?.name || `Worker ${i + 1}`}</Text>
+                <Text style={{ fontFamily: F.reg, fontSize: 11, color: C.ink3 }}>{c.role || 'Crew'}{c.isSupervisor ? ' • Supervisor' : ''}</Text>
+              </View>
             </View>
           ))}
         </View>
+      )}
 
-        {/* Breakdown */}
-        <View style={ss.px}>
-          <Text style={{ fontFamily: F.bold, fontSize: 15, color: C.ink, marginBottom: 12 }}>Breakdown</Text>
-          <View style={ss.breakdownCard}>
-            {[
-              { dot: C.purple, label: `Base pay (${earnings.jobCount || 12} jobs)`, amount: 'AED 2,400' },
-              { dot: C.green, label: 'Tips', amount: 'AED 340' },
-              { dot: C.orange, label: 'Bonus', amount: 'AED 100' },
-            ].map((item, i) => (
-              <View key={i} style={[ss.breakdownRow, i < 2 && { borderBottomWidth: 1, borderBottomColor: C.line2 }]}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: item.dot }} />
-                  <Text style={{ fontSize: 14, color: C.ink2 }}>{item.label}</Text>
-                </View>
-                <Text style={{ fontSize: 14, fontFamily: F.semi, color: C.ink }}>{item.amount}</Text>
+      {job.trucks?.length > 0 && (
+        <View style={ss.card}>
+          <Text style={ss.cardTitle}>Trucks ({job.trucks.length})</Text>
+          {job.trucks.map((t: any, i: number) => (
+            <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+              <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: C.purpleLite, alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="truck" size={14} color={C.purple} />
               </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: F.med, fontSize: 13, color: C.ink }}>{t.truck?.name || `Truck ${i + 1}`}</Text>
+                <Text style={{ fontFamily: F.reg, fontSize: 11, color: C.ink3 }}>{t.truck?.plateNumber || ''}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+function ImagesTab({ job, imgUrl, onImagePress }: { job: any; imgUrl: (i: any) => string; onImagePress: (url: string) => void }) {
+  const allImages = job.images || [];
+  if (allImages.length === 0) {
+    return (
+      <View style={{ alignItems: 'center', paddingTop: 60 }}>
+        <Icon name="image" size={48} color={C.faint} />
+        <Text style={{ fontFamily: F.semi, fontSize: 15, color: C.ink3, marginTop: 12 }}>No images yet</Text>
+      </View>
+    );
+  }
+  const grouped: Record<string, any[]> = {};
+  allImages.forEach((img: any) => {
+    const cat = img.category || 'General';
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(img);
+  });
+  return (
+    <View>
+      {Object.entries(grouped).map(([cat, imgs]) => (
+        <View key={cat} style={{ marginBottom: 20 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <Icon name={cat.toLowerCase().includes('permit') ? 'alert-triangle' : 'folder'} size={14}
+              color={cat.toLowerCase().includes('permit') ? '#D97706' : C.ink3} />
+            <Text style={{ fontFamily: F.semi, fontSize: 14, color: C.ink }}>{cat}</Text>
+            <Text style={{ fontFamily: F.reg, fontSize: 12, color: C.ink3 }}>({imgs.length})</Text>
+          </View>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {imgs.map((img: any, i: number) => (
+              <TouchableOpacity key={i} onPress={() => onImagePress(imgUrl(img))}>
+                <Image source={{ uri: imgUrl(img) }} style={{ width: (W - 56) / 3, height: (W - 56) / 3, borderRadius: 10, backgroundColor: C.line }} />
+              </TouchableOpacity>
             ))}
           </View>
         </View>
-      </ScrollView>
-      <TabBar active="earnings" />
+      ))}
+    </View>
+  );
+}
+
+function ChecklistTab({ job, onToggle }: { job: any; onToggle: (idx: number) => void }) {
+  const items = job.checklist || [];
+  const done = items.filter((i: any) => i.done).length;
+  if (items.length === 0) {
+    return (
+      <View style={{ alignItems: 'center', paddingTop: 60 }}>
+        <Icon name="check-square" size={48} color={C.faint} />
+        <Text style={{ fontFamily: F.semi, fontSize: 15, color: C.ink3, marginTop: 12 }}>No checklist items</Text>
+      </View>
+    );
+  }
+  return (
+    <View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+        <View style={{ flex: 1, height: 6, borderRadius: 3, backgroundColor: C.line }}>
+          <View style={{ width: `${(done / items.length) * 100}%` as any, height: 6, borderRadius: 3, backgroundColor: C.green }} />
+        </View>
+        <Text style={{ fontFamily: F.semi, fontSize: 13, color: C.green }}>{done}/{items.length}</Text>
+      </View>
+      {items.map((item: any, idx: number) => (
+        <TouchableOpacity key={idx} activeOpacity={0.7} onPress={() => onToggle(idx)}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.line }}>
+          <View style={{
+            width: 24, height: 24, borderRadius: 8, borderWidth: 2,
+            borderColor: item.done ? C.green : C.faint,
+            backgroundColor: item.done ? C.green : 'transparent',
+            alignItems: 'center', justifyContent: 'center',
+          }}>
+            {item.done && <Icon name="check" size={14} color={C.white} />}
+          </View>
+          <Text style={{
+            fontFamily: item.done ? F.reg : F.med, fontSize: 14,
+            color: item.done ? C.ink3 : C.ink,
+            textDecorationLine: item.done ? 'line-through' : 'none', flex: 1,
+          }}>{item.label}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+
+function PhotosTab({ completionPhotos, imgUrl, onImagePress, onUpload, onCamera, uploading }: {
+  completionPhotos: any[]; imgUrl: (i: any) => string; onImagePress: (url: string) => void;
+  onUpload: () => void; onCamera: () => void; uploading: boolean;
+}) {
+  return (
+    <View>
+      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
+        <TouchableOpacity activeOpacity={0.85} onPress={onCamera} disabled={uploading}
+          style={[ss.btnPrimary, { flex: 1 }, uploading && { opacity: 0.5 }]}>
+          <Icon name="camera" size={16} color={C.white} />
+          <Text style={ss.btnPrimaryTxt}>Camera</Text>
+        </TouchableOpacity>
+        <TouchableOpacity activeOpacity={0.85} onPress={onUpload} disabled={uploading}
+          style={[ss.btnOutline, { flex: 1 }]}>
+          <Icon name="upload" size={16} color={C.purple} />
+          <Text style={ss.btnOutlineTxt}>Gallery</Text>
+        </TouchableOpacity>
+      </View>
+      {uploading && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+          <ActivityIndicator size="small" color={C.purple} />
+          <Text style={{ fontFamily: F.med, fontSize: 13, color: C.purple }}>Uploading...</Text>
+        </View>
+      )}
+      {completionPhotos.length === 0 ? (
+        <View style={{ alignItems: 'center', paddingTop: 40 }}>
+          <Icon name="camera" size={48} color={C.faint} />
+          <Text style={{ fontFamily: F.semi, fontSize: 15, color: C.ink3, marginTop: 12 }}>No photos uploaded yet</Text>
+          <Text style={{ fontFamily: F.reg, fontSize: 13, color: C.faint, marginTop: 4 }}>Take or upload photos of the completed job</Text>
+        </View>
+      ) : (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {completionPhotos.map((p: any, i: number) => (
+            <TouchableOpacity key={i} onPress={() => onImagePress(imgUrl(p))}>
+              <Image source={{ uri: imgUrl(p) }} style={{ width: (W - 56) / 3, height: (W - 56) / 3, borderRadius: 10, backgroundColor: C.line }} />
+              {p.area && p.area !== 'General' && (
+                <View style={{ position: 'absolute', bottom: 4, left: 4, right: 4, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 6, padding: 3 }}>
+                  <Text style={{ fontFamily: F.med, fontSize: 9, color: C.white, textAlign: 'center' }}>{p.area}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
     </View>
   );
 }
 
 /* ═══════════════════ PROFILE ═══════════════════ */
+
 function ProfileScreen() {
-  const { s, go, logout } = useApp();
-  const [lang, setLang] = useState<'EN' | 'AR'>('EN');
+  const { s, logout, go } = useApp();
   const insets = useSafeAreaInsets();
-
-  const name = s.worker?.name || 'Crew Member';
-  const initial = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-  const role = s.worker?.role ? s.worker.role.charAt(0).toUpperCase() + s.worker.role.slice(1) : 'Staff';
-
-  const MENU = [
-    { icon: 'calendar', label: 'My Schedule', bg: C.purpleLite, color: C.purple },
-    { icon: 'dollar-sign', label: 'Earnings History', bg: C.greenBg, color: C.green },
-    { icon: 'star', label: 'My Reviews', bg: '#FFFBEB', color: C.orange },
-    { icon: 'settings', label: 'Settings', bg: C.warmGray, color: C.ink3 },
-  ];
+  const w = s.worker;
+  const initials = w?.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?';
 
   return (
-    <View style={ss.fill}>
+    <View style={[ss.fill, { paddingTop: insets.top }]}>
       <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
-        {/* Header gradient */}
-        <View style={ss.profileHeader}>
-          <View style={ss.profileAvatar}>
-            <Text style={{ fontFamily: F.display, fontSize: 32, color: C.purple }}>{initial}</Text>
-          </View>
-          <Text style={{ fontFamily: F.display, fontSize: 22, color: C.white, marginTop: 12 }}>{name}</Text>
-          <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', marginTop: 4 }}>{role}</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 10 }}>
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Icon key={i} name="star" size={16} color={C.orange} />
-            ))}
-            <Text style={{ fontSize: 14, fontFamily: F.semi, color: C.white, marginLeft: 4 }}>4.9</Text>
-          </View>
-        </View>
-
-        {/* Stats card */}
-        <View style={ss.statsCard}>
-          {[
-            { num: '234', label: 'Total Jobs' },
-            { num: '98%', label: 'On Time' },
-            { num: '14', label: 'Months' },
-          ].map((stat, i) => (
-            <View key={i} style={[ss.statCell, i === 1 && { borderLeftWidth: 1, borderRightWidth: 1, borderColor: C.line }]}>
-              <Text style={{ fontFamily: F.display, fontSize: 24, color: C.ink }}>{stat.num}</Text>
-              <Text style={{ fontSize: 11, color: C.ink3, marginTop: 2 }}>{stat.label}</Text>
+        <View style={{ backgroundColor: C.ink, padding: 24, paddingTop: 20, paddingBottom: 32, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 }}>
+          <Text style={{ fontFamily: F.display, fontSize: 22, color: C.white, marginBottom: 20 }}>Profile</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+            <View style={{ width: 60, height: 60, borderRadius: 20, backgroundColor: C.purple, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontFamily: F.bold, fontSize: 22, color: C.white }}>{initials}</Text>
             </View>
-          ))}
-        </View>
-
-        {/* Menu */}
-        <View style={[ss.px, { marginTop: 20 }]}>
-          <View style={ss.menuCard}>
-            {MENU.map((item, i) => (
-              <TouchableOpacity key={i} activeOpacity={0.7}
-                onPress={() => {
-                  if (item.label === 'My Schedule') go('schedule');
-                  else if (item.label === 'Earnings History') go('earnings');
-                }}
-                style={[ss.menuRow, i > 0 && { borderTopWidth: 1, borderTopColor: C.line2 }]}>
-                <View style={[ss.menuIcon, { backgroundColor: item.bg }]}>
-                  <Icon name={item.icon as any} size={16} color={item.color} />
-                </View>
-                <Text style={{ flex: 1, fontSize: 14, fontFamily: F.med, color: C.ink }}>{item.label}</Text>
-                <Icon name="chevron-right" size={14} color={C.ink3} />
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* Language */}
-        <View style={[ss.px, { marginTop: 16 }]}>
-          <View style={ss.langCard}>
-            <Text style={{ fontSize: 16 }}>🌐</Text>
-            <Text style={{ flex: 1, fontSize: 14, fontFamily: F.med, color: C.ink }}>Language</Text>
-            <View style={ss.langToggle}>
-              <TouchableOpacity onPress={() => setLang('EN')} style={[ss.langBtn, lang === 'EN' && ss.langBtnOn]}>
-                <Text style={[ss.langBtnTxt, lang === 'EN' && ss.langBtnTxtOn]}>EN</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setLang('AR')} style={[ss.langBtn, lang === 'AR' && ss.langBtnOn]}>
-                <Text style={[ss.langBtnTxt, lang === 'AR' && ss.langBtnTxtOn]}>عربي</Text>
-              </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontFamily: F.bold, fontSize: 18, color: C.white }}>{w?.name}</Text>
+              <Text style={{ fontFamily: F.med, fontSize: 13, color: C.lavender, textTransform: 'capitalize' }}>{w?.role}</Text>
+              <Text style={{ fontFamily: F.reg, fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>{w?.phone}</Text>
             </View>
           </View>
         </View>
 
-        {/* Sign out */}
-        <View style={[ss.px, { marginTop: 20 }]}>
-          <TouchableOpacity activeOpacity={0.8} onPress={() => { setToken(null); logout(); }} style={ss.signOutBtn}>
-            <Text style={{ fontFamily: F.semi, fontSize: 14, color: C.red }}>Sign Out</Text>
+        <View style={{ padding: 16, gap: 8, marginTop: 16 }}>
+          <TouchableOpacity activeOpacity={0.7} onPress={() => go('jobs')} style={ss.menuRow}>
+            <View style={[ss.menuIcon, { backgroundColor: C.purpleLite }]}><Icon name="calendar" size={18} color={C.purple} /></View>
+            <Text style={ss.menuTxt}>My Jobs</Text>
+            <Icon name="chevron-right" size={18} color={C.faint} />
+          </TouchableOpacity>
+
+          <View style={{ height: 24 }} />
+
+          <TouchableOpacity activeOpacity={0.85} onPress={() => { setToken(null); logout(); }}
+            style={{ height: 52, borderRadius: 14, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 }}>
+            <Icon name="log-out" size={18} color={C.red} />
+            <Text style={{ fontFamily: F.bold, fontSize: 15, color: C.red }}>Sign Out</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -775,115 +872,38 @@ function ProfileScreen() {
 }
 
 /* ═══════════════════ STYLES ═══════════════════ */
+
 const ss = StyleSheet.create({
   fill: { flex: 1, backgroundColor: C.paper },
-  px: { paddingHorizontal: 20 },
-
-  // Login
   loginWrap: { paddingHorizontal: 28, alignItems: 'center' },
-  logoCircle: { width: 72, height: 72, borderRadius: 36, backgroundColor: C.ink, alignItems: 'center', justifyContent: 'center', marginBottom: 18 },
-  loginTitle: { fontFamily: F.displayXB, fontSize: 28, color: C.ink },
-  loginSub: { fontFamily: F.reg, fontSize: 15, color: C.ink3, marginTop: 6 },
   label: { fontFamily: F.semi, fontSize: 13, color: C.ink2, marginBottom: 6 },
-  input: { height: 52, borderRadius: 14, borderWidth: 1.5, borderColor: C.line, backgroundColor: C.white, paddingHorizontal: 16, fontFamily: F.reg, fontSize: 15, color: C.ink },
+  input: { height: 54, borderRadius: 14, borderWidth: 1.5, borderColor: C.line, backgroundColor: C.white, paddingHorizontal: 16, fontFamily: F.reg, fontSize: 15, color: C.ink },
   errorTxt: { fontFamily: F.med, fontSize: 13, color: C.red, marginTop: 6 },
-
-  // Buttons
-  btnPrimary: { height: 52, borderRadius: 14, backgroundColor: C.purple, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
+  btnPrimary: { height: 50, borderRadius: 14, backgroundColor: C.purple, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
   btnPrimaryTxt: { color: C.white, fontFamily: F.bold, fontSize: 15 },
-  btnOutline: { height: 48, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(91,43,201,0.2)', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
-  btnOutlineTxt: { color: C.purple, fontFamily: F.semi, fontSize: 14 },
-  iconBtn: { width: 48, height: 48, borderRadius: 12, backgroundColor: C.purpleLite, alignItems: 'center', justifyContent: 'center' },
+  btnOutline: { height: 50, borderRadius: 14, borderWidth: 1.5, borderColor: C.purple, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
+  btnOutlineTxt: { color: C.purple, fontFamily: F.bold, fontSize: 15 },
 
-  // Avatar
-  avatarCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: C.purpleBg, alignItems: 'center', justifyContent: 'center' },
+  sectionTitle: { fontFamily: F.semi, fontSize: 15, color: C.ink },
 
-  // Schedule
-  statusBar: { marginHorizontal: 20, marginTop: 16, borderRadius: 16, padding: 16, paddingHorizontal: 18, backgroundColor: C.ink, overflow: 'hidden' },
-  statusLabel: { fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, color: 'rgba(255,255,255,0.6)', fontFamily: F.semi },
-  statusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.3)' },
-  progressSeg: { flex: 1, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.15)' },
-  sectionLabel: { fontFamily: F.bold, fontSize: 13, color: C.green, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10, marginTop: 20 },
-  clockInBtn: { backgroundColor: C.green, borderRadius: 14, padding: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 16 },
+  jobCard: { backgroundColor: C.white, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: C.line, marginBottom: 10 },
 
-  currentJobCard: { backgroundColor: C.white, borderWidth: 2, borderColor: C.purple, borderRadius: 18, padding: 18 },
-  activeChip: { position: 'absolute', top: 14, right: 14, backgroundColor: C.greenBg, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
-  upcomingCard: { backgroundColor: C.white, borderWidth: 1, borderColor: C.line, borderRadius: 14, padding: 14, flexDirection: 'row', gap: 14, alignItems: 'center', marginBottom: 10 },
-  upcomingBar: { width: 4, height: 44, borderRadius: 2, backgroundColor: C.purpleBg },
-  completedChip: { backgroundColor: C.greenBg, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F5F3F7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  chipTxt: { fontFamily: F.med, fontSize: 11, color: C.ink3 },
 
-  // Top bar
-  topBar: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingBottom: 12 },
-  topBarTitle: { fontFamily: F.bold, fontSize: 17, color: C.ink },
+  statBox: { flex: 1, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 12, paddingVertical: 10, alignItems: 'center' },
+  statNum: { fontFamily: F.bold, fontSize: 20, color: C.white },
+  statLabel: { fontFamily: F.reg, fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 2 },
 
-  // Job Detail
-  card: { marginHorizontal: 20, marginBottom: 16, backgroundColor: C.white, borderWidth: 1, borderColor: C.line, borderRadius: 18, padding: 18 },
-  infoBox: { flex: 1, backgroundColor: C.paper, borderRadius: 10, padding: 10 },
-  infoLabel: { fontSize: 11, color: C.ink3 },
-  infoValue: { fontSize: 14, fontFamily: F.semi, color: C.ink, marginTop: 2 },
-  noteBox: { marginTop: 10, padding: 10, backgroundColor: '#FFFBEB', borderRadius: 10 },
+  card: { backgroundColor: C.white, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: C.line },
+  cardTitle: { fontFamily: F.semi, fontSize: 14, color: C.ink, marginBottom: 12 },
 
-  // Checklist
-  checklistCard: { backgroundColor: C.white, borderWidth: 1, borderColor: C.line, borderRadius: 16, overflow: 'hidden' },
-  checkItem: { padding: 14, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  checkbox: { width: 24, height: 24, borderRadius: 8, borderWidth: 2, borderColor: C.purple, alignItems: 'center', justifyContent: 'center' },
-  checkboxDone: { backgroundColor: C.purple, borderColor: C.purple },
-  checkLabel: { fontSize: 14, fontFamily: F.med, color: C.ink2, flex: 1 },
-  checkLabelDone: { color: C.ink3, textDecorationLine: 'line-through' },
+  tabPill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: C.white, borderWidth: 1, borderColor: C.line },
+  tabPillOn: { backgroundColor: C.purple, borderColor: C.purple },
+  tabPillTxt: { fontFamily: F.med, fontSize: 12, color: C.ink3 },
+  tabPillTxtOn: { color: C.white },
 
-  progressTrack: { height: 8, borderRadius: 4, backgroundColor: C.warmGray, overflow: 'hidden' },
-  progressFill: { height: '100%', borderRadius: 4, backgroundColor: C.purple },
-
-  // Navigation
-  mapArea: { height: 380, backgroundColor: '#E8E4DC' },
-  mapBack: { position: 'absolute', left: 16, zIndex: 10 },
-  myLocationDot: { position: 'absolute', top: 120, left: 90, width: 28, height: 28, borderRadius: 14, backgroundColor: C.purple, borderWidth: 3, borderColor: C.white },
-  destDot: { position: 'absolute', top: 280, right: 60, width: 32, height: 32, borderRadius: 16, backgroundColor: C.white, borderWidth: 3, borderColor: C.red, alignItems: 'center', justifyContent: 'center' },
-  etaBadge: { position: 'absolute', top: 12, right: 16, backgroundColor: C.white, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, elevation: 4, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10 },
-  destCard: { marginHorizontal: 20, marginTop: -30, backgroundColor: C.white, borderRadius: 20, padding: 20, elevation: 8, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 20, zIndex: 2 },
-  arrivedBtn: { backgroundColor: C.ink, borderRadius: 14, padding: 16, alignItems: 'center' },
-
-  // Clock
-  bigClock: { marginTop: 32, width: 200, height: 200, borderRadius: 100, backgroundColor: C.ink, alignItems: 'center', justifyContent: 'center', shadowColor: C.ink, shadowOpacity: 0.25, shadowRadius: 20, elevation: 8 },
-  timeBox: { flex: 1, backgroundColor: C.white, borderWidth: 1, borderColor: C.line, borderRadius: 16, padding: 16, alignItems: 'center' },
-  timeLabel: { fontSize: 11, color: C.ink3, textTransform: 'uppercase', letterSpacing: 0.8, fontFamily: F.semi },
-  timeValue: { fontFamily: F.display, fontSize: 24, marginTop: 4 },
-  timeSuffix: { fontSize: 12, color: C.ink3 },
-  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8 },
-  clockOutBtn: { marginTop: 20, backgroundColor: C.red, borderRadius: 14, padding: 16, alignItems: 'center' },
-
-  // Photos
-  photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  photoCell: { width: (W - 50) / 2, aspectRatio: 1, borderRadius: 16, alignItems: 'center', justifyContent: 'center', gap: 6, overflow: 'hidden' },
-  photoDoneCheck: { position: 'absolute', top: 8, right: 8, width: 24, height: 24, borderRadius: 12, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center', zIndex: 2 },
-  photoCellLabel: { fontSize: 11, fontFamily: F.med, color: C.ink3, zIndex: 2 },
-  completeBtn: { marginTop: 20, backgroundColor: C.green, borderRadius: 14, padding: 16, alignItems: 'center' },
-
-  // Earnings
-  periodToggle: { flexDirection: 'row', marginHorizontal: 20, marginTop: 12, backgroundColor: C.warmGray, borderRadius: 12, padding: 3 },
-  periodBtn: { flex: 1, padding: 8, borderRadius: 10, alignItems: 'center' },
-  periodBtnOn: { backgroundColor: C.white, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 3, elevation: 1 },
-  periodTxt: { fontSize: 13, fontFamily: F.med, color: C.ink3 },
-  periodTxtOn: { fontFamily: F.semi, color: C.ink },
-  barChart: { paddingHorizontal: 20, flexDirection: 'row', alignItems: 'flex-end', gap: 8, height: 120, marginTop: 24 },
-  bar: { width: '100%', borderTopLeftRadius: 8, borderTopRightRadius: 8, backgroundColor: C.purpleBg },
-  barLabel: { fontSize: 10, color: C.ink3 },
-  breakdownCard: { backgroundColor: C.white, borderWidth: 1, borderColor: C.line, borderRadius: 16, overflow: 'hidden' },
-  breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 14, paddingHorizontal: 16 },
-
-  // Profile
-  profileHeader: { backgroundColor: C.ink, paddingTop: 52, paddingBottom: 40, alignItems: 'center' },
-  profileAvatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: C.purpleBg, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: 'rgba(255,255,255,0.2)' },
-  statsCard: { marginHorizontal: 20, marginTop: -20, backgroundColor: C.white, borderRadius: 18, padding: 18, flexDirection: 'row', elevation: 4, shadowColor: C.ink, shadowOpacity: 0.08, shadowRadius: 12 },
-  statCell: { flex: 1, alignItems: 'center' },
-  menuCard: { backgroundColor: C.white, borderWidth: 1, borderColor: C.line, borderRadius: 16, overflow: 'hidden' },
-  menuRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, paddingHorizontal: 16 },
-  menuIcon: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  langCard: { backgroundColor: C.white, borderWidth: 1, borderColor: C.line, borderRadius: 14, padding: 14, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  langToggle: { flexDirection: 'row', gap: 4, backgroundColor: C.warmGray, borderRadius: 8, padding: 2 },
-  langBtn: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6 },
-  langBtnOn: { backgroundColor: C.white, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 3, elevation: 1 },
-  langBtnTxt: { fontSize: 12, fontFamily: F.med, color: C.ink3 },
-  langBtnTxtOn: { fontFamily: F.semi, color: C.ink },
-  signOutBtn: { padding: 14, borderRadius: 14, backgroundColor: C.redBg, borderWidth: 1, borderColor: 'rgba(239,68,68,0.12)', alignItems: 'center' },
+  menuRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14, backgroundColor: C.white, borderWidth: 1, borderColor: C.line },
+  menuIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  menuTxt: { fontFamily: F.med, fontSize: 15, color: C.ink, flex: 1 },
 });

@@ -34,6 +34,9 @@ router.get('/today', async (req, res) => {
 router.get('/jobs', async (req, res) => {
   try {
     const jobs = await MovingJob.find({ 'crew.worker': req.crewId })
+      .populate('customer', 'fullName phone email')
+      .populate('crew.worker', 'name phone role')
+      .populate('trucks.truck', 'name plateNumber type')
       .sort({ scheduledDate: -1 }).limit(50).lean();
     res.json({ jobs });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -41,9 +44,52 @@ router.get('/jobs', async (req, res) => {
 
 router.get('/jobs/:id', async (req, res) => {
   try {
-    const job = await MovingJob.findById(req.params.id).lean();
+    const job = await MovingJob.findById(req.params.id)
+      .populate('customer', 'fullName phone email')
+      .populate('crew.worker', 'name phone role')
+      .populate('trucks.truck', 'name plateNumber type')
+      .lean();
     if (!job) return res.status(404).json({ error: 'Job not found' });
     res.json({ job });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.get('/jobs/by-date/:date', async (req, res) => {
+  try {
+    const d = new Date(req.params.date);
+    d.setHours(0, 0, 0, 0);
+    const next = new Date(d);
+    next.setDate(next.getDate() + 1);
+    const jobs = await MovingJob.find({
+      'crew.worker': req.crewId,
+      scheduledDate: { $gte: d, $lt: next },
+    }).populate('customer', 'fullName phone email')
+      .populate('crew.worker', 'name phone role')
+      .populate('trucks.truck', 'name plateNumber type')
+      .sort({ scheduledDate: 1 }).lean();
+    res.json({ jobs });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.patch('/jobs/:id/status', async (req, res) => {
+  try {
+    const { status } = req.body;
+    const allowed = { confirmed: 'in_progress', survey_done: 'in_progress', in_progress: 'completed' };
+    const job = await MovingJob.findById(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    const isCrew = job.crew?.some(c => String(c.worker) === String(req.crewId));
+    if (!isCrew) return res.status(403).json({ error: 'Not assigned to this job' });
+    if (allowed[job.status] !== status) return res.status(400).json({ error: `Cannot change from ${job.status} to ${status}` });
+    job.status = status;
+    if (status === 'in_progress') job.timeline.push({ at: new Date(), text: 'Job started by crew', author: 'crew' });
+    if (status === 'completed') job.timeline.push({ at: new Date(), text: 'Job completed by crew', author: 'crew' });
+    await job.save();
+    const populated = await MovingJob.findById(job._id)
+      .populate('customer', 'fullName phone email')
+      .populate('crew.worker', 'name phone role')
+      .populate('trucks.truck', 'name plateNumber type')
+      .lean();
+    res.json({ job: populated });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
