@@ -11,7 +11,7 @@ import {
 import { api } from '../../lib/api'
 import type { MovingJob } from '../../lib/types'
 import { Badge, Button, Card, CardBody, CardHeader, Spinner, Table, Td, Th, movingJobStatusLabel } from '../../components/ui'
-import { cn } from '../../lib/utils'
+
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
 const INK = '#14081F'
