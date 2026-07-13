@@ -34,7 +34,7 @@ function JobDispatchCard({ job, index, onPriceOverride }: { job: MovingJob; inde
 
   function imgUrl(img: typeof images[number], size = 800) {
     return img.storage === 'drive' && img.driveFileId
-      ? `https://lh3.googleusercontent.com/d/${img.driveFileId}=w${size}`
+      ? `https://drive.google.com/thumbnail?id=${img.driveFileId}&sz=w${size}`
       : img.url
   }
 

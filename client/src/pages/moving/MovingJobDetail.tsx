@@ -258,6 +258,9 @@ export default function MovingJobDetail() {
   const [editHireModal, setEditHireModal] = useState<{ idx: number; title: string; name: string; duration: string; hours: number; rate: number; notes: string } | null>(null)
   const [editExtraModal, setEditExtraModal] = useState<{ idx: number; description: string; amount: number; notes: string } | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [crewTab, setCrewTab] = useState<'existing' | 'new'>('existing')
+  const [truckTab, setTruckTab] = useState<'existing' | 'new'>('existing')
+  const [materialTab, setMaterialTab] = useState<'existing' | 'new'>('existing')
 
   const { data: job, isLoading } = useQuery<MovingJob>({
     queryKey: ['moving-job', id],
@@ -297,6 +300,15 @@ export default function MovingJobDetail() {
     mutationFn: (body: { itemId: string; qty: number; notes?: string }) =>
       api.post(`/moving-jobs/${id}/materials`, body).then(r => r.data),
     onSuccess: () => { invalidate(); setMaterialModal(false) },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  const createMaterialMut = useMutation({
+    mutationFn: async (body: { name: string; sku: string; category: string; retailPrice: number; qty: number }) => {
+      const item = (await api.post('/moving-inventory/items', { name: body.name, sku: body.sku, category: body.category, retailPrice: body.retailPrice, onHand: body.qty })).data
+      return api.post(`/moving-jobs/${id}/materials`, { itemId: item._id, qty: body.qty }).then(r => r.data)
+    },
+    onSuccess: () => { invalidate(); qc.invalidateQueries({ queryKey: ['moving-items'] }); setMaterialModal(false); setMaterialTab('existing') },
     onError: (e) => setErr(apiError(e)),
   })
 
@@ -370,7 +382,27 @@ export default function MovingJobDetail() {
 
   const updateMut = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.put(`/moving-jobs/${id}`, body).then(r => r.data),
-    onSuccess: () => { invalidate(); setCrewModal(false); setTruckModal(false); setCostsModal(false); setEditDetailsModal(false); setEditCrewModal(null); setEditTruckModal(null) },
+    onSuccess: () => { invalidate(); setCrewModal(false); setTruckModal(false); setCostsModal(false); setEditDetailsModal(false); setEditCrewModal(null); setEditTruckModal(null); setCrewTab('existing'); setTruckTab('existing') },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  const createWorkerMut = useMutation({
+    mutationFn: async (body: { name: string; phone?: string; role: string; dailyRate: number }) => {
+      const w = (await api.post('/workers', body)).data
+      const existing = (job?.crew ?? []).map((c: any) => ({ worker: c.worker._id, role: c.role, dailyRate: c.dailyRate, days: c.days ?? 1, extraHours: c.extraHours, extraHourRate: c.extraHourRate, isSupervisor: c.isSupervisor }))
+      return api.put(`/moving-jobs/${id}`, { crew: [...existing, { worker: w._id, role: body.role, dailyRate: body.dailyRate, days: 1 }] }).then(r => r.data)
+    },
+    onSuccess: () => { invalidate(); qc.invalidateQueries({ queryKey: ['workers'] }); setCrewModal(false); setCrewTab('existing') },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  const createTruckMut = useMutation({
+    mutationFn: async (body: { name: string; plateNumber?: string; type: string; dailyRate: number }) => {
+      const t = (await api.post('/trucks', body)).data
+      const existing = (job?.trucks ?? []).map((t: any) => ({ truck: t.truck._id, dailyRate: t.dailyRate, days: t.days ?? 1, notes: t.notes }))
+      return api.put(`/moving-jobs/${id}`, { trucks: [...existing, { truck: t._id, dailyRate: body.dailyRate, days: 1 }] }).then(r => r.data)
+    },
+    onSuccess: () => { invalidate(); qc.invalidateQueries({ queryKey: ['trucks'] }); setTruckModal(false); setTruckTab('existing') },
     onError: (e) => setErr(apiError(e)),
   })
 
@@ -1226,7 +1258,7 @@ export default function MovingJobDetail() {
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                           {grouped[cat].map(({ img, idx }) => {
                             const thumbUrl = img.storage === 'drive' && img.driveFileId
-                              ? `https://lh3.googleusercontent.com/d/${img.driveFileId}=w400`
+                              ? `https://drive.google.com/thumbnail?id=${img.driveFileId}&sz=w400`
                               : img.url
                             return (
                               <div key={idx} className="relative group aspect-square rounded-xl overflow-hidden border bg-muted">
@@ -1277,7 +1309,7 @@ export default function MovingJobDetail() {
           </button>
           <img
             src={lightboxImg.storage === 'drive' && lightboxImg.driveFileId
-              ? `https://lh3.googleusercontent.com/d/${lightboxImg.driveFileId}=w1600`
+              ? `https://drive.google.com/thumbnail?id=${lightboxImg.driveFileId}&sz=w1600`
               : lightboxImg.url}
             alt={lightboxImg.originalName || 'Photo'}
             className="max-w-full max-h-full rounded-xl shadow-2xl"
@@ -1344,90 +1376,185 @@ export default function MovingJobDetail() {
       </Card>
 
       {/* Add Crew Modal */}
-      <Modal open={crewModal} title="Add Crew Member" onClose={() => setCrewModal(false)}>
-        <form onSubmit={handleAddCrew} className="space-y-4">
-          <Field label="Worker">
-            <Select name="worker" required onChange={(e) => {
-              const w = workers.find(w => w._id === e.target.value)
-              if (w) {
-                const form = e.target.form!
-                ;(form.elements.namedItem('dailyRate') as HTMLInputElement).value = String(w.dailyRate || 0)
-                ;(form.elements.namedItem('role') as HTMLInputElement).value = w.role || ''
-              }
-            }}>
-              <option value="">Select a worker…</option>
-              {availableWorkers.map(w => (
-                <option key={w._id} value={w._id}>{w.name} ({w.role}) — AED {(w.dailyRate || 0).toLocaleString()}/day</option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Role"><Input name="role" placeholder="Auto-filled from worker" /></Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Daily Rate (AED)"><Input name="dailyRate" type="number" min="0" step="0.01" defaultValue={0} /></Field>
-            <Field label="Days"><Input name="days" type="number" min="1" step="1" defaultValue={1} /></Field>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Extra Hours"><Input name="extraHours" type="number" min="0" step="0.5" defaultValue={0} /></Field>
-            <Field label="Extra Hour Rate (AED)"><Input name="extraHourRate" type="number" min="0" step="0.01" defaultValue={0} /></Field>
-          </div>
-          <div className="flex justify-end gap-2 pt-4 border-t">
-            <Button type="button" variant="outline" onClick={() => setCrewModal(false)}>Cancel</Button>
-            <Button type="submit" disabled={updateMut.isPending}>{updateMut.isPending ? 'Adding…' : 'Add Member'}</Button>
-          </div>
-        </form>
+      <Modal open={crewModal} title="Add Crew Member" onClose={() => { setCrewModal(false); setCrewTab('existing') }}>
+        <div className="flex gap-1 p-1 rounded-lg bg-muted mb-4">
+          <button type="button" onClick={() => setCrewTab('existing')} className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${crewTab === 'existing' ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Existing Worker</button>
+          <button type="button" onClick={() => setCrewTab('new')} className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${crewTab === 'new' ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Create New</button>
+        </div>
+        {crewTab === 'existing' ? (
+          <form onSubmit={handleAddCrew} className="space-y-4">
+            <Field label="Worker">
+              <Select name="worker" required onChange={(e) => {
+                const w = workers.find(w => w._id === e.target.value)
+                if (w) {
+                  const form = e.target.form!
+                  ;(form.elements.namedItem('dailyRate') as HTMLInputElement).value = String(w.dailyRate || 0)
+                  ;(form.elements.namedItem('role') as HTMLInputElement).value = w.role || ''
+                }
+              }}>
+                <option value="">Select a worker…</option>
+                {availableWorkers.map(w => (
+                  <option key={w._id} value={w._id}>{w.name} ({w.role}) — AED {(w.dailyRate || 0).toLocaleString()}/day</option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Role"><Input name="role" placeholder="Auto-filled from worker" /></Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Daily Rate (AED)"><Input name="dailyRate" type="number" min="0" step="0.01" defaultValue={0} /></Field>
+              <Field label="Days"><Input name="days" type="number" min="1" step="1" defaultValue={1} /></Field>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Extra Hours"><Input name="extraHours" type="number" min="0" step="0.5" defaultValue={0} /></Field>
+              <Field label="Extra Hour Rate (AED)"><Input name="extraHourRate" type="number" min="0" step="0.01" defaultValue={0} /></Field>
+            </div>
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button type="button" variant="outline" onClick={() => setCrewModal(false)}>Cancel</Button>
+              <Button type="submit" disabled={updateMut.isPending}>{updateMut.isPending ? 'Adding…' : 'Add Member'}</Button>
+            </div>
+          </form>
+        ) : (
+          <form onSubmit={(e) => {
+            e.preventDefault()
+            const f = new FormData(e.currentTarget)
+            createWorkerMut.mutate({ name: String(f.get('name')), phone: String(f.get('phone') || ''), role: String(f.get('role')), dailyRate: Number(f.get('dailyRate') || 0) })
+          }} className="space-y-4">
+            <Field label="Name *"><Input name="name" required placeholder="Worker name" /></Field>
+            <Field label="Phone"><Input name="phone" placeholder="Phone number" /></Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Role">
+                <Select name="role" required>
+                  <option value="helper">Helper</option>
+                  <option value="driver">Driver</option>
+                  <option value="supervisor">Supervisor</option>
+                  <option value="packer">Packer</option>
+                </Select>
+              </Field>
+              <Field label="Daily Rate (AED)"><Input name="dailyRate" type="number" min="0" step="0.01" defaultValue={0} /></Field>
+            </div>
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button type="button" variant="outline" onClick={() => setCrewModal(false)}>Cancel</Button>
+              <Button type="submit" disabled={createWorkerMut.isPending}>{createWorkerMut.isPending ? 'Creating…' : 'Create & Add'}</Button>
+            </div>
+          </form>
+        )}
       </Modal>
 
       {/* Add Truck Modal */}
-      <Modal open={truckModal} title="Assign Truck" onClose={() => setTruckModal(false)}>
-        <form onSubmit={handleAddTruck} className="space-y-4">
-          <Field label="Truck">
-            <Select name="truck" required onChange={(e) => {
-              const t = trucks.find(t => t._id === e.target.value)
-              if (t) {
-                const form = e.target.form!
-                ;(form.elements.namedItem('dailyRate') as HTMLInputElement).value = String(t.dailyRate || 0)
-              }
-            }}>
-              <option value="">Select a truck…</option>
-              {availableTrucks.map(t => (
-                <option key={t._id} value={t._id}>{t.name} {t.plateNumber ? `(${t.plateNumber})` : ''} — AED {(t.dailyRate || 0).toLocaleString()}/day</option>
-              ))}
-            </Select>
-          </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Daily Rate (AED)"><Input name="dailyRate" type="number" min="0" step="0.01" defaultValue={0} /></Field>
-            <Field label="Days"><Input name="days" type="number" min="1" step="1" defaultValue={1} /></Field>
-          </div>
-          <Field label="Notes"><Input name="notes" placeholder="Optional notes about this truck assignment" /></Field>
-          <div className="flex justify-end gap-2 pt-4 border-t">
-            <Button type="button" variant="outline" onClick={() => setTruckModal(false)}>Cancel</Button>
-            <Button type="submit" disabled={updateMut.isPending}>{updateMut.isPending ? 'Assigning…' : 'Assign Truck'}</Button>
-          </div>
-        </form>
+      <Modal open={truckModal} title="Add Truck" onClose={() => { setTruckModal(false); setTruckTab('existing') }}>
+        <div className="flex gap-1 p-1 rounded-lg bg-muted mb-4">
+          <button type="button" onClick={() => setTruckTab('existing')} className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${truckTab === 'existing' ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Existing Truck</button>
+          <button type="button" onClick={() => setTruckTab('new')} className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${truckTab === 'new' ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Create New</button>
+        </div>
+        {truckTab === 'existing' ? (
+          <form onSubmit={handleAddTruck} className="space-y-4">
+            <Field label="Truck">
+              <Select name="truck" required onChange={(e) => {
+                const t = trucks.find(t => t._id === e.target.value)
+                if (t) {
+                  const form = e.target.form!
+                  ;(form.elements.namedItem('dailyRate') as HTMLInputElement).value = String(t.dailyRate || 0)
+                }
+              }}>
+                <option value="">Select a truck…</option>
+                {availableTrucks.map(t => (
+                  <option key={t._id} value={t._id}>{t.name} {t.plateNumber ? `(${t.plateNumber})` : ''} — AED {(t.dailyRate || 0).toLocaleString()}/day</option>
+                ))}
+              </Select>
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Daily Rate (AED)"><Input name="dailyRate" type="number" min="0" step="0.01" defaultValue={0} /></Field>
+              <Field label="Days"><Input name="days" type="number" min="1" step="1" defaultValue={1} /></Field>
+            </div>
+            <Field label="Notes"><Input name="notes" placeholder="Optional notes about this truck assignment" /></Field>
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button type="button" variant="outline" onClick={() => setTruckModal(false)}>Cancel</Button>
+              <Button type="submit" disabled={updateMut.isPending}>{updateMut.isPending ? 'Assigning…' : 'Assign Truck'}</Button>
+            </div>
+          </form>
+        ) : (
+          <form onSubmit={(e) => {
+            e.preventDefault()
+            const f = new FormData(e.currentTarget)
+            createTruckMut.mutate({ name: String(f.get('name')), plateNumber: String(f.get('plateNumber') || ''), type: String(f.get('type')), dailyRate: Number(f.get('dailyRate') || 0) })
+          }} className="space-y-4">
+            <Field label="Truck Name *"><Input name="name" required placeholder="e.g. Moving Truck 7 Ton" /></Field>
+            <Field label="Plate Number"><Input name="plateNumber" placeholder="e.g. ABC-1234" /></Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Type">
+                <Select name="type" required>
+                  <option value="small">Small</option>
+                  <option value="medium">Medium</option>
+                  <option value="large">Large</option>
+                  <option value="extra_large">Extra Large</option>
+                </Select>
+              </Field>
+              <Field label="Daily Rate (AED)"><Input name="dailyRate" type="number" min="0" step="0.01" defaultValue={0} /></Field>
+            </div>
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button type="button" variant="outline" onClick={() => setTruckModal(false)}>Cancel</Button>
+              <Button type="submit" disabled={createTruckMut.isPending}>{createTruckMut.isPending ? 'Creating…' : 'Create & Assign'}</Button>
+            </div>
+          </form>
+        )}
       </Modal>
 
       {/* Add Material Modal */}
-      <Modal open={materialModal} title="Add Material" onClose={() => setMaterialModal(false)}>
-        <form onSubmit={(e) => {
-          e.preventDefault()
-          const f = new FormData(e.currentTarget)
-          addMaterialMut.mutate({ itemId: String(f.get('item')), qty: Number(f.get('qty') || 1), notes: String(f.get('notes') || '') })
-        }} className="space-y-4">
-          <Field label="Item">
-            <Select name="item" required>
-              <option value="">Select an item…</option>
-              {movingItems.filter(i => i.onHand > 0).map(i => (
-                <option key={i._id} value={i._id}>{i.name} {i.sku ? `(${i.sku})` : ''} — {i.onHand} in stock — AED {(i.retailPrice || 0).toFixed(2)}/unit</option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Quantity"><Input name="qty" type="number" min="1" defaultValue={1} required /></Field>
-          <Field label="Notes"><Input name="notes" placeholder="Optional" /></Field>
-          <div className="flex justify-end gap-2 pt-4 border-t">
-            <Button type="button" variant="outline" onClick={() => setMaterialModal(false)}>Cancel</Button>
-            <Button type="submit" disabled={addMaterialMut.isPending}>{addMaterialMut.isPending ? 'Adding…' : 'Add Material'}</Button>
-          </div>
-        </form>
+      <Modal open={materialModal} title="Add Material" onClose={() => { setMaterialModal(false); setMaterialTab('existing') }}>
+        <div className="flex gap-1 p-1 rounded-lg bg-muted mb-4">
+          <button type="button" onClick={() => setMaterialTab('existing')} className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${materialTab === 'existing' ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Existing Item</button>
+          <button type="button" onClick={() => setMaterialTab('new')} className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${materialTab === 'new' ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Create New</button>
+        </div>
+        {materialTab === 'existing' ? (
+          <form onSubmit={(e) => {
+            e.preventDefault()
+            const f = new FormData(e.currentTarget)
+            addMaterialMut.mutate({ itemId: String(f.get('item')), qty: Number(f.get('qty') || 1), notes: String(f.get('notes') || '') })
+          }} className="space-y-4">
+            <Field label="Item">
+              <Select name="item" required>
+                <option value="">Select an item…</option>
+                {movingItems.filter(i => i.onHand > 0).map(i => (
+                  <option key={i._id} value={i._id}>{i.name} {i.sku ? `(${i.sku})` : ''} — {i.onHand} in stock — AED {(i.retailPrice || 0).toFixed(2)}/unit</option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Quantity"><Input name="qty" type="number" min="1" defaultValue={1} required /></Field>
+            <Field label="Notes"><Input name="notes" placeholder="Optional" /></Field>
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button type="button" variant="outline" onClick={() => setMaterialModal(false)}>Cancel</Button>
+              <Button type="submit" disabled={addMaterialMut.isPending}>{addMaterialMut.isPending ? 'Adding…' : 'Add Material'}</Button>
+            </div>
+          </form>
+        ) : (
+          <form onSubmit={(e) => {
+            e.preventDefault()
+            const f = new FormData(e.currentTarget)
+            createMaterialMut.mutate({ name: String(f.get('name')), sku: String(f.get('sku')), category: String(f.get('category')), retailPrice: Number(f.get('retailPrice') || 0), qty: Number(f.get('qty') || 1) })
+          }} className="space-y-4">
+            <Field label="Item Name *"><Input name="name" required placeholder="e.g. Bubble Wrap Roll" /></Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="SKU *"><Input name="sku" required placeholder="e.g. BW-001" /></Field>
+              <Field label="Category">
+                <Select name="category">
+                  <option value="box">Box</option>
+                  <option value="wrap">Wrap</option>
+                  <option value="tape">Tape</option>
+                  <option value="cover">Cover</option>
+                  <option value="tool">Tool</option>
+                  <option value="other">Other</option>
+                </Select>
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Price per Unit (AED)"><Input name="retailPrice" type="number" min="0" step="0.01" defaultValue={0} /></Field>
+              <Field label="Quantity"><Input name="qty" type="number" min="1" defaultValue={1} required /></Field>
+            </div>
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button type="button" variant="outline" onClick={() => setMaterialModal(false)}>Cancel</Button>
+              <Button type="submit" disabled={createMaterialMut.isPending}>{createMaterialMut.isPending ? 'Creating…' : 'Create & Add'}</Button>
+            </div>
+          </form>
+        )}
       </Modal>
 
       {/* Add External Hire Modal */}

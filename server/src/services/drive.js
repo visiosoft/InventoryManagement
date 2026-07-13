@@ -106,7 +106,7 @@ export async function uploadPublicImage({ buffer, filename, mimeType, customerNa
     supportsAllDrives: true,
   });
 
-  const url = `https://lh3.googleusercontent.com/d/${data.id}=w800`;
+  const url = `https://drive.google.com/thumbnail?id=${data.id}&sz=w800`;
   return { storage: 'drive', driveFileId: data.id, url, viewUrl: data.webViewLink };
 }
 
