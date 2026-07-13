@@ -28,7 +28,7 @@ import userRoutes from './routes/users.js';
 import whatsappRoutes from './routes/whatsapp.js';
 import workerRoutes from './routes/workers.js';
 import truckRoutes from './routes/trucks.js';
-import movingJobRoutes from './routes/movingJobs.js';
+import movingJobRoutes, { publicUploadRouter as movingJobPublicUpload } from './routes/movingJobs.js';
 import movingLeadRoutes from './routes/movingLeads.js';
 import movingQuoteRoutes from './routes/movingQuotes.js';
 import movingInvoiceRoutes from './routes/movingInvoices.js';
@@ -83,6 +83,7 @@ app.use('/api/customer-auth', customerAuthRoutes);
 app.use('/api/customer-portal', customerPortalRoutes);
 app.use('/api/crew-auth', crewAuthRoutes);
 app.use('/api/crew-portal', crewPortalRoutes);
+app.use('/api/moving-jobs/public-upload', movingJobPublicUpload);
 // Zoho webhook must be reachable without a JWT.
 app.use('/api/contracts/zoho-webhook', (req, _res, next) => next());
 // WhatsApp webhook verification and events must be reachable without a JWT.
@@ -234,3 +235,4 @@ process.on('uncaughtException', (err) => {
   console.error('[Runtime] uncaught exception:', err);
   process.exit(1);
 });
+

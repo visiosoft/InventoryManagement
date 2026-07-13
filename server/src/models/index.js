@@ -817,6 +817,7 @@ const movingJobSchema = new Schema(
       uploadedAt: { type: Date, default: Date.now },
       uploadedBy: { type: Schema.Types.ObjectId, ref: 'Worker' },
     }],
+    uploadToken: { type: String, default: null },
   },
   { timestamps: true }
 );

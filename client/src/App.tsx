@@ -69,6 +69,7 @@ import MovingInvoices from './pages/moving/MovingInvoices'
 import MovingInvoiceDetail from './pages/moving/MovingInvoiceDetail'
 import MovingClaims from './pages/moving/MovingClaims'
 import MovingSurveyDetail from './pages/moving/MovingSurveyDetail'
+import ClientUpload from './pages/moving/ClientUpload'
 import FieldLogin from './pages/field/FieldLogin'
 import FieldApp from './pages/field/FieldApp'
 import ReminderSettings from './pages/ReminderSettings'
@@ -81,6 +82,7 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/sign/:token" element={<SignContract />} />
+        <Route path="/upload/moving/:token" element={<ClientUpload />} />
         <Route path="/field/login" element={<FieldLogin />} />
         <Route path="/field/*" element={<FieldApp />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
@@ -92,6 +94,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Navigate to="/" replace />} />
       <Route path="/sign/:token" element={<SignContract />} />
+      <Route path="/upload/moving/:token" element={<ClientUpload />} />
       <Route path="/field/login" element={<Navigate to="/field" replace />} />
       <Route path="/field/*" element={<FieldApp />} />
       <Route element={<Layout />}>

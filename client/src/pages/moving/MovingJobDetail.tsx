@@ -1,9 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, FileText, MapPin, Users, Truck as TruckIcon, AlertCircle, ClipboardList, Package, Star, Wrench, Camera, X, Tag, CheckCircle2, Pencil, Image as ImageIcon, Check } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, FileText, MapPin, Users, Truck as TruckIcon, AlertCircle, ClipboardList, Package, Star, Wrench, Camera, X, Tag, CheckCircle2, Pencil, Image as ImageIcon, Check, Share2, Copy, ExternalLink } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingJob, MovingJobStatus, Worker, Truck, MovingJobImage } from '../../lib/types'
+
+const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
+const INK = '#14081F'
+const MUTED_COLOR = '#756E80'
 
 type MovingItemOption = { _id: string; name: string; sku?: string; onHand: number; retailPrice: number }
 import { Badge, Button, Card, CardBody, CardHeader, EmptyState, Field, Input, Modal, Select, Spinner, Table, Td, Th, Textarea, InfoGrid, InfoItem, movingJobStatusLabel } from '../../components/ui'
@@ -258,9 +262,13 @@ export default function MovingJobDetail() {
   const [editHireModal, setEditHireModal] = useState<{ idx: number; title: string; name: string; duration: string; hours: number; rate: number; notes: string } | null>(null)
   const [editExtraModal, setEditExtraModal] = useState<{ idx: number; description: string; amount: number; notes: string } | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [removeConfirm, setRemoveConfirm] = useState<{ type: 'crew' | 'truck' | 'material' | 'hire' | 'extra'; idx: number; label: string } | null>(null)
   const [crewTab, setCrewTab] = useState<'existing' | 'new'>('existing')
   const [truckTab, setTruckTab] = useState<'existing' | 'new'>('existing')
   const [materialTab, setMaterialTab] = useState<'existing' | 'new'>('existing')
+  const [shareModal, setShareModal] = useState(false)
+  const [shareLink, setShareLink] = useState('')
+  const [linkCopied, setLinkCopied] = useState(false)
 
   const { data: job, isLoading } = useQuery<MovingJob>({
     queryKey: ['moving-job', id],
@@ -406,6 +414,17 @@ export default function MovingJobDetail() {
     onError: (e) => setErr(apiError(e)),
   })
 
+  const shareUploadMut = useMutation({
+    mutationFn: () => api.post(`/moving-jobs/${id}/upload-token`).then(r => r.data),
+    onSuccess: (data) => {
+      const base = window.location.origin
+      setShareLink(`${base}/upload/moving/${data.uploadToken}`)
+      setShareModal(true)
+      setLinkCopied(false)
+    },
+    onError: (e) => setErr(apiError(e)),
+  })
+
   const deleteMut = useMutation({
     mutationFn: () => api.delete(`/moving-jobs/${id}`).then(r => r.data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['moving-jobs'] }); navigate('/moving/jobs') },
@@ -543,6 +562,17 @@ export default function MovingJobDetail() {
     updateMut.mutate({ trucks: updated })
   }
 
+  function handleConfirmedRemove() {
+    if (!removeConfirm) return
+    const { type, idx } = removeConfirm
+    if (type === 'crew') handleRemoveCrew(idx)
+    else if (type === 'truck') handleRemoveTruck(idx)
+    else if (type === 'material') removeMaterialMut.mutate(idx)
+    else if (type === 'hire') removeHireMut.mutate(idx)
+    else if (type === 'extra') removeExtraMut.mutate(idx)
+    setRemoveConfirm(null)
+  }
+
   function handleEditTruck(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (!editTruckModal) return
@@ -566,7 +596,7 @@ export default function MovingJobDetail() {
   const availableTrucks = trucks.filter(t => !addedTruckIds.has(t._id))
 
   return (
-    <div className="space-y-8">
+    <div style={{ background: '#FDFCFA', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7 space-y-8">
       {/* Header with Back and Title */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-4 flex-1">
@@ -579,12 +609,12 @@ export default function MovingJobDetail() {
           </button>
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2">
-              <h1 className="text-3xl font-bold text-foreground">{job.jobNo}</h1>
+              <div style={{ ...HEADING, fontSize: 26, fontWeight: 700, color: INK }}>{job.jobNo}</div>
               <Badge tone={statusTone[job.status]} className="text-sm px-3 py-1.5">
                 {movingJobStatusLabel(job.status)}
               </Badge>
             </div>
-            <p className="text-sm text-muted-foreground">
+            <p style={{ fontSize: 14, color: MUTED_COLOR }}>
               {job.customer?.fullName} • Job ID: {job._id?.slice(-8)}
             </p>
           </div>
@@ -623,6 +653,16 @@ export default function MovingJobDetail() {
           >
             <ClipboardList size={16} className="mr-1" />
             Survey
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => shareUploadMut.mutate()}
+            disabled={shareUploadMut.isPending}
+            title="Share upload link with client"
+          >
+            <Share2 size={16} className="mr-1" />
+            {shareUploadMut.isPending ? 'Generating…' : 'Share'}
           </Button>
           {!job.invoice && (
             <Button
@@ -893,7 +933,7 @@ export default function MovingJobDetail() {
                               <Pencil size={14} />
                             </button>
                             <button
-                              onClick={() => handleRemoveCrew(i)}
+                              onClick={() => setRemoveConfirm({ type: 'crew', idx: i, label: c.worker.name })}
                               className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-500/10 transition-colors"
                               title="Remove crew member"
                             >
@@ -951,7 +991,7 @@ export default function MovingJobDetail() {
                               <Pencil size={14} />
                             </button>
                             <button
-                              onClick={() => handleRemoveTruck(i)}
+                              onClick={() => setRemoveConfirm({ type: 'truck', idx: i, label: t.truck.name })}
                               className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-500/10 transition-colors"
                               title="Remove truck"
                             >
@@ -1008,7 +1048,7 @@ export default function MovingJobDetail() {
                             title="Edit material">
                             <Pencil size={14} />
                           </button>
-                          <button onClick={() => removeMaterialMut.mutate(i)}
+                          <button onClick={() => setRemoveConfirm({ type: 'material', idx: i, label: name })}
                             className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-500/10 transition-colors"
                             title="Remove material">
                             <Trash2 size={14} />
@@ -1062,7 +1102,7 @@ export default function MovingJobDetail() {
                           className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-muted transition-colors">
                           <Pencil size={14} />
                         </button>
-                        <button onClick={() => removeHireMut.mutate(i)}
+                        <button onClick={() => setRemoveConfirm({ type: 'hire', idx: i, label: h.title })}
                           className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-500/10 transition-colors">
                           <Trash2 size={14} />
                         </button>
@@ -1112,7 +1152,7 @@ export default function MovingJobDetail() {
                           <Pencil size={14} />
                         </button>
                         <button
-                          onClick={() => removeExtraMut.mutate(i)}
+                          onClick={() => setRemoveConfirm({ type: 'extra', idx: i, label: ex.description })}
                           className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-500/10 transition-colors"
                           title="Remove extra charge"
                         >
@@ -1862,6 +1902,45 @@ export default function MovingJobDetail() {
       </Modal>
 
       {/* Delete Confirmation Modal */}
+      {/* Share Upload Link Modal */}
+      <Modal open={shareModal} title="Share Upload Link" onClose={() => setShareModal(false)}>
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Share this link with the client so they can upload photos and videos for this job.
+          </p>
+          <div className="flex items-center gap-2">
+            <Input value={shareLink} readOnly className="text-xs font-mono" />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => { navigator.clipboard.writeText(shareLink); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000) }}
+              className="shrink-0"
+            >
+              {linkCopied ? <><Check size={14} className="mr-1" /> Copied</> : <><Copy size={14} className="mr-1" /> Copy</>}
+            </Button>
+          </div>
+          <div className="flex justify-between items-center pt-4 border-t">
+            <a href={shareLink} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center gap-1">
+              <ExternalLink size={14} /> Preview link
+            </a>
+            <Button variant="outline" onClick={() => setShareModal(false)}>Close</Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Remove Confirmation Modal */}
+      <Modal open={!!removeConfirm} title="Confirm Remove" onClose={() => setRemoveConfirm(null)}>
+        <div className="space-y-4">
+          <p className="text-sm text-foreground">
+            Are you sure you want to remove <strong>{removeConfirm?.label}</strong> from this job?
+          </p>
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            <Button variant="outline" onClick={() => setRemoveConfirm(null)}>Cancel</Button>
+            <Button onClick={handleConfirmedRemove} className="bg-red-600 hover:bg-red-700 text-white">Remove</Button>
+          </div>
+        </div>
+      </Modal>
+
       <Modal open={deleteConfirm} title="Delete Job" onClose={() => setDeleteConfirm(false)}>
         <div className="space-y-4">
           <p className="text-sm text-foreground">

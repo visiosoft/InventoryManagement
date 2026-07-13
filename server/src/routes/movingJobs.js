@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -558,6 +559,75 @@ router.patch('/:id/field-price', async (req, res) => {
     res.json(job);
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+// Generate or return existing upload token for client sharing
+router.post('/:id/upload-token', async (req, res) => {
+  try {
+    const job = await MovingJob.findById(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (!job.uploadToken) {
+      job.uploadToken = crypto.randomUUID();
+      await job.save();
+    }
+    res.json({ uploadToken: job.uploadToken });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Public (no-auth) endpoints, mounted separately in index.js ──
+
+export const publicUploadRouter = Router();
+const publicUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+
+// GET job info by token (public - limited fields)
+publicUploadRouter.get('/:token', async (req, res) => {
+  try {
+    const job = await MovingJob.findOne({ uploadToken: req.params.token }).populate('customer', 'fullName');
+    if (!job) return res.status(404).json({ error: 'Invalid or expired link' });
+    res.json({ jobNo: job.jobNo, customerName: job.customer?.fullName || '', scheduledDate: job.scheduledDate, imageCount: job.images?.length || 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST upload images/videos by token (public)
+publicUploadRouter.post('/:token/upload', publicUpload.array('files', 20), async (req, res) => {
+  try {
+    const job = await MovingJob.findOne({ uploadToken: req.params.token }).populate('customer', 'fullName');
+    if (!job) return res.status(404).json({ error: 'Invalid or expired link' });
+
+    const customerName = job.customer?.fullName || 'MovingJobs';
+    const category = String(req.body?.category || 'Client Upload');
+    const newImages = [];
+
+    for (const file of (req.files || [])) {
+      const result = await uploadPublicImage({
+        buffer: file.buffer,
+        mimeType: file.mimetype,
+        filename: `job-${job.jobNo}-client-${Date.now()}-${file.originalname}`,
+        customerName,
+      });
+      newImages.push({
+        url: result.url,
+        filename: file.originalname.replace(/\s+/g, '_'),
+        originalName: file.originalname,
+        size: file.size,
+        category,
+        storage: result.storage,
+        driveFileId: result.driveFileId || '',
+        uploadedAt: new Date(),
+      });
+    }
+
+    if (!job.images) job.images = [];
+    job.images.push(...newImages);
+    await job.save();
+    res.json({ uploaded: newImages.length, total: job.images.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

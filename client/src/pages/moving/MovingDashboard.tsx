@@ -13,6 +13,10 @@ import type { MovingJob } from '../../lib/types'
 import { Badge, Button, Card, CardBody, CardHeader, Spinner, Table, Td, Th, movingJobStatusLabel } from '../../components/ui'
 import { cn } from '../../lib/utils'
 
+const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
+const INK = '#14081F'
+const MUTED_COLOR = '#756E80'
+
 interface MovingSummary {
   totalJobs: number
   jobsThisMonth: number
@@ -86,27 +90,24 @@ const EMPTY: MovingSummary = {
 function KPICard({ label, value, sub, icon: Icon, color }: {
   label: string; value: string; sub: string; icon: React.ElementType; color: 'blue' | 'amber' | 'green' | 'purple'
 }) {
-  const p = {
-    blue:   { bg: 'bg-blue-500/10',    text: 'text-blue-600'    },
-    amber:  { bg: 'bg-amber-500/10',   text: 'text-amber-600'   },
-    green:  { bg: 'bg-emerald-500/10', text: 'text-emerald-600' },
-    purple: { bg: 'bg-purple-500/10',  text: 'text-purple-600'  },
-  }[color]
+  const colorMap = {
+    blue:   { iconBg: 'rgba(96,165,250,0.12)', iconColor: '#2563eb' },
+    amber:  { iconBg: 'rgba(251,191,36,0.12)', iconColor: '#d97706' },
+    green:  { iconBg: 'rgba(52,211,153,0.12)', iconColor: '#059669' },
+    purple: { iconBg: 'rgba(91,43,201,0.12)',  iconColor: '#5B2BC9' },
+  }
+  const { iconBg, iconColor } = colorMap[color]
   return (
-    <Card className="hover:shadow-md transition-shadow">
-      <CardBody className="p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{label}</p>
-            <p className="text-2xl font-bold text-foreground leading-none mb-1">{value}</p>
-            <p className="text-xs text-muted-foreground truncate">{sub}</p>
-          </div>
-          <div className={cn('p-2.5 rounded-lg shrink-0', p.bg)}>
-            <Icon size={20} className={p.text} />
-          </div>
+    <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 20 }}>
+      <div className="flex items-start justify-between gap-3">
+        <div style={{ fontSize: 13, color: MUTED_COLOR, fontWeight: 500 }}>{label}</div>
+        <div style={{ width: 36, height: 36, borderRadius: 10, background: iconBg, display: 'grid', placeItems: 'center', color: iconColor }}>
+          <Icon size={18} />
         </div>
-      </CardBody>
-    </Card>
+      </div>
+      <div style={{ ...HEADING, fontSize: 32, fontWeight: 700, color: INK, marginTop: 8 }}>{value}</div>
+      {sub && <div style={{ fontSize: 12, color: MUTED_COLOR, marginTop: 6 }}>{sub}</div>}
+    </div>
   )
 }
 
@@ -162,13 +163,13 @@ export default function MovingDashboard() {
   if (isLoading) return <div className="flex justify-center py-24"><Spinner /></div>
 
   return (
-    <div className="space-y-5">
+    <div style={{ background: '#FDFCFA', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7 space-y-5">
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Moving Operations</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">{todayStr}</p>
+          <div style={{ ...HEADING, fontSize: 26, fontWeight: 700, color: INK }}>Moving Operations</div>
+          <div style={{ fontSize: 14, color: MUTED_COLOR, marginTop: 4 }}>{todayStr}</div>
         </div>
         <div className="flex gap-2">
           <Link to="/moving/dispatch">
