@@ -1,0 +1,28 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='1024' height='1024' viewBox='0 0 1024 1024'>
+  <defs>
+    <linearGradient id='bg' x1='0' y1='0' x2='1' y2='1'>
+      <stop offset='0%' stop-color='#6B3DD6'/>
+      <stop offset='100%' stop-color='#4A1FB8'/>
+    </linearGradient>
+  </defs>
+  <rect width='1024' height='1024' rx='220' fill='url(#bg)'/>
+  <g transform='translate(512,512) scale(1.8)' fill='none' stroke='white' stroke-width='22' stroke-linecap='round' stroke-linejoin='round'>
+    <!-- Truck body -->
+    <rect x='-160' y='-80' width='200' height='130' rx='12'/>
+    <!-- Cab -->
+    <path d='M40,-80 L40,-20 L100,-20 L120,-60 L120,-80 Z'/>
+    <!-- Cab window fold -->
+    <line x1='100' y1='-20' x2='100' y2='-60'/>
+    <line x1='100' y1='-60' x2='120' y2='-60'/>
+    <!-- Wheels -->
+    <circle cx='-100' cy='70' r='25'/>
+    <circle cx='80' cy='70' r='25'/>
+    <!-- Wheel inner -->
+    <circle cx='-100' cy='70' r='8' fill='white'/>
+    <circle cx='80' cy='70' r='8' fill='white'/>
+    <!-- Ground line / base -->
+    <line x1='-160' y1='50' x2='-125' y2='50'/>
+    <line x1='-75' y1='50' x2='55' y2='50'/>
+    <line x1='105' y1='50' x2='120' y2='50'/>
+  </g>
+</svg>

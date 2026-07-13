@@ -5,13 +5,9 @@ import {
   KeyboardAvoidingView, Platform, Dimensions,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import * as WebBrowser from 'expo-web-browser';
-import * as Google from 'expo-auth-session/providers/google';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, F, Icon, TabBar, BackButton, useApp } from './core';
 import { api, setToken } from './api';
-
-WebBrowser.maybeCompleteAuthSession();
 
 const W = Dimensions.get('window').width;
 
@@ -19,8 +15,6 @@ export function Router() {
   const { s } = useApp();
   switch (s.screen) {
     case 'login': return <LoginScreen />;
-    case 'signup': return <SignupScreen />;
-    case 'phoneSetup': return <PhoneSetupScreen />;
     case 'home': return <HomeScreen />;
     case 'booking': return <BookingScreen />;
     case 'quote': return <QuoteScreen />;
@@ -33,42 +27,13 @@ export function Router() {
 }
 
 /* ═══════════════════ LOGIN ═══════════════════ */
-const GOOGLE_CLIENT_ID = '249289984785-625vj3md7p6hdtvuh8u678boidul9bul.apps.googleusercontent.com';
 
 function LoginScreen() {
-  const { login, go } = useApp();
+  const { login } = useApp();
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
-  const [gLoading, setGLoading] = useState(false);
   const [error, setError] = useState('');
   const insets = useSafeAreaInsets();
-
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId: GOOGLE_CLIENT_ID,
-    webClientId: GOOGLE_CLIENT_ID,
-  });
-
-  useEffect(() => {
-    if (response?.type === 'success') {
-      const accessToken = response.authentication?.accessToken;
-      if (accessToken) handleGoogleLogin(accessToken);
-    }
-  }, [response]);
-
-  const handleGoogleLogin = async (accessToken: string) => {
-    setGLoading(true); setError('');
-    try {
-      const res = await api.googleAuth(accessToken);
-      setToken(res.token);
-      if (res.needsPhone) {
-        login({ id: res.customer.id, fullName: res.customer.fullName, phone: '', email: res.customer.email || '' }, res.token);
-        go('phoneSetup');
-      } else {
-        login({ id: res.customer.id, fullName: res.customer.fullName, phone: res.customer.phone, email: res.customer.email || '' }, res.token);
-      }
-    } catch (e: any) { setError(e.message); }
-    finally { setGLoading(false); }
-  };
 
   const handleLogin = async () => {
     if (phone.length < 8) { setError('Enter a valid phone number'); return; }
@@ -89,143 +54,16 @@ function LoginScreen() {
         <Text style={ss.loginTitle}>PurpleBox</Text>
         <Text style={ss.loginSub}>Moving made simple</Text>
 
-        {/* Google Sign-In */}
-        <TouchableOpacity activeOpacity={0.85}
-          disabled={!request || gLoading}
-          onPress={() => promptAsync()}
-          style={[ss.googleBtn, (!request || gLoading) && { opacity: 0.5 }, { marginTop: 36 }]}>
-          <Text style={{ fontSize: 20 }}>G</Text>
-          <Text style={ss.googleBtnTxt}>{gLoading ? 'Signing in...' : 'Continue with Google'}</Text>
-        </TouchableOpacity>
-
-        {/* Divider */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 24, marginBottom: 24, width: '100%' }}>
-          <View style={{ flex: 1, height: 1, backgroundColor: C.line }} />
-          <Text style={{ marginHorizontal: 14, fontFamily: F.reg, fontSize: 12, color: C.ink3 }}>or</Text>
-          <View style={{ flex: 1, height: 1, backgroundColor: C.line }} />
-        </View>
-
-        {/* Phone login */}
-        <View style={{ width: '100%' }}>
-          <Text style={ss.label}>Phone Number</Text>
-          <TextInput style={ss.input} value={phone} onChangeText={setPhone}
-            placeholder="+971 50 123 4567" placeholderTextColor={C.faint}
-            keyboardType="phone-pad" />
-          {!!error && <Text style={ss.errorTxt}>{error}</Text>}
-          <TouchableOpacity activeOpacity={0.85} onPress={handleLogin}
-            disabled={loading || phone.length < 8}
-            style={[ss.btnPrimary, (loading || phone.length < 8) && { opacity: 0.5 }, { marginTop: 16 }]}>
-            <Text style={ss.btnPrimaryTxt}>{loading ? 'Signing in...' : 'Continue with Phone'}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity activeOpacity={0.7} onPress={() => go('signup')} style={{ marginTop: 20, alignItems: 'center' }}>
-            <Text style={{ fontFamily: F.med, fontSize: 14, color: C.ink3 }}>
-              Don't have an account? <Text style={{ color: C.purple, fontFamily: F.bold }}>Sign Up</Text>
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-/* ═══════════════════ SIGNUP ═══════════════════ */
-function SignupScreen() {
-  const { login, go } = useApp();
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const insets = useSafeAreaInsets();
-
-  const canSubmit = name.trim().length >= 2 && phone.length >= 8;
-
-  const handleSignup = async () => {
-    if (!canSubmit) return;
-    setLoading(true); setError('');
-    try {
-      const otpRes = await api.requestOtp(phone);
-      const res = await api.verifyOtp(phone, otpRes.code, name.trim());
-      setToken(res.token);
-      login({ id: res.customer.id, fullName: res.customer.fullName, phone: res.customer.phone, email: res.customer.email || '' }, res.token);
-    } catch (e: any) { setError(e.message); }
-    finally { setLoading(false); }
-  };
-
-  return (
-    <View style={[ss.fill, { paddingTop: insets.top + 60 }]}>
-      <View style={ss.loginWrap}>
-        <View style={ss.logoCircle}><Icon name="user-plus" size={28} color={C.white} /></View>
-        <Text style={ss.loginTitle}>Create Account</Text>
-        <Text style={ss.loginSub}>Join PurpleBox to get started</Text>
-
-        <View style={{ marginTop: 32, width: '100%' }}>
-          <Text style={ss.label}>Full Name</Text>
-          <TextInput style={ss.input} value={name} onChangeText={setName}
-            placeholder="Your full name" placeholderTextColor={C.faint}
-            autoCapitalize="words" autoFocus />
-
-          <Text style={[ss.label, { marginTop: 16 }]}>Phone Number</Text>
-          <TextInput style={ss.input} value={phone} onChangeText={setPhone}
-            placeholder="+971 50 123 4567" placeholderTextColor={C.faint}
-            keyboardType="phone-pad" />
-
-          {!!error && <Text style={ss.errorTxt}>{error}</Text>}
-
-          <TouchableOpacity activeOpacity={0.85} onPress={handleSignup}
-            disabled={loading || !canSubmit}
-            style={[ss.btnPrimary, (loading || !canSubmit) && { opacity: 0.5 }, { marginTop: 20 }]}>
-            <Text style={ss.btnPrimaryTxt}>{loading ? 'Creating account...' : 'Sign Up'}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity activeOpacity={0.7} onPress={() => go('login')} style={{ marginTop: 20, alignItems: 'center' }}>
-            <Text style={{ fontFamily: F.med, fontSize: 14, color: C.ink3 }}>
-              Already have an account? <Text style={{ color: C.purple, fontFamily: F.bold }}>Sign In</Text>
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-/* ═══════════════════ PHONE SETUP (one-time after Google sign-in) ═══════════════════ */
-function PhoneSetupScreen() {
-  const { s, login } = useApp();
-  const [phone, setPhone] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const insets = useSafeAreaInsets();
-
-  const handleSave = async () => {
-    if (phone.length < 8) { setError('Enter a valid phone number'); return; }
-    setLoading(true); setError('');
-    try {
-      const res = await api.setPhone(phone);
-      setToken(res.token);
-      login({ id: res.customer.id, fullName: res.customer.fullName, phone: res.customer.phone, email: res.customer.email || '' }, res.token);
-    } catch (e: any) { setError(e.message); }
-    finally { setLoading(false); }
-  };
-
-  return (
-    <View style={[ss.fill, { paddingTop: insets.top + 60 }]}>
-      <View style={ss.loginWrap}>
-        <View style={ss.logoCircle}><Icon name="phone" size={28} color={C.white} /></View>
-        <Text style={ss.loginTitle}>Almost there!</Text>
-        <Text style={[ss.loginSub, { textAlign: 'center' }]}>
-          Welcome{s.customer?.fullName ? `, ${s.customer.fullName.split(' ')[0]}` : ''}! We need your phone number to keep you updated on your moves.
-        </Text>
-        <View style={{ marginTop: 32, width: '100%' }}>
+        <View style={{ marginTop: 36, width: '100%' }}>
           <Text style={ss.label}>Phone Number</Text>
           <TextInput style={ss.input} value={phone} onChangeText={setPhone}
             placeholder="+971 50 123 4567" placeholderTextColor={C.faint}
             keyboardType="phone-pad" autoFocus />
           {!!error && <Text style={ss.errorTxt}>{error}</Text>}
-          <TouchableOpacity activeOpacity={0.85} onPress={handleSave}
+          <TouchableOpacity activeOpacity={0.85} onPress={handleLogin}
             disabled={loading || phone.length < 8}
             style={[ss.btnPrimary, (loading || phone.length < 8) && { opacity: 0.5 }, { marginTop: 16 }]}>
-            <Text style={ss.btnPrimaryTxt}>{loading ? 'Saving...' : 'Continue'}</Text>
+            <Text style={ss.btnPrimaryTxt}>{loading ? 'Signing in...' : 'Continue'}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -1450,9 +1288,6 @@ const ss = StyleSheet.create({
   label: { fontFamily: F.semi, fontSize: 13, color: C.ink2, marginBottom: 6 },
   input: { height: 52, borderRadius: 14, borderWidth: 1.5, borderColor: C.line, backgroundColor: C.white, paddingHorizontal: 16, fontFamily: F.reg, fontSize: 15, color: C.ink },
   errorTxt: { fontFamily: F.med, fontSize: 13, color: C.red, marginTop: 6 },
-  googleBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, height: 52, borderRadius: 14, borderWidth: 1.5, borderColor: C.line, backgroundColor: C.white, width: '100%' },
-  googleBtnTxt: { fontFamily: F.semi, fontSize: 15, color: C.ink },
-
   // Buttons
   btnPrimary: { height: 52, borderRadius: 14, backgroundColor: C.purple, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
   btnPrimaryTxt: { color: C.white, fontFamily: F.bold, fontSize: 15 },

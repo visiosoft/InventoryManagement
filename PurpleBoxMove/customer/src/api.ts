@@ -41,14 +41,6 @@ export const api = {
     req<{ token: string; customer: any; isNew: boolean }>('/customer-auth/verify-otp', {
       method: 'POST', body: JSON.stringify({ phone, code, fullName }),
     }),
-  googleAuth: (accessToken: string) =>
-    req<{ token: string; customer: any; needsPhone: boolean }>('/customer-auth/google', {
-      method: 'POST', body: JSON.stringify({ accessToken }),
-    }),
-  setPhone: (phone: string) =>
-    req<{ token: string; customer: any }>('/customer-auth/set-phone', {
-      method: 'PATCH', body: JSON.stringify({ phone }),
-    }),
   getMe: () => req<{ customer: any }>('/customer-auth/me'),
   updateProfile: (data: any) =>
     req<{ customer: any }>('/customer-auth/profile', { method: 'PATCH', body: JSON.stringify(data) }),

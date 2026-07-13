@@ -4,13 +4,15 @@
     "slug": "purplebox-customer",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "backgroundColor": "#FBF8F2",
-    "splash": { "backgroundColor": "#5B2BC9", "resizeMode": "contain" },
+    "splash": { "image": "./assets/splash.png", "backgroundColor": "#5B2BC9", "resizeMode": "contain" },
     "assetBundlePatterns": ["**/*"],
     "scheme": "purplebox-customer",
+    "web": { "favicon": "./assets/favicon.png" },
     "ios": { "supportsTablet": true, "bundleIdentifier": "com.purplebox.customer" },
-    "android": { "package": "com.purplebox.customer", "adaptiveIcon": { "backgroundColor": "#5B2BC9" } },
+    "android": { "package": "com.purplebox.customer", "adaptiveIcon": { "foregroundImage": "./assets/adaptive-icon.png", "backgroundColor": "#5B2BC9" } },
     "plugins": [
       ["expo-image-picker", {
         "photosPermission": "PurpleBox needs access to your photos so you can add images of your items for an accurate moving quote.",
