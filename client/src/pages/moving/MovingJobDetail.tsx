@@ -255,6 +255,8 @@ export default function MovingJobDetail() {
   const [editMaterialModal, setEditMaterialModal] = useState<{ idx: number; item: string; qty: number; notes: string } | null>(null)
   const [editCrewModal, setEditCrewModal] = useState<{ idx: number; name: string; role: string; dailyRate: number; days: number; extraHours: number; extraHourRate: number } | null>(null)
   const [editTruckModal, setEditTruckModal] = useState<{ idx: number; name: string; dailyRate: number; days: number; notes: string } | null>(null)
+  const [editHireModal, setEditHireModal] = useState<{ idx: number; title: string; name: string; duration: string; hours: number; rate: number; notes: string } | null>(null)
+  const [editExtraModal, setEditExtraModal] = useState<{ idx: number; description: string; amount: number; notes: string } | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
 
   const { data: job, isLoading } = useQuery<MovingJob>({
@@ -327,6 +329,20 @@ export default function MovingJobDetail() {
   const removeExtraMut = useMutation({
     mutationFn: (idx: number) => api.delete(`/moving-jobs/${id}/extras/${idx}`),
     onSuccess: invalidate,
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  const editHireMut = useMutation({
+    mutationFn: ({ idx, ...body }: { idx: number; title: string; name?: string; duration: string; hours: number; rate: number; notes?: string }) =>
+      api.put(`/moving-jobs/${id}/external-hires/${idx}`, body).then(r => r.data),
+    onSuccess: () => { invalidate(); setEditHireModal(null) },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  const editExtraMut = useMutation({
+    mutationFn: ({ idx, ...body }: { idx: number; description: string; amount: number; notes?: string }) =>
+      api.put(`/moving-jobs/${id}/extras/${idx}`, body).then(r => r.data),
+    onSuccess: () => { invalidate(); setEditExtraModal(null) },
     onError: (e) => setErr(apiError(e)),
   })
 
@@ -1009,10 +1025,16 @@ export default function MovingJobDetail() {
                     <Td>AED {h.rate.toLocaleString()}</Td>
                     <Td className="font-semibold">AED {h.cost.toLocaleString()}</Td>
                     <Td className="text-right">
-                      <button onClick={() => removeHireMut.mutate(i)}
-                        className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-500/10 transition-colors">
-                        <Trash2 size={14} />
-                      </button>
+                      <div className="flex items-center justify-end gap-1">
+                        <button onClick={() => setEditHireModal({ idx: i, title: h.title, name: h.name || '', duration: h.duration, hours: h.hours, rate: h.rate, notes: h.notes || '' })}
+                          className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-muted transition-colors">
+                          <Pencil size={14} />
+                        </button>
+                        <button onClick={() => removeHireMut.mutate(i)}
+                          className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-500/10 transition-colors">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </Td>
                   </tr>
                 ))}
@@ -1049,13 +1071,22 @@ export default function MovingJobDetail() {
                     <Td className="text-right font-bold">AED {ex.amount.toLocaleString()}</Td>
                     <Td className="text-sm text-muted-foreground">{ex.notes || '—'}</Td>
                     <Td className="text-right">
-                      <button
-                        onClick={() => removeExtraMut.mutate(i)}
-                        className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-500/10 transition-colors"
-                        title="Remove extra charge"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => setEditExtraModal({ idx: i, description: ex.description, amount: ex.amount, notes: ex.notes || '' })}
+                          className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-muted transition-colors"
+                          title="Edit extra charge"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          onClick={() => removeExtraMut.mutate(i)}
+                          className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-500/10 transition-colors"
+                          title="Remove extra charge"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </Td>
                   </tr>
                 ))}
@@ -1458,6 +1489,71 @@ export default function MovingJobDetail() {
             <Button type="submit" disabled={addExtraMut.isPending}>{addExtraMut.isPending ? 'Adding…' : 'Add Charge'}</Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Edit External Hire Modal */}
+      <Modal open={!!editHireModal} title="Edit External Hire" onClose={() => setEditHireModal(null)}>
+        {editHireModal && (
+          <form onSubmit={(e) => {
+            e.preventDefault()
+            const f = new FormData(e.currentTarget)
+            const dur = String(f.get('duration'))
+            const defaultHours: Record<string, number> = { quarter_day: 2, half_day: 4, full_day: 8, custom: Number(f.get('hours') || 8) }
+            const hours = defaultHours[dur] ?? 8
+            editHireMut.mutate({ idx: editHireModal.idx, title: String(f.get('title')), name: String(f.get('name') || ''), duration: dur, hours, rate: Number(f.get('rate') || 0), notes: String(f.get('notes') || '') })
+          }} className="space-y-4">
+            <Field label="Title / Role">
+              <Input name="title" required defaultValue={editHireModal.title} />
+            </Field>
+            <Field label="Person Name (optional)">
+              <Input name="name" defaultValue={editHireModal.name} />
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Duration">
+                <Select name="duration" required defaultValue={editHireModal.duration}>
+                  <option value="quarter_day">Quarter Day (2h)</option>
+                  <option value="half_day">Half Day (4h)</option>
+                  <option value="full_day">Full Day (8h)</option>
+                  <option value="custom">Custom Hours</option>
+                </Select>
+              </Field>
+              <Field label="Custom Hours (if custom)">
+                <Input name="hours" type="number" min="0.5" step="0.5" defaultValue={editHireModal.hours} />
+              </Field>
+            </div>
+            <Field label="Rate per Hour (AED)">
+              <Input name="rate" type="number" min="0" step="0.01" required defaultValue={editHireModal.rate} />
+            </Field>
+            <Field label="Notes"><Input name="notes" defaultValue={editHireModal.notes} /></Field>
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button type="button" variant="outline" onClick={() => setEditHireModal(null)}>Cancel</Button>
+              <Button type="submit" disabled={editHireMut.isPending}>{editHireMut.isPending ? 'Saving…' : 'Save'}</Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* Edit Extra Charge Modal */}
+      <Modal open={!!editExtraModal} title="Edit Extra Charge" onClose={() => setEditExtraModal(null)}>
+        {editExtraModal && (
+          <form onSubmit={(e) => {
+            e.preventDefault()
+            const f = new FormData(e.currentTarget)
+            editExtraMut.mutate({ idx: editExtraModal.idx, description: String(f.get('description')), amount: Number(f.get('amount') || 0), notes: String(f.get('notes') || '') })
+          }} className="space-y-4">
+            <Field label="Description *">
+              <Input name="description" required defaultValue={editExtraModal.description} />
+            </Field>
+            <Field label="Amount (AED)">
+              <Input name="amount" type="number" min="0" step="0.01" required defaultValue={editExtraModal.amount} />
+            </Field>
+            <Field label="Notes"><Input name="notes" defaultValue={editExtraModal.notes} /></Field>
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button type="button" variant="outline" onClick={() => setEditExtraModal(null)}>Cancel</Button>
+              <Button type="submit" disabled={editExtraMut.isPending}>{editExtraMut.isPending ? 'Saving…' : 'Save'}</Button>
+            </div>
+          </form>
+        )}
       </Modal>
 
       {/* Costs Modal */}

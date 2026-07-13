@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 
-const API_BASE = 'https://office.purplebox.ae/api';
+const API_BASE = 'https://purplebox.mypaperlessoffice.org/api';
 
 async function appendFile(form: FormData, fieldName: string, uri: string, name: string, type?: string) {
   if (Platform.OS === 'web') {
@@ -22,7 +22,9 @@ async function req<T = any>(path: string, opts: RequestInit = {}): Promise<T> {
     ...(opts.headers as Record<string, string> || {}),
   };
   if (TOKEN) headers['Authorization'] = `Bearer ${TOKEN}`;
-  const res = await fetch(`${API_BASE}${path}`, { ...opts, headers });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  const res = await fetch(`${API_BASE}${path}`, { ...opts, headers, signal: controller.signal }).finally(() => clearTimeout(timer));
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || body.message || `HTTP ${res.status}`);

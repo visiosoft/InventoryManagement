@@ -338,6 +338,24 @@ router.post('/:id/external-hires', async (req, res) => {
   }
 });
 
+router.put('/:id/external-hires/:idx', async (req, res) => {
+  try {
+    const job = await MovingJob.findById(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    const idx = Number(req.params.idx);
+    if (idx < 0 || idx >= job.externalHires.length) return res.status(400).json({ error: 'Invalid index' });
+    const { title, name, duration, hours, rate, notes } = req.body;
+    const cost = (rate || 0) * (hours || 0);
+    Object.assign(job.externalHires[idx], { title, name, duration, hours, rate, cost, notes });
+    recalcCosts(job);
+    await job.save();
+    const populated = await MovingJob.findById(job._id).populate(POPULATE_JOB);
+    res.json(populated);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 router.delete('/:id/external-hires/:idx', async (req, res) => {
   try {
     const job = await MovingJob.findById(req.params.id);
@@ -362,6 +380,23 @@ router.post('/:id/extras', async (req, res) => {
     if (!job) return res.status(404).json({ error: 'Job not found' });
     const { description, amount, notes } = req.body;
     job.extraCharges.push({ description, amount: Number(amount || 0), notes: notes || '' });
+    recalcCosts(job);
+    await job.save();
+    const populated = await MovingJob.findById(job._id).populate(POPULATE_JOB);
+    res.json(populated);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.put('/:id/extras/:idx', async (req, res) => {
+  try {
+    const job = await MovingJob.findById(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    const idx = Number(req.params.idx);
+    if (idx < 0 || idx >= job.extraCharges.length) return res.status(400).json({ error: 'Invalid index' });
+    const { description, amount, notes } = req.body;
+    Object.assign(job.extraCharges[idx], { description, amount: Number(amount || 0), notes: notes || '' });
     recalcCosts(job);
     await job.save();
     const populated = await MovingJob.findById(job._id).populate(POPULATE_JOB);
