@@ -1894,8 +1894,8 @@ export default function MovingJobDetail() {
         </div>
       </Modal>
 
-      {/* Sticky mobile bottom button */}
-      {!['invoiced', 'cancelled'].includes(job.status) && (
+      {/* Sticky mobile bottom button — hidden when any modal is open */}
+      {!['invoiced', 'cancelled'].includes(job.status) && !editDetailsModal && !crewModal && !truckModal && !materialModal && !hireModal && !extrasModal && !costsModal && !packageModal && !editCrewModal && !editTruckModal && !editMaterialModal && !editHireModal && !editExtraModal && !shareModal && !deleteConfirm && (
         <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/95 backdrop-blur border-t border-border md:hidden z-50">
           <Button
             className="w-full h-12 text-base font-semibold"
