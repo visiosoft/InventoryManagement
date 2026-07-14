@@ -1371,7 +1371,7 @@ export default function MovingJobDetail() {
               <Field label="Extra Hours"><Input name="extraHours" type="number" min="0" step="0.5" defaultValue={0} /></Field>
               <Field label="Extra Hour Rate (AED)"><Input name="extraHourRate" type="number" min="0" step="0.01" defaultValue={0} /></Field>
             </div>
-            <div className="flex justify-end gap-2 pt-4 border-t">
+            <div className="flex justify-end gap-2 pt-4 border-t sticky bottom-0 bg-card pb-1 -mb-1">
               <Button type="button" variant="outline" onClick={() => setCrewModal(false)}>Cancel</Button>
               <Button type="submit" disabled={updateMut.isPending}>{updateMut.isPending ? 'Adding…' : 'Add Member'}</Button>
             </div>
@@ -1395,7 +1395,7 @@ export default function MovingJobDetail() {
               </Field>
               <Field label="Daily Rate (AED)"><Input name="dailyRate" type="number" min="0" step="0.01" defaultValue={0} /></Field>
             </div>
-            <div className="flex justify-end gap-2 pt-4 border-t">
+            <div className="flex justify-end gap-2 pt-4 border-t sticky bottom-0 bg-card pb-1 -mb-1">
               <Button type="button" variant="outline" onClick={() => setCrewModal(false)}>Cancel</Button>
               <Button type="submit" disabled={createWorkerMut.isPending}>{createWorkerMut.isPending ? 'Creating…' : 'Create & Add'}</Button>
             </div>
@@ -1430,7 +1430,7 @@ export default function MovingJobDetail() {
               <Field label="Days"><Input name="days" type="number" min="1" step="1" defaultValue={1} /></Field>
             </div>
             <Field label="Notes"><Input name="notes" placeholder="Optional notes about this truck assignment" /></Field>
-            <div className="flex justify-end gap-2 pt-4 border-t">
+            <div className="flex justify-end gap-2 pt-4 border-t sticky bottom-0 bg-card pb-1 -mb-1">
               <Button type="button" variant="outline" onClick={() => setTruckModal(false)}>Cancel</Button>
               <Button type="submit" disabled={updateMut.isPending}>{updateMut.isPending ? 'Assigning…' : 'Assign Truck'}</Button>
             </div>
@@ -1454,7 +1454,7 @@ export default function MovingJobDetail() {
               </Field>
               <Field label="Daily Rate (AED)"><Input name="dailyRate" type="number" min="0" step="0.01" defaultValue={0} /></Field>
             </div>
-            <div className="flex justify-end gap-2 pt-4 border-t">
+            <div className="flex justify-end gap-2 pt-4 border-t sticky bottom-0 bg-card pb-1 -mb-1">
               <Button type="button" variant="outline" onClick={() => setTruckModal(false)}>Cancel</Button>
               <Button type="submit" disabled={createTruckMut.isPending}>{createTruckMut.isPending ? 'Creating…' : 'Create & Assign'}</Button>
             </div>
@@ -1484,7 +1484,7 @@ export default function MovingJobDetail() {
             </Field>
             <Field label="Quantity"><Input name="qty" type="number" min="1" defaultValue={1} required /></Field>
             <Field label="Notes"><Input name="notes" placeholder="Optional" /></Field>
-            <div className="flex justify-end gap-2 pt-4 border-t">
+            <div className="flex justify-end gap-2 pt-4 border-t sticky bottom-0 bg-card pb-1 -mb-1">
               <Button type="button" variant="outline" onClick={() => setMaterialModal(false)}>Cancel</Button>
               <Button type="submit" disabled={addMaterialMut.isPending}>{addMaterialMut.isPending ? 'Adding…' : 'Add Material'}</Button>
             </div>
@@ -1513,7 +1513,7 @@ export default function MovingJobDetail() {
               <Field label="Price per Unit (AED)"><Input name="retailPrice" type="number" min="0" step="0.01" defaultValue={0} /></Field>
               <Field label="Quantity"><Input name="qty" type="number" min="1" defaultValue={1} required /></Field>
             </div>
-            <div className="flex justify-end gap-2 pt-4 border-t">
+            <div className="flex justify-end gap-2 pt-4 border-t sticky bottom-0 bg-card pb-1 -mb-1">
               <Button type="button" variant="outline" onClick={() => setMaterialModal(false)}>Cancel</Button>
               <Button type="submit" disabled={createMaterialMut.isPending}>{createMaterialMut.isPending ? 'Creating…' : 'Create & Add'}</Button>
             </div>
@@ -1554,7 +1554,7 @@ export default function MovingJobDetail() {
             <Input name="rate" type="number" min="0" step="0.01" required placeholder="0.00" />
           </Field>
           <Field label="Notes"><Input name="notes" placeholder="Optional" /></Field>
-          <div className="flex justify-end gap-2 pt-4 border-t">
+          <div className="flex justify-end gap-2 pt-4 border-t sticky bottom-0 bg-card pb-1 -mb-1">
             <Button type="button" variant="outline" onClick={() => setHireModal(false)}>Cancel</Button>
             <Button type="submit" disabled={addHireMut.isPending}>{addHireMut.isPending ? 'Adding…' : 'Add Hire'}</Button>
           </div>
@@ -1575,7 +1575,7 @@ export default function MovingJobDetail() {
             <Input name="amount" type="number" min="0" step="0.01" required placeholder="0.00" />
           </Field>
           <Field label="Notes"><Input name="notes" placeholder="Optional" /></Field>
-          <div className="flex justify-end gap-2 pt-4 border-t">
+          <div className="flex justify-end gap-2 pt-4 border-t sticky bottom-0 bg-card pb-1 -mb-1">
             <Button type="button" variant="outline" onClick={() => setExtrasModal(false)}>Cancel</Button>
             <Button type="submit" disabled={addExtraMut.isPending}>{addExtraMut.isPending ? 'Adding…' : 'Add Charge'}</Button>
           </div>
@@ -1616,7 +1616,7 @@ export default function MovingJobDetail() {
               <Input name="rate" type="number" min="0" step="0.01" required defaultValue={editHireModal.rate} />
             </Field>
             <Field label="Notes"><Input name="notes" defaultValue={editHireModal.notes} /></Field>
-            <div className="flex justify-end gap-2 pt-4 border-t">
+            <div className="flex justify-end gap-2 pt-4 border-t sticky bottom-0 bg-card pb-1 -mb-1">
               <Button type="button" variant="outline" onClick={() => setEditHireModal(null)}>Cancel</Button>
               <Button type="submit" disabled={editHireMut.isPending}>{editHireMut.isPending ? 'Saving…' : 'Save'}</Button>
             </div>
@@ -1639,7 +1639,7 @@ export default function MovingJobDetail() {
               <Input name="amount" type="number" min="0" step="0.01" required defaultValue={editExtraModal.amount} />
             </Field>
             <Field label="Notes"><Input name="notes" defaultValue={editExtraModal.notes} /></Field>
-            <div className="flex justify-end gap-2 pt-4 border-t">
+            <div className="flex justify-end gap-2 pt-4 border-t sticky bottom-0 bg-card pb-1 -mb-1">
               <Button type="button" variant="outline" onClick={() => setEditExtraModal(null)}>Cancel</Button>
               <Button type="submit" disabled={editExtraMut.isPending}>{editExtraMut.isPending ? 'Saving…' : 'Save'}</Button>
             </div>
@@ -1654,7 +1654,7 @@ export default function MovingJobDetail() {
             <Input name="packing" type="number" min="0" step="0.01" defaultValue={job.costs?.packing ?? 0} />
           </Field>
           <p className="text-xs text-muted-foreground">Labor, truck, materials, extras, and external hire costs are auto-calculated. Only packing cost is manual.</p>
-          <div className="flex justify-end gap-2 pt-4 border-t">
+          <div className="flex justify-end gap-2 pt-4 border-t sticky bottom-0 bg-card pb-1 -mb-1">
             <Button type="button" variant="outline" onClick={() => setCostsModal(false)}>Cancel</Button>
             <Button type="submit" disabled={updateMut.isPending}>{updateMut.isPending ? 'Saving…' : 'Save Costs'}</Button>
           </div>
@@ -1776,7 +1776,7 @@ export default function MovingJobDetail() {
               <Field label="Extra Hour Rate (AED)"><Input name="extraHourRate" type="number" min="0" step="0.01" defaultValue={editCrewModal.extraHourRate} /></Field>
             </div>
             {err && <p className="text-sm text-red-600">{err}</p>}
-            <div className="flex justify-end gap-2 pt-4 border-t">
+            <div className="flex justify-end gap-2 pt-4 border-t sticky bottom-0 bg-card pb-1 -mb-1">
               <Button type="button" variant="outline" onClick={() => setEditCrewModal(null)}>Cancel</Button>
               <Button type="submit" disabled={updateMut.isPending}>{updateMut.isPending ? 'Saving…' : 'Save Changes'}</Button>
             </div>
@@ -1794,7 +1794,7 @@ export default function MovingJobDetail() {
             </div>
             <Field label="Notes"><Input name="notes" defaultValue={editTruckModal.notes} placeholder="Optional notes about this truck assignment" /></Field>
             {err && <p className="text-sm text-red-600">{err}</p>}
-            <div className="flex justify-end gap-2 pt-4 border-t">
+            <div className="flex justify-end gap-2 pt-4 border-t sticky bottom-0 bg-card pb-1 -mb-1">
               <Button type="button" variant="outline" onClick={() => setEditTruckModal(null)}>Cancel</Button>
               <Button type="submit" disabled={updateMut.isPending}>{updateMut.isPending ? 'Saving…' : 'Save Changes'}</Button>
             </div>
@@ -1817,7 +1817,7 @@ export default function MovingJobDetail() {
               <Input name="notes" defaultValue={editMaterialModal.notes} placeholder="Optional" />
             </Field>
             {err && <p className="text-sm text-red-600">{err}</p>}
-            <div className="flex justify-end gap-2 pt-4 border-t">
+            <div className="flex justify-end gap-2 pt-4 border-t sticky bottom-0 bg-card pb-1 -mb-1">
               <Button type="button" variant="outline" onClick={() => setEditMaterialModal(null)}>Cancel</Button>
               <Button type="submit" disabled={editMaterialMut.isPending}>{editMaterialMut.isPending ? 'Saving…' : 'Save'}</Button>
             </div>
@@ -1868,7 +1868,7 @@ export default function MovingJobDetail() {
           <p className="text-sm text-foreground">
             Are you sure you want to remove <strong>{removeConfirm?.label}</strong> from this job?
           </p>
-          <div className="flex justify-end gap-2 pt-4 border-t">
+          <div className="flex justify-end gap-2 pt-4 border-t sticky bottom-0 bg-card pb-1 -mb-1">
             <Button variant="outline" onClick={() => setRemoveConfirm(null)}>Cancel</Button>
             <Button onClick={handleConfirmedRemove} className="bg-red-600 hover:bg-red-700 text-white">Remove</Button>
           </div>
@@ -1881,7 +1881,7 @@ export default function MovingJobDetail() {
             Are you sure you want to delete job <strong>{job.jobNo}</strong>? This action cannot be undone.
           </p>
           {err && <p className="text-sm text-red-600">{err}</p>}
-          <div className="flex justify-end gap-2 pt-4 border-t">
+          <div className="flex justify-end gap-2 pt-4 border-t sticky bottom-0 bg-card pb-1 -mb-1">
             <Button variant="outline" onClick={() => setDeleteConfirm(false)}>Cancel</Button>
             <Button
               onClick={() => deleteMut.mutate()}

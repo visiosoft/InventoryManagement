@@ -404,7 +404,7 @@ export default function MovingInvoiceDetail() {
             <Field label="Notes"><Input name="notes" placeholder="Reference" /></Field>
           </div>
           {err && <p className="text-sm text-red-600">{err}</p>}
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 sticky bottom-0 bg-card pb-1 -mb-1">
             <Button type="submit" disabled={payMut.isPending}>{payMut.isPending ? 'Recording…' : 'Record'}</Button>
           </div>
         </form>
@@ -480,7 +480,7 @@ export default function MovingInvoiceDetail() {
 
           {err && <p className="text-sm text-red-600">{err}</p>}
 
-          <div className="flex justify-end gap-2 border-t pt-3">
+          <div className="flex justify-end gap-2 border-t pt-3 sticky bottom-0 bg-card pb-1 -mb-1">
             <Button variant="outline" onClick={() => { setReviseModal(false); setErr('') }}>Cancel</Button>
             <Button
               onClick={() => {
@@ -568,7 +568,7 @@ export default function MovingInvoiceDetail() {
 
           {err && <p className="text-sm text-red-600">{err}</p>}
 
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 sticky bottom-0 bg-card pb-1 -mb-1">
             <Button variant="outline" onClick={() => setItemsModal(false)}>Cancel</Button>
             <Button onClick={() => updateItemsMut.mutate(items)} disabled={updateItemsMut.isPending}>
               {updateItemsMut.isPending ? 'Saving…' : 'Save Items'}
@@ -581,7 +581,7 @@ export default function MovingInvoiceDetail() {
         <div className="space-y-4">
           <p className="text-sm">Are you sure you want to delete invoice <strong>{invoice.invoiceNo}</strong>? This action cannot be undone.</p>
           {err && <p className="text-sm text-red-600">{err}</p>}
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 sticky bottom-0 bg-card pb-1 -mb-1">
             <Button variant="outline" onClick={() => setDeleteConfirm(false)}>Cancel</Button>
             <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={() => deleteMut.mutate()} disabled={deleteMut.isPending}>
               {deleteMut.isPending ? 'Deleting…' : 'Delete Invoice'}
