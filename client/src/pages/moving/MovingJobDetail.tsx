@@ -7,10 +7,9 @@ import type { MovingJob, MovingJobStatus, Worker, Truck, MovingJobImage } from '
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
 const INK = '#14081F'
-const MUTED_COLOR = '#756E80'
 
 type MovingItemOption = { _id: string; name: string; sku?: string; onHand: number; retailPrice: number }
-import { Badge, Button, Card, CardBody, CardHeader, EmptyState, Field, Input, Modal, Select, Spinner, Table, Td, Th, Textarea, InfoGrid, InfoItem, movingJobStatusLabel } from '../../components/ui'
+import { Badge, Button, Card, CardBody, CardHeader, EmptyState, Field, Input, Modal, Select, Spinner, Textarea, InfoGrid, InfoItem, movingJobStatusLabel } from '../../components/ui'
 import { useAuth } from '../../lib/auth'
 import { cn } from '../../lib/utils'
 
