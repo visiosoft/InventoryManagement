@@ -1755,7 +1755,7 @@ export default function MovingJobDetail() {
           </Field>
 
           {err && <p className="text-sm text-red-600">{err}</p>}
-          <div className="flex justify-end gap-2 pt-4 border-t">
+          <div className="flex justify-end gap-2 pt-4 border-t sticky bottom-0 bg-card pb-1 -mb-1">
             <Button type="button" variant="outline" onClick={() => setEditDetailsModal(false)}>Cancel</Button>
             <Button type="submit" disabled={updateMut.isPending}>{updateMut.isPending ? 'Saving…' : 'Save Changes'}</Button>
           </div>
