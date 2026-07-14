@@ -205,7 +205,7 @@ function PackageModal({ open, initial, busy, err, onSave, onClose }: {
 
         {err && <p className="text-sm text-red-600">{err}</p>}
 
-        <div className="flex justify-end gap-2 pt-2 border-t">
+        <div className="flex justify-end gap-2 pt-2 border-t sticky bottom-0 bg-card pb-1 -mb-1">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={handleSave} disabled={busy || !pkgType || !Number(price)}>
             {busy ? 'Saving…' : 'Save Package'}
