@@ -117,111 +117,115 @@ export default function MovingInvoiceDetail() {
   }
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center gap-4 flex-wrap">
-        <button onClick={() => navigate('/moving/invoices')} className="text-muted-foreground hover:text-foreground">
-          <ArrowLeft size={18} />
-        </button>
-        <div className="flex-1">
-          <h1 className="text-xl font-semibold font-mono">{invoice.invoiceNo}</h1>
-          <p className="text-sm text-muted-foreground">{invoice.customer?.fullName}</p>
+    <div className="p-5 sm:p-7 space-y-8">
+      <div className="space-y-3">
+        <div className="flex items-center gap-3">
+          <button onClick={() => navigate('/moving/invoices')} className="text-muted-foreground hover:text-foreground">
+            <ArrowLeft size={18} />
+          </button>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-lg sm:text-xl font-semibold font-mono">{invoice.invoiceNo}</h1>
+            <p className="text-sm text-muted-foreground truncate">{invoice.customer?.fullName}</p>
+          </div>
+          <Badge tone={statusTone[invoice.status]}>{invoice.status}</Badge>
         </div>
-        <Badge tone={statusTone[invoice.status]}>{invoice.status}</Badge>
-        {transitions.map(s => (
-          <Button key={s} size="sm" variant="outline" onClick={() => statusMut.mutate(s)} disabled={statusMut.isPending}>
-            → {s}
-          </Button>
-        ))}
-        {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
-          <Button size="sm" onClick={() => setPayModal(true)}>Record Payment</Button>
-        )}
-        {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
+        <div className="flex flex-wrap gap-2">
+          {transitions.map(s => (
+            <Button key={s} size="sm" variant="outline" onClick={() => statusMut.mutate(s)} disabled={statusMut.isPending}>
+              → {s}
+            </Button>
+          ))}
+          {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
+            <Button size="sm" onClick={() => setPayModal(true)}>Record Payment</Button>
+          )}
+          {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => { setItems(invoice.items as typeof items); setReviseModal(true) }}
+              title="Add extra charges or adjust items, then resend via WhatsApp"
+            >
+              <RefreshCw size={13} className="mr-1" /><span className="hidden sm:inline">Revise &amp; Resend</span><span className="sm:hidden">Revise</span>
+            </Button>
+          )}
           <Button
             size="sm"
             variant="outline"
-            onClick={() => { setItems(invoice.items as typeof items); setReviseModal(true) }}
-            title="Add extra charges or adjust items, then resend via WhatsApp"
-          >
-            <RefreshCw size={13} className="mr-1" />Revise &amp; Resend
-          </Button>
-        )}
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={async () => {
-            if (!shareToken) {
-              const res = await api.post(`/moving-invoices/${id}/share-token`, {})
-              setShareToken(res.data.token)
-              window.open(`/api/moving-invoices/${id}/pdf?token=${res.data.token}`, '_blank')
-            } else {
-              window.open(`/api/moving-invoices/${id}/pdf?token=${shareToken}`, '_blank')
-            }
-          }}
-        >
-          <Download size={13} className="mr-1" />PDF
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={async () => {
-            if (!shareToken) {
-              const res = await api.post(`/moving-invoices/${id}/share-token`, {})
-              setShareToken(res.data.token)
-              const pdfUrl = `${window.location.origin}/api/moving-invoices/${id}/pdf?token=${res.data.token}`
-              const msg = `Hi ${invoice.customer?.fullName}, here's your invoice ${invoice.invoiceNo} for AED ${invoice.total}. Please review and let me know if you have any questions. ${pdfUrl}`
-              const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`
-              window.open(whatsappUrl, '_blank')
-            } else {
-              const pdfUrl = `${window.location.origin}/api/moving-invoices/${id}/pdf?token=${shareToken}`
-              const msg = `Hi ${invoice.customer?.fullName}, here's your invoice ${invoice.invoiceNo} for AED ${invoice.total}. Please review and let me know if you have any questions. ${pdfUrl}`
-              const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`
-              window.open(whatsappUrl, '_blank')
-            }
-          }}
-        >
-          <Share2 size={13} className="mr-1" />
-          WhatsApp
-        </Button>
-        {invoice.balanceDue > 0 && (
-          <Button
-            size="sm"
             onClick={async () => {
-              try {
-                const res = await api.post(`/moving-invoices/${id}/payment-link`, {})
-                setErr('')
-                alert(`Payment link sent via WhatsApp!\n\nLink: ${res.data.payUrl}\nBalance: AED ${res.data.balanceDue}`)
-              } catch (e) { setErr(apiError(e)) }
+              if (!shareToken) {
+                const res = await api.post(`/moving-invoices/${id}/share-token`, {})
+                setShareToken(res.data.token)
+                window.open(`/api/moving-invoices/${id}/pdf?token=${res.data.token}`, '_blank')
+              } else {
+                window.open(`/api/moving-invoices/${id}/pdf?token=${shareToken}`, '_blank')
+              }
             }}
           >
-            💳 Send Payment Link
+            <Download size={13} className="mr-1" />PDF
           </Button>
-        )}
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => syncZoho.mutate()}
-          disabled={syncZoho.isPending}
-          className={invoice.zohoBooksSyncId ? 'text-emerald-600 border-emerald-300' : invoice.zohoBooksSyncError ? 'text-red-600 border-red-300' : ''}
-          title={invoice.zohoBooksSyncId ? `Synced to Zoho Books on ${new Date(invoice.zohoBooksSyncedAt!).toLocaleDateString()}` : invoice.zohoBooksSyncError ? `Sync failed: ${invoice.zohoBooksSyncError}` : 'Sync to Zoho Books'}
-        >
-          <RefreshCw size={13} className={syncZoho.isPending ? 'animate-spin' : ''} />
-          {syncZoho.isPending ? 'Syncing…' : invoice.zohoBooksSyncId ? 'Synced' : 'Sync to Zoho'}
-        </Button>
-        {invoice.zohoBooksSyncId && (
-          <a
-            href={`https://books.zoho.com/app/908459713#/invoices/${invoice.zohoBooksSyncId}`}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 rounded-md border border-emerald-300 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={async () => {
+              if (!shareToken) {
+                const res = await api.post(`/moving-invoices/${id}/share-token`, {})
+                setShareToken(res.data.token)
+                const pdfUrl = `${window.location.origin}/api/moving-invoices/${id}/pdf?token=${res.data.token}`
+                const msg = `Hi ${invoice.customer?.fullName}, here's your invoice ${invoice.invoiceNo} for AED ${invoice.total}. Please review and let me know if you have any questions. ${pdfUrl}`
+                const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`
+                window.open(whatsappUrl, '_blank')
+              } else {
+                const pdfUrl = `${window.location.origin}/api/moving-invoices/${id}/pdf?token=${shareToken}`
+                const msg = `Hi ${invoice.customer?.fullName}, here's your invoice ${invoice.invoiceNo} for AED ${invoice.total}. Please review and let me know if you have any questions. ${pdfUrl}`
+                const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`
+                window.open(whatsappUrl, '_blank')
+              }
+            }}
           >
-            Open in Zoho ↗
-          </a>
-        )}
-        {invoice.status !== 'paid' && (
-          <Button size="sm" variant="outline" className="text-red-600 border-red-300 hover:bg-red-50" onClick={() => setDeleteConfirm(true)}>
-            <Trash2 size={13} className="mr-1" />Delete
+            <Share2 size={13} className="mr-1" />
+            <span className="hidden sm:inline">WhatsApp</span><span className="sm:hidden">WA</span>
           </Button>
-        )}
+          {invoice.balanceDue > 0 && (
+            <Button
+              size="sm"
+              onClick={async () => {
+                try {
+                  const res = await api.post(`/moving-invoices/${id}/payment-link`, {})
+                  setErr('')
+                  alert(`Payment link sent via WhatsApp!\n\nLink: ${res.data.payUrl}\nBalance: AED ${res.data.balanceDue}`)
+                } catch (e) { setErr(apiError(e)) }
+              }}
+            >
+              <span className="hidden sm:inline">💳 Send Payment Link</span><span className="sm:hidden">💳 Pay Link</span>
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => syncZoho.mutate()}
+            disabled={syncZoho.isPending}
+            className={invoice.zohoBooksSyncId ? 'text-emerald-600 border-emerald-300' : invoice.zohoBooksSyncError ? 'text-red-600 border-red-300' : ''}
+            title={invoice.zohoBooksSyncId ? `Synced to Zoho Books on ${new Date(invoice.zohoBooksSyncedAt!).toLocaleDateString()}` : invoice.zohoBooksSyncError ? `Sync failed: ${invoice.zohoBooksSyncError}` : 'Sync to Zoho Books'}
+          >
+            <RefreshCw size={13} className={syncZoho.isPending ? 'animate-spin' : ''} />
+            {syncZoho.isPending ? 'Syncing…' : invoice.zohoBooksSyncId ? 'Synced' : <><span className="hidden sm:inline">Sync to Zoho</span><span className="sm:hidden">Zoho</span></>}
+          </Button>
+          {invoice.zohoBooksSyncId && (
+            <a
+              href={`https://books.zoho.com/app/908459713#/invoices/${invoice.zohoBooksSyncId}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 rounded-md border border-emerald-300 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
+            >
+              <span className="hidden sm:inline">Open in Zoho ↗</span><span className="sm:hidden">Zoho ↗</span>
+            </a>
+          )}
+          {invoice.status !== 'paid' && (
+            <Button size="sm" variant="outline" className="text-red-600 border-red-300 hover:bg-red-50" onClick={() => setDeleteConfirm(true)}>
+              <Trash2 size={13} className="mr-1" /><span className="hidden sm:inline">Delete</span>
+            </Button>
+          )}
+        </div>
       </div>
 
       {err && <p className="text-sm text-red-600">{err}</p>}
@@ -236,7 +240,7 @@ export default function MovingInvoiceDetail() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
           <CardHeader title="Invoice Info" />
           <CardBody>
@@ -281,40 +285,61 @@ export default function MovingInvoiceDetail() {
           action={invoice.status !== 'paid' && invoice.status !== 'cancelled' ? <Button size="sm" variant="outline" onClick={() => { setItems(invoice.items as typeof items); setItemsModal(true) }}><Edit size={13} className="mr-1" />Edit Items</Button> : undefined}
         />
         <CardBody>
-          <Table>
-            <thead>
-              <tr>
-                <Th>#</Th>
-                <Th>Description</Th>
-                <Th className="text-right">Qty</Th>
-                <Th className="text-right">Rate</Th>
-                <Th className="text-right">Amount</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((it, i) => (
-                <tr key={i} className="hover:bg-muted/30">
-                  <Td>{i + 1}</Td>
-                  <Td>{it.description}</Td>
-                  <Td className="text-right">{it.qty}</Td>
-                  <Td className="text-right">AED {fmt(it.rate)}</Td>
-                  <Td className="text-right font-medium">AED {fmt(it.amount)}</Td>
+          {/* Desktop table */}
+          <div className="hidden md:block">
+            <Table>
+              <thead>
+                <tr>
+                  <Th>#</Th>
+                  <Th>Description</Th>
+                  <Th className="text-right">Qty</Th>
+                  <Th className="text-right">Rate</Th>
+                  <Th className="text-right">Amount</Th>
                 </tr>
-              ))}
-            </tbody>
-          </Table>
+              </thead>
+              <tbody>
+                {items.map((it, i) => (
+                  <tr key={i} className="hover:bg-muted/30">
+                    <Td>{i + 1}</Td>
+                    <Td>{it.description}</Td>
+                    <Td className="text-right">{it.qty}</Td>
+                    <Td className="text-right">AED {fmt(it.rate)}</Td>
+                    <Td className="text-right font-medium">AED {fmt(it.amount)}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          </div>
+          {/* Mobile cards */}
+          <div className="md:hidden space-y-3">
+            {items.map((it, i) => (
+              <div key={i} className="rounded-lg border p-3 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground">#{i + 1}</p>
+                    <p className="text-sm font-medium">{it.description}</p>
+                  </div>
+                  <p className="text-sm font-semibold text-primary whitespace-nowrap">AED {fmt(it.amount)}</p>
+                </div>
+                <div className="flex gap-4 text-xs text-muted-foreground">
+                  <span>Qty: {it.qty}</span>
+                  <span>Rate: AED {fmt(it.rate)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
 
           <div className="mt-4 flex flex-col items-end gap-1 text-sm">
-            <div className="flex gap-8">
+            <div className="flex gap-4 sm:gap-8">
               <span className="text-muted-foreground">Sub Total</span>
               <span>AED {fmt(total)}</span>
             </div>
-            <div className="flex gap-8 font-semibold text-base border-t pt-2">
+            <div className="flex gap-4 sm:gap-8 font-semibold text-base border-t pt-2">
               <span>Total</span>
               <span className="text-primary">AED {fmt(total)}</span>
             </div>
             {(invoice.balanceDue ?? 0) > 0 && (
-              <div className="flex gap-8 text-red-600 text-sm mt-1">
+              <div className="flex gap-4 sm:gap-8 text-red-600 text-sm mt-1">
                 <span>Balance Due</span>
                 <span>AED {fmt(invoice.balanceDue!)}</span>
               </div>
@@ -328,19 +353,37 @@ export default function MovingInvoiceDetail() {
         <Card>
           <CardHeader title="Payment History" />
           <CardBody>
-            <Table>
-              <thead><tr><Th>Date</Th><Th>Method</Th><Th>Notes</Th><Th className="text-right">Amount</Th></tr></thead>
-              <tbody>
-                {(invoice.paymentHistory ?? []).map((p, i) => (
-                  <tr key={i} className="hover:bg-muted/30">
-                    <Td>{dt(p.date)}</Td>
-                    <Td className="capitalize">{p.method}</Td>
-                    <Td className="text-muted-foreground text-sm">{p.notes || '—'}</Td>
-                    <Td className="text-right font-medium text-green-600">AED {fmt(p.amount)}</Td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
+            {/* Desktop table */}
+            <div className="hidden md:block">
+              <Table>
+                <thead><tr><Th>Date</Th><Th>Method</Th><Th>Notes</Th><Th className="text-right">Amount</Th></tr></thead>
+                <tbody>
+                  {(invoice.paymentHistory ?? []).map((p, i) => (
+                    <tr key={i} className="hover:bg-muted/30">
+                      <Td>{dt(p.date)}</Td>
+                      <Td className="capitalize">{p.method}</Td>
+                      <Td className="text-muted-foreground text-sm">{p.notes || '—'}</Td>
+                      <Td className="text-right font-medium text-green-600">AED {fmt(p.amount)}</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            </div>
+            {/* Mobile cards */}
+            <div className="md:hidden space-y-3">
+              {(invoice.paymentHistory ?? []).map((p, i) => (
+                <div key={i} className="rounded-lg border p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium capitalize">{p.method}</p>
+                      <p className="text-xs text-muted-foreground">{dt(p.date)}</p>
+                    </div>
+                    <p className="text-sm font-semibold text-green-600 whitespace-nowrap">AED {fmt(p.amount)}</p>
+                  </div>
+                  {p.notes && <p className="text-xs text-muted-foreground mt-1">{p.notes}</p>}
+                </div>
+              ))}
+            </div>
           </CardBody>
         </Card>
       )}
@@ -348,7 +391,7 @@ export default function MovingInvoiceDetail() {
       {/* Record Payment Modal */}
       <Modal open={payModal} title="Record Payment" onClose={() => setPayModal(false)}>
         <form onSubmit={handlePayment} className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Amount (AED)"><Input name="amount" type="number" min="0.01" step="0.01" defaultValue={invoice.balanceDue} required /></Field>
             <Field label="Method">
               <Select name="method" defaultValue="cash">
@@ -376,7 +419,7 @@ export default function MovingInvoiceDetail() {
           </div>
 
           {items.map((item, i) => (
-            <div key={i} className="grid grid-cols-5 gap-2 items-end p-3 border rounded-xl">
+            <div key={i} className="grid grid-cols-2 sm:grid-cols-5 gap-2 items-end p-3 border rounded-xl">
               <Field label="Description" className="col-span-2">
                 <input
                   className="w-full h-9 rounded-lg border bg-card px-3 text-sm"
@@ -456,7 +499,7 @@ export default function MovingInvoiceDetail() {
       <Modal open={itemsModal} title="Edit Line Items" onClose={() => setItemsModal(false)} className="max-w-6xl w-[90vw]">
         <div className="space-y-4">
           {items.map((item, i) => (
-            <div key={i} className="grid grid-cols-5 gap-2 items-end p-3 border rounded">
+            <div key={i} className="grid grid-cols-2 sm:grid-cols-5 gap-2 items-end p-3 border rounded">
               <Field label="Description">
                 <Input
                   value={item.description}

@@ -596,32 +596,32 @@ export default function MovingJobDetail() {
   const availableTrucks = trucks.filter(t => !addedTruckIds.has(t._id))
 
   return (
-    <div style={{ background: '#FDFCFA', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7 space-y-8">
+    <div style={{ background: '#FDFCFA', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7 space-y-8 pb-24 md:pb-7">
       {/* Header with Back and Title */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-start gap-4 flex-1">
+      <div className="space-y-3">
+        <div className="flex items-start gap-3">
           <button
             onClick={() => navigate('/moving/jobs')}
-            className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground shrink-0"
+            className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground shrink-0 mt-1"
             title="Back to jobs"
           >
             <ArrowLeft size={20} />
           </button>
-          <div className="flex-1">
-            <div className="flex items-center gap-3 mb-2">
-              <div style={{ ...HEADING, fontSize: 26, fontWeight: 700, color: INK }}>{job.jobNo}</div>
-              <Badge tone={statusTone[job.status]} className="text-sm px-3 py-1.5">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-3 mb-1 flex-wrap">
+              <div style={{ ...HEADING, fontSize: 22, fontWeight: 700, color: INK }}>{job.jobNo}</div>
+              <Badge tone={statusTone[job.status]} className="text-xs px-2.5 py-1">
                 {movingJobStatusLabel(job.status)}
               </Badge>
             </div>
-            <p style={{ fontSize: 14, color: MUTED_COLOR }}>
+            <p className="text-sm text-muted-foreground truncate">
               {job.customer?.fullName} • Job ID: {job._id?.slice(-8)}
             </p>
           </div>
         </div>
 
         {/* Action Buttons */}
-        <div className="flex gap-2 shrink-0">
+        <div className="flex flex-wrap gap-2">
           {!['invoiced'].includes(job.status) && (
             <Button
               size="sm"
@@ -662,7 +662,8 @@ export default function MovingJobDetail() {
             title="Share upload link with client"
           >
             <Share2 size={16} className="mr-1" />
-            {shareUploadMut.isPending ? 'Generating…' : 'Share Upload Link'}
+            <span className="hidden sm:inline">{shareUploadMut.isPending ? 'Generating…' : 'Share Upload Link'}</span>
+            <span className="sm:hidden">{shareUploadMut.isPending ? '…' : 'Share'}</span>
           </Button>
           {!job.invoice && (
             <Button
@@ -682,9 +683,9 @@ export default function MovingJobDetail() {
       {transitions.length > 0 && (
         <Card className="bg-gradient-to-r from-primary/5 to-primary/0 border-primary/20">
           <CardBody className="py-3">
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Next Steps:</span>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {transitions.map(s => (
                   <Button
                     key={s}
@@ -839,7 +840,7 @@ export default function MovingJobDetail() {
       <Card>
         <CardHeader title={<span className="flex items-center gap-2"><MapPin size={15} />Locations</span>} subtitle="Pickup and delivery addresses" />
         <CardBody>
-          <div className="grid grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div>
               <div className="flex items-center gap-2 mb-3">
                 <div className="w-2 h-2 rounded-full bg-green-500" />
@@ -871,7 +872,7 @@ export default function MovingJobDetail() {
       </Card>
 
       {/* Crew and Trucks Grid */}
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Crew */}
         <Card>
           <CardHeader
@@ -883,68 +884,42 @@ export default function MovingJobDetail() {
             {crewList.length === 0 ? (
               <EmptyState message="No crew members assigned to this job yet" />
             ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <thead>
-                    <tr className="border-b-2 border-muted">
-                      <Th>Name</Th>
-                      <Th>Role</Th>
-                      <Th>Daily Rate</Th>
-                      <Th>Days</Th>
-                      <Th>Extra Hours</Th>
-                      <Th className="text-right">Total</Th>
-                      <Th></Th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {crewList.map((c, i) => (
-                      <tr key={i} className="hover:bg-muted/50 transition-colors">
-                        <Td className="font-medium">
-                          <div className="flex items-center gap-1.5">
-                            {c.isSupervisor && <Star size={13} className="text-amber-500 fill-amber-500" />}
-                            {c.worker.name}
-                          </div>
-                        </Td>
-                        <Td className="capitalize text-sm">{c.role || c.worker.role}</Td>
-                        <Td className="text-sm font-medium">AED {c.dailyRate?.toLocaleString() ?? '—'}</Td>
-                        <Td className="text-sm">{c.days ?? 1}</Td>
-                        <Td className="text-sm">
-                          {(c.extraHours ?? 0) > 0 ? (
-                            <span className="text-amber-600">{c.extraHours}h × AED {c.extraHourRate}</span>
-                          ) : '—'}
-                        </Td>
-                        <Td className="text-right text-sm font-bold">AED {(((c.dailyRate || 0) * (c.days || 1)) + ((c.extraHours || 0) * (c.extraHourRate || 0))).toLocaleString()}</Td>
-                        <Td className="text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            {!c.isSupervisor && (
-                              <button
-                                onClick={() => setSupervisorMut.mutate(i)}
-                                className="text-muted-foreground hover:text-amber-500 p-1 rounded hover:bg-amber-500/10 transition-colors"
-                                title="Set as supervisor"
-                              >
-                                <Star size={14} />
-                              </button>
-                            )}
-                            <button
-                              onClick={() => setEditCrewModal({ idx: i, name: c.worker.name, role: c.role || c.worker.role || '', dailyRate: c.dailyRate ?? 0, days: c.days ?? 1, extraHours: c.extraHours ?? 0, extraHourRate: c.extraHourRate ?? 0 })}
-                              className="text-muted-foreground hover:text-primary p-1 rounded hover:bg-primary/10 transition-colors"
-                              title="Edit crew member"
-                            >
-                              <Pencil size={14} />
-                            </button>
-                            <button
-                              onClick={() => setRemoveConfirm({ type: 'crew', idx: i, label: c.worker.name })}
-                              className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-500/10 transition-colors"
-                              title="Remove crew member"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </Td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </Table>
+              <div className="space-y-3">
+                {crewList.map((c, i) => (
+                  <div key={i} className="border border-border rounded-lg p-3 hover:bg-muted/50 transition-colors">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 font-medium text-sm">
+                          {c.isSupervisor && <Star size={13} className="text-amber-500 fill-amber-500 shrink-0" />}
+                          <span className="truncate">{c.worker.name}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground capitalize mt-0.5">{c.role || c.worker.role}</p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {!c.isSupervisor && (
+                          <button onClick={() => setSupervisorMut.mutate(i)}
+                            className="text-muted-foreground hover:text-amber-500 p-1 rounded hover:bg-amber-500/10 transition-colors" title="Set as supervisor">
+                            <Star size={14} />
+                          </button>
+                        )}
+                        <button onClick={() => setEditCrewModal({ idx: i, name: c.worker.name, role: c.role || c.worker.role || '', dailyRate: c.dailyRate ?? 0, days: c.days ?? 1, extraHours: c.extraHours ?? 0, extraHourRate: c.extraHourRate ?? 0 })}
+                          className="text-muted-foreground hover:text-primary p-1 rounded hover:bg-primary/10 transition-colors" title="Edit crew member">
+                          <Pencil size={14} />
+                        </button>
+                        <button onClick={() => setRemoveConfirm({ type: 'crew', idx: i, label: c.worker.name })}
+                          className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-500/10 transition-colors" title="Remove crew member">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-muted-foreground">
+                      <span>AED {c.dailyRate?.toLocaleString() ?? '—'}/day</span>
+                      <span>{c.days ?? 1} day{(c.days ?? 1) !== 1 ? 's' : ''}</span>
+                      {(c.extraHours ?? 0) > 0 && <span className="text-amber-600">{c.extraHours}h extra</span>}
+                      <span className="font-semibold text-foreground">AED {(((c.dailyRate || 0) * (c.days || 1)) + ((c.extraHours || 0) * (c.extraHourRate || 0))).toLocaleString()}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </CardBody>
@@ -961,48 +936,32 @@ export default function MovingJobDetail() {
             {truckList.length === 0 ? (
               <EmptyState message="No trucks assigned to this job yet" />
             ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <thead>
-                    <tr className="border-b-2 border-muted">
-                      <Th>Truck</Th>
-                      <Th>Plate</Th>
-                      <Th>Daily Rate</Th>
-                      <Th>Days</Th>
-                      <Th className="text-right">Cost</Th>
-                      <Th></Th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {truckList.map((t, i) => (
-                      <tr key={i} className="hover:bg-muted/50 transition-colors">
-                        <Td className="font-medium">{t.truck.name}</Td>
-                        <Td className="font-mono text-sm">{t.truck.plateNumber || '—'}</Td>
-                        <Td className="text-sm">AED {(t.dailyRate ?? 0).toLocaleString()}</Td>
-                        <Td className="text-sm">{t.days ?? 1}</Td>
-                        <Td className="text-right text-sm font-bold">AED {((t.dailyRate || 0) * (t.days || 1)).toLocaleString()}</Td>
-                        <Td className="text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <button
-                              onClick={() => setEditTruckModal({ idx: i, name: t.truck.name, dailyRate: t.dailyRate ?? 0, days: t.days ?? 1, notes: t.notes || '' })}
-                              className="text-muted-foreground hover:text-primary p-1 rounded hover:bg-primary/10 transition-colors"
-                              title="Edit truck"
-                            >
-                              <Pencil size={14} />
-                            </button>
-                            <button
-                              onClick={() => setRemoveConfirm({ type: 'truck', idx: i, label: t.truck.name })}
-                              className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-500/10 transition-colors"
-                              title="Remove truck"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        </Td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </Table>
+              <div className="space-y-3">
+                {truckList.map((t, i) => (
+                  <div key={i} className="border border-border rounded-lg p-3 hover:bg-muted/50 transition-colors">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-sm truncate">{t.truck.name}</p>
+                        <p className="text-xs text-muted-foreground font-mono mt-0.5">{t.truck.plateNumber || '—'}</p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button onClick={() => setEditTruckModal({ idx: i, name: t.truck.name, dailyRate: t.dailyRate ?? 0, days: t.days ?? 1, notes: t.notes || '' })}
+                          className="text-muted-foreground hover:text-primary p-1 rounded hover:bg-primary/10 transition-colors" title="Edit truck">
+                          <Pencil size={14} />
+                        </button>
+                        <button onClick={() => setRemoveConfirm({ type: 'truck', idx: i, label: t.truck.name })}
+                          className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-500/10 transition-colors" title="Remove truck">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-muted-foreground">
+                      <span>AED {(t.dailyRate ?? 0).toLocaleString()}/day</span>
+                      <span>{t.days ?? 1} day{(t.days ?? 1) !== 1 ? 's' : ''}</span>
+                      <span className="font-semibold text-foreground">AED {((t.dailyRate || 0) * (t.days || 1)).toLocaleString()}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </CardBody>
@@ -1020,46 +979,36 @@ export default function MovingJobDetail() {
           {materialList.length === 0 ? (
             <EmptyState message="No materials assigned to this job yet" />
           ) : (
-            <Table>
-              <thead>
-                <tr className="border-b-2 border-muted">
-                  <Th>Item</Th>
-                  <Th>Qty</Th>
-                  <Th>Unit Cost</Th>
-                  <Th>Total</Th>
-                  <Th>Notes</Th>
-                  <Th></Th>
-                </tr>
-              </thead>
-              <tbody>
-                {materialList.map((m, i) => {
-                  const name = typeof m.item === 'string' ? m.item : m.item.name
-                  return (
-                    <tr key={i} className="hover:bg-muted/50 transition-colors">
-                      <Td className="font-medium">{name}</Td>
-                      <Td>{m.qty}</Td>
-                      <Td>AED {m.unitCost.toLocaleString()}</Td>
-                      <Td className="font-semibold">AED {(m.qty * m.unitCost).toLocaleString()}</Td>
-                      <Td className="text-xs text-muted-foreground">{m.notes || '—'}</Td>
-                      <Td className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <button onClick={() => setEditMaterialModal({ idx: i, item: name, qty: m.qty, notes: m.notes || '' })}
-                            className="text-muted-foreground hover:text-primary p-1 rounded hover:bg-primary/10 transition-colors"
-                            title="Edit material">
-                            <Pencil size={14} />
-                          </button>
-                          <button onClick={() => setRemoveConfirm({ type: 'material', idx: i, label: name })}
-                            className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-500/10 transition-colors"
-                            title="Remove material">
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </Td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </Table>
+            <div className="space-y-3">
+              {materialList.map((m, i) => {
+                const name = typeof m.item === 'string' ? m.item : m.item.name
+                return (
+                  <div key={i} className="border border-border rounded-lg p-3 hover:bg-muted/50 transition-colors">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-sm truncate">{name}</p>
+                        {m.notes && <p className="text-xs text-muted-foreground mt-0.5 truncate">{m.notes}</p>}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button onClick={() => setEditMaterialModal({ idx: i, item: name, qty: m.qty, notes: m.notes || '' })}
+                          className="text-muted-foreground hover:text-primary p-1 rounded hover:bg-primary/10 transition-colors" title="Edit material">
+                          <Pencil size={14} />
+                        </button>
+                        <button onClick={() => setRemoveConfirm({ type: 'material', idx: i, label: name })}
+                          className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-500/10 transition-colors" title="Remove material">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-muted-foreground">
+                      <span>Qty: {m.qty}</span>
+                      <span>AED {m.unitCost.toLocaleString()}/unit</span>
+                      <span className="font-semibold text-foreground">AED {(m.qty * m.unitCost).toLocaleString()}</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           )}
         </CardBody>
       </Card>
@@ -1075,43 +1024,33 @@ export default function MovingJobDetail() {
           {hireList.length === 0 ? (
             <EmptyState message="No external hires for this job" />
           ) : (
-            <Table>
-              <thead>
-                <tr className="border-b-2 border-muted">
-                  <Th>Title</Th>
-                  <Th>Name</Th>
-                  <Th>Duration</Th>
-                  <Th>Rate/hr</Th>
-                  <Th>Cost</Th>
-                  <Th></Th>
-                </tr>
-              </thead>
-              <tbody>
-                {hireList.map((h, i) => (
-                  <tr key={i} className="hover:bg-muted/50 transition-colors">
-                    <Td className="font-medium">{h.title}</Td>
-                    <Td>{h.name || '—'}</Td>
-                    <Td>
-                      <Badge tone="gray">{h.duration.replace(/_/g, ' ')} ({h.hours}h)</Badge>
-                    </Td>
-                    <Td>AED {h.rate.toLocaleString()}</Td>
-                    <Td className="font-semibold">AED {h.cost.toLocaleString()}</Td>
-                    <Td className="text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button onClick={() => setEditHireModal({ idx: i, title: h.title, name: h.name || '', duration: h.duration, hours: h.hours, rate: h.rate, notes: h.notes || '' })}
-                          className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-muted transition-colors">
-                          <Pencil size={14} />
-                        </button>
-                        <button onClick={() => setRemoveConfirm({ type: 'hire', idx: i, label: h.title })}
-                          className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-500/10 transition-colors">
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
+            <div className="space-y-3">
+              {hireList.map((h, i) => (
+                <div key={i} className="border border-border rounded-lg p-3 hover:bg-muted/50 transition-colors">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-sm truncate">{h.title}</p>
+                      {h.name && <p className="text-xs text-muted-foreground mt-0.5">{h.name}</p>}
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => setEditHireModal({ idx: i, title: h.title, name: h.name || '', duration: h.duration, hours: h.hours, rate: h.rate, notes: h.notes || '' })}
+                        className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-muted transition-colors" title="Edit hire">
+                        <Pencil size={14} />
+                      </button>
+                      <button onClick={() => setRemoveConfirm({ type: 'hire', idx: i, label: h.title })}
+                        className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-500/10 transition-colors" title="Remove hire">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-muted-foreground">
+                    <Badge tone="gray" className="text-xs">{h.duration.replace(/_/g, ' ')} ({h.hours}h)</Badge>
+                    <span>AED {h.rate.toLocaleString()}/hr</span>
+                    <span className="font-semibold text-foreground">AED {h.cost.toLocaleString()}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </CardBody>
       </Card>
@@ -1127,43 +1066,29 @@ export default function MovingJobDetail() {
           {extrasList.length === 0 ? (
             <EmptyState message="No extra charges added" />
           ) : (
-            <Table>
-              <thead>
-                <tr className="border-b-2 border-muted">
-                  <Th>Description</Th>
-                  <Th className="text-right">Amount</Th>
-                  <Th>Notes</Th>
-                  <Th></Th>
-                </tr>
-              </thead>
-              <tbody>
-                {extrasList.map((ex, i) => (
-                  <tr key={i} className="hover:bg-muted/50 transition-colors">
-                    <Td className="font-medium">{ex.description}</Td>
-                    <Td className="text-right font-bold">AED {ex.amount.toLocaleString()}</Td>
-                    <Td className="text-sm text-muted-foreground">{ex.notes || '—'}</Td>
-                    <Td className="text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => setEditExtraModal({ idx: i, description: ex.description, amount: ex.amount, notes: ex.notes || '' })}
-                          className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-muted transition-colors"
-                          title="Edit extra charge"
-                        >
-                          <Pencil size={14} />
-                        </button>
-                        <button
-                          onClick={() => setRemoveConfirm({ type: 'extra', idx: i, label: ex.description })}
-                          className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-500/10 transition-colors"
-                          title="Remove extra charge"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
+            <div className="space-y-3">
+              {extrasList.map((ex, i) => (
+                <div key={i} className="border border-border rounded-lg p-3 hover:bg-muted/50 transition-colors">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-sm truncate">{ex.description}</p>
+                      {ex.notes && <p className="text-xs text-muted-foreground mt-0.5 truncate">{ex.notes}</p>}
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className="font-bold text-sm mr-1">AED {ex.amount.toLocaleString()}</span>
+                      <button onClick={() => setEditExtraModal({ idx: i, description: ex.description, amount: ex.amount, notes: ex.notes || '' })}
+                        className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-muted transition-colors" title="Edit extra charge">
+                        <Pencil size={14} />
+                      </button>
+                      <button onClick={() => setRemoveConfirm({ type: 'extra', idx: i, label: ex.description })}
+                        className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-500/10 transition-colors" title="Remove extra charge">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </CardBody>
       </Card>
@@ -1969,6 +1894,19 @@ export default function MovingJobDetail() {
           </div>
         </div>
       </Modal>
+
+      {/* Sticky mobile bottom button */}
+      {!['invoiced', 'cancelled'].includes(job.status) && (
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/95 backdrop-blur border-t border-border md:hidden z-50">
+          <Button
+            className="w-full h-12 text-base font-semibold"
+            onClick={() => setEditDetailsModal(true)}
+          >
+            <Pencil size={18} className="mr-2" />
+            Edit Job
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

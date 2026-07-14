@@ -407,11 +407,11 @@ export function StatusBadge({
 /* ---------- Info Grid ---------- */
 export function InfoGrid({ children, cols = 2 }: { children: ReactNode; cols?: number }) {
   return (
-    <dl className={cn('grid gap-6', {
+    <dl className={cn('grid gap-x-6 gap-y-4', {
       'grid-cols-1': cols === 1,
       'grid-cols-2': cols === 2,
-      'grid-cols-3': cols === 3,
-      'grid-cols-4': cols === 4,
+      'grid-cols-2 md:grid-cols-3': cols === 3,
+      'grid-cols-2 md:grid-cols-4': cols === 4,
     })}>
       {children}
     </dl>
