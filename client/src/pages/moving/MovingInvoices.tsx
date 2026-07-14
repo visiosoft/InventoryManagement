@@ -33,15 +33,15 @@ function StatCard({ label, value, sub, icon, iconBg, iconColor }: {
   label: string; value: string | number; sub?: string; icon: React.ReactNode; iconBg: string; iconColor: string
 }) {
   return (
-    <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 20 }}>
-      <div className="flex justify-between items-start">
-        <div style={{ fontSize: 13, color: MUTED, fontWeight: 500 }}>{label}</div>
-        <div style={{ width: 36, height: 36, borderRadius: 10, background: iconBg, display: 'grid', placeItems: 'center', color: iconColor }}>
+    <div className="p-3 sm:p-5" style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16 }}>
+      <div className="flex justify-between items-start gap-1">
+        <div className="text-xs sm:text-[13px]" style={{ color: MUTED, fontWeight: 500 }}>{label}</div>
+        <div className="w-7 h-7 sm:w-9 sm:h-9 shrink-0" style={{ borderRadius: 10, background: iconBg, display: 'grid', placeItems: 'center', color: iconColor }}>
           {icon}
         </div>
       </div>
-      <div style={{ ...HEADING, fontSize: 32, fontWeight: 700, color: INK, marginTop: 8 }}>{value}</div>
-      {sub && <div style={{ fontSize: 12, color: MUTED, marginTop: 6 }}>{sub}</div>}
+      <div className="text-xl sm:text-[32px] mt-1 sm:mt-2" style={{ ...HEADING, fontWeight: 700, color: INK }}>{value}</div>
+      {sub && <div className="text-[11px] sm:text-xs mt-1" style={{ color: MUTED }}>{sub}</div>}
     </div>
   )
 }
