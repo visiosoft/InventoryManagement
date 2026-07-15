@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Printer, DollarSign, Camera, X, CalendarDays } from 'lucide-react'
+import { Printer, DollarSign, Camera, X, CalendarDays, Share2 } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingJob } from '../../lib/types'
 import { Badge, Button, Field, Input, Modal, Spinner, Textarea, movingJobStatusLabel } from '../../components/ui'
@@ -20,6 +20,59 @@ function getLocalDateString(d: Date) {
 
 interface PriceModalState { jobId: string; jobNo: string; currentCost: number }
 
+function buildShareMessage(job: MovingJob) {
+  const crew = (job.crew ?? []) as Array<{ worker: { name: string; role: string; phone?: string }; role?: string; isSupervisor?: boolean }>
+  const trucks = (job.trucks ?? []) as Array<{ truck: { name: string; plateNumber?: string } }>
+  const images = job.images ?? []
+  const pkg = job.clientPackage
+  const dateStr = job.scheduledDate
+    ? new Date(job.scheduledDate).toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })
+    : ''
+
+  const lines: string[] = []
+  lines.push(`📦 *Job ${job.jobNo}*`)
+  lines.push(`📅 ${dateStr}${job.scheduledTimeSlot ? ` · ${job.scheduledTimeSlot}` : ''}`)
+  if (pkg?.label) lines.push(`📋 Package: ${pkg.label}`)
+  lines.push('')
+
+  lines.push(`👤 *Customer:* ${job.customer?.fullName || '—'}`)
+  if (job.customer?.phone) lines.push(`📞 ${job.customer.phone}`)
+  lines.push('')
+
+  lines.push(`📍 *Pickup:* ${job.pickupAddress || '—'}`)
+  if (job.pickupFloor) lines.push(`   Floor: ${job.pickupFloor}${job.pickupHasElevator ? ' (Elevator ✓)' : ' (No elevator)'}`)
+  lines.push(`📍 *Delivery:* ${job.deliveryAddress || '—'}`)
+  if (job.deliveryFloor) lines.push(`   Floor: ${job.deliveryFloor}${job.deliveryHasElevator ? ' (Elevator ✓)' : ' (No elevator)'}`)
+  lines.push('')
+
+  if (crew.length > 0) {
+    lines.push(`👥 *Crew (${crew.length}):*`)
+    crew.forEach(c => {
+      const sup = c.isSupervisor ? ' ⭐' : ''
+      lines.push(`  • ${c.worker.name} (${c.role || c.worker.role})${sup}${c.worker.phone ? ' — ' + c.worker.phone : ''}`)
+    })
+    lines.push('')
+  }
+
+  if (trucks.length > 0) {
+    lines.push(`🚛 *Trucks (${trucks.length}):*`)
+    trucks.forEach(t => {
+      lines.push(`  • ${t.truck.name}${t.truck.plateNumber ? ' — ' + t.truck.plateNumber : ''}`)
+    })
+    lines.push('')
+  }
+
+  if (job.moveOutPermitRequired) lines.push(`⚠️ *Move-out permit required*\n`)
+  if (job.dispatchNotes) lines.push(`📝 *Notes:* ${job.dispatchNotes}\n`)
+
+  if (images.length > 0) {
+    lines.push(`🖼 ${images.length} estimation photo(s) available`)
+    lines.push(`View job: ${window.location.origin}/moving/jobs/${job._id}`)
+  }
+
+  return lines.join('\n')
+}
+
 function JobDispatchCard({ job, index, onPriceOverride }: { job: MovingJob; index: number; onPriceOverride: (s: PriceModalState) => void }) {
   const [lightbox, setLightbox] = useState<{ url: string; name: string; idx: number } | null>(null)
 
@@ -36,6 +89,11 @@ function JobDispatchCard({ job, index, onPriceOverride }: { job: MovingJob; inde
     return img.storage === 'drive' && img.driveFileId
       ? `https://drive.google.com/thumbnail?id=${img.driveFileId}&sz=w${size}`
       : img.url
+  }
+
+  function handleShare() {
+    const msg = buildShareMessage(job)
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
   }
 
   function goLightbox(dir: 1 | -1) {
@@ -66,14 +124,24 @@ function JobDispatchCard({ job, index, onPriceOverride }: { job: MovingJob; inde
               </span>
             )}
           </div>
-          <button
-            onClick={() => onPriceOverride({ jobId: job._id, jobNo: job.jobNo, currentCost: job.costs?.total ?? 0 })}
-            className="print:hidden flex items-center gap-1.5 hover:opacity-80 transition-opacity"
-            style={{ fontSize: 12, fontWeight: 600, color: '#9A3412', background: '#FFF7ED', border: '1px solid rgba(234,88,12,0.15)', padding: '6px 12px', borderRadius: 10 }}
-          >
-            <DollarSign size={13} />
-            {override?.amount != null ? 'Revise Price' : 'Adjust Price'}
-          </button>
+          <div className="print:hidden flex items-center gap-2">
+            <button
+              onClick={handleShare}
+              className="flex items-center gap-1.5 hover:opacity-80 transition-opacity"
+              style={{ fontSize: 12, fontWeight: 600, color: '#059669', background: '#ECFDF5', border: '1px solid rgba(5,150,105,0.15)', padding: '6px 12px', borderRadius: 10 }}
+            >
+              <Share2 size={13} />
+              Share
+            </button>
+            <button
+              onClick={() => onPriceOverride({ jobId: job._id, jobNo: job.jobNo, currentCost: job.costs?.total ?? 0 })}
+              className="flex items-center gap-1.5 hover:opacity-80 transition-opacity"
+              style={{ fontSize: 12, fontWeight: 600, color: '#9A3412', background: '#FFF7ED', border: '1px solid rgba(234,88,12,0.15)', padding: '6px 12px', borderRadius: 10 }}
+            >
+              <DollarSign size={13} />
+              {override?.amount != null ? 'Revise Price' : 'Adjust Price'}
+            </button>
+          </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap mt-1" style={{ fontSize: 13 }}>
           <span style={{ fontWeight: 500, color: INK }}>{job.customer?.fullName}</span>
