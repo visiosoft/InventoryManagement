@@ -9,7 +9,6 @@ const PURPLE = '#5B2BC9'
 const INK = '#14081F'
 const GREEN = '#047857'
 const MUTED = '#756E80'
-const _CHIP_BG = '#F3F0EA'
 
 export default function Approvals() {
   const qc = useQueryClient()
