@@ -1,9 +1,8 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Box, Users, FileText, CreditCard, BarChart3, Building2, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, ShoppingCart, Wallet, TrendingUp, UserCheck, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup } from 'lucide-react'
+import { LayoutDashboard, Box, Users, FileText, CreditCard, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, ShoppingCart, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ShieldCheck } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { cn } from '../lib/utils'
-import { integrationApi } from '../lib/api'
 
 const navTop = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard' as string | undefined },
@@ -11,30 +10,31 @@ const navTop = [
 
 const navGroups = [
   {
+    title: '',
+    items: [
+      { to: '/quotes', label: 'Book Unit', icon: FileText, perm: 'quotes' },
+    ],
+  },
+  {
     title: 'Inventory',
     items: [
-      { to: '/units', label: 'Units', icon: Box, perm: 'units' },
-      { to: '/contracts', label: 'Contracts', icon: FileText, perm: 'contracts' },
-      { to: '/documents', label: 'Documents', icon: FolderOpen, perm: 'documents' },
+      { to: '/units', label: 'Search Units', icon: Box, perm: 'units' },
     ],
   },
   {
     title: 'Sales',
     items: [
       { to: '/customers', label: 'Customers', icon: Users, perm: 'customers' },
-      { to: '/invoices', label: 'Invoices', icon: ReceiptText, perm: 'invoices' },
       { to: '/leads', label: 'Leads', icon: UserPlus, perm: 'leads' },
+      { to: '/contracts', label: 'Contracts', icon: Briefcase, perm: 'contracts' },
     ],
   },
-  {
-    title: 'Purchases',
-    items: [
-      { to: '/vendors', label: 'Vendors', icon: Truck, perm: 'vendors' },
-      { to: '/purchases', label: 'Purchases/Bill', icon: ShoppingCart, perm: 'purchases' },
-      { to: '/expenses', label: 'Expenses', icon: Wallet, perm: 'expenses' },
-      { to: '/payments', label: 'Payments', icon: CreditCard, perm: 'payments' },
-    ],
-  },
+]
+
+const profileMenuItems = [
+  { to: '/invoices', label: 'Invoices', icon: ReceiptText, perm: 'invoices' },
+  { to: '/documents', label: 'Documents', icon: FolderOpen, perm: 'documents' },
+  { to: '/settings', label: 'Settings', icon: Settings, perm: 'settings' },
 ]
 
 const reportItems = [
@@ -48,9 +48,7 @@ const reportItems = [
   { to: '/reports/expiring', label: 'Expiring Contracts', icon: Clock, perm: 'reports_expiring' },
 ]
 
-const navBottom = [
-  { to: '/settings', label: 'Settings', icon: Settings, perm: 'settings' },
-]
+const navBottom: { to: string; label: string; icon: any; perm: string }[] = []
 
 const movingNavItems = [
   { to: '/moving', label: 'Dashboard', icon: LayoutDashboard, perm: 'moving_dashboard' as string },
@@ -88,28 +86,23 @@ export default function Layout() {
   const [reportsOpen, setReportsOpen] = useState(onReportsRoute)
   const [dark, setDark] = useState(() => localStorage.getItem('pb_theme') === 'dark')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const profileRef = useRef<HTMLDivElement>(null)
   const isAdmin = user?.role === 'admin'
   const isMovingOnly = !isAdmin && hasPermission('moving_dashboard') && !hasPermission('units')
-  const [contactsToast, setContactsToast] = useState<{ created: number } | null>(null)
-  const lastSeenAt = useRef<string | null>(null)
 
   // Close sidebar on route change (mobile)
-  useEffect(() => { setSidebarOpen(false) }, [location.pathname])
+  useEffect(() => { setSidebarOpen(false); setProfileOpen(false) }, [location.pathname])
 
+  // Close profile dropdown on click outside
   useEffect(() => {
-    const poll = async () => {
-      try {
-        const data = await integrationApi.lastSync()
-        if (data?.at && data.created > 0 && data.at !== lastSeenAt.current) {
-          lastSeenAt.current = data.at
-          setContactsToast({ created: data.created })
-        }
-      } catch { /* silent */ }
+    const handler = (e: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) setProfileOpen(false)
     }
-    poll()
-    const id = setInterval(poll, 60_000)
-    return () => clearInterval(id)
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
   }, [])
+
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark)
@@ -149,10 +142,12 @@ export default function Layout() {
           const visibleItems = group.items.filter(({ perm }) => !perm || hasPermission(perm))
           if (visibleItems.length === 0) return null
           return (
-            <div key={group.title} className="pt-3">
-              <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-sidebar-muted/60">
-                {group.title}
-              </div>
+            <div key={group.title || visibleItems[0]?.to} className="pt-3">
+              {group.title && (
+                <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-sidebar-muted/60">
+                  {group.title}
+                </div>
+              )}
               {visibleItems.map(({ to, label, icon: Icon }) => (
                 <NavLink key={to} to={to} className={({ isActive }) => navLinkCls(isActive)}>
                   <Icon size={15} />{label}
@@ -161,6 +156,12 @@ export default function Layout() {
             </div>
           )
         })}
+
+        {!isMovingOnly && isAdmin && (
+          <NavLink to="/approvals" className={({ isActive }) => navLinkCls(isActive)}>
+            <ShieldCheck size={15} />Approvals
+          </NavLink>
+        )}
 
         {/* Reports */}
         {!isMovingOnly && (() => {
@@ -199,16 +200,6 @@ export default function Layout() {
           </NavLink>
         ))}
 
-        {isAdmin && (
-          <NavLink to="/users" className={({ isActive }) => navLinkCls(isActive)}>
-            <UserCog size={15} />Users
-          </NavLink>
-        )}
-        {isAdmin && (
-          <NavLink to="/backup" className={({ isActive }) => navLinkCls(isActive)}>
-            <DatabaseBackup size={15} />Backup
-          </NavLink>
-        )}
 
         {/* Moving Business */}
         {(() => {
@@ -233,7 +224,7 @@ export default function Layout() {
       {/* Footer */}
       <div className="shrink-0 border-t border-white/10 p-3 space-y-2">
         <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-white/5">
-          <div className="h-7 w-7 rounded-full bg-[#4C8CE4] flex items-center justify-center text-white text-xs font-bold shrink-0">
+          <div className="h-7 w-7 rounded-full bg-[#5B2BC9] flex items-center justify-center text-white text-xs font-bold shrink-0">
             {user?.name?.charAt(0)?.toUpperCase() ?? 'U'}
           </div>
           <div className="flex-1 min-w-0">
@@ -241,7 +232,8 @@ export default function Layout() {
             <div className="text-[10px] text-sidebar-muted truncate">{user?.email}</div>
           </div>
         </div>
-        <div className="flex gap-1">
+        {/* Dark/Logout visible on mobile only — desktop uses profile dropdown */}
+        <div className="flex gap-1 md:hidden">
           <button
             onClick={() => setDark(!dark)}
             className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-sidebar-muted hover:bg-white/8 hover:text-sidebar-foreground cursor-pointer transition-colors"
@@ -307,18 +299,90 @@ export default function Layout() {
 
       {/* ── Main content ────────────────────────────────────────── */}
       <main className="flex-1 md:ml-56 pt-14 md:pt-0 min-w-0">
+        {/* Desktop top bar with profile dropdown */}
+        <div className="hidden md:flex items-center justify-end h-14 px-6 border-b border-border/40">
+          <div ref={profileRef} className="relative">
+            <button
+              onClick={() => setProfileOpen(o => !o)}
+              className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-muted/60 transition-colors cursor-pointer"
+            >
+              <div className="h-7 w-7 rounded-full bg-[#5B2BC9] flex items-center justify-center text-white text-xs font-bold shrink-0">
+                {user?.name?.charAt(0)?.toUpperCase() ?? 'U'}
+              </div>
+              <span className="text-sm font-medium text-foreground max-w-[120px] truncate">{user?.name}</span>
+              <ChevronDown size={14} className={cn('text-muted-foreground transition-transform duration-200', profileOpen && 'rotate-180')} />
+            </button>
+
+            {profileOpen && (
+              <div className="absolute right-0 top-full mt-1 w-56 rounded-xl border border-border bg-white dark:bg-neutral-900 shadow-xl py-1.5 z-50">
+                {/* User info */}
+                <div className="px-3 py-2 border-b border-border/60">
+                  <div className="text-sm font-semibold text-foreground truncate">{user?.name}</div>
+                  <div className="text-xs text-muted-foreground truncate">{user?.email}</div>
+                </div>
+
+                {/* Profile menu items */}
+                <div className="py-1">
+                  {profileMenuItems.filter(({ perm }) => hasPermission(perm)).map(({ to, label, icon: Icon }) => (
+                    <NavLink
+                      key={to}
+                      to={to}
+                      className={({ isActive }) => cn(
+                        'flex items-center gap-2.5 px-3 py-2 text-sm transition-colors',
+                        isActive ? 'bg-accent text-accent-foreground font-medium' : 'text-foreground hover:bg-muted/60'
+                      )}
+                    >
+                      <Icon size={15} className="text-muted-foreground" />{label}
+                    </NavLink>
+                  ))}
+                </div>
+
+                {/* Admin items */}
+                {isAdmin && (
+                  <div className="border-t border-border/60 py-1">
+                    <NavLink
+                      to="/users"
+                      className={({ isActive }) => cn(
+                        'flex items-center gap-2.5 px-3 py-2 text-sm transition-colors',
+                        isActive ? 'bg-accent text-accent-foreground font-medium' : 'text-foreground hover:bg-muted/60'
+                      )}
+                    >
+                      <UserCog size={15} className="text-muted-foreground" />Users
+                    </NavLink>
+                    <NavLink
+                      to="/backup"
+                      className={({ isActive }) => cn(
+                        'flex items-center gap-2.5 px-3 py-2 text-sm transition-colors',
+                        isActive ? 'bg-accent text-accent-foreground font-medium' : 'text-foreground hover:bg-muted/60'
+                      )}
+                    >
+                      <DatabaseBackup size={15} className="text-muted-foreground" />Backup
+                    </NavLink>
+                  </div>
+                )}
+
+                {/* Dark mode + Logout */}
+                <div className="border-t border-border/60 py-1">
+                  <button
+                    onClick={() => setDark(!dark)}
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-muted/60 transition-colors cursor-pointer"
+                  >
+                    {dark ? <Sun size={15} className="text-muted-foreground" /> : <Moon size={15} className="text-muted-foreground" />}
+                    {dark ? 'Light mode' : 'Dark mode'}
+                  </button>
+                  <button
+                    onClick={() => { logout(); navigate('/login') }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-muted/60 transition-colors cursor-pointer"
+                  >
+                    <LogOut size={15} />Logout
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
         <div className="p-4 sm:p-6 lg:p-8 max-w-[1400px] mx-auto">
-          {contactsToast && (
-            <div className="fixed top-4 right-4 z-50 flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 dark:bg-emerald-950 dark:border-emerald-800 px-4 py-3 shadow-xl text-sm text-emerald-800 dark:text-emerald-300 max-w-sm">
-              <UserCheck size={16} className="shrink-0" />
-              <span className="flex-1">
-                <strong>{contactsToast.created} new contact{contactsToast.created > 1 ? 's' : ''}</strong> synced from Google Contacts.
-              </span>
-              <button onClick={() => setContactsToast(null)} className="shrink-0 text-emerald-600 hover:text-emerald-800 cursor-pointer">
-                <X size={14} />
-              </button>
-            </div>
-          )}
           <Outlet />
         </div>
       </main>

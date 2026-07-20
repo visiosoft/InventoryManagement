@@ -154,6 +154,7 @@ function RecordPaymentModalContent({ invoiceId, onClose }: { invoiceId: string; 
     const [method, setMethod] = useState('cash')
     const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
     const [notes, setNotes] = useState('')
+    const [receipt, setReceipt] = useState<File | null>(null)
     const [err, setErr] = useState('')
 
     const { data: inv } = useQuery<Invoice>({
@@ -167,13 +168,23 @@ function RecordPaymentModalContent({ invoiceId, onClose }: { invoiceId: string; 
     const balance = Math.max(0, total - paid)
 
     const record = useMutation({
-        mutationFn: (body: { amount: number; method: string; date: string; notes?: string }) =>
-            invoiceApi.recordPayment(invoiceId, body),
+        mutationFn: async (body: { amount: number; method: string; date: string; notes?: string }) => {
+            const inv = await invoiceApi.recordPayment(invoiceId, body)
+            if (receipt) {
+                const form = new FormData()
+                const ext = receipt.name.includes('.') ? receipt.name.slice(receipt.name.lastIndexOf('.')) : ''
+                const renamed = new File([receipt], `Receipt ${body.date} — ${receipt.name.replace(/\.[^.]*$/, '')}${ext}`, { type: receipt.type })
+                form.append('files', renamed)
+                await invoiceApi.uploadAttachments(invoiceId, form)
+            }
+            return inv
+        },
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['invoice', invoiceId] })
             qc.invalidateQueries({ queryKey: ['invoices'] })
             setAmount('')
             setNotes('')
+            setReceipt(null)
             setErr('')
         },
         onError: (e) => setErr(apiError(e)),
@@ -276,6 +287,15 @@ function RecordPaymentModalContent({ invoiceId, onClose }: { invoiceId: string; 
                             <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Reference / memo" />
                         </Field>
                     </div>
+                    <Field label="Payment receipt (optional)">
+                        <Input
+                            type="file"
+                            accept="image/*,.pdf"
+                            className="h-auto py-1.5"
+                            onChange={(e) => setReceipt(e.target.files?.[0] ?? null)}
+                        />
+                    </Field>
+                    {receipt && <p className="text-xs text-muted-foreground">Will attach: {receipt.name}</p>}
                     {err && <p className="text-xs text-destructive">{err}</p>}
                     <div className="flex gap-2 justify-end">
                         <Button type="button" variant="outline" onClick={onClose}>Done</Button>

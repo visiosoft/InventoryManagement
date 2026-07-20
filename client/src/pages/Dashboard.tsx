@@ -116,6 +116,12 @@ export default function Dashboard() {
     queryFn: () => api.get('/contracts/latest-notes?limit=30').then((r) => r.data),
   })
 
+  const { data: draftInvoicesPage } = useQuery<{ total: number }>({
+    queryKey: ['invoices-draft-count'],
+    queryFn: () => api.get('/invoices', { params: { status: 'draft', limit: 1 } }).then((r) => r.data),
+  })
+  const draftInvoices = draftInvoicesPage?.total ?? 0
+
   // ── All derived values must be computed before any early return so hooks
   //    (useMemo below) are always called in the same order every render. ──────
 
@@ -387,6 +393,19 @@ export default function Dashboard() {
   return (
     <div>
       <PageHeader title="Dashboard" subtitle="Facility overview at a glance (drag cards to reorder)" />
+
+      {draftInvoices > 0 && (
+        <Link
+          to="/invoices?status=draft"
+          className="mb-4 flex items-center justify-between rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm dark:border-amber-800 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-950/50 transition-colors"
+        >
+          <span className="flex items-center gap-2 font-medium text-amber-800 dark:text-amber-300">
+            <FileText size={15} />
+            {draftInvoices} draft invoice{draftInvoices !== 1 ? 's' : ''} awaiting send
+          </span>
+          <span className="text-xs text-amber-700 dark:text-amber-400">Review &amp; send →</span>
+        </Link>
+      )}
 
       <div className="space-y-5">
         {layout.map((id) => {

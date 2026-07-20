@@ -45,6 +45,8 @@ import ExpiringContractsReport from './pages/reports/ExpiringContractsReport'
 import Settings from './pages/Settings'
 import Backup from './pages/Backup'
 import Leads from './pages/Leads'
+import Quotations from './pages/Quotations'
+import NewQuote from './pages/NewQuote'
 import Invoices from './pages/Invoices'
 import InvoiceDetail from './pages/InvoiceDetail'
 import Vendors from './pages/Vendors'
@@ -70,9 +72,11 @@ import MovingInvoiceDetail from './pages/moving/MovingInvoiceDetail'
 import MovingClaims from './pages/moving/MovingClaims'
 import MovingSurveyDetail from './pages/moving/MovingSurveyDetail'
 import ClientUpload from './pages/moving/ClientUpload'
+import SharedJobView from './pages/moving/SharedJobView'
 import FieldLogin from './pages/field/FieldLogin'
 import FieldApp from './pages/field/FieldApp'
 import ReminderSettings from './pages/ReminderSettings'
+import Approvals from './pages/Approvals'
 
 export default function App() {
   const { user } = useAuth()
@@ -83,6 +87,7 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/sign/:token" element={<SignContract />} />
         <Route path="/upload/moving/:token" element={<ClientUpload />} />
+        <Route path="/share/job/:token" element={<SharedJobView />} />
         <Route path="/field/login" element={<FieldLogin />} />
         <Route path="/field/*" element={<FieldApp />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
@@ -95,6 +100,7 @@ export default function App() {
       <Route path="/login" element={<Navigate to="/" replace />} />
       <Route path="/sign/:token" element={<SignContract />} />
       <Route path="/upload/moving/:token" element={<ClientUpload />} />
+      <Route path="/share/job/:token" element={<SharedJobView />} />
       <Route path="/field/login" element={<Navigate to="/field" replace />} />
       <Route path="/field/*" element={<FieldApp />} />
       <Route element={<Layout />}>
@@ -103,6 +109,8 @@ export default function App() {
         <Route path="/customers" element={<Customers />} />
         <Route path="/customers/:id" element={<CustomerDetail />} />
         <Route path="/leads" element={<Leads />} />
+        <Route path="/quotes" element={<PermGuard module="quotes"><Quotations /></PermGuard>} />
+        <Route path="/quotes/new" element={<PermGuard module="quotes"><NewQuote /></PermGuard>} />
         <Route path="/invoices" element={<Invoices />} />
         <Route path="/invoices/:id" element={<InvoiceDetail />} />
         <Route path="/vendors" element={<Vendors />} />
@@ -125,6 +133,7 @@ export default function App() {
         <Route path="/reports/vacancies" element={<PermGuard module="reports_vacancies"><UpcomingVacanciesReport /></PermGuard>} />
         <Route path="/reports/overdue"   element={<PermGuard module="reports_overdue"><OverduePaymentsReport /></PermGuard>} />
         <Route path="/reports/expiring"  element={<PermGuard module="reports_expiring"><ExpiringContractsReport /></PermGuard>} />
+        <Route path="/approvals" element={<AdminGuard><Approvals /></AdminGuard>} />
         <Route path="/users" element={<AdminGuard><UserManagement /></AdminGuard>} />
         <Route path="/backup" element={<AdminGuard><Backup /></AdminGuard>} />
         <Route path="/settings" element={<Settings />} />

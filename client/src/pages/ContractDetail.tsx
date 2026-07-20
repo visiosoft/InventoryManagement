@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { CalendarDays, CalendarPlus, CheckCircle2, Download, FileText, FilePlus, MessageSquare, PenLine, Plus, ShieldCheck, Upload, X, XCircle, Receipt, Clock, FolderOpen, Bell, ChevronDown, ChevronUp } from 'lucide-react'
 import { api, apiError, reminderConfigApi } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -282,7 +282,7 @@ function SignatureCanvas({ onCapture }: { onCapture: (dataUrl: string | null) =>
 }
 
 // ── Sign-in-person modal ────────────────────────────────────────────────────────
-function SignInPersonModal({ contractNo, customerName, busy, error, onSign, onClose }: {
+export function SignInPersonModal({ contractNo, customerName, busy, error, onSign, onClose }: {
   contractNo: string
   customerName: string
   busy: boolean
@@ -1164,6 +1164,7 @@ function SectionRow({ label, count, total, tone, action }: {
 // ── Main page ──────────────────────────────────────────────────────────────────
 export default function ContractDetail() {
   const { id } = useParams()
+  const navigate = useNavigate()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const qc = useQueryClient()
@@ -1328,6 +1329,12 @@ export default function ContractDetail() {
 
   const deleteNote = useMutation({
     mutationFn: (idx: number) => api.delete(`/contracts/${id}/notes/${idx}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['contract', id] }),
+    onError: (e) => setError(apiError(e)),
+  })
+
+  const deleteDocument = useMutation({
+    mutationFn: (docId: string) => api.delete(`/documents/${docId}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['contract', id] }),
     onError: (e) => setError(apiError(e)),
   })
@@ -1582,7 +1589,10 @@ export default function ContractDetail() {
       <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
         <h1 className="text-2xl font-bold tracking-tight">Contract overview</h1>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={() => { setError(''); setEditModal(true) }}>
+          <Button variant="outline" size="sm" onClick={() => {
+            if (c.quote?._id) { navigate(`/quotes/new?quote=${c.quote._id}`) }
+            else { setError(''); setEditModal(true) }
+          }}>
             <PenLine size={14} /> Edit
           </Button>
           {!['ended', 'cancelled'].includes(c.status) && (
@@ -2125,7 +2135,15 @@ export default function ContractDetail() {
                         <Td>{statusLabel(d.type)}</Td>
                         <Td><Badge tone={d.storage === 'drive' ? 'blue' : 'gray'}>{d.storage === 'drive' ? 'Google Drive' : 'Local'}</Badge></Td>
                         <Td>{formatDate(d.createdAt)}</Td>
-                        <Td><a href={d.url} target="_blank" rel="noreferrer" className="text-primary text-xs hover:underline">Open</a></Td>
+                        <Td>
+                          <div className="flex items-center gap-2 justify-end">
+                            <a href={d.url} target="_blank" rel="noreferrer" className="text-primary text-xs hover:underline">Open</a>
+                            <button
+                              className="text-xs text-red-500 hover:text-red-700 hover:underline"
+                              onClick={() => { if (confirm('Delete this document?')) deleteDocument.mutate(d._id) }}
+                            >Delete</button>
+                          </div>
+                        </Td>
                       </tr>
                     ))}
                   </tbody>

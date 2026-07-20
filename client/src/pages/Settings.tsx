@@ -352,7 +352,6 @@ export default function Settings() {
   const qc = useQueryClient()
   const location = useLocation()
   const [driveMsg, setDriveMsg] = useState<{ ok: boolean; text: string } | null>(null)
-  const [contactsMsg, setContactsMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [whatsAppAllowedLabels, setWhatsAppAllowedLabels] = useState('')
   const [whatsAppSyncOnlyAllowedLabels, setWhatsAppSyncOnlyAllowedLabels] = useState(false)
 
@@ -372,23 +371,12 @@ export default function Settings() {
     } else if (params.get('driveError')) {
       setDriveMsg({ ok: false, text: `Drive connection failed: ${params.get('driveError')}` })
       window.history.replaceState({}, '', '/settings')
-    } else if (params.get('contactsConnected')) {
-      setContactsMsg({ ok: true, text: 'Google connected! Contacts auto-sync is active and signed PDFs will be stored in Google Drive.' })
-      window.history.replaceState({}, '', '/settings')
-      qc.invalidateQueries({ queryKey: ['integrations-status'] })
-    } else if (params.get('contactsError')) {
-      setContactsMsg({ ok: false, text: `Contacts connection failed: ${params.get('contactsError')}` })
-      window.history.replaceState({}, '', '/settings')
     }
   }, [location.search, qc])
 
   const { data: integrations } = useQuery<IntegrationStatus>({
     queryKey: ['integrations-status'],
     queryFn: () => integrationApi.status(),
-  })
-  const syncContacts = useMutation({
-    mutationFn: () => integrationApi.syncGoogleContacts(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['leads'] }),
   })
 
   return (
@@ -463,61 +451,6 @@ export default function Settings() {
             <span className={integrations?.whatsapp?.configured ? 'text-xs text-emerald-600 font-medium' : 'text-xs text-amber-600 font-medium'}>
               {integrations?.whatsapp?.configured ? 'Connected' : `Missing: ${(integrations?.whatsapp?.missing || []).join(', ') || 'keys'}`}
             </span>
-          </div>
-          <div className="rounded-lg border px-4 py-3 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="font-medium">Google Contacts + Drive</div>
-                <div className="text-xs text-muted-foreground">
-                  Syncs contacts into leads every 10 min · stores all signed PDFs in Google Drive
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className={integrations?.googleContacts?.configured ? 'text-xs text-emerald-600 font-medium' : 'text-xs text-amber-600 font-medium'}>
-                  {integrations?.googleContacts?.configured ? 'Connected' : 'Not connected'}
-                </span>
-                <Button
-                  size="sm"
-                  variant={integrations?.googleContacts?.configured ? 'outline' : 'default'}
-                  onClick={async () => {
-                    try {
-                      const { url } = await integrationApi.connectContacts()
-                      window.location.href = url
-                    } catch (e) {
-                      setContactsMsg({ ok: false, text: apiError(e) })
-                    }
-                  }}
-                >
-                  {integrations?.googleContacts?.configured ? 'Reconnect' : 'Connect Google Contacts'}
-                </Button>
-              </div>
-            </div>
-            {contactsMsg && (
-              <p className={`text-xs ${contactsMsg.ok ? 'text-emerald-700 dark:text-emerald-400' : 'text-destructive'}`}>
-                {contactsMsg.text}
-              </p>
-            )}
-            {!integrations?.googleContacts?.configured && (
-              <p className="text-xs text-muted-foreground">
-                Before connecting, add <code className="bg-muted px-1 rounded">http://localhost:5010/api/integrations/contacts/callback</code> to your OAuth client's authorized redirect URIs in Google Cloud Console.
-              </p>
-            )}
-            {integrations?.googleContacts?.configured && (
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t">
-                <div className="text-xs text-muted-foreground">Trigger a manual sync now</div>
-                <Button size="sm" variant="outline" onClick={() => syncContacts.mutate()} disabled={syncContacts.isPending}>
-                  {syncContacts.isPending ? 'Syncing…' : 'Sync now'}
-                </Button>
-              </div>
-            )}
-            {syncContacts.isSuccess && (
-              <p className="text-xs text-emerald-700 dark:text-emerald-400">
-                Done — created {syncContacts.data.summary.created}, updated {syncContacts.data.summary.updated}, skipped {syncContacts.data.summary.skipped}.
-              </p>
-            )}
-            {syncContacts.isError && (
-              <p className="text-xs text-destructive">{apiError(syncContacts.error)}</p>
-            )}
           </div>
           <p className="text-xs text-muted-foreground">
             Setup instructions are in <code>README.md</code>. WhatsApp v1 currently validates webhook setup only.

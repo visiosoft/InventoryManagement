@@ -35,7 +35,11 @@ export type LeadQuery = {
   owner?: string
   from?: string
   to?: string
+  page?: number
+  limit?: number
 }
+
+export type LeadPage = { data: Lead[]; total: number; page: number; pages: number; limit: number }
 
 export const productApi = {
   list: () => api.get<Product[]>('/products').then((r) => r.data),
@@ -53,7 +57,7 @@ export const unitTypeApi = {
 }
 
 export const leadApi = {
-  list: (params: LeadQuery) => api.get<Lead[]>('/leads', { params }).then((r) => r.data),
+  list: (params: LeadQuery) => api.get<LeadPage>('/leads', { params }).then((r) => r.data),
   create: (body: Partial<Lead>) => api.post<Lead>('/leads', body).then((r) => r.data),
   update: (id: string, body: Partial<Lead>) => api.put<Lead>(`/leads/${id}`, body).then((r) => r.data),
   updateStatus: (id: string, status: string, comment?: string) => api.patch<Lead>(`/leads/${id}/status`, { status, comment }).then((r) => r.data),
@@ -66,26 +70,33 @@ export const leadApi = {
 
 export const integrationApi = {
   status: () => api.get<IntegrationStatus>('/integrations/status').then((r) => r.data),
-  syncGoogleContacts: () =>
-    api
-      .post<{ ok: boolean; configured: boolean; summary: { created: number; updated: number; skipped: number; errors: number } }>(
-        '/integrations/google-contacts/sync', {}
-      )
-      .then((r) => r.data),
-  lastSync: () =>
-    api
-      .get<{ at: string | null; created: number; updated: number; skipped: number; errors: number }>(
-        '/integrations/google-contacts/last-sync'
-      )
-      .then((r) => r.data),
-  connectContacts: () =>
-    api.get<{ url: string }>('/integrations/contacts/connect').then((r) => r.data),
   connectDrive: () =>
     api.get<{ url: string }>('/integrations/drive/connect').then((r) => r.data),
 }
 
-export type QuoteQuery = { search?: string; status?: string; customer?: string }
+export type QuoteQuery = { search?: string; status?: string; customer?: string; lead?: string }
 export type InvoiceQuery = { search?: string; status?: string; customer?: string; page?: number; limit?: number }
+
+export interface UnitBooking {
+  kind: 'contract' | 'quote' | 'current'
+  ref: string
+  customer: string
+  startDate?: string
+  endDate?: string
+  status?: string
+}
+
+export interface AvailableUnit {
+  _id: string
+  unitNumber: string
+  floor: string
+  sizeSqf: number
+  price: number
+  status: string
+  discountPct: number
+  bookedInPeriod?: boolean
+  bookings?: UnitBooking[]
+}
 
 export const quoteApi = {
   list: (params: QuoteQuery) => api.get<Quote[]>('/quotes', { params }).then((r) => r.data),
@@ -94,6 +105,14 @@ export const quoteApi = {
   update: (id: string, body: Record<string, unknown>) => api.put<Quote>(`/quotes/${id}`, body).then((r) => r.data),
   updateStatus: (id: string, status: string) => api.patch<Quote>(`/quotes/${id}/status`, { status }).then((r) => r.data),
   remove: (id: string) => api.delete<{ ok: true }>(`/quotes/${id}`).then((r) => r.data),
+  updateFlowStep: (id: string, step: number, stepsDone: boolean[]) =>
+    api.patch(`/quotes/${id}/flow-step`, { step, stepsDone }).then((r) => r.data),
+  convertToContract: (id: string) =>
+    api.post<{ contractId: string; contractNo: string }>(`/quotes/${id}/convert-to-contract`).then((r) => r.data),
+  share: (id: string, channel?: 'whatsapp' | 'email') =>
+    api.post<{ token: string; url: string }>(`/quotes/${id}/share`, { channel }).then((r) => r.data),
+  availableUnits: (from?: string, to?: string, all?: boolean) =>
+    api.get<AvailableUnit[]>('/quotes/available-units', { params: { from, to, all: all ? 'true' : undefined } }).then((r) => r.data),
 }
 
 export const invoiceApi = {

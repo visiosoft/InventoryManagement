@@ -91,9 +91,16 @@ function JobDispatchCard({ job, index, onPriceOverride }: { job: MovingJob; inde
       : img.url
   }
 
-  function handleShare() {
-    const msg = buildShareMessage(job)
-    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
+  async function handleShare() {
+    try {
+      const { data } = await api.post(`/moving-jobs/${job._id}/share-token`)
+      const publicUrl = `${window.location.origin}/share/job/${data.token}`
+      const msg = buildShareMessage(job) + `\n\n🔗 *View full details:*\n${publicUrl}`
+      window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
+    } catch {
+      const msg = buildShareMessage(job)
+      window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
+    }
   }
 
   function goLightbox(dir: 1 | -1) {

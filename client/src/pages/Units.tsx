@@ -41,7 +41,7 @@ function UnitFormFields({ initial }: { initial?: Partial<Unit> }) {
           </Select>
         </Field>
         <Field label="Size (sq ft)"><Input name="sizeSqf" type="number" step="1" defaultValue={initial?.sizeSqf ?? ''} /></Field>
-        <Field label="Monthly price (AED)"><Input name="price" type="number" step="0.01" defaultValue={initial?.price ?? ''} /></Field>
+        <Field label="4 Weeks price (AED)"><Input name="price" type="number" step="0.01" defaultValue={initial?.price ?? ''} /></Field>
         <Field label="Length (ft)"><Input name="lengthFt" type="number" step="0.1" defaultValue={initial?.lengthFt ?? ''} /></Field>
         <Field label="Width (ft)"><Input name="widthFt" type="number" step="0.1" defaultValue={initial?.widthFt ?? ''} /></Field>
         <Field label="First month discount (%) — 28 days">
@@ -113,7 +113,7 @@ export default function Units() {
             (!statusFilter || u.status === statusFilter) &&
             (!floorFilter || u.floor === floorFilter) &&
             (!sizeFilter || u.sizeSqf === Number(sizeFilter)) &&
-            (!search || u.unitNumber.toLowerCase().includes(search.toLowerCase()) || String(u.sizeSqf ?? '').includes(search))
+            (!search || u.unitNumber.toLowerCase().includes(search.toLowerCase()) || String(u.sizeSqf ?? '') === search)
         )
         .sort((a, b) => {
           const floorCmp = a.floor.localeCompare(b.floor)
@@ -341,11 +341,6 @@ function UnitDetail({ unit, onUpdate, onDelete, error, busy }: { unit: Unit; onU
           <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
             Contracts{allContracts.length > 0 ? ` · ${allContracts.length}` : ''}
           </span>
-          <Link to={`/contracts/new?unit=${unit._id}`} onClick={e => e.stopPropagation()}>
-            <button type="button" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
-              <Plus size={12} /> New contract
-            </button>
-          </Link>
         </div>
         {contractsLoading ? (
           <p className="px-3 py-3 text-xs text-muted-foreground animate-pulse">Loading contracts…</p>
@@ -354,11 +349,16 @@ function UnitDetail({ unit, onUpdate, onDelete, error, busy }: { unit: Unit; onU
         ) : (
           <ul className="divide-y">
             {allContracts.map(c => (
-              <li key={c._id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm hover:bg-muted/20">
-                <div className="min-w-0">
-                  <Link to={`/contracts/${c._id}`} className="font-medium text-primary hover:underline text-sm">
-                    {c.contractNo}
-                  </Link>
+              <li key={c._id} className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted/20">
+                <Link
+                  to={`/contracts/${c._id}`}
+                  onClick={e => e.stopPropagation()}
+                  className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
+                >
+                  View
+                </Link>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm">{c.contractNo}</p>
                   <p className="text-xs text-muted-foreground truncate">
                     {c.customer?.fullName}
                     {c.endDate ? ` · until ${formatDate(c.endDate)}` : ''}

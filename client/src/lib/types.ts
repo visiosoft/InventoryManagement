@@ -54,15 +54,35 @@ export interface Customer {
 }
 
 export type LeadStatus = 'new' | 'contacted' | 'qualified' | 'proposal_sent' | 'won' | 'lost'
-export type LeadSource = 'manual' | 'google_contacts' | 'whatsapp' | 'referral' | 'walk_in' | 'other'
+export type LeadSource = 'manual' | 'whatsapp' | 'referral' | 'walk_in' | 'other'
 export type DurationUnit = 'week' | 'month'
+
+export interface LeadComment {
+  _id: string
+  user: { _id: string; name: string; email: string }
+  userName: string
+  text: string
+  createdAt: string
+}
+
+export interface LeadTimelineEntry {
+  _id?: string
+  at: string
+  type: string
+  text: string
+  user?: string
+}
 
 export interface Lead {
   _id: string
+  firstName?: string
+  lastName?: string
   fullName: string
   email?: string
   phone: string
+  whatsappNo?: string
   phoneNormalized: string
+  preferredContact?: 'email' | 'whatsapp'
   status: LeadStatus
   source: LeadSource
   leadDateTime: string
@@ -73,6 +93,8 @@ export interface Lead {
   owner: { _id: string; name: string; email: string }
   unitsNeeded: number
   notes?: string
+  comments?: LeadComment[]
+  timeline?: LeadTimelineEntry[]
   createdAt?: string
 }
 
@@ -95,6 +117,33 @@ export interface QuoteItem {
   amount: number
 }
 
+export interface QuoteUnit {
+  unit: string | { _id: string; unitNumber: string; sizeSqf: number; floor: string; price: number; status: string }
+  unitNumber: string
+  sizeSqf: number
+  floor: string
+  startDate: string
+  endDate: string
+  rate: number
+  discountPct: number
+  amount: number
+}
+
+export interface QuoteAddOn {
+  name: string
+  description?: string
+  quantity: number
+  rate: number
+  amount: number
+}
+
+export interface QuoteTimelineEntry {
+  at?: string
+  type?: string
+  text?: string
+  user?: string | { _id: string; name: string; email: string }
+}
+
 export interface Quote {
   _id: string
   quoteNo: string
@@ -103,16 +152,26 @@ export interface Quote {
   salesperson?: string
   expiryDate: string
   pdfTemplate: string
-  customer: { _id: string; fullName: string; email?: string }
+  customer: { _id: string; fullName: string; email?: string; phone?: string }
+  lead?: { _id: string; fullName: string; phone?: string; email?: string } | string
+  billingPeriod?: 'weekly' | 'monthly'
   billingAddress?: string
   shippingAddress?: string
   subject?: string
   items: QuoteItem[]
+  units?: QuoteUnit[]
+  addOns?: QuoteAddOn[]
+  deposit?: number
   subTotal: number
   adjustment: number
   total: number
   notes?: string
   status: QuoteStatus
+  contract?: { _id: string; contractNo: string; status?: string; approvalStatus?: string } | string
+  flowStep?: number
+  flowStepsDone?: boolean[]
+  assignedTo?: string | { _id: string; name: string; email: string }
+  timeline?: QuoteTimelineEntry[]
   createdAt?: string
 }
 
@@ -382,6 +441,12 @@ export interface Contract {
   authorizedPersons?: AccessPerson[]
   notes?: string
   timeline?: ContractNote[]
+  quote?: { _id: string; quoteNo: string; status?: string } | string
+  approvalStatus?: 'not_required' | 'pending' | 'approved' | 'rejected'
+  approvalNote?: string
+  approvedBy?: string
+  approvedAt?: string
+  source?: string
   createdAt?: string
 }
 

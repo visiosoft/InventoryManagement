@@ -1,14 +1,14 @@
-import { useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { CalendarPlus, CheckSquare, FileText, Mail, MessageCircle, MoreHorizontal, Plus, RefreshCw, Search, Upload, X } from 'lucide-react'
-import { api, apiError, integrationApi, leadApi } from '../lib/api'
-import type { Lead, LeadSource, LeadStatus } from '../lib/types'
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, Th, Textarea, leadStatusTone, statusLabel } from '../components/ui'
+import { CalendarPlus, CheckSquare, FileText, Mail, MessageCircle, MoreHorizontal, Plus, RefreshCw, Search, Send, Upload, X } from 'lucide-react'
+import { api, apiError, leadApi, type LeadPage } from '../lib/api'
+import type { Lead, LeadComment, LeadSource, LeadStatus } from '../lib/types'
+import { Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, Pagination, Select, Spinner, Table, Td, Th, Textarea, leadStatusTone, statusLabel } from '../components/ui'
 import { formatDate } from '../lib/utils'
 
 const LEAD_STATUSES: LeadStatus[] = ['new', 'contacted', 'qualified', 'proposal_sent', 'won', 'lost']
-const LEAD_SOURCES: LeadSource[] = ['manual', 'google_contacts', 'whatsapp', 'referral', 'walk_in', 'other']
+const LEAD_SOURCES: LeadSource[] = ['manual', 'whatsapp', 'referral', 'walk_in', 'other']
 
 function toDatetimeLocal(input?: string) {
     if (!input) return ''
@@ -42,10 +42,16 @@ function LeadForm({
     function submit(e: FormEvent<HTMLFormElement>) {
         e.preventDefault()
         const f = new FormData(e.currentTarget)
+        const firstName = String(f.get('firstName') || '')
+        const lastName = String(f.get('lastName') || '')
         onSubmit({
-            fullName: String(f.get('fullName') || ''),
+            firstName,
+            lastName,
+            fullName: [firstName, lastName].filter(Boolean).join(' '),
             phone: String(f.get('phone') || ''),
+            whatsappNo: String(f.get('whatsappNo') || ''),
             email: String(f.get('email') || ''),
+            preferredContact: String(f.get('preferredContact') || 'whatsapp'),
             status: String(f.get('status') || 'new'),
             source: String(f.get('source') || 'manual'),
             leadDateTime: fromDatetimeLocal(f.get('leadDateTime')),
@@ -62,15 +68,36 @@ function LeadForm({
     return (
         <form onSubmit={submit} className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
-                <Field label="Name">
-                    <Input name="fullName" defaultValue={initial?.fullName} required />
+                <Field label="First name">
+                    <Input name="firstName" defaultValue={initial?.firstName || initial?.fullName?.split(' ')[0]} required />
                 </Field>
+                <Field label="Last name">
+                    <Input name="lastName" defaultValue={initial?.lastName || initial?.fullName?.split(' ').slice(1).join(' ')} />
+                </Field>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
                 <Field label="Phone">
                     <Input name="phone" defaultValue={initial?.phone} required />
                 </Field>
-                <Field label="Email">
+                <Field label="WhatsApp No.">
+                    <Input name="whatsappNo" defaultValue={initial?.whatsappNo} placeholder="Same as phone if empty" />
+                </Field>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+                <Field label="Email (optional)">
                     <Input name="email" type="email" defaultValue={initial?.email} />
                 </Field>
+                <Field label="Preferred contact">
+                    <Select name="preferredContact" defaultValue={initial?.preferredContact || 'whatsapp'}>
+                        <option value="whatsapp">WhatsApp</option>
+                        <option value="email">Email</option>
+                    </Select>
+                </Field>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
                 <Field label="Lead datetime">
                     <Input
                         name="leadDateTime"
@@ -78,18 +105,6 @@ function LeadForm({
                         defaultValue={toDatetimeLocal(initial?.leadDateTime || new Date().toISOString())}
                         required
                     />
-                </Field>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-                <Field label="Status">
-                    <Select name="status" defaultValue={initial?.status || 'new'}>
-                        {LEAD_STATUSES.map((s) => (
-                            <option key={s} value={s}>
-                                {statusLabel(s)}
-                            </option>
-                        ))}
-                    </Select>
                 </Field>
                 <Field label="Source">
                     <Select name="source" defaultValue={initial?.source || 'manual'}>
@@ -102,23 +117,14 @@ function LeadForm({
                 </Field>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
-                <Field label="Storage size needed">
-                    <Input name="storageSizeValue" type="number" min={0} step="1" defaultValue={initial?.storageSizeValue ?? 25} required />
-                </Field>
-                <Field label="Duration needed">
-                    <Input name="durationValue" type="number" min={1} step="1" defaultValue={initial?.durationValue ?? 1} required />
-                </Field>
-                <Field label="No. of units needed">
-                    <Input name="unitsNeeded" type="number" min={1} step="1" defaultValue={initial?.unitsNeeded ?? 1} required />
-                </Field>
-            </div>
-
             <div className="grid grid-cols-2 gap-3">
-                <Field label="Duration unit">
-                    <Select name="durationUnit" defaultValue={initial?.durationUnit || 'month'}>
-                        <option value="week">Week(s)</option>
-                        <option value="month">Month(s)</option>
+                <Field label="Status">
+                    <Select name="status" defaultValue={initial?.status || 'new'}>
+                        {LEAD_STATUSES.map((s) => (
+                            <option key={s} value={s}>
+                                {statusLabel(s)}
+                            </option>
+                        ))}
                     </Select>
                 </Field>
                 <Field label="Lead owner">
@@ -133,6 +139,24 @@ function LeadForm({
                 </Field>
             </div>
 
+            <div className="grid grid-cols-3 gap-3">
+                <Field label="Storage size (sqft)">
+                    <Input name="storageSizeValue" type="number" min={0} step="1" defaultValue={initial?.storageSizeValue ?? 25} required />
+                </Field>
+                <Field label="Duration needed">
+                    <div className="flex gap-2">
+                        <Input name="durationValue" type="number" min={1} step="1" defaultValue={initial?.durationValue ?? 1} required className="flex-1" />
+                        <Select name="durationUnit" defaultValue={initial?.durationUnit || 'month'} className="w-28">
+                            <option value="week">Week(s)</option>
+                            <option value="month">Month(s)</option>
+                        </Select>
+                    </div>
+                </Field>
+                <Field label="Units needed">
+                    <Input name="unitsNeeded" type="number" min={1} step="1" defaultValue={initial?.unitsNeeded ?? 1} required />
+                </Field>
+            </div>
+
             <Field label="Notes">
                 <Textarea name="notes" defaultValue={initial?.notes} />
             </Field>
@@ -142,6 +166,134 @@ function LeadForm({
                 {busy ? 'Saving…' : 'Save lead'}
             </Button>
         </form>
+    )
+}
+
+function LeadDetailPanel({ lead }: { lead: Lead }) {
+    const qc = useQueryClient()
+    const [commentText, setCommentText] = useState('')
+
+    const { data: detail } = useQuery<Lead>({
+        queryKey: ['lead-detail', lead._id],
+        queryFn: () => api.get(`/leads/${lead._id}`).then(r => r.data),
+    })
+
+    const addComment = useMutation({
+        mutationFn: (text: string) => api.post(`/leads/${lead._id}/comments`, { text }).then(r => r.data),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['lead-detail', lead._id] })
+            qc.invalidateQueries({ queryKey: ['leads'] })
+            setCommentText('')
+        },
+    })
+
+    const comments = detail?.comments || []
+    const timeline = detail?.timeline || []
+
+    return (
+        <div className="space-y-5">
+            {/* Lead info header */}
+            <div className="flex items-start justify-between gap-3">
+                <div>
+                    <h3 className="text-lg font-semibold">{detail?.fullName || lead.fullName}</h3>
+                    <div className="flex flex-wrap gap-3 mt-1 text-sm text-muted-foreground">
+                        {lead.phone && <span>Phone: {lead.phone}</span>}
+                        {lead.whatsappNo && <span>WA: {lead.whatsappNo}</span>}
+                        {lead.email && <span>{lead.email}</span>}
+                    </div>
+                    <div className="flex gap-2 mt-2">
+                        <Badge tone={leadStatusTone[lead.status]}>{statusLabel(lead.status)}</Badge>
+                        <Badge tone="gray">{statusLabel(lead.source)}</Badge>
+                        {lead.preferredContact && (
+                            <Badge tone={lead.preferredContact === 'whatsapp' ? 'green' : 'blue'}>
+                                {lead.preferredContact === 'whatsapp' ? 'WhatsApp' : 'Email'} preferred
+                            </Badge>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* Quick info */}
+            <div className="grid grid-cols-4 gap-3">
+                <div className="rounded-lg border bg-muted/30 p-3">
+                    <p className="text-xs text-muted-foreground">Storage</p>
+                    <p className="font-semibold text-sm">{lead.storageSizeValue} sqft</p>
+                </div>
+                <div className="rounded-lg border bg-muted/30 p-3">
+                    <p className="text-xs text-muted-foreground">Duration</p>
+                    <p className="font-semibold text-sm">{lead.durationValue} {lead.durationUnit}(s)</p>
+                </div>
+                <div className="rounded-lg border bg-muted/30 p-3">
+                    <p className="text-xs text-muted-foreground">Units</p>
+                    <p className="font-semibold text-sm">{lead.unitsNeeded}</p>
+                </div>
+                <div className="rounded-lg border bg-muted/30 p-3">
+                    <p className="text-xs text-muted-foreground">Owner</p>
+                    <p className="font-semibold text-sm">{lead.owner?.name || '—'}</p>
+                </div>
+            </div>
+
+            {/* Notes */}
+            {lead.notes && (
+                <div className="rounded-lg border bg-muted/20 p-3">
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Notes</p>
+                    <p className="text-sm whitespace-pre-wrap">{lead.notes}</p>
+                </div>
+            )}
+
+            {/* Comments section */}
+            <div>
+                <h4 className="text-sm font-semibold mb-3">Comments & Activity</h4>
+
+                {/* Add comment */}
+                <div className="flex gap-2 mb-4">
+                    <Textarea
+                        value={commentText}
+                        onChange={(e) => setCommentText(e.target.value)}
+                        placeholder="Write a comment..."
+                        rows={2}
+                        className="flex-1"
+                    />
+                    <Button
+                        onClick={() => { if (commentText.trim()) addComment.mutate(commentText.trim()) }}
+                        disabled={!commentText.trim() || addComment.isPending}
+                        className="self-end"
+                    >
+                        <Send size={14} />
+                    </Button>
+                </div>
+
+                {/* Comments list */}
+                <div className="space-y-3 max-h-80 overflow-auto">
+                    {comments.length === 0 && timeline.length === 0 && (
+                        <p className="text-sm text-muted-foreground text-center py-4">No comments or activity yet.</p>
+                    )}
+                    {comments.slice().reverse().map((c: LeadComment) => (
+                        <div key={c._id} className="rounded-lg border bg-background p-3">
+                            <div className="flex justify-between items-center mb-1">
+                                <span className="text-xs font-semibold">{c.user?.name || c.userName || 'User'}</span>
+                                <span className="text-xs text-muted-foreground">{formatDate(c.createdAt)}</span>
+                            </div>
+                            <p className="text-sm whitespace-pre-wrap">{c.text}</p>
+                        </div>
+                    ))}
+
+                    {/* Timeline/Activity log */}
+                    {timeline.length > 0 && (
+                        <div className="border-t pt-3 mt-3">
+                            <p className="text-xs font-semibold text-muted-foreground mb-2">Activity Log</p>
+                            {timeline.slice().reverse().map((t, i) => (
+                                <div key={i} className="flex items-start gap-2 py-1.5 text-xs text-muted-foreground">
+                                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-muted-foreground/40 shrink-0" />
+                                    <span>{t.text}</span>
+                                    <span className="ml-auto shrink-0">{formatDate(t.at)}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
     )
 }
 
@@ -494,6 +646,7 @@ export default function Leads() {
 
     const [adding, setAdding] = useState(false)
     const [editing, setEditing] = useState<Lead | null>(null)
+    const [viewing, setViewing] = useState<Lead | null>(null)
     const [error, setError] = useState('')
     const [importResult, setImportResult] = useState<ImportResult | null>(null)
     const [pendingChange, setPendingChange] = useState<{ lead: Lead; newStatus: LeadStatus } | null>(null)
@@ -503,12 +656,12 @@ export default function Leads() {
     const [waLabel, setWaLabel] = useState('')
     const [selectedWhatsAppLeadId, setSelectedWhatsAppLeadId] = useState('')
 
-    const useWhatsAppLeadView = true
+    const useWhatsAppLeadView = false
 
     const whatsAppContacts = useQuery<{ contacts: WhatsAppLeadRow[]; total: number }>({
         queryKey: ['whatsapp-leads-table'],
         queryFn: async () => {
-            const rows = await leadApi.list({ source: 'whatsapp' })
+            const rows = (await leadApi.list({ source: 'whatsapp', limit: 500 })).data
             const contacts: WhatsAppLeadRow[] = rows.map((lead) => ({
                 lead: {
                     _id: lead._id,
@@ -568,6 +721,9 @@ export default function Leads() {
         }),
     })
 
+    const [page, setPage] = useState(1)
+    const [limit, setLimit] = useState(25)
+
     const queryParams = useMemo(
         () => ({
             search: search || undefined,
@@ -576,14 +732,21 @@ export default function Leads() {
             owner: owner || undefined,
             from: from || undefined,
             to: to || undefined,
+            page,
+            limit,
         }),
-        [search, status, source, owner, from, to]
+        [search, status, source, owner, from, to, page, limit]
     )
 
-    const { data: leads, isLoading } = useQuery<Lead[]>({
+    // Back to page 1 whenever a filter changes
+    useEffect(() => { setPage(1) }, [search, status, source, owner, from, to, limit])
+
+    const { data: leadsPage, isLoading } = useQuery<LeadPage>({
         queryKey: ['leads', queryParams],
         queryFn: () => leadApi.list(queryParams),
+        placeholderData: (prev) => prev,
     })
+    const leads = leadsPage?.data
 
     const createLead = useMutation({
         mutationFn: (body: Record<string, unknown>) => leadApi.create(body as Partial<Lead>),
@@ -638,21 +801,6 @@ export default function Leads() {
             setImportResult(data)
         },
         onError: (e) => setError(apiError(e)),
-    })
-
-    const [syncMsg, setSyncMsg] = useState<string | null>(null)
-    const syncContacts = useMutation({
-        mutationFn: () => integrationApi.syncGoogleContacts(),
-        onSuccess: (data) => {
-            qc.invalidateQueries({ queryKey: ['leads'] })
-            setSyncMsg(
-                data.summary.created > 0
-                    ? `${data.summary.created} new contact${data.summary.created > 1 ? 's' : ''} added from Google`
-                    : `Sync done — no new contacts`
-            )
-            setTimeout(() => setSyncMsg(null), 5000)
-        },
-        onError: (e) => { setSyncMsg(`Sync failed: ${apiError(e)}`); setTimeout(() => setSyncMsg(null), 5000) },
     })
 
     function handleCsvFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -779,7 +927,7 @@ export default function Leads() {
         <div>
             <PageHeader
                 title="Leads"
-                subtitle={`${leads?.length ?? 0} leads in pipeline`}
+                subtitle={`${leadsPage?.total ?? 0} leads in pipeline`}
                 action={
                     <div className="flex gap-2">
                         <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleCsvFile} />
@@ -787,22 +935,12 @@ export default function Leads() {
                             <Upload size={15} />
                             {importContacts.isPending ? 'Importing…' : 'Import CSV'}
                         </Button>
-                        <Button variant="outline" onClick={() => syncContacts.mutate()} disabled={syncContacts.isPending}>
-                            <RefreshCw size={15} className={syncContacts.isPending ? 'animate-spin' : ''} />
-                            {syncContacts.isPending ? 'Syncing…' : 'Sync Google Contacts'}
-                        </Button>
                         <Button onClick={() => setAdding(true)}>
                             <Plus size={15} /> Add lead
                         </Button>
                     </div>
                 }
             />
-
-            {syncMsg && (
-                <p className={`mb-3 text-xs font-medium ${syncMsg.startsWith('Sync failed') ? 'text-destructive' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                    {syncMsg}
-                </p>
-            )}
 
             <div className="mb-4 grid grid-cols-1 md:grid-cols-6 gap-2">
                 <div className="relative md:col-span-2">
@@ -848,12 +986,11 @@ export default function Leads() {
                         <thead>
                             <tr>
                                 <Th>Name</Th>
-                                <Th>Phone</Th>
+                                <Th>Phone / WhatsApp</Th>
+                                <Th>Contact</Th>
                                 <Th>Source</Th>
                                 <Th>Status</Th>
                                 <Th>Storage</Th>
-                                <Th>Duration</Th>
-                                <Th>Units</Th>
                                 <Th>Owner</Th>
                                 <Th>Date</Th>
                                 <Th />
@@ -861,18 +998,29 @@ export default function Leads() {
                         </thead>
                         <tbody>
                             {(leads || []).map((lead) => (
-                                <tr key={lead._id} className="hover:bg-muted/50">
+                                <tr key={lead._id} className="hover:bg-muted/50 cursor-pointer" onClick={() => navigate(`/quotes/new?lead=${lead._id}`)}>
                                     <Td>
                                         <div className="font-medium">{lead.fullName}</div>
                                         <div className="text-xs text-muted-foreground">{lead.email || '—'}</div>
                                     </Td>
-                                    <Td>{lead.phone}</Td>
+                                    <Td>
+                                        <div>{lead.phone}</div>
+                                        {lead.whatsappNo && lead.whatsappNo !== lead.phone && (
+                                            <div className="text-xs text-muted-foreground">WA: {lead.whatsappNo}</div>
+                                        )}
+                                    </Td>
+                                    <Td>
+                                        <Badge tone={lead.preferredContact === 'email' ? 'blue' : 'green'}>
+                                            {lead.preferredContact === 'email' ? 'Email' : 'WhatsApp'}
+                                        </Badge>
+                                    </Td>
                                     <Td>
                                         <Badge tone="gray">{statusLabel(lead.source)}</Badge>
                                     </Td>
                                     <Td>
                                         <Select
                                             value={lead.status}
+                                            onClick={(e) => e.stopPropagation()}
                                             onChange={(e) => {
                                                 const newStatus = e.target.value as LeadStatus
                                                 if (newStatus !== lead.status) {
@@ -888,24 +1036,23 @@ export default function Leads() {
                                                 </option>
                                             ))}
                                         </Select>
-                                        <div className="mt-1">
-                                            <Badge tone={leadStatusTone[lead.status]}>{statusLabel(lead.status)}</Badge>
-                                        </div>
                                     </Td>
-                                    <Td>{lead.storageSizeValue} {lead.storageSizeUnit}</Td>
-                                    <Td>{lead.durationValue} {lead.durationUnit}(s)</Td>
-                                    <Td>{lead.unitsNeeded}</Td>
+                                    <Td>
+                                        <div>{lead.storageSizeValue} sqft</div>
+                                        <div className="text-xs text-muted-foreground">{lead.durationValue} {lead.durationUnit}(s) · {lead.unitsNeeded} unit(s)</div>
+                                    </Td>
                                     <Td>{lead.owner?.name || '—'}</Td>
                                     <Td>{formatDate(lead.leadDateTime)}</Td>
                                     <Td>
-                                        <div className="flex gap-2 text-xs">
+                                        <div className="flex gap-2 text-xs" onClick={(e) => e.stopPropagation()}>
+                                            <button onClick={() => setViewing(lead)} className="text-primary hover:underline cursor-pointer">View</button>
                                             <button onClick={() => setEditing(lead)} className="text-primary hover:underline cursor-pointer">Edit</button>
                                             <button
                                                 onClick={() => convertLead.mutate(lead._id)}
                                                 className="text-emerald-600 hover:underline cursor-pointer disabled:opacity-50"
                                                 disabled={convertLead.isPending}
                                             >
-                                                {convertLead.isPending ? 'Converting…' : 'Convert'}
+                                                Convert
                                             </button>
                                             <button
                                                 onClick={() => {
@@ -922,6 +1069,14 @@ export default function Leads() {
                         </tbody>
                     </Table>
                     {(leads || []).length === 0 && <EmptyState message="No leads found for current filters." />}
+                    <Pagination
+                        page={leadsPage?.page ?? page}
+                        pages={leadsPage?.pages ?? 0}
+                        total={leadsPage?.total ?? 0}
+                        limit={leadsPage?.limit ?? limit}
+                        onPage={setPage}
+                        onLimit={setLimit}
+                    />
                 </Card>
             )}
 
@@ -1007,6 +1162,10 @@ export default function Leads() {
                         <Button className="w-full" onClick={() => setImportResult(null)}>Done</Button>
                     </div>
                 )}
+            </Modal>
+
+            <Modal open={!!viewing} onClose={() => setViewing(null)} title={viewing ? viewing.fullName : 'Lead details'} wide>
+                {viewing && <LeadDetailPanel lead={viewing} />}
             </Modal>
         </div>
     )

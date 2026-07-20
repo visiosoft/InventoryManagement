@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Download, Plus, Upload, RefreshCw } from 'lucide-react'
 import { api, apiError, invoiceApi, productApi } from '../lib/api'
 import type { Customer, Invoice, InvoiceAttachment, InvoiceItem, InvoicePaymentEntry, InvoiceStatus, Product, Unit } from '../lib/types'
@@ -551,8 +551,9 @@ function RecordPaymentModal({ invoice, onClose }: { invoice: Invoice; onClose: (
 
 export default function Invoices() {
     const qc = useQueryClient()
+    const [params] = useSearchParams()
     const [search, setSearch] = useState('')
-    const [status, setStatus] = useState('')
+    const [status, setStatus] = useState(params.get('status') || '')
     const [page, setPage] = useState(1)
     const [limit, setLimit] = useState(25)
     const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([])
