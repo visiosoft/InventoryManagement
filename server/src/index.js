@@ -28,7 +28,7 @@ import userRoutes from './routes/users.js';
 import whatsappRoutes from './routes/whatsapp.js';
 import workerRoutes from './routes/workers.js';
 import truckRoutes from './routes/trucks.js';
-import movingJobRoutes, { publicUploadRouter as movingJobPublicUpload } from './routes/movingJobs.js';
+import movingJobRoutes, { publicUploadRouter as movingJobPublicUpload, publicShareRouter as movingJobPublicShare } from './routes/movingJobs.js';
 import movingLeadRoutes from './routes/movingLeads.js';
 import movingQuoteRoutes from './routes/movingQuotes.js';
 import movingInvoiceRoutes from './routes/movingInvoices.js';
@@ -84,6 +84,7 @@ app.use('/api/customer-portal', customerPortalRoutes);
 app.use('/api/crew-auth', crewAuthRoutes);
 app.use('/api/crew-portal', crewPortalRoutes);
 app.use('/api/moving-jobs/public-upload', movingJobPublicUpload);
+app.use('/api/moving-jobs/share', movingJobPublicShare);
 // Zoho webhook must be reachable without a JWT.
 app.use('/api/contracts/zoho-webhook', (req, _res, next) => next());
 // WhatsApp webhook verification and events must be reachable without a JWT.
@@ -99,7 +100,11 @@ app.use('/api/payments', requireAuth, paymentRoutes);
 app.use('/api/documents', requireAuth, documentRoutes);
 app.use('/api/reports', requireAuth, reportRoutes);
 app.use('/api/leads', requireAuth, leadRoutes);
-app.use('/api/quotes', requireAuth, quoteRoutes);
+app.use(
+  '/api/quotes',
+  (req, res, next) => req.path.startsWith('/public/') ? next() : requireAuth(req, res, next),
+  quoteRoutes
+);
 app.use(
   '/api/invoices',
   (req, res, next) => req.path.startsWith('/public/') ? next() : requireAuth(req, res, next),
@@ -127,7 +132,7 @@ app.use('/api/unit-types', requireAuth, unitTypeRoutes);
 app.use(
   '/api/integrations',
   (req, res, next) =>
-    req.path.startsWith('/whatsapp/webhook') || req.path.startsWith('/google/callback') || req.path.startsWith('/contacts/connect') || req.path.startsWith('/drive/callback') || req.path.startsWith('/drive/connect')
+    req.path.startsWith('/whatsapp/webhook') || req.path.startsWith('/drive/callback') || req.path.startsWith('/drive/connect')
       ? next()
       : requireAuth(req, res, next),
   integrationRoutes
@@ -219,6 +224,7 @@ start().catch((err) => {
   process.exit(1);
 });
 
+
 process.on('unhandledRejection', (reason) => {
   if (isTransientMongoNetworkError(reason)) {
     console.error('[Runtime] transient MongoDB network rejection:', reason?.message || reason);
@@ -235,4 +241,5 @@ process.on('uncaughtException', (err) => {
   console.error('[Runtime] uncaught exception:', err);
   process.exit(1);
 });
+
 

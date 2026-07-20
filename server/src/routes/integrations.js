@@ -4,8 +4,6 @@ import { requireAdmin } from '../middleware/auth.js';
 import { driveConfigured } from '../services/drive.js';
 import { zohoConfigured } from '../services/zoho.js';
 import { whatsappConfigured, whatsappMissing, verifyWebhookChallenge, verifyWhatsAppSignature } from '../services/whatsapp.js';
-import { googleContactsConfigured, googleContactsMissing } from '../services/googleContacts.js';
-import { runGoogleContactsSync, syncState } from '../services/syncContacts.js';
 import { getWhatsAppLabelSyncStatus, processWhatsAppWebhookPayload, runWhatsAppLabelReconciliation } from '../services/whatsappLeadSync.js';
 import { updateEnvFile } from '../utils/env.js';
 
@@ -23,20 +21,7 @@ router.get('/status', (_req, res) => {
         },
         whatsapp: { configured: whatsappConfigured(), missing: whatsappMissing() },
         whatsappLabelSync: getWhatsAppLabelSyncStatus(),
-        googleContacts: { configured: googleContactsConfigured(), missing: googleContactsMissing() },
     });
-});
-
-router.post('/google-contacts/sync', async (req, res) => {
-    if (!googleContactsConfigured()) {
-        return res.json({ ok: true, configured: false, summary: { created: 0, updated: 0, skipped: 0, errors: 0 } });
-    }
-    const summary = await runGoogleContactsSync();
-    res.json({ ok: true, configured: true, summary });
-});
-
-router.get('/google-contacts/last-sync', (_req, res) => {
-    res.json(syncState);
 });
 
 router.post('/whatsapp/reconcile', requireAdmin, async (_req, res) => {
@@ -46,80 +31,6 @@ router.post('/whatsapp/reconcile', requireAdmin, async (_req, res) => {
 
 router.get('/whatsapp/last-sync', requireAdmin, (_req, res) => {
     res.json(getWhatsAppLabelSyncStatus());
-});
-
-// ── Google Contacts OAuth ─────────────────────────────────────────────────────
-
-function contactsOAuthClient() {
-    const callbackUrl = `${process.env.SERVER_URL || `http://localhost:${process.env.PORT || 5010}`}/api/integrations/google/callback`;
-    return new google.auth.OAuth2(
-        process.env.GOOGLE_CONTACTS_CLIENT_ID,
-        process.env.GOOGLE_CONTACTS_CLIENT_SECRET,
-        callbackUrl
-    );
-}
-
-router.get('/contacts/connect', (_req, res) => {
-    if (!process.env.GOOGLE_CONTACTS_CLIENT_ID || !process.env.GOOGLE_CONTACTS_CLIENT_SECRET) {
-        return res.status(400).json({ error: 'Google OAuth credentials not configured.' });
-    }
-    const url = contactsOAuthClient().generateAuthUrl({
-        access_type: 'offline',
-        prompt: 'consent',
-        // Request both scopes so one connect covers Contacts + Drive
-        scope: [
-            'https://www.googleapis.com/auth/contacts.readonly',
-            'https://www.googleapis.com/auth/drive',
-        ],
-    });
-    res.json({ url });
-});
-
-router.get('/google/callback', async (req, res) => {
-    const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
-    if (req.query.error) {
-        return res.redirect(`${clientOrigin}/settings?contactsError=${encodeURIComponent(req.query.error)}`);
-    }
-    try {
-        const oauth2 = contactsOAuthClient();
-        const { tokens } = await oauth2.getToken(String(req.query.code || ''));
-        if (!tokens.refresh_token) {
-            return res.redirect(`${clientOrigin}/settings?contactsError=${encodeURIComponent('No refresh token — revoke access at myaccount.google.com and try again.')}`);
-        }
-
-        // Save contacts token
-        updateEnvFile({ GOOGLE_CONTACTS_REFRESH_TOKEN: tokens.refresh_token });
-        process.env.GOOGLE_CONTACTS_REFRESH_TOKEN = tokens.refresh_token;
-
-        // Also set up Drive with the same token
-        oauth2.setCredentials(tokens);
-        const drive = google.drive({ version: 'v3', auth: oauth2 });
-
-        const list = await drive.files.list({
-            q: "name='PurpleBox Documents' and mimeType='application/vnd.google-apps.folder' and trashed=false",
-            fields: 'files(id)',
-            spaces: 'drive',
-        });
-        let folderId = list.data.files?.[0]?.id;
-        if (!folderId) {
-            const folder = await drive.files.create({
-                requestBody: { name: 'PurpleBox Documents', mimeType: 'application/vnd.google-apps.folder' },
-                fields: 'id',
-            });
-            folderId = folder.data.id;
-        }
-
-        updateEnvFile({
-            GOOGLE_DRIVE_REFRESH_TOKEN: tokens.refresh_token,
-            GOOGLE_DRIVE_FOLDER_ID: folderId,
-        });
-        process.env.GOOGLE_DRIVE_REFRESH_TOKEN = tokens.refresh_token;
-        process.env.GOOGLE_DRIVE_FOLDER_ID = folderId;
-
-        res.redirect(`${clientOrigin}/settings?contactsConnected=1`);
-    } catch (err) {
-        res.redirect(`${clientOrigin}/settings?contactsError=${encodeURIComponent(err?.message || 'Unknown error')}`);
-    }
 });
 
 // ── Google Drive OAuth ────────────────────────────────────────────────────────

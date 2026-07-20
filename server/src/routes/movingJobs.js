@@ -577,9 +577,71 @@ router.post('/:id/upload-token', async (req, res) => {
   }
 });
 
+// POST /moving-jobs/:id/share-token — generate or return existing share token
+router.post('/:id/share-token', async (req, res) => {
+  try {
+    const job = await MovingJob.findById(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (!job.shareToken) {
+      job.shareToken = crypto.randomUUID();
+      await job.save();
+    }
+    res.json({ token: job.shareToken });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Public (no-auth) endpoints, mounted separately in index.js ──
 
 export const publicUploadRouter = Router();
+
+export const publicShareRouter = Router();
+
+publicShareRouter.get('/:token', async (req, res) => {
+  try {
+    const job = await MovingJob.findOne({ shareToken: req.params.token })
+      .populate('customer', 'fullName phone email')
+      .populate('crew.worker', 'name role phone')
+      .populate('trucks.truck', 'name plateNumber');
+    if (!job) return res.status(404).json({ error: 'Invalid or expired link' });
+    res.json({
+      jobNo: job.jobNo,
+      status: job.status,
+      scheduledDate: job.scheduledDate,
+      scheduledTimeSlot: job.scheduledTimeSlot,
+      customer: { fullName: job.customer?.fullName },
+      pickupAddress: job.pickupAddress,
+      pickupFloor: job.pickupFloor,
+      pickupHasElevator: job.pickupHasElevator,
+      deliveryAddress: job.deliveryAddress,
+      deliveryFloor: job.deliveryFloor,
+      deliveryHasElevator: job.deliveryHasElevator,
+      crew: (job.crew || []).map(c => ({
+        name: c.worker?.name,
+        role: c.role || c.worker?.role,
+        phone: c.worker?.phone,
+        isSupervisor: c.isSupervisor,
+      })),
+      trucks: (job.trucks || []).map(t => ({
+        name: t.truck?.name,
+        plateNumber: t.truck?.plateNumber,
+      })),
+      images: (job.images || []).map(img => ({
+        url: img.storage === 'drive' && img.driveFileId
+          ? `https://drive.google.com/thumbnail?id=${img.driveFileId}&sz=w800`
+          : img.url,
+        originalName: img.originalName || img.filename,
+        category: img.category,
+      })),
+      moveOutPermitRequired: job.moveOutPermitRequired,
+      dispatchNotes: job.dispatchNotes,
+      clientPackage: job.clientPackage ? { label: job.clientPackage.label } : null,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 const publicUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 // GET job info by token (public - limited fields)

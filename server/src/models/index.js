@@ -100,12 +100,23 @@ const customerSchema = new Schema(
   { timestamps: true }
 );
 
+const leadCommentSchema = new Schema({
+  user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  userName: { type: String, default: '' },
+  text: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now },
+});
+
 const leadSchema = new Schema(
   {
+    firstName: { type: String, default: '' },
+    lastName: { type: String, default: '' },
     fullName: { type: String, required: true },
     email: { type: String, default: '' },
     phone: { type: String, required: true },
+    whatsappNo: { type: String, default: '' },
     phoneNormalized: { type: String, required: true, unique: true },
+    preferredContact: { type: String, enum: ['email', 'whatsapp'], default: 'whatsapp' },
     status: {
       type: String,
       enum: ['new', 'contacted', 'qualified', 'proposal_sent', 'won', 'lost'],
@@ -113,7 +124,7 @@ const leadSchema = new Schema(
     },
     source: {
       type: String,
-      enum: ['manual', 'google_contacts', 'whatsapp', 'referral', 'walk_in', 'other'],
+      enum: ['manual', 'whatsapp', 'referral', 'walk_in', 'other'],
       default: 'manual',
     },
     leadDateTime: { type: Date, default: Date.now },
@@ -124,11 +135,13 @@ const leadSchema = new Schema(
     owner: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     unitsNeeded: { type: Number, required: true, min: 1 },
     notes: { type: String, default: '' },
+    comments: [leadCommentSchema],
     timeline: [
       {
         at: { type: Date, default: Date.now },
         type: { type: String, default: 'note' },
         text: { type: String, default: '' },
+        user: { type: Schema.Types.ObjectId, ref: 'User' },
       },
     ],
   },
@@ -218,7 +231,17 @@ const contractSchema = new Schema(
     paymentMethod: { type: String, default: '' },
     firstPaymentDate: { type: Date },
     nextPaymentDate: { type: Date },
-    source: { type: String, enum: ['manual', 'import_json'], default: 'manual' },
+    quote: { type: Schema.Types.ObjectId, ref: 'Quote' },
+    // Admin approval gate — quote-sourced contracts require admin approval before booking.
+    approvalStatus: {
+      type: String,
+      enum: ['not_required', 'pending', 'approved', 'rejected'],
+      default: 'not_required',
+    },
+    approvalNote: { type: String, default: '' },
+    approvedBy: { type: String, default: '' },
+    approvedAt: { type: Date },
+    source: { type: String, enum: ['manual', 'import_json', 'quote'], default: 'manual' },
     externalId: { type: String, default: null },
     importedAt: { type: Date },
     raw: { type: Schema.Types.Mixed },
@@ -256,6 +279,32 @@ const quoteItemSchema = new Schema(
   { _id: false }
 );
 
+const quoteUnitSchema = new Schema(
+  {
+    unit: { type: Schema.Types.ObjectId, ref: 'Unit', required: true },
+    unitNumber: { type: String, default: '' },
+    sizeSqf: { type: Number, default: 0 },
+    floor: { type: String, default: '' },
+    startDate: { type: Date, required: true },
+    endDate: { type: Date, required: true },
+    rate: { type: Number, default: 0 },
+    discountPct: { type: Number, default: 0, min: 0, max: 100 },
+    amount: { type: Number, default: 0 },
+  },
+  { _id: false }
+);
+
+const quoteAddOnSchema = new Schema(
+  {
+    name: { type: String, required: true },
+    description: { type: String, default: '' },
+    quantity: { type: Number, default: 1, min: 1 },
+    rate: { type: Number, default: 0 },
+    amount: { type: Number, default: 0 },
+  },
+  { _id: false }
+);
+
 const quoteSchema = new Schema(
   {
     quoteNo: { type: String, required: true, unique: true },
@@ -265,15 +314,33 @@ const quoteSchema = new Schema(
     expiryDate: { type: Date, required: true },
     pdfTemplate: { type: String, default: 'Standard Template' },
     customer: { type: Schema.Types.ObjectId, ref: 'Customer', required: true },
+    lead: { type: Schema.Types.ObjectId, ref: 'Lead' },
+    billingPeriod: { type: String, enum: ['weekly', 'monthly'], default: 'monthly' },
     billingAddress: { type: String, default: '' },
     shippingAddress: { type: String, default: '' },
     subject: { type: String, default: '' },
     items: { type: [quoteItemSchema], default: [] },
+    units: { type: [quoteUnitSchema], default: [] },
+    addOns: { type: [quoteAddOnSchema], default: [] },
+    deposit: { type: Number, default: 0 },
     subTotal: { type: Number, default: 0, min: 0 },
     adjustment: { type: Number, default: 0 },
     total: { type: Number, default: 0 },
     notes: { type: String, default: '' },
     status: { type: String, enum: ['draft', 'sent', 'accepted', 'rejected', 'expired'], default: 'draft' },
+    shareToken: { type: String, default: null },
+    contract: { type: Schema.Types.ObjectId, ref: 'Contract' },
+    flowStep: { type: Number, default: 0, min: 0, max: 5 },
+    flowStepsDone: { type: [Boolean], default: [false, false, false, false, false, false] },
+    assignedTo: { type: Schema.Types.ObjectId, ref: 'User' },
+    timeline: [
+      {
+        at: { type: Date, default: Date.now },
+        type: { type: String, default: 'note' },
+        text: { type: String, default: '' },
+        user: { type: Schema.Types.ObjectId, ref: 'User' },
+      },
+    ],
   },
   { timestamps: true }
 );
@@ -818,6 +885,7 @@ const movingJobSchema = new Schema(
       uploadedBy: { type: Schema.Types.ObjectId, ref: 'Worker' },
     }],
     uploadToken: { type: String, default: null },
+    shareToken: { type: String, default: null },
   },
   { timestamps: true }
 );

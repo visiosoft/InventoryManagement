@@ -155,16 +155,58 @@ export function renderQuotePdf({ quote }) {
       doc.text('Amount', TX + nW + iW + qW + rW, y + 8, { width: aW - 8, align: 'right' });
       y += hH;
 
-      // Item rows
-      (quote.items || []).forEach((it, idx) => {
-         const rH = 26;
+      // Build display rows: units first (name + rental period), then add-ons, then legacy items.
+      const rows = [];
+      for (const u of quote.units || []) {
+         const size = u.sizeSqf ? `${u.sizeSqf} sqft` : '';
+         const floor = u.floor ? `Floor ${u.floor}` : '';
+         const meta = [size, floor].filter(Boolean).join(', ');
+         const disc = Number(u.discountPct || 0);
+         rows.push({
+            title: `Storage Unit ${u.unitNumber}${meta ? ` (${meta})` : ''}`,
+            sub: `${dt(u.startDate)} – ${dt(u.endDate)}${disc > 0 ? ` · ${disc}% discount` : ''}`,
+            qty: 1,
+            rate: u.rate,
+            amount: u.amount,
+         });
+      }
+      for (const a of quote.addOns || []) {
+         rows.push({
+            title: a.name,
+            sub: a.description || '',
+            qty: a.quantity,
+            rate: a.rate,
+            amount: a.amount,
+         });
+      }
+      for (const it of quote.items || []) {
+         rows.push({ title: it.itemDetails || '-', sub: '', qty: it.quantity ?? 0, rate: it.rate, amount: it.amount });
+      }
+      const depositAmt = Number(quote.deposit || 0);
+      if (depositAmt > 0) {
+         rows.push({ title: 'Security Deposit (refundable)', sub: '', qty: 1, rate: depositAmt, amount: depositAmt });
+      }
+
+      rows.forEach((r, idx) => {
+         doc.font('Helvetica-Bold').fontSize(9);
+         const titleH = doc.heightOfString(r.title, { width: iW - 12 });
+         doc.font('Helvetica').fontSize(8);
+         const subH = r.sub ? doc.heightOfString(r.sub, { width: iW - 12 }) : 0;
+         const rH = Math.max(26, titleH + subH + 14);
+
          if (idx % 2 === 1) doc.rect(TX, y, TW, rH).fill(ROW_ALT);
          doc.font('Helvetica').fontSize(9).fillColor(BLACK);
          doc.text(String(idx + 1), TX + 8, y + 8, { width: nW - 8 });
-         doc.text(it.itemDetails || '-', TX + nW + 6, y + 8, { width: iW - 12 });
-         doc.text(String(it.quantity ?? 0), TX + nW + iW, y + 8, { width: qW, align: 'right' });
-         doc.text(num(it.rate), TX + nW + iW + qW, y + 8, { width: rW, align: 'right' });
-         doc.text(num(it.amount), TX + nW + iW + qW + rW, y + 8, { width: aW - 8, align: 'right' });
+         doc.font('Helvetica-Bold').fontSize(9).fillColor(BLACK)
+            .text(r.title, TX + nW + 6, y + 8, { width: iW - 12 });
+         if (r.sub) {
+            doc.font('Helvetica').fontSize(8).fillColor(GRAY)
+               .text(r.sub, TX + nW + 6, y + 8 + titleH + 2, { width: iW - 12 });
+         }
+         doc.font('Helvetica').fontSize(9).fillColor(BLACK);
+         doc.text(String(r.qty), TX + nW + iW, y + 8, { width: qW, align: 'right' });
+         doc.text(num(r.rate), TX + nW + iW + qW, y + 8, { width: rW, align: 'right' });
+         doc.text(num(r.amount), TX + nW + iW + qW + rW, y + 8, { width: aW - 8, align: 'right' });
          y += rH;
       });
 
@@ -179,11 +221,12 @@ export function renderQuotePdf({ quote }) {
       const valX = tX + lblW;          // value starts at Amount column
       const valW = aW - 8;
 
-      // Sub Total
+      // Sub Total (units + add-ons + items + deposit)
+      const grandSubTotal = Number(quote.subTotal || 0) + depositAmt;
       doc.font('Helvetica').fontSize(9).fillColor(GRAY)
          .text('Sub Total', tX, y, { width: lblW, align: 'right' });
       doc.font('Helvetica').fontSize(9).fillColor(BLACK)
-         .text(num(quote.subTotal), valX, y, { width: valW, align: 'right' });
+         .text(num(grandSubTotal), valX, y, { width: valW, align: 'right' });
       y += 16;
 
       // Adjustment (only if non-zero)
@@ -195,12 +238,14 @@ export function renderQuotePdf({ quote }) {
          y += 16;
       }
 
-      // Total (bold)
+      // Total (bold) — includes deposit
+      const grandTotal = Number(quote.total || 0) + depositAmt;
       doc.font('Helvetica-Bold').fontSize(10).fillColor(BLACK)
          .text('Total', tX, y, { width: lblW, align: 'right' });
       doc.font('Helvetica-Bold').fontSize(10).fillColor(BLACK)
-         .text(aed(quote.total), valX, y, { width: valW, align: 'right' });
-      y += 30;
+         .text(aed(grandTotal), valX, y, { width: valW, align: 'right' });
+      y += 16;
+      y += 14;
 
       // ── NOTES ─────────────────────────────────────────────────────────────
       if (quote.notes) {

@@ -45,7 +45,17 @@ export async function fillAgreementPdf({ contract, customer, unit, signedDate })
     ? `Units: ${allUnits.map((u) => `${u.unitNumber} (${u.sizeSqf ?? '—'} sqft)`).join(', ')} @ ${Number(contract.rate).toFixed(2)} ${contract.billingPeriod}`
     : `${unit.sizeSqf ?? '—'} sq ft — Unit ${unit.unitNumber} (${contract.billingPeriod} @ ${Number(contract.rate).toFixed(2)})`;
   draw(page1, unitLine, 240, 630);                                                              // App. Unit Size
-  draw(page1, `Contract No: ${contract.contractNo}`, 240, 566);   // Access row (left box)
+  // Access row: contract no + authorized persons across the 4 cells
+  const accessNames = [contract.contractNo];
+  for (const ap of contract.authorizedPersons || []) {
+    const label = ap.name || '';
+    const id = ap.idNumber ? `${ap.idType || 'ID'}: ${ap.idNumber}` : '';
+    accessNames.push([label, id].filter(Boolean).join(' — '));
+  }
+  const cellXs = [240, 460, 680, 900];
+  accessNames.slice(0, 4).forEach((txt, i) => {
+    draw(page1, txt, cellXs[i], 566, { size: 11 });
+  });
 
   // --- Last page: signature block ---
   const last = doc.getPage(doc.getPageCount() - 1);

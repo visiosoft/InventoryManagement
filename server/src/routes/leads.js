@@ -4,7 +4,7 @@ import { Customer, Lead, User } from '../models/index.js';
 const router = Router();
 
 const ALLOWED_STATUS = new Set(['new', 'contacted', 'qualified', 'proposal_sent', 'won', 'lost']);
-const ALLOWED_SOURCE = new Set(['manual', 'google_contacts', 'whatsapp', 'referral', 'walk_in', 'other']);
+const ALLOWED_SOURCE = new Set(['manual', 'whatsapp', 'referral', 'walk_in', 'other']);
 const ALLOWED_DURATION_UNIT = new Set(['week', 'month']);
 
 function normalizePhone(input) {
@@ -24,10 +24,19 @@ function parseDate(value) {
 }
 
 function cleanBody(body) {
+    const firstName = String(body.firstName || '').trim();
+    const lastName = String(body.lastName || '').trim();
+    const fullName = body.fullName
+        ? String(body.fullName).trim()
+        : [firstName, lastName].filter(Boolean).join(' ');
     return {
-        fullName: String(body.fullName || '').trim(),
+        firstName,
+        lastName,
+        fullName,
         email: String(body.email || '').trim(),
         phone: String(body.phone || '').trim(),
+        whatsappNo: String(body.whatsappNo || '').trim(),
+        preferredContact: String(body.preferredContact || 'whatsapp').trim(),
         status: String(body.status || 'new').trim(),
         source: String(body.source || 'manual').trim(),
         leadDateTime: body.leadDateTime,
@@ -66,25 +75,39 @@ router.get('/', async (req, res) => {
 
     if (req.query.search) {
         const re = new RegExp(escRegex(String(req.query.search)), 'i');
-        filter.$or = [{ fullName: re }, { email: re }, { phone: re }, { notes: re }];
+        filter.$or = [{ fullName: re }, { firstName: re }, { lastName: re }, { email: re }, { phone: re }, { whatsappNo: re }, { notes: re }];
     }
 
-    const leads = await Lead.find(filter)
-        .populate('owner', 'name email')
-        .sort({ leadDateTime: -1, createdAt: -1 })
-        .allowDiskUse(true);
-    res.json(leads);
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(Math.max(1, Number(req.query.limit) || 25), 500);
+    const skip = (page - 1) * limit;
+
+    // Exclude heavy subdocuments (timeline, comments) — the detail endpoint loads them.
+    const [leads, total] = await Promise.all([
+        Lead.find(filter)
+            .select('-timeline -comments')
+            .populate('owner', 'name email')
+            .sort({ leadDateTime: -1, createdAt: -1 })
+            .skip(skip)
+            .limit(limit)
+            .lean()
+            .allowDiskUse(true),
+        Lead.countDocuments(filter),
+    ]);
+    res.json({ data: leads, total, page, pages: Math.ceil(total / limit), limit });
 });
 
 router.get('/:id', async (req, res) => {
-    const lead = await Lead.findById(req.params.id).populate('owner', 'name email');
+    const lead = await Lead.findById(req.params.id)
+        .populate('owner', 'name email')
+        .populate('comments.user', 'name email');
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
     res.json(lead);
 });
 
 router.post('/', async (req, res) => {
     const body = cleanBody(req.body || {});
-    if (!body.fullName) return res.status(400).json({ error: 'Full name is required' });
+    if (!body.firstName && !body.fullName) return res.status(400).json({ error: 'First name is required' });
     if (!body.phone) return res.status(400).json({ error: 'Phone is required' });
     if (!ALLOWED_STATUS.has(body.status)) return res.status(400).json({ error: 'Invalid lead status' });
     if (!ALLOWED_SOURCE.has(body.source)) return res.status(400).json({ error: 'Invalid lead source' });
@@ -104,12 +127,13 @@ router.post('/', async (req, res) => {
     const existing = await Lead.findOne({ phoneNormalized });
     if (existing) return res.status(409).json({ error: 'Lead already exists for this phone number' });
 
+    const userName = req.user.name || req.user.email || 'user';
     const lead = await Lead.create({
         ...body,
         owner: ownerId,
         leadDateTime,
         phoneNormalized,
-        timeline: [{ type: 'created', text: `Lead created by ${req.user.name || req.user.email || 'user'}` }],
+        timeline: [{ type: 'created', text: `Lead created by ${userName}`, user: req.user.id }],
     });
 
     res.status(201).json(await lead.populate('owner', 'name email'));
@@ -120,7 +144,7 @@ router.put('/:id', async (req, res) => {
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
 
     const body = cleanBody({ ...lead.toObject(), ...req.body });
-    if (!body.fullName) return res.status(400).json({ error: 'Full name is required' });
+    if (!body.firstName && !body.fullName) return res.status(400).json({ error: 'First name is required' });
     if (!body.phone) return res.status(400).json({ error: 'Phone is required' });
     if (!ALLOWED_STATUS.has(body.status)) return res.status(400).json({ error: 'Invalid lead status' });
     if (!ALLOWED_SOURCE.has(body.source)) return res.status(400).json({ error: 'Invalid lead source' });
@@ -138,10 +162,14 @@ router.put('/:id', async (req, res) => {
     const duplicate = await Lead.findOne({ phoneNormalized, _id: { $ne: lead._id } }).select('_id');
     if (duplicate) return res.status(409).json({ error: 'Another lead already uses this phone number' });
 
+    lead.firstName = body.firstName;
+    lead.lastName = body.lastName;
     lead.fullName = body.fullName;
     lead.email = body.email;
     lead.phone = body.phone;
+    lead.whatsappNo = body.whatsappNo;
     lead.phoneNormalized = phoneNormalized;
+    lead.preferredContact = body.preferredContact;
     lead.status = body.status;
     lead.source = body.source;
     lead.leadDateTime = parseDate(body.leadDateTime) || lead.leadDateTime;
@@ -152,7 +180,8 @@ router.put('/:id', async (req, res) => {
     lead.owner = ownerId;
     lead.unitsNeeded = body.unitsNeeded;
     lead.notes = body.notes;
-    lead.timeline.push({ type: 'updated', text: `Lead updated by ${req.user.name || req.user.email || 'user'}` });
+    const userName = req.user.name || req.user.email || 'user';
+    lead.timeline.push({ type: 'updated', text: `Lead updated by ${userName}`, user: req.user.id });
 
     await lead.save();
     res.json(await lead.populate('owner', 'name email'));
@@ -166,10 +195,10 @@ router.patch('/:id/status', async (req, res) => {
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
 
     lead.status = status;
-    lead.timeline.push({ type: 'status_changed', text: `Status changed to ${status}` });
+    lead.timeline.push({ type: 'status_changed', text: `Status changed to ${status}`, user: req.user.id });
 
     const comment = String(req.body?.comment || '').trim();
-    if (comment) lead.timeline.push({ type: 'comment', text: comment });
+    if (comment) lead.timeline.push({ type: 'comment', text: comment, user: req.user.id });
 
     await lead.save();
 
@@ -197,17 +226,11 @@ router.post('/:id/convert', async (req, res) => {
     });
 
     if (existingCustomer) {
-        if (lead.status !== 'won') {
-            lead.status = 'won';
-            lead.timeline.push({ type: 'converted', text: `Linked to existing customer ${existingCustomer.fullName}` });
-            await lead.save();
-        }
-
+        await Lead.findByIdAndDelete(lead._id);
         return res.json({
             ok: true,
             created: false,
             customer: existingCustomer,
-            lead: await lead.populate('owner', 'name email'),
         });
     }
 
@@ -225,16 +248,31 @@ router.post('/:id/convert', async (req, res) => {
         tenantType: 'individual',
     });
 
-    lead.status = 'won';
-    lead.timeline.push({ type: 'converted', text: `Converted to customer ${customer.fullName}` });
-    await lead.save();
+    await Lead.findByIdAndDelete(lead._id);
 
     res.json({
         ok: true,
         created: true,
         customer,
-        lead: await lead.populate('owner', 'name email'),
     });
+});
+
+router.post('/:id/comments', async (req, res) => {
+    const text = String(req.body?.text || '').trim();
+    if (!text) return res.status(400).json({ error: 'Comment text is required' });
+
+    const lead = await Lead.findById(req.params.id);
+    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+
+    const userName = req.user.name || req.user.email || 'user';
+    lead.comments.push({ user: req.user.id, userName, text });
+    lead.timeline.push({ type: 'comment', text, user: req.user.id });
+    await lead.save();
+
+    const populated = await Lead.findById(lead._id)
+        .populate('owner', 'name email')
+        .populate('comments.user', 'name email');
+    res.json(populated);
 });
 
 router.delete('/:id', async (req, res) => {

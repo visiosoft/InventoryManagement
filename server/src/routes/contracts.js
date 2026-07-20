@@ -8,6 +8,7 @@ import { sendForSignature, downloadSignedPdf, zohoConfigured } from '../services
 import { uploadFile } from '../services/drive.js';
 import { renderContractPdf } from '../services/contractPdf.js';
 import { fillAgreementPdf, agreementTemplateExists } from '../services/agreementPdf.js';
+import { mailConfigured, sendMail } from '../services/mail.js';
 
 // Renders the contract document: the official Customer Agreement template
 // filled with contract data when available, otherwise the generated fallback.
@@ -31,7 +32,7 @@ router.param('id', (req, res, next, id) => {
   next();
 });
 
-const populateAll = (q) => q.populate('customer').populate('unit').populate('units');
+const populateAll = (q) => q.populate('customer').populate('unit').populate('units').populate('quote', 'quoteNo status');
 
 const OPEN_STATUSES = ['draft', 'pending_signature', 'active'];
 
@@ -152,6 +153,16 @@ router.get('/latest-notes', async (req, res) => {
     text: n.note.text,
     author: n.note.author,
   })));
+});
+
+// List contracts pending admin approval.
+router.get('/pending-approvals', async (req, res) => {
+  const contracts = await Contract.find({ approvalStatus: 'pending' })
+    .populate('customer', 'fullName phone email')
+    .populate('unit', 'unitNumber')
+    .sort({ updatedAt: -1 })
+    .lean();
+  res.json(contracts);
 });
 
 router.get('/:id', async (req, res) => {
@@ -334,6 +345,8 @@ async function markSigned(contractId) {
   if (!['pending_signature', 'draft'].includes(contract.status)) {
     throw new Error(`Contract is ${contract.status}`);
   }
+  const approvalError = approvalBlocksBooking(contract);
+  if (approvalError) throw new Error(approvalError);
 
   // Archive the signed PDF (real Zoho download, or regenerate locally in mock mode).
   let pdfBuffer = null;
@@ -384,6 +397,77 @@ router.post('/zoho-webhook', async (req, res) => {
   res.json({ ok: true });
 });
 
+// Admin approval gate — blocks booking (activation) until an admin approves.
+function approvalBlocksBooking(contract) {
+  if (contract.approvalStatus === 'pending') {
+    return 'This contract requires admin approval before it can be booked';
+  }
+  if (contract.approvalStatus === 'rejected') {
+    return `This contract was rejected by admin${contract.approvalNote ? `: ${contract.approvalNote}` : ''}`;
+  }
+  return null;
+}
+
+// Send a contract for admin approval.
+router.post('/:id/send-for-approval', async (req, res) => {
+  const contract = await Contract.findById(req.params.id);
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  if (contract.approvalStatus === 'approved') {
+    return res.status(409).json({ error: 'Contract is already approved' });
+  }
+  const actor = req.user.name || req.user.email || 'user';
+  contract.approvalStatus = 'pending';
+  contract.approvalNote = '';
+  contract.approvedBy = '';
+  contract.approvedAt = undefined;
+  contract.timeline.push({ at: new Date(), text: `Sent for admin approval by ${actor}`, author: actor });
+  await contract.save();
+  res.json(await populateAll(Contract.findById(contract._id)));
+});
+
+// Approve or reject a contract for booking (admin only).
+router.post('/:id/approve', async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Only an admin can approve a contract' });
+  }
+  const contract = await Contract.findById(req.params.id);
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+
+  const actor = req.user.name || req.user.email || 'admin';
+  contract.approvalStatus = 'approved';
+  contract.approvalNote = String(req.body?.note || '');
+  contract.approvedBy = actor;
+  contract.approvedAt = new Date();
+  contract.status = 'active';
+  contract.timeline.push({ at: new Date(), text: `Contract approved and activated by ${actor}${req.body?.note ? `: ${req.body.note}` : ''}`, author: actor });
+  await contract.save();
+
+  const activateUnitIds = contract.units?.length ? contract.units : [contract.unit];
+  await Promise.all(activateUnitIds.map((uid) => syncUnitStatus(uid)));
+
+  res.json(await populateAll(Contract.findById(contract._id)));
+});
+
+router.post('/:id/reject', async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Only an admin can reject a contract' });
+  }
+  const contract = await Contract.findById(req.params.id);
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  if (contract.status === 'active') {
+    return res.status(409).json({ error: 'Cannot reject an already active contract' });
+  }
+
+  const actor = req.user.name || req.user.email || 'admin';
+  contract.approvalStatus = 'rejected';
+  contract.approvalNote = String(req.body?.note || '');
+  contract.approvedBy = actor;
+  contract.approvedAt = new Date();
+  contract.timeline.push({ at: new Date(), text: `Contract rejected${req.body?.note ? `: ${req.body.note}` : ''}`, author: actor });
+  await contract.save();
+  res.json(await populateAll(Contract.findById(contract._id)));
+});
+
 // Activate without signature (e.g. signed on paper, skip e-sign).
 router.post('/:id/activate', async (req, res) => {
   const contract = await Contract.findById(req.params.id);
@@ -391,6 +475,8 @@ router.post('/:id/activate', async (req, res) => {
   if (!['draft', 'pending_signature'].includes(contract.status)) {
     return res.status(409).json({ error: `Cannot activate a ${contract.status} contract` });
   }
+  const approvalError = approvalBlocksBooking(contract);
+  if (approvalError) return res.status(403).json({ error: approvalError });
 
   contract.status = 'active';
   await contract.save();
@@ -526,6 +612,8 @@ router.post('/:id/sign-inperson', async (req, res) => {
     if (!['draft', 'pending_signature'].includes(contract.status)) {
       return res.status(409).json({ error: `Cannot sign a ${contract.status} contract` });
     }
+    const approvalError = approvalBlocksBooking(contract);
+    if (approvalError) return res.status(403).json({ error: approvalError });
 
     const now = new Date();
     let pdfBuffer = await buildContractPdf(contract, now);
@@ -568,6 +656,11 @@ router.put('/:id', async (req, res) => {
     const contract = await Contract.findById(req.params.id);
     if (!contract) return res.status(404).json({ error: 'Contract not found' });
 
+    // Once booked (active), only an admin may edit the contract terms.
+    if (contract.status === 'active' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only an admin can edit a booked contract' });
+    }
+
     const allowed = ['rate', 'deposit', 'startDate', 'endDate', 'billingPeriod', 'autoRenew', 'paymentMethod', 'firstPaymentDate', 'notes'];
     for (const key of allowed) {
       if (req.body[key] !== undefined) {
@@ -578,6 +671,19 @@ router.put('/:id', async (req, res) => {
     // Allow updating the full units array (primary unit stays in contract.unit, array holds all)
     if (Array.isArray(req.body.units)) {
       contract.units = req.body.units.filter(Boolean);
+    }
+
+    // Authorized persons (name required per entry)
+    if (Array.isArray(req.body.authorizedPersons)) {
+      contract.authorizedPersons = req.body.authorizedPersons
+        .map((p) => ({
+          name: String(p.name || '').trim(),
+          phone: String(p.phone || '').trim(),
+          relation: String(p.relation || '').trim(),
+          idType: String(p.idType || '').trim(),
+          idNumber: String(p.idNumber || '').trim(),
+        }))
+        .filter((p) => p.name);
     }
 
     await contract.save();
@@ -1139,6 +1245,24 @@ router.get('/:id/pdf', async (req, res) => {
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="${contract.contractNo}.pdf"`);
   res.send(pdf);
+});
+
+// Send contract PDF via email
+router.post('/:id/send-email', async (req, res) => {
+  const contract = await populateAll(Contract.findById(req.params.id));
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  if (!mailConfigured()) return res.status(400).json({ error: 'SMTP not configured' });
+  const email = contract.customer?.email;
+  if (!email) return res.status(400).json({ error: 'Customer has no email address' });
+  const pdf = await buildContractPdf(contract);
+  await sendMail({
+    to: email,
+    subject: `Your Storage Contract ${contract.contractNo} — PurpleBox`,
+    text: `Dear ${contract.customer.fullName},\n\nPlease find your storage contract ${contract.contractNo} attached.\n\nThank you,\nPurpleBox`,
+    html: `<p>Dear ${contract.customer.fullName},</p><p>Please find your storage contract <strong>${contract.contractNo}</strong> attached.</p><p>Thank you,<br/>PurpleBox</p>`,
+    attachments: [{ filename: `${contract.contractNo}.pdf`, content: pdf, contentType: 'application/pdf' }],
+  });
+  res.json({ ok: true });
 });
 
 export default router;

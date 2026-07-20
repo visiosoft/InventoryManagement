@@ -6,6 +6,7 @@ import { parseCsv } from '../services/csv.js';
 import { renderInvoicePdf } from '../services/invoicePdf.js';
 import { uploadFile } from '../services/drive.js';
 import { sendWhatsAppText, whatsappSendConfigured, whatsappSendMissing } from '../services/whatsapp.js';
+import { mailConfigured, sendMail } from '../services/mail.js';
 import { zohoBooksConfigured, createZohoInvoice, recordZohoPayment } from '../services/zohoBooks.js';
 
 const router = Router();
@@ -562,6 +563,27 @@ router.post('/:id/record-payment', async (req, res) => {
 
     await invoice.save();
     await syncLinkedPayment(invoice);
+
+    // Auto-sync paid invoice to Zoho Books
+    if (zohoBooksConfigured()) {
+      try {
+        if (!invoice.zohoBooksSyncId) {
+          const { zohoInvoiceId } = await createZohoInvoice(invoice);
+          invoice.zohoBooksSyncId = zohoInvoiceId;
+          invoice.zohoBooksSyncedAt = new Date();
+          await invoice.save();
+        }
+        await recordZohoPayment(
+          invoice.zohoBooksSyncId,
+          n,
+          date ? new Date(date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+          method || 'cash'
+        );
+      } catch (zohoErr) {
+        console.error('Zoho auto-sync failed:', zohoErr.message);
+      }
+    }
+
     res.json(invoice);
 });
 
@@ -714,6 +736,25 @@ router.post('/zoho-books/bulk-sync', async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
+});
+
+// Send invoice PDF via email
+router.post('/:id/send-email', async (req, res) => {
+  const invoice = await Invoice.findById(req.params.id).populate('customer', 'fullName email phone');
+  if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+  if (!mailConfigured()) return res.status(400).json({ error: 'SMTP not configured' });
+  const email = invoice.customer?.email;
+  if (!email) return res.status(400).json({ error: 'Customer has no email address' });
+  const pdf = await renderInvoicePdf({ invoice });
+  await sendMail({
+    to: email,
+    subject: `Invoice ${invoice.invoiceNo} — PurpleBox`,
+    text: `Dear ${invoice.customer.fullName},\n\nPlease find your invoice ${invoice.invoiceNo} for AED ${Number(invoice.total || 0).toFixed(2)} attached.\n\nThank you,\nPurpleBox`,
+    html: `<p>Dear ${invoice.customer.fullName},</p><p>Please find your invoice <strong>${invoice.invoiceNo}</strong> for <strong>AED ${Number(invoice.total || 0).toFixed(2)}</strong> attached.</p><p>Thank you,<br/>PurpleBox</p>`,
+    attachments: [{ filename: `${invoice.invoiceNo}.pdf`, content: pdf, contentType: 'application/pdf' }],
+  });
+  if (invoice.status === 'draft') { invoice.status = 'sent'; await invoice.save(); }
+  res.json({ ok: true });
 });
 
 export default router;
