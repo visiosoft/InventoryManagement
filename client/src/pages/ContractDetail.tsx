@@ -1590,7 +1590,8 @@ export default function ContractDetail() {
         <h1 className="text-2xl font-bold tracking-tight">Contract overview</h1>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={() => {
-            if (c.quote?._id) { navigate(`/quotes/new?quote=${c.quote._id}`) }
+            const qId = typeof c.quote === 'object' && c.quote?._id ? c.quote._id : typeof c.quote === 'string' ? c.quote : null
+            if (qId) { navigate(`/quotes/new?quote=${qId}`) }
             else { setError(''); setEditModal(true) }
           }}>
             <PenLine size={14} /> Edit

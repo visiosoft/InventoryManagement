@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { CheckCircle2, Eye, Loader2, ShieldCheck, X } from 'lucide-react'
-import { api, apiError } from '../lib/api'
+import { CheckCircle2, Eye, Loader2, X } from 'lucide-react'
+import { api } from '../lib/api'
 import { EmptyState, PageHeader, Spinner } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
 
@@ -9,7 +9,7 @@ const PURPLE = '#5B2BC9'
 const INK = '#14081F'
 const GREEN = '#047857'
 const MUTED = '#756E80'
-const CHIP_BG = '#F3F0EA'
+const _CHIP_BG = '#F3F0EA'
 
 export default function Approvals() {
   const qc = useQueryClient()
@@ -42,7 +42,7 @@ export default function Approvals() {
       <PageHeader title="Approvals" subtitle="Contracts waiting for admin approval" />
 
       {contracts.length === 0 ? (
-        <EmptyState icon={ShieldCheck} title="No pending approvals" description="Contracts will appear here once a user sends them for approval from Book Unit." />
+        <EmptyState message="No pending approvals. Contracts will appear here once a user sends them for approval from Book Unit." />
       ) : (
         <div className="space-y-3 mt-4">
           {contracts.map((c: any) => (

@@ -167,15 +167,13 @@ export interface InvoiceStepHandle {
   saveAndSync: () => void
 }
 
-function InvoiceStep({ contract, invoices, customerId, customerName, customerPhone, onChanged, onMarkSent, markSending, handleRef, onEditingChange }: {
+function InvoiceStep({ contract, invoices, customerId, customerName, customerPhone, onChanged, handleRef, onEditingChange }: {
   contract: { _id: string; contractNo: string; startDate: string; endDate: string; rate: number }
   invoices: Invoice[]
   customerId: string
   customerName: string
   customerPhone: string
   onChanged: () => void
-  onMarkSent: (id: string) => void
-  markSending: boolean
   handleRef?: React.MutableRefObject<InvoiceStepHandle | null>
   onEditingChange?: (editing: boolean) => void
 }) {
@@ -485,7 +483,7 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
 export default function NewQuote() {
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const { user } = useAuth()
+  useAuth()
 
   const [searchParams] = useSearchParams()
   const leadParam = searchParams.get('lead')
@@ -1035,18 +1033,6 @@ export default function NewQuote() {
   function removePerson(idx: number) {
     setAuthorizedPersons((prev) => prev.filter((_, i) => i !== idx))
   }
-
-  const markInvoiceSent = useMutation({
-    mutationFn: () => invoiceApi.updateStatus(invoice!._id, 'sent'),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['flow-contract'] }); setErr('') },
-    onError: (e) => setErr(apiError(e)),
-  })
-
-  const markInvoiceById = useMutation({
-    mutationFn: (id: string) => invoiceApi.updateStatus(id, 'sent'),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['flow-contract'] }); setErr('') },
-    onError: (e) => setErr(apiError(e)),
-  })
 
   const recordPayment = useMutation({
     mutationFn: async () => {
@@ -1993,8 +1979,6 @@ export default function NewQuote() {
                   customerName={customerName}
                   customerPhone={customerPhone}
                   onChanged={() => qc.invalidateQueries({ queryKey: ['flow-contract'] })}
-                  onMarkSent={(id) => markInvoiceById.mutate(id)}
-                  markSending={markInvoiceById.isPending}
                   handleRef={invoiceHandleRef}
                   onEditingChange={setInvoiceEditing}
                 />
