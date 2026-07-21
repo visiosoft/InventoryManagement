@@ -189,6 +189,7 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
   const [err, setErr] = useState('')
   const [emailModal, setEmailModal] = useState<{ invoiceId: string; to: string; subject: string; body: string; pdfUrl: string } | null>(null)
   const [emailSending, setEmailSending] = useState(false)
+  const [emailSent, setEmailSent] = useState('')
 
   const sorted = [...invoices].sort((a, b) => new Date(a.dueDate || 0).getTime() - new Date(b.dueDate || 0).getTime())
 
@@ -495,6 +496,7 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
       )}
 
       {err && <p className="text-sm px-3 py-2 rounded-lg" style={{ color: '#b91c1c', background: '#fef2f2' }}>{err}</p>}
+      {emailSent && <DoneBanner text={emailSent} />}
 
       {/* Email compose modal */}
       <Modal open={!!emailModal} onClose={() => setEmailModal(null)} title="Send Invoice Email" wide>
@@ -541,12 +543,14 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
                 onClick={async () => {
                   setEmailSending(true)
                   try {
+                    const toAddr = emailModal.to
                     await api.post(`/invoices/${emailModal.invoiceId}/send-email`, {
-                      to: emailModal.to,
+                      to: toAddr,
                       subject: emailModal.subject,
                       body: emailModal.body,
                     })
                     setEmailModal(null)
+                    setEmailSent(`Email sent to ${toAddr}`)
                     setErr('')
                   } catch (e: any) {
                     setErr(apiError(e))
@@ -589,6 +593,7 @@ export default function NewQuote() {
   const [zohoSyncing, setZohoSyncing] = useState(false)
   const [quoteEmailModal, setQuoteEmailModal] = useState<{ to: string; subject: string; body: string; quoteUrl: string } | null>(null)
   const [quoteEmailSending, setQuoteEmailSending] = useState(false)
+  const [quoteEmailSent, setQuoteEmailSent] = useState('')
   const [contractId, setContractId] = useState('')
   const hydratedRef = useRef(false)
   const stepAutoSetRef = useRef(false)
@@ -1663,6 +1668,7 @@ export default function NewQuote() {
                     </div>
                   </div>
                   {sentMsg && <DoneBanner text={sentMsg} />}
+                  {quoteEmailSent && <DoneBanner text={quoteEmailSent} />}
                 </>
               ) : (
                 <>
@@ -2700,12 +2706,14 @@ export default function NewQuote() {
                 onClick={async () => {
                   setQuoteEmailSending(true)
                   try {
+                    const toAddr = quoteEmailModal.to
                     await api.post(`/quotes/${quoteId}/send-email`, {
-                      to: quoteEmailModal.to,
+                      to: toAddr,
                       subject: quoteEmailModal.subject,
                       body: quoteEmailModal.body,
                     })
                     setQuoteEmailModal(null)
+                    setQuoteEmailSent(`Email sent to ${toAddr}`)
                     setErr('')
                   } catch (e: any) {
                     setErr(apiError(e))
