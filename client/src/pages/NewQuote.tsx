@@ -377,10 +377,14 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
               )}
               <button
                 type="button"
-                onClick={() => {
-                  const phone = customerPhone.replace(/\D/g, '').replace(/^00/, '')
-                  const msg = `Hello ${customerName},\n\nHere is your invoice ${inv.invoiceNo} for ${formatMoney(inv.total)} AED.\n\nView: ${window.location.origin}/api/invoices/${inv._id}/pdf\n\nThank you — PurpleBox`
-                  window.open(phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
+                onClick={async () => {
+                  try {
+                    const shareRes = await api.post(`/invoices/${inv._id}/share`)
+                    const pdfUrl = shareRes.data.url
+                    const phone = customerPhone.replace(/\D/g, '').replace(/^00/, '')
+                    const msg = `Hello ${customerName},\n\nHere is your invoice ${inv.invoiceNo} for ${formatMoney(inv.total)} AED.\n\nView: ${pdfUrl}\n\nThank you — PurpleBox`
+                    window.open(phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
+                  } catch (e: any) { setErr(apiError(e)) }
                 }}
                 className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors"
                 style={{ color: '#25D366' }}
