@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { google } from 'googleapis';
 import { requireAdmin } from '../middleware/auth.js';
 import { driveConfigured } from '../services/drive.js';
+import { gmailConfigured } from '../services/gmail.js';
 import { zohoConfigured } from '../services/zoho.js';
 import { whatsappConfigured, whatsappMissing, verifyWebhookChallenge, verifyWhatsAppSignature } from '../services/whatsapp.js';
 import { getWhatsAppLabelSyncStatus, processWhatsAppWebhookPayload, runWhatsAppLabelReconciliation } from '../services/whatsappLeadSync.js';
@@ -19,6 +20,7 @@ router.get('/status', (_req, res) => {
                 ? (process.env.GOOGLE_SERVICE_ACCOUNT_FILE ? 'service_account' : 'oauth')
                 : '',
         },
+        gmail: { configured: gmailConfigured() },
         whatsapp: { configured: whatsappConfigured(), missing: whatsappMissing() },
         whatsappLabelSync: getWhatsAppLabelSyncStatus(),
     });
@@ -96,6 +98,49 @@ router.get('/drive/callback', async (req, res) => {
     } catch (err) {
         const msg = err?.message || 'Unknown error';
         res.redirect(`${clientOrigin}/settings?driveError=${encodeURIComponent(msg)}`);
+    }
+});
+
+// ── Gmail OAuth ──────────────────────────────────────────────────────────────
+
+function gmailOAuthClient() {
+    const clientId = process.env.GOOGLE_DRIVE_CLIENT_ID || process.env.GOOGLE_CONTACTS_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_DRIVE_CLIENT_SECRET || process.env.GOOGLE_CONTACTS_CLIENT_SECRET;
+    const callbackUrl = `${process.env.SERVER_URL || `http://localhost:${process.env.PORT || 5010}`}/api/integrations/gmail/callback`;
+    return new google.auth.OAuth2(clientId, clientSecret, callbackUrl);
+}
+
+router.get('/gmail/connect', (_req, res) => {
+    const clientId = process.env.GOOGLE_DRIVE_CLIENT_ID || process.env.GOOGLE_CONTACTS_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_DRIVE_CLIENT_SECRET || process.env.GOOGLE_CONTACTS_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+        return res.status(400).json({ error: 'Google OAuth credentials not configured.' });
+    }
+    const url = gmailOAuthClient().generateAuthUrl({
+        access_type: 'offline',
+        prompt: 'consent',
+        scope: ['https://www.googleapis.com/auth/gmail.send'],
+    });
+    res.json({ url });
+});
+
+router.get('/gmail/callback', async (req, res) => {
+    const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+    if (req.query.error) {
+        return res.redirect(`${clientOrigin}/settings?gmailError=${encodeURIComponent(req.query.error)}`);
+    }
+    try {
+        const oauth2 = gmailOAuthClient();
+        const { tokens } = await oauth2.getToken(String(req.query.code || ''));
+        if (!tokens.refresh_token) {
+            return res.redirect(`${clientOrigin}/settings?gmailError=${encodeURIComponent('No refresh token returned. Revoke access at myaccount.google.com and try again.')}`);
+        }
+        updateEnvFile({ GOOGLE_GMAIL_REFRESH_TOKEN: tokens.refresh_token });
+        process.env.GOOGLE_GMAIL_REFRESH_TOKEN = tokens.refresh_token;
+        res.redirect(`${clientOrigin}/settings?gmailConnected=1`);
+    } catch (err) {
+        const msg = err?.message || 'Unknown error';
+        res.redirect(`${clientOrigin}/settings?gmailError=${encodeURIComponent(msg)}`);
     }
 });
 

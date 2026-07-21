@@ -72,6 +72,8 @@ export const integrationApi = {
   status: () => api.get<IntegrationStatus>('/integrations/status').then((r) => r.data),
   connectDrive: () =>
     api.get<{ url: string }>('/integrations/drive/connect').then((r) => r.data),
+  connectGmail: () =>
+    api.get<{ url: string }>('/integrations/gmail/connect').then((r) => r.data),
 }
 
 export type QuoteQuery = { search?: string; status?: string; customer?: string; lead?: string }

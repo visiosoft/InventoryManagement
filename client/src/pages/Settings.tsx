@@ -352,6 +352,7 @@ export default function Settings() {
   const qc = useQueryClient()
   const location = useLocation()
   const [driveMsg, setDriveMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [gmailMsg, setGmailMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [whatsAppAllowedLabels, setWhatsAppAllowedLabels] = useState('')
   const [whatsAppSyncOnlyAllowedLabels, setWhatsAppSyncOnlyAllowedLabels] = useState(false)
 
@@ -370,6 +371,14 @@ export default function Settings() {
       qc.invalidateQueries({ queryKey: ['integrations-status'] })
     } else if (params.get('driveError')) {
       setDriveMsg({ ok: false, text: `Drive connection failed: ${params.get('driveError')}` })
+      window.history.replaceState({}, '', '/settings')
+    }
+    if (params.get('gmailConnected')) {
+      setGmailMsg({ ok: true, text: 'Gmail connected! You can now send invoices and quotes via email.' })
+      window.history.replaceState({}, '', '/settings')
+      qc.invalidateQueries({ queryKey: ['integrations-status'] })
+    } else if (params.get('gmailError')) {
+      setGmailMsg({ ok: false, text: `Gmail connection failed: ${params.get('gmailError')}` })
       window.history.replaceState({}, '', '/settings')
     }
   }, [location.search, qc])
@@ -440,6 +449,45 @@ export default function Settings() {
             {!integrations?.drive?.configured && (
               <p className="text-xs text-muted-foreground">
                 Before connecting, add <code className="bg-muted px-1 rounded">http://localhost:5010/api/integrations/drive/callback</code> to your OAuth client's authorized redirect URIs in Google Cloud Console.
+              </p>
+            )}
+          </div>
+          <div className="rounded-lg border px-4 py-3 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="font-medium">Gmail (Send Emails)</div>
+                <div className="text-xs text-muted-foreground">
+                  Send invoice and quote emails with PDF attachments via Gmail API
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className={integrations?.gmail?.configured ? 'text-xs text-emerald-600 font-medium' : 'text-xs text-amber-600 font-medium'}>
+                  {integrations?.gmail?.configured ? 'Connected' : 'Not connected'}
+                </span>
+                <Button
+                  size="sm"
+                  variant={integrations?.gmail?.configured ? 'outline' : 'default'}
+                  onClick={async () => {
+                    try {
+                      const { url } = await integrationApi.connectGmail()
+                      window.location.href = url
+                    } catch (e) {
+                      setGmailMsg({ ok: false, text: apiError(e) })
+                    }
+                  }}
+                >
+                  {integrations?.gmail?.configured ? 'Reconnect Gmail' : 'Connect Gmail'}
+                </Button>
+              </div>
+            </div>
+            {gmailMsg && (
+              <p className={`text-xs ${gmailMsg.ok ? 'text-emerald-700 dark:text-emerald-400' : 'text-destructive'}`}>
+                {gmailMsg.text}
+              </p>
+            )}
+            {!integrations?.gmail?.configured && (
+              <p className="text-xs text-muted-foreground">
+                Add <code className="bg-muted px-1 rounded">{window.location.origin.replace(/:\d+$/, ':5010')}/api/integrations/gmail/callback</code> to your OAuth client's authorized redirect URIs in Google Cloud Console.
               </p>
             )}
           </div>

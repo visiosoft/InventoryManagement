@@ -1,16 +1,15 @@
 import nodemailer from 'nodemailer';
+import { gmailConfigured, sendGmail } from './gmail.js';
 
-// Gmail / Google Workspace SMTP.
-// Required env vars (server/.env):
-//   SMTP_USER = contact@purplebox.ae
-//   SMTP_PASS = <16-character Google App Password>
-// Optional:
-//   SMTP_HOST = smtp.gmail.com   SMTP_PORT = 465   SMTP_FROM = "PurpleBox <contact@purplebox.ae>"
-
+// SMTP fallback (only used if Gmail API is not configured)
 let transporter = null;
 
-export function mailConfigured() {
+function smtpConfigured() {
     return Boolean(process.env.SMTP_USER && process.env.SMTP_PASS);
+}
+
+export function mailConfigured() {
+    return gmailConfigured() || smtpConfigured();
 }
 
 function getTransporter() {
@@ -30,8 +29,11 @@ function getTransporter() {
 }
 
 export async function sendMail({ to, subject, text, html, attachments }) {
-    if (!mailConfigured()) {
-        throw new Error('SMTP is not configured — set SMTP_USER and SMTP_PASS in server/.env');
+    if (gmailConfigured()) {
+        return sendGmail({ to, subject, text, html, attachments });
+    }
+    if (!smtpConfigured()) {
+        throw new Error('Email is not configured — connect Gmail in Settings');
     }
     const from = process.env.SMTP_FROM || `PurpleBox <${process.env.SMTP_USER}>`;
     return getTransporter().sendMail({ from, to, subject, text, html, attachments });

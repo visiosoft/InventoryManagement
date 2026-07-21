@@ -101,6 +101,7 @@ export interface Lead {
 export interface IntegrationStatus {
   zoho: { configured: boolean }
   drive: { configured: boolean; folderId?: string; method?: string }
+  gmail: { configured: boolean }
   whatsapp: { configured: boolean; missing?: string[] }
   googleContacts: { configured: boolean; missing?: string[] }
 }
