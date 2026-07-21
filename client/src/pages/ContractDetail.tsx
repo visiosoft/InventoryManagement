@@ -769,14 +769,13 @@ function InvoiceGroupRow({ g, index, onRecord, onDelete, onSendWhatsApp, sending
 
 // ── Payment row (standalone payments without invoice) ─────────────────────────
 async function downloadInvoiceReceipt(invoiceId: string) {
-  const res = await fetch(`/api/invoices/${invoiceId}/pdf`, {
-    headers: { Authorization: `Bearer ${localStorage.getItem('pb_token')}` },
-  })
-  if (!res.ok) { alert('Could not generate receipt'); return }
-  const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  window.open(url, '_blank', 'noopener,noreferrer')
-  setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  try {
+    const response = await api.get(`/invoices/${invoiceId}/pdf`, { responseType: 'blob' })
+    const blob = new Blob([response.data], { type: 'application/pdf' })
+    const url = URL.createObjectURL(blob)
+    window.open(url, '_blank', 'noopener,noreferrer')
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  } catch { alert('Could not generate receipt') }
 }
 
 function PaymentRow({
