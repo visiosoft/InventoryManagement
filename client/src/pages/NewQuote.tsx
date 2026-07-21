@@ -187,6 +187,7 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
   const [newItems, setNewItems] = useState<EditItem[]>([])
   const [newDue, setNewDue] = useState('')
   const [err, setErr] = useState('')
+  const [emailModal, setEmailModal] = useState<{ to: string; subject: string; body: string; pdfUrl: string } | null>(null)
 
   const sorted = [...invoices].sort((a, b) => new Date(a.dueDate || 0).getTime() - new Date(b.dueDate || 0).getTime())
 
@@ -397,19 +398,21 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
                   try {
                     const shareRes = await api.post(`/invoices/${inv._id}/share`)
                     const pdfUrl = shareRes.data.url
-                    const subject = `Invoice ${inv.invoiceNo} — PurpleBox`
-                    const body = [
-                      `Hello ${customerName},`,
-                      ``,
-                      `Please find your invoice ${inv.invoiceNo} for ${formatMoney(inv.total)} AED.`,
-                      ``,
-                      `View & download: ${pdfUrl}`,
-                      ``,
-                      `Thank you,`,
-                      `PurpleBox`,
-                    ].join('\n')
-                    const gmailUrl = `https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(customerEmail)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
-                    window.open(gmailUrl, '_blank')
+                    setEmailModal({
+                      to: customerEmail,
+                      subject: `Invoice ${inv.invoiceNo} — PurpleBox`,
+                      body: [
+                        `Hello ${customerName},`,
+                        ``,
+                        `Please find your invoice ${inv.invoiceNo} for ${formatMoney(inv.total)} AED.`,
+                        ``,
+                        `View & download: ${pdfUrl}`,
+                        ``,
+                        `Thank you,`,
+                        `PurpleBox`,
+                      ].join('\n'),
+                      pdfUrl,
+                    })
                   } catch (e: any) { setErr(apiError(e)) }
                 }}
                 className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors"
@@ -492,6 +495,65 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
       )}
 
       {err && <p className="text-sm px-3 py-2 rounded-lg" style={{ color: '#b91c1c', background: '#fef2f2' }}>{err}</p>}
+
+      {/* Email compose modal */}
+      <Modal open={!!emailModal} onClose={() => setEmailModal(null)} title="Send Invoice Email" wide>
+        {emailModal && (
+          <div className="space-y-4">
+            <Field label="To">
+              <Input
+                type="email"
+                value={emailModal.to}
+                onChange={(e) => setEmailModal({ ...emailModal, to: e.target.value })}
+                placeholder="customer@email.com"
+              />
+            </Field>
+            <Field label="Subject">
+              <Input
+                value={emailModal.subject}
+                onChange={(e) => setEmailModal({ ...emailModal, subject: e.target.value })}
+              />
+            </Field>
+            <Field label="Body">
+              <Textarea
+                value={emailModal.body}
+                onChange={(e) => setEmailModal({ ...emailModal, body: e.target.value })}
+                rows={8}
+              />
+            </Field>
+            {emailModal.pdfUrl && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: CHIP_BG }}>
+                <FileText size={14} style={{ color: PURPLE }} />
+                <span className="text-xs flex-1 truncate" style={{ color: INK }}>Invoice PDF link included in body</span>
+                <a href={emailModal.pdfUrl} target="_blank" rel="noreferrer" className="text-xs font-medium hover:underline" style={{ color: PURPLE }}>Preview</a>
+              </div>
+            )}
+            <div className="flex justify-end gap-2 pt-2 border-t" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
+              <button
+                type="button"
+                onClick={() => setEmailModal(null)}
+                className="px-4 py-2 rounded-xl text-sm font-semibold border hover:opacity-80 transition-opacity"
+                style={{ color: INK, borderColor: 'rgba(20,8,31,0.15)' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!emailModal.to}
+                onClick={() => {
+                  const gmailUrl = `https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(emailModal.to)}&su=${encodeURIComponent(emailModal.subject)}&body=${encodeURIComponent(emailModal.body)}`
+                  window.open(gmailUrl, '_blank')
+                  setEmailModal(null)
+                }}
+                className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+                style={{ background: PURPLE }}
+              >
+                <Send size={14} /> Open in Gmail
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }
@@ -516,6 +578,7 @@ export default function NewQuote() {
   const invoiceHandleRef = useRef<InvoiceStepHandle | null>(null)
   const [invoiceEditing, setInvoiceEditing] = useState(false)
   const [zohoSyncing, setZohoSyncing] = useState(false)
+  const [quoteEmailModal, setQuoteEmailModal] = useState<{ to: string; subject: string; body: string; quoteUrl: string } | null>(null)
   const [contractId, setContractId] = useState('')
   const hydratedRef = useRef(false)
   const stepAutoSetRef = useRef(false)
@@ -940,19 +1003,21 @@ export default function NewQuote() {
         const phone = customerPhone.replace(/\D/g, '').replace(/^00/, '')
         window.open(phone ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}` : `https://wa.me/?text=${encodeURIComponent(text)}`, '_blank')
       } else {
-        const subject = `Storage Quotation ${q.quoteNo} — PurpleBox`
-        const body = [
-          `Hello ${customerName},`,
-          ``,
-          `Please find your storage quotation ${q.quoteNo} — ${formatMoney(q.total)} AED.`,
-          ``,
-          `View the quote here: ${url}`,
-          ``,
-          `Thank you,`,
-          `PurpleBox`,
-        ].join('\n')
-        const gmailUrl = `https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(customerEmail)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
-        window.open(gmailUrl, '_blank')
+        setQuoteEmailModal({
+          to: customerEmail,
+          subject: `Storage Quotation ${q.quoteNo} — PurpleBox`,
+          body: [
+            `Hello ${customerName},`,
+            ``,
+            `Please find your storage quotation ${q.quoteNo} — ${formatMoney(q.total)} AED.`,
+            ``,
+            `View the quote here: ${url}`,
+            ``,
+            `Thank you,`,
+            `PurpleBox`,
+          ].join('\n'),
+          quoteUrl: url,
+        })
       }
     },
     onError: (e) => setErr(apiError(e)),
@@ -2580,6 +2645,65 @@ export default function NewQuote() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Quote email compose modal */}
+      <Modal open={!!quoteEmailModal} onClose={() => setQuoteEmailModal(null)} title="Send Quote Email" wide>
+        {quoteEmailModal && (
+          <div className="space-y-4">
+            <Field label="To">
+              <Input
+                type="email"
+                value={quoteEmailModal.to}
+                onChange={(e) => setQuoteEmailModal({ ...quoteEmailModal, to: e.target.value })}
+                placeholder="customer@email.com"
+              />
+            </Field>
+            <Field label="Subject">
+              <Input
+                value={quoteEmailModal.subject}
+                onChange={(e) => setQuoteEmailModal({ ...quoteEmailModal, subject: e.target.value })}
+              />
+            </Field>
+            <Field label="Body">
+              <Textarea
+                value={quoteEmailModal.body}
+                onChange={(e) => setQuoteEmailModal({ ...quoteEmailModal, body: e.target.value })}
+                rows={8}
+              />
+            </Field>
+            {quoteEmailModal.quoteUrl && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: CHIP_BG }}>
+                <FileText size={14} style={{ color: PURPLE }} />
+                <span className="text-xs flex-1 truncate" style={{ color: INK }}>Quote link included in body</span>
+                <a href={quoteEmailModal.quoteUrl} target="_blank" rel="noreferrer" className="text-xs font-medium hover:underline" style={{ color: PURPLE }}>Preview</a>
+              </div>
+            )}
+            <div className="flex justify-end gap-2 pt-2 border-t" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
+              <button
+                type="button"
+                onClick={() => setQuoteEmailModal(null)}
+                className="px-4 py-2 rounded-xl text-sm font-semibold border hover:opacity-80 transition-opacity"
+                style={{ color: INK, borderColor: 'rgba(20,8,31,0.15)' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!quoteEmailModal.to}
+                onClick={() => {
+                  const gmailUrl = `https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(quoteEmailModal.to)}&su=${encodeURIComponent(quoteEmailModal.subject)}&body=${encodeURIComponent(quoteEmailModal.body)}`
+                  window.open(gmailUrl, '_blank')
+                  setQuoteEmailModal(null)
+                }}
+                className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+                style={{ background: PURPLE }}
+              >
+                <Send size={14} /> Open in Gmail
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   )
