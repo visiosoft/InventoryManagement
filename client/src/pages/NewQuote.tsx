@@ -191,6 +191,8 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
   const [emailSending, setEmailSending] = useState(false)
   const [emailSent, setEmailSent] = useState('')
 
+  useEffect(() => { setErr('') }, [invoices.length])
+
   const sorted = [...invoices].sort((a, b) => new Date(a.dueDate || 0).getTime() - new Date(b.dueDate || 0).getTime())
 
   // Auto-expand first editable invoice
