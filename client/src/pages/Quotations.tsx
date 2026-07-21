@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { ChevronRight, FileSignature, Package, Plus, Search, Trash2 } from 'lucide-react'
 import { api, apiError, quoteApi, type AvailableUnit } from '../lib/api'
 import type { Quote, QuoteStatus, QuoteUnit, QuoteAddOn } from '../lib/types'
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, Th, Textarea } from '../components/ui'
+import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Table, Td, Th, Textarea } from '../components/ui'
 import { RentalFlowStepper, type FlowStep } from '../components/RentalFlowStepper'
 import { formatDate, formatMoney } from '../lib/utils'
 

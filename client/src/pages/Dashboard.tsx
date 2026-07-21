@@ -12,9 +12,7 @@ import { formatDate, formatMoney } from '../lib/utils'
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
 const INK = '#14081F'
 const MUTED_CLR = '#756E80'
-const PURPLE = '#5B2BC9'
 const CREAM = '#FDFCFA'
-const CHIP_BG = '#F3F0EA'
 
 type WidgetId =
   | 'stats'

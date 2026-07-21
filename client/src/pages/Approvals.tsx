@@ -11,7 +11,6 @@ const GREEN = '#047857'
 const MUTED = '#756E80'
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
 const CREAM = '#FDFCFA'
-const CHIP_BG = '#F3F0EA'
 
 export default function Approvals() {
   const qc = useQueryClient()

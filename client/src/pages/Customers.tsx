@@ -4,7 +4,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { FileText, FileBadge, Receipt, Plus, Search, Trash2, UserCheck, Merge } from 'lucide-react'
 import { api, apiError, customerApi } from '../lib/api'
 import type { Customer } from '../lib/types'
-import { Button, Card, EmptyState, Input, Modal, PageHeader, Pagination, Spinner, Table, Td, Th } from '../components/ui'
+import { Button, Card, EmptyState, Input, Modal, Pagination, Spinner, Table, Td, Th } from '../components/ui'
 import { AddCustomerModal } from '../components/AddCustomerModal'
 import { formatDate } from '../lib/utils'
 

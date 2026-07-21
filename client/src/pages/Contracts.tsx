@@ -5,8 +5,8 @@ import { Plus, Search, Trash2, X } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import type { Contract } from '../lib/types'
 import {
-  Badge, Button, Card, EmptyState, Input, Modal, PageHeader, Pagination,
-  Select, Spinner, Table, Td, Th,
+  Badge, Button, Card, EmptyState, Modal, Pagination,
+  Spinner, Table, Td, Th,
   contractStatusTone, statusLabel,
 } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'

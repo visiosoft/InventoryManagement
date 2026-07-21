@@ -1528,7 +1528,6 @@ export default function NewQuote() {
                         if (fm > 0 && ew > 0) durLabel = `${tw} wk${tw !== 1 ? 's' : ''} (${fm} mo + ${ew} extra wk)`
                         else if (fm > 0) durLabel = `${fm} mo (${tw} wks)`
                         const discounted = u.rate - (u.rate * u.discountPct) / 100
-                        const weeklyRate = discounted / 4
                         const periodTotal = calcUnitPeriodTotal(u.rate, u.discountPct, u.startDate, u.endDate)
                         return (
                           <div key={u.unitId} className="py-1">
@@ -2129,15 +2128,9 @@ export default function NewQuote() {
                     const cStart = new Date(contract.startDate)
                     const cEnd = new Date(contract.endDate)
                     const monthlyRate = Number(contract.rate || 0)
-                    const discPct = Number(contract.firstMonthDiscountPct || 0)
+                    const discPct = Number((contract as any).firstMonthDiscountPct ?? (contract as any).discountPct ?? 0)
                     const discountedMonthly = Math.round((monthlyRate - (monthlyRate * discPct) / 100) * 100) / 100
                     const weeklyRate = Math.round((monthlyRate / 4) * 100) / 100
-                    const discWeeklyRate = Math.round((discountedMonthly / 4) * 100) / 100
-                    const totalDays = Math.round((cEnd.getTime() - cStart.getTime()) / 86400000)
-                    const totalFm = Math.floor(totalDays / 28)
-                    const totalRem = totalDays % 28
-                    const totalEw = totalRem > 0 ? Math.ceil(totalRem / 7) : 0
-                    const totalWeeks = totalFm * 4 + totalEw
                     const periods: { label: string; from: Date; to: Date; weeks: number; amount: number; type: string; note?: string }[] = []
 
                     // First 4 weeks — rent (with discount if any)
