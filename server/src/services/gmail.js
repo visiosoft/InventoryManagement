@@ -18,6 +18,10 @@ export function gmailConfigured() {
     );
 }
 
+function mimeEncode(str) {
+    return '=?UTF-8?B?' + Buffer.from(str, 'utf8').toString('base64') + '?=';
+}
+
 function buildRawEmail({ from, to, subject, text, html, attachments }) {
     const boundary = '____boundary_' + Date.now().toString(36);
     const nl = '\r\n';
@@ -25,7 +29,7 @@ function buildRawEmail({ from, to, subject, text, html, attachments }) {
     let raw = '';
     raw += `From: ${from}${nl}`;
     raw += `To: ${to}${nl}`;
-    raw += `Subject: ${subject}${nl}`;
+    raw += `Subject: ${mimeEncode(subject)}${nl}`;
     raw += `MIME-Version: 1.0${nl}`;
 
     if (attachments && attachments.length > 0) {
