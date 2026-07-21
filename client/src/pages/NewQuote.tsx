@@ -169,12 +169,13 @@ export interface InvoiceStepHandle {
   saveAndSync: () => void
 }
 
-function InvoiceStep({ contract, invoices, customerId, customerName, customerPhone, onChanged, handleRef, onEditingChange }: {
+function InvoiceStep({ contract, invoices, customerId, customerName, customerPhone, customerEmail, onChanged, handleRef, onEditingChange }: {
   contract: { _id: string; contractNo: string; startDate: string; endDate: string; rate: number }
   invoices: Invoice[]
   customerId: string
   customerName: string
   customerPhone: string
+  customerEmail: string
   onChanged: () => void
   handleRef?: React.MutableRefObject<InvoiceStepHandle | null>
   onEditingChange?: (editing: boolean) => void
@@ -186,7 +187,6 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
   const [newItems, setNewItems] = useState<EditItem[]>([])
   const [newDue, setNewDue] = useState('')
   const [err, setErr] = useState('')
-  const [sentMsg, setSentMsg] = useState('')
 
   const sorted = [...invoices].sort((a, b) => new Date(a.dueDate || 0).getTime() - new Date(b.dueDate || 0).getTime())
 
@@ -394,11 +394,22 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
               <button
                 type="button"
                 onClick={async () => {
-                  setSentMsg('')
                   try {
-                    await api.post(`/invoices/${inv._id}/send-email`)
-                    setSentMsg(`${inv.invoiceNo} emailed`)
-                    onChanged()
+                    const shareRes = await api.post(`/invoices/${inv._id}/share`)
+                    const pdfUrl = shareRes.data.url
+                    const subject = `Invoice ${inv.invoiceNo} — PurpleBox`
+                    const body = [
+                      `Hello ${customerName},`,
+                      ``,
+                      `Please find your invoice ${inv.invoiceNo} for ${formatMoney(inv.total)} AED.`,
+                      ``,
+                      `View & download: ${pdfUrl}`,
+                      ``,
+                      `Thank you,`,
+                      `PurpleBox`,
+                    ].join('\n')
+                    const gmailUrl = `https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(customerEmail)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+                    window.open(gmailUrl, '_blank')
                   } catch (e: any) { setErr(apiError(e)) }
                 }}
                 className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors"
@@ -445,7 +456,6 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
               )}
             </div>
             )}
-            {sentMsg === `${inv.invoiceNo} emailed` && <div className="px-4 pb-3"><DoneBanner text={sentMsg} /></div>}
           </div>
         )
       })}
@@ -913,32 +923,17 @@ export default function NewQuote() {
         setQuoteId(q._id)
       }
 
-      if (channel === 'email') {
-        // Prefer server-side SMTP; fall back to the user's mail app if not configured
-        try {
-          const r = await api.post<{ sent: boolean; to: string }>(`/quotes/${q._id}/send-email`)
-          return { q, url: '', channel, smtpSentTo: r.data.to }
-        } catch (e) {
-          const status = (e as { response?: { status?: number } })?.response?.status
-          if (status !== 501) throw e
-        }
-      }
-
       const { url } = await quoteApi.share(q._id, channel)
-      return { q, url, channel, smtpSentTo: '' }
+      return { q, url, channel }
     },
-    onSuccess: ({ q, url, channel, smtpSentTo }) => {
+    onSuccess: ({ q, url, channel }) => {
       qc.invalidateQueries({ queryKey: ['quotes'] })
       qc.invalidateQueries({ queryKey: ['flow-resume'] })
       setErr('')
-      if (smtpSentTo) {
-        setSentMsg(`Quote ${q.quoteNo} emailed to ${smtpSentTo}`)
-        return
-      }
       setSentMsg('')
       const text =
         `Hello ${customerName},\n\n` +
-        `Please find your storage quotation *${q.quoteNo}* — ${formatMoney(q.total)} AED.\n` +
+        `Please find your storage quotation ${q.quoteNo} — ${formatMoney(q.total)} AED.\n` +
         `View the quote here: ${url}\n\n` +
         `Thank you — PurpleBox`
       if (channel === 'whatsapp') {
@@ -946,7 +941,18 @@ export default function NewQuote() {
         window.open(phone ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}` : `https://wa.me/?text=${encodeURIComponent(text)}`, '_blank')
       } else {
         const subject = `Storage Quotation ${q.quoteNo} — PurpleBox`
-        window.open(`mailto:${customerEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`, '_self')
+        const body = [
+          `Hello ${customerName},`,
+          ``,
+          `Please find your storage quotation ${q.quoteNo} — ${formatMoney(q.total)} AED.`,
+          ``,
+          `View the quote here: ${url}`,
+          ``,
+          `Thank you,`,
+          `PurpleBox`,
+        ].join('\n')
+        const gmailUrl = `https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(customerEmail)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+        window.open(gmailUrl, '_blank')
       }
     },
     onError: (e) => setErr(apiError(e)),
@@ -2091,6 +2097,7 @@ export default function NewQuote() {
                   customerId={customerId}
                   customerName={customerName}
                   customerPhone={customerPhone}
+                  customerEmail={customerEmail}
                   onChanged={() => { qc.invalidateQueries({ queryKey: ['flow-contract'] }); setZohoSyncing(false) }}
                   handleRef={invoiceHandleRef}
                   onEditingChange={(v) => { setInvoiceEditing(v); if (!v) setZohoSyncing(false) }}
