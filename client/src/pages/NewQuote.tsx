@@ -1189,14 +1189,15 @@ export default function NewQuote() {
 
   if (resumeLoading) {
     return (
-      <div style={{ background: CREAM, minHeight: '100vh', margin: '-1.5rem', padding: '2.5rem 1.5rem' }}>
+      <div style={{ background: CREAM, minHeight: '100vh', margin: '-1.5rem', padding: '1.5rem' }}>
         <div className="flex items-center justify-center py-24"><Spinner /></div>
       </div>
     )
   }
 
   return (
-    <div style={{ background: CREAM, borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+    <div style={{ background: CREAM, minHeight: '100vh', margin: '-1.5rem', padding: '1.5rem' }}>
+    <div style={{ borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
       <div className="max-w-3xl">
 
         {/* Header */}
@@ -2732,6 +2733,7 @@ export default function NewQuote() {
           </div>
         )}
       </Modal>
+    </div>
     </div>
   )
 }
