@@ -1499,27 +1499,6 @@ export default function ContractDetail() {
     })
   }
 
-  // Overdue payments — one event per invoice (group all payment records for the same invoice)
-  const overdueByInvoice = new Map<string, typeof overdue>()
-  for (const p of overdue) {
-    const invId = String((p.invoice as any)?._id ?? (p.invoice as any) ?? p.dueDate)
-    if (!overdueByInvoice.has(invId)) overdueByInvoice.set(invId, [])
-    overdueByInvoice.get(invId)!.push(p)
-  }
-  for (const [, group] of overdueByInvoice) {
-    const earliest = group.reduce((min, p) => new Date(p.dueDate) < min ? new Date(p.dueDate) : min, new Date(group[0].dueDate))
-    const total = Math.round(group.reduce((s, p) => s + Number(p.amount ?? 0), 0) * 100) / 100
-    const inv = (group[0].invoice as any)
-    const daysLate = Math.round((today2.getTime() - earliest.getTime()) / 86400000)
-    activityEvents.push({
-      id: `ovd-${group[0]._id}`,
-      type: 'overdue',
-      at: earliest,
-      title: 'Payment overdue',
-      subtitle: `${inv?.invoiceNo ?? ''} · due ${formatDate(earliest.toISOString())} · ${daysLate}d late · ${formatMoney(total)}`,
-    })
-  }
-
   // Paid payments — one event per (invoice × paid-date) so multiple partial
   // payments on different dates each appear as their own activity row.
   const paidByInvoiceDate = new Map<string, typeof paid>()
@@ -1931,12 +1910,6 @@ export default function ContractDetail() {
                                   </span>
                                 </div>
                                 {ev.subtitle && <p className="text-xs text-muted-foreground mt-0.5">{ev.subtitle}</p>}
-                                {ev.type === 'overdue' && (
-                                  <button className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
-                                    onClick={() => { const p = overdue.find(x => ev.id === `ovd-${x._id}`); if (p) setRecordingPayment(p) }}>
-                                    <CalendarDays size={11} /> Collect now
-                                  </button>
-                                )}
                               </div>
                             </div>
                           )
