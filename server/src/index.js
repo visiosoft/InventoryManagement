@@ -132,7 +132,7 @@ app.use('/api/unit-types', requireAuth, unitTypeRoutes);
 app.use(
   '/api/integrations',
   (req, res, next) =>
-    req.path.startsWith('/whatsapp/webhook') || req.path.startsWith('/drive/callback') || req.path.startsWith('/drive/connect')
+    req.path.startsWith('/whatsapp/webhook') || req.path.startsWith('/drive/callback') || req.path.startsWith('/drive/connect') || req.path.startsWith('/gmail/callback')
       ? next()
       : requireAuth(req, res, next),
   integrationRoutes
