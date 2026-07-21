@@ -6,8 +6,15 @@ import { Box, FileText, TrendingUp } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { api, apiError } from '../lib/api'
 import type { Summary } from '../lib/types'
-import { Card, CardHeader, CardBody, Spinner, PageHeader, EmptyState, Table, Th, Td, Button } from '../components/ui'
+import { Spinner, EmptyState, Table, Th, Td, Button } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
+
+const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
+const INK = '#14081F'
+const MUTED_CLR = '#756E80'
+const PURPLE = '#5B2BC9'
+const CREAM = '#FDFCFA'
+const CHIP_BG = '#F3F0EA'
 
 type WidgetId =
   | 'stats'
@@ -68,36 +75,34 @@ function WidgetShell({
       onDragOver={onDragOver}
       onDrop={() => onDrop(id)}
     >
-      <Card className="overflow-hidden">
-        <CardHeader
-          title={
-            <span className="flex items-center gap-2">
-              <GripVertical size={14} className="text-muted-foreground" />
-              {title}
-            </span>
-          }
-          subtitle={subtitle}
-        />
-        <CardBody>{children}</CardBody>
-      </Card>
+      <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, overflow: 'hidden' }}>
+        <div style={{ padding: '16px 20px 0' }}>
+          <span className="flex items-center gap-2">
+            <GripVertical size={14} style={{ color: MUTED_CLR }} />
+            <span style={{ color: INK, fontWeight: 600, fontSize: 14 }}>{title}</span>
+          </span>
+          {subtitle && <div style={{ color: MUTED_CLR, fontSize: 12, marginTop: 2, paddingLeft: 22 }}>{subtitle}</div>}
+        </div>
+        <div style={{ padding: '12px 20px 20px' }}>{children}</div>
+      </div>
     </div>
   )
 }
 
 function StatCard({ icon: Icon, label, value, sub, tone }: { icon: typeof Box; label: string; value: string; sub?: string; tone: string }) {
   return (
-    <Card className="p-5">
+    <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 20 }}>
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs text-muted-foreground">{label}</p>
-          <p className="text-2xl font-bold mt-1">{value}</p>
-          {sub && <p className="text-[11px] text-muted-foreground mt-0.5">{sub}</p>}
+          <p style={{ fontSize: 12, color: MUTED_CLR }}>{label}</p>
+          <p style={{ fontSize: 24, fontWeight: 700, color: INK, marginTop: 4 }}>{value}</p>
+          {sub && <p style={{ fontSize: 11, color: MUTED_CLR, marginTop: 2 }}>{sub}</p>}
         </div>
         <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${tone}`}>
           <Icon size={19} />
         </div>
       </div>
-    </Card>
+    </div>
   )
 }
 
@@ -376,23 +381,32 @@ export default function Dashboard() {
   if (isLoading) return <Spinner />
   if (isError || !data) {
     return (
-      <div>
-        <PageHeader title="Dashboard" subtitle="Facility overview at a glance" />
-        <Card>
-          <CardHeader title="Unable to load dashboard" subtitle={apiError(error)} />
-          <CardBody className="flex flex-wrap items-center gap-3">
+      <div style={{ background: CREAM, borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+        <div className="mb-7">
+          <div style={{ ...HEADING, fontSize: 26, fontWeight: 700, color: INK }}>Dashboard</div>
+          <div style={{ fontSize: 14, color: MUTED_CLR, marginTop: 4 }}>Facility overview at a glance</div>
+        </div>
+        <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, overflow: 'hidden' }}>
+          <div style={{ padding: '16px 20px 0' }}>
+            <span style={{ color: INK, fontWeight: 600, fontSize: 14 }}>Unable to load dashboard</span>
+            <div style={{ color: MUTED_CLR, fontSize: 12, marginTop: 2 }}>{apiError(error)}</div>
+          </div>
+          <div style={{ padding: '12px 20px 20px' }} className="flex flex-wrap items-center gap-3">
             <Button onClick={() => refetch()}>Retry</Button>
-            <span className="text-xs text-muted-foreground">If this keeps happening, verify the backend API and login session.</span>
-          </CardBody>
+            <span className="text-xs" style={{ color: MUTED_CLR }}>If this keeps happening, verify the backend API and login session.</span>
+          </div>
           <EmptyState message="Dashboard data is temporarily unavailable." />
-        </Card>
+        </div>
       </div>
     )
   }
 
   return (
-    <div>
-      <PageHeader title="Dashboard" subtitle="Facility overview at a glance (drag cards to reorder)" />
+    <div style={{ background: CREAM, borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+      <div className="mb-7">
+        <div style={{ ...HEADING, fontSize: 26, fontWeight: 700, color: INK }}>Dashboard</div>
+        <div style={{ fontSize: 14, color: MUTED_CLR, marginTop: 4 }}>Facility overview at a glance (drag cards to reorder)</div>
+      </div>
 
       {draftInvoices > 0 && (
         <Link

@@ -150,8 +150,8 @@ export function renderQuotePdf({ quote }) {
       doc.font('Helvetica-Bold').fontSize(9).fillColor(WHITE);
       doc.text('#', TX + 8, y + 8, { width: nW - 8 });
       doc.text('Item & Description', TX + nW + 6, y + 8, { width: iW - 12 });
-      doc.text('Qty', TX + nW + iW, y + 8, { width: qW, align: 'right' });
-      doc.text('Rate', TX + nW + iW + qW, y + 8, { width: rW, align: 'right' });
+      doc.text('Weeks', TX + nW + iW, y + 8, { width: qW, align: 'right' });
+      doc.text('Rate/wk', TX + nW + iW + qW, y + 8, { width: rW, align: 'right' });
       doc.text('Amount', TX + nW + iW + qW + rW, y + 8, { width: aW - 8, align: 'right' });
       y += hH;
 
@@ -162,12 +162,28 @@ export function renderQuotePdf({ quote }) {
          const floor = u.floor ? `Floor ${u.floor}` : '';
          const meta = [size, floor].filter(Boolean).join(', ');
          const disc = Number(u.discountPct || 0);
+         const uDays = u.startDate && u.endDate ? Math.round((new Date(u.endDate) - new Date(u.startDate)) / 86400000) : 0;
+         const uFullMo = Math.floor(uDays / 28);
+         const uRem = uDays % 28;
+         const uExtraWk = uRem > 0 ? Math.ceil(uRem / 7) : 0;
+         const uTotalWk = uFullMo * 4 + uExtraWk;
+         let durationStr = '';
+         if (uFullMo > 0 && uExtraWk > 0) {
+            durationStr = ` · ${uTotalWk} wk (${uFullMo} mo + ${uExtraWk} extra wk)`;
+         } else if (uFullMo > 0) {
+            durationStr = ` · ${uFullMo} mo (${uTotalWk} wk)`;
+         } else if (uTotalWk > 0) {
+            durationStr = ` · ${uTotalWk} wk`;
+         }
+         const discountedRate = u.rate - (u.rate * disc) / 100;
+         const wkRate = Number((discountedRate / 4).toFixed(2));
+         const periodAmount = Number((wkRate * (uTotalWk || 1)).toFixed(2));
          rows.push({
             title: `Storage Unit ${u.unitNumber}${meta ? ` (${meta})` : ''}`,
-            sub: `${dt(u.startDate)} – ${dt(u.endDate)}${disc > 0 ? ` · ${disc}% discount` : ''}`,
-            qty: 1,
-            rate: u.rate,
-            amount: u.amount,
+            sub: `${dt(u.startDate)} – ${dt(u.endDate)}${durationStr}${disc > 0 ? ` · ${disc}% discount` : ''}`,
+            qty: uTotalWk || 1,
+            rate: wkRate,
+            amount: periodAmount,
          });
       }
       for (const a of quote.addOns || []) {
@@ -221,8 +237,8 @@ export function renderQuotePdf({ quote }) {
       const valX = tX + lblW;          // value starts at Amount column
       const valW = aW - 8;
 
-      // Sub Total (units + add-ons + items + deposit)
-      const grandSubTotal = Number(quote.subTotal || 0) + depositAmt;
+      // Sub Total (recomputed from rows)
+      const grandSubTotal = rows.reduce((s, r) => s + r.amount, 0);
       doc.font('Helvetica').fontSize(9).fillColor(GRAY)
          .text('Sub Total', tX, y, { width: lblW, align: 'right' });
       doc.font('Helvetica').fontSize(9).fillColor(BLACK)
@@ -238,8 +254,9 @@ export function renderQuotePdf({ quote }) {
          y += 16;
       }
 
-      // Total (bold) — includes deposit
-      const grandTotal = Number(quote.total || 0) + depositAmt;
+      // Total (bold)
+      const adjustment = Number(quote.adjustment || 0);
+      const grandTotal = grandSubTotal + adjustment;
       doc.font('Helvetica-Bold').fontSize(10).fillColor(BLACK)
          .text('Total', tX, y, { width: lblW, align: 'right' });
       doc.font('Helvetica-Bold').fontSize(10).fillColor(BLACK)

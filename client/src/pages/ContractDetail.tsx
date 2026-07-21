@@ -14,6 +14,12 @@ import {
 import { formatDate, formatMoney } from '../lib/utils'
 import { UploadDocumentForm } from './Documents'
 
+const PURPLE = '#5B2BC9'
+const INK = '#14081F'
+const MUTED_CLR = '#756E80'
+const CREAM = '#FDFCFA'
+const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
+
 // ── Custom invoice generator modal ────────────────────────────────────────────
 type ContractDetailData = {
   contract: Contract
@@ -1116,7 +1122,7 @@ function EditContractForm({ contract, availableUnits, onSubmit, onCancel, busy, 
                   className="h-4 w-4 rounded border-input accent-primary shrink-0" />
                 <span className="text-sm flex-1 min-w-0">
                   <span className="font-medium">{u.unitNumber}</span>
-                  {u.sizeSqf ? <span className="text-muted-foreground ml-2">{u.sizeSqf} sq ft{u.price ? ` · AED ${u.price.toLocaleString()}/mo` : ''}</span> : null}
+                  {u.sizeSqf ? <span className="text-muted-foreground ml-2">{u.sizeSqf} sq ft{u.price ? ` · AED ${u.price.toLocaleString()}/4wk` : ''}</span> : null}
                 </span>
                 {isPrimary
                   ? <span className="text-xs text-muted-foreground shrink-0">Primary</span>
@@ -1577,17 +1583,23 @@ export default function ContractDetail() {
   activityEvents.sort((a, b) => b.at.getTime() - a.at.getTime())
 
   return (
-    <div>
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-1.5 text-sm text-muted-foreground mb-3">
-        <Link to="/contracts" className="hover:text-foreground transition-colors">Contracts</Link>
-        <span>/</span>
-        <span className="text-foreground font-medium">{c.contractNo}</span>
-      </div>
+    <div style={{ background: CREAM, borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+      {/* Back link */}
+      <button
+        type="button"
+        onClick={() => navigate('/contracts')}
+        className="flex items-center gap-1.5 text-xs mb-3 hover:opacity-70 transition-opacity"
+        style={{ color: PURPLE, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+      >
+        <span>←</span> Back to Contracts
+      </button>
 
       {/* Title + actions */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-        <h1 className="text-2xl font-bold tracking-tight">Contract overview</h1>
+        <div>
+          <div style={{ ...HEADING, fontSize: 26, fontWeight: 700, color: INK }}>Contract overview</div>
+          <div style={{ fontSize: 14, color: MUTED_CLR, marginTop: 4 }}>{c.contractNo} · {c.customer?.fullName}</div>
+        </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={() => {
             const qId = typeof c.quote === 'object' && c.quote?._id ? c.quote._id : typeof c.quote === 'string' ? c.quote : null
@@ -1750,7 +1762,7 @@ export default function ContractDetail() {
                   )
                 })()}
                 <div className="flex justify-between py-2">
-                  <span className="text-muted-foreground">Monthly</span>
+                  <span className="text-muted-foreground">4wk rate</span>
                   <span className="font-medium">AED {formatMoney(c.rate)}</span>
                 </div>
                 <div className="flex justify-between py-2">
@@ -1847,7 +1859,7 @@ export default function ContractDetail() {
                   <div className="flex-1 min-w-0">
                     <span className="font-semibold text-primary">No invoices generated yet</span>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      Generate the payment schedule based on contract dates and monthly rate (AED {formatMoney(c.rate)}/mo).
+                      Generate the payment schedule based on contract dates and rate (AED {formatMoney(c.rate)}/4wk).
                     </p>
                   </div>
                   <Button size="sm" onClick={() => autoInvoice.mutate()} disabled={autoInvoice.isPending} className="shrink-0">

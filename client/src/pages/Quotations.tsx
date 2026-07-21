@@ -8,6 +8,13 @@ import { Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, Selec
 import { RentalFlowStepper, type FlowStep } from '../components/RentalFlowStepper'
 import { formatDate, formatMoney } from '../lib/utils'
 
+const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
+const INK = '#14081F'
+const MUTED_COLOR = '#756E80'
+const PURPLE = '#5B2BC9'
+const CREAM = '#FDFCFA'
+const CHIP_BG = '#F3F0EA'
+
 const QUOTE_STATUSES: QuoteStatus[] = ['draft', 'sent', 'accepted', 'rejected', 'expired']
 
 const statusTone: Record<string, 'gray' | 'blue' | 'green' | 'yellow' | 'red'> = {
@@ -347,7 +354,7 @@ function QuoteWizard({
                         {u.sizeSqf} sqft · Floor {u.floor || '—'}
                       </div>
                       <div className="text-xs font-medium mt-1">
-                        {formatMoney(u.price || 0)} AED/mo
+                        {formatMoney(u.price || 0)} AED/4wk
                       </div>
                     </button>
                   )
@@ -818,56 +825,103 @@ export default function Quotations() {
   }, [quotes])
 
   return (
-    <div>
-      <PageHeader
-        title="Book Unit"
-        subtitle={`${stats.total} bookings · ${formatMoney(stats.totalValue)} AED total value`}
-        action={
-          <Button onClick={() => navigate('/quotes/new')}>
-            <Plus size={15} /> New Booking
-          </Button>
-        }
-      />
+    <div style={{ background: CREAM, borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 mb-6">
+        <div>
+          <h1 style={{ ...HEADING, color: INK, fontSize: 28, fontWeight: 800, lineHeight: 1.15, margin: 0 }}>
+            Book Unit
+          </h1>
+          <p style={{ color: MUTED_COLOR, fontSize: 14, marginTop: 4 }}>
+            {stats.total} bookings &middot; {formatMoney(stats.totalValue)} AED total value
+          </p>
+        </div>
+        <button
+          onClick={() => navigate('/quotes/new')}
+          style={{
+            background: PURPLE,
+            color: '#fff',
+            border: 'none',
+            borderRadius: 12,
+            padding: '10px 22px',
+            fontWeight: 700,
+            fontSize: 14,
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            ...HEADING,
+          }}
+        >
+          <Plus size={15} /> New Booking
+        </button>
+      </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-        <Card className="p-3">
-          <p className="text-xs text-muted-foreground">Draft</p>
-          <p className="text-2xl font-semibold">{stats.draft}</p>
-        </Card>
-        <Card className="p-3">
-          <p className="text-xs text-muted-foreground">Sent</p>
-          <p className="text-2xl font-semibold text-blue-600">{stats.sent}</p>
-        </Card>
-        <Card className="p-3">
-          <p className="text-xs text-muted-foreground">Accepted</p>
-          <p className="text-2xl font-semibold text-emerald-600">{stats.accepted}</p>
-        </Card>
-        <Card className="p-3">
-          <p className="text-xs text-muted-foreground">Total Value</p>
-          <p className="text-2xl font-semibold">{formatMoney(stats.totalValue)}</p>
-        </Card>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+        <div style={{ background: '#fff', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: '14px 16px' }}>
+          <p style={{ fontSize: 12, color: MUTED_COLOR, marginBottom: 2 }}>Draft</p>
+          <p style={{ fontSize: 24, fontWeight: 700, color: INK, ...HEADING, margin: 0 }}>{stats.draft}</p>
+        </div>
+        <div style={{ background: '#fff', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: '14px 16px' }}>
+          <p style={{ fontSize: 12, color: MUTED_COLOR, marginBottom: 2 }}>Sent</p>
+          <p style={{ fontSize: 24, fontWeight: 700, color: PURPLE, ...HEADING, margin: 0 }}>{stats.sent}</p>
+        </div>
+        <div style={{ background: '#fff', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: '14px 16px' }}>
+          <p style={{ fontSize: 12, color: MUTED_COLOR, marginBottom: 2 }}>Accepted</p>
+          <p style={{ fontSize: 24, fontWeight: 700, color: '#047857', ...HEADING, margin: 0 }}>{stats.accepted}</p>
+        </div>
+        <div style={{ background: '#fff', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: '14px 16px' }}>
+          <p style={{ fontSize: 12, color: MUTED_COLOR, marginBottom: 2 }}>Total Value</p>
+          <p style={{ fontSize: 24, fontWeight: 700, color: INK, ...HEADING, margin: 0 }}>{formatMoney(stats.totalValue)}</p>
+        </div>
       </div>
 
       {/* Filters */}
-      <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-2">
-        <div className="relative md:col-span-2">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            className="pl-9"
+      <div className="mb-5 flex flex-col sm:flex-row gap-2">
+        <div className="relative flex-1">
+          <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: MUTED_COLOR }} />
+          <input
             placeholder="Search by quote number, subject"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            style={{
+              width: '100%',
+              background: CHIP_BG,
+              border: 'none',
+              borderRadius: 10,
+              height: 36,
+              paddingLeft: 36,
+              paddingRight: 12,
+              fontSize: 13,
+              color: INK,
+              outline: 'none',
+            }}
           />
         </div>
-        <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          style={{
+            background: CHIP_BG,
+            border: 'none',
+            borderRadius: 10,
+            height: 36,
+            padding: '0 12px',
+            fontSize: 13,
+            color: INK,
+            outline: 'none',
+            cursor: 'pointer',
+            minWidth: 140,
+          }}
+        >
           <option value="">All statuses</option>
           {QUOTE_STATUSES.map((s) => (
             <option key={s} value={s}>
               {statusLabel(s)}
             </option>
           ))}
-        </Select>
+        </select>
       </div>
 
       {/* Table */}

@@ -7,6 +7,13 @@ import type { Lead, LeadComment, LeadSource, LeadStatus } from '../lib/types'
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, Pagination, Select, Spinner, Table, Td, Th, Textarea, leadStatusTone, statusLabel } from '../components/ui'
 import { formatDate } from '../lib/utils'
 
+const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
+const INK = '#14081F'
+const MUTED_COLOR = '#756E80'
+const PURPLE = '#5B2BC9'
+const CREAM = '#FDFCFA'
+const CHIP_BG = '#F3F0EA'
+
 const LEAD_STATUSES: LeadStatus[] = ['new', 'contacted', 'qualified', 'proposal_sent', 'won', 'lost']
 const LEAD_SOURCES: LeadSource[] = ['manual', 'whatsapp', 'referral', 'walk_in', 'other']
 
@@ -924,58 +931,174 @@ export default function Leads() {
     }
 
     return (
-        <div>
-            <PageHeader
-                title="Leads"
-                subtitle={`${leadsPage?.total ?? 0} leads in pipeline`}
-                action={
-                    <div className="flex gap-2">
-                        <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleCsvFile} />
-                        <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importContacts.isPending}>
-                            <Upload size={15} />
-                            {importContacts.isPending ? 'Importing…' : 'Import CSV'}
-                        </Button>
-                        <Button onClick={() => setAdding(true)}>
-                            <Plus size={15} /> Add lead
-                        </Button>
-                    </div>
-                }
-            />
-
-            <div className="mb-4 grid grid-cols-1 md:grid-cols-6 gap-2">
-                <div className="relative md:col-span-2">
-                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                    <Input className="pl-9" placeholder="Search name, phone, email" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <div style={{ background: CREAM, borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+            {/* ── Header ── */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+                <div>
+                    <h1 style={{ ...HEADING, color: INK, fontSize: 28, fontWeight: 700, lineHeight: 1.15, margin: 0 }}>
+                        Leads
+                    </h1>
+                    <p style={{ color: MUTED_COLOR, fontSize: 14, marginTop: 4 }}>
+                        {leadsPage?.total ?? 0} leads in pipeline
+                    </p>
                 </div>
-                <Select value={status} onChange={(e) => setStatus(e.target.value)}>
+                <div className="flex gap-2">
+                    <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleCsvFile} />
+                    <button
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={importContacts.isPending}
+                        style={{
+                            ...HEADING,
+                            background: CHIP_BG,
+                            color: INK,
+                            border: 'none',
+                            borderRadius: 10,
+                            height: 36,
+                            padding: '0 16px',
+                            fontSize: 13,
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            opacity: importContacts.isPending ? 0.5 : 1,
+                        }}
+                    >
+                        <Upload size={15} />
+                        {importContacts.isPending ? 'Importing…' : 'Import CSV'}
+                    </button>
+                    <button
+                        onClick={() => setAdding(true)}
+                        style={{
+                            ...HEADING,
+                            background: PURPLE,
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: 10,
+                            height: 36,
+                            padding: '0 16px',
+                            fontSize: 13,
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                        }}
+                    >
+                        <Plus size={15} /> Add lead
+                    </button>
+                </div>
+            </div>
+
+            {/* ── Filter bar ── */}
+            <div
+                style={{ background: CHIP_BG, borderRadius: 10, padding: '6px 10px' }}
+                className="mb-4 flex flex-wrap items-center gap-2"
+            >
+                <div className="relative flex-1" style={{ minWidth: 180 }}>
+                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: MUTED_COLOR }} />
+                    <input
+                        placeholder="Search name, phone, email"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        style={{
+                            background: 'transparent',
+                            border: 'none',
+                            outline: 'none',
+                            height: 36,
+                            paddingLeft: 32,
+                            fontSize: 13,
+                            color: INK,
+                            width: '100%',
+                        }}
+                    />
+                </div>
+                <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value)}
+                    style={{
+                        background: 'transparent',
+                        border: 'none',
+                        outline: 'none',
+                        height: 36,
+                        fontSize: 13,
+                        color: INK,
+                        cursor: 'pointer',
+                    }}
+                >
                     <option value="">All statuses</option>
                     {LEAD_STATUSES.map((s) => (
                         <option key={s} value={s}>
                             {statusLabel(s)}
                         </option>
                     ))}
-                </Select>
-                <Select value={source} onChange={(e) => setSource(e.target.value)}>
+                </select>
+                <select
+                    value={source}
+                    onChange={(e) => setSource(e.target.value)}
+                    style={{
+                        background: 'transparent',
+                        border: 'none',
+                        outline: 'none',
+                        height: 36,
+                        fontSize: 13,
+                        color: INK,
+                        cursor: 'pointer',
+                    }}
+                >
                     <option value="">All sources</option>
                     {LEAD_SOURCES.map((s) => (
                         <option key={s} value={s}>
                             {statusLabel(s)}
                         </option>
                     ))}
-                </Select>
-                <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-                <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-            </div>
-
-            <div className="mb-4 max-w-sm">
-                <Select value={owner} onChange={(e) => setOwner(e.target.value)}>
+                </select>
+                <input
+                    type="date"
+                    value={from}
+                    onChange={(e) => setFrom(e.target.value)}
+                    style={{
+                        background: 'transparent',
+                        border: 'none',
+                        outline: 'none',
+                        height: 36,
+                        fontSize: 13,
+                        color: INK,
+                    }}
+                />
+                <input
+                    type="date"
+                    value={to}
+                    onChange={(e) => setTo(e.target.value)}
+                    style={{
+                        background: 'transparent',
+                        border: 'none',
+                        outline: 'none',
+                        height: 36,
+                        fontSize: 13,
+                        color: INK,
+                    }}
+                />
+                <select
+                    value={owner}
+                    onChange={(e) => setOwner(e.target.value)}
+                    style={{
+                        background: 'transparent',
+                        border: 'none',
+                        outline: 'none',
+                        height: 36,
+                        fontSize: 13,
+                        color: INK,
+                        cursor: 'pointer',
+                    }}
+                >
                     <option value="">All owners</option>
                     {(users || []).map((u) => (
                         <option key={u._id} value={u._id}>
                             {u.name}
                         </option>
                     ))}
-                </Select>
+                </select>
             </div>
 
             {isLoading ? (

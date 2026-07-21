@@ -11,6 +11,13 @@ import {
 } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
 
+const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
+const INK = '#14081F'
+const MUTED_COLOR = '#756E80'
+const PURPLE = '#5B2BC9'
+const CREAM = '#FDFCFA'
+const CHIP_BG = '#F3F0EA'
+
 const STATUSES = ['draft', 'pending_signature', 'active', 'ended', 'cancelled']
 type PagedContracts = { data: Contract[]; total: number; page: number; pages: number; limit: number }
 
@@ -110,66 +117,159 @@ export default function Contracts() {
     }
   }
 
+  const pillSelect: React.CSSProperties = {
+    background: CHIP_BG,
+    border: 'none',
+    borderRadius: 10,
+    height: 36,
+    padding: '0 12px',
+    fontSize: 13,
+    color: INK,
+    outline: 'none',
+    cursor: 'pointer',
+    minWidth: 130,
+  }
+
+  const pillDate: React.CSSProperties = {
+    background: CHIP_BG,
+    border: 'none',
+    borderRadius: 10,
+    height: 36,
+    padding: '0 12px',
+    fontSize: 13,
+    color: INK,
+    outline: 'none',
+    width: 140,
+  }
+
   return (
-    <div>
-      <PageHeader
-        title="Contracts"
-        subtitle={data ? `${data.total} contract${data.total !== 1 ? 's' : ''}${hasFilters ? ' (filtered)' : ''}` : ''}
-        action={
-          <div className="flex gap-2">
-            {selectedContractIds.length > 0 && (
-              <Button variant="destructive" onClick={confirmBulkDelete} disabled={deleteManyContracts.isPending}>
-                {deleteManyContracts.isPending ? 'Deleting…' : `Delete selected (${selectedContractIds.length})`}
-              </Button>
-            )}
-            <Link to="/contracts/new"><Button><Plus size={15} /> New contract</Button></Link>
-          </div>
-        }
-      />
+    <div style={{ background: CREAM, borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 mb-6">
+        <div>
+          <h1 style={{ ...HEADING, color: INK, fontSize: 28, fontWeight: 800, lineHeight: 1.15, margin: 0 }}>
+            Contracts
+          </h1>
+          <p style={{ color: MUTED_COLOR, fontSize: 14, marginTop: 4 }}>
+            {data ? `${data.total} contract${data.total !== 1 ? 's' : ''}${hasFilters ? ' (filtered)' : ''}` : ' '}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          {selectedContractIds.length > 0 && (
+            <button
+              onClick={confirmBulkDelete}
+              disabled={deleteManyContracts.isPending}
+              style={{
+                background: '#DC2626',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 12,
+                padding: '10px 22px',
+                fontWeight: 700,
+                fontSize: 14,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                opacity: deleteManyContracts.isPending ? 0.6 : 1,
+                ...HEADING,
+              }}
+            >
+              {deleteManyContracts.isPending ? 'Deleting…' : `Delete selected (${selectedContractIds.length})`}
+            </button>
+          )}
+          <Link to="/contracts/new">
+            <button
+              style={{
+                background: PURPLE,
+                color: '#fff',
+                border: 'none',
+                borderRadius: 12,
+                padding: '10px 22px',
+                fontWeight: 700,
+                fontSize: 14,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                ...HEADING,
+              }}
+            >
+              <Plus size={15} /> New Contract
+            </button>
+          </Link>
+        </div>
+      </div>
 
       {/* ── Filter bar ───────────────────────────────────────────── */}
-      <div className="mb-4 flex flex-wrap items-end gap-2">
-        <div className="relative">
-          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            className="w-56 pl-7"
+      <div className="mb-5 flex flex-wrap items-end gap-2">
+        <div className="relative flex-1" style={{ minWidth: 200, maxWidth: 280 }}>
+          <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: MUTED_COLOR }} />
+          <input
             placeholder="Customer, unit, contract #…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            style={{
+              width: '100%',
+              background: CHIP_BG,
+              border: 'none',
+              borderRadius: 10,
+              height: 36,
+              paddingLeft: 36,
+              paddingRight: 12,
+              fontSize: 13,
+              color: INK,
+              outline: 'none',
+            }}
           />
         </div>
 
-        <Select value={status} onChange={(e) => setStatus(e.target.value)} className="w-44">
+        <select value={status} onChange={(e) => setStatus(e.target.value)} style={pillSelect}>
           <option value="">All statuses</option>
           {STATUSES.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
-        </Select>
+        </select>
 
-        <Select value={floor} onChange={(e) => setFloor(e.target.value)} className="w-32">
+        <select value={floor} onChange={(e) => setFloor(e.target.value)} style={{ ...pillSelect, minWidth: 110 }}>
           <option value="">All floors</option>
           <option value="F1">Floor F1</option>
           <option value="F2">Floor F2</option>
-        </Select>
+        </select>
 
         <div className="flex items-end gap-1">
           <div>
-            <p className="text-[10px] text-muted-foreground mb-1">Start from</p>
-            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-36" />
+            <p style={{ fontSize: 10, color: MUTED_COLOR, marginBottom: 2 }}>Start from</p>
+            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={pillDate} />
           </div>
           <div>
-            <p className="text-[10px] text-muted-foreground mb-1">to</p>
-            <Input type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} className="w-36" />
+            <p style={{ fontSize: 10, color: MUTED_COLOR, marginBottom: 2 }}>to</p>
+            <input type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} style={pillDate} />
           </div>
         </div>
 
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground pb-2">
+        <label className="flex items-center gap-1.5" style={{ fontSize: 12, color: MUTED_COLOR, paddingBottom: 8, cursor: 'pointer' }}>
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
           Show archived
         </label>
 
         {hasFilters && (
-          <Button variant="outline" size="sm" onClick={clearFilters} className="flex items-center gap-1">
+          <button
+            onClick={clearFilters}
+            style={{
+              background: CHIP_BG,
+              border: 'none',
+              borderRadius: 10,
+              height: 36,
+              padding: '0 14px',
+              fontSize: 13,
+              color: INK,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+          >
             <X size={12} /> Clear
-          </Button>
+          </button>
         )}
       </div>
 

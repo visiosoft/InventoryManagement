@@ -1,11 +1,18 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { LayoutGrid, List, Plus } from 'lucide-react'
+import { LayoutGrid, List, Plus, Search } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import type { Unit, Contract } from '../lib/types'
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, Th, Textarea, statusLabel, unitStatusTone } from '../components/ui'
+import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Table, Td, Th, Textarea, statusLabel, unitStatusTone } from '../components/ui'
 import { cn, formatDate, formatMoney } from '../lib/utils'
+
+const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
+const INK = '#14081F'
+const MUTED = '#756E80'
+const PURPLE = '#5B2BC9'
+const CREAM = '#FDFCFA'
+const CHIP_BG = '#F3F0EA'
 
 const statusColor: Record<string, string> = {
   available: 'bg-emerald-500/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/25',
@@ -156,24 +163,29 @@ export default function Units() {
   if (isLoading) return <Spinner />
 
   return (
-    <div>
-      <PageHeader
-        title="Units"
-        subtitle={`${filtered.length} units · ${filtered.filter((u) => u.status === 'available').length} available · ${filtered.filter((u) => u.status === 'maintenance').length} maintenance`}
-        action={
-          <div className="flex items-center gap-2">
-            <div className="flex rounded-lg border bg-card p-0.5">
-              <button onClick={() => setView('grid')} className={cn('rounded-md p-1.5 cursor-pointer', view === 'grid' ? 'bg-muted' : 'text-muted-foreground')}><LayoutGrid size={15} /></button>
-              <button onClick={() => setView('table')} className={cn('rounded-md p-1.5 cursor-pointer', view === 'table' ? 'bg-muted' : 'text-muted-foreground')}><List size={15} /></button>
-            </div>
-            <Button onClick={() => setAdding(true)}><Plus size={15} /> Add unit</Button>
+    <div style={{ background: CREAM, borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-7">
+        <div>
+          <div style={{ ...HEADING, fontSize: 26, fontWeight: 700, color: INK }}>Units</div>
+          <div style={{ fontSize: 14, color: MUTED, marginTop: 4 }}>
+            {filtered.length} units · {filtered.filter((u) => u.status === 'available').length} available · {filtered.filter((u) => u.status === 'maintenance').length} maintenance
           </div>
-        }
-      />
+        </div>
+        <div className="flex items-center gap-2.5">
+          <div style={{ height: 40, borderRadius: 10, background: CHIP_BG }} className="flex items-center p-0.5">
+            <button onClick={() => setView('grid')} className="h-8 w-8 grid place-items-center rounded-lg transition-colors" style={{ background: view === 'grid' ? 'white' : 'transparent' }}><LayoutGrid size={15} color={view === 'grid' ? INK : MUTED} /></button>
+            <button onClick={() => setView('table')} className="h-8 w-8 grid place-items-center rounded-lg transition-colors" style={{ background: view === 'table' ? 'white' : 'transparent' }}><List size={15} color={view === 'table' ? INK : MUTED} /></button>
+          </div>
+          <button onClick={() => setAdding(true)} style={{ height: 40, borderRadius: 10, background: PURPLE, color: 'white', fontSize: 13, fontWeight: 600 }} className="px-4 flex items-center gap-1.5 hover:brightness-110 transition">
+            <Plus size={15} /> Add unit
+          </button>
+        </div>
+      </div>
 
       {/* Size summary cards */}
       {sizeBreakdown.length > 0 && (
-        <div className="mb-3 flex flex-wrap gap-2">
+        <div className="mb-4 flex flex-wrap gap-2">
           {sizeBreakdown.map(({ sqf, available, total }) => {
             const active = sizeFilter === String(sqf)
             return (
@@ -181,18 +193,21 @@ export default function Units() {
                 key={sqf}
                 type="button"
                 onClick={() => setSizeFilter(active ? '' : String(sqf))}
-                className={cn(
-                  'rounded-lg border px-3 py-2 text-left transition-all text-xs cursor-pointer',
-                  active
-                    ? 'border-primary bg-primary/10 ring-1 ring-primary'
-                    : 'border-border bg-card hover:border-primary/60 hover:bg-accent'
-                )}
+                style={{
+                  background: active ? `${PURPLE}10` : 'white',
+                  border: `1.5px solid ${active ? PURPLE : 'rgba(20,8,31,0.08)'}`,
+                  borderRadius: 12,
+                  padding: '10px 14px',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                }}
               >
-                <div className="font-semibold text-foreground">{sqf} sq ft</div>
-                <div className={cn('mt-0.5 font-medium tabular-nums', available === 0 ? 'text-muted-foreground' : 'text-emerald-600 dark:text-emerald-400')}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: INK }}>{sqf} sq ft</div>
+                <div style={{ marginTop: 2, fontSize: 12, fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: available === 0 ? MUTED : '#047857' }}>
                   {available} / {total}
                 </div>
-                <div className="text-[10px] text-muted-foreground">available</div>
+                <div style={{ fontSize: 10, color: MUTED }}>available</div>
               </button>
             )
           })}
@@ -200,7 +215,7 @@ export default function Units() {
             <button
               type="button"
               onClick={() => setSizeFilter('')}
-              className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors self-center"
+              style={{ borderRadius: 12, border: `1.5px dashed rgba(20,8,31,0.15)`, padding: '10px 14px', fontSize: 12, color: MUTED, cursor: 'pointer', alignSelf: 'center', background: 'transparent' }}
             >
               Show all
             </button>
@@ -208,18 +223,30 @@ export default function Units() {
         </div>
       )}
 
-      <div className="mb-4 flex flex-wrap gap-2">
-        <Input className="w-44" placeholder="Search unit / size…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <Select value={floorFilter} onChange={(e) => setFloorFilter(e.target.value)} className="w-32">
-          <option value="">All floors</option>
-          <option value="F1">Floor F1</option>
-          <option value="F2">Floor F2</option>
-        </Select>
-        <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-44">
-          <option value="">All statuses</option>
-          {['available', 'occupied', 'reserved', 'maintenance'].map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
-        </Select>
-        <div className="ml-auto flex items-center gap-3 text-[11px] text-muted-foreground">
+      <div className="mb-5 flex flex-wrap items-center gap-2">
+        <div style={{ height: 36, borderRadius: 10, background: CHIP_BG }} className="flex items-center gap-2 px-3">
+          <Search size={14} color={MUTED} />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search unit / size…"
+            style={{ background: 'transparent', outline: 'none', border: 'none', fontSize: 13, color: INK, width: 130 }}
+          />
+        </div>
+        <div style={{ height: 36, borderRadius: 10, background: CHIP_BG }} className="px-1">
+          <select value={floorFilter} onChange={(e) => setFloorFilter(e.target.value)} style={{ height: 36, background: 'transparent', outline: 'none', border: 'none', fontSize: 13, color: INK, fontWeight: 500, paddingRight: 8, paddingLeft: 8 }}>
+            <option value="">All floors</option>
+            <option value="F1">Floor F1</option>
+            <option value="F2">Floor F2</option>
+          </select>
+        </div>
+        <div style={{ height: 36, borderRadius: 10, background: CHIP_BG }} className="px-1">
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ height: 36, background: 'transparent', outline: 'none', border: 'none', fontSize: 13, color: INK, fontWeight: 500, paddingRight: 8, paddingLeft: 8 }}>
+            <option value="">All statuses</option>
+            {['available', 'occupied', 'reserved', 'maintenance'].map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
+          </select>
+        </div>
+        <div className="ml-auto flex items-center gap-3" style={{ fontSize: 11, color: MUTED }}>
           <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> Available</span>
           <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-violet-500" /> Occupied</span>
           <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-amber-500" /> Reserved</span>
@@ -244,7 +271,7 @@ export default function Units() {
                   >
                     <div className="text-xs font-bold">{u.unitNumber}</div>
                     <div className="text-[10px] opacity-70 mt-0.5">{u.sizeSqf != null ? `${u.sizeSqf} sqf` : '—'}</div>
-                    {u.discountPct ? <div className="text-[9px] mt-0.5 font-medium text-amber-600">{u.discountPct}% 1st mo</div> : null}
+                    {u.discountPct ? <div className="text-[9px] mt-0.5 font-medium text-amber-600">{u.discountPct}% 1st 4wk</div> : null}
                     {u.shared ? <div className="text-[9px] mt-0.5 font-medium text-sky-600 dark:text-sky-400">Shared</div> : null}
                   </button>
                 ))}
@@ -256,7 +283,7 @@ export default function Units() {
       ) : (
         <Card>
           <Table>
-            <thead><tr><Th>Unit</Th><Th>Floor</Th><Th>Size</Th><Th>L × W (ft)</Th><Th>Monthly (AED)</Th><Th>1st Month Discount</Th><Th>Status</Th><Th>Shared</Th><Th>Notes</Th></tr></thead>
+            <thead><tr><Th>Unit</Th><Th>Floor</Th><Th>Size</Th><Th>L × W (ft)</Th><Th>4wk (AED)</Th><Th>1st 4wk Discount</Th><Th>Status</Th><Th>Shared</Th><Th>Notes</Th></tr></thead>
             <tbody>
               {filtered.map((u) => (
                 <tr key={u._id} className="hover:bg-muted/50 cursor-pointer" onClick={() => setSelected(u)}>

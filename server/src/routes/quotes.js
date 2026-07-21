@@ -34,15 +34,27 @@ function mapItem(item, idx) {
 function mapUnit(u) {
     const rate = toNumber(u.rate);
     const discountPct = toNumber(u.discountPct);
-    const gross = rate;
-    const amount = Number((gross - (gross * discountPct) / 100).toFixed(2));
+    const startDate = u.startDate ? new Date(u.startDate) : null;
+    const endDate = u.endDate ? new Date(u.endDate) : null;
+    const discounted = rate - (rate * discountPct) / 100;
+    let amount = Number(discounted.toFixed(2));
+    if (startDate && endDate) {
+        const days = Math.round((endDate - startDate) / 86400000);
+        if (days > 0) {
+            const weekly = discounted / 4;
+            const fullMonths = Math.floor(days / 28);
+            const rem = days % 28;
+            const extraWeeks = rem > 0 ? Math.ceil(rem / 7) : 0;
+            amount = Number((weekly * (fullMonths * 4 + extraWeeks)).toFixed(2));
+        }
+    }
     return {
         unit: String(u.unit || ''),
         unitNumber: String(u.unitNumber || ''),
         sizeSqf: toNumber(u.sizeSqf),
         floor: String(u.floor || ''),
-        startDate: u.startDate ? new Date(u.startDate) : null,
-        endDate: u.endDate ? new Date(u.endDate) : null,
+        startDate,
+        endDate,
         rate,
         discountPct,
         amount,
@@ -159,7 +171,7 @@ router.post('/:id/send-email', async (req, res) => {
             subject: `Storage Quotation ${quote.quoteNo} — PurpleBox`,
             text:
                 `Hello ${quote.customer?.fullName || ''},\n\n` +
-                `Please find attached your storage quotation ${quote.quoteNo} — ${quote.total.toFixed(2)} AED/month.\n\n` +
+                `Please find attached your storage quotation ${quote.quoteNo} — ${quote.total.toFixed(2)} AED.\n\n` +
                 `Thank you,\nPurpleBox`,
             attachments: [{ filename: `${quote.quoteNo}.pdf`, content: pdf, contentType: 'application/pdf' }],
         });
@@ -362,21 +374,49 @@ router.delete('/:id', async (req, res) => {
 async function createFirstInvoiceFromQuote(quote, contract, userName) {
     const fmt = (d) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
     const items = [];
+    let advanceTotal = 0;
+
     for (const u of quote.units) {
+        const rate = toNumber(u.rate);
+        const discountPct = toNumber(u.discountPct);
+        const discounted = Number((rate - (rate * discountPct) / 100).toFixed(2));
+
+        // Compute actual period weeks
         const periodStart = new Date(u.startDate);
-        const periodEnd = new Date(periodStart);
-        periodEnd.setDate(periodEnd.getDate() + 28);
+        const periodEnd = new Date(u.endDate);
+        const days = Math.round((periodEnd - periodStart) / 86400000);
+        const weeklyRate = Number((discounted / 4).toFixed(2));
+        const fullMonths = Math.floor(days / 28);
+        const rem = days % 28;
+        const extraWeeks = rem > 0 ? Math.ceil(rem / 7) : 0;
+        const totalWeeks = fullMonths * 4 + extraWeeks;
+        const rentAmount = Number((weeklyRate * (totalWeeks || 1)).toFixed(2));
+
         const displayEnd = new Date(periodEnd);
         displayEnd.setDate(displayEnd.getDate() - 1);
+        const wkRate = Number((rate / 4).toFixed(2));
+        const tw = totalWeeks || 1;
         items.push({
             sortOrder: items.length,
             itemDetails: `Storage Rent ${fmt(periodStart)} – ${fmt(displayEnd)} · Unit ${u.unitNumber}`,
-            quantity: 1,
-            rate: toNumber(u.rate),
-            discountPct: toNumber(u.discountPct),
-            amount: toNumber(u.amount),
+            quantity: tw,
+            rate: wkRate,
+            discountPct,
+            amount: rentAmount,
+        });
+
+        // Always collect 4 weeks advance (no discount on advance)
+        advanceTotal += rate;
+        items.push({
+            sortOrder: items.length,
+            itemDetails: `Advance Rent · Unit ${u.unitNumber}`,
+            quantity: 4,
+            rate: wkRate,
+            discountPct: 0,
+            amount: rate,
         });
     }
+
     for (const a of quote.addOns || []) {
         items.push({
             sortOrder: items.length,
@@ -387,6 +427,7 @@ async function createFirstInvoiceFromQuote(quote, contract, userName) {
             amount: toNumber(a.amount),
         });
     }
+
     const depositAmt = toNumber(quote.deposit);
     if (depositAmt > 0) {
         items.push({
@@ -398,6 +439,7 @@ async function createFirstInvoiceFromQuote(quote, contract, userName) {
             amount: depositAmt,
         });
     }
+
     const invoiceTotal = Number(items.reduce((s, it) => s + it.amount, 0).toFixed(2));
     const dueDate = new Date(Math.min(...quote.units.map((u) => new Date(u.startDate).getTime())));
 
@@ -418,7 +460,7 @@ async function createFirstInvoiceFromQuote(quote, contract, userName) {
         createdBy: userName,
     });
 
-    const rentAndAddOns = Number((invoiceTotal - depositAmt).toFixed(2));
+    const rentAndAddOns = Number((invoiceTotal - depositAmt - advanceTotal).toFixed(2));
     if (rentAndAddOns > 0) {
         await Payment.create({
             contract: contract._id,
@@ -427,6 +469,17 @@ async function createFirstInvoiceFromQuote(quote, contract, userName) {
             dueDate,
             status: 'pending',
             notes: `Storage Rent (first period) · ${quote.quoteNo}`,
+            recordedBy: userName,
+        });
+    }
+    if (advanceTotal > 0) {
+        await Payment.create({
+            contract: contract._id,
+            invoice: invoice._id,
+            amount: advanceTotal,
+            dueDate,
+            status: 'pending',
+            notes: `Advance Rent (last period) · ${quote.quoteNo}`,
             recordedBy: userName,
         });
     }

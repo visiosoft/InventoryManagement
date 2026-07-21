@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Plus, ChevronRight, ChevronLeft, Check, User, Box, FileText, Briefcase, Receipt as ReceiptIcon,
   CreditCard, ShieldCheck, Search, Trash2, CalendarRange, Loader2, CheckCircle2, Send, Mail, Download,
-  Upload, X, Eye,
+  Upload, X, Eye, ExternalLink,
 } from 'lucide-react'
 import { api, apiError, invoiceApi, quoteApi, type AvailableUnit } from '../lib/api'
 import type { AccessPerson, Customer, Invoice, Lead, Quote } from '../lib/types'
@@ -36,6 +36,7 @@ const DEFAULT_ADDONS = [
   { name: 'Climate Control', description: 'Temperature controlled environment', rate: 200 },
 ]
 
+interface UnitBookingInfo { ref: string; customer: string; startDate?: string; endDate?: string; kind?: string }
 interface UnitRow {
   unitId: string
   unitNumber: string
@@ -45,6 +46,7 @@ interface UnitRow {
   endDate: string
   rate: number
   discountPct: number
+  existingBookings?: UnitBookingInfo[]
 }
 
 interface AddOnRow {
@@ -420,7 +422,7 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
                   className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors"
                   style={{ color: '#047857' }}
                 >
-                  <CheckCircle2 size={13} /> Zoho ↗
+                  <ExternalLink size={13} /> Open in Zoho
                 </a>
               ) : (
                 <button
@@ -499,6 +501,7 @@ export default function NewQuote() {
   const [showShareBar, setShowShareBar] = useState(false)
   const invoiceHandleRef = useRef<InvoiceStepHandle | null>(null)
   const [invoiceEditing, setInvoiceEditing] = useState(false)
+  const [zohoSyncing, setZohoSyncing] = useState(false)
   const [contractId, setContractId] = useState('')
   const hydratedRef = useRef(false)
   const stepAutoSetRef = useRef(false)
@@ -783,6 +786,9 @@ export default function NewQuote() {
         endDate: dateRangeTo,
         rate: unit.price || 0,
         discountPct: unit.discountPct || 0,
+        existingBookings: (unit.bookings || []).map((b) => ({
+          ref: b.ref, customer: b.customer, startDate: b.startDate, endDate: b.endDate, kind: b.kind,
+        })),
       },
     ])
   }
@@ -819,7 +825,18 @@ export default function NewQuote() {
     setAddOnRows((prev) => prev.map((a, i) => (i === idx ? { ...a, [field]: value } : a)))
   }
 
-  const unitsTotal = unitRows.reduce((s, u) => s + u.rate - (u.rate * u.discountPct) / 100, 0)
+  function calcUnitPeriodTotal(rate: number, discountPct: number, start: string, end: string) {
+    const days = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86400000)
+    if (days <= 0) return 0
+    const discounted = rate - (rate * discountPct) / 100
+    const weekly = discounted / 4
+    const fullMonths = Math.floor(days / 28)
+    const rem = days % 28
+    const extraWeeks = rem > 0 ? Math.ceil(rem / 7) : 0
+    return Math.round(weekly * (fullMonths * 4 + extraWeeks) * 100) / 100
+  }
+
+  const unitsTotal = unitRows.reduce((s, u) => s + calcUnitPeriodTotal(u.rate, u.discountPct, u.startDate, u.endDate), 0)
   const addOnsTotal = addOnRows.reduce((s, a) => s + a.quantity * a.rate, 0)
   const subTotal = unitsTotal + addOnsTotal
   const total = subTotal + adjustment
@@ -917,7 +934,7 @@ export default function NewQuote() {
       setSentMsg('')
       const text =
         `Hello ${customerName},\n\n` +
-        `Please find your storage quotation *${q.quoteNo}* — ${formatMoney(q.total)} AED/month.\n` +
+        `Please find your storage quotation *${q.quoteNo}* — ${formatMoney(q.total)} AED.\n` +
         `View the quote here: ${url}\n\n` +
         `Thank you — PurpleBox`
       if (channel === 'whatsapp') {
@@ -1089,7 +1106,7 @@ export default function NewQuote() {
   }
 
   return (
-    <div style={{ background: CREAM, minHeight: '100vh', margin: '-1.5rem', padding: '2.5rem 1.5rem' }}>
+    <div style={{ background: CREAM, borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
       <div className="max-w-3xl">
 
         {/* Header */}
@@ -1254,7 +1271,7 @@ export default function NewQuote() {
               {quoteLocked ? (
                 <div className="p-4 rounded-xl" style={{ background: CHIP_BG }}>
                   {unitRows.map((u) => (
-                    <InfoRow key={u.unitId} label={`${u.unitNumber} · ${u.startDate} → ${u.endDate}`} value={`${formatMoney(u.rate - (u.rate * u.discountPct) / 100)} AED/mo`} />
+                    <InfoRow key={u.unitId} label={`${u.unitNumber} · ${u.startDate} → ${u.endDate}`} value={`${formatMoney(u.rate - (u.rate * u.discountPct) / 100)} AED/4wk`} />
                   ))}
                 </div>
               ) : (
@@ -1284,10 +1301,19 @@ export default function NewQuote() {
                       if (days <= 0) return (
                         <p className="text-xs font-medium" style={{ color: '#EF4444' }}>End date must be after start date</p>
                       )
-                      const weeks = Math.ceil(days / 7)
+                      const fullMonths = Math.floor(days / 28)
+                      const rem = days % 28
+                      const extraWeeks = rem > 0 ? Math.ceil(rem / 7) : 0
+                      const totalWeeks = fullMonths * 4 + extraWeeks
+                      let durationLabel = `${totalWeeks} week${totalWeeks !== 1 ? 's' : ''}`
+                      if (fullMonths > 0 && extraWeeks > 0) {
+                        durationLabel = `${totalWeeks} week${totalWeeks !== 1 ? 's' : ''} (${fullMonths} month${fullMonths !== 1 ? 's' : ''} + ${extraWeeks} extra week${extraWeeks !== 1 ? 's' : ''})`
+                      } else if (fullMonths > 0) {
+                        durationLabel = `${fullMonths} month${fullMonths !== 1 ? 's' : ''} (${totalWeeks} weeks)`
+                      }
                       return (
                         <p className="text-xs font-medium" style={{ color: MUTED }}>
-                          {days} day{days !== 1 ? 's' : ''} · {weeks} week{weeks !== 1 ? 's' : ''}
+                          {days} day{days !== 1 ? 's' : ''} · {durationLabel}
                         </p>
                       )
                     })()}
@@ -1315,23 +1341,27 @@ export default function NewQuote() {
                         })}
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <div className="relative">
-                          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: MUTED }} />
-                          <Input
+                        <div style={{ height: 36, borderRadius: 10, background: CHIP_BG }} className="flex items-center gap-2 px-3">
+                          <Search size={14} color={MUTED} />
+                          <input
                             value={unitSearch}
                             onChange={(e) => setUnitSearch(e.target.value)}
                             placeholder="Search unit no…"
-                            className="h-8 text-xs w-40 pl-8"
+                            style={{ background: 'transparent', outline: 'none', border: 'none', fontSize: 13, color: INK, width: 120 }}
                           />
                         </div>
-                        <Select value={sizeFilter} onChange={(e) => setSizeFilter(e.target.value)} className="h-8 text-xs w-32">
-                          <option value="">All sizes</option>
-                          {sizeOptions.map((s) => <option key={s} value={s}>{s} sqft</option>)}
-                        </Select>
-                        <Select value={floorFilter} onChange={(e) => setFloorFilter(e.target.value)} className="h-8 text-xs w-32">
-                          <option value="">All floors</option>
-                          {floorOptions.map((f) => <option key={f} value={f}>Floor {f}</option>)}
-                        </Select>
+                        <div style={{ height: 36, borderRadius: 10, background: CHIP_BG }} className="px-1">
+                          <select value={sizeFilter} onChange={(e) => setSizeFilter(e.target.value)} style={{ height: 36, background: 'transparent', outline: 'none', border: 'none', fontSize: 13, color: INK, fontWeight: 500, paddingRight: 8, paddingLeft: 8 }}>
+                            <option value="">All sizes</option>
+                            {sizeOptions.map((s) => <option key={s} value={s}>{s} sqft</option>)}
+                          </select>
+                        </div>
+                        <div style={{ height: 36, borderRadius: 10, background: CHIP_BG }} className="px-1">
+                          <select value={floorFilter} onChange={(e) => setFloorFilter(e.target.value)} style={{ height: 36, background: 'transparent', outline: 'none', border: 'none', fontSize: 13, color: INK, fontWeight: 500, paddingRight: 8, paddingLeft: 8 }}>
+                            <option value="">All floors</option>
+                            {floorOptions.map((f) => <option key={f} value={f}>Floor {f}</option>)}
+                          </select>
+                        </div>
                         <p className="text-xs font-semibold ml-auto" style={{ color: MUTED }}>
                           {filteredUnits.length} unit{filteredUnits.length !== 1 ? 's' : ''}
                           {!dateRangeFrom || !dateRangeTo ? ' (set dates to check the period)' : ''}
@@ -1341,7 +1371,7 @@ export default function NewQuote() {
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-56 overflow-y-auto pr-1">
                         {filteredUnits.map((u) => {
                           const selected = selectedUnitIds.has(u._id)
-                          const blocked = Boolean(u.bookedInPeriod) || u.status === 'maintenance'
+                          const blocked = u.status === 'maintenance'
                           const badge = u.bookedInPeriod
                             ? { label: 'Booked', bg: '#FEE2E2', color: '#B91C1C' }
                             : u.status === 'occupied'
@@ -1374,7 +1404,7 @@ export default function NewQuote() {
                                 </span>
                               </div>
                               <p className="text-[11px]" style={{ color: MUTED }}>{u.sizeSqf} sqft · Floor {u.floor || '—'}</p>
-                              <p className="text-xs font-semibold mt-1" style={{ color: PURPLE }}>{formatMoney(u.price || 0)} AED/mo</p>
+                              <p className="text-xs font-semibold mt-1" style={{ color: PURPLE }}>{formatMoney(u.price || 0)} AED/4wk</p>
                             </button>
                           )
                         })}
@@ -1393,7 +1423,19 @@ export default function NewQuote() {
                       <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>
                         Selected Units ({unitRows.length})
                       </p>
-                      {unitRows.map((u, idx) => (
+                      {unitRows.map((u, idx) => {
+                        const uDays = Math.round((new Date(u.endDate).getTime() - new Date(u.startDate).getTime()) / 86400000)
+                        const uFm = Math.floor(uDays / 28)
+                        const uRem = uDays % 28
+                        const uEw = uRem > 0 ? Math.ceil(uRem / 7) : 0
+                        const uTw = uFm * 4 + uEw
+                        let uDurLabel = `${uTw} wk${uTw !== 1 ? 's' : ''}`
+                        if (uFm > 0 && uEw > 0) uDurLabel = `${uTw} wk${uTw !== 1 ? 's' : ''} (${uFm} mo + ${uEw} extra wk)`
+                        else if (uFm > 0) uDurLabel = `${uFm} mo (${uTw} wks)`
+                        const discounted = u.rate - (u.rate * u.discountPct) / 100
+                        const weeklyRate = discounted / 4
+                        const periodTotal = calcUnitPeriodTotal(u.rate, u.discountPct, u.startDate, u.endDate)
+                        return (
                         <div key={u.unitId} className="rounded-xl border p-3 space-y-2" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
                           <div className="flex items-center justify-between">
                             <div>
@@ -1411,15 +1453,43 @@ export default function NewQuote() {
                             <Field label="End">
                               <Input type="date" value={u.endDate} onChange={(e) => updateUnit(idx, 'endDate', e.target.value)} className="h-8 text-xs" />
                             </Field>
-                            <Field label="Rate/mo">
+                            <Field label="Rate/4wk">
                               <Input type="number" min={0} value={u.rate} onChange={(e) => updateUnit(idx, 'rate', Number(e.target.value))} className="h-8 text-xs" />
                             </Field>
                             <Field label="Disc %">
                               <Input type="number" min={0} max={100} value={u.discountPct || ''} onChange={(e) => updateUnit(idx, 'discountPct', Number(e.target.value))} className="h-8 text-xs" placeholder="0" />
                             </Field>
                           </div>
+                          {uDays > 0 && (
+                            <div className="flex items-center justify-between pt-1 border-t" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
+                              <p className="text-[11px]" style={{ color: MUTED }}>
+                                {uDays} days · {uDurLabel} × {formatMoney(weeklyRate)} AED/wk
+                              </p>
+                              <p className="text-xs font-bold" style={{ color: PURPLE }}>
+                                {formatMoney(periodTotal)} AED
+                              </p>
+                            </div>
+                          )}
+                          {(u.existingBookings?.length ?? 0) > 0 && (
+                            <div className="rounded-lg p-2.5 space-y-1.5" style={{ background: '#FEF3C7' }}>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: '#F59E0B', color: '#fff' }}>SHARED</span>
+                                <span className="text-[10px] font-semibold" style={{ color: '#92400E' }}>Existing bookings on this unit</span>
+                              </div>
+                              {u.existingBookings!.map((b, bi) => (
+                                <div key={bi} className="text-[10px]" style={{ color: '#78350F' }}>
+                                  <span className="font-semibold">{b.customer || 'Unknown'}</span>
+                                  {b.startDate && b.endDate && (
+                                    <span> · {formatDate(b.startDate)} → {formatDate(b.endDate)}</span>
+                                  )}
+                                  <span className="opacity-60"> · {b.ref}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   )}
                 </>
@@ -1449,9 +1519,29 @@ export default function NewQuote() {
                     </div>
                     {/* Body */}
                     <div className="px-4 py-3 space-y-1">
-                      {unitRows.map((u) => (
-                        <InfoRow key={u.unitId} label={`${u.unitNumber} · ${u.startDate} → ${u.endDate}`} value={`${formatMoney(u.rate - (u.rate * u.discountPct) / 100)} AED/mo`} />
-                      ))}
+                      {unitRows.map((u) => {
+                        const d = Math.round((new Date(u.endDate).getTime() - new Date(u.startDate).getTime()) / 86400000)
+                        const fm = Math.floor(d / 28)
+                        const ew = d % 28 > 0 ? Math.ceil((d % 28) / 7) : 0
+                        const tw = fm * 4 + ew
+                        let durLabel = `${tw} wk${tw !== 1 ? 's' : ''}`
+                        if (fm > 0 && ew > 0) durLabel = `${tw} wk${tw !== 1 ? 's' : ''} (${fm} mo + ${ew} extra wk)`
+                        else if (fm > 0) durLabel = `${fm} mo (${tw} wks)`
+                        const discounted = u.rate - (u.rate * u.discountPct) / 100
+                        const weeklyRate = discounted / 4
+                        const periodTotal = calcUnitPeriodTotal(u.rate, u.discountPct, u.startDate, u.endDate)
+                        return (
+                          <div key={u.unitId} className="py-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-semibold" style={{ color: INK }}>{u.unitNumber}</span>
+                              <span className="text-xs font-bold" style={{ color: PURPLE }}>{formatMoney(periodTotal)} AED</span>
+                            </div>
+                            <p className="text-[10px]" style={{ color: MUTED }}>
+                              {formatMoney(discounted)} AED/4wk · {durLabel}
+                            </p>
+                          </div>
+                        )
+                      })}
                       {addOnRows.filter((a) => a.name).map((a, i) => (
                         <InfoRow key={i} label={`${a.name} ×${a.quantity}`} value={`${formatMoney(a.quantity * a.rate)} AED`} />
                       ))}
@@ -1507,13 +1597,33 @@ export default function NewQuote() {
                         Edit units
                       </button>
                     </div>
-                    {unitRows.map((u) => (
-                      <InfoRow
-                        key={u.unitId}
-                        label={`${u.unitNumber} · ${u.startDate} → ${u.endDate}${u.discountPct ? ` · -${u.discountPct}%` : ''}`}
-                        value={`${formatMoney(u.rate - (u.rate * u.discountPct) / 100)} AED/mo`}
-                      />
-                    ))}
+                    {unitRows.map((u) => {
+                      const d = Math.round((new Date(u.endDate).getTime() - new Date(u.startDate).getTime()) / 86400000)
+                      const fm = Math.floor(d / 28)
+                      const ew = d % 28 > 0 ? Math.ceil((d % 28) / 7) : 0
+                      const tw = fm * 4 + ew
+                      let durLabel2 = `${tw} wk${tw !== 1 ? 's' : ''}`
+                      if (fm > 0 && ew > 0) durLabel2 = `${tw} wk${tw !== 1 ? 's' : ''} (${fm} mo + ${ew} extra wk)`
+                      else if (fm > 0) durLabel2 = `${fm} mo (${tw} wks)`
+                      const discounted = u.rate - (u.rate * u.discountPct) / 100
+                      const weeklyRate = discounted / 4
+                      const periodTotal = calcUnitPeriodTotal(u.rate, u.discountPct, u.startDate, u.endDate)
+                      return (
+                        <div key={u.unitId} className="py-1.5" style={{ borderBottom: `1px solid rgba(20,8,31,0.06)` }}>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold" style={{ color: INK }}>{u.unitNumber}</span>
+                            <span className="text-xs font-bold" style={{ color: PURPLE }}>{formatMoney(periodTotal)} AED</span>
+                          </div>
+                          <p className="text-[11px] mt-0.5" style={{ color: MUTED }}>
+                            {u.startDate} → {u.endDate} · {d} days · {durLabel2}
+                          </p>
+                          <p className="text-[11px]" style={{ color: MUTED }}>
+                            Rate: {formatMoney(discounted)} AED/4wk · {formatMoney(weeklyRate)} AED/wk × {tw} wk{tw !== 1 ? 's' : ''}
+                            {u.discountPct ? ` · ${u.discountPct}% off` : ''}
+                          </p>
+                        </div>
+                      )
+                    })}
                   </div>
 
                   {/* Add-ons */}
@@ -1585,7 +1695,7 @@ export default function NewQuote() {
                     {Number(deposit) > 0 && <InfoRow label="Security deposit" value={`${formatMoney(Number(deposit))} AED`} />}
                     <div style={{ borderTop: `1px solid ${PURPLE}20` }} className="mt-1 pt-1">
                       <div className="flex items-center justify-between text-base py-1">
-                        <span className="font-bold" style={{ color: INK }}>Total / month</span>
+                        <span className="font-bold" style={{ color: INK }}>Total</span>
                         <span className="font-bold" style={{ color: PURPLE }}>{formatMoney(total)} AED</span>
                       </div>
                     </div>
@@ -1813,7 +1923,7 @@ export default function NewQuote() {
                           color: contract.status === 'active' ? GREEN : contract.status === 'cancelled' ? '#B91C1C' : '#1D4ED8',
                         }}>{contract.status.replace(/_/g, ' ')}</span>
                       </div>
-                      <span className="text-sm font-bold" style={{ color: PURPLE }}>{formatMoney(contract.rate)} AED/mo</span>
+                      <span className="text-sm font-bold" style={{ color: PURPLE }}>{formatMoney(contract.rate)} AED/4wk</span>
                     </div>
                     {/* Body */}
                     <div className="px-4 py-3 space-y-1">
@@ -1978,9 +2088,9 @@ export default function NewQuote() {
                   customerId={customerId}
                   customerName={customerName}
                   customerPhone={customerPhone}
-                  onChanged={() => qc.invalidateQueries({ queryKey: ['flow-contract'] })}
+                  onChanged={() => { qc.invalidateQueries({ queryKey: ['flow-contract'] }); setZohoSyncing(false) }}
                   handleRef={invoiceHandleRef}
-                  onEditingChange={setInvoiceEditing}
+                  onEditingChange={(v) => { setInvoiceEditing(v); if (!v) setZohoSyncing(false) }}
                 />
               )}
             </div>
@@ -2013,6 +2123,100 @@ export default function NewQuote() {
                       </p>
                     </div>
                   </div>
+
+                  {/* Payment schedule */}
+                  {contract && (() => {
+                    const cStart = new Date(contract.startDate)
+                    const cEnd = new Date(contract.endDate)
+                    const monthlyRate = Number(contract.rate || 0)
+                    const discPct = Number(contract.firstMonthDiscountPct || 0)
+                    const discountedMonthly = Math.round((monthlyRate - (monthlyRate * discPct) / 100) * 100) / 100
+                    const weeklyRate = Math.round((monthlyRate / 4) * 100) / 100
+                    const discWeeklyRate = Math.round((discountedMonthly / 4) * 100) / 100
+                    const totalDays = Math.round((cEnd.getTime() - cStart.getTime()) / 86400000)
+                    const totalFm = Math.floor(totalDays / 28)
+                    const totalRem = totalDays % 28
+                    const totalEw = totalRem > 0 ? Math.ceil(totalRem / 7) : 0
+                    const totalWeeks = totalFm * 4 + totalEw
+                    const periods: { label: string; from: Date; to: Date; weeks: number; amount: number; type: string; note?: string }[] = []
+
+                    // First 4 weeks — rent (with discount if any)
+                    const firstEnd = new Date(cStart)
+                    firstEnd.setDate(firstEnd.getDate() + 28)
+                    periods.push({ label: 'Rent (First 4 weeks)', from: new Date(cStart), to: firstEnd, weeks: 4, amount: discountedMonthly, type: 'rent', note: discPct > 0 ? `${discPct}% off` : undefined })
+
+                    // Advance — always 4 weeks (no discount)
+                    periods.push({ label: 'Advance Rent (4 weeks)', from: new Date(cStart), to: firstEnd, weeks: 4, amount: monthlyRate, type: 'advance' })
+
+                    // Middle periods (if any)
+                    let cursor = new Date(firstEnd)
+                    const lastPeriodStart = new Date(cEnd)
+                    lastPeriodStart.setDate(lastPeriodStart.getDate() - 28)
+                    let periodNum = 2
+                    while (cursor < lastPeriodStart && cursor < cEnd) {
+                      const pEnd = new Date(cursor)
+                      pEnd.setDate(pEnd.getDate() + 28)
+                      const actualEnd = pEnd > cEnd ? cEnd : pEnd
+                      const pDays = Math.round((actualEnd.getTime() - cursor.getTime()) / 86400000)
+                      const pWeeks = Math.ceil(pDays / 7)
+                      periods.push({
+                        label: `Rent Period ${periodNum}`,
+                        from: new Date(cursor),
+                        to: actualEnd,
+                        weeks: pWeeks,
+                        amount: Math.round(weeklyRate * pWeeks * 100) / 100,
+                        type: 'upcoming',
+                      })
+                      cursor = new Date(pEnd)
+                      periodNum++
+                    }
+
+                    const fmtD = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+                    const grandTotal = periods.reduce((s, p) => s + p.amount, 0)
+
+                    return (
+                      <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
+                        <div className="flex items-center justify-between px-4 py-2.5" style={{ background: CHIP_BG }}>
+                          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Payment Schedule</p>
+                          <p className="text-xs font-bold" style={{ color: INK }}>{formatMoney(grandTotal)} AED</p>
+                        </div>
+                        <div className="divide-y" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
+                          {periods.map((p, i) => {
+                            const isCollected = p.type === 'rent' || p.type === 'advance'
+                            return (
+                              <div key={i} className="flex items-center justify-between px-4 py-2.5">
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
+                                    style={{ background: isCollected ? `${GREEN}15` : `${PURPLE}10` }}>
+                                    {isCollected
+                                      ? <Check size={13} style={{ color: GREEN }} />
+                                      : <span className="text-[10px] font-bold" style={{ color: PURPLE }}>{i + 1}</span>}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-semibold" style={{ color: INK }}>{p.label}</p>
+                                    <p className="text-[10px]" style={{ color: MUTED }}>
+                                      {fmtD(p.from)} – {fmtD(p.to)} · {p.weeks} wk{p.weeks !== 1 ? 's' : ''} × {formatMoney(p.amount / p.weeks)}/wk
+                                      {p.note ? ` · ${p.note}` : ''}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="text-right flex-shrink-0">
+                                  <p className="text-xs font-bold" style={{ color: INK }}>{formatMoney(p.amount)} AED</p>
+                                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
+                                    style={isCollected
+                                      ? { background: '#D1FAE5', color: GREEN }
+                                      : { background: `${PURPLE}10`, color: PURPLE }
+                                    }>
+                                    {p.type === 'rent' ? 'due now' : p.type === 'advance' ? 'advance' : 'upcoming'}
+                                  </span>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })()}
 
                   {/* Payment history */}
                   {(() => {
@@ -2210,14 +2414,28 @@ export default function NewQuote() {
                   {step === 4 && invoiceEditing && (
                     <button
                       type="button"
-                      onClick={() => invoiceHandleRef.current?.saveAndSync()}
-                      disabled={invoiceHandleRef.current?.isSaving}
+                      onClick={() => { setZohoSyncing(true); invoiceHandleRef.current?.saveAndSync() }}
+                      disabled={zohoSyncing}
                       className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90"
                       style={{ background: GREEN }}
                     >
-                      {invoiceHandleRef.current?.isSyncing ? 'Syncing…' : 'Save & Sync to Zoho'}
+                      {zohoSyncing ? <><Loader2 size={14} className="animate-spin" /> Syncing…</> : 'Save & Sync to Zoho'}
                     </button>
                   )}
+                  {!(step === 4 && invoiceEditing) && (() => {
+                    const syncedInv = (flowData?.invoices || []).find((i) => i.zohoBooksSyncId)
+                    return syncedInv ? (
+                      <a
+                        href={`https://books.zoho.com/app/908459713#/invoices/${syncedInv.zohoBooksSyncId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold text-white hover:opacity-90"
+                        style={{ background: GREEN }}
+                      >
+                        <ExternalLink size={14} /> Open in Zoho
+                      </a>
+                    ) : null
+                  })()}
                   <button
                     type="button"
                     onClick={() => setStep((s) => s + 1)}

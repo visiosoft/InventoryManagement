@@ -11,6 +11,13 @@ import { formatDate } from '../lib/utils'
 // Re-export CustomerForm so existing imports (e.g. CustomerDetail) keep working
 export { CustomerForm } from '../components/AddCustomerModal'
 
+const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
+const INK = '#14081F'
+const MUTED_COLOR = '#756E80'
+const PURPLE = '#5B2BC9'
+const CREAM = '#FDFCFA'
+const CHIP_BG = '#F3F0EA'
+
 export default function Customers() {
   const qc = useQueryClient()
   const location = useLocation()
@@ -121,41 +128,61 @@ export default function Customers() {
   }
 
   return (
-    <div>
-      <PageHeader
-        title="Customers"
-        subtitle={data ? `${data.total} customer${data.total !== 1 ? 's' : ''}` : ''}
-        action={
-          <div className="flex items-center gap-2">
-            {selected.size > 0 && (
-              <Button
-                variant="destructive"
-                onClick={() => { if (confirm(`Delete ${selected.size} selected customer(s)? Customers with contracts will be skipped.`)) bulkDelete.mutate() }}
-                disabled={bulkDelete.isPending}
-              >
-                <Trash2 size={14} /> {bulkDelete.isPending ? 'Deleting…' : `Delete selected (${selected.size})`}
-              </Button>
-            )}
-            <Button onClick={() => { setPrefill(null); setAdding(true) }}><Plus size={15} /> Add customer</Button>
-          </div>
-        }
-      />
+    <div style={{ background: CREAM, borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+      {/* ── Header ── */}
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 style={{ ...HEADING, color: INK }} className="text-2xl font-bold leading-tight">Customers</h1>
+          {data && (
+            <p style={{ color: MUTED_COLOR }} className="mt-0.5 text-sm">{data.total} customer{data.total !== 1 ? 's' : ''}</p>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {selected.size > 0 && (
+            <button
+              onClick={() => { if (confirm(`Delete ${selected.size} selected customer(s)? Customers with contracts will be skipped.`)) bulkDelete.mutate() }}
+              disabled={bulkDelete.isPending}
+              style={{ borderRadius: 10, height: 36, fontSize: 13, fontWeight: 600, background: '#DC2626', color: '#fff', padding: '0 14px' }}
+              className="inline-flex items-center gap-1.5 transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              <Trash2 size={14} /> {bulkDelete.isPending ? 'Deleting…' : `Delete selected (${selected.size})`}
+            </button>
+          )}
+          <button
+            onClick={() => { setPrefill(null); setAdding(true) }}
+            style={{ background: PURPLE, color: '#fff', borderRadius: 10, height: 36, fontSize: 13, fontWeight: 600, padding: '0 14px' }}
+            className="inline-flex items-center gap-1.5 transition-opacity hover:opacity-90"
+          >
+            <Plus size={15} /> Add customer
+          </button>
+        </div>
+      </div>
 
+      {/* ── Filter bar ── */}
       <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-        <div className="relative max-w-sm flex-1">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            className="pl-9"
+        <div
+          style={{ background: CHIP_BG, borderRadius: 10, height: 36 }}
+          className="relative flex items-center max-w-sm flex-1 px-3"
+        >
+          <Search size={15} style={{ color: MUTED_COLOR }} className="shrink-0" />
+          <input
+            type="text"
             placeholder="Search name, phone, nationality, email, client ID…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            style={{ background: 'transparent', color: INK, fontSize: 13, outline: 'none', border: 'none' }}
+            className="ml-2 w-full placeholder:text-[#756E80]"
           />
         </div>
-        <div className="w-full md:w-56">
+        <div
+          style={{ background: CHIP_BG, borderRadius: 10, height: 36 }}
+          className="flex items-center px-1 w-full md:w-56"
+        >
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value)}
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+            style={{ background: 'transparent', color: INK, fontSize: 13, outline: 'none', border: 'none', height: '100%' }}
+            className="w-full px-2 cursor-pointer"
           >
             <option value="date_added_desc">Date added: newest first</option>
             <option value="date_added_asc">Date added: oldest first</option>
