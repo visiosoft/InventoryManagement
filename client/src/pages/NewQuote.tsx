@@ -187,7 +187,8 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
   const [newItems, setNewItems] = useState<EditItem[]>([])
   const [newDue, setNewDue] = useState('')
   const [err, setErr] = useState('')
-  const [emailModal, setEmailModal] = useState<{ to: string; subject: string; body: string; pdfUrl: string } | null>(null)
+  const [emailModal, setEmailModal] = useState<{ invoiceId: string; to: string; subject: string; body: string; pdfUrl: string } | null>(null)
+  const [emailSending, setEmailSending] = useState(false)
 
   const sorted = [...invoices].sort((a, b) => new Date(a.dueDate || 0).getTime() - new Date(b.dueDate || 0).getTime())
 
@@ -399,14 +400,13 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
                     const shareRes = await api.post(`/invoices/${inv._id}/share`)
                     const pdfUrl = shareRes.data.url
                     setEmailModal({
+                      invoiceId: inv._id,
                       to: customerEmail,
                       subject: `Invoice ${inv.invoiceNo} — PurpleBox`,
                       body: [
                         `Hello ${customerName},`,
                         ``,
                         `Please find your invoice ${inv.invoiceNo} for ${formatMoney(inv.total)} AED.`,
-                        ``,
-                        `View & download: ${pdfUrl}`,
                         ``,
                         `Thank you,`,
                         `PurpleBox`,
@@ -521,34 +521,43 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
                 rows={8}
               />
             </Field>
-            {emailModal.pdfUrl && (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: CHIP_BG }}>
-                <FileText size={14} style={{ color: PURPLE }} />
-                <span className="text-xs flex-1 truncate" style={{ color: INK }}>Invoice PDF link included in body</span>
-                <a href={emailModal.pdfUrl} target="_blank" rel="noreferrer" className="text-xs font-medium hover:underline" style={{ color: PURPLE }}>Preview</a>
-              </div>
-            )}
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: CHIP_BG }}>
+              <FileText size={14} style={{ color: PURPLE }} />
+              <span className="text-xs flex-1" style={{ color: INK }}>Invoice PDF will be attached automatically</span>
+            </div>
             <div className="flex justify-end gap-2 pt-2 border-t" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
               <button
                 type="button"
                 onClick={() => setEmailModal(null)}
-                className="px-4 py-2 rounded-xl text-sm font-semibold border hover:opacity-80 transition-opacity"
+                disabled={emailSending}
+                className="px-4 py-2 rounded-xl text-sm font-semibold border hover:opacity-80 transition-opacity disabled:opacity-50"
                 style={{ color: INK, borderColor: 'rgba(20,8,31,0.15)' }}
               >
                 Cancel
               </button>
               <button
                 type="button"
-                disabled={!emailModal.to}
-                onClick={() => {
-                  const gmailUrl = `https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(emailModal.to)}&su=${encodeURIComponent(emailModal.subject)}&body=${encodeURIComponent(emailModal.body)}`
-                  window.open(gmailUrl, '_blank')
-                  setEmailModal(null)
+                disabled={emailSending || !emailModal.to}
+                onClick={async () => {
+                  setEmailSending(true)
+                  try {
+                    await api.post(`/invoices/${emailModal.invoiceId}/send-email`, {
+                      to: emailModal.to,
+                      subject: emailModal.subject,
+                      body: emailModal.body,
+                    })
+                    setEmailModal(null)
+                    setErr('')
+                  } catch (e: any) {
+                    setErr(apiError(e))
+                  } finally {
+                    setEmailSending(false)
+                  }
                 }}
                 className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-50"
                 style={{ background: PURPLE }}
               >
-                <Send size={14} /> Open in Gmail
+                {emailSending ? <><Loader2 size={14} className="animate-spin" /> Sending…</> : <><Send size={14} /> Send Email</>}
               </button>
             </div>
           </div>
@@ -579,6 +588,7 @@ export default function NewQuote() {
   const [invoiceEditing, setInvoiceEditing] = useState(false)
   const [zohoSyncing, setZohoSyncing] = useState(false)
   const [quoteEmailModal, setQuoteEmailModal] = useState<{ to: string; subject: string; body: string; quoteUrl: string } | null>(null)
+  const [quoteEmailSending, setQuoteEmailSending] = useState(false)
   const [contractId, setContractId] = useState('')
   const hydratedRef = useRef(false)
   const stepAutoSetRef = useRef(false)
@@ -1010,8 +1020,6 @@ export default function NewQuote() {
             `Hello ${customerName},`,
             ``,
             `Please find your storage quotation ${q.quoteNo} — ${formatMoney(q.total)} AED.`,
-            ``,
-            `View the quote here: ${url}`,
             ``,
             `Thank you,`,
             `PurpleBox`,
@@ -2672,34 +2680,43 @@ export default function NewQuote() {
                 rows={8}
               />
             </Field>
-            {quoteEmailModal.quoteUrl && (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: CHIP_BG }}>
-                <FileText size={14} style={{ color: PURPLE }} />
-                <span className="text-xs flex-1 truncate" style={{ color: INK }}>Quote link included in body</span>
-                <a href={quoteEmailModal.quoteUrl} target="_blank" rel="noreferrer" className="text-xs font-medium hover:underline" style={{ color: PURPLE }}>Preview</a>
-              </div>
-            )}
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: CHIP_BG }}>
+              <FileText size={14} style={{ color: PURPLE }} />
+              <span className="text-xs flex-1" style={{ color: INK }}>Quote PDF will be attached automatically</span>
+            </div>
             <div className="flex justify-end gap-2 pt-2 border-t" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
               <button
                 type="button"
                 onClick={() => setQuoteEmailModal(null)}
-                className="px-4 py-2 rounded-xl text-sm font-semibold border hover:opacity-80 transition-opacity"
+                disabled={quoteEmailSending}
+                className="px-4 py-2 rounded-xl text-sm font-semibold border hover:opacity-80 transition-opacity disabled:opacity-50"
                 style={{ color: INK, borderColor: 'rgba(20,8,31,0.15)' }}
               >
                 Cancel
               </button>
               <button
                 type="button"
-                disabled={!quoteEmailModal.to}
-                onClick={() => {
-                  const gmailUrl = `https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(quoteEmailModal.to)}&su=${encodeURIComponent(quoteEmailModal.subject)}&body=${encodeURIComponent(quoteEmailModal.body)}`
-                  window.open(gmailUrl, '_blank')
-                  setQuoteEmailModal(null)
+                disabled={quoteEmailSending || !quoteEmailModal.to}
+                onClick={async () => {
+                  setQuoteEmailSending(true)
+                  try {
+                    await api.post(`/quotes/${quoteId}/send-email`, {
+                      to: quoteEmailModal.to,
+                      subject: quoteEmailModal.subject,
+                      body: quoteEmailModal.body,
+                    })
+                    setQuoteEmailModal(null)
+                    setErr('')
+                  } catch (e: any) {
+                    setErr(apiError(e))
+                  } finally {
+                    setQuoteEmailSending(false)
+                  }
                 }}
                 className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-50"
                 style={{ background: PURPLE }}
               >
-                <Send size={14} /> Open in Gmail
+                {quoteEmailSending ? <><Loader2 size={14} className="animate-spin" /> Sending…</> : <><Send size={14} /> Send Email</>}
               </button>
             </div>
           </div>

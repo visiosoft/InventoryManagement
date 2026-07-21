@@ -740,21 +740,30 @@ router.post('/zoho-books/bulk-sync', async (req, res) => {
 
 // Send invoice PDF via email
 router.post('/:id/send-email', async (req, res) => {
-  const invoice = await Invoice.findById(req.params.id).populate('customer', 'fullName email phone');
-  if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
-  if (!mailConfigured()) return res.status(400).json({ error: 'SMTP not configured' });
-  const email = invoice.customer?.email;
-  if (!email) return res.status(400).json({ error: 'Customer has no email address' });
-  const pdf = await renderInvoicePdf({ invoice });
-  await sendMail({
-    to: email,
-    subject: `Invoice ${invoice.invoiceNo} — PurpleBox`,
-    text: `Dear ${invoice.customer.fullName},\n\nPlease find your invoice ${invoice.invoiceNo} for AED ${Number(invoice.total || 0).toFixed(2)} attached.\n\nThank you,\nPurpleBox`,
-    html: `<p>Dear ${invoice.customer.fullName},</p><p>Please find your invoice <strong>${invoice.invoiceNo}</strong> for <strong>AED ${Number(invoice.total || 0).toFixed(2)}</strong> attached.</p><p>Thank you,<br/>PurpleBox</p>`,
-    attachments: [{ filename: `${invoice.invoiceNo}.pdf`, content: pdf, contentType: 'application/pdf' }],
-  });
-  if (invoice.status === 'draft') { invoice.status = 'sent'; await invoice.save(); }
-  res.json({ ok: true });
+  try {
+    const invoice = await Invoice.findById(req.params.id).populate('customer', 'fullName email phone');
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+    if (!mailConfigured()) return res.status(400).json({ error: 'SMTP not configured — set SMTP_PASS in server/.env' });
+    const { to, subject, body } = req.body;
+    const email = to || invoice.customer?.email;
+    if (!email) return res.status(400).json({ error: 'Customer has no email address' });
+    const subjectLine = subject || `Invoice ${invoice.invoiceNo} — PurpleBox`;
+    const bodyText = body || `Dear ${invoice.customer.fullName},\n\nPlease find your invoice ${invoice.invoiceNo} for AED ${Number(invoice.total || 0).toFixed(2)} attached.\n\nThank you,\nPurpleBox`;
+    const bodyHtml = bodyText.replace(/\n/g, '<br/>');
+    const pdf = await renderInvoicePdf({ invoice });
+    await sendMail({
+      to: email,
+      subject: subjectLine,
+      text: bodyText,
+      html: bodyHtml,
+      attachments: [{ filename: `${invoice.invoiceNo}.pdf`, content: pdf, contentType: 'application/pdf' }],
+    });
+    if (invoice.status === 'draft') { invoice.status = 'sent'; await invoice.save(); }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('send-email error:', err);
+    res.status(500).json({ error: err.message || 'Failed to send email' });
+  }
 });
 
 export default router;

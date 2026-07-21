@@ -165,14 +165,18 @@ router.post('/:id/send-email', async (req, res) => {
 
     const pdf = await renderQuotePdf({ quote });
     const userName = req.user.name || req.user.email || 'user';
+    const subjectLine = req.body?.subject || `Storage Quotation ${quote.quoteNo} — PurpleBox`;
+    const bodyText = req.body?.body ||
+        `Hello ${quote.customer?.fullName || ''},\n\n` +
+        `Please find attached your storage quotation ${quote.quoteNo} — ${quote.total.toFixed(2)} AED.\n\n` +
+        `Thank you,\nPurpleBox`;
+    const bodyHtml = bodyText.replace(/\n/g, '<br/>');
     try {
         await sendMail({
             to,
-            subject: `Storage Quotation ${quote.quoteNo} — PurpleBox`,
-            text:
-                `Hello ${quote.customer?.fullName || ''},\n\n` +
-                `Please find attached your storage quotation ${quote.quoteNo} — ${quote.total.toFixed(2)} AED.\n\n` +
-                `Thank you,\nPurpleBox`,
+            subject: subjectLine,
+            text: bodyText,
+            html: bodyHtml,
             attachments: [{ filename: `${quote.quoteNo}.pdf`, content: pdf, contentType: 'application/pdf' }],
         });
     } catch (err) {
