@@ -399,7 +399,7 @@ const invoiceSchema = new Schema(
     paymentHistory: { type: [invoicePaymentEntrySchema], default: [] },
     termsAndConditions: { type: String, default: '' },
     attachments: { type: [invoiceAttachmentSchema], default: [] },
-    status: { type: String, enum: ['draft', 'sent', 'paid', 'overdue', 'cancelled'], default: 'draft' },
+    status: { type: String, enum: ['draft', 'sent', 'paid', 'partial', 'overdue', 'cancelled'], default: 'draft' },
     shareToken: { type: String, default: null },
     source: { type: String, enum: ['manual', 'import_csv'], default: 'manual' },
     importBatch: { type: String, default: null },
