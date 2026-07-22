@@ -9,7 +9,7 @@ import {
   Badge, Button, Card, CardBody, CardHeader, EmptyState,
   Field, Input, Modal, Select, Spinner,
   Table, Td, Th, Textarea,
-  contractStatusTone, paymentStatusTone, statusLabel,
+  contractStatusTone, statusLabel,
 } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
 import { UploadDocumentForm } from './Documents'
