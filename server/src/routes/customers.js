@@ -35,7 +35,7 @@ router.get('/', async (req, res) => {
   else if (sortKey === 'date_added_asc') sort = { createdAt: 1, _id: 1 };
 
   const page  = Math.max(1, Number(req.query.page)  || 1);
-  const limit = Math.min(Math.max(1, Number(req.query.limit) || 25), 100);
+  const limit = Math.min(Math.max(1, Number(req.query.limit) || 25), 9999);
   const skip  = (page - 1) * limit;
 
   const [customers, total] = await Promise.all([

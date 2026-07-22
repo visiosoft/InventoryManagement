@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { CalendarDays, CalendarPlus, CheckCircle2, Download, FileText, FilePlus, MessageSquare, PenLine, Plus, ShieldCheck, Upload, X, XCircle, Receipt, Clock, FolderOpen, Bell, ChevronDown, ChevronUp } from 'lucide-react'
 import { api, apiError, reminderConfigApi } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -20,199 +20,11 @@ const MUTED_CLR = '#756E80'
 const CREAM = '#FDFCFA'
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
 
-// ── Custom invoice generator modal ────────────────────────────────────────────
 type ContractDetailData = {
   contract: Contract
   payments: Payment[]
   documents: AppDocument[]
   invoices?: Invoice[]
-}
-
-function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, onDone }: {
-  contract: Contract; payments: Payment[]
-  overrideStart?: string; overrideEnd?: string
-  onDone: () => void
-}) {
-  const monthlyRate = Number(contract.rate || 0)
-  const depositAmt = Number(contract.deposit || 0)
-  const toISO = (d: Date) => d.toISOString().slice(0, 10)
-
-  // Build unit label from all units on the contract
-  const allContractUnits = contract.units?.length ? contract.units : contract.unit ? [contract.unit] : []
-  const unitLabel = allContractUnits.map((u: any) => u?.unitNumber ?? u).filter(Boolean).join(', ')
-
-  // Next uninvoiced period start
-  const latestDueDate = payments.length > 0
-    ? new Date(Math.max(...payments.map(p => new Date(p.dueDate).getTime())))
-    : null
-  const nextStart = latestDueDate
-    ? new Date(latestDueDate.getTime() + 7 * 86400000)
-    : new Date(contract.startDate)
-
-  const contractEnd = contract.endDate ? new Date(contract.endDate) : null
-  const nextEnd28 = new Date(nextStart); nextEnd28.setDate(nextEnd28.getDate() + 28)
-  const smartEnd = contractEnd && contractEnd < nextEnd28 ? contractEnd : nextEnd28
-
-  const defaultStart = overrideStart ?? toISO(nextStart)
-  const defaultEnd = overrideEnd ?? toISO(smartEnd)
-
-  type ExtraItem = { id: number; description: string; amount: string; type: 'charge' | 'credit' }
-
-  const [isDeposit, setIsDeposit] = useState(false)
-  const [startDate, setStartDate] = useState(defaultStart)
-  const [endDate, setEndDate] = useState(defaultEnd)
-  const [dueDate, setDueDate] = useState(toISO(new Date()))
-  const [notes, setNotes] = useState('')
-  const [extraItems, setExtraItems] = useState<ExtraItem[]>([])
-  const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState('')
-  const nextId = useRef(0)
-
-  const fmtD = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-
-  // Rent total for the selected period (4-week = monthly rate, proportional otherwise)
-  const rentTotal = useMemo(() => {
-    if (isDeposit) return 0
-    const s = new Date(startDate), e = new Date(endDate)
-    const days = Math.round((e.getTime() - s.getTime()) / 86400000)
-    if (days <= 0) return 0
-    const weeks = Math.ceil(days / 7)
-    return Math.round((monthlyRate / 4) * weeks * 100) / 100
-  }, [isDeposit, startDate, endDate, monthlyRate])
-
-  const extrasTotal = extraItems.reduce((s, x) => {
-    const v = Math.round(Number(x.amount || 0) * 100) / 100
-    return s + (x.type === 'charge' ? v : -v)
-  }, 0)
-
-  const grandTotal = isDeposit ? depositAmt : Math.round((rentTotal + extrasTotal) * 100) / 100
-
-  function addExtra() { setExtraItems(p => [...p, { id: nextId.current++, description: '', amount: '', type: 'charge' }]) }
-  function removeExtra(id: number) { setExtraItems(p => p.filter(x => x.id !== id)) }
-  function updateExtra(id: number, patch: Partial<ExtraItem>) { setExtraItems(p => p.map(x => x.id === id ? { ...x, ...patch } : x)) }
-
-  async function submit() {
-    setBusy(true); setErr('')
-    try {
-      const validExtras = extraItems
-        .filter(x => x.description.trim() && Number(x.amount) > 0)
-        .map(x => ({ description: x.description.trim(), amount: Number(x.amount), type: x.type }))
-      await api.post(`/contracts/${contract._id}/generate-custom-invoice`, {
-        isDeposit,
-        startDate: !isDeposit ? startDate : undefined,
-        endDate: !isDeposit ? endDate : undefined,
-        dueDate, notes, discountPct: 0, extraItems: validExtras,
-      })
-      onDone()
-    } catch (e) { setErr(apiError(e)) }
-    finally { setBusy(false) }
-  }
-
-  return (
-    <div className="space-y-4">
-
-      {/* Type toggle */}
-      <div className="flex gap-2">
-        <button type="button" onClick={() => setIsDeposit(false)}
-          className={`flex-1 rounded-lg border py-2 text-sm font-medium transition-colors cursor-pointer
-            ${!isDeposit ? 'border-primary bg-primary/10 text-primary' : 'hover:bg-muted text-foreground'}`}>
-          Rent payment
-        </button>
-        <button type="button" onClick={() => setIsDeposit(true)}
-          className={`flex-1 rounded-lg border py-2 text-sm font-medium transition-colors cursor-pointer
-            ${isDeposit ? 'border-primary bg-primary/10 text-primary' : 'hover:bg-muted text-foreground'}`}>
-          Security deposit
-        </button>
-      </div>
-
-      {/* Main line item */}
-      <div className="rounded-lg border divide-y overflow-hidden">
-        {!isDeposit ? (
-          <>
-            {/* Period row */}
-            <div className="grid grid-cols-2 gap-3 p-3">
-              <Field label="Period start">
-                <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
-              </Field>
-              <Field label="Period end">
-                <Input type="date" value={endDate} min={startDate} onChange={e => setEndDate(e.target.value)} />
-              </Field>
-            </div>
-            {/* Rent summary row */}
-            <div className="flex items-center justify-between px-4 py-3 bg-muted/30">
-              <div>
-                <p className="text-sm font-medium">Rent payment · Unit {unitLabel}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {startDate && endDate
-                    ? `${fmtD(new Date(startDate))} – ${fmtD(new Date(endDate))}`
-                    : '—'}
-                </p>
-              </div>
-              <span className="text-base font-semibold">{formatMoney(rentTotal)}</span>
-            </div>
-          </>
-        ) : (
-          <div className="flex items-center justify-between px-4 py-3 bg-muted/30">
-            <p className="text-sm font-medium">Security deposit</p>
-            <span className="text-base font-semibold">{formatMoney(depositAmt)}</span>
-          </div>
-        )}
-
-        {/* Extra items */}
-        {extraItems.map((x) => (
-          <div key={x.id} className="flex items-center gap-2 px-3 py-2">
-            <Input value={x.description} placeholder="e.g. Lock deposit, Cleaning fee…"
-              onChange={e => updateExtra(x.id, { description: e.target.value })}
-              className="flex-1 text-sm" />
-            <select value={x.type} onChange={e => updateExtra(x.id, { type: e.target.value as 'charge' | 'credit' })}
-              className="rounded-md border bg-background px-2 py-1.5 text-sm w-24">
-              <option value="charge">+ Charge</option>
-              <option value="credit">− Credit</option>
-            </select>
-            <Input type="number" min={0} step="0.01" value={x.amount} placeholder="0.00"
-              onChange={e => updateExtra(x.id, { amount: e.target.value })}
-              className="w-24 text-right text-sm" />
-            <button type="button" onClick={() => removeExtra(x.id)}
-              className="text-muted-foreground hover:text-destructive cursor-pointer shrink-0">
-              <X size={14} />
-            </button>
-          </div>
-        ))}
-
-        {/* Add item + Total */}
-        <div className="flex items-center justify-between px-3 py-2 bg-muted/20">
-          <button type="button" onClick={addExtra}
-            className="text-xs text-primary hover:underline font-medium flex items-center gap-1 cursor-pointer">
-            <Plus size={11} /> Add item (lock, fee, credit…)
-          </button>
-          <span className="text-xs text-muted-foreground">{extraItems.length > 0 ? `${extraItems.length} extra item${extraItems.length > 1 ? 's' : ''}` : ''}</span>
-        </div>
-
-        {/* Grand total */}
-        <div className="flex items-center justify-between px-4 py-3 font-semibold bg-accent/40">
-          <span>Total</span>
-          <span className="text-lg">{formatMoney(grandTotal)}</span>
-        </div>
-      </div>
-
-      {/* Due date + notes */}
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Due date">
-          <Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
-        </Field>
-        <Field label="Notes (optional)">
-          <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="e.g. Month 1 rent" />
-        </Field>
-      </div>
-
-      {err && <p className="text-xs text-destructive">{err}</p>}
-
-      <Button className="w-full" disabled={busy || (isDeposit && !depositAmt) || (!isDeposit && rentTotal <= 0)}
-        onClick={submit}>
-        {busy ? 'Generating…' : 'Generate Invoice'}
-      </Button>
-    </div>
-  )
 }
 
 // ── Signature canvas (draw mode) ───────────────────────────────────────────────
@@ -694,7 +506,7 @@ function AddPaymentForm({ contractId, rate, busy, onSubmit }: {
 
 // ── Invoice group row (one row per invoice in the payment schedule) ───────────
 type InvoiceGroup = {
-  invoiceId: string; invoiceRef: { _id: string; invoiceNo: string }
+  invoiceId: string; invoiceRef: { _id: string; invoiceNo: string; paymentHistory?: { date: string; amount: number; method: string; notes?: string }[] }
   payments: Payment[]; unpaidInGroup: Payment[]; paidInGroup: Payment[]
   total: number; paidTotal: number; rentTotal: number; depositTotal: number
   earliestDue: Date; latestDue: Date; periodLabel: string
@@ -712,58 +524,71 @@ function InvoiceGroupRow({ g, index, onRecord, onDelete, onSendWhatsApp, sending
 }) {
   const rowBg = g.status === 'overdue' ? 'bg-red-50/60 dark:bg-red-950/20'
     : g.status === 'paid' ? 'bg-emerald-50/40 dark:bg-emerald-950/10' : ''
+  const history = g.invoiceRef.paymentHistory ?? []
 
   return (
-    <tr className={`${rowBg} hover:brightness-95`}>
-      <Td className="text-muted-foreground text-xs tabular-nums">{index}</Td>
-      <Td>
-        <Link to={`/invoices/${g.invoiceRef._id}`} className="text-primary hover:underline font-medium text-sm">
-          {g.invoiceRef.invoiceNo}
-        </Link>
-      </Td>
-      <Td className="text-sm text-muted-foreground whitespace-nowrap">
-        {g.periodLabel}
-      </Td>
-      <Td>
-        <span className="font-medium">{formatMoney(g.total)}</span>
-        {g.depositTotal > 0 && (
-          <span className="text-xs text-muted-foreground ml-1.5">(incl. {formatMoney(g.depositTotal)} dep.)</span>
-        )}
-        {g.status === 'partial' && (
-          <span className="text-xs text-muted-foreground ml-1.5">({formatMoney(g.paidTotal)} paid)</span>
-        )}
-      </Td>
-      <Td><Badge tone={groupStatusTone[g.status]}>{groupStatusLabel[g.status]}</Badge></Td>
-      <Td>
-        <div className="flex items-center gap-2 text-xs whitespace-nowrap">
-          <button className="text-emerald-700 hover:underline cursor-pointer" onClick={onSendWhatsApp} disabled={sendingInvoice}>
-            {sendingInvoice ? 'Sending…' : 'WhatsApp'}
-          </button>
-          {g.paidInGroup.length > 0 && (
-            <button
-              className="inline-flex items-center gap-1 text-emerald-700 hover:underline cursor-pointer font-medium"
-              onClick={() => downloadInvoiceReceipt(g.invoiceRef._id)}
-              title="Download invoice PDF"
-            >
-              <FileText size={12} /> Receipt
+    <>
+      <tr className={`${rowBg} hover:brightness-95`}>
+        <Td className="text-muted-foreground text-xs tabular-nums">{index}</Td>
+        <Td>
+          <Link to={`/invoices/${g.invoiceRef._id}`} className="text-primary hover:underline font-medium text-sm">
+            {g.invoiceRef.invoiceNo}
+          </Link>
+        </Td>
+        <Td className="text-sm text-muted-foreground whitespace-nowrap">
+          {g.periodLabel}
+        </Td>
+        <Td>
+          <span className="font-medium">{formatMoney(g.total)}</span>
+          {g.depositTotal > 0 && (
+            <span className="text-xs text-muted-foreground ml-1.5">(incl. {formatMoney(g.depositTotal)} dep.)</span>
+          )}
+          {g.status === 'partial' && (
+            <span className="text-xs text-muted-foreground ml-1.5">({formatMoney(g.paidTotal)} paid)</span>
+          )}
+        </Td>
+        <Td><Badge tone={groupStatusTone[g.status]}>{groupStatusLabel[g.status]}</Badge></Td>
+        <Td>
+          <div className="flex items-center gap-2 text-xs whitespace-nowrap">
+            <button className="text-emerald-700 hover:underline cursor-pointer" onClick={onSendWhatsApp} disabled={sendingInvoice}>
+              {sendingInvoice ? 'Sending…' : 'WhatsApp'}
             </button>
-          )}
-          {g.status === 'partial' && onGenerateForRemaining && (
-            <button
-              className="inline-flex items-center gap-1 text-primary hover:underline cursor-pointer font-medium"
-              onClick={onGenerateForRemaining}
-              title="Generate a new invoice for the remaining unpaid weeks"
-            >
-              <FilePlus size={12} /> Invoice remaining
-            </button>
-          )}
-          {g.unpaidInGroup.length > 0 && (
-            <Button size="sm" variant="outline" onClick={onRecord}>Record</Button>
-          )}
-          <button className="text-destructive hover:underline cursor-pointer" onClick={onDelete}>Delete</button>
-        </div>
-      </Td>
-    </tr>
+            {g.paidInGroup.length > 0 && (
+              <button
+                className="inline-flex items-center gap-1 text-emerald-700 hover:underline cursor-pointer font-medium"
+                onClick={() => downloadInvoiceReceipt(g.invoiceRef._id)}
+                title="Download invoice PDF"
+              >
+                <FileText size={12} /> Receipt
+              </button>
+            )}
+            {g.status === 'partial' && onGenerateForRemaining && (
+              <button
+                className="inline-flex items-center gap-1 text-primary hover:underline cursor-pointer font-medium"
+                onClick={onGenerateForRemaining}
+                title="Generate a new invoice for the remaining unpaid weeks"
+              >
+                <FilePlus size={12} /> Invoice remaining
+              </button>
+            )}
+            {g.unpaidInGroup.length > 0 && (
+              <Button size="sm" variant="outline" onClick={onRecord}>Record</Button>
+            )}
+            <button className="text-destructive hover:underline cursor-pointer" onClick={onDelete}>Delete</button>
+          </div>
+        </Td>
+      </tr>
+      {history.map((h, i) => (
+        <tr key={i} className="bg-muted/30">
+          <Td />
+          <Td className="text-xs text-muted-foreground pl-6">↳ Payment {i + 1}</Td>
+          <Td className="text-xs text-muted-foreground">{new Date(h.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</Td>
+          <Td className="text-xs font-medium text-emerald-600">{formatMoney(h.amount)}</Td>
+          <Td className="text-xs text-muted-foreground capitalize">{h.method.replace('_', ' ')}</Td>
+          <Td className="text-xs text-muted-foreground">{h.notes || ''}</Td>
+        </tr>
+      ))}
+    </>
   )
 }
 
@@ -1187,8 +1012,6 @@ export default function ContractDetail() {
   const [signingLinkExpiry, setSigningLinkExpiry] = useState('')
   const [linkCopied, setLinkCopied] = useState(false)
   const [sendingInvoiceId, setSendingInvoiceId] = useState<string | null>(null)
-  const [showInvoiceModal, setShowInvoiceModal] = useState(false)
-  const [invoiceOverride, setInvoiceOverride] = useState<{ start: string; end: string } | null>(null)
   const [editModal, setEditModal] = useState(false)
   const [endModal, setEndModal] = useState(false)
   const [endDate, setEndDate] = useState('')
@@ -1198,7 +1021,9 @@ export default function ContractDetail() {
   const [extendReSign, setExtendReSign] = useState(false)
   const [extendResult, setExtendResult] = useState<{ generated: number; signingUrl?: string | null; signingTokenExpiry?: string | null } | null>(null)
   const [extendLinkCopied, setExtendLinkCopied] = useState(false)
-  const [activeTab, setActiveTab] = useState<'overview' | 'payments' | 'documents' | 'activity'>('overview')
+  const [searchParams] = useSearchParams()
+  const tabParam = searchParams.get('tab') as 'overview' | 'payments' | 'documents' | 'activity' | null
+  const [activeTab, setActiveTab] = useState<'overview' | 'payments' | 'documents' | 'activity'>(tabParam || 'overview')
 
   const { data, isLoading } = useQuery<ContractDetailData>({
     queryKey: ['contract', id],
@@ -1209,11 +1034,6 @@ export default function ContractDetail() {
     queryKey: ['units'],
     queryFn: () => api.get('/units').then((r) => r.data),
     enabled: editModal,
-  })
-
-  const autoInvoice = useMutation({
-    mutationFn: () => api.post(`/contracts/${id}/auto-invoices`, null, { params: { months: 3 } }),
-    onSuccess: () => invalidate(),
   })
 
   function invalidate() {
@@ -1398,11 +1218,9 @@ export default function ContractDetail() {
   const totalOverdue = overdue.filter(p => !isDepositPayment(p)).reduce((s, p) => s + p.amount, 0)
   // Group payments by invoice → one display row per invoice
   const groupMap = new Map<string, Payment[]>()
-  const standalonePayments: Payment[] = []
   for (const p of payments) {
     const invId = (p.invoice as any)?._id
     if (invId) { if (!groupMap.has(invId)) groupMap.set(invId, []); groupMap.get(invId)!.push(p) }
-    else standalonePayments.push(p)
   }
   const fmtShortDate = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 
@@ -1425,7 +1243,7 @@ export default function ContractDetail() {
       : fmtShortDate(new Date(sorted[0].dueDate))
     return {
       invoiceId: invId,
-      invoiceRef: ps[0].invoice as { _id: string; invoiceNo: string },
+      invoiceRef: ps[0].invoice as InvoiceGroup['invoiceRef'],
       payments: sorted, unpaidInGroup, paidInGroup,
       total, paidTotal: Math.round(paidInGroup.reduce((s, p) => s + p.amount, 0) * 100) / 100,
       rentTotal, depositTotal, periodLabel,
@@ -1448,13 +1266,11 @@ export default function ContractDetail() {
     return s + Math.round(unpaidRent * 100) / 100
   }, 0)
 
-  // Deposit-covered invoices: status 'paid', net 0, no payment records linked to them
+  // Invoices not linked to any Payment records — show them separately
   const groupedInvoiceIds = new Set(invoiceGroups.map(g => String(g.invoiceId)))
-  const depositCoveredInvoices = allInvoices.filter((inv) =>
-    inv.status === 'paid' &&
-    Number(inv.total ?? 0) <= 0 &&
-    !groupedInvoiceIds.has(String(inv._id))
-  )
+  const ungroupedInvoices = allInvoices.filter((inv) => !groupedInvoiceIds.has(String(inv._id)))
+  const depositCoveredInvoices = ungroupedInvoices.filter((inv) => inv.status === 'paid' && Number(inv.total ?? 0) <= 0)
+  const standaloneInvoices = ungroupedInvoices.filter((inv) => !(inv.status === 'paid' && Number(inv.total ?? 0) <= 0))
 
   const allUnits = c.units?.length ? c.units : c.unit ? [c.unit] : []
   const unitLabel = allUnits.length > 1
@@ -1827,21 +1643,6 @@ export default function ContractDetail() {
           {/* OVERVIEW */}
           {activeTab === 'overview' && (
             <div>
-              {/* No invoices banner */}
-              {invoiceGroups.length === 0 && !['ended', 'cancelled'].includes(c.status) && (
-                <div className="flex items-center gap-3 rounded-xl border border-blue-200 dark:border-blue-900/50 bg-blue-50 dark:bg-blue-950/20 px-4 py-3 mb-4">
-                  <FilePlus size={20} className="text-primary shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <span className="font-semibold text-primary">No invoices generated yet</span>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Generate the payment schedule based on contract dates and rate (AED {formatMoney(c.rate)}/4wk).
-                    </p>
-                  </div>
-                  <Button size="sm" onClick={() => autoInvoice.mutate()} disabled={autoInvoice.isPending} className="shrink-0">
-                    {autoInvoice.isPending ? 'Generating…' : 'Auto-generate'}
-                  </Button>
-                </div>
-              )}
 
               <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
                 {/* Activity feed */}
@@ -1954,28 +1755,16 @@ export default function ContractDetail() {
           {activeTab === 'payments' && (
             <Card>
               <CardHeader title="Payment schedule"
-                subtitle={payments.length === 0 && depositCoveredInvoices.length === 0 ? 'No invoices yet' : `${paidGroups.length + depositCoveredInvoices.length} of ${invoiceGroups.length + depositCoveredInvoices.length} invoice${(invoiceGroups.length + depositCoveredInvoices.length) !== 1 ? 's' : ''} paid · ${formatMoney(totalPaid)} collected`}
+                subtitle={payments.length === 0 && depositCoveredInvoices.length === 0 && standaloneInvoices.length === 0 ? 'No invoices yet' : `${paidGroups.length + depositCoveredInvoices.length} of ${invoiceGroups.length + depositCoveredInvoices.length + standaloneInvoices.length} invoice${(invoiceGroups.length + depositCoveredInvoices.length + standaloneInvoices.length) !== 1 ? 's' : ''} paid · ${formatMoney(totalPaid)} collected`}
                 action={
                   <div className="flex gap-2 flex-wrap">
-                    {invoiceGroups.length === 0 && (
-                      <Button size="sm" onClick={() => autoInvoice.mutate()} disabled={autoInvoice.isPending}>
-                        <FilePlus size={13} /> {autoInvoice.isPending ? 'Generating…' : 'Auto-generate'}
-                      </Button>
-                    )}
-                    {allUnpaid.length > 0 && <Button size="sm" variant="outline" onClick={() => setBulkTarget(allUnpaid)}><CalendarDays size={13} /> Pay multiple</Button>}
-                    <Button size="sm" variant="outline" onClick={() => setShowInvoiceModal(true)}><FilePlus size={13} /> Invoice</Button>
-                    <Button size="sm" variant="outline" onClick={() => setAddingPayment(true)}><Plus size={13} /> Add</Button>
+                    <Button size="sm" variant="outline" onClick={() => navigate(`/invoices?create=1&customer=${c.customer?._id}&units=${allUnits.map(u => u?._id).filter(Boolean).join(',')}&order=${c.contractNo}&returnTo=${c._id}`)}><FilePlus size={13} /> New invoice</Button>
                   </div>
                 }
               />
-              {payments.length === 0 && depositCoveredInvoices.length === 0 ? (
+              {payments.length === 0 && depositCoveredInvoices.length === 0 && standaloneInvoices.length === 0 ? (
                 <CardBody>
-                  <div className="text-center py-8 space-y-3">
-                    <p className="text-sm text-muted-foreground">No invoices yet.</p>
-                    <Button onClick={() => autoInvoice.mutate()} disabled={autoInvoice.isPending}>
-                      <FilePlus size={14} /> {autoInvoice.isPending ? 'Generating…' : 'Auto-generate invoices'}
-                    </Button>
-                  </div>
+                  <p className="text-sm text-muted-foreground text-center py-6">No invoices yet</p>
                 </CardBody>
               ) : (
                 <Table>
@@ -1998,17 +1787,8 @@ export default function ContractDetail() {
                               const lastUnpaid = new Date(Math.max(...unpaidDates))
                               lastUnpaid.setDate(lastUnpaid.getDate() + 7)
                               const toISO = (d: Date) => d.toISOString().slice(0, 10)
-                              setInvoiceOverride({ start: toISO(firstUnpaid), end: toISO(lastUnpaid) })
-                              setShowInvoiceModal(true)
+                              navigate(`/invoices?create=1&customer=${c.customer?._id}&units=${allUnits.map(u => u?._id).filter(Boolean).join(',')}&order=${c.contractNo}&returnTo=${c._id}`)
                             }}
-                          />
-                        ))}
-                        {standalonePayments.filter(p => p.status !== 'paid').map((p) => (
-                          <PaymentRow key={p._id} p={p} index={0} rate={c.rate} isFirstForInvoice={false}
-                            onRecord={() => setRecordingPayment(p)} onEdit={() => setEditingPayment(p)}
-                            onUnrecord={() => { if (confirm('Unrecord this payment?')) unrecordPayment.mutate(p._id) }}
-                            onDelete={() => { if (confirm('Delete this payment?')) deletePayment.mutate(p._id) }}
-                            onSendInvoiceWhatsApp={() => { }} sendingInvoice={false}
                           />
                         ))}
                       </>
@@ -2024,16 +1804,22 @@ export default function ContractDetail() {
                             sendingInvoice={sendInvoiceWhatsApp.isPending && sendingInvoiceId === g.invoiceId}
                           />
                         ))}
-                        {standalonePayments.filter(p => p.status === 'paid').map((p) => (
-                          <PaymentRow key={p._id} p={p} index={0} rate={c.rate} isFirstForInvoice={false}
-                            onRecord={() => setRecordingPayment(p)} onEdit={() => setEditingPayment(p)}
-                            onUnrecord={() => { if (confirm('Unrecord this payment?')) unrecordPayment.mutate(p._id) }}
-                            onDelete={() => { if (confirm('Delete this payment?')) deletePayment.mutate(p._id) }}
-                            onSendInvoiceWhatsApp={() => { }} sendingInvoice={false}
-                          />
-                        ))}
                       </>
                     )}
+                    {standaloneInvoices.length > 0 && standaloneInvoices.map((inv: any, i: number) => (
+                      <tr key={inv._id} className="hover:bg-muted/30">
+                        <Td className="text-muted-foreground text-xs tabular-nums">{unpaidGroups.length + paidGroups.length + i + 1}</Td>
+                        <Td>
+                          <Link to={`/invoices/${inv._id}`} className="text-primary hover:underline font-medium text-sm">{inv.invoiceNo}</Link>
+                        </Td>
+                        <Td className="text-sm text-muted-foreground whitespace-nowrap">
+                          {inv.dueDate ? new Date(inv.dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                        </Td>
+                        <Td><span className="font-medium">{formatMoney(inv.total ?? 0)}</span></Td>
+                        <Td><Badge tone={inv.status === 'paid' ? 'green' : inv.status === 'sent' ? 'blue' : 'gray'}>{inv.status === 'draft' ? 'Quote' : statusLabel(inv.status)}</Badge></Td>
+                        <Td />
+                      </tr>
+                    ))}
                     {depositCoveredInvoices.length > 0 && (
                       <>
                         <tr>
@@ -2064,16 +1850,10 @@ export default function ContractDetail() {
                   </tbody>
                 </Table>
               )}
-              {payments.length > 0 && unpaidGroups.length === 0 && standalonePayments.filter(p => p.status !== 'paid').length === 0 && c.status === 'active' && (
+              {payments.length > 0 && unpaidGroups.length === 0 && c.status === 'active' && (
                 <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 mx-4 mb-4">
-                  <div>
-                    <div className="text-sm font-medium">All invoices paid</div>
-                    <div className="text-xs text-muted-foreground">Auto-generate the next period, or create a custom invoice</div>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={() => setShowInvoiceModal(true)}><FilePlus size={13} /> Custom</Button>
-                    <Button size="sm" onClick={() => autoInvoice.mutate()} disabled={autoInvoice.isPending}><FilePlus size={13} /> {autoInvoice.isPending ? 'Generating…' : 'Auto-generate'}</Button>
-                  </div>
+                  <div className="text-sm font-medium">All invoices paid</div>
+                  <Button size="sm" variant="outline" onClick={() => navigate(`/invoices?create=1&customer=${c.customer?._id}&units=${allUnits.map(u => u?._id).filter(Boolean).join(',')}&order=${c.contractNo}&returnTo=${c._id}`)}><FilePlus size={13} /> New invoice</Button>
                 </div>
               )}
             </Card>
@@ -2335,23 +2115,6 @@ export default function ContractDetail() {
           onSign={(body) => signInPerson.mutate(body)}
           onClose={() => setSigningInPerson(false)}
         />
-      </Modal>
-
-      <Modal
-        open={showInvoiceModal}
-        onClose={() => { setShowInvoiceModal(false); setInvoiceOverride(null) }}
-        title={invoiceOverride ? 'Generate invoice for remaining weeks' : 'Generate invoice'}
-        wide
-      >
-        {showInvoiceModal && (
-          <GenerateInvoiceModal
-            contract={c}
-            payments={payments}
-            overrideStart={invoiceOverride?.start}
-            overrideEnd={invoiceOverride?.end}
-            onDone={() => { setShowInvoiceModal(false); setInvoiceOverride(null); invalidate(); qc.invalidateQueries({ queryKey: ['invoices'] }) }}
-          />
-        )}
       </Modal>
 
       <Modal open={!!signingLink} onClose={() => { setSigningLink(''); setLinkCopied(false) }} title="Signing link ready">

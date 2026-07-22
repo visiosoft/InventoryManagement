@@ -3,7 +3,6 @@ import crypto from 'crypto';
 import { isValidObjectId } from 'mongoose';
 import { stampSignature } from '../services/stampSignature.js';
 import { Contract, Customer, Unit, Payment, Document, Invoice, nextContractNo, nextInvoiceNo } from '../models/index.js';
-import { generateSchedule } from '../services/schedule.js';
 import { sendForSignature, downloadSignedPdf, zohoConfigured } from '../services/zoho.js';
 import { uploadFile } from '../services/drive.js';
 import { renderContractPdf } from '../services/contractPdf.js';
@@ -184,13 +183,17 @@ router.get('/:id', async (req, res) => {
   }
 
   let payments = await Payment.find({ contract: contract._id })
-    .populate('invoice', 'invoiceNo status dueDate total')
+    .populate('invoice', 'invoiceNo status dueDate total paymentHistory')
     .sort({ dueDate: 1 });
   const documents = await Document.find({ contract: contract._id }).sort({ createdAt: -1 });
-  // Include all invoices so the payment schedule can show deposit-covered (net-0) ones
-  // that have no payment records attached.
-  const invoices = await Invoice.find({ orderNumber: contract.contractNo })
-    .select('invoiceNo status dueDate invoiceDate total paymentMade items subject createdAt')
+  // Include all invoices linked to this contract by orderNumber or customer
+  const invoices = await Invoice.find({
+    $or: [
+      { orderNumber: contract.contractNo },
+      ...(contract.customer?._id ? [{ customer: contract.customer._id }] : []),
+    ],
+  })
+    .select('invoiceNo status dueDate invoiceDate total paymentMade items subject createdAt paymentHistory')
     .sort({ dueDate: 1 });
 
   // Reconcile: if an invoice's total exceeds the sum of its linked payment records
@@ -508,25 +511,6 @@ router.post('/:id/regenerate-invoices', async (req, res) => {
   res.json({ ok: true });
 });
 
-// Generate (or regenerate) the payment schedule for a contract.
-// Existing PAID payments are kept; only pending ones are replaced.
-router.post('/:id/generate-schedule', async (req, res) => {
-  const contract = await Contract.findById(req.params.id);
-  if (!contract) return res.status(404).json({ error: 'Contract not found' });
-
-  // Remove only unpaid entries so paid history is preserved
-  await Payment.deleteMany({ contract: contract._id, status: { $in: ['pending', 'overdue'] } });
-
-  const schedule = generateSchedule({
-    startDate: contract.startDate,
-    endDate: contract.endDate,
-    billingPeriod: contract.billingPeriod,
-    rate: contract.rate,
-  });
-  await Payment.insertMany(schedule.map((p) => ({ ...p, contract: contract._id })));
-
-  res.json({ ok: true, count: schedule.length });
-});
 
 // End or cancel a contract — frees the unit and removes unpaid future payments.
 async function closeContract(req, res, status) {

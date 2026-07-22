@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Download, Plus, Upload, RefreshCw } from 'lucide-react'
 import { api, apiError, invoiceApi, productApi } from '../lib/api'
 import type { Customer, Invoice, InvoiceAttachment, InvoiceItem, InvoicePaymentEntry, InvoiceStatus, Product, Unit } from '../lib/types'
@@ -39,22 +39,68 @@ function toLocalDateInput(d?: string) {
     return date.toISOString().slice(0, 10)
 }
 
+function CustomerSearch({ customers, value, onChange }: { customers: Customer[]; value: string; onChange: (id: string) => void }) {
+    const [query, setQuery] = useState('')
+    const [open, setOpen] = useState(false)
+    const wrapRef = useRef<HTMLDivElement>(null)
+    const selected = customers.find(c => c._id === value)
+    const filtered = customers.filter(c => c.fullName.toLowerCase().includes(query.toLowerCase()))
+
+    useEffect(() => {
+        function onClickOutside(e: MouseEvent) { if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false) }
+        document.addEventListener('mousedown', onClickOutside)
+        return () => document.removeEventListener('mousedown', onClickOutside)
+    }, [])
+
+    return (
+        <div ref={wrapRef} className="relative">
+            <input
+                type="text"
+                placeholder="Search customer…"
+                value={open ? query : selected?.fullName || query}
+                onChange={(e) => { setQuery(e.target.value); setOpen(true); if (!e.target.value) onChange('') }}
+                onFocus={() => { setOpen(true); setQuery('') }}
+                className="w-full border border-border rounded-md px-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-[#4C8CE4]"
+            />
+            {open && (
+                <ul className="absolute z-50 mt-1 w-full max-h-64 overflow-auto rounded-md border bg-background shadow-lg">
+                    {filtered.length > 0 ? filtered.map(c => (
+                        <li key={c._id}
+                            className={`px-3 py-1.5 text-sm cursor-pointer hover:bg-muted ${c._id === value ? 'bg-primary/10 font-medium' : ''}`}
+                            onMouseDown={() => { onChange(c._id); setQuery(''); setOpen(false) }}
+                        >{c.fullName}</li>
+                    )) : (
+                        <li className="px-3 py-2 text-sm text-muted-foreground">No customers found</li>
+                    )}
+                </ul>
+            )}
+        </div>
+    )
+}
+
 function InvoiceForm({
     customers,
     initial,
     busy,
     error,
     onSubmit,
+    defaultCustomerId,
+    defaultUnitIds,
+    defaultOrderNumber,
 }: {
     customers: Customer[]
     initial?: Invoice
     busy: boolean
     error: string
     onSubmit: (body: Record<string, unknown>) => void
+    defaultCustomerId?: string
+    defaultUnitIds?: string[]
+    defaultOrderNumber?: string
 }) {
     const todayISO = new Date().toISOString().slice(0, 10)
     const twoDaysISO = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10)
     const VAT_PCT = 5
+    const [customerId, setCustomerId] = useState(initial?.customer?._id || defaultCustomerId || '')
     const [vatEnabled, setVatEnabled] = useState(initial?.vatEnabled ?? false)
     const [invoiceDate, setInvoiceDate] = useState(toLocalDateInput(initial?.invoiceDate) || todayISO)
     const [dueDate, setDueDate] = useState(toLocalDateInput(initial?.dueDate) || twoDaysISO)
@@ -83,6 +129,20 @@ function InvoiceForm({
             : [{ sortOrder: 0, itemDetails: '', quantity: 1, rate: 0, discountPct: 0, amount: 0 }]
     )
 
+    const prefilled = useRef(false)
+    useEffect(() => {
+        if (prefilled.current || !defaultUnitIds?.length || !units.length || initial) return
+        const matched = defaultUnitIds.map(id => units.find(u => u._id === id)).filter(Boolean) as Unit[]
+        if (matched.length) {
+            setItems(matched.map((unit, i) => ({
+                sortOrder: i, quantity: 1, discountPct: 0,
+                itemDetails: `Unit ${unit.unitNumber}${unit.sizeSqf ? ` · ${unit.sizeSqf} sq ft` : ''}`,
+                rate: unit.price ?? 0, amount: unit.price ?? 0,
+            })))
+            prefilled.current = true
+        }
+    }, [units, defaultUnitIds, initial])
+
     const subTotal = useMemo(() => Number(items.reduce((s, i) => s + calcAmount(i), 0).toFixed(2)), [items])
     const vatAmount = vatEnabled ? Number((subTotal * VAT_PCT / 100).toFixed(2)) : 0
     const grossTotal = Number((subTotal + vatAmount).toFixed(2))
@@ -103,7 +163,7 @@ function InvoiceForm({
         const normalizedItems = items.map((it, idx) => ({ ...it, sortOrder: idx, amount: calcAmount(it) }))
         onSubmit({
             customer: f.get('customer'),
-            orderNumber: f.get('orderNumber'),
+            orderNumber: f.get('orderNumber') || defaultOrderNumber || '',
             invoiceDate: f.get('invoiceDate'),
             terms: f.get('terms'),
             dueDate: f.get('dueDate'),
@@ -131,12 +191,8 @@ function InvoiceForm({
             <div className="grid grid-cols-[1fr_260px] gap-8 pb-5 border-b">
                 <div className="flex flex-col justify-start gap-1">
                     <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Bill To</span>
-                    <Select name="customer" defaultValue={initial?.customer?._id || ''} required>
-                        <option value="">Select customer…</option>
-                        {customers.map((c) => (
-                            <option key={c._id} value={c._id}>{c.fullName}</option>
-                        ))}
-                    </Select>
+                    <CustomerSearch customers={customers} value={customerId} onChange={setCustomerId} />
+                    <input type="hidden" name="customer" value={customerId} />
                 </div>
 
                 <div className="space-y-2">
@@ -332,7 +388,7 @@ function InvoiceForm({
             </div>
 
             {/* hidden fields */}
-            <input type="hidden" name="orderNumber" defaultValue={initial?.orderNumber || ''} />
+            <input type="hidden" name="orderNumber" defaultValue={initial?.orderNumber || defaultOrderNumber || ''} />
             <input type="hidden" name="salesperson" defaultValue={initial?.salesperson || ''} />
             <input type="hidden" name="subject" defaultValue={initial?.subject || ''} />
             <input type="hidden" name="bankInformation" defaultValue={initial?.bankInformation || DEFAULT_BANK_INFORMATION} />
@@ -557,7 +613,12 @@ export default function Invoices() {
     const [page, setPage] = useState(1)
     const [limit, setLimit] = useState(25)
     const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([])
-    const [adding, setAdding] = useState(false)
+    const [adding, setAdding] = useState(params.get('create') === '1')
+    const defaultCustomerId = params.get('customer') || ''
+    const defaultUnitIds = params.get('units')?.split(',').filter(Boolean) || []
+    const defaultOrderNumber = params.get('order') || ''
+    const returnTo = params.get('returnTo') || ''
+    const navigate = useNavigate()
     const [editing, setEditing] = useState<Invoice | null>(null)
 
     type ImportSummary = { created: number; updated: number; skipped: number; errors: number; stubsCreated: number; total: number }
@@ -591,8 +652,8 @@ export default function Invoices() {
     useEffect(() => { setPage(1) }, [search, status, limit])
 
     const { data: customers } = useQuery<Customer[]>({
-        queryKey: ['customers', ''],
-        queryFn: () => api.get('/customers', { params: { limit: 500 } }).then((r) => r.data.data ?? r.data),
+        queryKey: ['customers-all'],
+        queryFn: () => api.get('/customers', { params: { limit: 9999 } }).then((r) => r.data.data ?? r.data),
     })
 
     type PagedInvoices = { data: Invoice[]; total: number; page: number; pages: number; limit: number }
@@ -608,6 +669,7 @@ export default function Invoices() {
         mutationFn: (body: Record<string, unknown>) => invoiceApi.create(body),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['invoices'] })
+            if (returnTo) { navigate(`/contracts/${returnTo}?tab=payments`); return }
             setAdding(false)
             setError('')
         },
@@ -811,8 +873,12 @@ export default function Invoices() {
                 </Card>
             )}
 
-            <Modal open={adding} onClose={() => { setAdding(false); setError('') }} title="Create invoice" className="max-w-5xl">
-                <InvoiceForm customers={customers || []} busy={createInvoice.isPending} error={error} onSubmit={(body) => createInvoice.mutate(body)} />
+            <Modal open={adding} onClose={() => { if (returnTo) { navigate(`/contracts/${returnTo}?tab=payments`); return } setAdding(false); setError('') }} title="Create invoice" className="max-w-5xl">
+                {customers ? (
+                    <InvoiceForm customers={customers} busy={createInvoice.isPending} error={error} onSubmit={(body) => createInvoice.mutate(body)} defaultCustomerId={defaultCustomerId} defaultUnitIds={defaultUnitIds} defaultOrderNumber={defaultOrderNumber} />
+                ) : (
+                    <div className="flex justify-center py-8"><Spinner /></div>
+                )}
             </Modal>
 
             <Modal open={!!paying} onClose={() => setPaying(null)} title={paying ? `Record payment — ${paying.invoiceNo}` : 'Record payment'} wide>

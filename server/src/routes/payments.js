@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import mongoose from 'mongoose';
 import { Payment, Contract, Customer, Unit, Invoice, nextInvoiceNo } from '../models/index.js';
 import { renderReceiptPdf } from '../services/receiptPdf.js';
 import { sendWhatsAppText, whatsappSendConfigured, whatsappSendMissing } from '../services/whatsapp.js';
@@ -8,16 +9,8 @@ const router = Router();
 const populateAll = (q) =>
   q.populate({ path: 'contract', populate: [{ path: 'customer' }, { path: 'unit' }] });
 
-async function refreshOverdue() {
-  await Payment.updateMany(
-    { status: 'pending', dueDate: { $lt: new Date() } },
-    { $set: { status: 'overdue' } }
-  );
-}
-
 // Summary totals for the dashboard cards
 router.get('/summary', async (_req, res) => {
-  await refreshOverdue();
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
@@ -39,7 +32,6 @@ router.get('/summary', async (_req, res) => {
 });
 
 router.get('/', async (req, res) => {
-  await refreshOverdue();
   const filter = {};
   if (req.query.status) filter.status = req.query.status;
   if (req.query.contract) filter.contract = req.query.contract;
@@ -81,7 +73,7 @@ router.post('/invoice-partial', async (req, res) => {
   if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
 
   const partialAmt = Math.round(Number(amount) * 100) / 100;
-  const remaining  = Math.round((invoice.total - partialAmt) * 100) / 100;
+  const remaining = Math.round((invoice.total - partialAmt) * 100) / 100;
   if (partialAmt <= 0) return res.status(400).json({ error: 'Amount must be greater than 0' });
 
   const existing = await Payment.find({ contract: contractId, invoice: invoiceId, status: { $ne: 'paid' } });
@@ -111,7 +103,7 @@ router.post('/invoice-partial', async (req, res) => {
     });
   }
 
-  const newStatus = remaining > 0.01 ? 'partial' : 'paid';
+  const newStatus = remaining > 0.01 ? 'sent' : 'paid';
   await Invoice.findByIdAndUpdate(invoiceId, { status: newStatus, paymentMade: partialAmt });
 
   res.json({ ok: true, paid: partialAmt, remaining });
@@ -128,6 +120,22 @@ router.post('/bulk-record', async (req, res) => {
     { _id: { $in: paymentIds }, status: { $ne: 'paid' } },
     { $set: { status: 'paid', method: method || 'cash', paidDate: date, recordedBy: actor, ...(notes ? { notes } : {}) } }
   );
+
+  // Update linked invoice status if all payments for that invoice are now paid
+  const payments = await Payment.find({ _id: { $in: paymentIds } }).select('invoice');
+  const invoiceIds = [...new Set(payments.map(p => p.invoice).filter(Boolean).map(String))];
+  for (const invId of invoiceIds) {
+    const unpaid = await Payment.countDocuments({ invoice: invId, status: { $ne: 'paid' } });
+    if (unpaid === 0) {
+      const paidSum = await Payment.aggregate([
+        { $match: { invoice: new mongoose.Types.ObjectId(invId), status: 'paid' } },
+        { $group: { _id: null, total: { $sum: '$amount' } } },
+      ]);
+      const totalPaid = paidSum[0]?.total || 0;
+      await Invoice.findByIdAndUpdate(invId, { status: 'paid', paymentMade: totalPaid });
+    }
+  }
+
   res.json({ ok: true, updated: result.modifiedCount });
 });
 
@@ -159,6 +167,21 @@ router.post('/:id/record', async (req, res) => {
   payment.recordedBy = req.user?.name || req.user?.email || '';
   if (notes) payment.notes = notes;
   await payment.save();
+
+  // Update linked invoice status if all payments for that invoice are now paid
+  if (payment.invoice) {
+    const invId = String(payment.invoice);
+    const unpaid = await Payment.countDocuments({ invoice: invId, status: { $ne: 'paid' } });
+    if (unpaid === 0) {
+      const paidSum = await Payment.aggregate([
+        { $match: { invoice: new mongoose.Types.ObjectId(invId), status: 'paid' } },
+        { $group: { _id: null, total: { $sum: '$amount' } } },
+      ]);
+      const totalPaid = paidSum[0]?.total || 0;
+      await Invoice.findByIdAndUpdate(invId, { status: 'paid', paymentMade: totalPaid });
+    }
+  }
+
   res.json(await populateAll(Payment.findById(payment._id)));
 });
 
@@ -173,7 +196,6 @@ router.post('/:id/unrecord', async (req, res) => {
 });
 
 router.post('/:id/whatsapp-reminder', async (req, res) => {
-  await refreshOverdue();
   const payment = await populateAll(Payment.findById(req.params.id));
   if (!payment) return res.status(404).json({ error: 'Payment not found' });
   if (!['pending', 'overdue'].includes(payment.status)) {
@@ -275,7 +297,7 @@ router.post('/:id/generate-monthly-invoice', async (req, res) => {
   // Month window for this payment's due date
   const d = new Date(payment.dueDate);
   const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
-  const monthEnd   = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+  const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
 
   // All payments for this contract in this month, sorted by due date
   const monthPayments = await Payment.find({
@@ -299,8 +321,8 @@ router.post('/:id/generate-monthly-invoice', async (req, res) => {
 
   const items = monthPayments.map((p, i) => {
     const weekStart = new Date(p.dueDate);
-    const weekEnd   = new Date(weekStart); weekEnd.setDate(weekEnd.getDate() + 6);
-    const amount    = Number(p.amount || 0);
+    const weekEnd = new Date(weekStart); weekEnd.setDate(weekEnd.getDate() + 6);
+    const amount = Number(p.amount || 0);
     return {
       sortOrder: i,
       itemDetails: `Week ${i + 1} (${fmtDay(weekStart)} – ${fmtDay(weekEnd)}) · Unit ${unitNo}`,
@@ -348,6 +370,18 @@ router.put('/:id', async (req, res) => {
   if (req.body.notes !== undefined) payment.notes = req.body.notes;
   await payment.save();
   res.json(await populateAll(Payment.findById(payment._id)));
+});
+
+// Bulk delete all payments for a given invoice (and optionally the invoice itself)
+router.delete('/bulk', async (req, res) => {
+  const { paymentIds, deleteInvoice, invoiceId } = req.body;
+  if (!Array.isArray(paymentIds) || paymentIds.length === 0)
+    return res.status(400).json({ error: 'paymentIds array is required' });
+  await Payment.deleteMany({ _id: { $in: paymentIds } });
+  if (deleteInvoice && invoiceId) {
+    await Invoice.findByIdAndDelete(invoiceId);
+  }
+  res.json({ ok: true, deleted: paymentIds.length });
 });
 
 router.delete('/:id', async (req, res) => {
