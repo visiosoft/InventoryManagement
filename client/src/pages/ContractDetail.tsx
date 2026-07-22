@@ -1707,16 +1707,6 @@ export default function ContractDetail() {
                   <div className="h-full rounded-full bg-emerald-500 transition-all"
                     style={{ width: `${invoicedRentTotal > 0 ? Math.min(100, (totalPaid / invoicedRentTotal) * 100) : 0}%` }} />
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/40 px-3 py-2">
-                    <div className="text-[10px] font-semibold text-red-600 dark:text-red-400 uppercase tracking-wide">Overdue</div>
-                    <div className="text-lg font-bold text-red-700 dark:text-red-400">{formatMoney(totalOverdue)}</div>
-                  </div>
-                  <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/40 px-3 py-2">
-                    <div className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide">Upcoming</div>
-                    <div className="text-lg font-bold text-blue-700 dark:text-blue-400">{formatMoney(totalUnpaidGroups)}</div>
-                  </div>
-                </div>
               </div>
 
               {/* Contract detail rows */}
