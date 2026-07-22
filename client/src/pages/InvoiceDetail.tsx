@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Download, AlertCircle, CheckCircle2, Clock, Pencil, MessageCircle, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Download, AlertCircle, CheckCircle2, Clock, Pencil, MessageCircle, RefreshCw, Trash2 } from 'lucide-react'
 import { api, apiError, invoiceApi } from '../lib/api'
 import type { Invoice, InvoicePaymentEntry, InvoiceStatus } from '../lib/types'
 import {
@@ -483,11 +483,26 @@ export default function InvoiceDetail() {
     const qc = useQueryClient()
     const [paying, setPaying] = useState(false)
     const [editing, setEditing] = useState(false)
+    const [editingPayment, setEditingPayment] = useState<{ idx: number; amount: string; method: string; date: string; notes: string } | null>(null)
+    const [deletingPaymentIdx, setDeletingPaymentIdx] = useState<number | null>(null)
 
     const { data: invoice, isLoading } = useQuery<Invoice>({
         queryKey: ['invoice', id],
         queryFn: () => invoiceApi.get(id!),
         enabled: !!id,
+    })
+
+    const invalidate = () => { qc.invalidateQueries({ queryKey: ['invoice', id] }); qc.invalidateQueries({ queryKey: ['invoices'] }) }
+
+    const updatePayment = useMutation({
+        mutationFn: (p: { idx: number; amount: string; method: string; date: string; notes: string }) =>
+            api.put(`/invoices/${id}/payments/${p.idx}`, { amount: Number(p.amount), method: p.method, date: p.date, notes: p.notes }),
+        onSuccess: () => { setEditingPayment(null); invalidate() },
+    })
+
+    const deletePayment = useMutation({
+        mutationFn: (idx: number) => api.delete(`/invoices/${id}/payments/${idx}`),
+        onSuccess: () => { setDeletingPaymentIdx(null); invalidate() },
     })
 
     const whatsapp = useMutation({
@@ -868,6 +883,7 @@ export default function InvoiceDetail() {
                                 <Th>Amount (AED)</Th>
                                 <Th>Method</Th>
                                 <Th>Notes</Th>
+                                <Th className="w-20"></Th>
                             </tr>
                         </thead>
                         <tbody>
@@ -877,12 +893,83 @@ export default function InvoiceDetail() {
                                     <Td className="font-medium text-emerald-600">{formatMoney(p.amount)}</Td>
                                     <Td className="capitalize">{p.method.replace('_', ' ')}</Td>
                                     <Td className="text-muted-foreground">{p.notes || '—'}</Td>
+                                    <Td>
+                                        <div className="flex items-center gap-1">
+                                            <button
+                                                type="button"
+                                                onClick={() => setEditingPayment({
+                                                    idx,
+                                                    amount: String(p.amount),
+                                                    method: p.method,
+                                                    date: p.date ? new Date(p.date).toISOString().slice(0, 10) : '',
+                                                    notes: p.notes || '',
+                                                })}
+                                                className="p-1.5 rounded-md hover:bg-muted transition-colors"
+                                                title="Edit payment"
+                                            >
+                                                <Pencil size={13} className="text-muted-foreground" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setDeletingPaymentIdx(idx)}
+                                                className="p-1.5 rounded-md hover:bg-red-50 transition-colors"
+                                                title="Delete payment"
+                                            >
+                                                <Trash2 size={13} className="text-red-500" />
+                                            </button>
+                                        </div>
+                                    </Td>
                                 </tr>
                             ))}
                         </tbody>
                     </Table>
                 </Card>
             )}
+
+            {/* Edit payment modal */}
+            <Modal open={!!editingPayment} onClose={() => setEditingPayment(null)} title="Edit Payment">
+                {editingPayment && (
+                    <form onSubmit={(e: FormEvent) => { e.preventDefault(); updatePayment.mutate(editingPayment) }} className="space-y-4">
+                        <Field label="Date">
+                            <Input type="date" value={editingPayment.date} onChange={(e) => setEditingPayment({ ...editingPayment, date: e.target.value })} />
+                        </Field>
+                        <Field label="Amount (AED)">
+                            <Input type="number" step="0.01" min="0.01" value={editingPayment.amount} onChange={(e) => setEditingPayment({ ...editingPayment, amount: e.target.value })} />
+                        </Field>
+                        <Field label="Method">
+                            <Select value={editingPayment.method} onChange={(e) => setEditingPayment({ ...editingPayment, method: e.target.value })}>
+                                <option value="cash">Cash</option>
+                                <option value="bank_transfer">Bank Transfer</option>
+                                <option value="card">Card</option>
+                                <option value="cheque">Cheque</option>
+                                <option value="other">Other</option>
+                            </Select>
+                        </Field>
+                        <Field label="Notes">
+                            <Input value={editingPayment.notes} onChange={(e) => setEditingPayment({ ...editingPayment, notes: e.target.value })} placeholder="Optional" />
+                        </Field>
+                        {updatePayment.isError && <p className="text-sm text-destructive">{apiError(updatePayment.error)}</p>}
+                        <div className="flex justify-end gap-2 pt-2">
+                            <Button type="button" variant="outline" onClick={() => setEditingPayment(null)}>Cancel</Button>
+                            <Button type="submit" disabled={updatePayment.isPending}>
+                                {updatePayment.isPending ? 'Saving…' : 'Save'}
+                            </Button>
+                        </div>
+                    </form>
+                )}
+            </Modal>
+
+            {/* Delete payment confirmation */}
+            <Modal open={deletingPaymentIdx !== null} onClose={() => setDeletingPaymentIdx(null)} title="Delete Payment">
+                <p className="text-sm mb-4">Are you sure you want to delete this payment record? This will update the invoice balance.</p>
+                {deletePayment.isError && <p className="text-sm text-destructive mb-4">{apiError(deletePayment.error)}</p>}
+                <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={() => setDeletingPaymentIdx(null)}>Cancel</Button>
+                    <Button variant="destructive" disabled={deletePayment.isPending} onClick={() => { if (deletingPaymentIdx !== null) deletePayment.mutate(deletingPaymentIdx) }}>
+                        {deletePayment.isPending ? 'Deleting…' : 'Delete'}
+                    </Button>
+                </div>
+            </Modal>
 
             {/* Record Payment modal */}
             <Modal

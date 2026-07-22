@@ -599,9 +599,36 @@ router.delete('/:id/payments/:idx', async (req, res) => {
 
     invoice.paymentHistory.splice(idx, 1);
     invoice.paymentMade = Number(invoice.paymentHistory.reduce((s, p) => s + p.amount, 0).toFixed(2));
-    if (invoice.paymentMade < invoice.total && invoice.status === 'paid') {
-        invoice.status = 'sent';
+    if (invoice.paymentMade >= invoice.total) invoice.status = 'paid';
+    else if (invoice.paymentMade > 0) invoice.status = 'partial';
+    else invoice.status = 'sent';
+
+    await invoice.save();
+    await syncLinkedPayment(invoice);
+    res.json(invoice);
+});
+
+// Update a payment entry by index.
+router.put('/:id/payments/:idx', async (req, res) => {
+    const invoice = await Invoice.findById(req.params.id).populate('customer', 'fullName email');
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+
+    const idx = Number(req.params.idx);
+    if (!Number.isInteger(idx) || idx < 0 || idx >= (invoice.paymentHistory?.length || 0)) {
+        return res.status(400).json({ error: 'Invalid payment index' });
     }
+
+    const { amount, method, date, notes } = req.body;
+    const entry = invoice.paymentHistory[idx];
+    if (amount != null) { const n = toNumber(amount); if (n <= 0) return res.status(400).json({ error: 'Amount must be > 0' }); entry.amount = n; }
+    if (method) entry.method = method;
+    if (date) entry.date = new Date(date);
+    if (notes != null) entry.notes = notes;
+
+    invoice.paymentMade = Number(invoice.paymentHistory.reduce((s, p) => s + p.amount, 0).toFixed(2));
+    if (invoice.paymentMade >= invoice.total) invoice.status = 'paid';
+    else if (invoice.paymentMade > 0) invoice.status = 'partial';
+    else invoice.status = 'sent';
 
     await invoice.save();
     await syncLinkedPayment(invoice);
