@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { CalendarDays, CalendarPlus, CheckCircle2, Download, FileText, FilePlus, MessageSquare, PenLine, Plus, ShieldCheck, Upload, X, XCircle, Receipt, Clock, FolderOpen, Bell, ChevronDown, ChevronUp } from 'lucide-react'
+import { CalendarDays, CalendarPlus, CheckCircle2, Download, FileText, FilePlus, MessageSquare, PenLine, ShieldCheck, Upload, X, XCircle, Receipt, Clock, FolderOpen, Bell, ChevronDown, ChevronUp } from 'lucide-react'
 import { api, apiError, reminderConfigApi } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { AppDocument, Contract, ContractNote, Invoice, Payment, Unit } from '../lib/types'
@@ -603,83 +603,6 @@ async function downloadInvoiceReceipt(invoiceId: string) {
   } catch { alert('Could not generate receipt') }
 }
 
-function PaymentRow({
-  p,
-  index,
-  rate,
-  isFirstForInvoice,
-  onRecord,
-  onEdit,
-  onUnrecord,
-  onDelete,
-  onSendInvoiceWhatsApp,
-  sendingInvoice,
-}: {
-  p: Payment; index: number; rate: number; isFirstForInvoice: boolean
-  onRecord: () => void; onEdit: () => void; onUnrecord: () => void; onDelete: () => void
-  onSendInvoiceWhatsApp: () => void
-  sendingInvoice: boolean
-}) {
-  // rate is monthly; weekly payment = rate/4. First 4 payments may be discounted.
-  const weeklyRate = Math.round((rate / 4) * 100) / 100
-  const isDiscounted = index < 4 && p.amount < weeklyRate
-  const rowBg =
-    p.status === 'overdue' ? 'bg-red-50/60 dark:bg-red-950/20' :
-      p.status === 'paid' ? 'bg-emerald-50/40 dark:bg-emerald-950/10' : ''
-
-  return (
-    <tr className={`${rowBg} hover:brightness-95`}>
-      <Td className="text-muted-foreground text-xs tabular-nums">{index + 1}</Td>
-      <Td className={`text-sm ${p.status === 'overdue' ? 'text-red-600 font-medium' : ''}`}>
-        {formatDate(p.dueDate)}
-      </Td>
-      <Td>
-        <span className="font-medium">{formatMoney(p.amount)}</span>
-        {isDiscounted && (
-          <span className="ml-1.5 text-xs text-amber-600">(was {formatMoney(weeklyRate)})</span>
-        )}
-      </Td>
-      <Td><Badge tone={paymentStatusTone[p.status]}>{statusLabel(p.status)}</Badge></Td>
-      <Td className="text-sm">{formatDate(p.paidDate) || '—'}</Td>
-      <Td className="text-sm capitalize">{p.method ? p.method.replace('_', ' ') : '—'}</Td>
-      <Td className="text-xs text-muted-foreground max-w-[120px] truncate" title={p.notes}>{p.notes || '—'}</Td>
-      <Td>
-        <div className="flex items-center gap-2 text-xs whitespace-nowrap">
-          {p.invoice && isFirstForInvoice && (
-            <>
-              <Link to={`/invoices/${p.invoice._id}`} className="text-primary hover:underline font-medium">
-                {p.invoice.invoiceNo}
-              </Link>
-              <button
-                className="text-emerald-700 hover:underline cursor-pointer"
-                onClick={onSendInvoiceWhatsApp}
-                disabled={sendingInvoice}
-              >
-                {sendingInvoice ? 'Sending…' : 'WhatsApp'}
-              </button>
-              {p.status === 'paid' && (
-                <button
-                  className="inline-flex items-center gap-1 text-emerald-700 hover:underline cursor-pointer font-medium"
-                  onClick={() => downloadInvoiceReceipt(p.invoice!._id)}
-                  title="Download invoice receipt PDF"
-                >
-                  <FileText size={12} /> Receipt
-                </button>
-              )}
-            </>
-          )}
-          {p.status !== 'paid' && <Button size="sm" variant="outline" onClick={onRecord}>Record</Button>}
-          {p.status === 'paid' && (
-            <button className="text-amber-600 hover:underline cursor-pointer" onClick={onUnrecord}>Unrecord</button>
-          )}
-          <button className="text-primary hover:underline cursor-pointer" onClick={onEdit}>Edit</button>
-          <button className="text-destructive hover:underline cursor-pointer" onClick={onDelete}>Delete</button>
-        </div>
-      </Td>
-    </tr>
-  )
-}
-
 // ── Contract timeline (notes / follow-ups) ────────────────────────────────────
 function ContractTimeline({ notes, onAdd, onDelete, addBusy }: {
   notes: ContractNote[]
@@ -1080,18 +1003,6 @@ export default function ContractDetail() {
     mutationFn: ({ paymentId, body }: { paymentId: string; body: Record<string, unknown> }) =>
       api.put(`/payments/${paymentId}`, body),
     onSuccess: () => { invalidate(); setEditingPayment(null) },
-    onError: (e) => setError(apiError(e)),
-  })
-
-  const unrecordPayment = useMutation({
-    mutationFn: (paymentId: string) => api.post(`/payments/${paymentId}/unrecord`),
-    onSuccess: () => invalidate(),
-    onError: (e) => setError(apiError(e)),
-  })
-
-  const deletePayment = useMutation({
-    mutationFn: (paymentId: string) => api.delete(`/payments/${paymentId}`),
-    onSuccess: () => invalidate(),
     onError: (e) => setError(apiError(e)),
   })
 
@@ -1782,11 +1693,6 @@ export default function ContractDetail() {
                             onSendWhatsApp={() => { setSendingInvoiceId(g.invoiceId); sendInvoiceWhatsApp.mutate(g.invoiceId) }}
                             sendingInvoice={sendInvoiceWhatsApp.isPending && sendingInvoiceId === g.invoiceId}
                             onGenerateForRemaining={() => {
-                              const unpaidDates = g.unpaidInGroup.map(p => new Date(p.dueDate).getTime())
-                              const firstUnpaid = new Date(Math.min(...unpaidDates))
-                              const lastUnpaid = new Date(Math.max(...unpaidDates))
-                              lastUnpaid.setDate(lastUnpaid.getDate() + 7)
-                              const toISO = (d: Date) => d.toISOString().slice(0, 10)
                               navigate(`/invoices?create=1&customer=${c.customer?._id}&units=${allUnits.map(u => u?._id).filter(Boolean).join(',')}&order=${c.contractNo}&returnTo=${c._id}`)
                             }}
                           />
