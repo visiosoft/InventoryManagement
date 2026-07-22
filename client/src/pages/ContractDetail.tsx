@@ -1275,6 +1275,13 @@ export default function ContractDetail() {
     onError: (e) => setError(apiError(e)),
   })
 
+  const bulkDeletePayments = useMutation({
+    mutationFn: (body: { paymentIds: string[]; deleteInvoice?: boolean; invoiceId?: string }) =>
+      api.delete('/payments/bulk', { data: body }),
+    onSuccess: () => invalidate(),
+    onError: (e) => setError(apiError(e)),
+  })
+
   const addPayment = useMutation({
     mutationFn: (body: object) => api.post('/payments', body),
     onSuccess: () => { invalidate(); setAddingPayment(false) },
@@ -1845,30 +1852,6 @@ export default function ContractDetail() {
                   </Button>
                 </div>
               )}
-              {totalOverdue > 0 && (
-                <div className="flex items-center gap-3 rounded-xl border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/20 px-4 py-3 mb-4">
-                  <XCircle size={20} className="text-red-500 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <span className="font-semibold text-red-700 dark:text-red-400">AED {formatMoney(totalOverdue)} overdue · {overdue.length} payment{overdue.length !== 1 ? 's' : ''}</span>
-                    {overdue[0] && (
-                      <p className="text-xs text-red-600/80 dark:text-red-400/70 mt-0.5">
-                        {(overdue[0].invoice as any)?.invoiceNo} is {Math.round((new Date().getTime() - new Date(overdue[0].dueDate).getTime()) / 86400000)}d late. Resolve before auto-renew on {c.endDate ? new Date(c.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '—'}.
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex gap-2 shrink-0">
-                    <Button size="sm" variant="outline" onClick={() => {
-                      const text = [`Hello ${c.customer?.fullName ?? 'there'},`, ``, `This is a reminder that your payment for contract *${c.contractNo}* is overdue.`, ``, `Please get in touch with us at your earliest convenience.`, ``, `Thank you – PurpleBox`].join('\n')
-                      window.open(waPhone ? `https://wa.me/${waPhone}?text=${encodeURIComponent(text)}` : `https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer')
-                    }}>
-                      <MessageSquare size={13} /> Remind
-                    </Button>
-                    <Button size="sm" onClick={() => setBulkTarget(overdue)}>
-                      <CalendarDays size={13} /> Collect
-                    </Button>
-                  </div>
-                </div>
-              )}
 
               <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
                 {/* Activity feed */}
@@ -2016,7 +1999,7 @@ export default function ContractDetail() {
                         {unpaidGroups.map((g, i) => (
                           <InvoiceGroupRow key={g.invoiceId} g={g} index={i + 1}
                             onRecord={() => setInvoiceGroupTarget(g)}
-                            onDelete={() => { if (confirm(`Delete all ${g.payments.length} payment entries for ${g.invoiceRef.invoiceNo}?`)) g.payments.forEach(p => deletePayment.mutate(p._id)) }}
+                            onDelete={() => { if (confirm(`Delete all ${g.payments.length} payment entries for ${g.invoiceRef.invoiceNo}?`)) bulkDeletePayments.mutate({ paymentIds: g.payments.map(p => p._id), deleteInvoice: true, invoiceId: g.invoiceId }) }}
                             onSendWhatsApp={() => { setSendingInvoiceId(g.invoiceId); sendInvoiceWhatsApp.mutate(g.invoiceId) }}
                             sendingInvoice={sendInvoiceWhatsApp.isPending && sendingInvoiceId === g.invoiceId}
                             onGenerateForRemaining={() => {
@@ -2046,7 +2029,7 @@ export default function ContractDetail() {
                         {paidGroups.map((g, i) => (
                           <InvoiceGroupRow key={g.invoiceId} g={g} index={unpaidGroups.length + i + 1}
                             onRecord={() => { }}
-                            onDelete={() => { if (confirm(`Delete all ${g.payments.length} payment entries for ${g.invoiceRef.invoiceNo}?`)) g.payments.forEach(p => deletePayment.mutate(p._id)) }}
+                            onDelete={() => { if (confirm(`Delete all ${g.payments.length} payment entries for ${g.invoiceRef.invoiceNo}?`)) bulkDeletePayments.mutate({ paymentIds: g.payments.map(p => p._id), deleteInvoice: true, invoiceId: g.invoiceId }) }}
                             onSendWhatsApp={() => { setSendingInvoiceId(g.invoiceId); sendInvoiceWhatsApp.mutate(g.invoiceId) }}
                             sendingInvoice={sendInvoiceWhatsApp.isPending && sendingInvoiceId === g.invoiceId}
                           />
