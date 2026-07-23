@@ -238,21 +238,7 @@ export default function SignContract() {
           </p>
         </div>
 
-        {/* Contract summary */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
-          {[
-            ['Customer', info.customerName],
-            ['Contract No', info.contractNo],
-            ['Start Date', fmt(info.startDate)],
-            ['End Date', fmt(info.endDate)],
-            ['1st Month Invoice', fmtMoney(info.firstInvoiceTotal ?? info.rate)],
-          ].map(([label, val]) => (
-            <div key={label} style={{ background: '#f9f9fb', borderRadius: 8, padding: '10px 14px', border: '1px solid #e5e5e5' }}>
-              <div style={{ fontSize: 11, color: '#888', marginBottom: 2 }}>{label}</div>
-              <div style={{ fontWeight: 600, fontSize: 14 }}>{val}</div>
-            </div>
-          ))}
-        </div>
+        {/* Contract summary — hidden for now */}
 
         {/* PDF viewer — iframe works on Android Chrome and desktop; iOS blocks inline PDFs */}
         <div style={{ marginBottom: 24, borderRadius: 8, overflow: 'hidden', border: '1px solid #e5e5e5', background: '#f5f5f5' }}>
