@@ -41,7 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   function hasPermission(module: string): boolean {
     if (!user) return false
-    if (user.role === 'admin') return true
+    if (user.role === 'admin' && !user.permissions.length) return true
     return user.permissions.includes(module)
   }
 

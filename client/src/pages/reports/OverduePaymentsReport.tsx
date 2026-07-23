@@ -1,6 +1,6 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, Clock, Download, Wallet } from 'lucide-react'
+import { AlertTriangle, Clock, Download, Trash2, Wallet } from 'lucide-react'
 import { api } from '../../lib/api'
 import { Button, Card, CardHeader, EmptyState, PageHeader, Spinner, Table, Td, Th } from '../../components/ui'
 import { formatDate, formatMoney } from '../../lib/utils'
@@ -16,8 +16,14 @@ export default function OverduePaymentsReport() {
     queryFn: () => api.get('/reports/overdue').then(r => r.data),
   })
 
+  const qc = useQueryClient()
   const payments = data?.payments ?? []
   const total    = data?.total ?? 0
+
+  const deletePayment = useMutation({
+    mutationFn: (id: string) => api.delete(`/payments/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['overdue-payments'] }),
+  })
 
   const oldest = payments.length
     ? Math.max(...payments.map(p => daysOverdue(p.dueDate)))
@@ -88,6 +94,7 @@ export default function OverduePaymentsReport() {
                 <Th>Due Date</Th>
                 <Th>Days Overdue</Th>
                 <Th>Contract</Th>
+                <Th className="w-16"></Th>
               </tr>
             </thead>
             <tbody>
@@ -130,6 +137,15 @@ export default function OverduePaymentsReport() {
                           {p.contract.contractNo}
                         </Link>
                       ) : '—'}
+                    </Td>
+                    <Td>
+                      <button
+                        className="p-1.5 rounded-md hover:bg-red-50 transition-colors cursor-pointer"
+                        title="Delete payment"
+                        onClick={() => { if (confirm('Delete this overdue payment record?')) deletePayment.mutate(p._id) }}
+                      >
+                        <Trash2 size={14} className="text-red-500" />
+                      </button>
                     </Td>
                   </tr>
                 )

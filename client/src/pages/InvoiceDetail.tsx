@@ -186,6 +186,8 @@ function RecordPaymentModalContent({ invoiceId, onClose }: { invoiceId: string; 
             setNotes('')
             setReceipt(null)
             setErr('')
+            onClose()
+            setTimeout(() => alert('Payment recorded successfully!'), 100)
         },
         onError: (e) => setErr(apiError(e)),
     })
@@ -874,11 +876,12 @@ export default function InvoiceDetail() {
 
             {/* Payment history */}
             {(invoice.paymentHistory ?? []).length > 0 && (
-                <Card>
+                <Card className="mb-4">
                     <CardHeader title={`Payment History (${invoice.paymentHistory!.length})`} />
                     <Table>
                         <thead>
                             <tr>
+                                <Th>#</Th>
                                 <Th>Date</Th>
                                 <Th>Amount (AED)</Th>
                                 <Th>Method</Th>
@@ -889,6 +892,7 @@ export default function InvoiceDetail() {
                         <tbody>
                             {invoice.paymentHistory!.map((p, idx) => (
                                 <tr key={idx} className="hover:bg-muted/50">
+                                    <Td className="text-muted-foreground">{idx + 1}</Td>
                                     <Td>{formatDate(p.date)}</Td>
                                     <Td className="font-medium text-emerald-600">{formatMoney(p.amount)}</Td>
                                     <Td className="capitalize">{p.method.replace('_', ' ')}</Td>

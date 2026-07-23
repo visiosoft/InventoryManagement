@@ -183,7 +183,9 @@ function UserModal({ editing, onClose, onDone }: {
   const [email, setEmail]         = useState(editing?.email ?? '')
   const [password, setPassword]   = useState('')
   const [role, setRole]           = useState(editing?.role ?? 'staff')
-  const [permissions, setPerms]   = useState<string[]>(editing?.permissions ?? [])
+  const [permissions, setPerms]   = useState<string[]>(
+    editing?.permissions?.length ? editing.permissions : (editing?.role === 'admin' ? ALL_MODULE_KEYS : [])
+  )
   const [isActive, setIsActive]   = useState(editing?.isActive ?? true)
   const [err, setErr]             = useState('')
   const [busy, setBusy]           = useState(false)
@@ -194,7 +196,7 @@ function UserModal({ editing, onClose, onDone }: {
   async function submit() {
     setBusy(true); setErr('')
     try {
-      const body = { name, email, role, permissions: isAdmin ? [] : permissions, isActive }
+      const body = { name, email, role, permissions, isActive }
       if (isNew) {
         await api.post('/users', { ...body, password })
       } else {
@@ -246,7 +248,7 @@ function UserModal({ editing, onClose, onDone }: {
           {isAdmin && (
             <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 flex items-start gap-2 text-sm">
               <ShieldCheck size={15} className="text-primary shrink-0 mt-0.5" />
-              <span className="text-muted-foreground">Admin users have full access to all modules. No module restrictions apply.</span>
+              <span className="text-muted-foreground">Admin users can manage settings and users. Select which modules they can access below.</span>
             </div>
           )}
         </div>
@@ -254,10 +256,10 @@ function UserModal({ editing, onClose, onDone }: {
         {/* Right: permissions */}
         <div>
           <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
-            Module access {isAdmin && <span className="text-primary">(unrestricted)</span>}
+            Module access
           </div>
-          <PermissionGrid permissions={isAdmin ? ALL_MODULE_KEYS : permissions}
-            onChange={setPerms} disabled={isAdmin} />
+          <PermissionGrid permissions={permissions}
+            onChange={setPerms} disabled={false} />
         </div>
       </div>
 
