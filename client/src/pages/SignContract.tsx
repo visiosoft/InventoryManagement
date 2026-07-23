@@ -20,10 +20,6 @@ function fmt(d: string) {
   return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-function fmtMoney(n: number) {
-  return `AED ${n.toLocaleString('en-AE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
-
 // ── Reusable drawing canvas (used for both initials and signature) ────────────
 function DrawCanvas({
   height = 128,
