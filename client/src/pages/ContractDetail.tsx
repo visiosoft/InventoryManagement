@@ -1156,7 +1156,12 @@ export default function ContractDetail() {
       invoiceId: invId,
       invoiceRef: ps[0].invoice as InvoiceGroup['invoiceRef'],
       payments: sorted, unpaidInGroup, paidInGroup,
-      total, paidTotal: Math.round(paidInGroup.reduce((s, p) => s + p.amount, 0) * 100) / 100,
+      total, paidTotal: (() => {
+        const inv = allInvoices.find(i => String(i._id) === invId)
+        const historySum = (inv?.paymentHistory || []).reduce((ss: number, h: any) => ss + (h.amount || 0), 0)
+        const paymentRecordPaid = Math.round(paidInGroup.reduce((ss, p) => ss + p.amount, 0) * 100) / 100
+        return Math.round(Math.max(historySum, inv?.paymentMade ?? 0, paymentRecordPaid) * 100) / 100
+      })(),
       rentTotal, depositTotal, periodLabel,
       earliestDue: new Date(sorted[0].dueDate),
       latestDue: new Date(sorted[sorted.length - 1].dueDate),
@@ -1166,10 +1171,13 @@ export default function ContractDetail() {
 
   const unpaidGroups = invoiceGroups.filter(g => g.status !== 'paid')
   const paidGroups = invoiceGroups.filter(g => g.status === 'paid')
-  // Upcoming total = everything unpaid (rent + deposit) for display
+  // Upcoming total = invoice balance due (total - paymentMade) for partial invoices
   const totalUnpaidGroups = unpaidGroups.reduce((s, g) => {
-    const unpaidAll = g.unpaidInGroup.reduce((ss, p) => ss + p.amount, 0)
-    return s + Math.round(unpaidAll * 100) / 100
+    const invDoc = allInvoices.find(inv => String(inv._id) === String(g.invoiceId))
+    const invoiceTotal = invDoc?.total ?? g.total
+    const invoicePaid = invDoc?.paymentMade ?? g.paidTotal
+    const balanceDue = Math.max(0, invoiceTotal - invoicePaid)
+    return s + Math.round(balanceDue * 100) / 100
   }, 0)
   // Rent-only upcoming — used for the balance denominator (excludes deposit liability)
   const totalUnpaidGroupsRent = unpaidGroups.reduce((s, g) => {

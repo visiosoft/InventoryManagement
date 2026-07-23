@@ -305,10 +305,13 @@ router.post('/import/csv', upload.single('file'), async (req, res) => {
                 existing.orderNumber = orderNumber;
                 existing.total = amount;
                 existing.subTotal = amount;
-                existing.paymentMade = paymentMade;
-                if (paymentMade > 0 && existing.paymentHistory.length === 0) {
-                    existing.paymentHistory.push({ date: invoiceDate, amount: paymentMade, method: 'bank_transfer', notes: 'Imported from Zoho' });
+                const oldHistSum = (existing.paymentHistory || []).reduce((s, e) => s + (e.amount || 0), 0);
+                if (paymentMade > oldHistSum + 0.01) {
+                    const gap = Math.round((paymentMade - oldHistSum) * 100) / 100;
+                    existing.paymentHistory.push({ date: invoiceDate, amount: gap, method: 'bank_transfer', notes: 'Imported from Zoho' });
                 }
+                const newHistSum = existing.paymentHistory.reduce((s, e) => s + (e.amount || 0), 0);
+                existing.paymentMade = Math.round(Math.max(Number(existing.paymentMade || 0), newHistSum) * 100) / 100;
                 existing.source = 'import_csv';
                 existing.importBatch = batch;
                 await existing.save();
@@ -407,6 +410,15 @@ router.get('/:id', async (req, res) => {
             await Invoice.findByIdAndUpdate(invoice._id, { $set: updates });
             Object.assign(invoice, updates);
         }
+    }
+
+    // Ensure paymentMade is at least the sum of paymentHistory
+    const historySum = Number((invoice.paymentHistory || []).reduce((s, p) => s + (p.amount || 0), 0).toFixed(2));
+    if (historySum > Number(invoice.paymentMade || 0) + 0.01) {
+        invoice.paymentMade = historySum;
+        const newStatus = historySum >= invoice.total ? 'paid' : historySum > 0 ? 'partial' : invoice.status;
+        if (newStatus !== invoice.status) invoice.status = newStatus;
+        await Invoice.findByIdAndUpdate(invoice._id, { $set: { paymentMade: invoice.paymentMade, status: invoice.status } });
     }
 
     res.json(invoice);
