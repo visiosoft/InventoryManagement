@@ -1,7 +1,33 @@
 import { Router } from 'express';
-import { Customer, Contract, Document, Payment, Invoice } from '../models/index.js';
+import { Customer, Contract, Document, Payment, Invoice, Unit, Quote } from '../models/index.js';
+import { requireAdmin } from '../middleware/auth.js';
 
 const router = Router();
+
+async function syncUnitStatus(unitId) {
+  if (!unitId) return;
+  const unit = await Unit.findById(unitId);
+  if (!unit) return;
+  const active = await Contract.findOne({ $or: [{ unit: unitId }, { units: unitId }], status: 'active' });
+  unit.status = active ? 'rented' : 'available';
+  await unit.save();
+}
+
+async function deleteCustomerCascade(customerId) {
+  const contracts = await Contract.find({ customer: customerId });
+  for (const contract of contracts) {
+    const allUnitIds = contract.units?.length ? contract.units : [contract.unit];
+    await Payment.deleteMany({ contract: contract._id });
+    await Document.deleteMany({ contract: contract._id });
+    await Invoice.deleteMany({ orderNumber: contract.contractNo });
+    await contract.deleteOne();
+    await Promise.all(allUnitIds.map((uid) => syncUnitStatus(uid)));
+  }
+  await Invoice.deleteMany({ customer: customerId });
+  await Document.deleteMany({ customer: customerId });
+  await Quote.deleteMany({ customer: customerId });
+  await Customer.findByIdAndDelete(customerId);
+}
 
 function escRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -86,10 +112,10 @@ router.put('/:id', async (req, res) => {
   res.json(customer);
 });
 
-router.delete('/:id', async (req, res) => {
-  const hasContracts = await Contract.exists({ customer: req.params.id });
-  if (hasContracts) return res.status(409).json({ error: 'Customer has contracts on file' });
-  await Customer.findByIdAndDelete(req.params.id);
+router.delete('/:id', requireAdmin, async (req, res) => {
+  const customer = await Customer.findById(req.params.id);
+  if (!customer) return res.status(404).json({ error: 'Customer not found' });
+  await deleteCustomerCascade(req.params.id);
   res.json({ ok: true });
 });
 
@@ -109,18 +135,13 @@ router.post('/:id/merge-into/:targetId', async (req, res) => {
   res.json({ ok: true, invoicesMoved: result.modifiedCount, deletedCustomer: source.fullName, intoCustomer: target.fullName });
 });
 
-router.post('/bulk-delete', async (req, res) => {
+router.post('/bulk-delete', requireAdmin, async (req, res) => {
   const ids = Array.isArray(req.body.ids) ? req.body.ids : [];
   if (!ids.length) return res.status(400).json({ error: 'No ids provided' });
-  let deleted = 0;
-  const skipped = [];
   for (const id of ids) {
-    const hasContracts = await Contract.exists({ customer: id });
-    if (hasContracts) { skipped.push(id); continue; }
-    await Customer.findByIdAndDelete(id);
-    deleted++;
+    await deleteCustomerCascade(id);
   }
-  res.json({ ok: true, deleted, skipped: skipped.length });
+  res.json({ ok: true, deleted: ids.length, skipped: 0 });
 });
 
 export default router;

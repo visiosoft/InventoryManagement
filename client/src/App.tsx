@@ -46,6 +46,7 @@ import Settings from './pages/Settings'
 import Backup from './pages/Backup'
 import Leads from './pages/Leads'
 import Quotations from './pages/Quotations'
+import Quotes from './pages/Quotes'
 import NewQuote from './pages/NewQuote'
 import Invoices from './pages/Invoices'
 import InvoiceDetail from './pages/InvoiceDetail'
@@ -111,6 +112,7 @@ export default function App() {
         <Route path="/leads" element={<Leads />} />
         <Route path="/quotes" element={<PermGuard module="quotes"><Quotations /></PermGuard>} />
         <Route path="/quotes/new" element={<PermGuard module="quotes"><NewQuote /></PermGuard>} />
+        <Route path="/quotations" element={<PermGuard module="quotes"><Quotes /></PermGuard>} />
         <Route path="/invoices" element={<Invoices />} />
         <Route path="/invoices/:id" element={<InvoiceDetail />} />
         <Route path="/vendors" element={<Vendors />} />

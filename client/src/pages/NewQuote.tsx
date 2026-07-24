@@ -136,7 +136,7 @@ function ItemEditor({ items, onChange }: { items: EditItem[]; onChange: (items: 
             <Field label="Rate">
               <Input type="number" value={it.rate} onChange={(e) => update(idx, 'rate', Number(e.target.value))} className="h-8 text-xs" />
             </Field>
-            <Field label="Disc %">
+            <Field label="Disc 4 weeks %">
               <Input type="number" min={0} max={100} value={it.discountPct || ''} onChange={(e) => update(idx, 'discountPct', Number(e.target.value))} className="h-8 text-xs" placeholder="0" />
             </Field>
             <div className="flex items-center justify-between pb-1.5">
@@ -921,12 +921,12 @@ export default function NewQuote() {
   function calcUnitPeriodTotal(rate: number, discountPct: number, start: string, end: string) {
     const days = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86400000)
     if (days <= 0) return 0
-    const discounted = rate - (rate * discountPct) / 100
-    const weekly = discounted / 4
-    const fullMonths = Math.floor(days / 28)
-    const rem = days % 28
-    const extraWeeks = rem > 0 ? Math.ceil(rem / 7) : 0
-    return Math.round(weekly * (fullMonths * 4 + extraWeeks) * 100) / 100
+    const totalWeeks = Math.ceil(days / 7)
+    const weeklyFull = rate / 4
+    const weeklyDisc = weeklyFull - (weeklyFull * discountPct) / 100
+    const discWeeks = Math.min(4, totalWeeks)
+    const fullWeeks = Math.max(0, totalWeeks - 4)
+    return Math.round((discWeeks * weeklyDisc + fullWeeks * weeklyFull) * 100) / 100
   }
 
   const unitsTotal = unitRows.reduce((s, u) => s + calcUnitPeriodTotal(u.rate, u.discountPct, u.startDate, u.endDate), 0)
@@ -1391,16 +1391,8 @@ export default function NewQuote() {
                       if (days <= 0) return (
                         <p className="text-xs font-medium" style={{ color: '#EF4444' }}>End date must be after start date</p>
                       )
-                      const fullMonths = Math.floor(days / 28)
-                      const rem = days % 28
-                      const extraWeeks = rem > 0 ? Math.ceil(rem / 7) : 0
-                      const totalWeeks = fullMonths * 4 + extraWeeks
-                      let durationLabel = `${totalWeeks} week${totalWeeks !== 1 ? 's' : ''}`
-                      if (fullMonths > 0 && extraWeeks > 0) {
-                        durationLabel = `${totalWeeks} week${totalWeeks !== 1 ? 's' : ''} (${fullMonths} month${fullMonths !== 1 ? 's' : ''} + ${extraWeeks} extra week${extraWeeks !== 1 ? 's' : ''})`
-                      } else if (fullMonths > 0) {
-                        durationLabel = `${fullMonths} month${fullMonths !== 1 ? 's' : ''} (${totalWeeks} weeks)`
-                      }
+                      const totalWeeks = Math.ceil(days / 7)
+                      const durationLabel = `${totalWeeks} week${totalWeeks !== 1 ? 's' : ''}`
                       return (
                         <p className="text-xs font-medium" style={{ color: MUTED }}>
                           {days} day{days !== 1 ? 's' : ''} · {durationLabel}
@@ -1515,15 +1507,10 @@ export default function NewQuote() {
                       </p>
                       {unitRows.map((u, idx) => {
                         const uDays = Math.round((new Date(u.endDate).getTime() - new Date(u.startDate).getTime()) / 86400000)
-                        const uFm = Math.floor(uDays / 28)
-                        const uRem = uDays % 28
-                        const uEw = uRem > 0 ? Math.ceil(uRem / 7) : 0
-                        const uTw = uFm * 4 + uEw
-                        let uDurLabel = `${uTw} wk${uTw !== 1 ? 's' : ''}`
-                        if (uFm > 0 && uEw > 0) uDurLabel = `${uTw} wk${uTw !== 1 ? 's' : ''} (${uFm} mo + ${uEw} extra wk)`
-                        else if (uFm > 0) uDurLabel = `${uFm} mo (${uTw} wks)`
-                        const discounted = u.rate - (u.rate * u.discountPct) / 100
-                        const weeklyRate = discounted / 4
+                        const uTw = Math.ceil(uDays / 7)
+                        const uDurLabel = `${uTw} week${uTw !== 1 ? 's' : ''}`
+                        const weeklyFull = u.rate / 4
+                        const weeklyDisc = weeklyFull - (weeklyFull * (u.discountPct || 0)) / 100
                         const periodTotal = calcUnitPeriodTotal(u.rate, u.discountPct, u.startDate, u.endDate)
                         return (
                         <div key={u.unitId} className="rounded-xl border p-3 space-y-2" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
@@ -1546,14 +1533,16 @@ export default function NewQuote() {
                             <Field label="Rate/4wk">
                               <Input type="number" min={0} value={u.rate} onChange={(e) => updateUnit(idx, 'rate', Number(e.target.value))} className="h-8 text-xs" />
                             </Field>
-                            <Field label="Disc %">
+                            <Field label="Disc 4 weeks %">
                               <Input type="number" min={0} max={100} value={u.discountPct || ''} onChange={(e) => updateUnit(idx, 'discountPct', Number(e.target.value))} className="h-8 text-xs" placeholder="0" />
                             </Field>
                           </div>
                           {uDays > 0 && (
                             <div className="flex items-center justify-between pt-1 border-t" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
                               <p className="text-[11px]" style={{ color: MUTED }}>
-                                {uDays} days · {uDurLabel} × {formatMoney(weeklyRate)} AED/wk
+                                {(u.discountPct || 0) > 0 && uTw > 0
+                                  ? `4 wks × ${formatMoney(weeklyDisc)} AED/wk (${u.discountPct}% off)${uTw > 4 ? ` + ${uTw - 4} wk${uTw - 4 !== 1 ? 's' : ''} × ${formatMoney(weeklyFull)} AED/wk` : ''}`
+                                  : `${uDurLabel} · ${formatMoney(weeklyFull)} AED/wk`}
                               </p>
                               <p className="text-xs font-bold" style={{ color: PURPLE }}>
                                 {formatMoney(periodTotal)} AED
@@ -1611,13 +1600,10 @@ export default function NewQuote() {
                     <div className="px-4 py-3 space-y-1">
                       {unitRows.map((u) => {
                         const d = Math.round((new Date(u.endDate).getTime() - new Date(u.startDate).getTime()) / 86400000)
-                        const fm = Math.floor(d / 28)
-                        const ew = d % 28 > 0 ? Math.ceil((d % 28) / 7) : 0
-                        const tw = fm * 4 + ew
-                        let durLabel = `${tw} wk${tw !== 1 ? 's' : ''}`
-                        if (fm > 0 && ew > 0) durLabel = `${tw} wk${tw !== 1 ? 's' : ''} (${fm} mo + ${ew} extra wk)`
-                        else if (fm > 0) durLabel = `${fm} mo (${tw} wks)`
+                        const tw = Math.ceil(d / 7)
+                        const durLabel = `${tw} week${tw !== 1 ? 's' : ''}`
                         const discounted = u.rate - (u.rate * u.discountPct) / 100
+                        const weeklyRate = discounted / 4
                         const periodTotal = calcUnitPeriodTotal(u.rate, u.discountPct, u.startDate, u.endDate)
                         return (
                           <div key={u.unitId} className="py-1">
@@ -1626,7 +1612,7 @@ export default function NewQuote() {
                               <span className="text-xs font-bold" style={{ color: PURPLE }}>{formatMoney(periodTotal)} AED</span>
                             </div>
                             <p className="text-[10px]" style={{ color: MUTED }}>
-                              {formatMoney(discounted)} AED/4wk · {durLabel}
+                              {formatMoney(weeklyRate)} AED/wk × {durLabel}
                             </p>
                           </div>
                         )
@@ -1689,12 +1675,8 @@ export default function NewQuote() {
                     </div>
                     {unitRows.map((u) => {
                       const d = Math.round((new Date(u.endDate).getTime() - new Date(u.startDate).getTime()) / 86400000)
-                      const fm = Math.floor(d / 28)
-                      const ew = d % 28 > 0 ? Math.ceil((d % 28) / 7) : 0
-                      const tw = fm * 4 + ew
-                      let durLabel2 = `${tw} wk${tw !== 1 ? 's' : ''}`
-                      if (fm > 0 && ew > 0) durLabel2 = `${tw} wk${tw !== 1 ? 's' : ''} (${fm} mo + ${ew} extra wk)`
-                      else if (fm > 0) durLabel2 = `${fm} mo (${tw} wks)`
+                      const tw = Math.ceil(d / 7)
+                      const durLabel2 = `${tw} week${tw !== 1 ? 's' : ''}`
                       const discounted = u.rate - (u.rate * u.discountPct) / 100
                       const weeklyRate = discounted / 4
                       const periodTotal = calcUnitPeriodTotal(u.rate, u.discountPct, u.startDate, u.endDate)
@@ -1708,7 +1690,7 @@ export default function NewQuote() {
                             {u.startDate} → {u.endDate} · {d} days · {durLabel2}
                           </p>
                           <p className="text-[11px]" style={{ color: MUTED }}>
-                            Rate: {formatMoney(discounted)} AED/4wk · {formatMoney(weeklyRate)} AED/wk × {tw} wk{tw !== 1 ? 's' : ''}
+                            Rate: {formatMoney(weeklyRate)} AED/wk × {durLabel2}
                             {u.discountPct ? ` · ${u.discountPct}% off` : ''}
                           </p>
                         </div>
@@ -1850,7 +1832,7 @@ export default function NewQuote() {
                     <InfoRow label="Customer" value={customerName} />
                     <InfoRow label="Period" value={`${dateRangeFrom} → ${dateRangeTo}`} />
                     <InfoRow label="Units" value={unitRows.map((u) => u.unitNumber).join(', ')} />
-                    <InfoRow label="Monthly total" value={`${formatMoney(total)} AED`} />
+                    <InfoRow label={`Total (${dateRangeFrom && dateRangeTo ? Math.ceil(Math.round((new Date(dateRangeTo).getTime() - new Date(dateRangeFrom).getTime()) / 86400000) / 7) : 0} weeks)`} value={`${formatMoney(total)} AED`} />
                     {Number(deposit) > 0 && <InfoRow label="Deposit" value={`${formatMoney(Number(deposit))} AED`} />}
                   </div>
 
@@ -2013,7 +1995,7 @@ export default function NewQuote() {
                           color: contract.status === 'active' ? GREEN : contract.status === 'cancelled' ? '#B91C1C' : '#1D4ED8',
                         }}>{contract.status.replace(/_/g, ' ')}</span>
                       </div>
-                      <span className="text-sm font-bold" style={{ color: PURPLE }}>{formatMoney(contract.rate)} AED/4wk</span>
+                      <span className="text-sm font-bold" style={{ color: PURPLE }}>{formatMoney(total)} AED / {dateRangeFrom && dateRangeTo ? Math.ceil(Math.round((new Date(dateRangeTo).getTime() - new Date(dateRangeFrom).getTime()) / 86400000) / 7) : 0} weeks</span>
                     </div>
                     {/* Body */}
                     <div className="px-4 py-3 space-y-1">

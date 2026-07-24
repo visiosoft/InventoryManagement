@@ -163,26 +163,18 @@ export function renderQuotePdf({ quote }) {
          const meta = [size, floor].filter(Boolean).join(', ');
          const disc = Number(u.discountPct || 0);
          const uDays = u.startDate && u.endDate ? Math.round((new Date(u.endDate) - new Date(u.startDate)) / 86400000) : 0;
-         const uFullMo = Math.floor(uDays / 28);
-         const uRem = uDays % 28;
-         const uExtraWk = uRem > 0 ? Math.ceil(uRem / 7) : 0;
-         const uTotalWk = uFullMo * 4 + uExtraWk;
-         let durationStr = '';
-         if (uFullMo > 0 && uExtraWk > 0) {
-            durationStr = ` · ${uTotalWk} wk (${uFullMo} mo + ${uExtraWk} extra wk)`;
-         } else if (uFullMo > 0) {
-            durationStr = ` · ${uFullMo} mo (${uTotalWk} wk)`;
-         } else if (uTotalWk > 0) {
-            durationStr = ` · ${uTotalWk} wk`;
-         }
-         const discountedRate = u.rate - (u.rate * disc) / 100;
-         const wkRate = Number((discountedRate / 4).toFixed(2));
-         const periodAmount = Number((wkRate * (uTotalWk || 1)).toFixed(2));
+         const uTotalWk = uDays > 0 ? Math.ceil(uDays / 7) : 0;
+         const durationStr = uTotalWk > 0 ? ` · ${uTotalWk} week${uTotalWk !== 1 ? 's' : ''}` : '';
+         const wkFull = Number((u.rate / 4).toFixed(2));
+         const wkDisc = Number((wkFull - (wkFull * disc) / 100).toFixed(2));
+         const discWks = Math.min(4, uTotalWk || 1);
+         const fullWks = Math.max(0, (uTotalWk || 1) - 4);
+         const periodAmount = Number((discWks * wkDisc + fullWks * wkFull).toFixed(2));
          rows.push({
             title: `Storage Unit ${u.unitNumber}${meta ? ` (${meta})` : ''}`,
-            sub: `${dt(u.startDate)} – ${dt(u.endDate)}${durationStr}${disc > 0 ? ` · ${disc}% discount` : ''}`,
+            sub: `${dt(u.startDate)} – ${dt(u.endDate)}${durationStr}${disc > 0 ? ` · ${disc}% off first 4 weeks` : ''}`,
             qty: uTotalWk || 1,
-            rate: wkRate,
+            rate: wkFull,
             amount: periodAmount,
          });
       }

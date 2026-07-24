@@ -413,7 +413,7 @@ async function createFirstInvoiceFromQuote(quote, contract, userName) {
         advanceTotal += rate;
         items.push({
             sortOrder: items.length,
-            itemDetails: `Advance Rent · Unit ${u.unitNumber}`,
+            itemDetails: `Refundable / Adjustable Security Deposit · Unit ${u.unitNumber}`,
             quantity: 4,
             rate: wkRate,
             discountPct: 0,
@@ -483,7 +483,7 @@ async function createFirstInvoiceFromQuote(quote, contract, userName) {
             amount: advanceTotal,
             dueDate,
             status: 'pending',
-            notes: `Advance Rent (last period) · ${quote.quoteNo}`,
+            notes: `Refundable / Adjustable Security Deposit (last period) · ${quote.quoteNo}`,
             recordedBy: userName,
         });
     }
@@ -612,6 +612,7 @@ router.post('/:id/convert-to-contract', async (req, res) => {
         autoRenew: Boolean(req.body?.autoRenew),
         paymentMethod: String(req.body?.paymentMethod || ''),
         authorizedPersons,
+        totalQuotation: Number(quote.total || 0),
         quote: quote._id,
         source: 'quote',
         approvalStatus: 'not_required',

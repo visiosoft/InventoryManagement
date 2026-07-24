@@ -392,7 +392,7 @@ export default function Contracts() {
           <div className="space-y-4">
             <p className="text-sm">
               Permanently delete <strong>{deleteTarget.contractNo}</strong>?
-              {' '}This will also remove all associated payment records and documents.
+              {' '}This will also remove all associated invoices, payment records, and documents.
             </p>
             {deleteTarget.status === 'active' && (
               <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">

@@ -86,17 +86,21 @@ function consolidateItems(items) {
 function normaliseRentItems(items) {
   return items.map(it => {
     // Convert Mongoose subdocument to plain object before spreading
-    const obj = (it && typeof it.toObject === 'function') ? it.toObject() : { ...it };
+    let obj = (it && typeof it.toObject === 'function') ? it.toObject() : { ...it };
+    // Rename legacy "Advance Rent" to new label
+    if (/^Advance Rent/.test(obj.itemDetails || '')) {
+      obj = { ...obj, itemDetails: obj.itemDetails.replace(/^Advance Rent/, 'Refundable / Adjustable Security Deposit') };
+    }
     const desc = obj.itemDetails || '';
     // Convert weekly-quantity rent items to monthly rate (qty=1)
-    if (/^(Storage Rent|Advance Rent)/.test(desc) && Number(obj.quantity ?? 1) > 1) {
+    if (/^(Storage Rent|Refundable \/ Adjustable Security Deposit)/.test(desc) && Number(obj.quantity ?? 1) > 1) {
       const monthlyRate = Math.round(Number(obj.quantity) * Number(obj.rate || 0) * 100) / 100;
       return { ...obj, quantity: 1, rate: monthlyRate };
     }
-    // Rename contract-generated "Security Deposit · Unit X" → "Advance Rent — Last Period · Unit X"
+    // Rename contract-generated "Security Deposit · Unit X"
     const depMatch = desc.match(/^Security Deposit\s+·\s+Unit\s+(.+)$/);
     if (depMatch) {
-      return { ...obj, itemDetails: `Advance Rent — Last Period · Unit ${depMatch[1]}` };
+      return { ...obj, itemDetails: `Refundable / Adjustable Security Deposit · Unit ${depMatch[1]}` };
     }
     return obj;
   });
@@ -131,7 +135,7 @@ export function renderInvoicePdf({ invoice }) {
 
     // ── TITLE ─────────────────────────────────────────────────────────────
     doc.font('Helvetica').fontSize(36).fillColor(DARK)
-       .text('INVOICE', M, 68, { width: PW - 2 * M, align: 'center' });
+       .text(invoice.status === 'draft' ? 'QUOTE' : 'INVOICE', M, 68, { width: PW - 2 * M, align: 'center' });
 
     // ── LEFT COLUMN ───────────────────────────────────────────────────────
     let ly = 132;
@@ -248,8 +252,8 @@ export function renderInvoicePdf({ invoice }) {
       doc.font('Helvetica').fontSize(9).fillColor(BLACK);
       doc.text(String(idx + 1),       TX + 6,                         y + 8, { width: nW - 6 });
       doc.text(it.itemDetails || '-', TX + nW + 6,                    y + 8, { width: iW - 12 });
-      const isRentLine = /^(Storage Rent|Advance Rent)/.test(it.itemDetails || '');
-      doc.text(isRentLine ? '1 mo' : '—', TX + nW + iW, y + 8, { width: qW, align: 'right' });
+      const isRentLine = /^(Storage Rent|Refundable \/ Adjustable Security Deposit)/.test(it.itemDetails || '');
+      doc.text(isRentLine ? '1' : '—', TX + nW + iW, y + 8, { width: qW, align: 'right' });
       doc.text(num(it.rate),           TX + nW + iW + qW,              y + 8, { width: rW, align: 'right' });
       if (hasDiscount) {
         if (discounted) {

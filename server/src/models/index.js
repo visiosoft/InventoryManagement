@@ -250,6 +250,7 @@ const contractSchema = new Schema(
     authorizedPersons: [accessPersonSchema],
     signingToken: { type: String, default: null },
     signingTokenExpiry: { type: Date, default: null },
+    totalQuotation: { type: Number, default: 0 },
     archived: { type: Boolean, default: false },
     timeline: [
       {

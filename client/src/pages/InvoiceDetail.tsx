@@ -44,16 +44,21 @@ function consolidateItems(items: Invoice['items']) {
 
 function normaliseRentItems(items: Invoice['items']): Invoice['items'] {
     return items.map(it => {
-        const desc = it.itemDetails ?? ''
+        let desc = it.itemDetails ?? ''
+        // Rename legacy "Advance Rent" to new label
+        if (/^Advance Rent/.test(desc)) {
+            desc = desc.replace(/^Advance Rent/, 'Refundable / Adjustable Security Deposit')
+            it = { ...it, itemDetails: desc }
+        }
         // Convert weekly-quantity rent items to monthly rate (qty=1)
-        if (/^(Storage Rent|Advance Rent)/.test(desc) && Number(it.quantity ?? 1) > 1) {
+        if (/^(Storage Rent|Refundable \/ Adjustable Security Deposit)/.test(desc) && Number(it.quantity ?? 1) > 1) {
             const monthlyRate = Math.round(Number(it.quantity) * Number(it.rate || 0) * 100) / 100
             return { ...it, quantity: 1, rate: monthlyRate }
         }
-        // Rename contract-generated "Security Deposit · Unit X" → "Advance Rent — Last Period · Unit X"
+        // Rename contract-generated "Security Deposit · Unit X"
         const depMatch = desc.match(/^Security Deposit\s+·\s+Unit\s+(.+)$/)
         if (depMatch) {
-            return { ...it, itemDetails: `Advance Rent — Last Period · Unit ${depMatch[1]}` }
+            return { ...it, itemDetails: `Refundable / Adjustable Security Deposit · Unit ${depMatch[1]}` }
         }
         return it
     })
@@ -416,7 +421,7 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
                                                 }
                                             </td>
                                             <td className="px-3 py-2 text-right text-muted-foreground text-xs">
-                                                {/^(Storage Rent|Advance Rent)/.test(it.itemDetails ?? '') ? '1 mo' : '—'}
+                                                {/^(Storage Rent|Refundable \/ Adjustable Security Deposit)/.test(it.itemDetails ?? '') ? '1' : '—'}
                                             </td>
                                             <td className="px-3 py-2 text-right text-muted-foreground text-xs">
                                                 {it.rate > 0 ? formatMoney(it.rate) : '—'}
@@ -698,7 +703,7 @@ export default function InvoiceDetail() {
                             <div className="space-y-2.5">
                                 <div>
                                     <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
-                                        Invoice Date
+                                        {docLabel(invoice)} Date
                                     </p>
                                     <p>{formatDate(invoice.invoiceDate)}</p>
                                 </div>
@@ -772,7 +777,7 @@ export default function InvoiceDetail() {
                     <CardBody className="space-y-4">
                         <div className="rounded-lg bg-muted/50 px-4 py-3 space-y-2 text-sm">
                             <div className="flex justify-between">
-                                <span className="text-muted-foreground">Invoice Total</span>
+                                <span className="text-muted-foreground">{docLabel(invoice)} Total</span>
                                 <span className="font-medium">AED {formatMoney(invoice.total)}</span>
                             </div>
                             <div className="flex justify-between">
@@ -820,7 +825,7 @@ export default function InvoiceDetail() {
                                     <Td className="text-muted-foreground">{idx + 1}</Td>
                                     <Td className="whitespace-pre-line">{it.itemDetails}</Td>
                                     <Td className="text-right text-muted-foreground">
-                                        {/^(Storage Rent|Advance Rent)/.test(it.itemDetails ?? '') ? '1 mo' : '—'}
+                                        {/^(Storage Rent|Refundable \/ Adjustable Security Deposit)/.test(it.itemDetails ?? '') ? '1' : '—'}
                                     </Td>
                                     <Td className="text-right">
                                         {discounted

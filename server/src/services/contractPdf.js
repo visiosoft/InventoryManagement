@@ -52,9 +52,7 @@ export function renderContractPdf({ contract, customer, unit }) {
     doc.fontSize(13).font('Helvetica-Bold').text('3. Terms');
     doc.moveDown(0.5);
     const weeks = Math.ceil((new Date(contract.endDate) - new Date(contract.startDate)) / (7 * 24 * 60 * 60 * 1000));
-    row('Billing Period:', contract.billingPeriod === 'weekly' ? 'Weekly' : `${weeks} Weeks`);
-    row('Rate:', `${contract.rate.toFixed(2)} per ${weeks} weeks`);
-    row('Security Deposit:', contract.deposit.toFixed(2));
+    row('Duration:', `${weeks} Weeks`);
     row('Start Date:', fmt(contract.startDate));
     row('End Date:', fmt(contract.endDate));
     row('Auto-Renew:', contract.autoRenew ? 'Yes' : 'No');

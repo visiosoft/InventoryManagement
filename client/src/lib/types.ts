@@ -448,6 +448,7 @@ export interface Contract {
   approvedBy?: string
   approvedAt?: string
   source?: string
+  totalQuotation?: number
   createdAt?: string
 }
 

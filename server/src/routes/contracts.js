@@ -75,19 +75,9 @@ async function deleteContractRecord(contract) {
     throw new Error('Cannot delete an active contract. End or cancel it first.');
   }
 
-  // Block deletion if any paid payments exist — financial history must be preserved.
-  const paidCount = await Payment.countDocuments({ contract: contract._id, status: 'paid' });
-  if (paidCount > 0) {
-    throw new Error(
-      `Cannot delete contract ${contract.contractNo}: it has ${paidCount} recorded payment(s). ` +
-      `Financial records must be retained. Archive or keep this contract instead.`
-    );
-  }
-
   const allUnitIds = contract.units?.length ? contract.units : [contract.unit];
   await Payment.deleteMany({ contract: contract._id });
   await Document.deleteMany({ contract: contract._id });
-  // Also remove invoices linked to this contract (only reachable here since no paid payments exist)
   await Invoice.deleteMany({ orderNumber: contract.contractNo });
   await contract.deleteOne();
   await Promise.all(allUnitIds.map((uid) => syncUnitStatus(uid)));
@@ -645,7 +635,7 @@ router.put('/:id', async (req, res) => {
       return res.status(403).json({ error: 'Only an admin can edit a booked contract' });
     }
 
-    const allowed = ['rate', 'deposit', 'startDate', 'endDate', 'billingPeriod', 'autoRenew', 'paymentMethod', 'firstPaymentDate', 'notes'];
+    const allowed = ['rate', 'deposit', 'startDate', 'endDate', 'billingPeriod', 'autoRenew', 'paymentMethod', 'firstPaymentDate', 'notes', 'totalQuotation'];
     for (const key of allowed) {
       if (req.body[key] !== undefined) {
         contract[key] = key.endsWith('Date') && req.body[key] ? new Date(req.body[key]) : req.body[key];
@@ -849,7 +839,7 @@ async function generateMissingPeriodInvoices(contract, cutoffDate, createdBy = '
       const linkedPayment = await Payment.findOne({ contract: contract._id, invoice: existingInvoice._id });
       if (!linkedPayment && existingInvoice.total > 0) {
         const rentItem = (existingInvoice.items || []).find(it => /^Storage Rent/i.test(it.itemDetails || ''));
-        const depItem = (existingInvoice.items || []).find(it => /^(Security deposit|Advance Rent)/i.test(it.itemDetails || ''));
+        const depItem = (existingInvoice.items || []).find(it => /^(Security deposit|Refundable \/ Adjustable Security Deposit)/i.test(it.itemDetails || ''));
         const rentAmt = rentItem ? Math.round(Number(rentItem.amount) * 100) / 100 : existingInvoice.total;
         const unitNoLocal = contract.unit?.unitNumber || '-';
         const fmt2 = (d) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -936,7 +926,7 @@ async function generateMissingPeriodInvoices(contract, cutoffDate, createdBy = '
           const depPeriodStart = new Date(contractStart.getTime() + depositStartWeek * 7 * 86400000);
           const depPeriodEnd = new Date(depPeriodStart.getTime() + 28 * 86400000);
           const depPeriodDisplayEnd = new Date(depPeriodEnd.getTime() - 86400000);
-          items.push({ sortOrder: items.length, itemDetails: `Advance Rent ${fmt(depPeriodStart)} – ${fmt(depPeriodDisplayEnd)} · Unit ${unitNo}`, quantity: 1, rate: monthlyRate, discountPct: 0, amount: monthlyRate });
+          items.push({ sortOrder: items.length, itemDetails: `Refundable / Adjustable Security Deposit ${fmt(depPeriodStart)} – ${fmt(depPeriodDisplayEnd)} · Unit ${unitNo}`, quantity: 1, rate: monthlyRate, discountPct: 0, amount: monthlyRate });
         }
       }
 
@@ -1043,6 +1033,89 @@ router.post('/:id/auto-invoices', async (req, res) => {
 
   const generated = await generateMissingPeriodInvoices(contract, cutoff);
   res.json({ generated });
+});
+
+// Generate invoices from totalQuotation — splits into 4-week chunks at the contract rate.
+// Each invoice covers 4 weeks; the last invoice gets whatever remainder is left.
+router.post('/:id/generate-quotation-invoices', async (req, res) => {
+  try {
+    const contract = await populateAll(Contract.findById(req.params.id));
+    if (!contract) return res.status(404).json({ error: 'Contract not found' });
+
+    const totalQ = Number(contract.totalQuotation || 0);
+    if (totalQ <= 0) return res.status(400).json({ error: 'Set a Total Quotation amount first' });
+
+    const monthlyRate = Number(contract.rate || 0);
+    if (monthlyRate <= 0) return res.status(400).json({ error: 'Contract rate must be greater than 0' });
+
+    const customerId = contract.customer?._id || contract.customer;
+    const unitNo = contract.unit?.unitNumber || '-';
+    const contractStart = new Date(contract.startDate);
+    const fmt2 = (d) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const actor = req.user?.name || req.user?.email || '';
+
+    // Sum already-invoiced amount for this contract
+    const existingInvoices = await Invoice.find({ orderNumber: contract.contractNo });
+    const alreadyInvoiced = Math.round(existingInvoices.reduce((s, inv) => s + Number(inv.total || 0), 0) * 100) / 100;
+    const remaining = Math.round((totalQ - alreadyInvoiced) * 100) / 100;
+    if (remaining <= 0) return res.status(409).json({ error: `Already fully invoiced (${alreadyInvoiced} of ${totalQ})` });
+
+    // Figure out the next period start based on existing invoices
+    const existingPeriodCount = existingInvoices.length;
+    const periodStart = new Date(contractStart);
+    periodStart.setDate(periodStart.getDate() + existingPeriodCount * 28);
+
+    let generated = 0;
+    let left = remaining;
+
+    while (left > 0.01) {
+      const invoiceAmount = Math.round(Math.min(monthlyRate, left) * 100) / 100;
+      const pStart = new Date(periodStart);
+      pStart.setDate(pStart.getDate() + generated * 28);
+      const pEnd = new Date(pStart);
+      pEnd.setDate(pEnd.getDate() + 27);
+
+      const invoice = await Invoice.create({
+        invoiceNo: await nextInvoiceNo(),
+        customer: customerId,
+        invoiceDate: new Date(),
+        dueDate: pStart,
+        orderNumber: contract.contractNo,
+        terms: 'Due on receipt',
+        subject: `Storage Rent ${fmt2(pStart)} – ${fmt2(pEnd)} · ${contract.contractNo}`,
+        items: [{
+          sortOrder: 0,
+          itemDetails: `Storage Rent ${fmt2(pStart)} – ${fmt2(pEnd)} · Unit ${unitNo}`,
+          quantity: 1,
+          rate: invoiceAmount,
+          discountPct: 0,
+          amount: invoiceAmount,
+        }],
+        subTotal: invoiceAmount,
+        total: invoiceAmount,
+        paymentMade: 0,
+        status: 'sent',
+        createdBy: actor,
+      });
+
+      await Payment.create({
+        contract: contract._id,
+        invoice: invoice._id,
+        amount: invoiceAmount,
+        dueDate: pStart,
+        status: 'pending',
+        notes: `Storage Rent ${fmt2(pStart)} – ${fmt2(pEnd)} · Unit ${unitNo}`,
+        recordedBy: actor,
+      });
+
+      left = Math.round((left - invoiceAmount) * 100) / 100;
+      generated++;
+    }
+
+    res.json({ generated, totalInvoiced: Math.round((remaining) * 100) / 100 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Flexible invoice generator — called from the UI modal.

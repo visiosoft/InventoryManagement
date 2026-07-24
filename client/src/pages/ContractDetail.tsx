@@ -301,7 +301,7 @@ function BulkPayForm({ unpaid, busy, onSubmit }: {
   busy: boolean
   onSubmit: (body: { paymentIds: string[]; method: string; paidDate: string; notes: string }) => void
 }) {
-  const periodLabel = 'month'
+  const periodLabel = 'period'
   const [count, setCount] = useState(unpaid.length)   // default: all
   const [method, setMethod] = useState('cash')
   const [paidDate, setPaidDate] = useState(new Date().toISOString().slice(0, 10))
@@ -813,7 +813,7 @@ function EditContractForm({ contract, availableUnits, onSubmit, onCancel, busy, 
       className="space-y-4"
     >
       <div className="grid grid-cols-2 gap-4">
-        <Field label="Monthly Rate (AED)">
+        <Field label="Rate per 4 Weeks (AED)">
           <Input name="rate" type="number" min="0" step="0.01" defaultValue={contract.rate} required />
         </Field>
         <Field label="Deposit (AED)">
@@ -822,7 +822,7 @@ function EditContractForm({ contract, availableUnits, onSubmit, onCancel, busy, 
         <Field label="Billing Period">
           <Select name="billingPeriod" defaultValue={contract.billingPeriod}>
             <option value="weekly">Weekly</option>
-            <option value="monthly">Monthly</option>
+            <option value="monthly">4 Weeks</option>
           </Select>
         </Field>
         <Field label="Payment Method">
@@ -936,6 +936,8 @@ export default function ContractDetail() {
   const [linkCopied, setLinkCopied] = useState(false)
   const [sendingInvoiceId, setSendingInvoiceId] = useState<string | null>(null)
   const [editModal, setEditModal] = useState(false)
+  const [editingTotalQ, setEditingTotalQ] = useState(false)
+  const [totalQDraft, setTotalQDraft] = useState('')
   const [endModal, setEndModal] = useState(false)
   const [endDate, setEndDate] = useState('')
   const [endReason, setEndReason] = useState('')
@@ -1053,6 +1055,12 @@ export default function ContractDetail() {
   const updateContract = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.put(`/contracts/${id}`, body),
     onSuccess: () => { invalidate(); setEditModal(false); setError('') },
+    onError: (e) => setError(apiError(e)),
+  })
+
+  const generateQuotationInvoices = useMutation({
+    mutationFn: () => api.post(`/contracts/${id}/generate-quotation-invoices`).then((r) => r.data),
+    onSuccess: (data) => { invalidate(); alert(`${data.generated} invoice${data.generated !== 1 ? 's' : ''} generated`) },
     onError: (e) => setError(apiError(e)),
   })
 
@@ -1208,13 +1216,11 @@ export default function ContractDetail() {
   const contractWeeks2 = c.startDate && c.endDate ? Math.ceil(Math.round((new Date(c.endDate).getTime() - new Date(c.startDate).getTime()) / 86400000) / 7) : 0
   const wRate2 = Math.round((c.rate / 4) * 100) / 100
   const dPct2 = Number(c.unit?.discountPct ?? 0)
-  const theoreticalTotal2 = dPct2 > 0
+  const rentTotal2 = dPct2 > 0
     ? Math.round((Math.min(4, contractWeeks2) * Math.round(wRate2 * (1 - dPct2 / 100) * 100) / 100 + Math.max(0, contractWeeks2 - 4) * wRate2) * 100) / 100
     : Math.round(contractWeeks2 * wRate2 * 100) / 100
-  // Use actual invoiced rent total when available (paid + unpaid rent, no deposit)
-  const invoicedRentTotal = invoiceGroups.length > 0
-    ? Math.round((totalPaid + totalUnpaidGroupsRent + totalOverdue) * 100) / 100
-    : theoreticalTotal2
+  const theoreticalTotal2 = Math.round((rentTotal2 + Number(c.deposit || 0)) * 100) / 100
+  const invoicedRentTotal = Number(c.totalQuotation || 0)
   const customerPhone = c.customer?.phones?.[0] ?? c.customer?.phone ?? ''
   const waPhone = customerPhone.replace(/\D/g, '').replace(/^00/, '')
   const waText = [`Hello ${c.customer?.fullName ?? 'there'},`, ``, `This is a message regarding your storage contract *${c.contractNo}*.`, `${unitLabel}`, ``, `Thank you – PurpleBox`].join('\n')
@@ -1455,12 +1461,8 @@ export default function ContractDetail() {
                 {c.startDate && c.endDate && (() => {
                   const s = new Date(c.startDate), e = new Date(c.endDate)
                   const totalDays = Math.round((e.getTime() - s.getTime()) / 86400000)
-                  const months = Math.floor(totalDays / 30)
-                  const remWeeks = Math.round((totalDays % 30) / 7)
-                  const durParts: string[] = []
-                  if (months > 0) durParts.push(`${months} month${months !== 1 ? 's' : ''}`)
-                  if (remWeeks > 0) durParts.push(`${remWeeks} week${remWeeks !== 1 ? 's' : ''}`)
-                  const dur = durParts.join(' ') || '< 1 week'
+                  const weeks = Math.ceil(totalDays / 7)
+                  const dur = `${weeks} week${weeks !== 1 ? 's' : ''}`
                   return (
                     <div className="flex justify-between py-2">
                       <span className="text-muted-foreground">Term</span>
@@ -1475,9 +1477,30 @@ export default function ContractDetail() {
                   <span className="text-muted-foreground">4wk rate</span>
                   <span className="font-medium">AED {formatMoney(c.rate)}</span>
                 </div>
-                <div className="flex justify-between py-2">
-                  <span className="text-muted-foreground">Total</span>
-                  <span className="font-medium">AED {formatMoney(theoreticalTotal2)}</span>
+                <div className="flex justify-between py-2 items-center">
+                  <span className="text-muted-foreground">Total Quotation</span>
+                  {editingTotalQ ? (
+                    <form className="flex items-center gap-1" onSubmit={(e) => {
+                      e.preventDefault()
+                      const val = parseFloat(totalQDraft)
+                      if (!isNaN(val) && val >= 0) {
+                        updateContract.mutate({ totalQuotation: val }, { onSuccess: () => setEditingTotalQ(false) })
+                      }
+                    }}>
+                      <input type="number" step="0.01" min="0" value={totalQDraft} onChange={(e) => setTotalQDraft(e.target.value)} autoFocus
+                        className="w-24 rounded border px-1.5 py-0.5 text-sm text-right" />
+                      <button type="submit" className="text-xs text-primary font-medium">Save</button>
+                      <button type="button" onClick={() => setEditingTotalQ(false)} className="text-xs text-muted-foreground">Cancel</button>
+                    </form>
+                  ) : (
+                    <span className="font-medium cursor-pointer hover:text-primary" onClick={() => {
+                      setTotalQDraft(String(c.totalQuotation || theoreticalTotal2))
+                      setEditingTotalQ(true)
+                    }}>
+                      AED {formatMoney(c.totalQuotation || theoreticalTotal2)}
+                      <PenLine size={10} className="inline ml-1 text-muted-foreground" />
+                    </span>
+                  )}
                 </div>
                 {c.paymentMethod && (
                   <div className="flex justify-between py-2">
@@ -1677,6 +1700,11 @@ export default function ContractDetail() {
                 subtitle={payments.length === 0 && depositCoveredInvoices.length === 0 && standaloneInvoices.length === 0 ? 'No invoices yet' : `${paidGroups.length + depositCoveredInvoices.length} of ${invoiceGroups.length + depositCoveredInvoices.length + standaloneInvoices.length} invoice${(invoiceGroups.length + depositCoveredInvoices.length + standaloneInvoices.length) !== 1 ? 's' : ''} paid · ${formatMoney(totalPaid)} collected`}
                 action={
                   <div className="flex gap-2 flex-wrap">
+                    {(c.totalQuotation ?? 0) > 0 && (
+                      <Button size="sm" onClick={() => generateQuotationInvoices.mutate()} disabled={generateQuotationInvoices.isPending}>
+                        <FilePlus size={13} /> {generateQuotationInvoices.isPending ? 'Generating…' : 'Generate Invoices'}
+                      </Button>
+                    )}
                     <Button size="sm" variant="outline" onClick={() => navigate(`/invoices?create=1&customer=${c.customer?._id}&units=${allUnits.map(u => u?._id).filter(Boolean).join(',')}&order=${c.contractNo}&returnTo=${c._id}`)}><FilePlus size={13} /> New invoice</Button>
                   </div>
                 }
@@ -1767,7 +1795,14 @@ export default function ContractDetail() {
               {payments.length > 0 && unpaidGroups.length === 0 && c.status === 'active' && (
                 <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 mx-4 mb-4">
                   <div className="text-sm font-medium">All invoices paid</div>
-                  <Button size="sm" variant="outline" onClick={() => navigate(`/invoices?create=1&customer=${c.customer?._id}&units=${allUnits.map(u => u?._id).filter(Boolean).join(',')}&order=${c.contractNo}&returnTo=${c._id}`)}><FilePlus size={13} /> New invoice</Button>
+                  <div className="flex gap-2">
+                    {(c.totalQuotation ?? 0) > 0 && (
+                      <Button size="sm" onClick={() => generateQuotationInvoices.mutate()} disabled={generateQuotationInvoices.isPending}>
+                        <FilePlus size={13} /> {generateQuotationInvoices.isPending ? 'Generating…' : 'Generate Invoices'}
+                      </Button>
+                    )}
+                    <Button size="sm" variant="outline" onClick={() => navigate(`/invoices?create=1&customer=${c.customer?._id}&units=${allUnits.map(u => u?._id).filter(Boolean).join(',')}&order=${c.contractNo}&returnTo=${c._id}`)}><FilePlus size={13} /> New invoice</Button>
+                  </div>
                 </div>
               )}
             </Card>

@@ -38,7 +38,7 @@ export async function fillAgreementPdf({ contract, customer, unit, signedDate })
   };
 
   // --- Page 1: Licensee Information (box left edge ≈ x 229, label column to the left) ---
-  draw(page1, customer.fullName, 240, 952);                       // Full Name
+  draw(page1, `${customer.fullName}  (${contract.contractNo})`, 240, 952); // Full Name + Contract No
   draw(page1, customer.address, 240, 888);                        // Address
   draw(page1, customer.phone, 240, 824);                          // Contact Number
   draw(page1, customer.email, 755, 824);                          // Email Address
@@ -48,11 +48,11 @@ export async function fillAgreementPdf({ contract, customer, unit, signedDate })
   const allUnits = contract.units?.length > 1 ? contract.units : [unit];
   const weeks = calcWeeks(contract.startDate, contract.endDate);
   const unitLine = allUnits.length > 1
-    ? `Units: ${allUnits.map((u) => `${u.unitNumber} (${u.sizeSqf ?? '—'} sqft)`).join(', ')} @ ${Number(contract.rate).toFixed(2)} (${weeks} weeks)`
-    : `${unit.sizeSqf ?? '—'} sq ft — Unit ${unit.unitNumber} (${weeks} weeks @ ${Number(contract.rate).toFixed(2)})`;
+    ? `Units: ${allUnits.map((u) => `${u.unitNumber} (${u.sizeSqf ?? '—'} sqft)`).join(', ')} (${weeks} weeks)`
+    : `${unit.sizeSqf ?? '—'} sq ft — Unit ${unit.unitNumber} (${weeks} weeks)`;
   draw(page1, unitLine, 240, 630);                                                              // App. Unit Size
   // Access row: contract no + authorized persons across the 4 cells
-  const accessNames = [contract.contractNo];
+  const accessNames = [];
   for (const ap of contract.authorizedPersons || []) {
     const label = ap.name || '';
     const id = ap.idNumber ? `${ap.idType || 'ID'}: ${ap.idNumber}` : '';
