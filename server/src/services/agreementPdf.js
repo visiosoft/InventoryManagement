@@ -19,6 +19,11 @@ export function agreementTemplateExists() {
 const fmtDate = (d) =>
   new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
+const calcWeeks = (start, end) => {
+  const ms = new Date(end) - new Date(start);
+  return Math.ceil(ms / (7 * 24 * 60 * 60 * 1000));
+};
+
 export async function fillAgreementPdf({ contract, customer, unit, signedDate }) {
   const bytes = fs.readFileSync(TEMPLATE_PATH);
   const doc = await PDFDocument.load(bytes);
@@ -41,9 +46,10 @@ export async function fillAgreementPdf({ contract, customer, unit, signedDate })
   draw(page1, fmtDate(contract.startDate), 240, 694);             // Move In Date
   draw(page1, fmtDate(contract.endDate), 755, 694);               // Move Out Date
   const allUnits = contract.units?.length > 1 ? contract.units : [unit];
+  const weeks = calcWeeks(contract.startDate, contract.endDate);
   const unitLine = allUnits.length > 1
-    ? `Units: ${allUnits.map((u) => `${u.unitNumber} (${u.sizeSqf ?? '—'} sqft)`).join(', ')} @ ${Number(contract.rate).toFixed(2)} (4 weeks)`
-    : `${unit.sizeSqf ?? '—'} sq ft — Unit ${unit.unitNumber} (4 weeks @ ${Number(contract.rate).toFixed(2)})`;
+    ? `Units: ${allUnits.map((u) => `${u.unitNumber} (${u.sizeSqf ?? '—'} sqft)`).join(', ')} @ ${Number(contract.rate).toFixed(2)} (${weeks} weeks)`
+    : `${unit.sizeSqf ?? '—'} sq ft — Unit ${unit.unitNumber} (${weeks} weeks @ ${Number(contract.rate).toFixed(2)})`;
   draw(page1, unitLine, 240, 630);                                                              // App. Unit Size
   // Access row: contract no + authorized persons across the 4 cells
   const accessNames = [contract.contractNo];
