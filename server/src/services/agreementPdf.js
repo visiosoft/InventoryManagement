@@ -42,8 +42,8 @@ export async function fillAgreementPdf({ contract, customer, unit, signedDate })
   draw(page1, fmtDate(contract.endDate), 755, 694);               // Move Out Date
   const allUnits = contract.units?.length > 1 ? contract.units : [unit];
   const unitLine = allUnits.length > 1
-    ? `Units: ${allUnits.map((u) => `${u.unitNumber} (${u.sizeSqf ?? '—'} sqft)`).join(', ')} @ ${Number(contract.rate).toFixed(2)} ${contract.billingPeriod}`
-    : `${unit.sizeSqf ?? '—'} sq ft — Unit ${unit.unitNumber} (${contract.billingPeriod} @ ${Number(contract.rate).toFixed(2)})`;
+    ? `Units: ${allUnits.map((u) => `${u.unitNumber} (${u.sizeSqf ?? '—'} sqft)`).join(', ')} @ ${Number(contract.rate).toFixed(2)} (4 weeks)`
+    : `${unit.sizeSqf ?? '—'} sq ft — Unit ${unit.unitNumber} (4 weeks @ ${Number(contract.rate).toFixed(2)})`;
   draw(page1, unitLine, 240, 630);                                                              // App. Unit Size
   // Access row: contract no + authorized persons across the 4 cells
   const accessNames = [contract.contractNo];

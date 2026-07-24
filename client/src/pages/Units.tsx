@@ -45,6 +45,8 @@ function UnitFormFields({ initial }: { initial?: Partial<Unit> }) {
           <Select name="floor" defaultValue={initial?.floor || 'F1'}>
             <option value="F1">F1</option>
             <option value="F2">F2</option>
+            <option value="F3">F3</option>
+            <option value="Shed">Shed</option>
           </Select>
         </Field>
         <Field label="Size (sq ft)"><Input name="sizeSqf" type="number" step="1" defaultValue={initial?.sizeSqf ?? ''} /></Field>
@@ -238,6 +240,8 @@ export default function Units() {
             <option value="">All floors</option>
             <option value="F1">Floor F1</option>
             <option value="F2">Floor F2</option>
+            <option value="F3">Floor F3</option>
+            <option value="Shed">Shed</option>
           </select>
         </div>
         <div style={{ height: 36, borderRadius: 10, background: CHIP_BG }} className="px-1">

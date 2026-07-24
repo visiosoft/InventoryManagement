@@ -233,6 +233,8 @@ export default function Contracts() {
           <option value="">All floors</option>
           <option value="F1">Floor F1</option>
           <option value="F2">Floor F2</option>
+          <option value="F3">Floor F3</option>
+          <option value="Shed">Shed</option>
         </select>
 
         <div className="flex items-end gap-1">

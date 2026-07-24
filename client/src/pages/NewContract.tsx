@@ -691,6 +691,8 @@ export default function NewContract() {
                   <option value="">All floors</option>
                   <option value="F1">Floor F1</option>
                   <option value="F2">Floor F2</option>
+                  <option value="F3">Floor F3</option>
+                  <option value="Shed">Shed</option>
                 </Select>
                 <Select value={sizeFilter} onChange={(e) => setSizeFilter(e.target.value)} className="w-36">
                   <option value="">All sizes</option>

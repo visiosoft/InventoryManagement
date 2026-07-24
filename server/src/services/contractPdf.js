@@ -51,8 +51,8 @@ export function renderContractPdf({ contract, customer, unit }) {
 
     doc.fontSize(13).font('Helvetica-Bold').text('3. Terms');
     doc.moveDown(0.5);
-    row('Billing Period:', contract.billingPeriod === 'weekly' ? 'Weekly' : 'Monthly');
-    row('Rate:', `${contract.rate.toFixed(2)} per ${contract.billingPeriod === 'weekly' ? 'week' : 'month'}`);
+    row('Billing Period:', contract.billingPeriod === 'weekly' ? 'Weekly' : '4 Weeks');
+    row('Rate:', `${contract.rate.toFixed(2)} per 4 weeks`);
     row('Security Deposit:', contract.deposit.toFixed(2));
     row('Start Date:', fmt(contract.startDate));
     row('End Date:', fmt(contract.endDate));
