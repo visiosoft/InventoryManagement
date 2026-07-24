@@ -576,26 +576,6 @@ router.post('/:id/record-payment', async (req, res) => {
     await invoice.save();
     await syncLinkedPayment(invoice);
 
-    // Auto-sync paid invoice to Zoho Books
-    if (zohoBooksConfigured()) {
-      try {
-        if (!invoice.zohoBooksSyncId) {
-          const { zohoInvoiceId } = await createZohoInvoice(invoice);
-          invoice.zohoBooksSyncId = zohoInvoiceId;
-          invoice.zohoBooksSyncedAt = new Date();
-          await invoice.save();
-        }
-        await recordZohoPayment(
-          invoice.zohoBooksSyncId,
-          n,
-          date ? new Date(date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
-          method || 'cash'
-        );
-      } catch (zohoErr) {
-        console.error('Zoho auto-sync failed:', zohoErr.message);
-      }
-    }
-
     res.json(invoice);
 });
 

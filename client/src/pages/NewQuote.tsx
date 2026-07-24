@@ -226,7 +226,6 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
         subject: inv.subject,
         items: editItems.map((it, i) => ({ ...it, sortOrder: i })),
       })
-      await api.post(`/invoices/${inv._id}/sync-zoho-books`)
     },
     onSuccess: () => { setEditId(''); editingInvRef.current = null; onChanged(); setErr('') },
     onError: (e) => setErr(apiError(e)),
@@ -840,7 +839,7 @@ export default function NewQuote() {
   })
 
   const sizeOptions = [...new Set((allUnits || []).map((u) => u.sizeSqf))].sort((a, b) => a - b)
-  const floorOptions = [...new Set((allUnits || []).map((u) => u.floor).filter(Boolean))].sort()
+  const floorOptions = [...new Set([...(allUnits || []).map((u) => u.floor).filter(Boolean), 'F1', 'F2', 'F3', 'Shed'])].sort()
 
   const filteredUnits = (allUnits || []).filter((u) => {
     if (unitSearch && !u.unitNumber.toLowerCase().includes(unitSearch.trim().toLowerCase())) return false
