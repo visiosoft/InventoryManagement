@@ -1134,7 +1134,6 @@ export default function ContractDetail() {
   const totalPaid = paid.reduce((s, p) => s + p.amount, 0)
   // Exclude deposit/advance-rent records from rent totals
   const isDepositPayment = (p: Payment) => /^(security deposit|advance rent)/i.test(p.notes || '')
-  const totalOverdue = overdue.filter(p => !isDepositPayment(p)).reduce((s, p) => s + p.amount, 0)
   // Group payments by invoice → one display row per invoice
   const groupMap = new Map<string, Payment[]>()
   for (const p of payments) {
@@ -1188,10 +1187,6 @@ export default function ContractDetail() {
     return s + Math.round(balanceDue * 100) / 100
   }, 0)
   // Rent-only upcoming — used for the balance denominator (excludes deposit liability)
-  const totalUnpaidGroupsRent = unpaidGroups.reduce((s, g) => {
-    const unpaidRent = g.unpaidInGroup.filter(p => !isDepositPayment(p)).reduce((ss, p) => ss + p.amount, 0)
-    return s + Math.round(unpaidRent * 100) / 100
-  }, 0)
 
   // Invoices not linked to any Payment records — show them separately
   const groupedInvoiceIds = new Set(invoiceGroups.map(g => String(g.invoiceId)))
@@ -1700,11 +1695,9 @@ export default function ContractDetail() {
                 subtitle={payments.length === 0 && depositCoveredInvoices.length === 0 && standaloneInvoices.length === 0 ? 'No invoices yet' : `${paidGroups.length + depositCoveredInvoices.length} of ${invoiceGroups.length + depositCoveredInvoices.length + standaloneInvoices.length} invoice${(invoiceGroups.length + depositCoveredInvoices.length + standaloneInvoices.length) !== 1 ? 's' : ''} paid · ${formatMoney(totalPaid)} collected`}
                 action={
                   <div className="flex gap-2 flex-wrap">
-                    {(c.totalQuotation ?? 0) > 0 && (
-                      <Button size="sm" onClick={() => generateQuotationInvoices.mutate()} disabled={generateQuotationInvoices.isPending}>
-                        <FilePlus size={13} /> {generateQuotationInvoices.isPending ? 'Generating…' : 'Generate Invoices'}
-                      </Button>
-                    )}
+                    <Button size="sm" onClick={() => generateQuotationInvoices.mutate()} disabled={generateQuotationInvoices.isPending}>
+                      <FilePlus size={13} /> {generateQuotationInvoices.isPending ? 'Generating…' : 'Generate Invoices'}
+                    </Button>
                     <Button size="sm" variant="outline" onClick={() => navigate(`/invoices?create=1&customer=${c.customer?._id}&units=${allUnits.map(u => u?._id).filter(Boolean).join(',')}&order=${c.contractNo}&returnTo=${c._id}`)}><FilePlus size={13} /> New invoice</Button>
                   </div>
                 }
@@ -1796,11 +1789,9 @@ export default function ContractDetail() {
                 <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 mx-4 mb-4">
                   <div className="text-sm font-medium">All invoices paid</div>
                   <div className="flex gap-2">
-                    {(c.totalQuotation ?? 0) > 0 && (
-                      <Button size="sm" onClick={() => generateQuotationInvoices.mutate()} disabled={generateQuotationInvoices.isPending}>
-                        <FilePlus size={13} /> {generateQuotationInvoices.isPending ? 'Generating…' : 'Generate Invoices'}
-                      </Button>
-                    )}
+                    <Button size="sm" onClick={() => generateQuotationInvoices.mutate()} disabled={generateQuotationInvoices.isPending}>
+                      <FilePlus size={13} /> {generateQuotationInvoices.isPending ? 'Generating…' : 'Generate Invoices'}
+                    </Button>
                     <Button size="sm" variant="outline" onClick={() => navigate(`/invoices?create=1&customer=${c.customer?._id}&units=${allUnits.map(u => u?._id).filter(Boolean).join(',')}&order=${c.contractNo}&returnTo=${c._id}`)}><FilePlus size={13} /> New invoice</Button>
                   </div>
                 </div>

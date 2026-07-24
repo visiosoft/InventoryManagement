@@ -1042,8 +1042,13 @@ router.post('/:id/generate-quotation-invoices', async (req, res) => {
     const contract = await populateAll(Contract.findById(req.params.id));
     if (!contract) return res.status(404).json({ error: 'Contract not found' });
 
-    const totalQ = Number(contract.totalQuotation || 0);
-    if (totalQ <= 0) return res.status(400).json({ error: 'Set a Total Quotation amount first' });
+    const weeks = contract.startDate && contract.endDate
+      ? Math.ceil((new Date(contract.endDate) - new Date(contract.startDate)) / (7 * 24 * 60 * 60 * 1000))
+      : 0;
+    const weeklyRate = Number(contract.rate || 0) / 4;
+    const theoreticalTotal = Math.round(weeklyRate * weeks * 100) / 100 + Number(contract.deposit || 0);
+    const totalQ = Number(contract.totalQuotation || 0) || theoreticalTotal;
+    if (totalQ <= 0) return res.status(400).json({ error: 'Contract has no quotation amount or rate' });
 
     const monthlyRate = Number(contract.rate || 0);
     if (monthlyRate <= 0) return res.status(400).json({ error: 'Contract rate must be greater than 0' });
