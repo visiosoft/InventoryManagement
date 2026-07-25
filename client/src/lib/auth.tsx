@@ -6,7 +6,7 @@ export interface AuthUser {
   name: string
   email: string
   role: string          // 'admin' | 'staff'
-  permissions: string[] // module keys; admins bypass this entirely
+  permissions: string[] // module keys; admins with empty list get all access
   isActive: boolean
 }
 
@@ -14,7 +14,7 @@ interface AuthContextValue {
   user: AuthUser | null
   login: (email: string, password: string) => Promise<void>
   logout: () => void
-  /** Returns true if the current user can access the given module key. Admins always return true. */
+  /** Returns true if the current user can access the given module key. */
   hasPermission: (module: string) => boolean
 }
 
@@ -41,7 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   function hasPermission(module: string): boolean {
     if (!user) return false
-    if (user.role === 'admin') return true
+    if (user.role === 'admin' && !user.permissions?.length) return true
     return user.permissions.includes(module)
   }
 

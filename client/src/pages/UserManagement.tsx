@@ -447,7 +447,7 @@ export default function UserManagement() {
                       </span>
                     </Td>
                     <Td>
-                      {u.role === 'admin' ? (
+                      {u.role === 'admin' && moduleCount === 0 ? (
                         <span className="text-xs text-muted-foreground italic">All modules</span>
                       ) : moduleCount === 0 ? (
                         <span className="flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
