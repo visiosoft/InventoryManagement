@@ -63,6 +63,7 @@
         .log-filter { display: flex; gap: 6px; }
         .log-filter button { padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(20,8,31,0.15); background: white; font-size: 11px; font-weight: 600; cursor: pointer; }
         .log-filter button.active { background: #5B2BC9; color: white; border-color: #5B2BC9; }
+        input:focus { border-color: #5B2BC9 !important; box-shadow: 0 0 0 2px rgba(91,43,201,0.12); }
     </style>
 </head>
 <body>
@@ -77,6 +78,59 @@
         <div id="content">
             <div class="card center-msg">
                 <p>Checking connection...</p>
+            </div>
+        </div>
+
+        <!-- Settings panel -->
+        <div class="card" id="settingsCard" style="margin-top:24px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+                <div class="heading card-title" style="margin-bottom:0">Settings</div>
+                <button class="btn btn-outline" id="settingsToggle" style="padding:4px 12px;font-size:11px">▼ Expand</button>
+            </div>
+            <div id="settingsBody" style="display:none">
+                <div style="margin-bottom:18px">
+                    <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">Allowed Labels</label>
+                    <p style="font-size:12px;color:#756E80;margin-bottom:8px">WhatsApp labels to read leads from. Type a label and press Enter to add.</p>
+                    <div id="labelTags" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
+                    <div style="display:flex;gap:8px">
+                        <input type="text" id="labelInput" placeholder="e.g. New Customer" style="flex:1;padding:8px 12px;border:1px solid rgba(20,8,31,0.15);border-radius:8px;font-size:13px;outline:none;" />
+                        <button class="btn btn-outline" id="addLabelBtn" style="padding:6px 14px;font-size:12px">+ Add</button>
+                    </div>
+                </div>
+                <div style="margin-bottom:18px">
+                    <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+                        <input type="checkbox" id="syncOnlyAllowed" style="width:16px;height:16px;accent-color:#5B2BC9" />
+                        <span><strong>Sync only allowed labels</strong> — skip contacts without a matching label</span>
+                    </label>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px">
+                    <div>
+                        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Max Chats per Sync</label>
+                        <input type="number" id="cfgMaxChats" min="1" max="200" style="width:100%;padding:8px 12px;border:1px solid rgba(20,8,31,0.15);border-radius:8px;font-size:13px;outline:none;" />
+                    </div>
+                    <div>
+                        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Messages per Chat</label>
+                        <input type="number" id="cfgMsgPerChat" min="1" max="20" style="width:100%;padding:8px 12px;border:1px solid rgba(20,8,31,0.15);border-radius:8px;font-size:13px;outline:none;" />
+                    </div>
+                    <div>
+                        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Max Stored Messages</label>
+                        <input type="number" id="cfgMaxStore" min="1" max="100" style="width:100%;padding:8px 12px;border:1px solid rgba(20,8,31,0.15);border-radius:8px;font-size:13px;outline:none;" />
+                    </div>
+                    <div>
+                        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Auto-Sync Interval (ms)</label>
+                        <input type="number" id="cfgSyncInterval" min="0" style="width:100%;padding:8px 12px;border:1px solid rgba(20,8,31,0.15);border-radius:8px;font-size:13px;outline:none;" />
+                        <p style="font-size:11px;color:#756E80;margin-top:3px">0 = disabled. Needs server restart.</p>
+                    </div>
+                </div>
+                <div style="margin-bottom:18px">
+                    <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Default Owner Email</label>
+                    <input type="email" id="cfgOwnerEmail" placeholder="admin@company.com" style="width:100%;padding:8px 12px;border:1px solid rgba(20,8,31,0.15);border-radius:8px;font-size:13px;outline:none;" />
+                    <p style="font-size:11px;color:#756E80;margin-top:3px">Leads will be assigned to this user by default</p>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" id="saveSettingsBtn">Save Settings</button>
+                    <span id="settingsSaveStatus" style="font-size:13px;color:#10B981;align-self:center"></span>
+                </div>
             </div>
         </div>
 
@@ -315,6 +369,109 @@ function setupLogControls() {
 
 setupLogControls();
 fetchLogs('');
+
+// ── Settings ────────────────────────────────────────────────────────────────
+let settingsLabels = [];
+
+document.getElementById('settingsToggle').onclick = () => {
+    const body = document.getElementById('settingsBody');
+    const btn = document.getElementById('settingsToggle');
+    if (body.style.display === 'none') {
+        body.style.display = 'block';
+        btn.textContent = '▲ Collapse';
+        loadSettings();
+    } else {
+        body.style.display = 'none';
+        btn.textContent = '▼ Expand';
+    }
+};
+
+function renderLabelTags() {
+    const container = document.getElementById('labelTags');
+    container.innerHTML = settingsLabels.map((l, i) =>
+        `<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:rgba(91,43,201,0.08);color:#5B2BC9;border-radius:6px;font-size:12px;font-weight:600">
+            ${escHtml(l)}
+            <button onclick="removeLabel(${i})" style="border:none;background:none;color:#5B2BC9;cursor:pointer;font-size:14px;line-height:1;padding:0 2px">&times;</button>
+        </span>`
+    ).join('');
+}
+
+window.removeLabel = function(i) {
+    settingsLabels.splice(i, 1);
+    renderLabelTags();
+};
+
+document.getElementById('addLabelBtn').onclick = addLabel;
+document.getElementById('labelInput').onkeydown = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); addLabel(); }
+};
+
+function addLabel() {
+    const input = document.getElementById('labelInput');
+    const val = input.value.trim();
+    if (val && !settingsLabels.includes(val)) {
+        settingsLabels.push(val);
+        renderLabelTags();
+    }
+    input.value = '';
+    input.focus();
+}
+
+async function loadSettings() {
+    try {
+        const data = await apiFetch('/settings');
+        if (!data.ok) return;
+        const s = data.settings;
+        settingsLabels = s.allowedLabels || [];
+        renderLabelTags();
+        document.getElementById('syncOnlyAllowed').checked = s.syncOnlyAllowedLabels || false;
+        document.getElementById('cfgMaxChats').value = s.maxChats || 15;
+        document.getElementById('cfgMsgPerChat').value = s.messagesPerChat || 10;
+        document.getElementById('cfgMaxStore').value = s.maxStoreMessages || 10;
+        document.getElementById('cfgSyncInterval').value = s.syncIntervalMs || 0;
+        document.getElementById('cfgOwnerEmail').value = s.defaultOwnerEmail || '';
+    } catch (e) {
+        console.error('Failed to load settings:', e.message);
+    }
+}
+
+document.getElementById('saveSettingsBtn').onclick = async () => {
+    const btn = document.getElementById('saveSettingsBtn');
+    const status = document.getElementById('settingsSaveStatus');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+    status.textContent = '';
+    try {
+        const body = {
+            allowedLabels: settingsLabels,
+            syncOnlyAllowedLabels: document.getElementById('syncOnlyAllowed').checked,
+            maxChats: Number(document.getElementById('cfgMaxChats').value) || 15,
+            messagesPerChat: Number(document.getElementById('cfgMsgPerChat').value) || 10,
+            maxStoreMessages: Number(document.getElementById('cfgMaxStore').value) || 10,
+            syncIntervalMs: Number(document.getElementById('cfgSyncInterval').value) || 0,
+            defaultOwnerEmail: document.getElementById('cfgOwnerEmail').value.trim(),
+        };
+        const res = await fetch('/api/settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (data.ok) {
+            status.style.color = '#10B981';
+            status.textContent = '✓ Saved';
+        } else {
+            status.style.color = '#EF4444';
+            status.textContent = data.error || 'Save failed';
+        }
+    } catch (e) {
+        status.style.color = '#EF4444';
+        status.textContent = e.message;
+    }
+    btn.disabled = false;
+    btn.textContent = 'Save Settings';
+    setTimeout(() => { status.textContent = ''; }, 3000);
+};
 
 init();
 </script>

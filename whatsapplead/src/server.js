@@ -6,6 +6,7 @@ import cors from 'cors';
 import { connectDb } from '../../server/src/db.js';
 import { closeWhatsAppScraperBrowser, getSharedBrowser, scrapeWhatsAppConversations } from './services/whatsappScraper.js';
 import { listLeadMessages, listWhatsAppContacts, upsertConversationBatch } from './services/leadSync.js';
+import { getConfig, updateConfig } from './models/Config.js';
 
 const app = express();
 
@@ -81,6 +82,31 @@ app.get('/api/logs', requireApiKey, (req, res) => {
     const limit = Math.min(Number(req.query.limit) || 100, LOG_MAX);
     const filtered = level ? logBuffer.filter(l => l.level === level) : logBuffer;
     res.json({ ok: true, total: filtered.length, logs: filtered.slice(-limit) });
+});
+
+// ── Settings (DB-backed config) ──────────────────────────────────────────────
+
+app.get('/api/settings', requireApiKey, async (_req, res) => {
+    try {
+        const cfg = await getConfig();
+        res.json({ ok: true, settings: cfg });
+    } catch (e) {
+        res.status(500).json({ ok: false, error: e.message });
+    }
+});
+
+app.put('/api/settings', requireApiKey, async (req, res) => {
+    try {
+        const allowed = ['allowedLabels', 'syncOnlyAllowedLabels', 'maxChats', 'messagesPerChat', 'maxStoreMessages', 'syncIntervalMs', 'defaultOwnerEmail'];
+        const updates = {};
+        for (const key of allowed) {
+            if (req.body[key] !== undefined) updates[key] = req.body[key];
+        }
+        const cfg = await updateConfig(updates);
+        res.json({ ok: true, settings: cfg });
+    } catch (e) {
+        res.status(500).json({ ok: false, error: e.message });
+    }
 });
 
 app.get('/api/contacts', async (req, res) => {
@@ -197,15 +223,15 @@ app.post('/api/disconnect', requireApiKey, async (_req, res) => {
 
 app.post('/api/sync', requireApiKey, async (req, res) => {
     try {
-        const maxChats = Number(req.body?.maxChats || process.env.WHATSAPP_MAX_CHATS || 15);
-        const messagesPerChat = Number(req.body?.messagesPerChat || process.env.WHATSAPP_MESSAGES_PER_CHAT || 10);
-        const maxStoreMessages = Number(req.body?.maxStoreMessages || process.env.WHATSAPP_MAX_STORE_MESSAGES || 10);
+        const cfg = await getConfig();
+        const maxChats = Number(req.body?.maxChats || cfg.maxChats || 15);
+        const messagesPerChat = Number(req.body?.messagesPerChat || cfg.messagesPerChat || 10);
+        const maxStoreMessages = Number(req.body?.maxStoreMessages || cfg.maxStoreMessages || 10);
 
-        const allowedLabels = parseAllowedLabels(req.body?.allowedLabels || process.env.WHATSAPP_ALLOWED_LABELS || '');
-        const syncOnlyAllowedLabels = parseBoolean(
-            req.body?.syncOnlyAllowedLabels,
-            parseBoolean(process.env.WHATSAPP_SYNC_ONLY_ALLOWED_LABELS || 'false', false)
-        );
+        const allowedLabels = parseAllowedLabels(req.body?.allowedLabels || cfg.allowedLabels || []);
+        const syncOnlyAllowedLabels = req.body?.syncOnlyAllowedLabels !== undefined
+            ? parseBoolean(req.body.syncOnlyAllowedLabels)
+            : cfg.syncOnlyAllowedLabels || false;
 
         if (syncOnlyAllowedLabels && allowedLabels.length === 0) {
             return res.status(400).json({
@@ -224,7 +250,7 @@ app.post('/api/sync', requireApiKey, async (req, res) => {
         });
 
         const syncResult = await upsertConversationBatch(scraped, {
-            defaultOwnerEmail: process.env.DEFAULT_LEAD_OWNER_EMAIL || '',
+            defaultOwnerEmail: cfg.defaultOwnerEmail || process.env.DEFAULT_LEAD_OWNER_EMAIL || '',
             maxStoreMessages,
             allowSyntheticPhone: process.env.WHATSAPP_ALLOW_SYNTHETIC_PHONE,
             allowedLabels,
@@ -267,8 +293,9 @@ async function runScheduledSync() {
 
     syncInProgress = true;
     try {
-        const allowedLabels = parseAllowedLabels(process.env.WHATSAPP_ALLOWED_LABELS || '');
-        const syncOnlyAllowedLabels = parseBoolean(process.env.WHATSAPP_SYNC_ONLY_ALLOWED_LABELS || 'false', false);
+        const cfg = await getConfig();
+        const allowedLabels = cfg.allowedLabels || [];
+        const syncOnlyAllowedLabels = cfg.syncOnlyAllowedLabels || false;
 
         if (syncOnlyAllowedLabels && allowedLabels.length === 0) {
             console.log('[WhatsAppLead] Scheduled sync skipped: sync-only label mode enabled but no allowed labels configured.');
@@ -278,16 +305,16 @@ async function runScheduledSync() {
         const scraped = await scrapeWhatsAppConversations({
             webUrl: process.env.WHATSAPP_WEB_URL || 'https://web.whatsapp.com',
             headless: String(process.env.WHATSAPP_HEADLESS || 'false').toLowerCase() === 'true',
-            maxChats: Math.max(1, Math.min(Number(process.env.WHATSAPP_MAX_CHATS || 15), 200)),
-            messagesPerChat: Math.max(1, Math.min(Number(process.env.WHATSAPP_MESSAGES_PER_CHAT || 10), 20)),
+            maxChats: Math.max(1, Math.min(cfg.maxChats || 15, 200)),
+            messagesPerChat: Math.max(1, Math.min(cfg.messagesPerChat || 10, 20)),
             profileDir: process.env.WHATSAPP_PROFILE_DIR || '.wa-profile',
             allowedLabels,
             syncOnlyAllowedLabels,
         });
 
         const syncResult = await upsertConversationBatch(scraped, {
-            defaultOwnerEmail: process.env.DEFAULT_LEAD_OWNER_EMAIL || '',
-            maxStoreMessages: Number(process.env.WHATSAPP_MAX_STORE_MESSAGES || 10),
+            defaultOwnerEmail: cfg.defaultOwnerEmail || process.env.DEFAULT_LEAD_OWNER_EMAIL || '',
+            maxStoreMessages: cfg.maxStoreMessages || 10,
             allowSyntheticPhone: process.env.WHATSAPP_ALLOW_SYNTHETIC_PHONE,
             allowedLabels,
             syncOnlyAllowedLabels,
