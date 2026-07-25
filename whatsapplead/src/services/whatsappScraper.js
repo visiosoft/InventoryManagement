@@ -635,15 +635,18 @@ export async function scrapeWhatsAppConversations({
                         copyable?.getAttribute('data-id') ||
                         `${chatIndex}-${msgIndex}-${prePlain}`;
 
-                    const classBlob = [
-                        node.className,
-                        node.parentElement?.className,
-                        node.querySelector('[class*="message-"]')?.className,
-                    ]
-                        .filter(Boolean)
-                        .join(' ');
-
-                    const direction = classBlob.includes('message-out') ? 'outbound' : 'inbound';
+                    let direction = 'inbound';
+                    let walk = node;
+                    for (let d = 0; d < 8 && walk; d++) {
+                        const cls = walk.className || '';
+                        if (cls.includes('message-out')) { direction = 'outbound'; break; }
+                        if (walk.getAttribute?.('data-id')?.includes('true_')) { direction = 'outbound'; break; }
+                        walk = walk.parentElement;
+                    }
+                    if (direction === 'inbound' && convRow) {
+                        const dataId = convRow.getAttribute('data-id') || '';
+                        if (dataId.includes('true_')) direction = 'outbound';
+                    }
 
                     const hasImage = Boolean(
                         node.querySelector('img[src]') ||
