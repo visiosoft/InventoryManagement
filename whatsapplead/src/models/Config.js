@@ -34,7 +34,9 @@ export async function getConfig() {
 
 export async function updateConfig(updates) {
     const cfg = await getConfig();
-    Object.assign(cfg, updates);
+    for (const [key, value] of Object.entries(updates)) {
+        cfg.set(key, value);
+    }
     await cfg.save();
     return cfg;
 }
