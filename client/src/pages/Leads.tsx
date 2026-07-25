@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { CalendarPlus, CheckSquare, FileText, Mail, MessageCircle, MoreHorizontal, Plus, RefreshCw, Search, Send, Upload, X } from 'lucide-react'
@@ -1129,7 +1129,8 @@ export default function Leads() {
                         </thead>
                         <tbody>
                             {(leads || []).map((lead) => (
-                                <tr key={lead._id} className="hover:bg-muted/50 cursor-pointer" onClick={() => navigate(`/quotes/new?lead=${lead._id}`)}>
+                                <Fragment key={lead._id}>
+                                <tr className="hover:bg-muted/50 cursor-pointer" onClick={() => navigate(`/quotes/new?lead=${lead._id}`)}>
                                     <Td>
                                         <button
                                             onClick={(e) => { e.stopPropagation(); setExpandedLeadId(expandedLeadId === lead._id ? null : lead._id) }}
@@ -1238,6 +1239,7 @@ export default function Leads() {
                                         </td>
                                     </tr>
                                 )}
+                                </Fragment>
                             ))}
                         </tbody>
                     </Table>
