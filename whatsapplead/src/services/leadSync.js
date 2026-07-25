@@ -197,82 +197,88 @@ export async function upsertConversationBatch(conversations, options) {
         const sanitizedLabels = sanitizeConversationLabels(rawLabels, conversation);
 
         const identity = resolvePhoneIdentity(conversation, options);
-        if (!identity) continue;
+        if (!identity) {
+            console.warn(`[WhatsAppLead][Skip] No phone identity for "${conversation.chatTitle}"`);
+            continue;
+        }
 
         const { phoneNormalized, phoneDisplay, isSynthetic } = identity;
 
-        let lead = await Lead.findOne({ phoneNormalized });
-        if (!lead) {
-            lead = await Lead.create({
-                fullName: cleanName(conversation.chatTitle, phoneNormalized),
-                email: '',
-                phone: phoneDisplay,
-                phoneNormalized,
-                status: 'new',
-                source: 'whatsapp',
-                leadDateTime: new Date(),
-                storageSizeValue: 0,
-                storageSizeUnit: 'sqft',
-                durationValue: 1,
-                durationUnit: 'month',
-                ...(ownerId && { owner: ownerId }),
-                unitsNeeded: 1,
-                notes: buildLeadNotes(conversation, isSynthetic),
-                timeline: [{ type: 'created', text: 'Lead auto-created from WhatsApp desktop scrape.' }],
-            });
-            createdLeads += 1;
-            logLeadSync('created', {
-                name: lead.fullName,
-                phone: lead.phone,
-                phoneNormalized,
-                messageCount: conversation.messages?.length || 0,
-                isSynthetic,
-                labels: conversation.labels,
-            });
-        } else {
-            // Merge: update existing lead with WhatsApp data without overwriting good data
-            const waName = cleanName(conversation.chatTitle, phoneNormalized);
-            const updates = {};
+        try {
+            let lead = await Lead.findOne({ phoneNormalized });
+            if (!lead) {
+                lead = await Lead.create({
+                    fullName: cleanName(conversation.chatTitle, phoneNormalized),
+                    email: '',
+                    phone: phoneDisplay,
+                    phoneNormalized,
+                    status: 'new',
+                    source: 'whatsapp',
+                    leadDateTime: new Date(),
+                    storageSizeValue: 0,
+                    storageSizeUnit: 'sqft',
+                    durationValue: 1,
+                    durationUnit: 'month',
+                    ...(ownerId && { owner: ownerId }),
+                    unitsNeeded: 1,
+                    notes: buildLeadNotes(conversation, isSynthetic),
+                    timeline: [{ type: 'created', text: 'Lead auto-created from WhatsApp desktop scrape.' }],
+                });
+                createdLeads += 1;
+                console.log(`[WhatsAppLead][DB] Created lead: "${lead.fullName}" phone=${lead.phone}`);
+                logLeadSync('created', {
+                    name: lead.fullName,
+                    phone: lead.phone,
+                    phoneNormalized,
+                    messageCount: conversation.messages?.length || 0,
+                    isSynthetic,
+                    labels: conversation.labels,
+                });
+            } else {
+                // Merge: update existing lead with WhatsApp data without overwriting good data
+                const waName = cleanName(conversation.chatTitle, phoneNormalized);
+                const updates = {};
 
-            // Upgrade source to whatsapp if it was manual/google so we know it's on WA
-            if (lead.source !== 'whatsapp') updates.source = 'whatsapp';
+                // Upgrade source to whatsapp if it was manual/google so we know it's on WA
+                if (lead.source !== 'whatsapp') updates.source = 'whatsapp';
 
-            // Only overwrite name if existing name is a placeholder and WA has a real name
-            if (isPlaceholderLeadName(lead.fullName) && !isPlaceholderLeadName(waName)) {
-                updates.fullName = waName;
-            }
+                // Only overwrite name if existing name is a placeholder and WA has a real name
+                if (isPlaceholderLeadName(lead.fullName) && !isPlaceholderLeadName(waName)) {
+                    updates.fullName = waName;
+                }
 
-            // Fill in phone display if existing record has a synthetic/placeholder phone
-            if (isPlaceholderPhone(lead.phone) && !isSynthetic) {
-                updates.phone = phoneDisplay;
-            }
+                // Fill in phone display if existing record has a synthetic/placeholder phone
+                if (isPlaceholderPhone(lead.phone) && !isSynthetic) {
+                    updates.phone = phoneDisplay;
+                }
 
-            if (Object.keys(updates).length > 0) {
-                await Lead.findByIdAndUpdate(lead._id, {
-                    $set: updates,
-                    $push: { timeline: { type: 'whatsapp_merge', text: 'Lead merged with WhatsApp contact.' } },
+                if (Object.keys(updates).length > 0) {
+                    await Lead.findByIdAndUpdate(lead._id, {
+                        $set: updates,
+                        $push: { timeline: { type: 'whatsapp_merge', text: 'Lead merged with WhatsApp contact.' } },
+                    });
+                }
+
+                updatedLeads += 1;
+                console.log(`[WhatsAppLead][DB] Updated lead: "${lead.fullName}" phone=${lead.phone}`);
+                logLeadSync('merged', {
+                    name: lead.fullName,
+                    phone: lead.phone,
+                    phoneNormalized,
+                    messageCount: conversation.messages?.length || 0,
+                    isSynthetic,
+                    labels: conversation.labels,
                 });
             }
 
-            updatedLeads += 1;
-            logLeadSync('merged', {
-                name: lead.fullName,
-                phone: lead.phone,
-                phoneNormalized,
-                messageCount: conversation.messages?.length || 0,
-                isSynthetic,
-                labels: conversation.labels,
-            });
-        }
-
-        const mappedStatus = mapStatusFromLabels(labels);
+        const mappedStatus = mapStatusFromLabels(rawLabels);
 
         await WhatsAppLabelState.findOneAndUpdate(
             { phoneNormalized },
             {
                 phone: phoneDisplay,
                 phoneNormalized,
-                labels,
+                labels: rawLabels,
                 mappedStatus,
                 lastEventKey: `scrape:${Date.now()}:${phoneNormalized}`,
                 lastWebhookAt: new Date(),
@@ -306,7 +312,7 @@ export async function upsertConversationBatch(conversations, options) {
                             occurredAt: Number.isNaN(occurredAt.getTime()) ? new Date() : occurredAt,
                             raw: {
                                 importedFrom: 'whatsapp-web-scraper',
-                                labels,
+                                labels: rawLabels,
                                 media: msg.media || {},
                                 links: msg.links || [],
                                 meta: msg.raw || {},
@@ -321,6 +327,9 @@ export async function upsertConversationBatch(conversations, options) {
         if (ops.length > 0) {
             const result = await WhatsAppMessage.bulkWrite(ops, { ordered: false });
             savedMessages += Number(result.upsertedCount || 0);
+        }
+        } catch (err) {
+            console.error(`[WhatsAppLead][DB] Failed to save "${conversation.chatTitle}": ${err.message}`);
         }
     }
 
