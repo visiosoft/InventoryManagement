@@ -51,6 +51,18 @@
         .spin { animation: spin 1s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
         @media (max-width: 520px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
+        .log-panel { background: #14081F; border-radius: 12px; padding: 16px; max-height: 400px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.7; }
+        .log-panel::-webkit-scrollbar { width: 6px; }
+        .log-panel::-webkit-scrollbar-thumb { background: #5B2BC9; border-radius: 3px; }
+        .log-line { white-space: pre-wrap; word-break: break-all; }
+        .log-line .ts { color: #756E80; }
+        .log-line.info { color: #A3E635; }
+        .log-line.warn { color: #FBBF24; }
+        .log-line.error { color: #F87171; }
+        .log-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
+        .log-filter { display: flex; gap: 6px; }
+        .log-filter button { padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(20,8,31,0.15); background: white; font-size: 11px; font-weight: 600; cursor: pointer; }
+        .log-filter button.active { background: #5B2BC9; color: white; border-color: #5B2BC9; }
     </style>
 </head>
 <body>
@@ -65,6 +77,25 @@
         <div id="content">
             <div class="card center-msg">
                 <p>Checking connection...</p>
+            </div>
+        </div>
+
+        <!-- Logs panel — always visible -->
+        <div class="card" style="margin-top:24px">
+            <div class="log-toolbar">
+                <div class="heading card-title" style="margin-bottom:0">Logs</div>
+                <div style="display:flex;gap:8px;align-items:center">
+                    <div class="log-filter" id="logFilter">
+                        <button class="active" data-level="">All</button>
+                        <button data-level="info">Info</button>
+                        <button data-level="warn">Warn</button>
+                        <button data-level="error">Error</button>
+                    </div>
+                    <button class="btn btn-outline" id="refreshLogsBtn" style="padding:4px 10px;font-size:11px">↻ Refresh</button>
+                </div>
+            </div>
+            <div class="log-panel" id="logPanel">
+                <div class="log-line info">Loading logs...</div>
             </div>
         </div>
     </div>
@@ -240,6 +271,50 @@ async function doDisconnect() {
         btn.innerHTML = `${svgWifiOff} Disconnect`;
     }
 }
+
+// ── Logs ─────────────────────────────────────────────────────────────────────
+let currentLogLevel = '';
+let logPollTimer = null;
+
+async function fetchLogs(level) {
+    try {
+        const q = level ? `?level=${level}&limit=200` : '?limit=200';
+        const data = await apiFetch('/logs' + q);
+        const panel = document.getElementById('logPanel');
+        if (!data.logs || data.logs.length === 0) {
+            panel.innerHTML = '<div class="log-line info">No logs yet.</div>';
+            return;
+        }
+        panel.innerHTML = data.logs.map(l => {
+            const ts = l.ts.replace('T', ' ').replace('Z', '').slice(0, 19);
+            return `<div class="log-line ${l.level}"><span class="ts">[${ts}]</span> ${escHtml(l.msg)}</div>`;
+        }).join('');
+        panel.scrollTop = panel.scrollHeight;
+    } catch (e) {
+        document.getElementById('logPanel').innerHTML = `<div class="log-line error">Failed to load logs: ${escHtml(e.message)}</div>`;
+    }
+}
+
+function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function setupLogControls() {
+    document.getElementById('refreshLogsBtn').onclick = () => fetchLogs(currentLogLevel);
+    document.querySelectorAll('#logFilter button').forEach(btn => {
+        btn.onclick = () => {
+            currentLogLevel = btn.dataset.level;
+            document.querySelectorAll('#logFilter button').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            fetchLogs(currentLogLevel);
+        };
+    });
+    // Auto-refresh logs every 10 seconds
+    logPollTimer = setInterval(() => fetchLogs(currentLogLevel), 10000);
+}
+
+setupLogControls();
+fetchLogs('');
 
 init();
 </script>

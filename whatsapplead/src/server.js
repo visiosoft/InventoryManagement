@@ -12,6 +12,23 @@ const app = express();
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '2mb' }));
 
+// ── In-memory log buffer ─────────────────────────────────────────────────────
+const LOG_MAX = 500;
+const logBuffer = [];
+
+function addLog(level, msg) {
+    const entry = { ts: new Date().toISOString(), level, msg };
+    logBuffer.push(entry);
+    if (logBuffer.length > LOG_MAX) logBuffer.shift();
+}
+
+const origLog = console.log;
+const origErr = console.error;
+const origWarn = console.warn;
+console.log = (...args) => { addLog('info', args.join(' ')); origLog(...args); };
+console.error = (...args) => { addLog('error', args.join(' ')); origErr(...args); };
+console.warn = (...args) => { addLog('warn', args.join(' ')); origWarn(...args); };
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const publicDir = path.resolve(__dirname, '../public');
@@ -57,6 +74,13 @@ function requireApiKey(req, res, next) {
 
 app.get('/api/health', (_req, res) => {
     res.json({ ok: true, service: 'whatsapplead' });
+});
+
+app.get('/api/logs', requireApiKey, (req, res) => {
+    const level = req.query.level; // 'info', 'warn', 'error' or omit for all
+    const limit = Math.min(Number(req.query.limit) || 100, LOG_MAX);
+    const filtered = level ? logBuffer.filter(l => l.level === level) : logBuffer;
+    res.json({ ok: true, total: filtered.length, logs: filtered.slice(-limit) });
 });
 
 app.get('/api/contacts', async (req, res) => {
