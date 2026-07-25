@@ -10,8 +10,17 @@ import {
 } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
 
+const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
+const INK = '#14081F'
+const MUTED = '#756E80'
+const PURPLE = '#5B2BC9'
+
 const invoiceStatusTone: Record<InvoiceStatus, string> = {
     draft: 'gray', sent: 'blue', paid: 'green', partial: 'amber', overdue: 'red', cancelled: 'amber',
+}
+
+const statusDot: Record<string, string> = {
+    draft: '#94A3B8', sent: '#3B82F6', paid: '#10B981', partial: '#F59E0B', overdue: '#EF4444', cancelled: '#F59E0B',
 }
 
 // Merge legacy "Week N: DD Mon YYYY · Unit X" line items into one monthly line
@@ -585,91 +594,77 @@ export default function InvoiceDetail() {
     const canPay = !['paid', 'cancelled'].includes(invoice.status)
 
     return (
-        <div>
-            {/* Back link */}
-            <button
-                onClick={() => navigate(-1)}
-                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-4 cursor-pointer"
-            >
-                <ArrowLeft size={13} /> Back
-            </button>
-
-            {/* Page header */}
-            <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
-                <div>
-                    <div className="flex items-center gap-3">
-                        <h1 className="text-2xl font-bold">{invoice.invoiceNo}</h1>
-                        <Badge tone={invoiceStatusTone[invoice.status]}>{invoiceLabel(invoice.status)}</Badge>
-                    </div>
+        <div style={{ background: '#FDFCFA', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+            {/* Header */}
+            <div className="flex items-center gap-3 mb-4">
+                <button onClick={() => navigate(-1)} className="hover:opacity-70 transition-opacity" style={{ color: MUTED }}>
+                    <ArrowLeft size={18} />
+                </button>
+                <div className="flex-1 min-w-0">
+                    <div style={{ ...HEADING, fontSize: 22, fontWeight: 700, color: INK }} className="font-mono">{invoice.invoiceNo}</div>
                     {invoice.customer?.fullName && (
-                        <p className="text-sm text-muted-foreground mt-1">{invoice.customer.fullName}</p>
+                        <div style={{ fontSize: 14, color: MUTED, marginTop: 2 }}>{invoice.customer.fullName}</div>
                     )}
                 </div>
+                <div className="flex items-center gap-1.5">
+                    <span style={{ width: 7, height: 7, borderRadius: 4, background: statusDot[invoice.status] }} />
+                    <Badge tone={invoiceStatusTone[invoice.status]}>{invoiceLabel(invoice.status)}</Badge>
+                </div>
+            </div>
 
-                {/* Action buttons */}
-                <div className="flex flex-wrap gap-2">
-                    {invoice.status === 'draft' && (
-                        <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => updateStatus.mutate('sent')}
-                            disabled={updateStatus.isPending}
-                        >
-                            Mark as Sent
-                        </Button>
-                    )}
-                    {invoice.status !== 'cancelled' && (
-                        <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
-                            <Pencil size={13} /> Edit
-                        </Button>
-                    )}
-                    <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => whatsapp.mutate()}
-                        disabled={whatsapp.isPending}
-                        className="text-emerald-600 border-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+            {/* Action buttons */}
+            <div className="flex flex-wrap gap-2 mb-7">
+                {invoice.status === 'draft' && (
+                    <Button size="sm" variant="outline" onClick={() => updateStatus.mutate('sent')} disabled={updateStatus.isPending}>
+                        Mark as Sent
+                    </Button>
+                )}
+                {invoice.status !== 'cancelled' && (
+                    <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+                        <Pencil size={13} /> Edit
+                    </Button>
+                )}
+                <Button
+                    size="sm" variant="outline"
+                    onClick={() => whatsapp.mutate()} disabled={whatsapp.isPending}
+                    className="text-emerald-600 border-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+                >
+                    <MessageCircle size={13} />
+                    {whatsapp.isPending ? 'Generating…' : 'WhatsApp'}
+                </Button>
+                <Button size="sm" variant="outline" onClick={openPdf}>
+                    <Download size={14} /> PDF
+                </Button>
+                <Button
+                    size="sm" variant="outline"
+                    onClick={() => syncZoho.mutate()} disabled={syncZoho.isPending}
+                    className={invoice.zohoBooksSyncId ? 'text-emerald-600 border-emerald-300' : invoice.zohoBooksSyncError ? 'text-red-600 border-red-300' : ''}
+                    title={invoice.zohoBooksSyncId ? `Synced to Zoho Books on ${new Date(invoice.zohoBooksSyncedAt!).toLocaleDateString()}` : invoice.zohoBooksSyncError ? `Sync failed: ${invoice.zohoBooksSyncError}` : 'Sync to Zoho Books'}
+                >
+                    <RefreshCw size={13} className={syncZoho.isPending ? 'animate-spin' : ''} />
+                    {syncZoho.isPending ? 'Syncing…' : invoice.zohoBooksSyncId ? 'Synced' : 'Sync to Zoho'}
+                </Button>
+                {invoice.zohoBooksSyncId && (
+                    <a
+                        href={`https://books.zoho.com/app/908459713#/invoices/${invoice.zohoBooksSyncId}`}
+                        target="_blank" rel="noreferrer"
+                        className="inline-flex items-center gap-1 rounded-md border border-emerald-300 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
                     >
-                        <MessageCircle size={13} />
-                        {whatsapp.isPending ? 'Generating…' : 'WhatsApp'}
+                        Open in Zoho ↗
+                    </a>
+                )}
+                {canPay && (
+                    <Button size="sm" variant="success" onClick={() => setPaying(true)}>
+                        Record Payment
                     </Button>
-                    <Button size="sm" variant="outline" onClick={openPdf}>
-                        <Download size={14} /> PDF
-                    </Button>
-                    <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => syncZoho.mutate()}
-                        disabled={syncZoho.isPending}
-                        className={invoice.zohoBooksSyncId ? 'text-emerald-600 border-emerald-300' : invoice.zohoBooksSyncError ? 'text-red-600 border-red-300' : ''}
-                        title={invoice.zohoBooksSyncId ? `Synced to Zoho Books on ${new Date(invoice.zohoBooksSyncedAt!).toLocaleDateString()}` : invoice.zohoBooksSyncError ? `Sync failed: ${invoice.zohoBooksSyncError}` : 'Sync to Zoho Books'}
-                    >
-                        <RefreshCw size={13} className={syncZoho.isPending ? 'animate-spin' : ''} />
-                        {syncZoho.isPending ? 'Syncing…' : invoice.zohoBooksSyncId ? 'Synced' : 'Sync to Zoho'}
-                    </Button>
-                    {invoice.zohoBooksSyncId && (
-                        <a
-                            href={`https://books.zoho.com/app/908459713#/invoices/${invoice.zohoBooksSyncId}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1 rounded-md border border-emerald-300 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
-                        >
-                            Open in Zoho ↗
-                        </a>
-                    )}
-                    {canPay && (
-                        <Button size="sm" variant="success" onClick={() => setPaying(true)}>
-                            Record Payment
-                        </Button>
-                    )}
-                </div>
+                )}
             </div>
 
             {/* Zoho sync error */}
             {(syncZoho.error || (invoice.zohoBooksSyncError && !invoice.zohoBooksSyncId)) && (
-                <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 dark:bg-red-950/20 dark:border-red-900 px-4 py-3">
+                <div className="flex items-start gap-2 mb-4" style={{ background: '#FEF2F2', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 12, padding: '12px 16px' }}>
                     <AlertCircle className="text-red-600 shrink-0 mt-0.5" size={15} />
-                    <div className="text-xs text-red-700 dark:text-red-400">
+                    <div style={{ fontSize: 12, color: '#B91C1C' }}>
                         <span className="font-semibold">Zoho Books sync failed: </span>
                         {syncZoho.error ? apiError(syncZoho.error) : invoice.zohoBooksSyncError}
                     </div>
@@ -680,265 +675,236 @@ export default function InvoiceDetail() {
             <WhatNext invoice={invoice} onRecordPayment={() => setPaying(true)} />
 
             {/* Details + Payment summary */}
-            <div className="grid gap-4 lg:grid-cols-3 mb-4">
+            <div className="grid gap-4 lg:grid-cols-3 mb-6">
                 {/* Invoice details */}
-                <Card className="lg:col-span-2 relative overflow-hidden">
+                <div className="lg:col-span-2 relative overflow-hidden" style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: '20px 24px' }}>
                     {invoice.status === 'overdue' && <CornerRibbon label="Overdue" color="amber" />}
                     {invoice.status === 'paid' && <CornerRibbon label="Paid" color="green" />}
-                    <CardHeader title={`${docLabel(invoice)} Details`} />
-                    <CardBody className="space-y-4 text-sm">
-                        <div className="grid grid-cols-2 gap-6">
-                            <div>
-                                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-1">
-                                    Bill To
-                                </p>
-                                <p className="font-semibold">{invoice.customer?.fullName || '—'}</p>
-                                {invoice.customer?.address && (
-                                    <p className="text-muted-foreground text-xs mt-0.5">{invoice.customer.address}</p>
-                                )}
-                                {invoice.customer?.email && (
-                                    <p className="text-muted-foreground text-xs">{invoice.customer.email}</p>
-                                )}
-                                {invoice.customer?.phone && (
-                                    <p className="text-muted-foreground text-xs">{invoice.customer.phone}</p>
-                                )}
-                            </div>
-                            <div className="space-y-2.5">
-                                <div>
-                                    <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
-                                        {docLabel(invoice)} Date
-                                    </p>
-                                    <p>{formatDate(invoice.invoiceDate)}</p>
-                                </div>
-                                <div>
-                                    <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
-                                        Due Date
-                                    </p>
-                                    <p>{formatDate(invoice.dueDate)}</p>
-                                </div>
-                                {invoice.terms && (
-                                    <div>
-                                        <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
-                                            Terms
-                                        </p>
-                                        <p>{invoice.terms}</p>
-                                    </div>
-                                )}
-                                {invoice.orderNumber && (
-                                    <div>
-                                        <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
-                                            Order #
-                                        </p>
-                                        <p>{invoice.orderNumber}</p>
-                                    </div>
-                                )}
-                                {invoice.salesperson && (
-                                    <div>
-                                        <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
-                                            Salesperson
-                                        </p>
-                                        <p>{invoice.salesperson}</p>
-                                    </div>
-                                )}
-                            </div>
+                    <div style={{ ...HEADING, fontSize: 15, fontWeight: 700, color: INK, marginBottom: 16 }}>{docLabel(invoice)} Details</div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+                        <div>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Bill To</div>
+                            <p style={{ fontWeight: 600, color: INK }}>{invoice.customer?.fullName || '—'}</p>
+                            {invoice.customer?.address && <p style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>{invoice.customer.address}</p>}
+                            {invoice.customer?.email && <p style={{ fontSize: 12, color: MUTED }}>{invoice.customer.email}</p>}
+                            {invoice.customer?.phone && <p style={{ fontSize: 12, color: MUTED }}>{invoice.customer.phone}</p>}
                         </div>
-
-                        {invoice.bankInformation && (
+                        <div className="space-y-3">
                             <div>
-                                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-1">
-                                    Bank Information
-                                </p>
-                                <div className="rounded-lg bg-muted/50 px-3 py-2 text-xs whitespace-pre-line">
-                                    {invoice.bankInformation}
+                                <div style={{ fontSize: 11, fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{docLabel(invoice)} Date</div>
+                                <div style={{ fontSize: 13, color: INK }}>{formatDate(invoice.invoiceDate)}</div>
+                            </div>
+                            <div>
+                                <div style={{ fontSize: 11, fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Due Date</div>
+                                <div style={{ fontSize: 13, color: INK }}>{formatDate(invoice.dueDate)}</div>
+                            </div>
+                            {invoice.terms && (
+                                <div>
+                                    <div style={{ fontSize: 11, fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Terms</div>
+                                    <div style={{ fontSize: 13, color: INK }}>{invoice.terms}</div>
                                 </div>
-                            </div>
-                        )}
+                            )}
+                            {invoice.orderNumber && (
+                                <div>
+                                    <div style={{ fontSize: 11, fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Order #</div>
+                                    <div style={{ fontSize: 13, color: INK }}>{invoice.orderNumber}</div>
+                                </div>
+                            )}
+                            {invoice.salesperson && (
+                                <div>
+                                    <div style={{ fontSize: 11, fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Salesperson</div>
+                                    <div style={{ fontSize: 13, color: INK }}>{invoice.salesperson}</div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
 
-                        {invoice.subject && (
-                            <div>
-                                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
-                                    Subject
-                                </p>
-                                <p>{invoice.subject}</p>
-                            </div>
-                        )}
-
-                        {invoice.customerNotes && (
-                            <div>
-                                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
-                                    Notes
-                                </p>
-                                <p className="text-muted-foreground">{invoice.customerNotes}</p>
-                            </div>
-                        )}
-                    </CardBody>
-                </Card>
+                    {invoice.bankInformation && (
+                        <div className="mt-4">
+                            <div style={{ fontSize: 11, fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Bank Information</div>
+                            <div style={{ background: '#FAF8F5', borderRadius: 10, padding: '8px 12px', fontSize: 12, color: INK, whiteSpace: 'pre-line' }}>{invoice.bankInformation}</div>
+                        </div>
+                    )}
+                    {invoice.subject && (
+                        <div className="mt-4">
+                            <div style={{ fontSize: 11, fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Subject</div>
+                            <div style={{ fontSize: 13, color: INK }}>{invoice.subject}</div>
+                        </div>
+                    )}
+                    {invoice.customerNotes && (
+                        <div className="mt-4">
+                            <div style={{ fontSize: 11, fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Notes</div>
+                            <div style={{ fontSize: 13, color: MUTED }}>{invoice.customerNotes}</div>
+                        </div>
+                    )}
+                </div>
 
                 {/* Payment summary */}
-                <Card>
-                    <CardHeader title="Payment Summary" />
-                    <CardBody className="space-y-4">
-                        <div className="rounded-lg bg-muted/50 px-4 py-3 space-y-2 text-sm">
-                            <div className="flex justify-between">
-                                <span className="text-muted-foreground">{docLabel(invoice)} Total</span>
-                                <span className="font-medium">AED {formatMoney(invoice.total)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-muted-foreground">Amount Paid</span>
-                                <span className="font-medium text-emerald-600">AED {formatMoney(paid)}</span>
-                            </div>
-                            <div className="border-t pt-2 flex justify-between">
-                                <span className="font-semibold">Balance Due</span>
-                                <span className={`font-bold ${balance > 0 ? 'text-destructive' : 'text-emerald-600'}`}>
-                                    AED {formatMoney(balance)}
-                                </span>
-                            </div>
+                <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: '20px 24px' }}>
+                    <div style={{ ...HEADING, fontSize: 15, fontWeight: 700, color: INK, marginBottom: 16 }}>Payment Summary</div>
+                    <div className="space-y-2 text-sm">
+                        <div className="flex justify-between py-2" style={{ borderBottom: '1px solid rgba(20,8,31,0.06)' }}>
+                            <span style={{ color: MUTED }}>{docLabel(invoice)} Total</span>
+                            <span style={{ fontWeight: 500, color: INK }}>AED {formatMoney(invoice.total)}</span>
                         </div>
-                        {canPay && (
-                            <Button variant="success" className="w-full" size="sm" onClick={() => setPaying(true)}>
-                                Record Payment
-                            </Button>
-                        )}
-                    </CardBody>
-                </Card>
+                        <div className="flex justify-between py-2" style={{ borderBottom: '1px solid rgba(20,8,31,0.06)' }}>
+                            <span style={{ color: MUTED }}>Amount Paid</span>
+                            <span style={{ fontWeight: 500, color: '#059669' }}>AED {formatMoney(paid)}</span>
+                        </div>
+                        <div className="flex justify-between py-2">
+                            <span style={{ fontSize: 14, fontWeight: 700, color: INK }}>Balance Due</span>
+                            <span style={{ fontSize: 14, fontWeight: 700, color: balance > 0 ? '#EF4444' : '#059669' }}>AED {formatMoney(balance)}</span>
+                        </div>
+                    </div>
+                    {canPay && (
+                        <Button variant="success" className="w-full mt-4" size="sm" onClick={() => setPaying(true)}>
+                            Record Payment
+                        </Button>
+                    )}
+                </div>
             </div>
 
             {/* Items table */}
-            <Card className="mb-4">
-                <CardHeader title="Items" />
-                <Table>
-                    <thead>
-                        <tr>
-                            <Th>#</Th>
-                            <Th>Item & Description</Th>
-                            <Th className="text-right">Qty</Th>
-                            <Th className="text-right">Rate (AED)</Th>
-                            {(invoice.items || []).some(it => (it.discountPct ?? 0) > 0) && (
-                                <Th className="text-right">Discount</Th>
-                            )}
-                            <Th className="text-right">Amount (AED)</Th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {consolidateItems(invoice.items).map((it, idx) => {
-                            const hasDiscount = consolidateItems(invoice.items).some(i => (i.discountPct ?? 0) > 0)
-                            const discounted = (it.discountPct ?? 0) > 0
-                            return (
-                                <tr key={idx} className={`hover:bg-muted/50 ${discounted ? 'bg-amber-50/60 dark:bg-amber-950/20' : ''}`}>
-                                    <Td className="text-muted-foreground">{idx + 1}</Td>
-                                    <Td className="whitespace-pre-line">
-                                        {it.itemDetails}
-                                        {it.description && <div className="text-xs text-muted-foreground mt-0.5">{it.description}</div>}
-                                    </Td>
-                                    <Td className="text-right text-muted-foreground">
-                                        {/^(Storage Rent|Refundable \/ Adjustable Security Deposit)/.test(it.itemDetails ?? '') ? '1' : '—'}
-                                    </Td>
-                                    <Td className="text-right">
-                                        {discounted
-                                            ? <span className="line-through text-muted-foreground">{formatMoney(it.rate)}</span>
-                                            : formatMoney(it.rate)
-                                        }
-                                    </Td>
-                                    {hasDiscount && (
-                                        <Td className="text-right">
-                                            {discounted
-                                                ? <span className="text-amber-600 font-medium">{it.discountPct}% off</span>
-                                                : <span className="text-muted-foreground">—</span>
-                                            }
-                                        </Td>
-                                    )}
-                                    <Td className="text-right font-medium">{formatMoney(it.amount)}</Td>
-                                </tr>
-                            )
-                        })}
-                    </tbody>
-                </Table>
-                <div className="border-t px-5 py-3 space-y-1.5 text-sm">
-                    <div className="flex justify-end gap-8">
-                        <span className="text-muted-foreground">Sub Total</span>
-                        <span className="w-28 text-right">{formatMoney(invoice.subTotal)}</span>
-                    </div>
-                    {invoice.vatEnabled && (
-                        <div className="flex justify-end gap-8 text-muted-foreground">
-                            <span>VAT ({invoice.vatPct ?? 5}%)</span>
-                            <span className="w-28 text-right">{formatMoney(invoice.vatAmount ?? 0)}</span>
-                        </div>
-                    )}
-                    <div className="flex justify-end gap-8 font-bold text-base border-t pt-1.5">
-                        <span>Total</span>
-                        <span className="w-28 text-right">AED {formatMoney(invoice.total)}</span>
-                    </div>
-                    {paid > 0 && (
-                        <>
-                            <div className="flex justify-end gap-8 text-destructive">
-                                <span>Payment Made</span>
-                                <span className="w-28 text-right">(-) {formatMoney(paid)}</span>
-                            </div>
-                            <div className="flex justify-end gap-8 font-bold">
-                                <span>Balance Due</span>
-                                <span className={`w-28 text-right ${balance > 0 ? 'text-destructive' : 'text-emerald-600'}`}>
-                                    {formatMoney(balance)}
-                                </span>
-                            </div>
-                        </>
-                    )}
+            <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, overflow: 'hidden', marginBottom: 24 }}>
+                <div style={{ padding: '16px 24px', borderBottom: '1px solid rgba(20,8,31,0.06)' }}>
+                    <div style={{ ...HEADING, fontSize: 15, fontWeight: 700, color: INK }}>Items</div>
                 </div>
-            </Card>
-
-            {/* Payment history */}
-            {(invoice.paymentHistory ?? []).length > 0 && (
-                <Card className="mb-4">
-                    <CardHeader title={`Payment History (${invoice.paymentHistory!.length})`} />
-                    <Table>
+                <div className="overflow-x-auto">
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                         <thead>
-                            <tr>
-                                <Th>#</Th>
-                                <Th>Date</Th>
-                                <Th>Amount (AED)</Th>
-                                <Th>Method</Th>
-                                <Th>Notes</Th>
-                                <Th className="w-20"></Th>
+                            <tr style={{ borderBottom: '1px solid rgba(20,8,31,0.06)' }}>
+                                <th style={{ padding: '10px 16px', fontSize: 11, fontWeight: 600, color: MUTED, textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.05em' }}>#</th>
+                                <th style={{ padding: '10px 16px', fontSize: 11, fontWeight: 600, color: MUTED, textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Item & Description</th>
+                                <th style={{ padding: '10px 16px', fontSize: 11, fontWeight: 600, color: MUTED, textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Qty</th>
+                                <th style={{ padding: '10px 16px', fontSize: 11, fontWeight: 600, color: MUTED, textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Rate (AED)</th>
+                                {(invoice.items || []).some(it => (it.discountPct ?? 0) > 0) && (
+                                    <th style={{ padding: '10px 16px', fontSize: 11, fontWeight: 600, color: MUTED, textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Discount</th>
+                                )}
+                                <th style={{ padding: '10px 16px', fontSize: 11, fontWeight: 600, color: MUTED, textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Amount (AED)</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {invoice.paymentHistory!.map((p, idx) => (
-                                <tr key={idx} className="hover:bg-muted/50">
-                                    <Td className="text-muted-foreground">{idx + 1}</Td>
-                                    <Td>{formatDate(p.date)}</Td>
-                                    <Td className="font-medium text-emerald-600">{formatMoney(p.amount)}</Td>
-                                    <Td className="capitalize">{p.method.replace('_', ' ')}</Td>
-                                    <Td className="text-muted-foreground">{p.notes || '—'}</Td>
-                                    <Td>
-                                        <div className="flex items-center gap-1">
-                                            <button
-                                                type="button"
-                                                onClick={() => setEditingPayment({
-                                                    idx,
-                                                    amount: String(p.amount),
-                                                    method: p.method,
-                                                    date: p.date ? new Date(p.date).toISOString().slice(0, 10) : '',
-                                                    notes: p.notes || '',
-                                                })}
-                                                className="p-1.5 rounded-md hover:bg-muted transition-colors"
-                                                title="Edit payment"
-                                            >
-                                                <Pencil size={13} className="text-muted-foreground" />
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setDeletingPaymentIdx(idx)}
-                                                className="p-1.5 rounded-md hover:bg-red-50 transition-colors"
-                                                title="Delete payment"
-                                            >
-                                                <Trash2 size={13} className="text-red-500" />
-                                            </button>
-                                        </div>
-                                    </Td>
-                                </tr>
-                            ))}
+                            {consolidateItems(invoice.items).map((it, idx) => {
+                                const hasDiscount = consolidateItems(invoice.items).some(i => (i.discountPct ?? 0) > 0)
+                                const discounted = (it.discountPct ?? 0) > 0
+                                return (
+                                    <tr key={idx} style={{ borderBottom: '1px solid rgba(20,8,31,0.04)', background: discounted ? 'rgba(245,158,11,0.06)' : undefined }} className="hover:bg-[#FAF8F5] transition-colors">
+                                        <td style={{ padding: '12px 16px', fontSize: 13, color: MUTED }}>{idx + 1}</td>
+                                        <td style={{ padding: '12px 16px', fontSize: 13, color: INK, whiteSpace: 'pre-line' }}>
+                                            {it.itemDetails}
+                                            {it.description && <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>{it.description}</div>}
+                                        </td>
+                                        <td style={{ padding: '12px 16px', fontSize: 13, color: MUTED, textAlign: 'right' }}>
+                                            {/^(Storage Rent|Refundable \/ Adjustable Security Deposit)/.test(it.itemDetails ?? '') ? '1' : '—'}
+                                        </td>
+                                        <td style={{ padding: '12px 16px', fontSize: 13, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                                            {discounted
+                                                ? <span style={{ textDecoration: 'line-through', color: MUTED }}>{formatMoney(it.rate)}</span>
+                                                : <span style={{ color: INK }}>{formatMoney(it.rate)}</span>
+                                            }
+                                        </td>
+                                        {hasDiscount && (
+                                            <td style={{ padding: '12px 16px', fontSize: 13, textAlign: 'right' }}>
+                                                {discounted
+                                                    ? <span style={{ color: '#D97706', fontWeight: 500 }}>{it.discountPct}% off</span>
+                                                    : <span style={{ color: MUTED }}>—</span>
+                                                }
+                                            </td>
+                                        )}
+                                        <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: INK, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(it.amount)}</td>
+                                    </tr>
+                                )
+                            })}
                         </tbody>
-                    </Table>
-                </Card>
+                    </table>
+                </div>
+                <div style={{ padding: '16px 24px', borderTop: '1px solid rgba(20,8,31,0.06)', background: '#FAF8F5' }}>
+                    <div className="flex flex-col items-end gap-1">
+                        <div className="flex gap-8" style={{ fontSize: 13, color: MUTED }}>
+                            <span>Sub Total</span>
+                            <span style={{ width: 112, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: INK }}>{formatMoney(invoice.subTotal)}</span>
+                        </div>
+                        {invoice.vatEnabled && (
+                            <div className="flex gap-8" style={{ fontSize: 13, color: MUTED }}>
+                                <span>VAT ({invoice.vatPct ?? 5}%)</span>
+                                <span style={{ width: 112, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(invoice.vatAmount ?? 0)}</span>
+                            </div>
+                        )}
+                        <div className="flex gap-8 border-t pt-1.5" style={{ fontSize: 16, fontWeight: 700, color: PURPLE, ...HEADING }}>
+                            <span>Total</span>
+                            <span style={{ width: 112, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>AED {formatMoney(invoice.total)}</span>
+                        </div>
+                        {paid > 0 && (
+                            <>
+                                <div className="flex gap-8" style={{ fontSize: 13, color: '#EF4444' }}>
+                                    <span>Payment Made</span>
+                                    <span style={{ width: 112, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>(-) {formatMoney(paid)}</span>
+                                </div>
+                                <div className="flex gap-8" style={{ fontSize: 14, fontWeight: 700 }}>
+                                    <span style={{ color: INK }}>Balance Due</span>
+                                    <span style={{ width: 112, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: balance > 0 ? '#EF4444' : '#059669' }}>{formatMoney(balance)}</span>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* Payment history */}
+            {(invoice.paymentHistory ?? []).length > 0 && (
+                <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, overflow: 'hidden', marginBottom: 24 }}>
+                    <div style={{ padding: '16px 24px', borderBottom: '1px solid rgba(20,8,31,0.06)' }}>
+                        <div style={{ ...HEADING, fontSize: 15, fontWeight: 700, color: INK }}>Payment History ({invoice.paymentHistory!.length})</div>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                            <thead>
+                                <tr style={{ borderBottom: '1px solid rgba(20,8,31,0.06)' }}>
+                                    {['#', 'Date', 'Amount (AED)', 'Method', 'Notes', ''].map((h, i) => (
+                                        <th key={h || i} style={{ padding: '10px 16px', fontSize: 11, fontWeight: 600, color: MUTED, textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {invoice.paymentHistory!.map((p, idx) => (
+                                    <tr key={idx} style={{ borderBottom: '1px solid rgba(20,8,31,0.04)' }} className="hover:bg-[#FAF8F5] transition-colors">
+                                        <td style={{ padding: '12px 16px', fontSize: 13, color: MUTED }}>{idx + 1}</td>
+                                        <td style={{ padding: '12px 16px', fontSize: 13, color: INK }}>{formatDate(p.date)}</td>
+                                        <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: '#059669', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(p.amount)}</td>
+                                        <td style={{ padding: '12px 16px', fontSize: 13, color: INK, textTransform: 'capitalize' }}>{p.method.replace('_', ' ')}</td>
+                                        <td style={{ padding: '12px 16px', fontSize: 13, color: MUTED }}>{p.notes || '—'}</td>
+                                        <td style={{ padding: '12px 16px' }}>
+                                            <div className="flex items-center gap-1">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setEditingPayment({
+                                                        idx,
+                                                        amount: String(p.amount),
+                                                        method: p.method,
+                                                        date: p.date ? new Date(p.date).toISOString().slice(0, 10) : '',
+                                                        notes: p.notes || '',
+                                                    })}
+                                                    className="p-1.5 rounded-md hover:bg-muted transition-colors"
+                                                    title="Edit payment"
+                                                >
+                                                    <Pencil size={13} style={{ color: MUTED }} />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setDeletingPaymentIdx(idx)}
+                                                    className="p-1.5 rounded-md hover:bg-red-50 transition-colors"
+                                                    title="Delete payment"
+                                                >
+                                                    <Trash2 size={13} className="text-red-500" />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             )}
 
             {/* Edit payment modal */}
