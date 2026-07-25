@@ -13,3 +13,8 @@ export function formatDate(d: string | Date | undefined | null) {
   if (!d) return '—'
   return new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
 }
+
+export function formatDateTime(d: string | Date | undefined | null) {
+  if (!d) return '—'
+  return new Date(d).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}

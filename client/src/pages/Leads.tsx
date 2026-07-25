@@ -5,7 +5,7 @@ import { CalendarPlus, CheckSquare, FileText, Mail, MessageCircle, MoreHorizonta
 import { api, apiError, leadApi, type LeadPage } from '../lib/api'
 import type { Lead, LeadComment, LeadSource, LeadStatus } from '../lib/types'
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Pagination, Select, Spinner, Table, Td, Th, Textarea, leadStatusTone, statusLabel } from '../components/ui'
-import { formatDate } from '../lib/utils'
+import { formatDate, formatDateTime } from '../lib/utils'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
 const INK = '#14081F'
@@ -1174,7 +1174,7 @@ export default function Leads() {
                                             ))}
                                         </Select>
                                     </Td>
-                                    <Td>{formatDate(lead.leadDateTime)}</Td>
+                                    <Td>{formatDateTime(lead.leadDateTime)}</Td>
                                     <Td>
                                         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                                             <button onClick={() => setViewing(lead)} className="text-xs text-primary hover:underline cursor-pointer">View</button>
@@ -1231,7 +1231,7 @@ export default function Leads() {
                                                                     <span style={{ fontWeight: 700, color: isOut ? PURPLE : '#059669' }}>
                                                                         {isOut ? 'You' : (lead.fullName || lead.phone || 'Contact')}
                                                                     </span>
-                                                                    <span style={{ color: MUTED_COLOR, whiteSpace: 'nowrap' }}>{formatDate(msg.occurredAt)}</span>
+                                                                    <span style={{ color: MUTED_COLOR, whiteSpace: 'nowrap' }}>{formatDateTime(msg.occurredAt)}</span>
                                                                 </div>
                                                                 <div style={{ fontSize: 13, color: INK, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{msg.text || '(media)'}</div>
                                                             </div>

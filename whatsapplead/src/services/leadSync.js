@@ -309,14 +309,16 @@ export async function upsertConversationBatch(conversations, options) {
                 updateOne: {
                     filter: { messageId },
                     update: {
+                        $set: {
+                            direction: msg.direction === 'outbound' ? 'outbound' : 'inbound',
+                            text: String(msg.text || '').trim(),
+                            type: messageType,
+                        },
                         $setOnInsert: {
                             messageId,
                             phone: phoneDisplay,
                             phoneNormalized,
                             lead: lead._id,
-                            direction: msg.direction === 'outbound' ? 'outbound' : 'inbound',
-                            type: messageType,
-                            text: String(msg.text || '').trim(),
                             status: 'imported',
                             occurredAt: Number.isNaN(occurredAt.getTime()) ? new Date() : occurredAt,
                             raw: {
