@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { CalendarDays, CalendarPlus, CheckCircle2, Download, FileText, FilePlus, MessageSquare, PenLine, ShieldCheck, Upload, X, XCircle, Receipt, Clock, FolderOpen, Bell, ChevronDown, ChevronUp } from 'lucide-react'
+import { CalendarDays, CalendarPlus, CheckCircle2, Download, FileText, FilePlus, MessageSquare, PenLine, ShieldCheck, Upload, X, XCircle, Receipt, Clock, FolderOpen, Bell, ChevronDown, ChevronUp, Trash2 } from 'lucide-react'
 import { api, apiError, reminderConfigApi } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { AppDocument, Contract, ContractNote, Invoice, Payment, Unit } from '../lib/types'
@@ -1136,9 +1136,11 @@ export default function ContractDetail() {
   const isDepositPayment = (p: Payment) => /^(security deposit|advance rent)/i.test(p.notes || '')
   // Group payments by invoice → one display row per invoice
   const groupMap = new Map<string, Payment[]>()
+  const orphanPayments: Payment[] = []
   for (const p of payments) {
     const invId = (p.invoice as any)?._id
     if (invId) { if (!groupMap.has(invId)) groupMap.set(invId, []); groupMap.get(invId)!.push(p) }
+    else { orphanPayments.push(p) }
   }
   const fmtShortDate = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 
@@ -1702,7 +1704,7 @@ export default function ContractDetail() {
                   </div>
                 }
               />
-              {payments.length === 0 && depositCoveredInvoices.length === 0 && standaloneInvoices.length === 0 ? (
+              {payments.length === 0 && depositCoveredInvoices.length === 0 && standaloneInvoices.length === 0 && orphanPayments.length === 0 ? (
                 <CardBody>
                   <p className="text-sm text-muted-foreground text-center py-6">No invoices yet</p>
                 </CardBody>
@@ -1778,6 +1780,34 @@ export default function ContractDetail() {
                               </span>
                             </Td>
                             <Td />
+                          </tr>
+                        ))}
+                      </>
+                    )}
+                    {orphanPayments.length > 0 && (
+                      <>
+                        <tr>
+                          <td colSpan={6} className="px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-orange-600 dark:text-orange-400 bg-orange-50/60 dark:bg-orange-950/20 border-t">
+                            Unlinked Payments — {orphanPayments.length} record{orphanPayments.length !== 1 ? 's' : ''} · {formatMoney(orphanPayments.reduce((s, p) => s + p.amount, 0))}
+                          </td>
+                        </tr>
+                        {orphanPayments.map((p) => (
+                          <tr key={p._id} className="hover:bg-muted/30">
+                            <Td />
+                            <Td className="text-sm text-muted-foreground">—</Td>
+                            <Td className="text-sm text-muted-foreground whitespace-nowrap">
+                              {new Date(p.dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </Td>
+                            <Td><span className="font-medium">{formatMoney(p.amount)}</span></Td>
+                            <Td><Badge tone={p.status === 'paid' ? 'green' : p.status === 'overdue' ? 'red' : 'gray'}>{p.status}</Badge></Td>
+                            <Td>
+                              <button
+                                onClick={() => { if (confirm(`Delete this unlinked payment of AED ${formatMoney(p.amount)}?`)) bulkDeletePayments.mutate({ paymentIds: [p._id] }) }}
+                                className="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors text-muted-foreground hover:text-red-600"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </Td>
                           </tr>
                         ))}
                       </>
