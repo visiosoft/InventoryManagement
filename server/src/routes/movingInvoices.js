@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import { MovingInvoice, Customer, MovingJob, nextMovingInvoiceNo } from '../models/index.js';
+import { requireAdmin } from '../middleware/auth.js';
 import { generateMovingInvoicePdf } from '../services/movingInvoicePdf.js';
 import { notifyInvoiceReady, notifyPaymentReceived } from '../services/movingNotifications.js';
 import { zohoBooksConfigured, createZohoInvoice } from '../services/zohoBooks.js';
@@ -307,11 +308,10 @@ router.post('/:id/revise', async (req, res) => {
 });
 
 // Delete invoice
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAdmin, async (req, res) => {
   try {
     const inv = await MovingInvoice.findById(req.params.id);
     if (!inv) return res.status(404).json({ error: 'Invoice not found' });
-    if (['paid'].includes(inv.status)) return res.status(409).json({ error: 'Cannot delete a paid invoice' });
     await inv.deleteOne();
     res.json({ ok: true });
   } catch (err) {

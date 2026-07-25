@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Paperclip, AlertCircle, CheckCircle2, Clock } from 'lucide-react'
 import { apiError, purchaseApi } from '../lib/api'
 import type { Purchase, PurchaseAttachment, PurchasePaymentEntry, PurchaseStatus } from '../lib/types'
@@ -455,6 +455,7 @@ function PurchaseAttachmentManager({ purchase }: { purchase: Purchase }) {
 
 export default function PurchaseDetail() {
     const { id } = useParams<{ id: string }>()
+    const navigate = useNavigate()
     const qc = useQueryClient()
     const [paying, setPaying] = useState(false)
     const [pdfView, setPdfView] = useState(true)
@@ -483,9 +484,9 @@ export default function PurchaseDetail() {
 
     return (
         <div>
-            <Link to="/purchases" className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-4">
-                <ArrowLeft size={13} /> Back to Purchases
-            </Link>
+            <button onClick={() => navigate(-1)} className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-4 cursor-pointer" style={{ background: 'none', border: 'none', padding: 0 }}>
+                <ArrowLeft size={13} /> Back
+            </button>
 
             {/* Page header */}
             <div className="flex flex-wrap items-start justify-between gap-4 mb-5">

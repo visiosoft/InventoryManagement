@@ -186,6 +186,7 @@ export interface InvoicePaymentEntry {
 export interface InvoiceItem {
   sortOrder: number
   itemDetails: string
+  description?: string
   quantity: number
   rate: number
   discountPct: number

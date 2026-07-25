@@ -1,4 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, Plus } from 'lucide-react'
 import { api, apiError, quoteApi } from '../lib/api'
@@ -281,7 +282,7 @@ export default function Quotes() {
                                         {q.status === 'expired' && <CornerRibbon label="Expired" color="amber" size="sm" />}
                                         {q.status === 'accepted' && <CornerRibbon label="Accepted" color="green" size="sm" />}
                                         {q.status === 'rejected' && <CornerRibbon label="Rejected" color="red" size="sm" />}
-                                        {q.quoteNo}
+                                        <Link to={`/quotes/new?quote=${q._id}`} className="text-primary hover:underline">{q.quoteNo}</Link>
                                     </Td>
                                     <Td>{q.customer?.fullName || '—'}</Td>
                                     <Td>{formatDate(q.quoteDate)}</Td>

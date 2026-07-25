@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useState } from 'react'
 import { Search, Receipt, ArrowRight, AlertCircle, CheckCircle2, Clock, Trash2 } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
+import { useAuth } from '../../lib/auth'
 import type { MovingInvoice, MovingInvoiceStatus } from '../../lib/types'
 import { Badge, Button, Modal, Spinner } from '../../components/ui'
 import { formatDate } from '../../lib/utils'
@@ -57,6 +58,8 @@ function fmtAedShort(n: number) {
 }
 
 export default function MovingInvoices() {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const qc = useQueryClient()
   const [filterStatus, setFilterStatus] = useState<MovingInvoiceStatus | ''>('')
   const [search, setSearch] = useState('')
@@ -248,7 +251,7 @@ export default function MovingInvoices() {
                           <Link to={`/moving/invoices/${inv._id}`} className="p-1 transition-colors hover:opacity-70" style={{ color: MUTED }}>
                             <ArrowRight size={14} />
                           </Link>
-                          {inv.status !== 'paid' && (
+                          {isAdmin && (
                             <button onClick={() => setDeleteId(inv._id)} className="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors" style={{ color: MUTED }}>
                               <Trash2 size={14} />
                             </button>
@@ -268,7 +271,7 @@ export default function MovingInvoices() {
 
       <Modal open={!!deleteId} title="Delete Invoice" onClose={() => setDeleteId(null)}>
         <div className="space-y-4">
-          <p className="text-sm">Are you sure you want to delete this invoice? Paid invoices cannot be deleted.</p>
+          <p className="text-sm">Are you sure you want to delete this invoice? This action cannot be undone.</p>
           {err && <p className="text-sm text-red-600">{err}</p>}
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setDeleteId(null)}>Cancel</Button>

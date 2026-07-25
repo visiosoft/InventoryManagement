@@ -434,10 +434,10 @@ export default function MovingSurveyDetail() {
         </Button>
         <Button
           variant="outline"
-          onClick={() => navigate(`/moving/jobs/${id}`)}
+          onClick={() => navigate(-1)}
           className="h-12"
         >
-          Back to Job
+          Back
         </Button>
       </div>
     </div>

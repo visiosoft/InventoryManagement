@@ -242,7 +242,8 @@ export function renderInvoicePdf({ invoice }) {
     // Item rows
     const AMBER_BG = '#FFFBEB';
     (invoice.items || []).forEach((it, idx) => {
-      const rH = 26;
+      const hasSubDesc = !!(it.description);
+      const rH = hasSubDesc ? 38 : 26;
       const discounted = (it.discountPct ?? 0) > 0;
       if (discounted) {
         doc.rect(TX, y, TW, rH).fill(AMBER_BG);
@@ -252,6 +253,11 @@ export function renderInvoicePdf({ invoice }) {
       doc.font('Helvetica').fontSize(9).fillColor(BLACK);
       doc.text(String(idx + 1),       TX + 6,                         y + 8, { width: nW - 6 });
       doc.text(it.itemDetails || '-', TX + nW + 6,                    y + 8, { width: iW - 12 });
+      if (hasSubDesc) {
+        doc.font('Helvetica').fontSize(7.5).fillColor('#64748B');
+        doc.text(it.description, TX + nW + 6, y + 20, { width: iW - 12 });
+        doc.fontSize(9).fillColor(BLACK);
+      }
       const isRentLine = /^(Storage Rent|Refundable \/ Adjustable Security Deposit)/.test(it.itemDetails || '');
       doc.text(isRentLine ? '1' : '—', TX + nW + iW, y + 8, { width: qW, align: 'right' });
       doc.text(num(it.rate),           TX + nW + iW + qW,              y + 8, { width: rW, align: 'right' });

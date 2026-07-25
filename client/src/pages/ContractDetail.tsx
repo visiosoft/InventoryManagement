@@ -1308,11 +1308,11 @@ export default function ContractDetail() {
       {/* Back link */}
       <button
         type="button"
-        onClick={() => navigate('/contracts')}
+        onClick={() => navigate(-1)}
         className="flex items-center gap-1.5 text-xs mb-3 hover:opacity-70 transition-opacity"
         style={{ color: PURPLE, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
       >
-        <span>←</span> Back to Contracts
+        <span>←</span> Back
       </button>
 
       {/* Title + actions */}

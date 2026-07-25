@@ -944,9 +944,9 @@ export default function VendorDetail() {
     return (
         <div>
             {/* Back */}
-            <Link to="/vendors" className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-4">
-                <ArrowLeft size={13} /> Back to Vendors
-            </Link>
+            <button onClick={() => navigate(-1)} className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-4 cursor-pointer" style={{ background: 'none', border: 'none', padding: 0 }}>
+                <ArrowLeft size={13} /> Back
+            </button>
 
             {/* Header bar */}
             <div className="flex flex-wrap items-start justify-between gap-3 mb-5">

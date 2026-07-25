@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Download, AlertCircle, CheckCircle2, Clock, Pencil, MessageCircle, RefreshCw, Trash2 } from 'lucide-react'
 import { api, apiError, invoiceApi } from '../lib/api'
 import type { Invoice, InvoicePaymentEntry, InvoiceStatus } from '../lib/types'
@@ -357,7 +357,7 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
     }
 
     function addExtra() {
-        setItems(prev => [...prev, { sortOrder: prev.length, itemDetails: '', quantity: 1, rate: 0, discountPct: 0, amount: 0 }])
+        setItems(prev => [...prev, { sortOrder: prev.length, itemDetails: '', description: '', quantity: 1, rate: 0, discountPct: 0, amount: 0 }])
     }
 
     const save = useMutation({
@@ -419,6 +419,8 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
                                                     : <Input value={it.itemDetails} onChange={e => updateDesc(idx, e.target.value)}
                                                         placeholder="Description" className="h-7 text-xs" />
                                                 }
+                                                <Input value={it.description || ''} onChange={e => setItems(prev => prev.map((item, i) => i !== idx ? item : { ...item, description: e.target.value }))}
+                                                    placeholder="Sub-detail / additional info" className="h-6 text-[11px] mt-1 text-muted-foreground" />
                                             </td>
                                             <td className="px-3 py-2 text-right text-muted-foreground text-xs">
                                                 {/^(Storage Rent|Refundable \/ Adjustable Security Deposit)/.test(it.itemDetails ?? '') ? '1' : '—'}
@@ -487,6 +489,7 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
 
 export default function InvoiceDetail() {
     const { id } = useParams<{ id: string }>()
+    const navigate = useNavigate()
     const qc = useQueryClient()
     const [paying, setPaying] = useState(false)
     const [editing, setEditing] = useState(false)
@@ -584,12 +587,12 @@ export default function InvoiceDetail() {
     return (
         <div>
             {/* Back link */}
-            <Link
-                to="/invoices"
-                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-4"
+            <button
+                onClick={() => navigate(-1)}
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-4 cursor-pointer"
             >
-                <ArrowLeft size={13} /> Back to Invoices
-            </Link>
+                <ArrowLeft size={13} /> Back
+            </button>
 
             {/* Page header */}
             <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
@@ -823,7 +826,10 @@ export default function InvoiceDetail() {
                             return (
                                 <tr key={idx} className={`hover:bg-muted/50 ${discounted ? 'bg-amber-50/60 dark:bg-amber-950/20' : ''}`}>
                                     <Td className="text-muted-foreground">{idx + 1}</Td>
-                                    <Td className="whitespace-pre-line">{it.itemDetails}</Td>
+                                    <Td className="whitespace-pre-line">
+                                        {it.itemDetails}
+                                        {it.description && <div className="text-xs text-muted-foreground mt-0.5">{it.description}</div>}
+                                    </Td>
                                     <Td className="text-right text-muted-foreground">
                                         {/^(Storage Rent|Refundable \/ Adjustable Security Deposit)/.test(it.itemDetails ?? '') ? '1' : '—'}
                                     </Td>

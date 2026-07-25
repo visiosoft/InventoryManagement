@@ -600,9 +600,9 @@ export default function MovingJobDetail() {
       <div className="space-y-3">
         <div className="flex items-start gap-3">
           <button
-            onClick={() => navigate('/moving/jobs')}
+            onClick={() => navigate(-1)}
             className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground shrink-0 mt-1"
-            title="Back to jobs"
+            title="Back"
           >
             <ArrowLeft size={20} />
           </button>

@@ -139,11 +139,11 @@ export default function CustomerDetail() {
       <div className="mb-7">
         <button
           type="button"
-          onClick={() => navigate('/customers')}
+          onClick={() => navigate(-1)}
           className="flex items-center gap-1.5 text-xs mb-3 hover:opacity-70 transition-opacity"
           style={{ color: PURPLE, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
         >
-          <ArrowLeft size={13} /> Back to Customers
+          <ArrowLeft size={13} /> Back
         </button>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
