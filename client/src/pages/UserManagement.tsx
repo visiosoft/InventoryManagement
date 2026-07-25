@@ -68,6 +68,7 @@ const MODULE_GROUPS = [
       { key: 'moving_dispatch',         label: 'Dispatch' },
       { key: 'moving_workers',          label: 'Workers' },
       { key: 'moving_fleet',            label: 'Fleet' },
+      { key: 'moving_quotes',            label: 'Quotes' },
       { key: 'moving_invoices',         label: 'Invoices' },
       { key: 'reports_moving_revenue',  label: 'Revenue Report' },
       { key: 'reports_moving_jobs',     label: 'Jobs Report' },
