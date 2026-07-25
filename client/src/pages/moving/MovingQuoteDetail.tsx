@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Download, CheckCircle, Plus, Trash2, Edit } from 'lucide-react'
+import { ArrowLeft, Download, CheckCircle, Plus, Trash2, Edit, Receipt } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingQuote, MovingQuoteStatus } from '../../lib/types'
 import { Badge, Button, Card, CardBody, CardHeader, Field, Input, Modal, Spinner, Table, Td, Th } from '../../components/ui'
@@ -71,6 +71,12 @@ export default function MovingQuoteDetail() {
     onError: (e) => setErr(apiError(e)),
   })
 
+  const convertToInvoiceMut = useMutation({
+    mutationFn: () => api.post(`/moving-quotes/${id}/convert-to-invoice`).then(r => r.data),
+    onSuccess: (invoice) => navigate(`/moving/invoices/${invoice._id}`),
+    onError: (e) => setErr(apiError(e)),
+  })
+
   if (isLoading) return <div className="p-8"><Spinner /></div>
   if (!quote) return <div className="p-8 text-muted-foreground">Quote not found</div>
 
@@ -85,7 +91,7 @@ export default function MovingQuoteDetail() {
   return (
     <div className="space-y-8">
       <div className="flex items-center gap-4">
-        <button onClick={() => navigate('/moving/quotes')} className="text-muted-foreground hover:text-foreground">
+        <button onClick={() => navigate(-1)} className="text-muted-foreground hover:text-foreground">
           <ArrowLeft size={18} />
         </button>
         <div className="flex-1">
@@ -102,6 +108,12 @@ export default function MovingQuoteDetail() {
           <Button size="sm" onClick={() => createJobMut.mutate()} disabled={createJobMut.isPending}>
             <CheckCircle size={13} className="mr-1" />
             {createJobMut.isPending ? 'Creating…' : 'Create Job'}
+          </Button>
+        )}
+        {(quote.status === 'accepted' || quote.status === 'sent') && (
+          <Button size="sm" onClick={() => convertToInvoiceMut.mutate()} disabled={convertToInvoiceMut.isPending}>
+            <Receipt size={13} className="mr-1" />
+            {convertToInvoiceMut.isPending ? 'Converting…' : 'Convert to Invoice'}
           </Button>
         )}
         <Button

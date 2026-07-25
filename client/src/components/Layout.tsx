@@ -59,6 +59,7 @@ const movingNavItems = [
   { to: '/moving/workers', label: 'Workers', icon: Users2, perm: 'moving_workers' },
   { to: '/moving/fleet', label: 'Fleet', icon: Truck, perm: 'moving_fleet' },
   { to: '/moving-inventory', label: 'Inventory', icon: Box, perm: 'moving_dashboard' },
+  { to: '/moving/quotes', label: 'Quotes', icon: ScrollText, perm: 'moving_quotes' },
   { to: '/moving/invoices', label: 'Invoices', icon: ReceiptText, perm: 'moving_invoices' },
   { to: '/moving/dispatch', label: 'Dispatch', icon: Package, perm: 'moving_dispatch' },
   { to: '/moving/claims', label: 'Claims', icon: AlertTriangle, perm: 'moving_dashboard' },

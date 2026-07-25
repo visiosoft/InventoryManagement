@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import crypto from 'crypto';
-import { MovingQuote, nextMovingQuoteNo } from '../models/index.js';
+import { MovingQuote, MovingInvoice, MovingJob, nextMovingQuoteNo, nextMovingInvoiceNo } from '../models/index.js';
 import { generateMovingQuotePdf } from '../services/movingQuotePdf.js';
 
 const router = Router();
@@ -108,6 +108,48 @@ router.post('/:id/share-token', async (req, res) => {
     res.json({ token });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Convert accepted quote to invoice
+router.post('/:id/convert-to-invoice', async (req, res) => {
+  try {
+    const quote = await MovingQuote.findById(req.params.id)
+      .populate('customer', 'fullName phone email')
+      .populate('job', 'jobNo');
+    if (!quote) return res.status(404).json({ error: 'Quote not found' });
+
+    const invoiceNo = await nextMovingInvoiceNo();
+    const depositPaid = quote.depositRequired ? Math.round(quote.total * (quote.depositPct || 0) / 100 * 100) / 100 : 0;
+    const invoice = await MovingInvoice.create({
+      invoiceNo,
+      job: quote.job?._id || undefined,
+      customer: quote.customer._id,
+      status: 'draft',
+      invoiceDate: new Date(),
+      items: quote.items,
+      subTotal: quote.subTotal,
+      total: quote.total,
+      depositPaid,
+      balanceDue: Math.max(0, quote.total - depositPaid),
+      notes: `Generated from quote ${quote.quoteNo}`,
+      termsAndConditions: quote.termsAndConditions || '',
+    });
+
+    // Link invoice to job if exists
+    if (quote.job?._id) {
+      await MovingJob.findByIdAndUpdate(quote.job._id, { invoice: invoice._id });
+    }
+
+    // Mark quote as accepted if not already
+    if (quote.status !== 'accepted') {
+      quote.status = 'accepted';
+      await quote.save();
+    }
+
+    res.status(201).json(invoice);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 

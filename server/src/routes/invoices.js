@@ -396,29 +396,25 @@ router.get('/:id', async (req, res) => {
     const invoice = await Invoice.findById(req.params.id).populate('customer', 'fullName email phone address');
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
 
-    // For contract-linked invoices, sync paymentMade and status from linked Payment records.
-    const contractPayments = await Payment.find({ invoice: invoice._id });
-    if (contractPayments.length > 0) {
-        const totalPaid = Math.round(
-            contractPayments.filter(p => p.status === 'paid').reduce((s, p) => s + Number(p.amount || 0), 0) * 100
-        ) / 100;
-        const allPaid = contractPayments.every(p => p.status === 'paid');
-        const updates = {};
-        if (totalPaid > Number(invoice.paymentMade || 0)) updates.paymentMade = totalPaid;
-        if (allPaid && totalPaid >= Number(invoice.total || 0) && invoice.status !== 'paid') updates.status = 'paid';
-        if (Object.keys(updates).length > 0) {
-            await Invoice.findByIdAndUpdate(invoice._id, { $set: updates });
-            Object.assign(invoice, updates);
-        }
-    }
-
-    // Ensure paymentMade is at least the sum of paymentHistory
+    // Recalculate paymentMade from the two authoritative sources:
+    // 1) paymentHistory (embedded array on the invoice)
+    // 2) linked Payment records (from the contract payment schedule)
     const historySum = Number((invoice.paymentHistory || []).reduce((s, p) => s + (p.amount || 0), 0).toFixed(2));
-    if (historySum > Number(invoice.paymentMade || 0) + 0.01) {
-        invoice.paymentMade = historySum;
-        const newStatus = historySum >= invoice.total ? 'paid' : historySum > 0 ? 'partial' : invoice.status;
-        if (newStatus !== invoice.status) invoice.status = newStatus;
-        await Invoice.findByIdAndUpdate(invoice._id, { $set: { paymentMade: invoice.paymentMade, status: invoice.status } });
+    const contractPayments = await Payment.find({ invoice: invoice._id });
+    const paymentRecordSum = Math.round(
+        contractPayments.filter(p => p.status === 'paid').reduce((s, p) => s + Number(p.amount || 0), 0) * 100
+    ) / 100;
+    const correctPaid = Math.round(Math.max(historySum, paymentRecordSum) * 100) / 100;
+    const allPaid = contractPayments.length > 0 && contractPayments.every(p => p.status === 'paid');
+
+    const updates = {};
+    if (Math.abs(correctPaid - Number(invoice.paymentMade || 0)) > 0.01) updates.paymentMade = correctPaid;
+    if (allPaid && correctPaid >= Number(invoice.total || 0) && invoice.status !== 'paid') updates.status = 'paid';
+    else if (!allPaid && correctPaid > 0 && correctPaid < Number(invoice.total || 0) && invoice.status === 'paid') updates.status = 'partial';
+    if (correctPaid >= invoice.total && invoice.status !== 'paid' && !updates.status) updates.status = 'paid';
+    if (Object.keys(updates).length > 0) {
+        await Invoice.findByIdAndUpdate(invoice._id, { $set: updates });
+        Object.assign(invoice, updates);
     }
 
     res.json(invoice);
