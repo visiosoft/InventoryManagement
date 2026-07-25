@@ -5,8 +5,8 @@ import { ArrowLeft, Download, AlertCircle, CheckCircle2, Clock, Pencil, MessageC
 import { api, apiError, invoiceApi } from '../lib/api'
 import type { Invoice, InvoicePaymentEntry, InvoiceStatus } from '../lib/types'
 import {
-    Badge, Button, Card, CardBody, CardHeader, CornerRibbon,
-    Field, Input, Modal, Select, Spinner, Table, Td, Th, statusLabel,
+    Badge, Button, CornerRibbon,
+    Field, Input, Modal, Select, Spinner, statusLabel,
 } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
 
