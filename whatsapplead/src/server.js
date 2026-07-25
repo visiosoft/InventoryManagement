@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 import express from 'express';
 import cors from 'cors';
 import { connectDb } from '../../server/src/db.js';
-import { closeWhatsAppScraperBrowser, scrapeWhatsAppConversations } from './services/whatsappScraper.js';
+import { closeWhatsAppScraperBrowser, getSharedBrowser, scrapeWhatsAppConversations } from './services/whatsappScraper.js';
 import { listLeadMessages, listWhatsAppContacts, upsertConversationBatch } from './services/leadSync.js';
 
 const app = express();
@@ -74,6 +74,101 @@ app.get('/api/contacts/:leadId/messages', async (req, res) => {
     const result = await listLeadMessages(req.params.leadId, limit);
     if (!result) return res.status(404).json({ error: 'Lead not found' });
     res.json({ ok: true, ...result });
+});
+
+// ── WhatsApp QR code & connection status ─────────────────────────────────────
+
+let qrPageRef = null;
+
+async function ensureWhatsAppPage() {
+    const profileDir = process.env.WHATSAPP_PROFILE_DIR || '.wa-profile';
+    const webUrl = process.env.WHATSAPP_WEB_URL || 'https://web.whatsapp.com';
+    const browser = await getSharedBrowser({ headless: true, profileDir, webUrl });
+
+    if (qrPageRef && !qrPageRef.isClosed()) {
+        return qrPageRef;
+    }
+
+    const pages = await browser.pages();
+    const existing = pages.find(p => p.url().includes('web.whatsapp.com'));
+    if (existing && !existing.isClosed()) {
+        qrPageRef = existing;
+        return qrPageRef;
+    }
+
+    const page = await browser.newPage();
+    await page.goto(webUrl, { waitUntil: 'domcontentloaded', timeout: 120000 });
+    qrPageRef = page;
+    return page;
+}
+
+async function detectWhatsAppState(page) {
+    return page.evaluate(() => {
+        const qrCanvas = document.querySelector('canvas[aria-label="Scan this QR code to link a device!"]')
+            || document.querySelector('div[data-ref] canvas')
+            || document.querySelector('canvas');
+        if (qrCanvas) return 'qr';
+
+        const sidePanel = document.querySelector('#pane-side')
+            || document.querySelector('[data-testid="chat-list"]')
+            || document.querySelector('div[aria-label="Chat list"]');
+        if (sidePanel) return 'connected';
+
+        const loading = document.querySelector('[data-testid="intro-md-beta-logo-dark"]')
+            || document.querySelector('.landing-wrapper')
+            || document.querySelector('progress');
+        if (loading) return 'loading';
+
+        return 'unknown';
+    });
+}
+
+app.get('/api/status', requireApiKey, async (_req, res) => {
+    try {
+        const page = await ensureWhatsAppPage();
+        await new Promise(r => setTimeout(r, 1500));
+        const state = await detectWhatsAppState(page);
+        res.json({ ok: true, state });
+    } catch (error) {
+        res.status(500).json({ ok: false, state: 'error', error: error.message });
+    }
+});
+
+app.get('/api/qr', requireApiKey, async (_req, res) => {
+    try {
+        const page = await ensureWhatsAppPage();
+
+        // Wait a moment for QR to render
+        await new Promise(r => setTimeout(r, 2000));
+
+        const state = await detectWhatsAppState(page);
+        if (state === 'connected') {
+            return res.json({ ok: true, state: 'connected', message: 'Already connected to WhatsApp' });
+        }
+
+        const screenshot = await page.screenshot({ encoding: 'base64', type: 'png' });
+        res.json({ ok: true, state, screenshot: `data:image/png;base64,${screenshot}` });
+    } catch (error) {
+        res.status(500).json({ ok: false, error: error.message });
+    }
+});
+
+app.post('/api/disconnect', requireApiKey, async (_req, res) => {
+    try {
+        await closeWhatsAppScraperBrowser();
+        qrPageRef = null;
+
+        // Delete session profile to force re-auth
+        const profileDir = path.resolve(process.cwd(), process.env.WHATSAPP_PROFILE_DIR || '.wa-profile');
+        const fs = await import('fs');
+        if (fs.existsSync(profileDir)) {
+            fs.rmSync(profileDir, { recursive: true, force: true });
+        }
+
+        res.json({ ok: true, message: 'Disconnected and session cleared' });
+    } catch (error) {
+        res.status(500).json({ ok: false, error: error.message });
+    }
 });
 
 app.post('/api/sync', requireApiKey, async (req, res) => {

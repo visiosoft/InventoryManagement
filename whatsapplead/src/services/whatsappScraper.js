@@ -160,7 +160,7 @@ async function buildChromiumHostResolverRules(webUrl) {
     return `${rules.join(', ')}, EXCLUDE localhost`;
 }
 
-async function getSharedBrowser({ headless, profileDir, webUrl }) {
+export async function getSharedBrowser({ headless, profileDir, webUrl }) {
     if (sharedBrowser?.connected) {
         return sharedBrowser;
     }

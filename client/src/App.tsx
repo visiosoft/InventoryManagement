@@ -58,6 +58,7 @@ import Expenses from './pages/Expenses'
 import MovingInventory from './pages/MovingInventory'
 import UserManagement from './pages/UserManagement'
 import WhatsApp from './pages/WhatsApp'
+import WhatsAppSetup from './pages/WhatsAppSetup'
 import MovingDashboard from './pages/moving/MovingDashboard'
 import MovingLeads from './pages/moving/MovingLeads'
 import MovingLeadDetail from './pages/moving/MovingLeadDetail'
@@ -143,6 +144,7 @@ export default function App() {
         <Route path="/settings" element={<Settings />} />
         <Route path="/settings/reminders" element={<AdminGuard><ReminderSettings /></AdminGuard>} />
         <Route path="/whatsapp" element={<WhatsApp />} />
+        <Route path="/whatsapp/setup" element={<AdminGuard><WhatsAppSetup /></AdminGuard>} />
 
         {/* ── Moving Business ── */}
         <Route path="/moving" element={<PermGuard module="moving_dashboard"><MovingDashboard /></PermGuard>} />

@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { apiError, integrationApi, productApi, unitTypeApi } from '../lib/api'
 import type { IntegrationStatus, Product, UnitType } from '../lib/types'
 import { Button, Card, CardBody, CardHeader, Field, Input, Modal, PageHeader, Table, Td, Th } from '../components/ui'
@@ -351,6 +351,7 @@ function ProductsCard() {
 export default function Settings() {
   const qc = useQueryClient()
   const location = useLocation()
+  const navigate = useNavigate()
   const [driveMsg, setDriveMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [gmailMsg, setGmailMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [whatsAppAllowedLabels, setWhatsAppAllowedLabels] = useState('')
@@ -499,6 +500,19 @@ export default function Settings() {
             <span className={integrations?.whatsapp?.configured ? 'text-xs text-emerald-600 font-medium' : 'text-xs text-amber-600 font-medium'}>
               {integrations?.whatsapp?.configured ? 'Connected' : `Missing: ${(integrations?.whatsapp?.missing || []).join(', ') || 'keys'}`}
             </span>
+          </div>
+          <div className="rounded-lg border px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="font-medium">WhatsApp Lead Automation</div>
+                <div className="text-xs text-muted-foreground">
+                  Connect WhatsApp Web to auto-capture leads by label
+                </div>
+              </div>
+              <Button size="sm" onClick={() => navigate('/whatsapp/setup')}>
+                Setup
+              </Button>
+            </div>
           </div>
           <p className="text-xs text-muted-foreground">
             Setup instructions are in <code>README.md</code>. WhatsApp v1 currently validates webhook setup only.

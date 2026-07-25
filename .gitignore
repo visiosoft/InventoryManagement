@@ -4,5 +4,6 @@ dist/
 .env.*
 !.env.example
 server/uploads/
+whatsapplead/.wa-profile/
 *.log
 .DS_Store
