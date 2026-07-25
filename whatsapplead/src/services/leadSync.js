@@ -184,15 +184,13 @@ export async function upsertConversationBatch(conversations, options) {
 
     for (const conversation of conversations) {
         const rawLabels = (conversation.labels || []).map(normalizeLabel).filter(Boolean);
-        if (rawLabels.length === 0) {
-            skippedByLabel += 1;
-            continue;
-        }
 
-        const labels = filterAllowedLabels(rawLabels, options);
-        if (allowlist.length > 0 && labels.length === 0) {
-            skippedByLabel += 1;
-            continue;
+        if (syncOnlyAllowedLabels && allowlist.length > 0) {
+            const labels = filterAllowedLabels(rawLabels, options);
+            if (labels.length === 0) {
+                skippedByLabel += 1;
+                continue;
+            }
         }
 
         // Use sanitized labels for storage (strips labels that look like the contact's own name)
