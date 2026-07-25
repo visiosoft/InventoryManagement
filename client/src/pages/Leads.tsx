@@ -1216,23 +1216,28 @@ export default function Leads() {
                                                 ) : !expandedMessages?.messages?.length ? (
                                                     <div style={{ fontSize: 12, color: MUTED_COLOR }}>No messages found for this lead.</div>
                                                 ) : (
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 300, overflowY: 'auto' }}>
-                                                        {expandedMessages.messages.map((msg) => (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 350, overflowY: 'auto', padding: '4px 0' }}>
+                                                        {expandedMessages.messages.map((msg) => {
+                                                            const isOut = msg.direction === 'outbound'
+                                                            return (
                                                             <div key={msg._id} style={{
-                                                                padding: '8px 12px',
-                                                                borderRadius: 8,
-                                                                background: msg.direction === 'outbound' ? 'rgba(91,43,201,0.06)' : 'white',
-                                                                border: '1px solid rgba(20,8,31,0.06)',
-                                                                maxWidth: '80%',
-                                                                alignSelf: msg.direction === 'outbound' ? 'flex-end' : 'flex-start',
+                                                                padding: '8px 14px',
+                                                                borderRadius: isOut ? '12px 12px 4px 12px' : '12px 12px 12px 4px',
+                                                                background: isOut ? '#EDE9FE' : 'white',
+                                                                border: isOut ? '1px solid rgba(91,43,201,0.15)' : '1px solid rgba(20,8,31,0.08)',
+                                                                maxWidth: '75%',
+                                                                alignSelf: isOut ? 'flex-end' : 'flex-start',
                                                             }}>
-                                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: MUTED_COLOR, marginBottom: 2 }}>
-                                                                    <span style={{ fontWeight: 600 }}>{msg.direction === 'outbound' ? 'You' : 'Contact'}</span>
-                                                                    <span>{formatDate(msg.occurredAt)}</span>
+                                                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 11, marginBottom: 3 }}>
+                                                                    <span style={{ fontWeight: 700, color: isOut ? PURPLE : '#059669' }}>
+                                                                        {isOut ? 'You' : (lead.fullName || lead.phone || 'Contact')}
+                                                                    </span>
+                                                                    <span style={{ color: MUTED_COLOR, whiteSpace: 'nowrap' }}>{formatDate(msg.occurredAt)}</span>
                                                                 </div>
-                                                                <div style={{ fontSize: 13, color: INK, whiteSpace: 'pre-wrap' }}>{msg.text || '(media)'}</div>
+                                                                <div style={{ fontSize: 13, color: INK, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{msg.text || '(media)'}</div>
                                                             </div>
-                                                        ))}
+                                                            )
+                                                        })}
                                                     </div>
                                                 )}
                                             </div>
