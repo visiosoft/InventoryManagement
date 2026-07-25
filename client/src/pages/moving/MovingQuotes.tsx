@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
-import { Search, FileText, ArrowRight, Plus, Trash2 } from 'lucide-react'
+import { Search, FileText, ArrowRight, Plus, Trash2, UserPlus } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
 import type { MovingQuote, MovingQuoteStatus } from '../../lib/types'
@@ -45,6 +45,9 @@ export default function MovingQuotes() {
   const [err, setErr] = useState('')
   const [showNew, setShowNew] = useState(false)
   const [custSearch, setCustSearch] = useState('')
+  const [showAddCust, setShowAddCust] = useState(false)
+  const [newCustName, setNewCustName] = useState('')
+  const [newCustPhone, setNewCustPhone] = useState('')
 
   const { data: allQuotes = [], isLoading } = useQuery<MovingQuote[]>({
     queryKey: ['moving-quotes'],
@@ -53,7 +56,7 @@ export default function MovingQuotes() {
 
   const { data: customers = [] } = useQuery<Array<{ _id: string; fullName: string; phone?: string }>>({
     queryKey: ['customers-list'],
-    queryFn: () => api.get('/customers').then(r => r.data),
+    queryFn: () => api.get('/customers?limit=1000').then(r => r.data?.data ?? r.data),
     enabled: showNew,
   })
 
@@ -75,6 +78,18 @@ export default function MovingQuotes() {
       subTotal: 0, total: 0,
     }).then(r => r.data),
     onSuccess: (quote) => { qc.invalidateQueries({ queryKey: ['moving-quotes'] }); navigate(`/moving/quotes/${quote._id}`) },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  const addCustMut = useMutation({
+    mutationFn: (body: { fullName: string; phone: string }) => api.post('/customers', body).then(r => r.data),
+    onSuccess: (cust) => {
+      qc.invalidateQueries({ queryKey: ['customers-list'] })
+      setShowAddCust(false)
+      setNewCustName('')
+      setNewCustPhone('')
+      createMut.mutate(cust._id)
+    },
     onError: (e) => setErr(apiError(e)),
   })
 
@@ -246,19 +261,65 @@ export default function MovingQuotes() {
       </Modal>
 
       {/* New Quote modal — select customer */}
-      <Modal open={showNew} title="New Moving Quote" onClose={() => { setShowNew(false); setCustSearch('') }}>
+      <Modal open={showNew} title="New Moving Quote" onClose={() => { setShowNew(false); setCustSearch(''); setShowAddCust(false); setNewCustName(''); setNewCustPhone('') }}>
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">Select a customer to create a new quote for:</p>
-          <div style={{ height: 36, borderRadius: 8, background: '#F3F0EA' }} className="flex items-center gap-2 px-3">
-            <Search size={14} color={MUTED} />
-            <input
-              value={custSearch}
-              onChange={e => setCustSearch(e.target.value)}
-              placeholder="Search customers…"
-              style={{ background: 'transparent', border: 'none', outline: 'none', flex: 1, fontSize: 13, color: INK }}
-              autoFocus
-            />
+          <div className="flex gap-2">
+            <div style={{ height: 36, borderRadius: 8, background: '#F3F0EA' }} className="flex items-center gap-2 px-3 flex-1">
+              <Search size={14} color={MUTED} />
+              <input
+                value={custSearch}
+                onChange={e => setCustSearch(e.target.value)}
+                placeholder="Search customers…"
+                style={{ background: 'transparent', border: 'none', outline: 'none', flex: 1, fontSize: 13, color: INK }}
+                autoFocus
+              />
+            </div>
+            <button
+              onClick={() => setShowAddCust(!showAddCust)}
+              style={{ height: 36, borderRadius: 8, background: showAddCust ? PURPLE : '#F3F0EA', color: showAddCust ? 'white' : PURPLE, fontSize: 13, fontWeight: 600, padding: '0 12px', border: 'none' }}
+              className="flex items-center gap-1.5 hover:opacity-90 transition-opacity whitespace-nowrap"
+            >
+              <UserPlus size={14} /> New
+            </button>
           </div>
+
+          {showAddCust && (
+            <div style={{ background: '#FAF8F5', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 12, padding: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: INK, marginBottom: 12 }}>Add New Customer</div>
+              <div className="space-y-3">
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 500, color: MUTED, marginBottom: 4, display: 'block' }}>Full Name *</label>
+                  <input
+                    value={newCustName}
+                    onChange={e => setNewCustName(e.target.value)}
+                    placeholder="Customer name"
+                    style={{ width: '100%', height: 36, borderRadius: 8, border: '1px solid rgba(20,8,31,0.12)', padding: '0 12px', fontSize: 13, color: INK, background: 'white' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 500, color: MUTED, marginBottom: 4, display: 'block' }}>Phone *</label>
+                  <input
+                    value={newCustPhone}
+                    onChange={e => setNewCustPhone(e.target.value)}
+                    placeholder="+971 5X XXX XXXX"
+                    style={{ width: '100%', height: 36, borderRadius: 8, border: '1px solid rgba(20,8,31,0.12)', padding: '0 12px', fontSize: 13, color: INK, background: 'white' }}
+                  />
+                </div>
+                <Button
+                  onClick={() => {
+                    if (!newCustName.trim() || !newCustPhone.trim()) { setErr('Name and phone are required'); return }
+                    addCustMut.mutate({ fullName: newCustName.trim(), phone: newCustPhone.trim() })
+                  }}
+                  disabled={addCustMut.isPending}
+                  className="w-full"
+                >
+                  {addCustMut.isPending ? 'Creating…' : 'Create & Select'}
+                </Button>
+              </div>
+            </div>
+          )}
+
           <div className="max-h-64 overflow-y-auto space-y-1">
             {filteredCustomers.slice(0, 20).map(c => (
               <button

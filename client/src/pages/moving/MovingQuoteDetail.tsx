@@ -1,13 +1,22 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Download, CheckCircle, Plus, Trash2, Edit, Receipt } from 'lucide-react'
+import { ArrowLeft, Download, Plus, Trash2, Edit, Receipt } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingQuote, MovingQuoteStatus } from '../../lib/types'
-import { Badge, Button, Card, CardBody, CardHeader, Field, Input, Modal, Spinner, Table, Td, Th } from '../../components/ui'
+import { Badge, Button, Field, Input, Modal, Spinner } from '../../components/ui'
 import { useState } from 'react'
+
+const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
+const INK = '#14081F'
+const MUTED = '#756E80'
+const PURPLE = '#5B2BC9'
 
 const statusTone: Record<MovingQuoteStatus, string> = {
   draft: 'gray', sent: 'blue', accepted: 'green', rejected: 'red', expired: 'yellow',
+}
+
+const statusDot: Record<string, string> = {
+  draft: '#94A3B8', sent: '#3B82F6', accepted: '#10B981', rejected: '#EF4444', expired: '#F59E0B',
 }
 
 const STATUS_TRANSITIONS: Record<MovingQuoteStatus, MovingQuoteStatus[]> = {
@@ -25,6 +34,15 @@ function fmt(n: number) {
 function dt(d?: string) {
   if (!d) return '—'
   return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex justify-between py-2" style={{ borderBottom: '1px solid rgba(20,8,31,0.06)' }}>
+      <span style={{ fontSize: 13, color: MUTED }}>{label}</span>
+      <span style={{ fontSize: 13, fontWeight: 500, color: INK }}>{children}</span>
+    </div>
+  )
 }
 
 export default function MovingQuoteDetail() {
@@ -59,18 +77,6 @@ export default function MovingQuoteDetail() {
     onError: (e) => setErr(apiError(e)),
   })
 
-  const createJobMut = useMutation({
-    mutationFn: () => api.post('/moving-jobs', {
-      customer: quote?.customer?._id,
-      quote: id,
-      jobType: 'other',
-      status: 'confirmed',
-      notes: `Created from quote ${quote?.quoteNo}`,
-    }).then(r => r.data),
-    onSuccess: (job) => navigate(`/moving/jobs/${job._id}`),
-    onError: (e) => setErr(apiError(e)),
-  })
-
   const convertToInvoiceMut = useMutation({
     mutationFn: () => api.post(`/moving-quotes/${id}/convert-to-invoice`).then(r => r.data),
     onSuccess: (invoice) => navigate(`/moving/invoices/${invoice._id}`),
@@ -78,9 +84,8 @@ export default function MovingQuoteDetail() {
   })
 
   if (isLoading) return <div className="p-8"><Spinner /></div>
-  if (!quote) return <div className="p-8 text-muted-foreground">Quote not found</div>
+  if (!quote) return <div className="p-8" style={{ color: MUTED }}>Quote not found</div>
 
-  // Initialize items from quote
   if (items.length === 0 && quote.items && quote.items.length > 0) {
     setItems(quote.items as typeof items)
   }
@@ -89,27 +94,29 @@ export default function MovingQuoteDetail() {
   const total = items.reduce((s, i) => s + i.amount, 0)
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center gap-4">
-        <button onClick={() => navigate(-1)} className="text-muted-foreground hover:text-foreground">
+    <div style={{ background: '#FDFCFA', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-6">
+        <button onClick={() => navigate(-1)} className="hover:opacity-70 transition-opacity" style={{ color: MUTED }}>
           <ArrowLeft size={18} />
         </button>
-        <div className="flex-1">
-          <h1 className="text-xl font-semibold font-mono">{quote.quoteNo}</h1>
-          <p className="text-sm text-muted-foreground">{quote.customer?.fullName}</p>
+        <div className="flex-1 min-w-0">
+          <div style={{ ...HEADING, fontSize: 22, fontWeight: 700, color: INK }} className="font-mono">{quote.quoteNo}</div>
+          <div style={{ fontSize: 14, color: MUTED, marginTop: 2 }}>{quote.customer?.fullName}</div>
         </div>
-        <Badge tone={statusTone[quote.status]}>{quote.status}</Badge>
+        <div className="flex items-center gap-1.5">
+          <span style={{ width: 7, height: 7, borderRadius: 4, background: statusDot[quote.status] }} />
+          <Badge tone={statusTone[quote.status]}>{quote.status}</Badge>
+        </div>
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex flex-wrap gap-2 mb-7">
         {transitions.map(s => (
           <Button key={s} size="sm" variant="outline" onClick={() => statusMut.mutate(s)} disabled={statusMut.isPending}>
             → {s}
           </Button>
         ))}
-        {quote.status === 'accepted' && !quote.job && (
-          <Button size="sm" onClick={() => createJobMut.mutate()} disabled={createJobMut.isPending}>
-            <CheckCircle size={13} className="mr-1" />
-            {createJobMut.isPending ? 'Creating…' : 'Create Job'}
-          </Button>
-        )}
         {(quote.status === 'accepted' || quote.status === 'sent') && (
           <Button size="sm" onClick={() => convertToInvoiceMut.mutate()} disabled={convertToInvoiceMut.isPending}>
             <Receipt size={13} className="mr-1" />
@@ -122,8 +129,8 @@ export default function MovingQuoteDetail() {
           onClick={async () => {
             if (!shareToken) {
               const res = await api.post(`/moving-quotes/${id}/share-token`, {})
-              setShareToken(res.data.shareToken)
-              window.open(`/api/moving-quotes/${id}/pdf?token=${res.data.shareToken}`, '_blank')
+              setShareToken(res.data.token)
+              window.open(`/api/moving-quotes/${id}/pdf?token=${res.data.token}`, '_blank')
             } else {
               window.open(`/api/moving-quotes/${id}/pdf?token=${shareToken}`, '_blank')
             }
@@ -133,105 +140,99 @@ export default function MovingQuoteDetail() {
         </Button>
       </div>
 
-      {err && <p className="text-sm text-red-600">{err}</p>}
+      {err && <p className="text-sm text-red-600 mb-4">{err}</p>}
 
-      <div className="grid grid-cols-2 gap-6">
-        <Card>
-          <CardHeader title="Quote Info" />
-          <CardBody>
-            <dl className="space-y-2 text-sm">
-              <div className="flex justify-between"><dt className="text-muted-foreground">Quote Date</dt><dd>{dt(quote.quoteDate)}</dd></div>
-              <div className="flex justify-between"><dt className="text-muted-foreground">Expiry Date</dt><dd>{dt(quote.expiryDate)}</dd></div>
-              {quote.salesperson && <div className="flex justify-between"><dt className="text-muted-foreground">Salesperson</dt><dd>{quote.salesperson}</dd></div>}
-              {quote.job && (
-                <div className="flex justify-between">
-                  <dt className="text-muted-foreground">Job</dt>
-                  <dd><Link to={`/moving/jobs/${quote.job._id}`} className="text-primary hover:underline">{quote.job.jobNo}</Link></dd>
-                </div>
-              )}
-            </dl>
-          </CardBody>
-        </Card>
+      {/* Info cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: '20px 24px' }}>
+          <div style={{ ...HEADING, fontSize: 15, fontWeight: 700, color: INK, marginBottom: 12 }}>Quote Info</div>
+          <InfoRow label="Quote Date">{dt(quote.quoteDate)}</InfoRow>
+          <InfoRow label="Expiry Date">{dt(quote.expiryDate)}</InfoRow>
+          {quote.salesperson && <InfoRow label="Salesperson">{quote.salesperson}</InfoRow>}
+          {quote.job && (
+            <InfoRow label="Job">
+              <Link to={`/moving/jobs/${quote.job._id}`} style={{ color: PURPLE, fontFamily: 'monospace', fontWeight: 600 }} className="hover:opacity-80">{quote.job.jobNo}</Link>
+            </InfoRow>
+          )}
+        </div>
 
-        <Card>
-          <CardHeader title="Customer" />
-          <CardBody>
-            <dl className="space-y-2 text-sm">
-              <div className="flex justify-between"><dt className="text-muted-foreground">Name</dt><dd className="font-medium">{quote.customer?.fullName}</dd></div>
-              {quote.customer?.phone && <div className="flex justify-between"><dt className="text-muted-foreground">Phone</dt><dd>{quote.customer.phone}</dd></div>}
-              {quote.customer?.email && <div className="flex justify-between"><dt className="text-muted-foreground">Email</dt><dd>{quote.customer.email}</dd></div>}
-            </dl>
-          </CardBody>
-        </Card>
+        <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: '20px 24px' }}>
+          <div style={{ ...HEADING, fontSize: 15, fontWeight: 700, color: INK, marginBottom: 12 }}>Customer</div>
+          <InfoRow label="Name">{quote.customer?.fullName}</InfoRow>
+          {quote.customer?.phone && <InfoRow label="Phone">{quote.customer.phone}</InfoRow>}
+          {quote.customer?.email && <InfoRow label="Email">{quote.customer.email}</InfoRow>}
+        </div>
       </div>
 
       {/* Move addresses */}
       {(quote.job?.pickupAddress || quote.job?.deliveryAddress) && (
-        <Card>
-          <CardHeader title="Move Details" />
-          <CardBody>
-            <div className="grid grid-cols-2 gap-6 text-sm">
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Pickup</p>
-                <p>{quote.job?.pickupAddress || '—'}</p>
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Delivery</p>
-                <p>{quote.job?.deliveryAddress || '—'}</p>
-              </div>
+        <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: '20px 24px', marginBottom: 24 }}>
+          <div style={{ ...HEADING, fontSize: 15, fontWeight: 700, color: INK, marginBottom: 12 }}>Move Details</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Pickup</div>
+              <div style={{ fontSize: 13, color: INK }}>{quote.job?.pickupAddress || '—'}</div>
             </div>
-          </CardBody>
-        </Card>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Delivery</div>
+              <div style={{ fontSize: 13, color: INK }}>{quote.job?.deliveryAddress || '—'}</div>
+            </div>
+          </div>
+        </div>
       )}
 
-      {/* Items table */}
-      <Card>
-        <CardHeader
-          title="Line Items"
-          action={quote.status === 'draft' ? <Button size="sm" onClick={() => setItemsModal(true)}><Edit size={13} className="mr-1" />Edit</Button> : undefined}
-        />
-        <CardBody>
-          <Table>
+      {/* Line Items */}
+      <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, overflow: 'hidden', marginBottom: 24 }}>
+        <div style={{ padding: '16px 24px', borderBottom: '1px solid rgba(20,8,31,0.06)' }} className="flex items-center justify-between">
+          <div style={{ ...HEADING, fontSize: 15, fontWeight: 700, color: INK }}>Line Items</div>
+          {quote.status === 'draft' && (
+            <Button size="sm" variant="outline" onClick={() => setItemsModal(true)}>
+              <Edit size={13} className="mr-1" />Edit
+            </Button>
+          )}
+        </div>
+        <div className="overflow-x-auto">
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
-              <tr>
-                <Th>#</Th>
-                <Th>Description</Th>
-                <Th className="text-right">Qty</Th>
-                <Th className="text-right">Rate</Th>
-                <Th className="text-right">Amount</Th>
+              <tr style={{ borderBottom: '1px solid rgba(20,8,31,0.06)' }}>
+                {['#', 'Description', 'Qty', 'Rate', 'Amount'].map((h, i) => (
+                  <th key={h} style={{ padding: '10px 16px', fontSize: 11, fontWeight: 600, color: MUTED, textAlign: i >= 2 ? 'right' : 'left', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {items.map((it, i) => (
-                <tr key={i} className="hover:bg-muted/30">
-                  <Td>{i + 1}</Td>
-                  <Td>{it.description}</Td>
-                  <Td className="text-right">{it.qty}</Td>
-                  <Td className="text-right">AED {fmt(it.rate)}</Td>
-                  <Td className="text-right font-medium">AED {fmt(it.amount)}</Td>
+                <tr key={i} style={{ borderBottom: '1px solid rgba(20,8,31,0.04)' }} className="hover:bg-[#FAF8F5] transition-colors">
+                  <td style={{ padding: '12px 16px', fontSize: 13, color: MUTED }}>{i + 1}</td>
+                  <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 500, color: INK }}>{it.description}</td>
+                  <td style={{ padding: '12px 16px', fontSize: 13, color: INK, textAlign: 'right' }}>{it.qty}</td>
+                  <td style={{ padding: '12px 16px', fontSize: 13, color: INK, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>AED {fmt(it.rate)}</td>
+                  <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: INK, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>AED {fmt(it.amount)}</td>
                 </tr>
               ))}
             </tbody>
-          </Table>
-
-          <div className="mt-4 flex flex-col items-end gap-1 text-sm">
-            <div className="flex gap-8">
-              <span className="text-muted-foreground">Sub Total</span>
-              <span>AED {fmt(total)}</span>
+          </table>
+        </div>
+        <div style={{ padding: '16px 24px', borderTop: '1px solid rgba(20,8,31,0.06)', background: '#FAF8F5' }}>
+          <div className="flex flex-col items-end gap-1">
+            <div className="flex gap-8" style={{ fontSize: 13, color: MUTED }}>
+              <span>Sub Total</span>
+              <span style={{ fontVariantNumeric: 'tabular-nums', color: INK }}>AED {fmt(total)}</span>
             </div>
-            <div className="flex gap-8 font-semibold text-base border-t pt-2">
+            <div className="flex gap-8" style={{ fontSize: 16, fontWeight: 700, color: PURPLE, ...HEADING }}>
               <span>Total</span>
-              <span className="text-primary">AED {fmt(total)}</span>
+              <span style={{ fontVariantNumeric: 'tabular-nums' }}>AED {fmt(total)}</span>
             </div>
           </div>
-        </CardBody>
-      </Card>
+        </div>
+      </div>
 
+      {/* Notes */}
       {quote.notes && (
-        <Card>
-          <CardHeader title="Notes" />
-          <CardBody><p className="text-sm">{quote.notes}</p></CardBody>
-        </Card>
+        <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: '20px 24px' }}>
+          <div style={{ ...HEADING, fontSize: 15, fontWeight: 700, color: INK, marginBottom: 8 }}>Notes</div>
+          <p style={{ fontSize: 13, color: MUTED, lineHeight: 1.6 }}>{quote.notes}</p>
+        </div>
       )}
 
       {/* Edit Items Modal */}
@@ -301,7 +302,7 @@ export default function MovingQuoteDetail() {
           <div className="border-t pt-3">
             <div className="flex justify-end gap-8 text-sm font-semibold">
               <span>Total:</span>
-              <span className="text-primary">AED {fmt(total)}</span>
+              <span style={{ color: PURPLE }}>AED {fmt(total)}</span>
             </div>
           </div>
 

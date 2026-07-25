@@ -1,13 +1,22 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Download, Share2, Edit, Plus, Trash2, RefreshCw, AlertCircle } from 'lucide-react'
+import { ArrowLeft, Download, Share2, Edit, Plus, Trash2, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingInvoice, MovingInvoiceStatus } from '../../lib/types'
-import { Badge, Button, Card, CardBody, CardHeader, Field, Input, Modal, Select, Spinner, Table, Td, Th } from '../../components/ui'
+import { Badge, Button, Field, Input, Modal, Select, Spinner } from '../../components/ui'
+
+const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
+const INK = '#14081F'
+const MUTED = '#756E80'
+const PURPLE = '#5B2BC9'
 
 const statusTone: Record<MovingInvoiceStatus, string> = {
   draft: 'gray', sent: 'blue', partial: 'yellow', paid: 'green', cancelled: 'red',
+}
+
+const statusDot: Record<string, string> = {
+  draft: '#94A3B8', sent: '#3B82F6', partial: '#F59E0B', paid: '#10B981', cancelled: '#EF4444',
 }
 
 const STATUS_TRANSITIONS: Record<MovingInvoiceStatus, MovingInvoiceStatus[]> = {
@@ -25,6 +34,15 @@ function fmt(n: number) {
 function dt(d?: string) {
   if (!d) return '—'
   return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex justify-between py-2" style={{ borderBottom: '1px solid rgba(20,8,31,0.06)' }}>
+      <span style={{ fontSize: 13, color: MUTED }}>{label}</span>
+      <span style={{ fontSize: 13, fontWeight: 500, color: INK }}>{children}</span>
+    </div>
+  )
 }
 
 export default function MovingInvoiceDetail() {
@@ -75,6 +93,18 @@ export default function MovingInvoiceDetail() {
     onError: (e) => setErr(apiError(e)),
   })
 
+  const createJobMut = useMutation({
+    mutationFn: () => api.post('/moving-jobs', {
+      customer: invoice?.customer?._id,
+      invoice: id,
+      jobType: 'other',
+      status: 'confirmed',
+      notes: `Created from invoice ${invoice?.invoiceNo}`,
+    }).then(r => r.data),
+    onSuccess: (job) => navigate(`/moving/jobs/${job._id}`),
+    onError: (e) => setErr(apiError(e)),
+  })
+
   const deleteMut = useMutation({
     mutationFn: () => api.delete(`/moving-invoices/${id}`),
     onSuccess: () => navigate('/moving/invoices'),
@@ -87,7 +117,7 @@ export default function MovingInvoiceDetail() {
       qc.invalidateQueries({ queryKey: ['moving-invoice', id] })
       qc.invalidateQueries({ queryKey: ['moving-invoices'] })
     },
-    onError: () => { /* error shown inline via syncZoho.error */ },
+    onError: () => {},
   })
 
   const [deleteConfirm, setDeleteConfirm] = useState(false)
@@ -100,7 +130,7 @@ export default function MovingInvoiceDetail() {
   }, [invoice?._id])
 
   if (isLoading) return <div className="p-8"><Spinner /></div>
-  if (!invoice) return <div className="p-8 text-muted-foreground">Invoice not found</div>
+  if (!invoice) return <div className="p-8" style={{ color: MUTED }}>Invoice not found</div>
 
   const transitions = STATUS_TRANSITIONS[invoice.status] ?? []
   const total = items.reduce((s, i) => s + i.amount, 0)
@@ -117,275 +147,279 @@ export default function MovingInvoiceDetail() {
   }
 
   return (
-    <div className="p-5 sm:p-7 space-y-8">
-      <div className="space-y-3">
-        <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/moving/invoices')} className="text-muted-foreground hover:text-foreground">
-            <ArrowLeft size={18} />
-          </button>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-lg sm:text-xl font-semibold font-mono">{invoice.invoiceNo}</h1>
-            <p className="text-sm text-muted-foreground truncate">{invoice.customer?.fullName}</p>
-          </div>
-          <Badge tone={statusTone[invoice.status]}>{invoice.status}</Badge>
+    <div style={{ background: '#FDFCFA', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-4">
+        <button onClick={() => navigate(-1)} className="hover:opacity-70 transition-opacity" style={{ color: MUTED }}>
+          <ArrowLeft size={18} />
+        </button>
+        <div className="flex-1 min-w-0">
+          <div style={{ ...HEADING, fontSize: 22, fontWeight: 700, color: INK }} className="font-mono">{invoice.invoiceNo}</div>
+          <div style={{ fontSize: 14, color: MUTED, marginTop: 2 }} className="truncate">{invoice.customer?.fullName}</div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {transitions.map(s => (
-            <Button key={s} size="sm" variant="outline" onClick={() => statusMut.mutate(s)} disabled={statusMut.isPending}>
-              → {s}
-            </Button>
-          ))}
-          {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
-            <Button size="sm" onClick={() => setPayModal(true)}>Record Payment</Button>
-          )}
-          {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => { setItems(invoice.items as typeof items); setReviseModal(true) }}
-              title="Add extra charges or adjust items, then resend via WhatsApp"
-            >
-              <RefreshCw size={13} className="mr-1" /><span className="hidden sm:inline">Revise &amp; Resend</span><span className="sm:hidden">Revise</span>
-            </Button>
-          )}
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={async () => {
-              if (!shareToken) {
-                const res = await api.post(`/moving-invoices/${id}/share-token`, {})
-                setShareToken(res.data.token)
-                window.open(`/api/moving-invoices/${id}/pdf?token=${res.data.token}`, '_blank')
-              } else {
-                window.open(`/api/moving-invoices/${id}/pdf?token=${shareToken}`, '_blank')
-              }
-            }}
-          >
-            <Download size={13} className="mr-1" />PDF
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={async () => {
-              if (!shareToken) {
-                const res = await api.post(`/moving-invoices/${id}/share-token`, {})
-                setShareToken(res.data.token)
-                const pdfUrl = `${window.location.origin}/api/moving-invoices/${id}/pdf?token=${res.data.token}`
-                const msg = `Hi ${invoice.customer?.fullName}, here's your invoice ${invoice.invoiceNo} for AED ${invoice.total}. Please review and let me know if you have any questions. ${pdfUrl}`
-                const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`
-                window.open(whatsappUrl, '_blank')
-              } else {
-                const pdfUrl = `${window.location.origin}/api/moving-invoices/${id}/pdf?token=${shareToken}`
-                const msg = `Hi ${invoice.customer?.fullName}, here's your invoice ${invoice.invoiceNo} for AED ${invoice.total}. Please review and let me know if you have any questions. ${pdfUrl}`
-                const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`
-                window.open(whatsappUrl, '_blank')
-              }
-            }}
-          >
-            <Share2 size={13} className="mr-1" />
-            <span className="hidden sm:inline">WhatsApp</span><span className="sm:hidden">WA</span>
-          </Button>
-          {invoice.balanceDue > 0 && (
-            <Button
-              size="sm"
-              onClick={async () => {
-                try {
-                  const res = await api.post(`/moving-invoices/${id}/payment-link`, {})
-                  setErr('')
-                  alert(`Payment link sent via WhatsApp!\n\nLink: ${res.data.payUrl}\nBalance: AED ${res.data.balanceDue}`)
-                } catch (e) { setErr(apiError(e)) }
-              }}
-            >
-              <span className="hidden sm:inline">💳 Send Payment Link</span><span className="sm:hidden">💳 Pay Link</span>
-            </Button>
-          )}
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => syncZoho.mutate()}
-            disabled={syncZoho.isPending}
-            className={invoice.zohoBooksSyncId ? 'text-emerald-600 border-emerald-300' : invoice.zohoBooksSyncError ? 'text-red-600 border-red-300' : ''}
-            title={invoice.zohoBooksSyncId ? `Synced to Zoho Books on ${new Date(invoice.zohoBooksSyncedAt!).toLocaleDateString()}` : invoice.zohoBooksSyncError ? `Sync failed: ${invoice.zohoBooksSyncError}` : 'Sync to Zoho Books'}
-          >
-            <RefreshCw size={13} className={syncZoho.isPending ? 'animate-spin' : ''} />
-            {syncZoho.isPending ? 'Syncing…' : invoice.zohoBooksSyncId ? 'Synced' : <><span className="hidden sm:inline">Sync to Zoho</span><span className="sm:hidden">Zoho</span></>}
-          </Button>
-          {invoice.zohoBooksSyncId && (
-            <a
-              href={`https://books.zoho.com/app/908459713#/invoices/${invoice.zohoBooksSyncId}`}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 rounded-md border border-emerald-300 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
-            >
-              <span className="hidden sm:inline">Open in Zoho ↗</span><span className="sm:hidden">Zoho ↗</span>
-            </a>
-          )}
-          {invoice.status !== 'paid' && (
-            <Button size="sm" variant="outline" className="text-red-600 border-red-300 hover:bg-red-50" onClick={() => setDeleteConfirm(true)}>
-              <Trash2 size={13} className="mr-1" /><span className="hidden sm:inline">Delete</span>
-            </Button>
-          )}
+        <div className="flex items-center gap-1.5">
+          <span style={{ width: 7, height: 7, borderRadius: 4, background: statusDot[invoice.status] }} />
+          <Badge tone={statusTone[invoice.status]}>{invoice.status}</Badge>
         </div>
       </div>
 
-      {err && <p className="text-sm text-red-600">{err}</p>}
+      {/* Action buttons */}
+      <div className="flex flex-wrap gap-2 mb-7">
+        {transitions.map(s => (
+          <Button key={s} size="sm" variant="outline" onClick={() => statusMut.mutate(s)} disabled={statusMut.isPending}>
+            → {s}
+          </Button>
+        ))}
+        {!invoice.job && (
+          <Button size="sm" onClick={() => createJobMut.mutate()} disabled={createJobMut.isPending}>
+            <CheckCircle size={13} className="mr-1" />
+            {createJobMut.isPending ? 'Creating…' : 'Create Job'}
+          </Button>
+        )}
+        {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
+          <Button size="sm" onClick={() => setPayModal(true)}>Record Payment</Button>
+        )}
+        {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => { setItems(invoice.items as typeof items); setReviseModal(true) }}
+            title="Add extra charges or adjust items, then resend via WhatsApp"
+          >
+            <RefreshCw size={13} className="mr-1" /><span className="hidden sm:inline">Revise &amp; Resend</span><span className="sm:hidden">Revise</span>
+          </Button>
+        )}
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={async () => {
+            if (!shareToken) {
+              const res = await api.post(`/moving-invoices/${id}/share-token`, {})
+              setShareToken(res.data.token)
+              window.open(`/api/moving-invoices/${id}/pdf?token=${res.data.token}`, '_blank')
+            } else {
+              window.open(`/api/moving-invoices/${id}/pdf?token=${shareToken}`, '_blank')
+            }
+          }}
+        >
+          <Download size={13} className="mr-1" />PDF
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={async () => {
+            if (!shareToken) {
+              const res = await api.post(`/moving-invoices/${id}/share-token`, {})
+              setShareToken(res.data.token)
+              const pdfUrl = `${window.location.origin}/api/moving-invoices/${id}/pdf?token=${res.data.token}`
+              const msg = `Hi ${invoice.customer?.fullName}, here's your invoice ${invoice.invoiceNo} for AED ${invoice.total}. Please review and let me know if you have any questions. ${pdfUrl}`
+              window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
+            } else {
+              const pdfUrl = `${window.location.origin}/api/moving-invoices/${id}/pdf?token=${shareToken}`
+              const msg = `Hi ${invoice.customer?.fullName}, here's your invoice ${invoice.invoiceNo} for AED ${invoice.total}. Please review and let me know if you have any questions. ${pdfUrl}`
+              window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
+            }
+          }}
+        >
+          <Share2 size={13} className="mr-1" />
+          <span className="hidden sm:inline">WhatsApp</span><span className="sm:hidden">WA</span>
+        </Button>
+        {invoice.balanceDue > 0 && (
+          <Button
+            size="sm"
+            onClick={async () => {
+              try {
+                const res = await api.post(`/moving-invoices/${id}/payment-link`, {})
+                setErr('')
+                alert(`Payment link sent via WhatsApp!\n\nLink: ${res.data.payUrl}\nBalance: AED ${res.data.balanceDue}`)
+              } catch (e) { setErr(apiError(e)) }
+            }}
+          >
+            <span className="hidden sm:inline">Send Payment Link</span><span className="sm:hidden">Pay Link</span>
+          </Button>
+        )}
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => syncZoho.mutate()}
+          disabled={syncZoho.isPending}
+          className={invoice.zohoBooksSyncId ? 'text-emerald-600 border-emerald-300' : invoice.zohoBooksSyncError ? 'text-red-600 border-red-300' : ''}
+          title={invoice.zohoBooksSyncId ? `Synced to Zoho Books on ${new Date(invoice.zohoBooksSyncedAt!).toLocaleDateString()}` : invoice.zohoBooksSyncError ? `Sync failed: ${invoice.zohoBooksSyncError}` : 'Sync to Zoho Books'}
+        >
+          <RefreshCw size={13} className={syncZoho.isPending ? 'animate-spin' : ''} />
+          {syncZoho.isPending ? 'Syncing…' : invoice.zohoBooksSyncId ? 'Synced' : <><span className="hidden sm:inline">Sync to Zoho</span><span className="sm:hidden">Zoho</span></>}
+        </Button>
+        {invoice.zohoBooksSyncId && (
+          <a
+            href={`https://books.zoho.com/app/908459713#/invoices/${invoice.zohoBooksSyncId}`}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 rounded-md border border-emerald-300 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
+          >
+            <span className="hidden sm:inline">Open in Zoho ↗</span><span className="sm:hidden">Zoho ↗</span>
+          </a>
+        )}
+        {invoice.status !== 'paid' && (
+          <Button size="sm" variant="outline" className="text-red-600 border-red-300 hover:bg-red-50" onClick={() => setDeleteConfirm(true)}>
+            <Trash2 size={13} className="mr-1" /><span className="hidden sm:inline">Delete</span>
+          </Button>
+        )}
+      </div>
+
+      {err && <p className="text-sm text-red-600 mb-4">{err}</p>}
 
       {(syncZoho.error || (invoice.zohoBooksSyncError && !invoice.zohoBooksSyncId)) && (
-        <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 dark:bg-red-950/20 dark:border-red-900 px-4 py-3">
+        <div className="flex items-start gap-2 mb-4" style={{ background: '#FEF2F2', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 12, padding: '12px 16px' }}>
           <AlertCircle className="text-red-600 shrink-0 mt-0.5" size={15} />
-          <div className="text-xs text-red-700 dark:text-red-400">
+          <div style={{ fontSize: 12, color: '#B91C1C' }}>
             <span className="font-semibold">Zoho Books sync failed: </span>
             {syncZoho.error ? apiError(syncZoho.error) : invoice.zohoBooksSyncError}
           </div>
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader title="Invoice Info" />
-          <CardBody>
-            <dl className="space-y-2 text-sm">
-              <div className="flex justify-between"><dt className="text-muted-foreground">Invoice Date</dt><dd>{dt(invoice.invoiceDate)}</dd></div>
-              <div className="flex justify-between"><dt className="text-muted-foreground">Due Date</dt><dd>{dt(invoice.dueDate)}</dd></div>
-              {invoice.job && (
-                <div className="flex justify-between">
-                  <dt className="text-muted-foreground">Job</dt>
-                  <dd><Link to={`/moving/jobs/${invoice.job._id}`} className="text-primary hover:underline">{invoice.job.jobNo}</Link></dd>
-                </div>
-              )}
-            </dl>
-          </CardBody>
-        </Card>
+      {/* Info cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: '20px 24px' }}>
+          <div style={{ ...HEADING, fontSize: 15, fontWeight: 700, color: INK, marginBottom: 12 }}>Invoice Info</div>
+          <InfoRow label="Invoice Date">{dt(invoice.invoiceDate)}</InfoRow>
+          <InfoRow label="Due Date">{dt(invoice.dueDate)}</InfoRow>
+          {invoice.job && (
+            <InfoRow label="Job">
+              <Link to={`/moving/jobs/${invoice.job._id}`} style={{ color: PURPLE, fontFamily: 'monospace', fontWeight: 600 }} className="hover:opacity-80">{invoice.job.jobNo}</Link>
+            </InfoRow>
+          )}
+        </div>
 
-        <Card>
-          <CardHeader title="Payment Summary" />
-          <CardBody>
-            <dl className="space-y-2 text-sm">
-              <div className="flex justify-between"><dt className="text-muted-foreground">Total</dt><dd className="font-medium">AED {fmt(invoice.total)}</dd></div>
-              {invoice.depositPaid > 0 && <div className="flex justify-between"><dt className="text-muted-foreground">Deposit Paid</dt><dd>AED {fmt(invoice.depositPaid)}</dd></div>}
-              {(invoice.paymentHistory ?? []).length > 0 && (
-                <div className="flex justify-between">
-                  <dt className="text-muted-foreground">Payments</dt>
-                  <dd>AED {fmt((invoice.paymentHistory ?? []).reduce((s, p) => s + p.amount, 0))}</dd>
-                </div>
-              )}
-              <div className="flex justify-between font-semibold border-t pt-2">
-                <dt>Balance Due</dt>
-                <dd className={invoice.balanceDue > 0 ? 'text-red-600' : 'text-green-600'}>AED {fmt(invoice.balanceDue)}</dd>
-              </div>
-            </dl>
-          </CardBody>
-        </Card>
+        <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: '20px 24px' }}>
+          <div style={{ ...HEADING, fontSize: 15, fontWeight: 700, color: INK, marginBottom: 12 }}>Payment Summary</div>
+          <InfoRow label="Total"><span style={{ fontWeight: 600 }}>AED {fmt(invoice.total)}</span></InfoRow>
+          {invoice.depositPaid > 0 && <InfoRow label="Deposit Paid">AED {fmt(invoice.depositPaid)}</InfoRow>}
+          {(invoice.paymentHistory ?? []).length > 0 && (
+            <InfoRow label="Payments">AED {fmt((invoice.paymentHistory ?? []).reduce((s, p) => s + p.amount, 0))}</InfoRow>
+          )}
+          <div className="flex justify-between py-2">
+            <span style={{ fontSize: 14, fontWeight: 700, color: INK }}>Balance Due</span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: invoice.balanceDue > 0 ? '#EF4444' : '#059669' }}>AED {fmt(invoice.balanceDue)}</span>
+          </div>
+        </div>
       </div>
 
-      {/* Items */}
-      <Card>
-        <CardHeader
-          title="Line Items"
-          action={invoice.status !== 'paid' && invoice.status !== 'cancelled' ? <Button size="sm" variant="outline" onClick={() => { setItems(invoice.items as typeof items); setItemsModal(true) }}><Edit size={13} className="mr-1" />Edit Items</Button> : undefined}
-        />
-        <CardBody>
-          {/* Desktop table */}
-          <div className="hidden md:block">
-            <Table>
-              <thead>
-                <tr>
-                  <Th>#</Th>
-                  <Th>Description</Th>
-                  <Th className="text-right">Qty</Th>
-                  <Th className="text-right">Rate</Th>
-                  <Th className="text-right">Amount</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((it, i) => (
-                  <tr key={i} className="hover:bg-muted/30">
-                    <Td>{i + 1}</Td>
-                    <Td>{it.description}</Td>
-                    <Td className="text-right">{it.qty}</Td>
-                    <Td className="text-right">AED {fmt(it.rate)}</Td>
-                    <Td className="text-right font-medium">AED {fmt(it.amount)}</Td>
-                  </tr>
+      {/* Line Items */}
+      <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, overflow: 'hidden', marginBottom: 24 }}>
+        <div style={{ padding: '16px 24px', borderBottom: '1px solid rgba(20,8,31,0.06)' }} className="flex items-center justify-between">
+          <div style={{ ...HEADING, fontSize: 15, fontWeight: 700, color: INK }}>Line Items</div>
+          {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
+            <Button size="sm" variant="outline" onClick={() => { setItems(invoice.items as typeof items); setItemsModal(true) }}>
+              <Edit size={13} className="mr-1" />Edit Items
+            </Button>
+          )}
+        </div>
+        {/* Desktop table */}
+        <div className="hidden md:block overflow-x-auto">
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid rgba(20,8,31,0.06)' }}>
+                {['#', 'Description', 'Qty', 'Rate', 'Amount'].map((h, i) => (
+                  <th key={h} style={{ padding: '10px 16px', fontSize: 11, fontWeight: 600, color: MUTED, textAlign: i >= 2 ? 'right' : 'left', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
                 ))}
-              </tbody>
-            </Table>
-          </div>
-          {/* Mobile cards */}
-          <div className="md:hidden space-y-3">
-            {items.map((it, i) => (
-              <div key={i} className="rounded-lg border p-3 space-y-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-xs text-muted-foreground">#{i + 1}</p>
-                    <p className="text-sm font-medium">{it.description}</p>
-                  </div>
-                  <p className="text-sm font-semibold text-primary whitespace-nowrap">AED {fmt(it.amount)}</p>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((it, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid rgba(20,8,31,0.04)' }} className="hover:bg-[#FAF8F5] transition-colors">
+                  <td style={{ padding: '12px 16px', fontSize: 13, color: MUTED }}>{i + 1}</td>
+                  <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 500, color: INK }}>{it.description}</td>
+                  <td style={{ padding: '12px 16px', fontSize: 13, color: INK, textAlign: 'right' }}>{it.qty}</td>
+                  <td style={{ padding: '12px 16px', fontSize: 13, color: INK, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>AED {fmt(it.rate)}</td>
+                  <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: INK, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>AED {fmt(it.amount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {/* Mobile cards */}
+        <div className="md:hidden p-4 space-y-3">
+          {items.map((it, i) => (
+            <div key={i} style={{ background: '#FAF8F5', borderRadius: 12, padding: 12 }}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <span style={{ fontSize: 11, color: MUTED }}>#{i + 1}</span>
+                  <p style={{ fontSize: 13, fontWeight: 500, color: INK }}>{it.description}</p>
                 </div>
-                <div className="flex gap-4 text-xs text-muted-foreground">
-                  <span>Qty: {it.qty}</span>
-                  <span>Rate: AED {fmt(it.rate)}</span>
-                </div>
+                <span style={{ fontSize: 13, fontWeight: 600, color: PURPLE, whiteSpace: 'nowrap' }}>AED {fmt(it.amount)}</span>
               </div>
-            ))}
-          </div>
-
-          <div className="mt-4 flex flex-col items-end gap-1 text-sm">
-            <div className="flex gap-4 sm:gap-8">
-              <span className="text-muted-foreground">Sub Total</span>
-              <span>AED {fmt(total)}</span>
+              <div className="flex gap-4 mt-1" style={{ fontSize: 12, color: MUTED }}>
+                <span>Qty: {it.qty}</span>
+                <span>Rate: AED {fmt(it.rate)}</span>
+              </div>
             </div>
-            <div className="flex gap-4 sm:gap-8 font-semibold text-base border-t pt-2">
+          ))}
+        </div>
+        <div style={{ padding: '16px 24px', borderTop: '1px solid rgba(20,8,31,0.06)', background: '#FAF8F5' }}>
+          <div className="flex flex-col items-end gap-1">
+            <div className="flex gap-4 sm:gap-8" style={{ fontSize: 13, color: MUTED }}>
+              <span>Sub Total</span>
+              <span style={{ fontVariantNumeric: 'tabular-nums', color: INK }}>AED {fmt(total)}</span>
+            </div>
+            <div className="flex gap-4 sm:gap-8" style={{ fontSize: 16, fontWeight: 700, color: PURPLE, ...HEADING }}>
               <span>Total</span>
-              <span className="text-primary">AED {fmt(total)}</span>
+              <span style={{ fontVariantNumeric: 'tabular-nums' }}>AED {fmt(total)}</span>
             </div>
             {(invoice.balanceDue ?? 0) > 0 && (
-              <div className="flex gap-4 sm:gap-8 text-red-600 text-sm mt-1">
+              <div className="flex gap-4 sm:gap-8 mt-1" style={{ fontSize: 13, fontWeight: 600, color: '#EF4444' }}>
                 <span>Balance Due</span>
-                <span>AED {fmt(invoice.balanceDue!)}</span>
+                <span style={{ fontVariantNumeric: 'tabular-nums' }}>AED {fmt(invoice.balanceDue!)}</span>
               </div>
             )}
           </div>
-        </CardBody>
-      </Card>
+        </div>
+      </div>
 
       {/* Payment History */}
       {(invoice.paymentHistory ?? []).length > 0 && (
-        <Card>
-          <CardHeader title="Payment History" />
-          <CardBody>
-            {/* Desktop table */}
-            <div className="hidden md:block">
-              <Table>
-                <thead><tr><Th>Date</Th><Th>Method</Th><Th>Notes</Th><Th className="text-right">Amount</Th></tr></thead>
-                <tbody>
-                  {(invoice.paymentHistory ?? []).map((p, i) => (
-                    <tr key={i} className="hover:bg-muted/30">
-                      <Td>{dt(p.date)}</Td>
-                      <Td className="capitalize">{p.method}</Td>
-                      <Td className="text-muted-foreground text-sm">{p.notes || '—'}</Td>
-                      <Td className="text-right font-medium text-green-600">AED {fmt(p.amount)}</Td>
-                    </tr>
+        <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, overflow: 'hidden', marginBottom: 24 }}>
+          <div style={{ padding: '16px 24px', borderBottom: '1px solid rgba(20,8,31,0.06)' }}>
+            <div style={{ ...HEADING, fontSize: 15, fontWeight: 700, color: INK }}>Payment History</div>
+          </div>
+          {/* Desktop table */}
+          <div className="hidden md:block overflow-x-auto">
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(20,8,31,0.06)' }}>
+                  {['Date', 'Method', 'Notes', 'Amount'].map((h, i) => (
+                    <th key={h} style={{ padding: '10px 16px', fontSize: 11, fontWeight: 600, color: MUTED, textAlign: i === 3 ? 'right' : 'left', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
                   ))}
-                </tbody>
-              </Table>
-            </div>
-            {/* Mobile cards */}
-            <div className="md:hidden space-y-3">
-              {(invoice.paymentHistory ?? []).map((p, i) => (
-                <div key={i} className="rounded-lg border p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium capitalize">{p.method}</p>
-                      <p className="text-xs text-muted-foreground">{dt(p.date)}</p>
-                    </div>
-                    <p className="text-sm font-semibold text-green-600 whitespace-nowrap">AED {fmt(p.amount)}</p>
+                </tr>
+              </thead>
+              <tbody>
+                {(invoice.paymentHistory ?? []).map((p, i) => (
+                  <tr key={i} style={{ borderBottom: '1px solid rgba(20,8,31,0.04)' }} className="hover:bg-[#FAF8F5] transition-colors">
+                    <td style={{ padding: '12px 16px', fontSize: 13, color: INK }}>{dt(p.date)}</td>
+                    <td style={{ padding: '12px 16px', fontSize: 13, color: INK, textTransform: 'capitalize' }}>{p.method}</td>
+                    <td style={{ padding: '12px 16px', fontSize: 13, color: MUTED }}>{p.notes || '—'}</td>
+                    <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: '#059669', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>AED {fmt(p.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {/* Mobile cards */}
+          <div className="md:hidden p-4 space-y-3">
+            {(invoice.paymentHistory ?? []).map((p, i) => (
+              <div key={i} style={{ background: '#FAF8F5', borderRadius: 12, padding: 12 }}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p style={{ fontSize: 13, fontWeight: 500, color: INK, textTransform: 'capitalize' }}>{p.method}</p>
+                    <p style={{ fontSize: 12, color: MUTED }}>{dt(p.date)}</p>
                   </div>
-                  {p.notes && <p className="text-xs text-muted-foreground mt-1">{p.notes}</p>}
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#059669', whiteSpace: 'nowrap' }}>AED {fmt(p.amount)}</span>
                 </div>
-              ))}
-            </div>
-          </CardBody>
-        </Card>
+                {p.notes && <p style={{ fontSize: 12, color: MUTED, marginTop: 4 }}>{p.notes}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Record Payment Modal */}
@@ -413,9 +447,9 @@ export default function MovingInvoiceDetail() {
       {/* Revise & Resend Modal */}
       <Modal open={reviseModal} title="Revise Invoice & Resend to Customer" onClose={() => { setReviseModal(false); setErr('') }} className="max-w-4xl w-[90vw]">
         <div className="space-y-4">
-          <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-sm text-amber-800">
-            <p className="font-semibold mb-1">Supervisor Revision</p>
-            <p className="text-xs">Update line items to reflect actual work done on site. The customer will receive a WhatsApp notification with the revised total and balance due.</p>
+          <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 12, padding: '12px 16px' }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: '#92400E', marginBottom: 4 }}>Supervisor Revision</p>
+            <p style={{ fontSize: 12, color: '#92400E' }}>Update line items to reflect actual work done on site. The customer will receive a WhatsApp notification with the revised total and balance due.</p>
           </div>
 
           {items.map((item, i) => (
@@ -459,18 +493,18 @@ export default function MovingInvoiceDetail() {
 
           <div className="border-t pt-3">
             <div className="flex justify-end gap-8 text-sm">
-              <span className="text-muted-foreground">New Total:</span>
-              <span className="font-bold text-primary text-base">AED {fmt(items.reduce((s, i) => s + i.amount, 0))}</span>
+              <span style={{ color: MUTED }}>New Total:</span>
+              <span style={{ fontWeight: 700, color: PURPLE, fontSize: 16 }}>AED {fmt(items.reduce((s, i) => s + i.amount, 0))}</span>
             </div>
             {invoice.depositPaid > 0 && (
               <div className="flex justify-end gap-8 text-sm mt-1">
-                <span className="text-muted-foreground">Less Deposit:</span>
+                <span style={{ color: MUTED }}>Less Deposit:</span>
                 <span>AED {fmt(invoice.depositPaid)}</span>
               </div>
             )}
             <div className="flex justify-end gap-8 text-sm font-semibold mt-1">
               <span>New Balance Due:</span>
-              <span className="text-red-600">AED {fmt(Math.max(0, items.reduce((s, i) => s + i.amount, 0) - (invoice.depositPaid || 0) - ((invoice.paymentHistory ?? []).reduce((s, p) => s + p.amount, 0))))}</span>
+              <span style={{ color: '#EF4444' }}>AED {fmt(Math.max(0, items.reduce((s, i) => s + i.amount, 0) - (invoice.depositPaid || 0) - ((invoice.paymentHistory ?? []).reduce((s, p) => s + p.amount, 0))))}</span>
             </div>
           </div>
 
@@ -489,7 +523,7 @@ export default function MovingInvoiceDetail() {
               }}
               disabled={reviseMut.isPending}
             >
-              {reviseMut.isPending ? 'Saving & Sending…' : '✓ Save & Resend to Customer'}
+              {reviseMut.isPending ? 'Saving & Sending…' : 'Save & Resend to Customer'}
             </Button>
           </div>
         </div>
@@ -562,7 +596,7 @@ export default function MovingInvoiceDetail() {
           <div className="border-t pt-3">
             <div className="flex justify-end gap-8 text-sm font-semibold">
               <span>Total:</span>
-              <span className="text-primary">AED {fmt(total)}</span>
+              <span style={{ color: PURPLE }}>AED {fmt(total)}</span>
             </div>
           </div>
 

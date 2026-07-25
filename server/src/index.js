@@ -118,7 +118,11 @@ app.use('/api/workers', requireAuth, workerRoutes);
 app.use('/api/trucks', requireAuth, truckRoutes);
 app.use('/api/moving-jobs', requireAuth, movingJobRoutes);
 app.use('/api/moving-leads', requireAuth, movingLeadRoutes);
-app.use('/api/moving-quotes', requireAuth, movingQuoteRoutes);
+app.use(
+  '/api/moving-quotes',
+  (req, res, next) => (req.path.endsWith('/pdf') && req.query.token) ? next() : requireAuth(req, res, next),
+  movingQuoteRoutes
+);
 app.use(
   '/api/moving-invoices',
   (req, res, next) => (req.path.startsWith('/pay/') || (req.path.endsWith('/pdf') && req.query.token)) ? next() : requireAuth(req, res, next),
