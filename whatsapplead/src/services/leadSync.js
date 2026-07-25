@@ -116,10 +116,7 @@ function filterAllowedLabels(labels, options) {
 
 function cleanName(chatTitle, phoneNormalized) {
     const title = String(chatTitle || '').trim();
-    if (!title) return `WhatsApp ${phoneNormalized.slice(-4)}`;
-
-    const looksLikeNumber = /^\+?[0-9\s()-]+$/.test(title);
-    if (looksLikeNumber) return `WhatsApp ${phoneNormalized.slice(-4)}`;
+    if (!title) return phoneNormalized;
     return title;
 }
 
