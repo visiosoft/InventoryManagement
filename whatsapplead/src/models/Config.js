@@ -1,4 +1,6 @@
-import mongoose from 'mongoose';
+import { Lead } from '../../../server/src/models/index.js';
+
+const mongoose = Lead.base;
 
 const configSchema = new mongoose.Schema({
     key: { type: String, required: true, unique: true, default: 'whatsapplead' },
