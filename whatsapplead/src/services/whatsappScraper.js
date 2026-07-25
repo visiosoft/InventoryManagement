@@ -175,12 +175,17 @@ export async function getSharedBrowser({ headless, profileDir, webUrl }) {
         launchArgs.push(`--host-resolver-rules=${hostResolverRules}`);
     }
 
-    sharedBrowser = await puppeteer.launch({
+    const launchOpts = {
         headless,
         userDataDir: resolvedProfile,
         defaultViewport: { width: 1366, height: 900 },
         args: launchArgs,
-    });
+    };
+
+    const execPath = process.env.PUPPETEER_EXECUTABLE_PATH;
+    if (execPath) launchOpts.executablePath = execPath;
+
+    sharedBrowser = await puppeteer.launch(launchOpts);
 
     sharedBrowser.on('disconnected', () => {
         sharedBrowser = null;
