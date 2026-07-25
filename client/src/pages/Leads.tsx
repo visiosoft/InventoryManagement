@@ -663,6 +663,7 @@ export default function Leads() {
     const [waLabel, setWaLabel] = useState('')
     const [selectedWhatsAppLeadId, setSelectedWhatsAppLeadId] = useState('')
     const [expandedLeadId, setExpandedLeadId] = useState<string | null>(null)
+    const [menuLeadId, setMenuLeadId] = useState<string | null>(null)
 
     const { data: expandedMessages, isLoading: messagesLoading } = useQuery<{ ok: boolean; messages: { _id: string; text: string; direction: string; occurredAt: string; type: string }[] }>({
         queryKey: ['lead-messages', expandedLeadId],
@@ -1118,11 +1119,8 @@ export default function Leads() {
                                 <Th style={{ width: 32 }} />
                                 <Th>Name</Th>
                                 <Th>Phone / WhatsApp</Th>
-                                <Th>Contact</Th>
                                 <Th>Source</Th>
                                 <Th>Status</Th>
-                                <Th>Storage</Th>
-                                <Th>Owner</Th>
                                 <Th>Date</Th>
                                 <Th />
                             </tr>
@@ -1131,29 +1129,27 @@ export default function Leads() {
                             {(leads || []).map((lead) => (
                                 <Fragment key={lead._id}>
                                 <tr className="hover:bg-muted/50 cursor-pointer" onClick={() => navigate(`/quotes/new?lead=${lead._id}`)}>
-                                    <Td>
+                                    <Td style={{ padding: '0 4px', width: 28 }}>
+                                        {lead.source === 'whatsapp' && (
                                         <button
                                             onClick={(e) => { e.stopPropagation(); setExpandedLeadId(expandedLeadId === lead._id ? null : lead._id) }}
-                                            className="text-xs cursor-pointer hover:bg-muted rounded px-1"
-                                            style={{ color: PURPLE }}
+                                            className="cursor-pointer rounded-md"
+                                            title="Show messages"
+                                            style={{ color: PURPLE, background: expandedLeadId === lead._id ? 'rgba(91,43,201,0.08)' : 'transparent', border: 'none', padding: '6px 6px', fontSize: 11, lineHeight: 1 }}
                                         >
                                             {expandedLeadId === lead._id ? '▼' : '▶'}
                                         </button>
+                                        )}
                                     </Td>
                                     <Td>
                                         <div className="font-medium">{lead.fullName}</div>
-                                        <div className="text-xs text-muted-foreground">{lead.email || '—'}</div>
+                                        {lead.email && <div className="text-xs text-muted-foreground">{lead.email}</div>}
                                     </Td>
                                     <Td>
                                         <div>{lead.phone}</div>
                                         {lead.whatsappNo && lead.whatsappNo !== lead.phone && (
                                             <div className="text-xs text-muted-foreground">WA: {lead.whatsappNo}</div>
                                         )}
-                                    </Td>
-                                    <Td>
-                                        <Badge tone={lead.preferredContact === 'email' ? 'blue' : 'green'}>
-                                            {lead.preferredContact === 'email' ? 'Email' : 'WhatsApp'}
-                                        </Badge>
                                     </Td>
                                     <Td>
                                         <Badge tone="gray">{statusLabel(lead.source)}</Badge>
@@ -1178,37 +1174,40 @@ export default function Leads() {
                                             ))}
                                         </Select>
                                     </Td>
-                                    <Td>
-                                        <div>{lead.storageSizeValue} sqft</div>
-                                        <div className="text-xs text-muted-foreground">{lead.durationValue} {lead.durationUnit}(s) · {lead.unitsNeeded} unit(s)</div>
-                                    </Td>
-                                    <Td>{lead.owner?.name || '—'}</Td>
                                     <Td>{formatDate(lead.leadDateTime)}</Td>
                                     <Td>
-                                        <div className="flex gap-2 text-xs" onClick={(e) => e.stopPropagation()}>
-                                            <button onClick={() => setViewing(lead)} className="text-primary hover:underline cursor-pointer">View</button>
-                                            <button onClick={() => setEditing(lead)} className="text-primary hover:underline cursor-pointer">Edit</button>
+                                        <div className="relative" onClick={(e) => e.stopPropagation()}>
                                             <button
-                                                onClick={() => convertLead.mutate(lead._id)}
-                                                className="text-emerald-600 hover:underline cursor-pointer disabled:opacity-50"
-                                                disabled={convertLead.isPending}
+                                                onClick={() => setMenuLeadId(menuLeadId === lead._id ? null : lead._id)}
+                                                className="p-1 rounded hover:bg-muted cursor-pointer"
                                             >
-                                                Convert
+                                                <MoreHorizontal size={16} style={{ color: MUTED_COLOR }} />
                                             </button>
-                                            <button
-                                                onClick={() => {
-                                                    if (confirm('Delete this lead?')) removeLead.mutate(lead._id)
-                                                }}
-                                                className="text-destructive hover:underline cursor-pointer"
-                                            >
-                                                Delete
-                                            </button>
+                                            {menuLeadId === lead._id && (
+                                                <div style={{
+                                                    position: 'absolute', right: 0, top: '100%', zIndex: 50,
+                                                    background: 'white', border: '1px solid rgba(20,8,31,0.1)', borderRadius: 10,
+                                                    boxShadow: '0 4px 16px rgba(20,8,31,0.1)', minWidth: 200, padding: '6px 0',
+                                                }}>
+                                                    <div style={{ padding: '8px 14px', borderBottom: '1px solid rgba(20,8,31,0.06)' }}>
+                                                        <div style={{ fontSize: 11, color: MUTED_COLOR, fontWeight: 600, marginBottom: 4 }}>Details</div>
+                                                        <div style={{ fontSize: 12, color: INK }}>Owner: {lead.owner?.name || '—'}</div>
+                                                        <div style={{ fontSize: 12, color: INK }}>Storage: {lead.storageSizeValue} sqft</div>
+                                                        <div style={{ fontSize: 12, color: INK }}>{lead.durationValue} {lead.durationUnit}(s) · {lead.unitsNeeded} unit(s)</div>
+                                                        <div style={{ fontSize: 12, color: INK }}>Contact: {lead.preferredContact === 'email' ? 'Email' : 'WhatsApp'}</div>
+                                                    </div>
+                                                    <button onClick={() => { setViewing(lead); setMenuLeadId(null) }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 12, border: 'none', background: 'none', cursor: 'pointer', color: INK }} onMouseEnter={(e) => (e.currentTarget.style.background = '#FAF8F5')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}>View</button>
+                                                    <button onClick={() => { setEditing(lead); setMenuLeadId(null) }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 12, border: 'none', background: 'none', cursor: 'pointer', color: INK }} onMouseEnter={(e) => (e.currentTarget.style.background = '#FAF8F5')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}>Edit</button>
+                                                    <button onClick={() => { convertLead.mutate(lead._id); setMenuLeadId(null) }} disabled={convertLead.isPending} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 12, border: 'none', background: 'none', cursor: 'pointer', color: '#059669' }} onMouseEnter={(e) => (e.currentTarget.style.background = '#FAF8F5')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}>Convert</button>
+                                                    <button onClick={() => { if (confirm('Delete this lead?')) removeLead.mutate(lead._id); setMenuLeadId(null) }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 12, border: 'none', background: 'none', cursor: 'pointer', color: '#EF4444' }} onMouseEnter={(e) => (e.currentTarget.style.background = '#FAF8F5')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}>Delete</button>
+                                                </div>
+                                            )}
                                         </div>
                                     </Td>
                                 </tr>
                                 {expandedLeadId === lead._id && (
                                     <tr>
-                                        <td colSpan={10} style={{ padding: 0, border: 'none' }}>
+                                        <td colSpan={7} style={{ padding: 0, border: 'none' }}>
                                             <div style={{ background: '#FAF8F5', padding: '12px 24px', borderBottom: '1px solid rgba(20,8,31,0.08)' }}>
                                                 <div style={{ ...HEADING, fontSize: 13, fontWeight: 700, marginBottom: 8, color: INK }}>WhatsApp Messages</div>
                                                 {messagesLoading ? (
