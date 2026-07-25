@@ -1,53 +1,247 @@
 <!doctype html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>WhatsAppLead</title>
+    <title>WhatsApp Setup — PurpleBox</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-        href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&family=Space+Grotesk:wght@500;700&display=swap"
-        rel="stylesheet" />
-    <link rel="stylesheet" href="/styles.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Inter', sans-serif; background: #FDFCFA; color: #14081F; min-height: 100vh; }
+        .heading { font-family: 'Bricolage Grotesque', sans-serif; letter-spacing: -0.02em; }
+        .wrap { max-width: 680px; margin: 0 auto; padding: 40px 20px; }
+        .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 32px; }
+        .header h1 { font-size: 24px; font-weight: 700; }
+        .header p { font-size: 14px; color: #756E80; margin-top: 4px; }
+        .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 600; }
+        .badge-connected { background: rgba(16,185,129,0.1); color: #10B981; border: 1px solid rgba(16,185,129,0.25); }
+        .badge-qr { background: rgba(245,158,11,0.1); color: #F59E0B; border: 1px solid rgba(245,158,11,0.25); }
+        .badge-loading { background: rgba(59,130,246,0.1); color: #3B82F6; border: 1px solid rgba(59,130,246,0.25); }
+        .badge-error { background: rgba(239,68,68,0.1); color: #EF4444; border: 1px solid rgba(239,68,68,0.25); }
+        .badge-disconnected { background: rgba(148,163,184,0.1); color: #94A3B8; border: 1px solid rgba(148,163,184,0.25); }
+        .card { background: white; border: 1px solid rgba(20,8,31,0.08); border-radius: 16px; padding: 24px 28px; margin-bottom: 20px; }
+        .card-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+        .qr-wrap { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 12px 0; }
+        .qr-wrap img { max-width: 100%; border-radius: 12px; border: 2px solid rgba(20,8,31,0.08); }
+        .qr-instructions { font-size: 13px; color: #756E80; margin-bottom: 20px; line-height: 1.6; }
+        .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; border: none; cursor: pointer; transition: opacity 0.15s; }
+        .btn:hover { opacity: 0.85; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-primary { background: #5B2BC9; color: white; }
+        .btn-outline { background: white; color: #14081F; border: 1px solid rgba(20,8,31,0.15); }
+        .btn-danger { background: white; color: #EF4444; border: 1px solid rgba(239,68,68,0.3); }
+        .btn-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+        .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+        .stat-box { background: #FAF8F5; border-radius: 10px; padding: 14px 16px; text-align: center; }
+        .stat-val { font-size: 28px; font-weight: 700; color: #5B2BC9; }
+        .stat-label { font-size: 11px; font-weight: 600; color: #756E80; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 4px; }
+        .steps { list-style: none; counter-reset: step; }
+        .steps li { display: flex; gap: 12px; font-size: 13px; color: #756E80; line-height: 1.6; margin-bottom: 8px; }
+        .steps li::before { counter-increment: step; content: counter(step) "."; font-weight: 700; color: #5B2BC9; min-width: 20px; }
+        .center-msg { text-align: center; padding: 40px 20px; }
+        .center-msg h3 { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+        .center-msg p { font-size: 13px; color: #756E80; margin-bottom: 20px; max-width: 400px; margin-left: auto; margin-right: auto; }
+        .icon-circle { width: 56px; height: 56px; border-radius: 14px; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; }
+        .success-icon { background: rgba(16,185,129,0.08); }
+        .error-icon { background: #FEF2F2; }
+        .error-bar { background: #FEF2F2; border: 1px solid rgba(239,68,68,0.2); border-radius: 12px; padding: 12px 16px; font-size: 13px; color: #B91C1C; margin-bottom: 20px; }
+        .auto-hint { font-size: 12px; color: #756E80; margin-top: 8px; }
+        .spin { animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @media (max-width: 520px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
+    </style>
 </head>
-
 <body>
-    <div class="bg-orb orb-a"></div>
-    <div class="bg-orb orb-b"></div>
-
-    <main class="app-shell">
-        <header class="topbar">
+    <div class="wrap">
+        <div class="header">
             <div>
-                <p class="eyebrow">Unified Pipeline</p>
-                <h1>WhatsAppLead Contacts</h1>
-                <p class="sub">Scrape WhatsApp Web chats and sync directly into your existing leads database.</p>
+                <h1 class="heading">WhatsApp Setup</h1>
+                <p>Connect your WhatsApp to auto-capture leads</p>
             </div>
-            <button id="syncButton" class="sync-btn">Sync WhatsApp</button>
-        </header>
+            <div id="statusBadge" class="badge badge-loading">Checking...</div>
+        </div>
+        <div id="content">
+            <div class="card center-msg">
+                <p>Checking connection...</p>
+            </div>
+        </div>
+    </div>
 
-        <section class="stats" id="stats"></section>
+<script>
+const POLL_MS = 5000;
+let pollTimer = null;
 
-        <section class="workspace">
-            <aside class="left-panel">
-                <div class="left-panel-head">
-                    <h2>Contacts</h2>
-                    <input id="searchInput" type="search" placeholder="Search name, phone, label..." />
+const svgWifi = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h.01"/><path d="M2 8.82a15 15 0 0 1 20 0"/><path d="M5 12.859a10 10 0 0 1 14 0"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/></svg>`;
+const svgWifiOff = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h.01"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/><path d="M2 2l20 20"/><path d="M5 12.859C5.79 12.15 6.68 11.56 7.65 11.1"/><path d="M16.35 11.1a10 10 0 0 1 1.65 1.76"/><path d="M2 8.82c1.48-1.37 3.18-2.44 5.03-3.17"/><path d="M16.97 5.65A15 15 0 0 1 22 8.82"/></svg>`;
+const svgCheck = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4 12 14.01l-3-3"/></svg>`;
+const svgRefresh = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>`;
+const svgQr = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="8" height="8" rx="1"/><rect x="14" y="2" width="8" height="8" rx="1"/><rect x="2" y="14" width="8" height="8" rx="1"/><path d="M14 14h2v2h-2z"/><path d="M20 14h2v2h-2z"/><path d="M14 20h2v2h-2z"/><path d="M20 20h2v2h-2z"/><path d="M17 17h2v2h-2z"/></svg>`;
+
+async function apiFetch(path, method = 'GET', body) {
+    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    if (method === 'POST') opts.body = JSON.stringify(body || {});
+    const res = await fetch('/api' + path, opts);
+    return res.json();
+}
+
+function setBadge(state) {
+    const el = document.getElementById('statusBadge');
+    const labels = { connected: 'Connected', qr: 'Scan QR', loading: 'Loading...', error: 'Error', disconnected: 'Disconnected', unknown: 'Checking...' };
+    el.textContent = labels[state] || state;
+    el.className = 'badge badge-' + (state === 'unknown' ? 'loading' : state);
+}
+
+function startPoll(fn) {
+    stopPoll();
+    pollTimer = setInterval(fn, POLL_MS);
+}
+function stopPoll() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+async function checkStatus() {
+    try {
+        const data = await apiFetch('/status');
+        return data.state || 'unknown';
+    } catch { return 'error'; }
+}
+
+async function init() {
+    const state = await checkStatus();
+    setBadge(state);
+    if (state === 'connected') showConnected();
+    else if (state === 'qr' || state === 'loading') showQr();
+    else showDisconnected(state === 'error' ? 'Cannot reach WhatsApp service' : '');
+}
+
+function showConnected() {
+    stopPoll();
+    setBadge('connected');
+    document.getElementById('content').innerHTML = `
+        <div class="card">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+                <div class="icon-circle success-icon">${svgCheck}</div>
+                <div>
+                    <div class="heading card-title" style="margin-bottom:2px">WhatsApp Connected</div>
+                    <div style="font-size:13px;color:#756E80">Your account is linked and ready for lead automation</div>
                 </div>
-                <div id="contactList" class="contact-list"></div>
-            </aside>
+            </div>
+            <div class="btn-row">
+                <button class="btn btn-primary" id="syncBtn">${svgRefresh} Sync Now</button>
+                <button class="btn btn-danger" id="disconnectBtn">${svgWifiOff} Disconnect</button>
+            </div>
+        </div>
+        <div id="syncResult"></div>
+        <div class="card">
+            <div class="heading card-title">How It Works</div>
+            <ol class="steps">
+                <li>WhatsApp conversations are scraped periodically from WhatsApp Web</li>
+                <li>Contacts are automatically saved as <strong>Leads</strong> in your system</li>
+                <li>WhatsApp <strong>labels</strong> are mapped to lead statuses (e.g. "New Customer" → qualified)</li>
+                <li>Messages are stored for context when following up with leads</li>
+            </ol>
+        </div>
+    `;
+    document.getElementById('syncBtn').onclick = doSync;
+    document.getElementById('disconnectBtn').onclick = doDisconnect;
+}
 
-            <section class="detail-panel" id="detailPanel">
-                <div class="empty-state">
-                    <h3>Select a contact</h3>
-                    <p>Choose a contact from the list to see labels and last 5 chat messages.</p>
+async function showQr() {
+    setBadge('qr');
+    document.getElementById('content').innerHTML = `
+        <div class="card">
+            <div class="heading card-title">Scan QR Code</div>
+            <p class="qr-instructions">Open WhatsApp on your phone → <strong>Settings</strong> → <strong>Linked Devices</strong> → <strong>Link a Device</strong> → Scan this QR code</p>
+            <div class="qr-wrap" id="qrWrap"><p>Loading QR code...</p></div>
+            <p class="auto-hint">Auto-checks every 5 seconds. Once scanned, the status will update automatically.</p>
+        </div>
+    `;
+    await fetchQr();
+    startPoll(async () => {
+        const s = await checkStatus();
+        setBadge(s);
+        if (s === 'connected') { showConnected(); }
+        else if (s === 'qr') { await fetchQr(); }
+    });
+}
+
+async function fetchQr() {
+    try {
+        const data = await apiFetch('/qr');
+        if (data.state === 'connected') { showConnected(); return; }
+        const wrap = document.getElementById('qrWrap');
+        if (data.screenshot) {
+            wrap.innerHTML = `
+                <img src="${data.screenshot}" alt="WhatsApp QR Code" style="max-width:400px" />
+                <button class="btn btn-outline" id="refreshQrBtn">${svgRefresh} Refresh QR</button>
+            `;
+            document.getElementById('refreshQrBtn').onclick = fetchQr;
+        } else {
+            wrap.innerHTML = `<button class="btn btn-primary" id="showQrBtn">${svgQr} Show QR Code</button>`;
+            document.getElementById('showQrBtn').onclick = fetchQr;
+        }
+    } catch (e) {
+        document.getElementById('qrWrap').innerHTML = `<p style="color:#EF4444">${e.message}</p>`;
+    }
+}
+
+function showDisconnected(error) {
+    stopPoll();
+    setBadge(error ? 'error' : 'disconnected');
+    const icon = error ? `<div class="icon-circle error-icon">${svgWifiOff}</div>` : `<div class="icon-circle" style="background:#F8FAFC">${svgWifiOff}</div>`;
+    document.getElementById('content').innerHTML = `
+        ${error ? `<div class="error-bar">${error}</div>` : ''}
+        <div class="card center-msg">
+            ${icon}
+            <h3 class="heading">${error ? 'Cannot Connect' : 'Not Connected'}</h3>
+            <p>${error || 'Connect your WhatsApp account to start capturing leads automatically'}</p>
+            <button class="btn btn-primary" id="connectBtn">${svgQr} Connect WhatsApp</button>
+        </div>
+    `;
+    document.getElementById('connectBtn').onclick = showQr;
+}
+
+async function doSync() {
+    const btn = document.getElementById('syncBtn');
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spin">${svgRefresh}</span> Syncing...`;
+    try {
+        const data = await apiFetch('/sync', 'POST');
+        document.getElementById('syncResult').innerHTML = `
+            <div class="card">
+                <div class="heading card-title">Last Sync Result</div>
+                <div class="stat-grid">
+                    <div class="stat-box"><div class="stat-val heading">${data.scrapedCount ?? 0}</div><div class="stat-label">Scraped</div></div>
+                    <div class="stat-box"><div class="stat-val heading">${data.createdLeads ?? 0}</div><div class="stat-label">New Leads</div></div>
+                    <div class="stat-box"><div class="stat-val heading">${data.updatedLeads ?? 0}</div><div class="stat-label">Updated</div></div>
+                    <div class="stat-box"><div class="stat-val heading">${data.savedMessages ?? 0}</div><div class="stat-label">Messages</div></div>
                 </div>
-            </section>
-        </section>
-    </main>
+            </div>
+        `;
+    } catch (e) {
+        document.getElementById('syncResult').innerHTML = `<div class="error-bar">${e.message}</div>`;
+    }
+    btn.disabled = false;
+    btn.innerHTML = `${svgRefresh} Sync Now`;
+}
 
-    <script type="module" src="/app.js"></script>
+async function doDisconnect() {
+    const btn = document.getElementById('disconnectBtn');
+    btn.disabled = true;
+    btn.textContent = 'Disconnecting...';
+    try {
+        await apiFetch('/disconnect', 'POST');
+        showDisconnected('');
+    } catch (e) {
+        alert(e.message);
+        btn.disabled = false;
+        btn.innerHTML = `${svgWifiOff} Disconnect`;
+    }
+}
+
+init();
+</script>
 </body>
-
 </html>
