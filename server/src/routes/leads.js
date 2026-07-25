@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { Customer, Lead, User } from '../models/index.js';
+import { Customer, Lead, User, WhatsAppMessage } from '../models/index.js';
 
 const router = Router();
 
@@ -273,6 +273,17 @@ router.post('/:id/comments', async (req, res) => {
         .populate('owner', 'name email')
         .populate('comments.user', 'name email');
     res.json(populated);
+});
+
+router.get('/:id/messages', async (req, res) => {
+    const lead = await Lead.findById(req.params.id).select('phoneNormalized');
+    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const messages = await WhatsAppMessage.find({ phoneNormalized: lead.phoneNormalized })
+        .sort({ occurredAt: -1 })
+        .limit(limit)
+        .lean();
+    res.json({ ok: true, messages });
 });
 
 router.delete('/:id', async (req, res) => {

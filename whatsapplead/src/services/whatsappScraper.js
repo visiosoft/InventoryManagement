@@ -501,21 +501,9 @@ export async function scrapeWhatsAppConversations({
 
             if (!rowSnapshot) break;
 
-            if (onlyAllowed && allowedLabelSet.size > 0) {
-                const rowLabelValues = (rowSnapshot.labels || []).map((value) => normalizeRowText(value)).filter(Boolean);
-                const rowLabelSet = new Set(rowLabelValues.map((value) => normalizeLabel(value)).filter(Boolean));
-                const hasAllowedLabel = Array.from(rowLabelSet).some((label) => allowedLabelSet.has(label));
-
-                // Conservative pre-check: skip only when labels are detected and none are allowed.
-                // If labels are missing at row level, continue and let full extraction/persistence apply strict filtering.
-                if (rowLabelSet.size > 0 && !hasAllowedLabel) {
-                    console.log(
-                        `[WhatsAppLead][Skip] row=${index + 1} title="${normalizeRowText(rowSnapshot.title)}" labels="${rowLabelValues.join('|')}" reason="label-precheck"`
-                    );
-                    await sleep(delays.betweenRowsMs);
-                    continue;
-                }
-            }
+            // Row-level label detection is unreliable (CSS selectors can match contact
+            // names). Skip pre-check and let full panel extraction + upsertConversationBatch
+            // handle label filtering with accurate data.
 
             let opened = false;
 

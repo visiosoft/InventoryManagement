@@ -30,6 +30,15 @@ function resolvePhoneIdentity(conversation, options) {
         };
     }
 
+    const titleDigits = normalizePhone(conversation.chatTitle);
+    if (titleDigits && titleDigits.length >= 7) {
+        return {
+            phoneDisplay: conversation.chatTitle,
+            phoneNormalized: titleDigits,
+            isSynthetic: false,
+        };
+    }
+
     const allowSynthetic = String(options.allowSyntheticPhone ?? 'true').toLowerCase() === 'true';
     if (!allowSynthetic) return null;
 
@@ -184,13 +193,16 @@ export async function upsertConversationBatch(conversations, options) {
 
     for (const conversation of conversations) {
         const rawLabels = (conversation.labels || []).map(normalizeLabel).filter(Boolean);
+        console.log(`[WhatsAppLead][Label] "${conversation.chatTitle}" labels=[${rawLabels.join(', ')}] allowlist=[${allowlist.join(', ')}]`);
 
         if (syncOnlyAllowedLabels && allowlist.length > 0) {
             const labels = filterAllowedLabels(rawLabels, options);
             if (labels.length === 0) {
+                console.log(`[WhatsAppLead][Skip] "${conversation.chatTitle}" — no matching label`);
                 skippedByLabel += 1;
                 continue;
             }
+            console.log(`[WhatsAppLead][Match] "${conversation.chatTitle}" matched=[${labels.join(', ')}]`);
         }
 
         // Use sanitized labels for storage (strips labels that look like the contact's own name)

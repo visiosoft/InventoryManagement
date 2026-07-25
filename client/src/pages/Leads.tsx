@@ -662,6 +662,13 @@ export default function Leads() {
     const [waSearch, setWaSearch] = useState('')
     const [waLabel, setWaLabel] = useState('')
     const [selectedWhatsAppLeadId, setSelectedWhatsAppLeadId] = useState('')
+    const [expandedLeadId, setExpandedLeadId] = useState<string | null>(null)
+
+    const { data: expandedMessages, isLoading: messagesLoading } = useQuery<{ ok: boolean; messages: { _id: string; text: string; direction: string; occurredAt: string; type: string }[] }>({
+        queryKey: ['lead-messages', expandedLeadId],
+        queryFn: () => api.get(`/leads/${expandedLeadId}/messages?limit=20`).then(r => r.data),
+        enabled: !!expandedLeadId,
+    })
 
     const useWhatsAppLeadView = false
 
@@ -1108,6 +1115,7 @@ export default function Leads() {
                     <Table>
                         <thead>
                             <tr>
+                                <Th style={{ width: 32 }} />
                                 <Th>Name</Th>
                                 <Th>Phone / WhatsApp</Th>
                                 <Th>Contact</Th>
@@ -1122,6 +1130,15 @@ export default function Leads() {
                         <tbody>
                             {(leads || []).map((lead) => (
                                 <tr key={lead._id} className="hover:bg-muted/50 cursor-pointer" onClick={() => navigate(`/quotes/new?lead=${lead._id}`)}>
+                                    <Td>
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); setExpandedLeadId(expandedLeadId === lead._id ? null : lead._id) }}
+                                            className="text-xs cursor-pointer hover:bg-muted rounded px-1"
+                                            style={{ color: PURPLE }}
+                                        >
+                                            {expandedLeadId === lead._id ? '▼' : '▶'}
+                                        </button>
+                                    </Td>
                                     <Td>
                                         <div className="font-medium">{lead.fullName}</div>
                                         <div className="text-xs text-muted-foreground">{lead.email || '—'}</div>
@@ -1188,6 +1205,39 @@ export default function Leads() {
                                         </div>
                                     </Td>
                                 </tr>
+                                {expandedLeadId === lead._id && (
+                                    <tr>
+                                        <td colSpan={10} style={{ padding: 0, border: 'none' }}>
+                                            <div style={{ background: '#FAF8F5', padding: '12px 24px', borderBottom: '1px solid rgba(20,8,31,0.08)' }}>
+                                                <div style={{ ...HEADING, fontSize: 13, fontWeight: 700, marginBottom: 8, color: INK }}>WhatsApp Messages</div>
+                                                {messagesLoading ? (
+                                                    <div style={{ fontSize: 12, color: MUTED_COLOR }}>Loading messages...</div>
+                                                ) : !expandedMessages?.messages?.length ? (
+                                                    <div style={{ fontSize: 12, color: MUTED_COLOR }}>No messages found for this lead.</div>
+                                                ) : (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 300, overflowY: 'auto' }}>
+                                                        {expandedMessages.messages.map((msg) => (
+                                                            <div key={msg._id} style={{
+                                                                padding: '8px 12px',
+                                                                borderRadius: 8,
+                                                                background: msg.direction === 'outbound' ? 'rgba(91,43,201,0.06)' : 'white',
+                                                                border: '1px solid rgba(20,8,31,0.06)',
+                                                                maxWidth: '80%',
+                                                                alignSelf: msg.direction === 'outbound' ? 'flex-end' : 'flex-start',
+                                                            }}>
+                                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: MUTED_COLOR, marginBottom: 2 }}>
+                                                                    <span style={{ fontWeight: 600 }}>{msg.direction === 'outbound' ? 'You' : 'Contact'}</span>
+                                                                    <span>{formatDate(msg.occurredAt)}</span>
+                                                                </div>
+                                                                <div style={{ fontSize: 13, color: INK, whiteSpace: 'pre-wrap' }}>{msg.text || '(media)'}</div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )}
                             ))}
                         </tbody>
                     </Table>

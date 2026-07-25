@@ -249,6 +249,8 @@ app.post('/api/sync', requireApiKey, async (req, res) => {
             syncOnlyAllowedLabels,
         });
 
+        console.log(`[WhatsAppLead] Scrape done. ${scraped.length} conversations. Starting DB upsert...`);
+
         const syncResult = await upsertConversationBatch(scraped, {
             defaultOwnerEmail: cfg.defaultOwnerEmail || process.env.DEFAULT_LEAD_OWNER_EMAIL || '',
             maxStoreMessages,
@@ -256,6 +258,8 @@ app.post('/api/sync', requireApiKey, async (req, res) => {
             allowedLabels,
             syncOnlyAllowedLabels,
         });
+
+        console.log(`[WhatsAppLead] Sync complete. created=${syncResult.createdLeads} updated=${syncResult.updatedLeads} messages=${syncResult.savedMessages} skipped=${syncResult.skippedByLabel}`);
 
         res.json({
             ok: true,
