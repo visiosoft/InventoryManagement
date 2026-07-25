@@ -8,17 +8,19 @@ const INK = '#14081F'
 const MUTED = '#756E80'
 const PURPLE = '#5B2BC9'
 
-const WA_BASE = import.meta.env.VITE_WHATSAPP_LEAD_URL || 'http://localhost:5075'
-const WA_API_KEY = import.meta.env.VITE_WHATSAPP_LEAD_API_KEY || ''
+const WA_BASE = import.meta.env.VITE_WHATSAPP_LEAD_URL || ''
 
 function waHeaders(): HeadersInit {
     const h: Record<string, string> = { 'Content-Type': 'application/json' }
-    if (WA_API_KEY) h['x-api-key'] = WA_API_KEY
+    const key = import.meta.env.VITE_WHATSAPP_LEAD_API_KEY
+    if (key) h['x-api-key'] = key
     return h
 }
 
-async function waFetch(path: string, opts?: RequestInit) {
-    const res = await fetch(`${WA_BASE}${path}`, { ...opts, headers: { ...waHeaders(), ...opts?.headers } })
+async function waFetch(path: string, method: 'GET' | 'POST' = 'GET', body?: any) {
+    const opts: RequestInit = { method, headers: waHeaders() }
+    if (method === 'POST') opts.body = JSON.stringify(body ?? {})
+    const res = await fetch(`${WA_BASE}/api${path}`, opts)
     return res.json()
 }
 
@@ -37,7 +39,7 @@ export default function WhatsAppSetup() {
 
     async function checkStatus() {
         try {
-            const data = await waFetch('/api/status')
+            const data = await waFetch('/status')
             setState(data.state || 'unknown')
             setError('')
             return data.state
@@ -53,7 +55,7 @@ export default function WhatsAppSetup() {
     async function fetchQr() {
         setChecking(true)
         try {
-            const data = await waFetch('/api/qr')
+            const data = await waFetch('/qr')
             if (data.state === 'connected') {
                 setState('connected')
                 setScreenshot(null)
@@ -73,7 +75,7 @@ export default function WhatsAppSetup() {
     async function disconnect() {
         setDisconnecting(true)
         try {
-            await waFetch('/api/disconnect', { method: 'POST' })
+            await waFetch('/disconnect', 'POST')
             setState('disconnected')
             setScreenshot(null)
             setSyncResult(null)
@@ -88,7 +90,7 @@ export default function WhatsAppSetup() {
         setSyncing(true)
         setSyncResult(null)
         try {
-            const data = await waFetch('/api/sync', { method: 'POST', body: JSON.stringify({}) })
+            const data = await waFetch('/sync', 'POST')
             setSyncResult(data)
         } catch (e: any) {
             setError(e.message)
@@ -275,7 +277,7 @@ export default function WhatsAppSetup() {
                         </Button>
                         {state === 'error' && (
                             <div style={{ fontSize: 12, color: MUTED, maxWidth: 400, textAlign: 'center' }}>
-                                Make sure the WhatsApp Lead service is running on your server (port {WA_BASE.split(':').pop()})
+                                Make sure the WhatsApp Lead service is running at {WA_BASE || '(not configured)'}
                             </div>
                         )}
                     </div>
