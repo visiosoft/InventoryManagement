@@ -166,14 +166,12 @@ async function resolveOwner(defaultOwnerEmail) {
     }
 
     const fallback = await User.findOne({ isActive: true }).sort({ role: 1, createdAt: 1 }).select('_id');
-    if (!fallback) {
-        throw new Error('No active users found to assign WhatsApp leads. Create a user first.');
-    }
-    return fallback;
+    return fallback || null;
 }
 
 export async function upsertConversationBatch(conversations, options) {
     const owner = await resolveOwner(options.defaultOwnerEmail);
+    const ownerId = owner ? owner._id : null;
     const allowlist = Array.isArray(options?.allowedLabels)
         ? Array.from(new Set(options.allowedLabels.map(normalizeLabel).filter(Boolean)))
         : [];
@@ -185,7 +183,6 @@ export async function upsertConversationBatch(conversations, options) {
     let skippedByLabel = 0;
 
     for (const conversation of conversations) {
-        // Skip contacts with no WhatsApp labels at all
         const rawLabels = (conversation.labels || []).map(normalizeLabel).filter(Boolean);
         if (rawLabels.length === 0) {
             skippedByLabel += 1;
@@ -193,7 +190,7 @@ export async function upsertConversationBatch(conversations, options) {
         }
 
         const labels = filterAllowedLabels(rawLabels, options);
-        if (syncOnlyAllowedLabels && allowlist.length > 0 && labels.length === 0) {
+        if (allowlist.length > 0 && labels.length === 0) {
             skippedByLabel += 1;
             continue;
         }
@@ -220,7 +217,7 @@ export async function upsertConversationBatch(conversations, options) {
                 storageSizeUnit: 'sqft',
                 durationValue: 1,
                 durationUnit: 'month',
-                owner: owner._id,
+                ...(ownerId && { owner: ownerId }),
                 unitsNeeded: 1,
                 notes: buildLeadNotes(conversation, isSynthetic),
                 timeline: [{ type: 'created', text: 'Lead auto-created from WhatsApp desktop scrape.' }],
