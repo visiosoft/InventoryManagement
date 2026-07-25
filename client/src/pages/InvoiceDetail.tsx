@@ -580,7 +580,7 @@ export default function InvoiceDetail() {
         return <div className="p-6 text-sm text-muted-foreground">Invoice not found.</div>
     }
 
-    const paid = invoice.paymentMade ?? 0
+    const paid = Math.min(invoice.paymentMade ?? 0, invoice.total)
     const balance = Math.max(0, invoice.total - paid)
     const canPay = !['paid', 'cancelled'].includes(invoice.status)
 

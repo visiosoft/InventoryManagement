@@ -404,7 +404,7 @@ router.get('/:id', async (req, res) => {
     const paymentRecordSum = Math.round(
         contractPayments.filter(p => p.status === 'paid').reduce((s, p) => s + Number(p.amount || 0), 0) * 100
     ) / 100;
-    const correctPaid = Math.round(Math.max(historySum, paymentRecordSum) * 100) / 100;
+    const correctPaid = Math.round(Math.min(Math.max(historySum, paymentRecordSum), Number(invoice.total || 0)) * 100) / 100;
     const allPaid = contractPayments.length > 0 && contractPayments.every(p => p.status === 'paid');
 
     const updates = {};
