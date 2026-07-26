@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
 import { apiError, integrationApi, productApi, unitTypeApi } from '../lib/api'
 import type { IntegrationStatus, Product, UnitType } from '../lib/types'
 import { Button, Card, CardBody, CardHeader, Field, Input, Modal, PageHeader, Table, Td, Th } from '../components/ui'
@@ -351,7 +351,6 @@ function ProductsCard() {
 export default function Settings() {
   const qc = useQueryClient()
   const location = useLocation()
-  const navigate = useNavigate()
   const [driveMsg, setDriveMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [gmailMsg, setGmailMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [whatsAppAllowedLabels, setWhatsAppAllowedLabels] = useState('')

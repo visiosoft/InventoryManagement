@@ -4,15 +4,13 @@ import { useNavigate } from 'react-router-dom'
 import { CalendarPlus, CheckSquare, FileText, Mail, MessageCircle, MoreHorizontal, Plus, RefreshCw, Search, Send, Upload, X } from 'lucide-react'
 import { api, apiError, leadApi, type LeadPage } from '../lib/api'
 import type { Lead, LeadComment, LeadSource, LeadStatus } from '../lib/types'
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, Pagination, Select, Spinner, Table, Td, Th, Textarea, leadStatusTone, statusLabel } from '../components/ui'
+import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Textarea, leadStatusTone, statusLabel } from '../components/ui'
 import { formatDate, formatDateTime } from '../lib/utils'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
 const INK = '#14081F'
 const MUTED_COLOR = '#756E80'
 const PURPLE = '#5B2BC9'
-const CREAM = '#FDFCFA'
-const CHIP_BG = '#F3F0EA'
 
 const LEAD_STATUSES: LeadStatus[] = ['new', 'contacted', 'qualified', 'proposal_sent', 'won', 'lost']
 const LEAD_SOURCES: LeadSource[] = ['manual', 'whatsapp', 'referral', 'walk_in', 'other']
@@ -1196,8 +1194,10 @@ export default function Leads() {
 
                                         {/* Expanded messages */}
                                         {isOpen && (
-                                            <div style={{ padding: '4px 22px 26px 62px', background: '#FBF8F2', borderTop: '1px solid rgba(20,8,31,.06)' }}>
-                                                <div style={{ ...HEADING, fontSize: 11.5, fontWeight: 700, letterSpacing: '.09em', textTransform: 'uppercase' as const, color: MUTED_COLOR, marginBottom: 14, paddingTop: 18 }}>Messages</div>
+                                            <div style={{ padding: '4px 22px 26px 62px', borderTop: '1px solid rgba(20,8,31,.06)', position: 'relative' as const, overflow: 'hidden' }}>
+                                                <div style={{ position: 'absolute', inset: 0, backgroundImage: 'url(/chat-bg.avif)', backgroundSize: 'cover', backgroundPosition: 'center', opacity: 0.08 }} />
+                                                <div style={{ position: 'absolute', inset: 0, background: 'rgba(253,252,250,0.85)' }} />
+                                                <div style={{ ...HEADING, fontSize: 11.5, fontWeight: 700, letterSpacing: '.09em', textTransform: 'uppercase' as const, color: MUTED_COLOR, marginBottom: 14, paddingTop: 18, position: 'relative' as const }}>Messages</div>
                                                 {messagesLoading ? (
                                                     <div style={{ fontSize: 13, color: MUTED_COLOR }}>Loading messages...</div>
                                                 ) : !expandedMessages?.messages?.length ? (
@@ -1205,7 +1205,7 @@ export default function Leads() {
                                                 ) : (
                                                     <div style={{
                                                         position: 'relative' as const, borderRadius: 14, overflow: 'hidden',
-                                                        width: '50%',
+                                                        width: '75%',
                                                     }}>
                                                         <div style={{
                                                             position: 'absolute', inset: 0,
