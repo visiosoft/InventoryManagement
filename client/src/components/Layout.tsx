@@ -300,7 +300,7 @@ export default function Layout() {
       </header>
 
       {/* ── Main content ────────────────────────────────────────── */}
-      <main className="flex-1 md:ml-56 pt-14 md:pt-0 min-w-0">
+      <main className="flex-1 md:ml-56 pt-14 md:pt-0 min-w-0" style={{ background: '#FBF8F2' }}>
         {/* Desktop top bar with profile dropdown */}
         <div className="hidden md:flex items-center justify-end h-14 px-6 border-b border-border/40">
           <div ref={profileRef} className="relative">

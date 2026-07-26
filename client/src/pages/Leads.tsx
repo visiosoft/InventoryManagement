@@ -980,6 +980,9 @@ export default function Leads() {
         <div style={{ minHeight: '100vh', padding: '36px 32px 64px', background: '#FBF8F2', fontFamily: "'Roboto', sans-serif" }}>
             <div style={{ maxWidth: 1240, margin: '0 auto' }}>
 
+                {/* ── Card wrapper ── */}
+                <div style={{ background: '#fff', border: '1px solid rgba(20,8,31,.10)', borderRadius: 22, boxShadow: '0 8px 24px rgba(20,8,31,.05)', padding: '24px 24px 0' }}>
+
                 {/* ── Header ── */}
                 <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 24, flexWrap: 'wrap', marginBottom: 26 }}>
                     <div>
@@ -1088,7 +1091,7 @@ export default function Leads() {
                 {isLoading ? (
                     <Spinner />
                 ) : (
-                    <div style={{ background: '#fff', border: '1px solid rgba(20,8,31,.10)', borderRadius: 22, boxShadow: '0 8px 24px rgba(20,8,31,.05)', overflow: 'hidden' }}>
+                    <div style={{ margin: '0 -24px', overflow: 'hidden', borderBottomLeftRadius: 22, borderBottomRightRadius: 22 }}>
                         <div style={{ overflowX: 'auto' }}>
 
                             {/* Header row */}
@@ -1291,6 +1294,8 @@ export default function Leads() {
                         </div>
                     </div>
                 )}
+
+                </div>{/* ── end card wrapper ── */}
 
             </div>
 

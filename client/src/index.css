@@ -94,7 +94,8 @@ body {
 
 * { border-color: var(--border); }
 
-::-webkit-scrollbar        { width: 5px; height: 5px; }
+* { scrollbar-width: thin; }
+::-webkit-scrollbar        { width: 3px; height: 3px; }
 ::-webkit-scrollbar-track  { background: transparent; }
 ::-webkit-scrollbar-thumb  { background: var(--border); border-radius: 99px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--sidebar-muted); }
