@@ -977,7 +977,7 @@ export default function Leads() {
     })
 
     return (
-        <div style={{ minHeight: '100vh', padding: '36px 32px 64px', background: '#FBF8F2' }}>
+        <div style={{ minHeight: '100vh', padding: '36px 32px 64px', background: '#FBF8F2', fontFamily: "'Roboto', sans-serif" }}>
             <div style={{ maxWidth: 1240, margin: '0 auto' }}>
 
                 {/* ── Header ── */}
@@ -1194,9 +1194,7 @@ export default function Leads() {
 
                                         {/* Expanded messages */}
                                         {isOpen && (
-                                            <div style={{ padding: '4px 22px 26px 62px', borderTop: '1px solid rgba(20,8,31,.06)', position: 'relative' as const, overflow: 'hidden' }}>
-                                                <div style={{ position: 'absolute', inset: 0, backgroundImage: 'url(/chat-bg.avif)', backgroundSize: 'cover', backgroundPosition: 'center', opacity: 0.08 }} />
-                                                <div style={{ position: 'absolute', inset: 0, background: 'rgba(253,252,250,0.85)' }} />
+                                            <div style={{ padding: '4px 22px 26px 62px', borderTop: '1px solid rgba(20,8,31,.06)', background: '#FBF8F2' }}>
                                                 <div style={{ ...HEADING, fontSize: 11.5, fontWeight: 700, letterSpacing: '.09em', textTransform: 'uppercase' as const, color: MUTED_COLOR, marginBottom: 14, paddingTop: 18, position: 'relative' as const }}>Messages</div>
                                                 {messagesLoading ? (
                                                     <div style={{ fontSize: 13, color: MUTED_COLOR }}>Loading messages...</div>
@@ -1204,16 +1202,9 @@ export default function Leads() {
                                                     <div style={{ fontSize: 13, color: MUTED_COLOR }}>No messages found for this lead.</div>
                                                 ) : (
                                                     <div style={{
-                                                        position: 'relative' as const, borderRadius: 14, overflow: 'hidden',
-                                                        width: '75%',
+                                                        position: 'relative' as const, borderRadius: 14, width: '75%', overflow: 'hidden',
                                                     }}>
-                                                        <div style={{
-                                                            position: 'absolute', inset: 0,
-                                                            backgroundImage: 'url(/chat-bg.avif)',
-                                                            backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat',
-                                                            opacity: 0.12,
-                                                        }} />
-                                                        <div style={{ position: 'absolute', inset: 0, background: 'rgba(253,252,250,0.7)' }} />
+                                                        <div style={{ position: 'absolute', inset: 0, backgroundImage: 'url(/chat-b.jpg)', backgroundSize: 'cover', backgroundPosition: 'center', opacity: 0.35 }} />
                                                     <div style={{
                                                         position: 'relative' as const,
                                                         display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 350, overflowY: 'auto', padding: '12px 16px',
