@@ -353,16 +353,6 @@ export default function Settings() {
   const location = useLocation()
   const [driveMsg, setDriveMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [gmailMsg, setGmailMsg] = useState<{ ok: boolean; text: string } | null>(null)
-  const [whatsAppAllowedLabels, setWhatsAppAllowedLabels] = useState('')
-  const [whatsAppSyncOnlyAllowedLabels, setWhatsAppSyncOnlyAllowedLabels] = useState(false)
-
-  useEffect(() => {
-    const saved = localStorage.getItem('whatsapplead.allowedLabels') || ''
-    setWhatsAppAllowedLabels(saved)
-    const savedToggle = localStorage.getItem('whatsapplead.syncOnlyAllowedLabels')
-    setWhatsAppSyncOnlyAllowedLabels(savedToggle === 'true')
-  }, [])
-
   useEffect(() => {
     const params = new URLSearchParams(location.search)
     if (params.get('driveConnected')) {
@@ -519,60 +509,6 @@ export default function Settings() {
         </CardBody>
       </Card>
 
-      <Card>
-        <CardHeader title="WhatsAppLead Label Rules" subtitle="Restrict which labels are kept after WhatsApp sync" />
-        <CardBody className="space-y-3 text-sm">
-          <Field label="Allowed labels (comma-separated)">
-            <Input
-              value={whatsAppAllowedLabels}
-              onChange={(e) => setWhatsAppAllowedLabels(e.target.value)}
-              placeholder="Inquiry,New customer"
-            />
-          </Field>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              onClick={() => {
-                localStorage.setItem('whatsapplead.allowedLabels', whatsAppAllowedLabels.trim())
-                localStorage.setItem('whatsapplead.syncOnlyAllowedLabels', String(whatsAppSyncOnlyAllowedLabels))
-              }}
-            >
-              Save label rules
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                localStorage.removeItem('whatsapplead.allowedLabels')
-                localStorage.removeItem('whatsapplead.syncOnlyAllowedLabels')
-                setWhatsAppAllowedLabels('')
-                setWhatsAppSyncOnlyAllowedLabels(false)
-              }}
-            >
-              Clear
-            </Button>
-          </div>
-          <div className="flex items-center justify-between rounded-lg border px-3 py-2">
-            <div>
-              <p className="text-sm font-medium">Sync only chats with allowed labels</p>
-              <p className="text-xs text-muted-foreground">Turn off to sync all chats regardless of label.</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setWhatsAppSyncOnlyAllowedLabels((v) => !v)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${whatsAppSyncOnlyAllowedLabels ? 'bg-emerald-600' : 'bg-muted-foreground/30'}`}
-              aria-label="Toggle sync only allowed labels"
-              aria-pressed={whatsAppSyncOnlyAllowedLabels}
-            >
-              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${whatsAppSyncOnlyAllowedLabels ? 'translate-x-6' : 'translate-x-1'}`} />
-            </button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            These values are sent to WhatsApp sync requests from the Leads page. For always-on server rules, also set
-            <code className="bg-muted px-1 rounded ml-1">WHATSAPP_ALLOWED_LABELS</code> in the WhatsAppLead .env.
-          </p>
-        </CardBody>
-      </Card>
     </div>
   )
 }
