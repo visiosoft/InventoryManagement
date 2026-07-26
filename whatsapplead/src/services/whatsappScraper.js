@@ -636,16 +636,22 @@ export async function scrapeWhatsAppConversations({
                         `${chatIndex}-${msgIndex}-${prePlain}`;
 
                     let direction = 'inbound';
-                    let walk = node;
-                    for (let d = 0; d < 8 && walk; d++) {
-                        const cls = walk.className || '';
-                        if (cls.includes('message-out')) { direction = 'outbound'; break; }
-                        if (walk.getAttribute?.('data-id')?.includes('true_')) { direction = 'outbound'; break; }
-                        walk = walk.parentElement;
-                    }
+                    // 1. Check for delivery status icons (only on outbound messages)
+                    const hasTick = node.querySelector('svg title')?.textContent?.includes('wds-ic-') ||
+                        node.querySelector('[aria-label*="Delivered" i], [aria-label*="Read" i], [aria-label*="Sent" i]');
+                    if (hasTick) direction = 'outbound';
+                    // 2. Check data-id on conv row (true_ = outbound)
                     if (direction === 'inbound' && convRow) {
                         const dataId = convRow.getAttribute('data-id') || '';
                         if (dataId.includes('true_')) direction = 'outbound';
+                    }
+                    // 3. Walk up DOM for message-out class
+                    if (direction === 'inbound') {
+                        let walk = node;
+                        for (let d = 0; d < 8 && walk; d++) {
+                            if ((walk.className || '').includes('message-out')) { direction = 'outbound'; break; }
+                            walk = walk.parentElement;
+                        }
                     }
 
                     const hasImage = Boolean(
