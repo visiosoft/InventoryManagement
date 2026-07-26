@@ -226,7 +226,9 @@ router.post('/:id/convert', async (req, res) => {
     });
 
     if (existingCustomer) {
-        await Lead.findByIdAndDelete(lead._id);
+        lead.status = 'won';
+        lead.timeline.push({ type: 'converted', text: 'Lead converted to existing customer.', user: req.user.id });
+        await lead.save();
         return res.json({
             ok: true,
             created: false,
@@ -248,7 +250,9 @@ router.post('/:id/convert', async (req, res) => {
         tenantType: 'individual',
     });
 
-    await Lead.findByIdAndDelete(lead._id);
+    lead.status = 'won';
+    lead.timeline.push({ type: 'converted', text: 'Lead converted to new customer.', user: req.user.id });
+    await lead.save();
 
     res.json({
         ok: true,
@@ -280,7 +284,7 @@ router.get('/:id/messages', async (req, res) => {
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
     const limit = Math.min(Number(req.query.limit) || 50, 200);
     const messages = await WhatsAppMessage.find({ phoneNormalized: lead.phoneNormalized })
-        .sort({ occurredAt: -1 })
+        .sort({ occurredAt: 1 })
         .limit(limit)
         .lean();
     res.json({ ok: true, messages });

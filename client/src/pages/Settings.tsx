@@ -509,7 +509,7 @@ export default function Settings() {
                   Connect WhatsApp Web to auto-capture leads by label
                 </div>
               </div>
-              <Button size="sm" onClick={() => navigate('/whatsapp/setup')}>
+              <Button size="sm" onClick={() => window.open('https://whatsapp.purplebox.ae/whatsapp/setup', '_blank')}>
                 Setup
               </Button>
             </div>
