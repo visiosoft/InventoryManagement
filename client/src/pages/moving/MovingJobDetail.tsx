@@ -517,10 +517,10 @@ export default function MovingJobDetail() {
   if (!job) return <div className="p-8"><div className="flex items-center gap-2 text-muted-foreground"><AlertCircle size={20} /> Job not found</div></div>
 
   const transitions = STATUS_TRANSITIONS[job.status] ?? []
-  const crewList = (job.crew ?? []) as Array<{ worker: { _id: string; name: string; role: string }; role?: string; dailyRate?: number; days?: number; extraHours?: number; extraHourRate?: number; isSupervisor?: boolean }>
+  const crewList = ((job.crew ?? []) as Array<{ worker: { _id: string; name: string; role: string } | null; role?: string; dailyRate?: number; days?: number; extraHours?: number; extraHourRate?: number; isSupervisor?: boolean }>).filter(c => c.worker != null) as Array<{ worker: { _id: string; name: string; role: string }; role?: string; dailyRate?: number; days?: number; extraHours?: number; extraHourRate?: number; isSupervisor?: boolean }>
   const materialList = (job.materialUsage ?? []) as Array<{ item: { _id: string; name: string; sku?: string } | string; qty: number; unitCost: number; notes?: string }>
   const hireList = (job.externalHires ?? []) as Array<{ title: string; name?: string; duration: string; hours: number; rate: number; cost: number; notes?: string }>
-  const truckList = (job.trucks ?? []) as Array<{ truck: { _id: string; name: string; plateNumber?: string; dailyRate?: number }; dailyRate?: number; days?: number; notes?: string }>
+  const truckList = ((job.trucks ?? []) as Array<{ truck: { _id: string; name: string; plateNumber?: string; dailyRate?: number } | null; dailyRate?: number; days?: number; notes?: string }>).filter(t => t.truck != null) as Array<{ truck: { _id: string; name: string; plateNumber?: string; dailyRate?: number }; dailyRate?: number; days?: number; notes?: string }>
   const extrasList = (job.extraCharges ?? []) as Array<{ description: string; amount: number; notes?: string }>
   const imageList = (job.images ?? []) as MovingJobImage[]
 
