@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, FileText, MapPin, Users, Truck as TruckIcon, AlertCircle, ClipboardList, Package, Star, Wrench, Camera, X, Tag, CheckCircle2, Pencil, Image as ImageIcon, Check, Share2, Copy, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, FileText, MapPin, Users, Truck as TruckIcon, AlertCircle, Package, Star, Wrench, Camera, X, Tag, CheckCircle2, Pencil, Image as ImageIcon, Check, Share2, Copy, ExternalLink } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingJob, MovingJobStatus, Worker, Truck, MovingJobImage } from '../../lib/types'
 
@@ -643,15 +643,19 @@ export default function MovingJobDetail() {
               Delete
             </Button>
           )}
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => navigate(`/moving/jobs/${id}/survey`)}
-            title="View or edit the moving survey"
-          >
-            <ClipboardList size={16} className="mr-1" />
-            Survey
-          </Button>
+          {job.status !== 'completed' && job.status !== 'invoiced' && job.status !== 'cancelled' && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => updateMut.mutate({ status: 'completed' })}
+              disabled={updateMut.isPending}
+              title="Mark this job as done"
+              className="text-green-600 hover:text-green-700 border-green-200 hover:border-green-300 hover:bg-green-50"
+            >
+              <CheckCircle2 size={16} className="mr-1" />
+              Job Done
+            </Button>
+          )}
           <Button
             size="sm"
             variant="outline"
