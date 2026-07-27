@@ -192,15 +192,7 @@ export async function upsertConversationBatch(conversations, options) {
         const rawLabels = (conversation.labels || []).map(normalizeLabel).filter(Boolean);
         console.log(`[WhatsAppLead][Label] "${conversation.chatTitle}" labels=[${rawLabels.join(', ')}] allowlist=[${allowlist.join(', ')}]`);
 
-        if (syncOnlyAllowedLabels && allowlist.length > 0) {
-            const labels = filterAllowedLabels(rawLabels, options);
-            if (labels.length === 0) {
-                console.log(`[WhatsAppLead][Skip] "${conversation.chatTitle}" — no matching label`);
-                skippedByLabel += 1;
-                continue;
-            }
-            console.log(`[WhatsAppLead][Match] "${conversation.chatTitle}" matched=[${labels.join(', ')}]`);
-        }
+        // Label filtering disabled — sync all contacts regardless of labels
 
         // Use sanitized labels for storage (strips labels that look like the contact's own name)
         const sanitizedLabels = sanitizeConversationLabels(rawLabels, conversation);
