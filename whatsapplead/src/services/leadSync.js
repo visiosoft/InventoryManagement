@@ -223,6 +223,7 @@ export async function upsertConversationBatch(conversations, options) {
                     ...(ownerId && { owner: ownerId }),
                     unitsNeeded: 1,
                     notes: buildLeadNotes(conversation, isSynthetic),
+                    labels: sanitizedLabels,
                     timeline: [{ type: 'created', text: 'Lead auto-created from WhatsApp desktop scrape.' }],
                 });
                 createdLeads += 1;
@@ -251,6 +252,11 @@ export async function upsertConversationBatch(conversations, options) {
                 // Fill in phone display if existing record has a synthetic/placeholder phone
                 if (isPlaceholderPhone(lead.phone) && !isSynthetic) {
                     updates.phone = phoneDisplay;
+                }
+
+                // Always update labels from WhatsApp
+                if (sanitizedLabels.length > 0) {
+                    updates.labels = sanitizedLabels;
                 }
 
                 if (Object.keys(updates).length > 0) {

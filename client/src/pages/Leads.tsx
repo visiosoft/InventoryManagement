@@ -1095,11 +1095,12 @@ export default function Leads() {
                         <div style={{ overflowX: 'auto' }}>
 
                             {/* Header row */}
-                            <div style={{ minWidth: 1020, display: 'grid', gridTemplateColumns: '26px minmax(200px,1.5fr) minmax(160px,1.1fr) 120px 130px minmax(130px,.9fr) auto', alignItems: 'center', gap: 14, padding: '14px 22px', background: '#FBF8F2', borderBottom: '1px solid rgba(20,8,31,.10)', fontSize: 11.5, fontWeight: 700, letterSpacing: '.09em', textTransform: 'uppercase' as const, color: MUTED_COLOR }}>
+                            <div style={{ minWidth: 1020, display: 'grid', gridTemplateColumns: '26px minmax(200px,1.5fr) minmax(160px,1.1fr) 120px minmax(120px,1fr) 130px minmax(130px,.9fr) auto', alignItems: 'center', gap: 14, padding: '14px 22px', background: '#FBF8F2', borderBottom: '1px solid rgba(20,8,31,.10)', fontSize: 11.5, fontWeight: 700, letterSpacing: '.09em', textTransform: 'uppercase' as const, color: MUTED_COLOR }}>
                                 <span />
                                 <span>Name</span>
                                 <span>Phone / WhatsApp</span>
                                 <span>Source</span>
+                                <span>Labels</span>
                                 <span>Status</span>
                                 <span>Added</span>
                                 <span style={{ textAlign: 'right' }}>Actions</span>
@@ -1115,7 +1116,7 @@ export default function Leads() {
                                     <div style={{ minWidth: 1020, borderBottom: '1px solid rgba(20,8,31,.07)' }}>
                                         <div
                                             style={{
-                                                display: 'grid', gridTemplateColumns: '26px minmax(200px,1.5fr) minmax(160px,1.1fr) 120px 130px minmax(130px,.9fr) auto',
+                                                display: 'grid', gridTemplateColumns: '26px minmax(200px,1.5fr) minmax(160px,1.1fr) 120px minmax(120px,1fr) 130px minmax(130px,.9fr) auto',
                                                 alignItems: 'center', gap: 14, padding: `${isOpen ? '16px' : '14px'} 22px`,
                                                 cursor: lead.source === 'whatsapp' ? 'pointer' : 'default',
                                                 background: isOpen ? '#FDFCFA' : 'transparent',
@@ -1151,6 +1152,13 @@ export default function Leads() {
                                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 11px 5px 8px', borderRadius: 999, background: '#F6F0E4', border: '1px solid rgba(20,8,31,.06)', fontSize: 12, fontWeight: 600, color: '#4A4357' }}>
                                                     <span style={{ width: 6, height: 6, borderRadius: 99, background: sdot }} />{statusLabel(lead.source)}
                                                 </span>
+                                            </div>
+
+                                            {/* Labels */}
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                                {(lead.labels || []).length > 0 ? (lead.labels || []).map((lbl: string) => (
+                                                    <span key={lbl} style={{ padding: '3px 9px', borderRadius: 999, background: '#EDE9FE', color: '#5B2BC9', fontSize: 11, fontWeight: 600 }}>{lbl}</span>
+                                                )) : <span style={{ fontSize: 12, color: MUTED_COLOR }}>—</span>}
                                             </div>
 
                                             {/* Status */}

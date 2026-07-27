@@ -243,7 +243,7 @@ app.post('/api/sync', requireApiKey, async (req, res) => {
             webUrl: process.env.WHATSAPP_WEB_URL || 'https://web.whatsapp.com',
             headless: String(process.env.WHATSAPP_HEADLESS || 'false').toLowerCase() === 'true',
             maxChats: Math.max(1, Math.min(maxChats, 200)),
-            messagesPerChat: Math.max(1, Math.min(messagesPerChat, 20)),
+            messagesPerChat: Math.max(1, Math.min(messagesPerChat, 50)),
             profileDir: process.env.WHATSAPP_PROFILE_DIR || '.wa-profile',
             allowedLabels,
             syncOnlyAllowedLabels,

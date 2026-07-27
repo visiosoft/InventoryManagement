@@ -135,6 +135,7 @@ const leadSchema = new Schema(
     owner: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     unitsNeeded: { type: Number, required: true, min: 1 },
     notes: { type: String, default: '' },
+    labels: { type: [String], default: [] },
     comments: [leadCommentSchema],
     timeline: [
       {

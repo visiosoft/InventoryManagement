@@ -7,7 +7,7 @@ const configSchema = new mongoose.Schema({
     allowedLabels: { type: [String], default: [] },
     syncOnlyAllowedLabels: { type: Boolean, default: false },
     maxChats: { type: Number, default: 15 },
-    messagesPerChat: { type: Number, default: 10 },
+    messagesPerChat: { type: Number, default: 30 },
     maxStoreMessages: { type: Number, default: 10 },
     syncIntervalMs: { type: Number, default: 0 },
     defaultOwnerEmail: { type: String, default: '' },
