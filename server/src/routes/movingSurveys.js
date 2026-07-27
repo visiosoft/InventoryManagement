@@ -27,8 +27,8 @@ router.put('/job/:jobId', async (req, res) => {
       { ...req.body, job: req.params.jobId },
       { upsert: true, new: true, runValidators: true }
     );
-    // Update job status to survey_done
-    await MovingJob.findByIdAndUpdate(req.params.jobId, { status: 'survey_done' });
+    // Keep job confirmed after survey completion
+    await MovingJob.findByIdAndUpdate(req.params.jobId, { status: 'confirmed' });
     res.json(survey);
   } catch (err) {
     res.status(500).json({ error: err.message });

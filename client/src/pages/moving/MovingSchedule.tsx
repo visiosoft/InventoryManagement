@@ -16,7 +16,6 @@ const PURPLE = '#5B2BC9'
 const eventStyle: Record<MovingJobStatus, { bg: string; color: string }> = {
   draft: { bg: '#F3F0EA', color: '#756E80' },
   confirmed: { bg: '#F7F3FF', color: '#5B2BC9' },
-  survey_done: { bg: '#EDE5FF', color: '#5B2BC9' },
   in_progress: { bg: '#FFF7ED', color: '#EA580C' },
   completed: { bg: '#ECFDF5', color: '#059669' },
   invoiced: { bg: '#EFF6FF', color: '#2563EB' },

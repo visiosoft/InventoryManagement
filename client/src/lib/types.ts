@@ -560,7 +560,7 @@ export interface MovingLead {
   createdAt?: string
 }
 
-export type MovingJobStatus = 'draft' | 'confirmed' | 'survey_done' | 'in_progress' | 'completed' | 'invoiced' | 'cancelled'
+export type MovingJobStatus = 'draft' | 'confirmed' | 'in_progress' | 'completed' | 'invoiced' | 'cancelled'
 export type MovingJobType = 'local' | 'inter_emirate' | 'international' | 'office' | 'storage_to_home' | 'other'
 
 export interface MovingJobCrewMember {

@@ -19,7 +19,6 @@ const STATUSES: { value: MovingJobStatus | ''; label: string }[] = [
   { value: '', label: 'All' },
   { value: 'draft', label: 'Coming Soon' },
   { value: 'confirmed', label: 'Confirmed' },
-  { value: 'survey_done', label: 'Survey Done' },
   { value: 'in_progress', label: 'In Progress' },
   { value: 'completed', label: 'Completed' },
   { value: 'invoiced', label: 'Invoiced' },
@@ -27,12 +26,12 @@ const STATUSES: { value: MovingJobStatus | ''; label: string }[] = [
 ]
 
 const statusTone: Record<MovingJobStatus, string> = {
-  draft: 'gray', confirmed: 'blue', survey_done: 'purple',
+  draft: 'gray', confirmed: 'blue',
   in_progress: 'yellow', completed: 'green', invoiced: 'teal', cancelled: 'red',
 }
 
 const statusDot: Record<string, string> = {
-  draft: '#94A3B8', confirmed: '#3B82F6', survey_done: '#8B5CF6',
+  draft: '#94A3B8', confirmed: '#3B82F6',
   in_progress: '#F59E0B', completed: '#10B981', invoiced: '#14B8A6', cancelled: '#EF4444',
 }
 

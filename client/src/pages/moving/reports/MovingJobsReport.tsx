@@ -8,7 +8,7 @@ interface JobsReport {
 }
 
 const statusTone: Record<string, string> = {
-  draft: 'gray', confirmed: 'blue', survey_done: 'purple',
+  draft: 'gray', confirmed: 'blue',
   in_progress: 'yellow', completed: 'green', invoiced: 'teal', cancelled: 'red',
 }
 

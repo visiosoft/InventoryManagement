@@ -206,7 +206,7 @@ export default function MovingSurveyDetail() {
           )}
         </div>
         {job && (
-          <Badge tone={{ draft: 'gray', confirmed: 'blue', survey_done: 'purple', in_progress: 'yellow', completed: 'green', invoiced: 'teal', cancelled: 'red' }[job.status] ?? 'gray'}>
+          <Badge tone={{ draft: 'gray', confirmed: 'blue', in_progress: 'yellow', completed: 'green', invoiced: 'teal', cancelled: 'red' }[job.status] ?? 'gray'}>
             {job.status.replace(/_/g, ' ')}
           </Badge>
         )}

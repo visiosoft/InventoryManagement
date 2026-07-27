@@ -74,7 +74,7 @@ router.get('/jobs/by-date/:date', async (req, res) => {
 router.patch('/jobs/:id/status', async (req, res) => {
   try {
     const { status } = req.body;
-    const allowed = { confirmed: 'in_progress', survey_done: 'in_progress', in_progress: 'completed' };
+    const allowed = { confirmed: 'in_progress', in_progress: 'completed' };
     const job = await MovingJob.findById(req.params.id);
     if (!job) return res.status(404).json({ error: 'Job not found' });
     const isCrew = job.crew?.some(c => String(c.worker) === String(req.crewId));

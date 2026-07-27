@@ -217,14 +217,13 @@ function PackageModal({ open, initial, busy, err, onSave, onClose }: {
 }
 
 const statusTone: Record<MovingJobStatus, string> = {
-  draft: 'gray', confirmed: 'blue', survey_done: 'purple',
+  draft: 'gray', confirmed: 'blue',
   in_progress: 'yellow', completed: 'green', invoiced: 'teal', cancelled: 'red',
 }
 
 const STATUS_TRANSITIONS: Record<MovingJobStatus, MovingJobStatus[]> = {
   draft: ['confirmed', 'cancelled'],
-  confirmed: ['survey_done', 'in_progress', 'cancelled'],
-  survey_done: ['confirmed', 'in_progress', 'cancelled'],
+  confirmed: ['in_progress', 'cancelled'],
   in_progress: ['completed', 'cancelled'],
   completed: ['invoiced'],
   invoiced: [],

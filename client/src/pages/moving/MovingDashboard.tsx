@@ -40,7 +40,6 @@ interface JobsBreakdown {
 const STATUS_COLORS: Record<string, string> = {
   draft: '#94a3b8',
   confirmed: '#60a5fa',
-  survey_done: '#c084fc',
   in_progress: '#fbbf24',
   completed: '#34d399',
   invoiced: '#2dd4bf',
@@ -59,7 +58,7 @@ const TYPE_LABELS: Record<string, string> = {
 const CHART_COLORS = ['#60a5fa', '#34d399', '#fbbf24', '#c084fc', '#2dd4bf', '#f87171', '#fb923c']
 
 const statusTone: Record<string, string> = {
-  draft: 'gray', confirmed: 'blue', survey_done: 'purple',
+  draft: 'gray', confirmed: 'blue',
   in_progress: 'yellow', completed: 'green', invoiced: 'teal', cancelled: 'red',
 }
 
