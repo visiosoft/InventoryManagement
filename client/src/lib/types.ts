@@ -93,6 +93,7 @@ export interface Lead {
   owner: { _id: string; name: string; email: string }
   unitsNeeded: number
   notes?: string
+  labels?: string[]
   comments?: LeadComment[]
   timeline?: LeadTimelineEntry[]
   createdAt?: string
