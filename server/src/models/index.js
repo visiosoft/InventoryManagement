@@ -27,6 +27,8 @@ const userSchema = new Schema(
     // Modules this user can access. Admins bypass this check entirely.
     permissions: { type: [String], default: [] },
     isActive: { type: Boolean, default: true },
+    resetToken: { type: String, default: null },
+    resetTokenExpiry: { type: Date, default: null },
   },
   { timestamps: true }
 );

@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { apiError } from '../lib/api'
 
@@ -94,7 +94,10 @@ export default function Login() {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-foreground mb-1.5">Password</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-semibold text-foreground">Password</label>
+                <Link to="/forgot-password" className="text-xs font-medium" style={{ color: '#4C8CE4' }}>Forgot password?</Link>
+              </div>
               <input
                 type="password"
                 autoComplete="current-password"
