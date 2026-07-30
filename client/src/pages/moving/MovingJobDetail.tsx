@@ -1330,12 +1330,20 @@ export default function MovingJobDetail() {
                   autoFocus
                 />
               </Field>
-              <Field label={`Photos & Videos${visitFiles.length ? ` (${visitFiles.length} selected)` : ''}`}>
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-sm font-medium">Photos & Videos</label>
+                  {visitFiles.length > 0 && (
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-primary text-primary-foreground">
+                      {visitFiles.length} file{visitFiles.length !== 1 ? 's' : ''} selected
+                    </span>
+                  )}
+                </div>
                 <div className="space-y-3">
                   <label className="flex flex-col items-center justify-center gap-2 w-full h-24 rounded-xl border-2 border-dashed border-primary/30 bg-card cursor-pointer hover:bg-primary/10 transition-colors">
                     <Upload size={22} className="text-primary" />
                     <span className="text-xs font-medium text-primary">{visitFiles.length ? 'Add more photos or videos' : 'Tap to add photos or videos (max 50MB each)'}</span>
-                    <input type="file" multiple accept="image/*,video/*" className="sr-only" onChange={(e) => {
+                    <input type="file" multiple accept="image/*,video/*" className="hidden" onChange={(e) => {
                       const picked = e.target.files
                       if (!picked) return
                       setVisitFiles(prev => [...prev, ...Array.from(picked).filter(f => f.size <= 50 * 1024 * 1024)])
@@ -1343,19 +1351,29 @@ export default function MovingJobDetail() {
                     }} />
                   </label>
                   {visitFiles.length > 0 && (
-                    <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
                       {visitFiles.map((f, i) => (
-                        <div key={i} className="relative aspect-square rounded-lg overflow-hidden bg-muted">
+                        <div key={i} className="relative rounded-lg overflow-hidden bg-muted border">
                           {f.type.startsWith('video') ? (
-                            <div className="w-full h-full flex flex-col items-center justify-center gap-1">
-                              <FileVideo size={20} className="text-primary" />
-                              <span className="text-[9px] px-1 text-center truncate w-full text-muted-foreground">{f.name}</span>
+                            <div className="aspect-square relative">
+                              <video src={URL.createObjectURL(f)} className="w-full h-full object-cover" muted preload="metadata" />
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                                <div className="h-8 w-8 rounded-full bg-black/60 flex items-center justify-center">
+                                  <FileVideo size={16} color="#fff" />
+                                </div>
+                              </div>
                             </div>
                           ) : (
-                            <img src={URL.createObjectURL(f)} className="w-full h-full object-cover" />
+                            <div className="aspect-square">
+                              <img src={URL.createObjectURL(f)} className="w-full h-full object-cover" />
+                            </div>
                           )}
+                          <div className="px-2 py-1 bg-card">
+                            <div className="text-[10px] truncate text-muted-foreground">{f.name}</div>
+                            <div className="text-[9px] text-muted-foreground/60">{(f.size / 1024 / 1024).toFixed(1)} MB</div>
+                          </div>
                           <button type="button" onClick={() => setVisitFiles(prev => prev.filter((_, j) => j !== i))}
-                            className="absolute top-1 right-1 h-5 w-5 rounded-full bg-black/60 flex items-center justify-center">
+                            className="absolute top-1 right-1 h-5 w-5 rounded-full bg-black/60 flex items-center justify-center hover:bg-red-600 transition-colors">
                             <X size={10} color="#fff" />
                           </button>
                         </div>
@@ -1363,7 +1381,7 @@ export default function MovingJobDetail() {
                     </div>
                   )}
                 </div>
-              </Field>
+              </div>
               {visitError && <p className="text-sm text-red-600">{visitError}</p>}
               <div className="flex justify-end gap-2">
                 <Button variant="outline" type="button" onClick={() => { setVisitModal(false); setVisitDate(new Date().toISOString().slice(0, 10)); setVisitNotes(''); setVisitFiles([]); setVisitError('') }}>Cancel</Button>
