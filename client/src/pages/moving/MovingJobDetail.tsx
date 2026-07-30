@@ -1268,6 +1268,43 @@ export default function MovingJobDetail() {
         </CardBody>
       </Card>
 
+      {/* Client Visits */}
+      {(job as any).clientVisits?.length > 0 && (
+        <Card>
+          <CardHeader
+            title={<span className="flex items-center gap-2"><Camera size={15} />Client Visits</span>}
+            subtitle={`${(job as any).clientVisits.length} visit${(job as any).clientVisits.length !== 1 ? 's' : ''} uploaded by customer`}
+          />
+          <CardBody className="space-y-4">
+            {(job as any).clientVisits.map((visit: any) => (
+              <div key={visit._id} className="rounded-xl border p-4 space-y-2">
+                <div className="text-xs text-muted-foreground">
+                  {new Date(visit.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  {' · '}
+                  {new Date(visit.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                </div>
+                {visit.notes && <p className="text-sm whitespace-pre-wrap">{visit.notes}</p>}
+                {visit.images?.length > 0 && (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+                    {visit.images.map((img: any) => {
+                      const thumbUrl = img.storage === 'drive' && img.driveFileId
+                        ? `https://drive.google.com/thumbnail?id=${img.driveFileId}&sz=w400`
+                        : img.url
+                      return (
+                        <div key={img._id} className="aspect-square rounded-lg overflow-hidden cursor-pointer hover:opacity-90"
+                          onClick={() => setLightboxImg(img)}>
+                          <img src={thumbUrl} className="w-full h-full object-cover" loading="lazy" />
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            ))}
+          </CardBody>
+        </Card>
+      )}
+
       {/* Lightbox */}
       {lightboxImg && (
         <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={() => setLightboxImg(null)}>

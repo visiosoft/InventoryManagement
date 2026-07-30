@@ -8,6 +8,7 @@ const router = Router();
 router.use(requireCustomer);
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
+const uploadLarge = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 const SERVICE_TO_JOB_TYPE = {
   'Home / Apartment Shifting': 'local',
@@ -247,6 +248,79 @@ router.get('/invoices/:id', async (req, res) => {
     const invoice = await MovingInvoice.findOne({ _id: req.params.id, customer: req.customer.customerId }).lean();
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
     res.json({ invoice });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Client Visits ──────────────────────────────────────────────
+
+router.get('/moves/:id/visits', async (req, res) => {
+  try {
+    const job = await MovingJob.findOne({ _id: req.params.id, customer: req.customer.customerId }).lean();
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    const visits = (job.clientVisits || []).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    res.json({ visits });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/moves/:id/visits', uploadLarge.array('files', 20), async (req, res) => {
+  try {
+    const job = await MovingJob.findOne({ _id: req.params.id, customer: req.customer.customerId }).populate('customer', 'fullName');
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    const customerFolder = `${job.customer?.fullName || 'MovingCustomers'} - ${job.jobNo || req.params.id}`;
+    const images = [];
+    for (const file of (req.files || [])) {
+      try {
+        const result = await uploadPublicImage({
+          buffer: file.buffer,
+          mimeType: file.mimetype,
+          filename: `visit-${job.jobNo || req.params.id}-${Date.now()}-${file.originalname}`,
+          customerName: customerFolder,
+        });
+        images.push({
+          url: result.url,
+          filename: file.originalname.replace(/\s+/g, '_'),
+          originalName: file.originalname,
+          size: file.size,
+          category: 'Client Visit',
+          storage: result.storage,
+          driveFileId: result.driveFileId || '',
+        });
+      } catch (uploadErr) {
+        console.error('[client-visit] Drive upload failed:', uploadErr.message);
+      }
+    }
+
+    const visit = {
+      notes: req.body.notes || '',
+      images,
+      createdAt: new Date(),
+    };
+    job.clientVisits.push(visit);
+    await job.save();
+
+    const created = job.clientVisits[job.clientVisits.length - 1];
+    res.status(201).json({ visit: created });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/moves/:id/visits/:visitId', async (req, res) => {
+  try {
+    const job = await MovingJob.findOne({ _id: req.params.id, customer: req.customer.customerId });
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    const visit = job.clientVisits.id(req.params.visitId);
+    if (!visit) return res.status(404).json({ error: 'Visit not found' });
+
+    visit.deleteOne();
+    await job.save();
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

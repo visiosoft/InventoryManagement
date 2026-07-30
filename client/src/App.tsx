@@ -83,9 +83,23 @@ import ReminderSettings from './pages/ReminderSettings'
 import Approvals from './pages/Approvals'
 import ForgotPassword from './pages/ForgotPassword'
 import ResetPassword from './pages/ResetPassword'
+import PortalLogin from './pages/portal/PortalLogin'
+import PortalApp from './pages/portal/PortalApp'
+import { CustomerAuthProvider } from './lib/customerAuth'
 
 export default function App() {
   const { user } = useAuth()
+
+  if (location.pathname.startsWith('/portal')) {
+    return (
+      <CustomerAuthProvider>
+        <Routes>
+          <Route path="/portal/login" element={<PortalLogin />} />
+          <Route path="/portal/*" element={<PortalApp />} />
+        </Routes>
+      </CustomerAuthProvider>
+    )
+  }
 
   if (!user) {
     return (
