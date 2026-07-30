@@ -664,8 +664,11 @@ export default function MovingJobDetail() {
           <Button
             size="sm"
             variant="outline"
-            onClick={() => setVisitModal(true)}
-            title="Share visit portal link with client"
+            onClick={() => {
+              setVisitModal(true)
+              setTimeout(() => document.getElementById('site-visits')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+            }}
+            title="Add a site visit with notes and photos"
             className="text-violet-600 hover:text-violet-700 border-violet-200 hover:border-violet-300 hover:bg-violet-50"
           >
             <CalendarCheck size={16} className="mr-1" />
@@ -1285,56 +1288,137 @@ export default function MovingJobDetail() {
       </Card>
 
       {/* Site Visits */}
-      {(job as any).clientVisits?.length > 0 && (
-        <Card>
-          <CardHeader
-            title={<span className="flex items-center gap-2"><CalendarCheck size={15} />Site Visits</span>}
-            subtitle={`${(job as any).clientVisits.length} visit${(job as any).clientVisits.length !== 1 ? 's' : ''}`}
-          />
-          <CardBody className="space-y-4">
-            {[...(job as any).clientVisits].sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map((visit: any) => (
-              <div key={visit._id} className="rounded-xl border p-4 space-y-2">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Clock size={12} />
-                    {new Date(visit.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    {' · '}
-                    {new Date(visit.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                    {visit.createdByName && <span className="font-medium">· {visit.createdByName}</span>}
-                  </div>
-                  <Button size="sm" variant="outline"
-                    className="h-7 w-7 p-0 text-red-500 hover:text-red-600 hover:bg-red-50 border-red-200"
-                    onClick={async () => {
-                      if (!confirm('Delete this visit?')) return
-                      try {
-                        await api.delete(`/moving-jobs/${id}/visits/${visit._id}`)
-                        qc.invalidateQueries({ queryKey: ['moving-job', id] })
-                      } catch (err) { alert(apiError(err)) }
-                    }}>
-                    <Trash2 size={13} />
-                  </Button>
-                </div>
-                {visit.notes && <p className="text-sm whitespace-pre-wrap">{visit.notes}</p>}
-                {visit.images?.length > 0 && (
-                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
-                    {visit.images.map((img: any) => {
-                      const thumbUrl = img.storage === 'drive' && img.driveFileId
-                        ? `https://drive.google.com/thumbnail?id=${img.driveFileId}&sz=w400`
-                        : img.url
-                      return (
-                        <div key={img._id} className="aspect-square rounded-lg overflow-hidden cursor-pointer hover:opacity-90"
-                          onClick={() => setLightboxImg(img)}>
-                          <img src={thumbUrl} className="w-full h-full object-cover" loading="lazy" />
+      <Card id="site-visits">
+        <CardHeader
+          title={<span className="flex items-center gap-2"><CalendarCheck size={15} />Site Visits</span>}
+          subtitle={`${((job as any).clientVisits || []).length} visit${((job as any).clientVisits || []).length !== 1 ? 's' : ''} · document items and rooms before the move`}
+        />
+        <CardBody className="space-y-5">
+          {/* Add visit form */}
+          {visitModal ? (
+            <form onSubmit={async (e) => {
+              e.preventDefault()
+              if (!visitNotes.trim() && !visitFiles.length) return
+              setVisitUploading(true)
+              setVisitError('')
+              try {
+                const fd = new FormData()
+                fd.append('notes', visitNotes)
+                visitFiles.forEach(f => fd.append('files', f))
+                await api.post(`/moving-jobs/${id}/visits`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+                setVisitModal(false)
+                setVisitNotes('')
+                setVisitFiles([])
+                qc.invalidateQueries({ queryKey: ['moving-job', id] })
+              } catch (err) {
+                setVisitError(apiError(err))
+              } finally {
+                setVisitUploading(false)
+              }
+            }} className="rounded-xl border-2 border-primary/20 bg-primary/5 p-4 space-y-4">
+              <Field label="Notes">
+                <Textarea
+                  value={visitNotes}
+                  onChange={(e: any) => setVisitNotes(e.target.value)}
+                  placeholder="Describe what you see — rooms, items, access issues, special instructions..."
+                  rows={4}
+                  autoFocus
+                />
+              </Field>
+              <Field label="Photos & Videos">
+                <div className="space-y-3">
+                  <label className="flex flex-col items-center justify-center gap-2 w-full h-24 rounded-xl border-2 border-dashed border-primary/30 bg-card cursor-pointer hover:bg-primary/10 transition-colors">
+                    <Upload size={22} className="text-primary" />
+                    <span className="text-xs font-medium text-primary">Tap to add photos or videos (max 50MB each)</span>
+                    <input type="file" multiple accept="image/*,video/*" className="sr-only" onChange={(e) => {
+                      const picked = e.target.files
+                      if (!picked) return
+                      setVisitFiles(prev => [...prev, ...Array.from(picked).filter(f => f.size <= 50 * 1024 * 1024)])
+                      e.target.value = ''
+                    }} />
+                  </label>
+                  {visitFiles.length > 0 && (
+                    <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
+                      {visitFiles.map((f, i) => (
+                        <div key={i} className="relative aspect-square rounded-lg overflow-hidden bg-muted">
+                          {f.type.startsWith('video') ? (
+                            <div className="w-full h-full flex flex-col items-center justify-center gap-1">
+                              <FileVideo size={20} className="text-primary" />
+                              <span className="text-[9px] px-1 text-center truncate w-full text-muted-foreground">{f.name}</span>
+                            </div>
+                          ) : (
+                            <img src={URL.createObjectURL(f)} className="w-full h-full object-cover" />
+                          )}
+                          <button type="button" onClick={() => setVisitFiles(prev => prev.filter((_, j) => j !== i))}
+                            className="absolute top-1 right-1 h-5 w-5 rounded-full bg-black/60 flex items-center justify-center">
+                            <X size={10} color="#fff" />
+                          </button>
                         </div>
-                      )
-                    })}
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </Field>
+              {visitError && <p className="text-sm text-red-600">{visitError}</p>}
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" type="button" onClick={() => { setVisitModal(false); setVisitNotes(''); setVisitFiles([]); setVisitError('') }}>Cancel</Button>
+                <Button type="submit" disabled={visitUploading || (!visitNotes.trim() && !visitFiles.length)}>
+                  {visitUploading ? 'Uploading…' : 'Save Visit'}
+                </Button>
               </div>
-            ))}
-          </CardBody>
-        </Card>
-      )}
+            </form>
+          ) : (
+            <button
+              onClick={() => setVisitModal(true)}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-primary/25 text-primary text-sm font-medium hover:bg-primary/5 transition-colors"
+            >
+              <Plus size={18} /> Add Site Visit
+            </button>
+          )}
+
+          {/* Visit list */}
+          {[...(((job as any).clientVisits) || [])].sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map((visit: any) => (
+            <div key={visit._id} className="rounded-xl border p-4 space-y-2">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Clock size={12} />
+                  {new Date(visit.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  {' · '}
+                  {new Date(visit.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                  {visit.createdByName && <span className="font-medium">· {visit.createdByName}</span>}
+                </div>
+                <Button size="sm" variant="outline"
+                  className="h-7 w-7 p-0 text-red-500 hover:text-red-600 hover:bg-red-50 border-red-200"
+                  onClick={async () => {
+                    if (!confirm('Delete this visit?')) return
+                    try {
+                      await api.delete(`/moving-jobs/${id}/visits/${visit._id}`)
+                      qc.invalidateQueries({ queryKey: ['moving-job', id] })
+                    } catch (err) { alert(apiError(err)) }
+                  }}>
+                  <Trash2 size={13} />
+                </Button>
+              </div>
+              {visit.notes && <p className="text-sm whitespace-pre-wrap">{visit.notes}</p>}
+              {visit.images?.length > 0 && (
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+                  {visit.images.map((img: any) => {
+                    const thumbUrl = img.storage === 'drive' && img.driveFileId
+                      ? `https://drive.google.com/thumbnail?id=${img.driveFileId}&sz=w400`
+                      : img.url
+                    return (
+                      <div key={img._id} className="aspect-square rounded-lg overflow-hidden cursor-pointer hover:opacity-90"
+                        onClick={() => setLightboxImg(img)}>
+                        <img src={thumbUrl} className="w-full h-full object-cover" loading="lazy" />
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          ))}
+        </CardBody>
+      </Card>
 
       {/* Lightbox */}
       {lightboxImg && (
@@ -1931,83 +2015,6 @@ export default function MovingJobDetail() {
             <Button variant="outline" onClick={() => setShareModal(false)}>Close</Button>
           </div>
         </div>
-      </Modal>
-
-      {/* Schedule Visit Modal */}
-      <Modal open={visitModal} title="Add Site Visit" onClose={() => { setVisitModal(false); setVisitNotes(''); setVisitFiles([]); setVisitError('') }}>
-        <form onSubmit={async (e) => {
-          e.preventDefault()
-          if (!visitNotes.trim() && !visitFiles.length) return
-          setVisitUploading(true)
-          setVisitError('')
-          try {
-            const fd = new FormData()
-            fd.append('notes', visitNotes)
-            visitFiles.forEach(f => fd.append('files', f))
-            await api.post(`/moving-jobs/${id}/visits`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
-            setVisitModal(false)
-            setVisitNotes('')
-            setVisitFiles([])
-            qc.invalidateQueries({ queryKey: ['moving-job', id] })
-          } catch (err) {
-            setVisitError(apiError(err))
-          } finally {
-            setVisitUploading(false)
-          }
-        }} className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Document the site visit — capture items, rooms, and any notes for the team.
-          </p>
-          <Field label="Notes">
-            <Textarea
-              value={visitNotes}
-              onChange={(e: any) => setVisitNotes(e.target.value)}
-              placeholder="Describe what you see — rooms, items, access issues, special instructions..."
-              rows={4}
-            />
-          </Field>
-          <Field label="Photos & Videos">
-            <div className="space-y-3">
-              <label className="flex flex-col items-center justify-center gap-2 w-full h-24 rounded-xl border-2 border-dashed border-primary/30 bg-primary/5 cursor-pointer hover:bg-primary/10 transition-colors">
-                <Upload size={22} className="text-primary" />
-                <span className="text-xs font-medium text-primary">Tap to add photos or videos (max 50MB each)</span>
-                <input type="file" multiple accept="image/*,video/*" className="sr-only" onChange={(e) => {
-                  const picked = e.target.files
-                  if (!picked) return
-                  setVisitFiles(prev => [...prev, ...Array.from(picked).filter(f => f.size <= 50 * 1024 * 1024)])
-                  e.target.value = ''
-                }} />
-              </label>
-              {visitFiles.length > 0 && (
-                <div className="grid grid-cols-4 gap-2">
-                  {visitFiles.map((f, i) => (
-                    <div key={i} className="relative aspect-square rounded-lg overflow-hidden bg-muted">
-                      {f.type.startsWith('video') ? (
-                        <div className="w-full h-full flex flex-col items-center justify-center gap-1">
-                          <FileVideo size={20} className="text-primary" />
-                          <span className="text-[9px] px-1 text-center truncate w-full text-muted-foreground">{f.name}</span>
-                        </div>
-                      ) : (
-                        <img src={URL.createObjectURL(f)} className="w-full h-full object-cover" />
-                      )}
-                      <button type="button" onClick={() => setVisitFiles(prev => prev.filter((_, j) => j !== i))}
-                        className="absolute top-1 right-1 h-5 w-5 rounded-full bg-black/60 flex items-center justify-center">
-                        <X size={10} color="#fff" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </Field>
-          {visitError && <p className="text-sm text-red-600">{visitError}</p>}
-          <div className="flex justify-end gap-2 pt-4 border-t">
-            <Button variant="outline" type="button" onClick={() => { setVisitModal(false); setVisitNotes(''); setVisitFiles([]); setVisitError('') }}>Cancel</Button>
-            <Button type="submit" disabled={visitUploading || (!visitNotes.trim() && !visitFiles.length)}>
-              {visitUploading ? 'Uploading…' : 'Save Visit'}
-            </Button>
-          </div>
-        </form>
       </Modal>
 
       {/* Remove Confirmation Modal */}
