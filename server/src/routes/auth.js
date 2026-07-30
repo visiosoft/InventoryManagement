@@ -32,7 +32,7 @@ router.post('/forgot-password', async (req, res) => {
   user.resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000);
   await user.save();
 
-  const baseUrl = process.env.APP_URL || req.headers.origin || `${req.protocol}://${req.get('host')}`;
+  const baseUrl = process.env.APP_URL || 'https://office.purplebox.ae';
   const resetUrl = `${baseUrl}/reset-password?token=${token}`;
 
   try {
