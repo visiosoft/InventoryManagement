@@ -32,8 +32,8 @@ router.post('/forgot-password', async (req, res) => {
   user.resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000);
   await user.save();
 
-  const origin = req.headers.origin || `${req.protocol}://${req.get('host')}`;
-  const resetUrl = `${origin}/reset-password?token=${token}`;
+  const baseUrl = process.env.APP_URL || req.headers.origin || `${req.protocol}://${req.get('host')}`;
+  const resetUrl = `${baseUrl}/reset-password?token=${token}`;
 
   try {
     if (mailConfigured()) {
