@@ -1330,11 +1330,11 @@ export default function MovingJobDetail() {
                   autoFocus
                 />
               </Field>
-              <Field label="Photos & Videos">
+              <Field label={`Photos & Videos${visitFiles.length ? ` (${visitFiles.length} selected)` : ''}`}>
                 <div className="space-y-3">
                   <label className="flex flex-col items-center justify-center gap-2 w-full h-24 rounded-xl border-2 border-dashed border-primary/30 bg-card cursor-pointer hover:bg-primary/10 transition-colors">
                     <Upload size={22} className="text-primary" />
-                    <span className="text-xs font-medium text-primary">Tap to add photos or videos (max 50MB each)</span>
+                    <span className="text-xs font-medium text-primary">{visitFiles.length ? 'Add more photos or videos' : 'Tap to add photos or videos (max 50MB each)'}</span>
                     <input type="file" multiple accept="image/*,video/*" className="sr-only" onChange={(e) => {
                       const picked = e.target.files
                       if (!picked) return
