@@ -892,6 +892,8 @@ const movingJobSchema = new Schema(
     clientVisits: [{
       notes: { type: String, default: '' },
       images: [movingJobImageSchema],
+      createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
+      createdByName: { type: String, default: '' },
       createdAt: { type: Date, default: Date.now },
     }],
     uploadToken: { type: String, default: null },

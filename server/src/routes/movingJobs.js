@@ -592,6 +592,82 @@ router.post('/:id/share-token', async (req, res) => {
   }
 });
 
+// ── Site Visits ──────────────────────────────────────────────────
+
+const visitUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+
+router.get('/:id/visits', async (req, res) => {
+  try {
+    const job = await MovingJob.findById(req.params.id).lean();
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    const visits = (job.clientVisits || []).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    res.json({ visits });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/visits', visitUpload.array('files', 20), async (req, res) => {
+  try {
+    const job = await MovingJob.findById(req.params.id).populate('customer', 'fullName');
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    const customerFolder = `${job.customer?.fullName || 'MovingCustomers'} - ${job.jobNo || req.params.id}`;
+    const images = [];
+    for (const file of (req.files || [])) {
+      try {
+        const result = await uploadPublicImage({
+          buffer: file.buffer,
+          mimeType: file.mimetype,
+          filename: `visit-${job.jobNo || req.params.id}-${Date.now()}-${file.originalname}`,
+          customerName: customerFolder,
+        });
+        images.push({
+          url: result.url,
+          filename: file.originalname.replace(/\s+/g, '_'),
+          originalName: file.originalname,
+          size: file.size,
+          category: 'Site Visit',
+          storage: result.storage,
+          driveFileId: result.driveFileId || '',
+        });
+      } catch (uploadErr) {
+        console.error('[site-visit] Drive upload failed:', uploadErr.message);
+      }
+    }
+
+    const visit = {
+      notes: req.body.notes || '',
+      images,
+      createdBy: req.user?.id || null,
+      createdByName: req.user?.name || '',
+      createdAt: new Date(),
+    };
+    job.clientVisits.push(visit);
+    job.timeline.push({ text: `Site visit added by ${req.user?.name || 'staff'}`, at: new Date(), author: req.user?.name });
+    await job.save();
+
+    const created = job.clientVisits[job.clientVisits.length - 1];
+    res.status(201).json({ visit: created });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/:id/visits/:visitId', async (req, res) => {
+  try {
+    const job = await MovingJob.findById(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    const visit = job.clientVisits.id(req.params.visitId);
+    if (!visit) return res.status(404).json({ error: 'Visit not found' });
+    visit.deleteOne();
+    await job.save();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Public (no-auth) endpoints, mounted separately in index.js ──
 
 export const publicUploadRouter = Router();
