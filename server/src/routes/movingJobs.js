@@ -645,6 +645,7 @@ router.post('/:id/visits', visitUpload.array('files', 20), async (req, res) => {
       createdAt: new Date(),
     };
     job.clientVisits.push(visit);
+    if (images.length) job.images.push(...images);
     job.timeline.push({ text: `Site visit added by ${req.user?.name || 'staff'}`, at: new Date(), author: req.user?.name });
     await job.save();
 

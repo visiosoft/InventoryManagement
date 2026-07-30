@@ -301,6 +301,7 @@ router.post('/moves/:id/visits', uploadLarge.array('files', 20), async (req, res
       createdAt: new Date(),
     };
     job.clientVisits.push(visit);
+    if (images.length) job.images.push(...images);
     await job.save();
 
     const created = job.clientVisits[job.clientVisits.length - 1];
