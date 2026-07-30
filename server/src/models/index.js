@@ -890,6 +890,7 @@ const movingJobSchema = new Schema(
       uploadedBy: { type: Schema.Types.ObjectId, ref: 'Worker' },
     }],
     clientVisits: [{
+      visitDate: { type: Date },
       notes: { type: String, default: '' },
       images: [movingJobImageSchema],
       createdBy: { type: Schema.Types.ObjectId, ref: 'User' },

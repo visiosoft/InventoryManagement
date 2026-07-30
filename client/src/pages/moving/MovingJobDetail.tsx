@@ -268,6 +268,7 @@ export default function MovingJobDetail() {
   const [shareLink, setShareLink] = useState('')
   const [linkCopied, setLinkCopied] = useState(false)
   const [visitModal, setVisitModal] = useState(false)
+  const [visitDate, setVisitDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [visitNotes, setVisitNotes] = useState('')
   const [visitFiles, setVisitFiles] = useState<File[]>([])
   const [visitUploading, setVisitUploading] = useState(false)
@@ -1303,6 +1304,7 @@ export default function MovingJobDetail() {
               setVisitError('')
               try {
                 const fd = new FormData()
+                fd.append('visitDate', visitDate)
                 fd.append('notes', visitNotes)
                 visitFiles.forEach(f => fd.append('files', f))
                 await api.post(`/moving-jobs/${id}/visits`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
@@ -1316,6 +1318,9 @@ export default function MovingJobDetail() {
                 setVisitUploading(false)
               }
             }} className="rounded-xl border-2 border-primary/20 bg-primary/5 p-4 space-y-4">
+              <Field label="Visit Date">
+                <Input type="date" value={visitDate} onChange={(e: any) => setVisitDate(e.target.value)} required />
+              </Field>
               <Field label="Notes">
                 <Textarea
                   value={visitNotes}
@@ -1361,7 +1366,7 @@ export default function MovingJobDetail() {
               </Field>
               {visitError && <p className="text-sm text-red-600">{visitError}</p>}
               <div className="flex justify-end gap-2">
-                <Button variant="outline" type="button" onClick={() => { setVisitModal(false); setVisitNotes(''); setVisitFiles([]); setVisitError('') }}>Cancel</Button>
+                <Button variant="outline" type="button" onClick={() => { setVisitModal(false); setVisitDate(new Date().toISOString().slice(0, 10)); setVisitNotes(''); setVisitFiles([]); setVisitError('') }}>Cancel</Button>
                 <Button type="submit" disabled={visitUploading || (!visitNotes.trim() && !visitFiles.length)}>
                   {visitUploading ? 'Uploading…' : 'Save Visit'}
                 </Button>
@@ -1377,15 +1382,16 @@ export default function MovingJobDetail() {
           )}
 
           {/* Visit list */}
-          {[...(((job as any).clientVisits) || [])].sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map((visit: any) => (
+          {[...(((job as any).clientVisits) || [])].sort((a: any, b: any) => new Date(b.visitDate || b.createdAt).getTime() - new Date(a.visitDate || a.createdAt).getTime()).map((visit: any) => (
             <div key={visit._id} className="rounded-xl border p-4 space-y-2">
               <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Clock size={12} />
-                  {new Date(visit.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  {' · '}
-                  {new Date(visit.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                  {visit.createdByName && <span className="font-medium">· {visit.createdByName}</span>}
+                <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+                  <CalendarCheck size={12} />
+                  <span className="font-semibold text-foreground">
+                    {new Date(visit.visitDate || visit.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </span>
+                  {visit.createdByName && <span>· {visit.createdByName}</span>}
+                  <span className="text-muted-foreground/60">· added {new Date(visit.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
                 </div>
                 <Button size="sm" variant="outline"
                   className="h-7 w-7 p-0 text-red-500 hover:text-red-600 hover:bg-red-50 border-red-200"

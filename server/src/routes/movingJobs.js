@@ -637,6 +637,7 @@ router.post('/:id/visits', visitUpload.array('files', 20), async (req, res) => {
     }
 
     const visit = {
+      visitDate: req.body.visitDate ? new Date(req.body.visitDate) : new Date(),
       notes: req.body.notes || '',
       images,
       createdBy: req.user?.id || null,
