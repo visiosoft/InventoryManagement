@@ -177,8 +177,8 @@ export default function App() {
         <Route path="/moving/dispatch" element={<PermGuard module="moving_dispatch"><MovingDispatch /></PermGuard>} />
         <Route path="/moving/workers" element={<PermGuard module="moving_workers"><Workers /></PermGuard>} />
         <Route path="/moving/fleet" element={<PermGuard module="moving_fleet"><Fleet /></PermGuard>} />
-        <Route path="/moving/quotes" element={<PermGuard module="moving_quotes"><MovingQuotes /></PermGuard>} />
-        <Route path="/moving/quotes/:id" element={<PermGuard module="moving_quotes"><MovingQuoteDetail /></PermGuard>} />
+        <Route path="/moving/quotes" element={<PermGuard module="moving_jobs"><MovingQuotes /></PermGuard>} />
+        <Route path="/moving/quotes/:id" element={<PermGuard module="moving_jobs"><MovingQuoteDetail /></PermGuard>} />
         <Route path="/moving/invoices" element={<PermGuard module="moving_invoices"><MovingInvoices /></PermGuard>} />
         <Route path="/moving/invoices/:id" element={<PermGuard module="moving_invoices"><MovingInvoiceDetail /></PermGuard>} />
         <Route path="/moving/visits" element={<PermGuard module="moving_jobs"><SiteVisits /></PermGuard>} />
