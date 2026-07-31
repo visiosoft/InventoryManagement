@@ -822,7 +822,7 @@ const movingJobSchema = new Schema(
     lead: { type: Schema.Types.ObjectId, ref: 'MovingLead' },
     status: {
       type: String,
-      enum: ['draft', 'confirmed', 'in_progress', 'completed', 'invoiced', 'cancelled'],
+      enum: ['draft', 'confirmed', 'in_progress', 'survey_done', 'completed', 'invoiced', 'cancelled'],
       default: 'draft',
     },
     jobType: {

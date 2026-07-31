@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Plus, Trash2, FileText, MapPin, Users, Truck as TruckIcon, AlertCircle, Package, Star, Wrench, Camera, X, Tag, CheckCircle2, Pencil, Image as ImageIcon, Check, Share2, Copy, ExternalLink, CalendarCheck, Upload, FileVideo, Clock } from 'lucide-react'
@@ -268,6 +268,7 @@ export default function MovingJobDetail() {
   const [shareLink, setShareLink] = useState('')
   const [linkCopied, setLinkCopied] = useState(false)
   const [visitModal, setVisitModal] = useState(false)
+  const visitFileRef = useRef<HTMLInputElement>(null)
   const [visitDate, setVisitDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [visitNotes, setVisitNotes] = useState('')
   const [visitFiles, setVisitFiles] = useState<File[]>([])
@@ -1340,16 +1341,20 @@ export default function MovingJobDetail() {
                   )}
                 </div>
                 <div className="space-y-3">
-                  <label className="flex flex-col items-center justify-center gap-2 w-full h-24 rounded-xl border-2 border-dashed border-primary/30 bg-card cursor-pointer hover:bg-primary/10 transition-colors">
+                  <input ref={visitFileRef} type="file" multiple accept="image/*,video/*" className="hidden"
+                    onChange={(e) => {
+                      const picked = e.target.files
+                      if (!picked || !picked.length) return
+                      const arr = Array.from(picked).filter(f => f.size <= 50 * 1024 * 1024)
+                      setVisitFiles(prev => [...prev, ...arr])
+                      e.target.value = ''
+                    }}
+                  />
+                  <button type="button" onClick={() => visitFileRef.current?.click()}
+                    className="flex flex-col items-center justify-center gap-2 w-full h-24 rounded-xl border-2 border-dashed border-primary/30 bg-card cursor-pointer hover:bg-primary/10 transition-colors">
                     <Upload size={22} className="text-primary" />
                     <span className="text-xs font-medium text-primary">{visitFiles.length ? 'Add more photos or videos' : 'Tap to add photos or videos (max 50MB each)'}</span>
-                    <input type="file" multiple accept="image/*,video/*" className="hidden" onChange={(e) => {
-                      const picked = e.target.files
-                      if (!picked) return
-                      setVisitFiles(prev => [...prev, ...Array.from(picked).filter(f => f.size <= 50 * 1024 * 1024)])
-                      e.target.value = ''
-                    }} />
-                  </label>
+                  </button>
                   {visitFiles.length > 0 && (
                     <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
                       {visitFiles.map((f, i) => (
