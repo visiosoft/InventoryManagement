@@ -924,7 +924,7 @@ const movingQuoteSchema = new Schema(
     customer: { type: Schema.Types.ObjectId, ref: 'Customer', required: true },
     status: { type: String, enum: ['draft', 'sent', 'accepted', 'rejected', 'expired'], default: 'draft' },
     quoteDate: { type: Date, default: Date.now },
-    expiryDate: { type: Date },
+    expiryDate: { type: Date, default: () => { const d = new Date(); d.setDate(d.getDate() + 1); return d; } },
     items: [movingQuoteItemSchema],
     subTotal: { type: Number, default: 0 },
     discount: { type: Number, default: 0 },
