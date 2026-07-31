@@ -1300,7 +1300,7 @@ export default function MovingJobDetail() {
           {visitModal ? (
             <form onSubmit={async (e) => {
               e.preventDefault()
-              if (!visitNotes.trim() && !visitFiles.length) return
+              if (!visitNotes.trim()) { setVisitError('Notes are required'); return }
               setVisitUploading(true)
               setVisitError('')
               try {
@@ -1390,7 +1390,7 @@ export default function MovingJobDetail() {
               {visitError && <p className="text-sm text-red-600">{visitError}</p>}
               <div className="flex justify-end gap-2">
                 <Button variant="outline" type="button" onClick={() => { setVisitModal(false); setVisitDate(new Date().toISOString().slice(0, 10)); setVisitNotes(''); setVisitFiles([]); setVisitError('') }}>Cancel</Button>
-                <Button type="submit" disabled={visitUploading || (!visitNotes.trim() && !visitFiles.length)}>
+                <Button type="submit" disabled={visitUploading || !visitNotes.trim()}>
                   {visitUploading ? 'Uploading…' : 'Save Visit'}
                 </Button>
               </div>
