@@ -85,7 +85,6 @@ export default function SiteVisits() {
   const [convertErr, setConvertErr] = useState('')
 
   // add more files to existing visit
-  const addFileRef = useRef<HTMLInputElement>(null)
   const [addingToVisitId, setAddingToVisitId] = useState<string | null>(null)
   const [addFileProgress, setAddFileProgress] = useState(0)
 
@@ -746,19 +745,6 @@ export default function SiteVisits() {
 
                         {/* Add more photos/videos */}
                         <div>
-                          <input
-                            ref={addFileRef}
-                            type="file"
-                            multiple
-                            accept="image/*,video/mp4,video/quicktime,video/mov,video/*"
-                            className="hidden"
-                            onChange={(e) => {
-                              if (e.target.files && e.target.files.length > 0) {
-                                handleAddFiles(visit._id, e.target.files)
-                                e.target.value = ''
-                              }
-                            }}
-                          />
                           {addingToVisitId === visit._id ? (
                             <div className="space-y-1.5">
                               <div className="flex items-center justify-between text-xs">
@@ -770,13 +756,21 @@ export default function SiteVisits() {
                               </div>
                             </div>
                           ) : (
-                            <button
-                              type="button"
-                              onClick={() => addFileRef.current?.click()}
-                              className="flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-dashed border-primary/30 text-xs font-medium text-primary hover:bg-primary/5 transition-colors"
-                            >
+                            <label className="flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-dashed border-primary/30 text-xs font-medium text-primary hover:bg-primary/5 transition-colors cursor-pointer w-fit">
                               <Upload size={14} /> Add Photos / Videos
-                            </button>
+                              <input
+                                type="file"
+                                multiple
+                                accept="image/*,video/mp4,video/quicktime,video/mov,video/*"
+                                className="hidden"
+                                onChange={(e) => {
+                                  if (e.target.files && e.target.files.length > 0) {
+                                    handleAddFiles(visit._id, e.target.files)
+                                    e.target.value = ''
+                                  }
+                                }}
+                              />
+                            </label>
                           )}
                         </div>
 
