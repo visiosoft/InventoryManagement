@@ -289,7 +289,7 @@ export default function SiteVisits() {
                   <Input type="date" value={visitDate} onChange={(e: any) => setVisitDate(e.target.value)} required />
                 </Field>
                 <Field label="Customer Name">
-                  <Input value={customerName} onChange={(e: any) => setCustomerName(e.target.value)} placeholder="e.g. Ahmed Ali" />
+                  <Input value={customerName} onChange={(e: any) => setCustomerName(e.target.value)} placeholder="e.g. Ahmed Ali" autoFocus />
                 </Field>
                 <Field label="Customer Phone">
                   <Input value={customerPhone} onChange={(e: any) => setCustomerPhone(e.target.value)} placeholder="e.g. +971 50 123 4567" />
@@ -304,7 +304,6 @@ export default function SiteVisits() {
                   onChange={(e: any) => setNotes(e.target.value)}
                   placeholder="Describe what you see — rooms, items, access issues, special instructions..."
                   rows={4}
-                  autoFocus
                 />
               </Field>
               {/* Home Items Checklist */}
