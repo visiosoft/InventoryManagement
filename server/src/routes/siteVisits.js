@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { SiteVisit, nextSiteVisitNo, MovingJob, nextMovingJobNo, Customer } from '../models/index.js';
-import { uploadPublicImage } from '../services/drive.js';
+import { uploadPublicImage, driveClient, driveConfigured } from '../services/drive.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -40,7 +40,7 @@ router.get('/', async (req, res) => {
 router.post('/', upload.array('files', 20), async (req, res) => {
   try {
     const visitNo = await nextSiteVisitNo();
-    const { visitDate, customerName, customerPhone, address, notes } = req.body;
+    const { visitDate, customerName, customerPhone, address, notes, items } = req.body;
 
     const images = [];
     for (const file of (req.files || [])) {
@@ -73,6 +73,7 @@ router.post('/', upload.array('files', 20), async (req, res) => {
       customerPhone: customerPhone || '',
       address: address || '',
       notes: notes || '',
+      items: items ? JSON.parse(items) : [],
       images,
       createdBy: req.user?.id || null,
       createdByName: req.user?.name || '',
@@ -81,6 +82,66 @@ router.post('/', upload.array('files', 20), async (req, res) => {
     res.status(201).json(visit);
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+// In-memory cache for Drive files to avoid re-downloading on every range request
+const driveCache = new Map();
+const CACHE_TTL = 5 * 60 * 1000;
+
+// Stream a Drive file (video/image) through the server — must be before /:id
+router.get('/drive-stream/:fileId', async (req, res) => {
+  try {
+    if (!driveConfigured()) return res.status(501).json({ error: 'Drive not configured' });
+    const fileId = req.params.fileId;
+    const drive = driveClient();
+
+    let cached = driveCache.get(fileId);
+    if (!cached || Date.now() - cached.ts > CACHE_TTL) {
+      console.log('[drive-stream] downloading', fileId);
+      const meta = await drive.files.get({ fileId, fields: 'mimeType,size,name' });
+      const mimeType = meta.data.mimeType || 'application/octet-stream';
+
+      const { data } = await drive.files.get(
+        { fileId, alt: 'media' },
+        { responseType: 'arraybuffer', timeout: 120000 }
+      );
+      const buffer = Buffer.from(data);
+      cached = { buffer, mimeType, ts: Date.now() };
+      driveCache.set(fileId, cached);
+      // evict old entries
+      if (driveCache.size > 20) {
+        const oldest = [...driveCache.entries()].sort((a, b) => a[1].ts - b[1].ts)[0];
+        if (oldest) driveCache.delete(oldest[0]);
+      }
+    }
+
+    const { buffer, mimeType } = cached;
+    const total = buffer.length;
+
+    const range = req.headers.range;
+    if (range) {
+      const parts = range.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : total - 1;
+      res.writeHead(206, {
+        'Content-Range': `bytes ${start}-${end}/${total}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': end - start + 1,
+        'Content-Type': mimeType,
+      });
+      res.end(buffer.subarray(start, end + 1));
+    } else {
+      res.writeHead(200, {
+        'Content-Type': mimeType,
+        'Content-Length': total,
+        'Accept-Ranges': 'bytes',
+      });
+      res.end(buffer);
+    }
+  } catch (err) {
+    console.error('[drive-stream]', err.message);
+    if (!res.headersSent) res.status(500).json({ error: 'Failed to stream file' });
   }
 });
 
@@ -98,13 +159,14 @@ router.get('/:id', async (req, res) => {
 // Update visit fields (no file handling)
 router.put('/:id', async (req, res) => {
   try {
-    const { visitDate, customerName, customerPhone, address, notes } = req.body;
+    const { visitDate, customerName, customerPhone, address, notes, items } = req.body;
     const update = {};
     if (visitDate !== undefined) update.visitDate = new Date(visitDate);
     if (customerName !== undefined) update.customerName = customerName;
     if (customerPhone !== undefined) update.customerPhone = customerPhone;
     if (address !== undefined) update.address = address;
     if (notes !== undefined) update.notes = notes;
+    if (items !== undefined) update.items = typeof items === 'string' ? JSON.parse(items) : items;
 
     const visit = await SiteVisit.findByIdAndUpdate(req.params.id, update, { new: true });
     if (!visit) return res.status(404).json({ error: 'Site visit not found' });
@@ -189,7 +251,7 @@ router.post('/:id/convert-to-job', async (req, res) => {
       status: 'draft',
       jobType: 'local',
       pickupAddress: visit.address || '',
-      notes: `From site visit ${visit.visitNo}:\n${visit.notes}`,
+      notes: `From site visit ${visit.visitNo}:\n${visit.notes}${visit.items?.length ? '\n\nItems: ' + visit.items.map(i => `${i.name}${i.qty > 1 ? ' x' + i.qty : ''}`).join(', ') : ''}`,
       images: visit.images.map(img => ({
         url: img.url,
         filename: img.filename,

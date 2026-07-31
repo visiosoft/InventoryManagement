@@ -30,7 +30,7 @@ function requireDrive() {
   if (!driveConfigured()) throw new Error('Google Drive is not configured. Set GOOGLE_DRIVE_* env vars.');
 }
 
-function driveClient() {
+export function driveClient() {
   let auth;
   if (hasServiceAccountConfig()) {
     auth = new google.auth.GoogleAuth({

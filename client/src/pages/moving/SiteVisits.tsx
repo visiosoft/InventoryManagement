@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2, Search, CalendarCheck, MapPin, Phone, User, X, Upload, FileVideo, Briefcase, Pencil } from 'lucide-react'
+import { Plus, Minus, Trash2, Search, CalendarCheck, MapPin, Phone, User, X, Upload, FileVideo, Briefcase, Pencil, Package } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import { Badge, Button, Field, Input, Modal, Spinner, Textarea } from '../../components/ui'
 import { useNavigate } from 'react-router-dom'
@@ -9,6 +9,15 @@ const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing
 const INK = '#14081F'
 const MUTED = '#756E80'
 const PURPLE = '#5B2BC9'
+
+const HOME_ITEMS = [
+  'Sofa', 'Bed', 'Wardrobe', 'Dining Table', 'Chairs', 'TV', 'Fridge', 'Washing Machine',
+  'Dryer', 'AC Unit', 'Microwave', 'Oven', 'Dishwasher', 'Coffee Table', 'Side Table',
+  'Desk', 'Bookshelf', 'Mirror', 'Dresser', 'Mattress', 'Nightstand', 'Shoe Rack',
+  'Kitchen Cabinet', 'Boxes', 'Bags', 'Bicycle', 'Gym Equipment', 'Piano',
+]
+
+interface ItemEntry { name: string; qty: number }
 
 const VIDEO_EXTS = /\.(mp4|mov|avi|webm|mkv|m4v|3gp|wmv)$/i
 const isVideo = (img: SiteVisitImage) => VIDEO_EXTS.test(img.filename || '') || VIDEO_EXTS.test(img.originalName || '')
@@ -30,6 +39,7 @@ interface SiteVisit {
   customerPhone: string
   address: string
   notes: string
+  items: ItemEntry[]
   images: SiteVisitImage[]
   linkedJob?: string
   createdByName: string
@@ -49,6 +59,7 @@ export default function SiteVisits() {
   const [customerPhone, setCustomerPhone] = useState('')
   const [address, setAddress] = useState('')
   const [notes, setNotes] = useState('')
+  const [items, setItems] = useState<ItemEntry[]>([])
   const [files, setFiles] = useState<File[]>([])
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
@@ -62,6 +73,7 @@ export default function SiteVisits() {
   const [editPhone, setEditPhone] = useState('')
   const [editAddr, setEditAddr] = useState('')
   const [editNotes, setEditNotes] = useState('')
+  const [editItems, setEditItems] = useState<ItemEntry[]>([])
   const [editSaving, setEditSaving] = useState(false)
   const [editErr, setEditErr] = useState('')
 
@@ -82,6 +94,19 @@ export default function SiteVisits() {
 
   const visits = data?.visits || []
 
+  const tapItem = (name: string, list: ItemEntry[], setList: React.Dispatch<React.SetStateAction<ItemEntry[]>>) => {
+    const idx = list.findIndex(i => i.name === name)
+    if (idx === -1) setList([...list, { name, qty: 1 }])
+    else setList(list.map((it, i) => i === idx ? { ...it, qty: it.qty + 1 } : it))
+  }
+
+  const decItem = (name: string, list: ItemEntry[], setList: React.Dispatch<React.SetStateAction<ItemEntry[]>>) => {
+    const idx = list.findIndex(i => i.name === name)
+    if (idx === -1) return
+    if (list[idx].qty <= 1) setList(list.filter((_, i) => i !== idx))
+    else setList(list.map((it, i) => i === idx ? { ...it, qty: it.qty - 1 } : it))
+  }
+
   const resetForm = () => {
     setShowForm(false)
     setVisitDate(new Date().toISOString().slice(0, 10))
@@ -89,6 +114,7 @@ export default function SiteVisits() {
     setCustomerPhone('')
     setAddress('')
     setNotes('')
+    setItems([])
     setFiles([])
     setError('')
   }
@@ -108,6 +134,7 @@ export default function SiteVisits() {
       fd.append('customerPhone', customerPhone)
       fd.append('address', address)
       fd.append('notes', notes)
+      if (items.length > 0) fd.append('items', JSON.stringify(items))
       files.forEach(f => fd.append('files', f))
       await api.post('/site-visits', fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -132,6 +159,7 @@ export default function SiteVisits() {
     setEditPhone(visit.customerPhone)
     setEditAddr(visit.address)
     setEditNotes(visit.notes)
+    setEditItems(visit.items || [])
     setEditErr('')
     setExpandedId(visit._id)
   }
@@ -150,6 +178,7 @@ export default function SiteVisits() {
         customerPhone: editPhone,
         address: editAddr,
         notes: editNotes,
+        items: editItems,
       })
       setEditId(null)
       qc.invalidateQueries({ queryKey: ['site-visits'] })
@@ -157,6 +186,16 @@ export default function SiteVisits() {
       setEditErr(apiError(err))
     } finally {
       setEditSaving(false)
+    }
+  }
+
+  const handleDeleteImage = async (visitId: string, imgIdx: number) => {
+    if (!confirm('Delete this file?')) return
+    try {
+      await api.delete(`/site-visits/${visitId}/images/${imgIdx}`)
+      qc.invalidateQueries({ queryKey: ['site-visits'] })
+    } catch (err) {
+      alert(apiError(err))
     }
   }
 
@@ -268,6 +307,55 @@ export default function SiteVisits() {
                   autoFocus
                 />
               </Field>
+              {/* Home Items Checklist */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-medium flex items-center gap-1.5">
+                    <Package size={14} style={{ color: PURPLE }} /> Home Items
+                  </label>
+                  {items.length > 0 && (
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: `${PURPLE}15`, color: PURPLE }}>
+                      {items.reduce((s, i) => s + i.qty, 0)} item{items.reduce((s, i) => s + i.qty, 0) !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {HOME_ITEMS.map(name => {
+                    const entry = items.find(i => i.name === name)
+                    return (
+                      <button
+                        key={name}
+                        type="button"
+                        onClick={() => tapItem(name, items, setItems)}
+                        onContextMenu={(e) => { e.preventDefault(); decItem(name, items, setItems) }}
+                        className="relative flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all select-none"
+                        style={{
+                          background: entry ? PURPLE : '#F3F0EA',
+                          color: entry ? 'white' : INK,
+                          border: entry ? `1px solid ${PURPLE}` : '1px solid transparent',
+                        }}
+                      >
+                        {name}
+                        {entry && entry.qty > 1 && (
+                          <span className="inline-flex items-center justify-center h-4 min-w-[16px] rounded-full text-[10px] font-bold bg-white" style={{ color: PURPLE }}>
+                            {entry.qty}
+                          </span>
+                        )}
+                        {entry && (
+                          <span
+                            onClick={(e) => { e.stopPropagation(); decItem(name, items, setItems) }}
+                            className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-white/30 hover:bg-white/50 transition-colors cursor-pointer"
+                          >
+                            <Minus size={10} />
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1.5">Tap to add, tap again to increase qty. Use − to decrease.</p>
+              </div>
+
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-sm font-medium">Photos & Videos</label>
@@ -385,6 +473,9 @@ export default function SiteVisits() {
                         {visit.linkedJob && (
                           <Badge tone="green" className="text-[10px]">Linked to Job</Badge>
                         )}
+                        {visit.items && visit.items.length > 0 && (
+                          <span className="text-[10px] text-muted-foreground/60 flex items-center gap-0.5"><Package size={10} /> {visit.items.reduce((s: number, i: ItemEntry) => s + i.qty, 0)} items</span>
+                        )}
                         {visit.images.length > 0 && (
                           <span className="text-[10px] text-muted-foreground/60">{visit.images.length} photo{visit.images.length !== 1 ? 's' : ''}</span>
                         )}
@@ -453,6 +544,54 @@ export default function SiteVisits() {
                         <Field label="Notes *">
                           <Textarea value={editNotes} onChange={(e: any) => setEditNotes(e.target.value)} rows={4} />
                         </Field>
+                        {/* Home Items Checklist (Edit) */}
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <label className="text-sm font-medium flex items-center gap-1.5">
+                              <Package size={14} style={{ color: PURPLE }} /> Home Items
+                            </label>
+                            {editItems.length > 0 && (
+                              <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: `${PURPLE}15`, color: PURPLE }}>
+                                {editItems.reduce((s, i) => s + i.qty, 0)} item{editItems.reduce((s, i) => s + i.qty, 0) !== 1 ? 's' : ''}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {HOME_ITEMS.map(name => {
+                              const entry = editItems.find(i => i.name === name)
+                              return (
+                                <button
+                                  key={name}
+                                  type="button"
+                                  onClick={() => tapItem(name, editItems, setEditItems)}
+                                  onContextMenu={(e) => { e.preventDefault(); decItem(name, editItems, setEditItems) }}
+                                  className="relative flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all select-none"
+                                  style={{
+                                    background: entry ? PURPLE : '#F3F0EA',
+                                    color: entry ? 'white' : INK,
+                                    border: entry ? `1px solid ${PURPLE}` : '1px solid transparent',
+                                  }}
+                                >
+                                  {name}
+                                  {entry && entry.qty > 1 && (
+                                    <span className="inline-flex items-center justify-center h-4 min-w-[16px] rounded-full text-[10px] font-bold bg-white" style={{ color: PURPLE }}>
+                                      {entry.qty}
+                                    </span>
+                                  )}
+                                  {entry && (
+                                    <span
+                                      onClick={(e) => { e.stopPropagation(); decItem(name, editItems, setEditItems) }}
+                                      className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-white/30 hover:bg-white/50 transition-colors cursor-pointer"
+                                    >
+                                      <Minus size={10} />
+                                    </span>
+                                  )}
+                                </button>
+                              )
+                            })}
+                          </div>
+                          <p className="text-[11px] text-muted-foreground mt-1.5">Tap to add, tap again to increase qty. Use − to decrease.</p>
+                        </div>
                         {editErr && <p className="text-sm text-red-600">{editErr}</p>}
                         <div className="flex justify-end gap-2">
                           <Button variant="outline" onClick={cancelEdit}>Cancel</Button>
@@ -484,25 +623,55 @@ export default function SiteVisits() {
                             <span className="text-xs font-medium text-muted-foreground">Notes</span>
                             <p className="whitespace-pre-wrap">{visit.notes}</p>
                           </div>
+                          {visit.items && visit.items.length > 0 && (
+                            <div className="sm:col-span-2">
+                              <span className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-2">
+                                <Package size={12} /> Home Items ({visit.items.reduce((s, i) => s + i.qty, 0)})
+                              </span>
+                              <div className="flex flex-wrap gap-1.5">
+                                {visit.items.map((it, i) => (
+                                  <span
+                                    key={i}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium"
+                                    style={{ background: `${PURPLE}12`, color: PURPLE, border: `1px solid ${PURPLE}25` }}
+                                  >
+                                    {it.name}
+                                    {it.qty > 1 && (
+                                      <span className="inline-flex items-center justify-center h-4 min-w-[16px] rounded-full text-[10px] font-bold bg-white" style={{ color: PURPLE }}>
+                                        {it.qty}
+                                      </span>
+                                    )}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
 
                         {visit.images.length > 0 && (() => {
-                          const photos = visit.images.filter(img => !isVideo(img))
-                          const videos = visit.images.filter(img => isVideo(img))
+                          const indexed = visit.images.map((img, i) => ({ img, origIdx: i }))
+                          const photos = indexed.filter(x => !isVideo(x.img))
+                          const videos = indexed.filter(x => isVideo(x.img))
                           return (
                             <div className="space-y-4">
                               {photos.length > 0 && (
                                 <div>
                                   <span className="text-xs font-medium text-muted-foreground mb-2 block">Photos ({photos.length})</span>
                                   <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-                                    {photos.map((img, idx) => {
+                                    {photos.map(({ img, origIdx }) => {
                                       const thumbUrl = img.storage === 'drive' && img.driveFileId
                                         ? `https://drive.google.com/thumbnail?id=${img.driveFileId}&sz=w400`
                                         : img.url
                                       return (
-                                        <div key={idx} className="aspect-square rounded-lg overflow-hidden cursor-pointer hover:opacity-90 border"
-                                          onClick={() => setLightboxImg(img)}>
-                                          <img src={thumbUrl} className="w-full h-full object-cover" loading="lazy" />
+                                        <div key={origIdx} className="relative aspect-square rounded-lg overflow-hidden border group">
+                                          <img src={thumbUrl} className="w-full h-full object-cover cursor-pointer" loading="lazy"
+                                            onClick={() => setLightboxImg(img)} />
+                                          <button
+                                            onClick={(e) => { e.stopPropagation(); handleDeleteImage(visit._id, origIdx) }}
+                                            className="absolute top-1 right-1 h-6 w-6 rounded-full bg-black/60 flex items-center justify-center text-white sm:opacity-0 sm:group-hover:opacity-100 hover:bg-red-600 transition-all"
+                                          >
+                                            <X size={12} />
+                                          </button>
                                         </div>
                                       )
                                     })}
@@ -513,23 +682,31 @@ export default function SiteVisits() {
                                 <div>
                                   <span className="text-xs font-medium text-muted-foreground mb-2 block">Videos ({videos.length})</span>
                                   <div className="space-y-3 sm:grid sm:grid-cols-2 sm:gap-3 sm:space-y-0">
-                                    {videos.map((img, idx) => (
-                                      <div key={idx} className="rounded-xl overflow-hidden border bg-black" style={{ minWidth: 0 }}>
+                                    {videos.map(({ img, origIdx }) => (
+                                      <div key={origIdx} className="rounded-xl overflow-hidden border bg-black" style={{ minWidth: 0 }}>
                                         <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
                                           <video
                                             src={img.driveFileId
-                                              ? `https://drive.google.com/uc?export=download&id=${img.driveFileId}`
+                                              ? `/api/site-visits/drive-stream/${img.driveFileId}`
                                               : img.url}
                                             controls
                                             playsInline
-                                            preload="metadata"
+                                            preload="none"
                                             className="absolute inset-0 w-full h-full object-contain bg-black"
                                           />
                                         </div>
-                                        <div className="px-3 py-2 bg-white flex items-center gap-2 min-w-0">
-                                          <FileVideo size={14} className="text-muted-foreground shrink-0" />
-                                          <span className="text-xs text-muted-foreground truncate">{img.originalName || img.filename}</span>
-                                          {img.size > 0 && <span className="text-[10px] text-muted-foreground/50 shrink-0">{(img.size / 1024 / 1024).toFixed(1)} MB</span>}
+                                        <div className="px-3 py-2 bg-white flex items-center justify-between min-w-0">
+                                          <div className="flex items-center gap-2 min-w-0">
+                                            <FileVideo size={14} className="text-muted-foreground shrink-0" />
+                                            <span className="text-xs text-muted-foreground truncate">{img.originalName || img.filename}</span>
+                                            {img.size > 0 && <span className="text-[10px] text-muted-foreground/50 shrink-0">{(img.size / 1024 / 1024).toFixed(1)} MB</span>}
+                                          </div>
+                                          <button
+                                            onClick={() => handleDeleteImage(visit._id, origIdx)}
+                                            className="h-7 w-7 rounded-lg border border-red-200 flex items-center justify-center text-red-500 hover:text-red-600 hover:bg-red-50 transition-colors shrink-0 ml-2"
+                                          >
+                                            <Trash2 size={13} />
+                                          </button>
                                         </div>
                                       </div>
                                     ))}
@@ -622,7 +799,7 @@ export default function SiteVisits() {
               <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
                   <video
                     src={lightboxImg.driveFileId
-                      ? `https://drive.google.com/uc?export=download&id=${lightboxImg.driveFileId}`
+                      ? `/api/site-visits/drive-stream/${lightboxImg.driveFileId}`
                       : lightboxImg.url}
                     controls
                     autoPlay

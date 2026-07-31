@@ -132,7 +132,10 @@ app.use(
 app.use('/api/moving-reports', requireAuth, movingReportRoutes);
 app.use('/api/moving-surveys', requireAuth, movingSurveyRoutes);
 app.use('/api/moving-claims', requireAuth, movingClaimRoutes);
-app.use('/api/site-visits', requireAuth, siteVisitRoutes);
+app.use('/api/site-visits',
+  (req, res, next) => req.path.startsWith('/drive-stream/') ? next() : requireAuth(req, res, next),
+  siteVisitRoutes,
+);
 app.use('/api/products', requireAuth, productRoutes);
 app.use('/api/unit-types', requireAuth, unitTypeRoutes);
 app.use(

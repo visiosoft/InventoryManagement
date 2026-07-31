@@ -1107,6 +1107,7 @@ const siteVisitSchema = new Schema({
   customerPhone: { type: String, default: '' },
   address: { type: String, default: '' },
   notes: { type: String, required: true },
+  items: [{ name: { type: String }, qty: { type: Number, default: 1 } }],
   images: [movingJobImageSchema],
   linkedJob: { type: Schema.Types.ObjectId, ref: 'MovingJob', default: null },
   createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
