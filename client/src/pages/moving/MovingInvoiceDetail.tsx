@@ -4,7 +4,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft, Download, Share2, Edit, Plus, Trash2, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingInvoice, MovingInvoiceStatus } from '../../lib/types'
-import { Badge, Button, Field, Input, Modal, Select, Spinner } from '../../components/ui'
+import { Badge, Button, Field, Input, Modal, Select, Spinner, Textarea } from '../../components/ui'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
 const INK = '#14081F'
@@ -53,9 +53,13 @@ export default function MovingInvoiceDetail() {
   const [payModal, setPayModal] = useState(false)
   const [itemsModal, setItemsModal] = useState(false)
   const [reviseModal, setReviseModal] = useState(false)
-  const [items, setItems] = useState<Array<{ description: string; qty: number; rate: number; amount: number }>>([])
+  const [items, setItems] = useState<Array<{ description: string; subDescription?: string; qty: number; rate: number; amount: number }>>([])
   const [_editIdx, setEditIdx] = useState<number | null>(null)
   const [shareToken, setShareToken] = useState<string>('')
+  const [notesEdit, setNotesEdit] = useState(false)
+  const [notesVal, setNotesVal] = useState('')
+  const [termsEdit, setTermsEdit] = useState(false)
+  const [termsVal, setTermsVal] = useState('')
 
   const { data: invoice, isLoading } = useQuery<MovingInvoice>({
     queryKey: ['moving-invoice', id],
@@ -77,6 +81,12 @@ export default function MovingInvoiceDetail() {
       return api.put(`/moving-invoices/${id}`, { items: newItems, total, balanceDue: Math.max(0, total - paid) }).then(r => r.data)
     },
     onSuccess: () => { invalidate(); setItemsModal(false); setEditIdx(null) },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  const updateFieldMut = useMutation({
+    mutationFn: (fields: Record<string, any>) => api.put(`/moving-invoices/${id}`, fields).then(r => r.data),
+    onSuccess: () => { invalidate(); setNotesEdit(false); setTermsEdit(false) },
     onError: (e) => setErr(apiError(e)),
   })
 
@@ -328,11 +338,14 @@ export default function MovingInvoiceDetail() {
             <tbody>
               {items.map((it, i) => (
                 <tr key={i} style={{ borderBottom: '1px solid rgba(20,8,31,0.04)' }} className="hover:bg-[#FAF8F5] transition-colors">
-                  <td style={{ padding: '12px 16px', fontSize: 13, color: MUTED }}>{i + 1}</td>
-                  <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 500, color: INK }}>{it.description}</td>
-                  <td style={{ padding: '12px 16px', fontSize: 13, color: INK, textAlign: 'right' }}>{it.qty}</td>
-                  <td style={{ padding: '12px 16px', fontSize: 13, color: INK, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>AED {fmt(it.rate)}</td>
-                  <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: INK, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>AED {fmt(it.amount)}</td>
+                  <td style={{ padding: '12px 16px', fontSize: 13, color: MUTED, verticalAlign: 'top' }}>{i + 1}</td>
+                  <td style={{ padding: '12px 16px', verticalAlign: 'top' }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: INK }}>{it.description}</div>
+                    {it.subDescription && <div style={{ fontSize: 11, color: MUTED, marginTop: 2, lineHeight: 1.4 }}>{it.subDescription}</div>}
+                  </td>
+                  <td style={{ padding: '12px 16px', fontSize: 13, color: INK, textAlign: 'right', verticalAlign: 'top' }}>{it.qty}</td>
+                  <td style={{ padding: '12px 16px', fontSize: 13, color: INK, textAlign: 'right', fontVariantNumeric: 'tabular-nums', verticalAlign: 'top' }}>AED {fmt(it.rate)}</td>
+                  <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: INK, textAlign: 'right', fontVariantNumeric: 'tabular-nums', verticalAlign: 'top' }}>AED {fmt(it.amount)}</td>
                 </tr>
               ))}
             </tbody>
@@ -346,6 +359,7 @@ export default function MovingInvoiceDetail() {
                 <div className="min-w-0">
                   <span style={{ fontSize: 11, color: MUTED }}>#{i + 1}</span>
                   <p style={{ fontSize: 13, fontWeight: 500, color: INK }}>{it.description}</p>
+                  {it.subDescription && <p style={{ fontSize: 11, color: MUTED, marginTop: 1, lineHeight: 1.4 }}>{it.subDescription}</p>}
                 </div>
                 <span style={{ fontSize: 13, fontWeight: 600, color: PURPLE, whiteSpace: 'nowrap' }}>AED {fmt(it.amount)}</span>
               </div>
@@ -533,61 +547,75 @@ export default function MovingInvoiceDetail() {
       <Modal open={itemsModal} title="Edit Line Items" onClose={() => setItemsModal(false)} className="max-w-6xl w-[90vw]">
         <div className="space-y-4">
           {items.map((item, i) => (
-            <div key={i} className="grid grid-cols-2 sm:grid-cols-5 gap-2 items-end p-3 border rounded">
-              <Field label="Description">
+            <div key={i} className="p-3 border rounded space-y-2">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 items-end">
+                <Field label="Description">
+                  <Input
+                    value={item.description}
+                    onChange={e => {
+                      const updated = [...items]
+                      updated[i].description = e.target.value
+                      setItems(updated)
+                    }}
+                  />
+                </Field>
+                <Field label="Qty">
+                  <Input
+                    type="number"
+                    value={item.qty}
+                    onChange={e => {
+                      const updated = [...items]
+                      const qty = Number(e.target.value)
+                      updated[i].qty = qty
+                      updated[i].amount = qty * updated[i].rate
+                      setItems(updated)
+                    }}
+                  />
+                </Field>
+                <Field label="Rate (AED)">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={item.rate}
+                    onChange={e => {
+                      const updated = [...items]
+                      const rate = Number(e.target.value)
+                      updated[i].rate = rate
+                      updated[i].amount = updated[i].qty * rate
+                      setItems(updated)
+                    }}
+                  />
+                </Field>
+                <Field label="Amount">
+                  <Input disabled value={`AED ${fmt(item.amount)}`} />
+                </Field>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setItems(items.filter((_, idx) => idx !== i))}
+                  className="text-red-500 hover:text-red-700"
+                >
+                  <Trash2 size={14} />
+                </Button>
+              </div>
+              <div>
                 <Input
-                  value={item.description}
+                  value={item.subDescription || ''}
                   onChange={e => {
                     const updated = [...items]
-                    updated[i].description = e.target.value
+                    updated[i].subDescription = e.target.value
                     setItems(updated)
                   }}
+                  placeholder="Sub-description (optional) — additional details for this item"
+                  className="text-xs"
                 />
-              </Field>
-              <Field label="Qty">
-                <Input
-                  type="number"
-                  value={item.qty}
-                  onChange={e => {
-                    const updated = [...items]
-                    const qty = Number(e.target.value)
-                    updated[i].qty = qty
-                    updated[i].amount = qty * updated[i].rate
-                    setItems(updated)
-                  }}
-                />
-              </Field>
-              <Field label="Rate (AED)">
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={item.rate}
-                  onChange={e => {
-                    const updated = [...items]
-                    const rate = Number(e.target.value)
-                    updated[i].rate = rate
-                    updated[i].amount = updated[i].qty * rate
-                    setItems(updated)
-                  }}
-                />
-              </Field>
-              <Field label="Amount">
-                <Input disabled value={`AED ${fmt(item.amount)}`} />
-              </Field>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setItems(items.filter((_, idx) => idx !== i))}
-                className="text-red-500 hover:text-red-700"
-              >
-                <Trash2 size={14} />
-              </Button>
+              </div>
             </div>
           ))}
 
           <Button
             variant="outline"
-            onClick={() => setItems([...items, { description: '', qty: 1, rate: 0, amount: 0 }])}
+            onClick={() => setItems([...items, { description: '', subDescription: '', qty: 1, rate: 0, amount: 0 }])}
             className="w-full"
           >
             <Plus size={14} className="mr-1" /> Add Item
@@ -610,6 +638,61 @@ export default function MovingInvoiceDetail() {
           </div>
         </div>
       </Modal>
+
+      {/* Customer Notes & Terms */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: '20px 24px' }}>
+          <div className="flex items-center justify-between mb-2">
+            <div style={{ ...HEADING, fontSize: 15, fontWeight: 700, color: INK }}>Customer Notes</div>
+            {!notesEdit && (
+              <Button size="sm" variant="outline" onClick={() => { setNotesVal(invoice.notes || ''); setNotesEdit(true) }}>
+                <Edit size={13} className="mr-1" />Edit
+              </Button>
+            )}
+          </div>
+          {notesEdit ? (
+            <div className="space-y-2">
+              <Textarea value={notesVal} onChange={(e: any) => setNotesVal(e.target.value)} rows={4} placeholder="Add notes visible to the customer..." autoFocus />
+              <div className="flex justify-end gap-2">
+                <Button size="sm" variant="outline" onClick={() => setNotesEdit(false)}>Cancel</Button>
+                <Button size="sm" onClick={() => updateFieldMut.mutate({ notes: notesVal })} disabled={updateFieldMut.isPending}>
+                  {updateFieldMut.isPending ? 'Saving…' : 'Save'}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <p style={{ fontSize: 13, color: invoice.notes ? MUTED : '#C4BFD0', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+              {invoice.notes || 'No notes added'}
+            </p>
+          )}
+        </div>
+
+        <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: '20px 24px' }}>
+          <div className="flex items-center justify-between mb-2">
+            <div style={{ ...HEADING, fontSize: 15, fontWeight: 700, color: INK }}>Terms & Conditions</div>
+            {!termsEdit && (
+              <Button size="sm" variant="outline" onClick={() => { setTermsVal(invoice.termsAndConditions || ''); setTermsEdit(true) }}>
+                <Edit size={13} className="mr-1" />Edit
+              </Button>
+            )}
+          </div>
+          {termsEdit ? (
+            <div className="space-y-2">
+              <Textarea value={termsVal} onChange={(e: any) => setTermsVal(e.target.value)} rows={4} placeholder="Add terms and conditions..." autoFocus />
+              <div className="flex justify-end gap-2">
+                <Button size="sm" variant="outline" onClick={() => setTermsEdit(false)}>Cancel</Button>
+                <Button size="sm" onClick={() => updateFieldMut.mutate({ termsAndConditions: termsVal })} disabled={updateFieldMut.isPending}>
+                  {updateFieldMut.isPending ? 'Saving…' : 'Save'}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <p style={{ fontSize: 13, color: invoice.termsAndConditions ? MUTED : '#C4BFD0', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+              {invoice.termsAndConditions || 'No terms added'}
+            </p>
+          )}
+        </div>
+      </div>
 
       <Modal open={deleteConfirm} title="Delete Invoice" onClose={() => setDeleteConfirm(false)}>
         <div className="space-y-4">
