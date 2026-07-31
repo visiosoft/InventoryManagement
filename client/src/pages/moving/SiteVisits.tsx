@@ -84,6 +84,11 @@ export default function SiteVisits() {
   const [converting, setConverting] = useState(false)
   const [convertErr, setConvertErr] = useState('')
 
+  // add more files to existing visit
+  const addFileRef = useRef<HTMLInputElement>(null)
+  const [addingToVisitId, setAddingToVisitId] = useState<string | null>(null)
+  const [addFileProgress, setAddFileProgress] = useState(0)
+
   // lightbox
   const [lightboxImg, setLightboxImg] = useState<SiteVisitImage | null>(null)
 
@@ -186,6 +191,29 @@ export default function SiteVisits() {
       setEditErr(apiError(err))
     } finally {
       setEditSaving(false)
+    }
+  }
+
+  const handleAddFiles = async (visitId: string, fileList: FileList) => {
+    const arr = Array.from(fileList).filter(f => f.size <= 50 * 1024 * 1024)
+    if (!arr.length) return
+    setAddingToVisitId(visitId)
+    setAddFileProgress(0)
+    try {
+      const fd = new FormData()
+      arr.forEach(f => fd.append('files', f))
+      await api.post(`/site-visits/${visitId}/images`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (e) => {
+          if (e.total) setAddFileProgress(Math.round((e.loaded * 100) / e.total))
+        },
+      })
+      qc.invalidateQueries({ queryKey: ['site-visits'] })
+    } catch (err) {
+      alert(apiError(err))
+    } finally {
+      setAddingToVisitId(null)
+      setAddFileProgress(0)
     }
   }
 
@@ -715,6 +743,42 @@ export default function SiteVisits() {
                             </div>
                           )
                         })()}
+
+                        {/* Add more photos/videos */}
+                        <div>
+                          <input
+                            ref={addFileRef}
+                            type="file"
+                            multiple
+                            accept="image/*,video/mp4,video/quicktime,video/mov,video/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              if (e.target.files && e.target.files.length > 0) {
+                                handleAddFiles(visit._id, e.target.files)
+                                e.target.value = ''
+                              }
+                            }}
+                          />
+                          {addingToVisitId === visit._id ? (
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="text-muted-foreground font-medium">Uploading…</span>
+                                <span className="font-semibold" style={{ color: PURPLE }}>{addFileProgress}%</span>
+                              </div>
+                              <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
+                                <div className="h-full rounded-full transition-all duration-300" style={{ width: `${addFileProgress}%`, background: PURPLE }} />
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => addFileRef.current?.click()}
+                              className="flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-dashed border-primary/30 text-xs font-medium text-primary hover:bg-primary/5 transition-colors"
+                            >
+                              <Upload size={14} /> Add Photos / Videos
+                            </button>
+                          )}
+                        </div>
 
                         <div className="flex items-center justify-between">
                           <div className="text-xs text-muted-foreground/60">

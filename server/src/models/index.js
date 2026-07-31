@@ -909,6 +909,7 @@ movingJobSchema.index({ scheduledDate: 1 });
 const movingQuoteItemSchema = new Schema(
   {
     description: { type: String, default: '' },
+    subDescription: { type: String, default: '' },
     qty: { type: Number, default: 1 },
     rate: { type: Number, default: 0 },
     amount: { type: Number, default: 0 },

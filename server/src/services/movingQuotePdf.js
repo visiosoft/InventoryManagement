@@ -144,11 +144,18 @@ export function generateMovingQuotePdf(quote) {
     y += hH;
 
     (quote.items || []).forEach((it, idx) => {
-      const rH = 26;
+      const hasSub = !!it.subDescription;
+      const rH = hasSub ? 38 : 26;
       if (idx % 2 === 1) doc.rect(TX, y, TW, rH).fill(ROW_ALT);
       doc.font('Helvetica').fontSize(9).fillColor(BLACK);
       doc.text(String(idx + 1), TX + 8, y + 8, { width: nW - 8 });
       doc.text(it.description || '-', TX + nW + 6, y + 8, { width: iW - 12 });
+      if (hasSub) {
+        doc.font('Helvetica').fontSize(7).fillColor(GRAY);
+        doc.text(it.subDescription, TX + nW + 6, y + 20, { width: iW - 12 });
+        doc.fillColor(BLACK);
+      }
+      doc.font('Helvetica').fontSize(9).fillColor(BLACK);
       doc.text(String(it.qty ?? 1), TX + nW + iW, y + 8, { width: qW, align: 'right' });
       doc.text(num(it.rate), TX + nW + iW + qW, y + 8, { width: rW, align: 'right' });
       doc.text(num(it.amount), TX + nW + iW + qW + rW, y + 8, { width: aW - 8, align: 'right' });

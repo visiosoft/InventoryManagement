@@ -665,6 +665,7 @@ export interface MovingJob {
 
 export interface MovingQuoteItem {
   description: string
+  subDescription?: string
   qty: number
   rate: number
   amount: number
