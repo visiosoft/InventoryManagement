@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, FileText, MapPin, Users, Truck as TruckIcon, AlertCircle, Package, Star, Wrench, Camera, X, Tag, CheckCircle2, Pencil, Image as ImageIcon, Check, Share2, Copy, ExternalLink, CalendarCheck, Upload, FileVideo, Clock } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, FileText, MapPin, Users, Truck as TruckIcon, AlertCircle, Package, Star, Wrench, Camera, X, Tag, CheckCircle2, Pencil, Image as ImageIcon, Check, Share2, Copy, ExternalLink, CalendarCheck, Upload, FileVideo } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingJob, MovingJobStatus, Worker, Truck, MovingJobImage } from '../../lib/types'
 
@@ -1290,7 +1290,7 @@ export default function MovingJobDetail() {
       </Card>
 
       {/* Site Visits */}
-      <Card id="site-visits">
+      <div id="site-visits"><Card>
         <CardHeader
           title={<span className="flex items-center gap-2"><CalendarCheck size={15} />Site Visits</span>}
           subtitle={`${((job as any).clientVisits || []).length} visit${((job as any).clientVisits || []).length !== 1 ? 's' : ''} · document items and rooms before the move`}
@@ -1447,7 +1447,7 @@ export default function MovingJobDetail() {
             </div>
           ))}
         </CardBody>
-      </Card>
+      </Card></div>
 
       {/* Lightbox */}
       {lightboxImg && (
