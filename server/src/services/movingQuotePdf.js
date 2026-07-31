@@ -176,8 +176,9 @@ export function generateMovingQuotePdf(quote) {
     y += 16;
 
     if (quote.discount) {
-      doc.font('Helvetica').fontSize(9).fillColor(GRAY).text('Discount', tX, y, { width: lblW, align: 'right' });
-      doc.font('Helvetica').fontSize(9).fillColor(BLACK).text(`-${num(quote.discount)}`, valX, y, { width: valW, align: 'right' });
+      const discountAmt = (quote.subTotal || 0) * quote.discount / 100;
+      doc.font('Helvetica').fontSize(9).fillColor(GRAY).text(`Discount (${quote.discount}%)`, tX, y, { width: lblW, align: 'right' });
+      doc.font('Helvetica').fontSize(9).fillColor(BLACK).text(`-${num(discountAmt)}`, valX, y, { width: valW, align: 'right' });
       y += 16;
     }
 

@@ -60,6 +60,7 @@ export default function MovingInvoiceDetail() {
   const [notesVal, setNotesVal] = useState('')
   const [termsEdit, setTermsEdit] = useState(false)
   const [termsVal, setTermsVal] = useState('')
+  const [saveAsDefault, setSaveAsDefault] = useState(false)
 
   const { data: invoice, isLoading } = useQuery<MovingInvoice>({
     queryKey: ['moving-invoice', id],
@@ -671,17 +672,32 @@ export default function MovingInvoiceDetail() {
           <div className="flex items-center justify-between mb-2">
             <div style={{ ...HEADING, fontSize: 15, fontWeight: 700, color: INK }}>Terms & Conditions</div>
             {!termsEdit && (
-              <Button size="sm" variant="outline" onClick={() => { setTermsVal(invoice.termsAndConditions || ''); setTermsEdit(true) }}>
-                <Edit size={13} className="mr-1" />Edit
-              </Button>
+              <div className="flex gap-2">
+                {!invoice.termsAndConditions && localStorage.getItem('pb_default_terms') && (
+                  <Button size="sm" variant="outline" onClick={() => {
+                    const def = localStorage.getItem('pb_default_terms') || ''
+                    updateFieldMut.mutate({ termsAndConditions: def })
+                  }}>Load Default</Button>
+                )}
+                <Button size="sm" variant="outline" onClick={() => { setTermsVal(invoice.termsAndConditions || ''); setSaveAsDefault(false); setTermsEdit(true) }}>
+                  <Edit size={13} className="mr-1" />Edit
+                </Button>
+              </div>
             )}
           </div>
           {termsEdit ? (
             <div className="space-y-2">
               <Textarea value={termsVal} onChange={(e: any) => setTermsVal(e.target.value)} rows={4} placeholder="Add terms and conditions..." autoFocus />
+              <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: MUTED }}>
+                <input type="checkbox" checked={saveAsDefault} onChange={e => setSaveAsDefault(e.target.checked)} />
+                Save as default for future quotes
+              </label>
               <div className="flex justify-end gap-2">
                 <Button size="sm" variant="outline" onClick={() => setTermsEdit(false)}>Cancel</Button>
-                <Button size="sm" onClick={() => updateFieldMut.mutate({ termsAndConditions: termsVal })} disabled={updateFieldMut.isPending}>
+                <Button size="sm" onClick={() => {
+                  if (saveAsDefault) localStorage.setItem('pb_default_terms', termsVal)
+                  updateFieldMut.mutate({ termsAndConditions: termsVal })
+                }} disabled={updateFieldMut.isPending}>
                   {updateFieldMut.isPending ? 'Saving…' : 'Save'}
                 </Button>
               </div>

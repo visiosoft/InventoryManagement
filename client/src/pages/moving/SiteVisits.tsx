@@ -756,13 +756,16 @@ export default function SiteVisits() {
                               </div>
                             </div>
                           ) : (
-                            <label className="flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-dashed border-primary/30 text-xs font-medium text-primary hover:bg-primary/5 transition-colors cursor-pointer w-fit">
+                            <label
+                              className="flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-dashed border-primary/30 text-xs font-medium text-primary hover:bg-primary/5 transition-colors cursor-pointer w-fit"
+                              onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                            >
                               <Upload size={14} /> Add Photos / Videos
                               <input
                                 type="file"
                                 multiple
                                 accept="image/*,video/mp4,video/quicktime,video/mov,video/*"
-                                className="hidden"
+                                style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', opacity: 0 }}
                                 onChange={(e) => {
                                   if (e.target.files && e.target.files.length > 0) {
                                     handleAddFiles(visit._id, e.target.files)

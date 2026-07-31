@@ -58,6 +58,8 @@ export default function MovingQuoteDetail() {
   const [notesVal, setNotesVal] = useState('')
   const [termsEdit, setTermsEdit] = useState(false)
   const [termsVal, setTermsVal] = useState('')
+  const [saveAsDefault, setSaveAsDefault] = useState(false)
+  const [discountPct, setDiscountPct] = useState(0)
 
   const { data: quote, isLoading } = useQuery<MovingQuote>({
     queryKey: ['moving-quote', id],
@@ -74,8 +76,10 @@ export default function MovingQuoteDetail() {
 
   const updateItemsMut = useMutation({
     mutationFn: (newItems: typeof items) => {
-      const total = newItems.reduce((s, i) => s + i.amount, 0)
-      return api.put(`/moving-quotes/${id}`, { items: newItems, total }).then(r => r.data)
+      const subTotal = newItems.reduce((s, i) => s + i.amount, 0)
+      const discountAmt = subTotal * discountPct / 100
+      const total = subTotal - discountAmt
+      return api.put(`/moving-quotes/${id}`, { items: newItems, subTotal, discount: discountPct, total }).then(r => r.data)
     },
     onSuccess: () => { invalidate(); setItemsModal(false); setEditIdx(null) },
     onError: (e) => setErr(apiError(e)),
@@ -98,6 +102,7 @@ export default function MovingQuoteDetail() {
 
   if (items.length === 0 && quote.items && quote.items.length > 0) {
     setItems(quote.items as typeof items)
+    setDiscountPct(quote.discount || 0)
   }
 
   const transitions = STATUS_TRANSITIONS[quote.status] ?? []
@@ -232,9 +237,15 @@ export default function MovingQuoteDetail() {
               <span>Sub Total</span>
               <span style={{ fontVariantNumeric: 'tabular-nums', color: INK }}>AED {fmt(total)}</span>
             </div>
+            {(quote.discount || 0) > 0 && (
+              <div className="flex gap-8" style={{ fontSize: 13, color: '#EF4444' }}>
+                <span>Discount ({quote.discount}%)</span>
+                <span style={{ fontVariantNumeric: 'tabular-nums' }}>-AED {fmt(total * (quote.discount || 0) / 100)}</span>
+              </div>
+            )}
             <div className="flex gap-8" style={{ fontSize: 16, fontWeight: 700, color: PURPLE, ...HEADING }}>
               <span>Total</span>
-              <span style={{ fontVariantNumeric: 'tabular-nums' }}>AED {fmt(total)}</span>
+              <span style={{ fontVariantNumeric: 'tabular-nums' }}>AED {fmt(total - total * (quote.discount || 0) / 100)}</span>
             </div>
           </div>
         </div>
@@ -272,17 +283,32 @@ export default function MovingQuoteDetail() {
           <div className="flex items-center justify-between mb-2">
             <div style={{ ...HEADING, fontSize: 15, fontWeight: 700, color: INK }}>Terms & Conditions</div>
             {!termsEdit && (
-              <Button size="sm" variant="outline" onClick={() => { setTermsVal(quote.termsAndConditions || ''); setTermsEdit(true) }}>
-                <Edit size={13} className="mr-1" />Edit
-              </Button>
+              <div className="flex gap-2">
+                {!quote.termsAndConditions && localStorage.getItem('pb_default_terms') && (
+                  <Button size="sm" variant="outline" onClick={() => {
+                    const def = localStorage.getItem('pb_default_terms') || ''
+                    updateFieldMut.mutate({ termsAndConditions: def })
+                  }}>Load Default</Button>
+                )}
+                <Button size="sm" variant="outline" onClick={() => { setTermsVal(quote.termsAndConditions || ''); setSaveAsDefault(false); setTermsEdit(true) }}>
+                  <Edit size={13} className="mr-1" />Edit
+                </Button>
+              </div>
             )}
           </div>
           {termsEdit ? (
             <div className="space-y-2">
               <Textarea value={termsVal} onChange={(e: any) => setTermsVal(e.target.value)} rows={4} placeholder="Add terms and conditions..." autoFocus />
+              <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: MUTED }}>
+                <input type="checkbox" checked={saveAsDefault} onChange={e => setSaveAsDefault(e.target.checked)} />
+                Save as default for future quotes
+              </label>
               <div className="flex justify-end gap-2">
                 <Button size="sm" variant="outline" onClick={() => setTermsEdit(false)}>Cancel</Button>
-                <Button size="sm" onClick={() => updateFieldMut.mutate({ termsAndConditions: termsVal })} disabled={updateFieldMut.isPending}>
+                <Button size="sm" onClick={() => {
+                  if (saveAsDefault) localStorage.setItem('pb_default_terms', termsVal)
+                  updateFieldMut.mutate({ termsAndConditions: termsVal })
+                }} disabled={updateFieldMut.isPending}>
                   {updateFieldMut.isPending ? 'Saving…' : 'Save'}
                 </Button>
               </div>
@@ -373,10 +399,31 @@ export default function MovingQuoteDetail() {
             <Plus size={14} className="mr-1" /> Add Item
           </Button>
 
-          <div className="border-t pt-3">
+          <div className="border-t pt-3 space-y-2">
+            <div className="flex justify-end items-center gap-3">
+              <span className="text-sm text-muted-foreground">Sub Total:</span>
+              <span className="text-sm font-semibold" style={{ fontVariantNumeric: 'tabular-nums' }}>AED {fmt(total)}</span>
+            </div>
+            <div className="flex justify-end items-center gap-3">
+              <span className="text-sm text-muted-foreground">Discount %:</span>
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                value={discountPct}
+                onChange={e => setDiscountPct(Math.min(100, Math.max(0, Number(e.target.value))))}
+                className="w-20 text-right text-sm"
+              />
+            </div>
+            {discountPct > 0 && (
+              <div className="flex justify-end items-center gap-3">
+                <span className="text-sm text-red-500">Discount:</span>
+                <span className="text-sm font-semibold text-red-500" style={{ fontVariantNumeric: 'tabular-nums' }}>-AED {fmt(total * discountPct / 100)}</span>
+              </div>
+            )}
             <div className="flex justify-end gap-8 text-sm font-semibold">
               <span>Total:</span>
-              <span style={{ color: PURPLE }}>AED {fmt(total)}</span>
+              <span style={{ color: PURPLE }}>AED {fmt(total - total * discountPct / 100)}</span>
             </div>
           </div>
 

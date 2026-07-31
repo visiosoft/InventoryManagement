@@ -76,6 +76,7 @@ export default function MovingQuotes() {
       customer: customerId,
       items: [{ description: '', qty: 1, rate: 0, amount: 0 }],
       subTotal: 0, total: 0,
+      termsAndConditions: localStorage.getItem('pb_default_terms') || '',
     }).then(r => r.data),
     onSuccess: (quote) => { qc.invalidateQueries({ queryKey: ['moving-quotes'] }); navigate(`/moving/quotes/${quote._id}`) },
     onError: (e) => setErr(apiError(e)),
