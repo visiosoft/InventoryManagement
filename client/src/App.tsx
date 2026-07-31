@@ -74,6 +74,7 @@ import MovingInvoiceDetail from './pages/moving/MovingInvoiceDetail'
 import MovingQuotes from './pages/moving/MovingQuotes'
 import MovingQuoteDetail from './pages/moving/MovingQuoteDetail'
 import MovingClaims from './pages/moving/MovingClaims'
+import SiteVisits from './pages/moving/SiteVisits'
 import MovingSurveyDetail from './pages/moving/MovingSurveyDetail'
 import ClientUpload from './pages/moving/ClientUpload'
 import SharedJobView from './pages/moving/SharedJobView'
@@ -180,6 +181,7 @@ export default function App() {
         <Route path="/moving/quotes/:id" element={<PermGuard module="moving_quotes"><MovingQuoteDetail /></PermGuard>} />
         <Route path="/moving/invoices" element={<PermGuard module="moving_invoices"><MovingInvoices /></PermGuard>} />
         <Route path="/moving/invoices/:id" element={<PermGuard module="moving_invoices"><MovingInvoiceDetail /></PermGuard>} />
+        <Route path="/moving/visits" element={<PermGuard module="moving_jobs"><SiteVisits /></PermGuard>} />
         <Route path="/moving/claims" element={<PermGuard module="moving_dashboard"><MovingClaims /></PermGuard>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

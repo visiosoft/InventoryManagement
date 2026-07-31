@@ -1100,6 +1100,19 @@ movingClaimSchema.index({ job: 1 });
 movingClaimSchema.index({ customer: 1 });
 movingClaimSchema.index({ status: 1, createdAt: -1 });
 
+const siteVisitSchema = new Schema({
+  visitNo: { type: String, required: true, unique: true },
+  visitDate: { type: Date, required: true },
+  customerName: { type: String, default: '' },
+  customerPhone: { type: String, default: '' },
+  address: { type: String, default: '' },
+  notes: { type: String, required: true },
+  images: [movingJobImageSchema],
+  linkedJob: { type: Schema.Types.ObjectId, ref: 'MovingJob', default: null },
+  createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
+  createdByName: { type: String, default: '' },
+}, { timestamps: true });
+
 const reminderStageSchema = new Schema({
   name: { type: String, default: '' },
   daysBeforeDue: { type: Number, default: 0 },
@@ -1174,6 +1187,7 @@ const productSchema = new Schema(
   },
   { timestamps: true }
 );
+export const SiteVisit = model('SiteVisit', siteVisitSchema);
 export const Product = model('Product', productSchema);
 export const Document = model('Document', documentSchema);
 export const AuditLog = model('AuditLog', auditLogSchema);
@@ -1255,4 +1269,15 @@ export async function nextMovingClaimNo() {
     { new: true, upsert: true }
   );
   return `CLM-${String(counter.seq).padStart(5, '0')}`;
+}
+
+export async function nextSiteVisitNo() {
+  const now = new Date();
+  const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+  const counter = await Counter.findOneAndUpdate(
+    { key: `site-visit-${date}` },
+    { $inc: { seq: 1 } },
+    { new: true, upsert: true }
+  );
+  return `SV-${date}-${String(counter.seq).padStart(3, '0')}`;
 }

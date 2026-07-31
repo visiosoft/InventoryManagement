@@ -35,6 +35,7 @@ import movingInvoiceRoutes from './routes/movingInvoices.js';
 import movingReportRoutes from './routes/movingReports.js';
 import movingSurveyRoutes from './routes/movingSurveys.js';
 import movingClaimRoutes from './routes/movingClaims.js';
+import siteVisitRoutes from './routes/siteVisits.js';
 import productRoutes from './routes/products.js';
 import backupRoutes from './routes/backup.js';
 import reminderConfigRoutes from './routes/reminderConfig.js';
@@ -131,6 +132,7 @@ app.use(
 app.use('/api/moving-reports', requireAuth, movingReportRoutes);
 app.use('/api/moving-surveys', requireAuth, movingSurveyRoutes);
 app.use('/api/moving-claims', requireAuth, movingClaimRoutes);
+app.use('/api/site-visits', requireAuth, siteVisitRoutes);
 app.use('/api/products', requireAuth, productRoutes);
 app.use('/api/unit-types', requireAuth, unitTypeRoutes);
 app.use(

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, FileText, MapPin, Users, Truck as TruckIcon, AlertCircle, Package, Star, Wrench, Camera, X, Tag, CheckCircle2, Pencil, Image as ImageIcon, Check, Share2, Copy, ExternalLink, CalendarCheck, Upload, FileVideo } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, FileText, MapPin, Users, Truck as TruckIcon, AlertCircle, Package, Star, Wrench, Camera, X, Tag, CheckCircle2, Pencil, Image as ImageIcon, Check, Share2, Copy, ExternalLink } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingJob, MovingJobStatus, Worker, Truck, MovingJobImage } from '../../lib/types'
 
@@ -267,13 +267,6 @@ export default function MovingJobDetail() {
   const [shareModal, setShareModal] = useState(false)
   const [shareLink, setShareLink] = useState('')
   const [linkCopied, setLinkCopied] = useState(false)
-  const [visitModal, setVisitModal] = useState(false)
-  const visitFileRef = useRef<HTMLInputElement>(null)
-  const [visitDate, setVisitDate] = useState(() => new Date().toISOString().slice(0, 10))
-  const [visitNotes, setVisitNotes] = useState('')
-  const [visitFiles, setVisitFiles] = useState<File[]>([])
-  const [visitUploading, setVisitUploading] = useState(false)
-  const [visitError, setVisitError] = useState('')
 
   const { data: job, isLoading } = useQuery<MovingJob>({
     queryKey: ['moving-job', id],
@@ -663,20 +656,6 @@ export default function MovingJobDetail() {
               Job Done
             </Button>
           )}
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              setVisitModal(true)
-              setTimeout(() => document.getElementById('site-visits')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
-            }}
-            title="Add a site visit with notes and photos"
-            className="text-violet-600 hover:text-violet-700 border-violet-200 hover:border-violet-300 hover:bg-violet-50"
-          >
-            <CalendarCheck size={16} className="mr-1" />
-            <span className="hidden sm:inline">Schedule Visit</span>
-            <span className="sm:hidden">Visit</span>
-          </Button>
           <Button
             size="sm"
             variant="outline"
@@ -1289,165 +1268,6 @@ export default function MovingJobDetail() {
         </CardBody>
       </Card>
 
-      {/* Site Visits */}
-      <div id="site-visits"><Card>
-        <CardHeader
-          title={<span className="flex items-center gap-2"><CalendarCheck size={15} />Site Visits</span>}
-          subtitle={`${((job as any).clientVisits || []).length} visit${((job as any).clientVisits || []).length !== 1 ? 's' : ''} · document items and rooms before the move`}
-        />
-        <CardBody className="space-y-5">
-          {/* Add visit form */}
-          {visitModal ? (
-            <form onSubmit={async (e) => {
-              e.preventDefault()
-              if (!visitNotes.trim()) { setVisitError('Notes are required'); return }
-              setVisitUploading(true)
-              setVisitError('')
-              try {
-                const fd = new FormData()
-                fd.append('visitDate', visitDate)
-                fd.append('notes', visitNotes)
-                visitFiles.forEach(f => fd.append('files', f))
-                await api.post(`/moving-jobs/${id}/visits`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
-                setVisitModal(false)
-                setVisitNotes('')
-                setVisitFiles([])
-                qc.invalidateQueries({ queryKey: ['moving-job', id] })
-              } catch (err) {
-                setVisitError(apiError(err))
-              } finally {
-                setVisitUploading(false)
-              }
-            }} className="rounded-xl border-2 border-primary/20 bg-primary/5 p-4 space-y-4">
-              <Field label="Visit Date">
-                <Input type="date" value={visitDate} onChange={(e: any) => setVisitDate(e.target.value)} required />
-              </Field>
-              <Field label="Notes">
-                <Textarea
-                  value={visitNotes}
-                  onChange={(e: any) => setVisitNotes(e.target.value)}
-                  placeholder="Describe what you see — rooms, items, access issues, special instructions..."
-                  rows={4}
-                  autoFocus
-                />
-              </Field>
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-sm font-medium">Photos & Videos</label>
-                  {visitFiles.length > 0 && (
-                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-primary text-primary-foreground">
-                      {visitFiles.length} file{visitFiles.length !== 1 ? 's' : ''} selected
-                    </span>
-                  )}
-                </div>
-                <div className="space-y-3">
-                  <input ref={visitFileRef} type="file" multiple accept="image/*,video/*" className="hidden"
-                    onChange={(e) => {
-                      const picked = e.target.files
-                      if (!picked || !picked.length) return
-                      const arr = Array.from(picked).filter(f => f.size <= 50 * 1024 * 1024)
-                      setVisitFiles(prev => [...prev, ...arr])
-                      e.target.value = ''
-                    }}
-                  />
-                  <button type="button" onClick={() => visitFileRef.current?.click()}
-                    className="flex flex-col items-center justify-center gap-2 w-full h-24 rounded-xl border-2 border-dashed border-primary/30 bg-card cursor-pointer hover:bg-primary/10 transition-colors">
-                    <Upload size={22} className="text-primary" />
-                    <span className="text-xs font-medium text-primary">{visitFiles.length ? 'Add more photos or videos' : 'Tap to add photos or videos (max 50MB each)'}</span>
-                  </button>
-                  {visitFiles.length > 0 && (
-                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
-                      {visitFiles.map((f, i) => (
-                        <div key={i} className="relative rounded-lg overflow-hidden bg-muted border">
-                          {f.type.startsWith('video') ? (
-                            <div className="aspect-square relative">
-                              <video src={URL.createObjectURL(f)} className="w-full h-full object-cover" muted preload="metadata" />
-                              <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-                                <div className="h-8 w-8 rounded-full bg-black/60 flex items-center justify-center">
-                                  <FileVideo size={16} color="#fff" />
-                                </div>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="aspect-square">
-                              <img src={URL.createObjectURL(f)} className="w-full h-full object-cover" />
-                            </div>
-                          )}
-                          <div className="px-2 py-1 bg-card">
-                            <div className="text-[10px] truncate text-muted-foreground">{f.name}</div>
-                            <div className="text-[9px] text-muted-foreground/60">{(f.size / 1024 / 1024).toFixed(1)} MB</div>
-                          </div>
-                          <button type="button" onClick={() => setVisitFiles(prev => prev.filter((_, j) => j !== i))}
-                            className="absolute top-1 right-1 h-5 w-5 rounded-full bg-black/60 flex items-center justify-center hover:bg-red-600 transition-colors">
-                            <X size={10} color="#fff" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-              {visitError && <p className="text-sm text-red-600">{visitError}</p>}
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" type="button" onClick={() => { setVisitModal(false); setVisitDate(new Date().toISOString().slice(0, 10)); setVisitNotes(''); setVisitFiles([]); setVisitError('') }}>Cancel</Button>
-                <Button type="submit" disabled={visitUploading || !visitNotes.trim()}>
-                  {visitUploading ? 'Uploading…' : 'Save Visit'}
-                </Button>
-              </div>
-            </form>
-          ) : (
-            <button
-              onClick={() => setVisitModal(true)}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-primary/25 text-primary text-sm font-medium hover:bg-primary/5 transition-colors"
-            >
-              <Plus size={18} /> Add Site Visit
-            </button>
-          )}
-
-          {/* Visit list */}
-          {[...(((job as any).clientVisits) || [])].sort((a: any, b: any) => new Date(b.visitDate || b.createdAt).getTime() - new Date(a.visitDate || a.createdAt).getTime()).map((visit: any) => (
-            <div key={visit._id} className="rounded-xl border p-4 space-y-2">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
-                  <CalendarCheck size={12} />
-                  <span className="font-semibold text-foreground">
-                    {new Date(visit.visitDate || visit.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  </span>
-                  {visit.createdByName && <span>· {visit.createdByName}</span>}
-                  <span className="text-muted-foreground/60">· added {new Date(visit.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
-                </div>
-                <Button size="sm" variant="outline"
-                  className="h-7 w-7 p-0 text-red-500 hover:text-red-600 hover:bg-red-50 border-red-200"
-                  onClick={async () => {
-                    if (!confirm('Delete this visit?')) return
-                    try {
-                      await api.delete(`/moving-jobs/${id}/visits/${visit._id}`)
-                      qc.invalidateQueries({ queryKey: ['moving-job', id] })
-                    } catch (err) { alert(apiError(err)) }
-                  }}>
-                  <Trash2 size={13} />
-                </Button>
-              </div>
-              {visit.notes && <p className="text-sm whitespace-pre-wrap">{visit.notes}</p>}
-              {visit.images?.length > 0 && (
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
-                  {visit.images.map((img: any) => {
-                    const thumbUrl = img.storage === 'drive' && img.driveFileId
-                      ? `https://drive.google.com/thumbnail?id=${img.driveFileId}&sz=w400`
-                      : img.url
-                    return (
-                      <div key={img._id} className="aspect-square rounded-lg overflow-hidden cursor-pointer hover:opacity-90"
-                        onClick={() => setLightboxImg(img)}>
-                        <img src={thumbUrl} className="w-full h-full object-cover" loading="lazy" />
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          ))}
-        </CardBody>
-      </Card></div>
 
       {/* Lightbox */}
       {lightboxImg && (
