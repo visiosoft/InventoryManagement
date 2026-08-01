@@ -1,139 +1,177 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Briefcase, ClipboardList, Truck } from 'lucide-react'
+import {
+  Briefcase, ClipboardList, Truck, TrendingUp, Wallet,
+  MapPin, FileText, Receipt, Calendar, ArrowRight,
+} from 'lucide-react'
 import { api } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
 import type { MovingJob } from '../../lib/types'
 
-const statusTone: Record<string, string> = {
-  draft: 'bg-gray-100 text-gray-700',
-  confirmed: 'bg-blue-100 text-blue-700',
-  in_progress: 'bg-yellow-100 text-yellow-700',
-  completed: 'bg-green-100 text-green-700',
-  invoiced: 'bg-teal-100 text-teal-700',
-  cancelled: 'bg-red-100 text-red-700',
+const PURPLE = '#5B2BC9'
+const INK = '#14081F'
+const MUTED = '#756E80'
+
+interface MovingSummary {
+  totalJobs: number
+  jobsThisMonth: number
+  activeJobs: number
+  totalRevenue: number
+  revenueThisMonth: number
+  upcomingJobs: MovingJob[]
 }
 
-function todayIso() {
-  return new Date().toISOString().slice(0, 10)
+const statusColors: Record<string, string> = {
+  draft: '#94a3b8', confirmed: '#60a5fa', in_progress: '#fbbf24',
+  completed: '#34d399', invoiced: '#2dd4bf', cancelled: '#f87171',
+}
+
+function fmtAed(n: number) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`
+  return n.toLocaleString()
+}
+
+function isToday(dateStr?: string) {
+  if (!dateStr) return false
+  const d = new Date(dateStr), t = new Date()
+  return d.getDate() === t.getDate() && d.getMonth() === t.getMonth() && d.getFullYear() === t.getFullYear()
 }
 
 export default function FieldHome() {
   const { user } = useAuth()
   const navigate = useNavigate()
-  const today = todayIso()
 
-  const { data: jobs = [], isLoading } = useQuery<MovingJob[]>({
-    queryKey: ['field-jobs-today'],
-    queryFn: () =>
-      api.get('/moving-jobs/schedule', { params: { from: today, to: today } }).then(r => r.data),
+  const { data: summary, isLoading } = useQuery<MovingSummary>({
+    queryKey: ['moving-summary'],
+    queryFn: () => api.get('/moving-reports/summary').then(r => r.data),
+    retry: 1,
   })
 
   const now = new Date()
-  const dateLabel = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  const dateLabel = now.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+
+  const todayJobs = (summary?.upcomingJobs || []).filter(j => isToday(j.scheduledDate))
+  const nextJobs = (summary?.upcomingJobs || []).filter(j => !isToday(j.scheduledDate)).slice(0, 5)
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Greeting */}
       <div>
-        <h1 className="text-2xl font-bold text-foreground">
+        <h1 style={{ fontSize: 22, fontWeight: 700, color: INK, fontFamily: "'Bricolage Grotesque', sans-serif" }}>
           Hi, {user?.name?.split(' ')[0] || 'there'}!
         </h1>
-        <p className="text-muted-foreground text-sm mt-1">{dateLabel}</p>
+        <p style={{ fontSize: 13, color: MUTED, marginTop: 2 }}>{dateLabel}</p>
       </div>
 
-      {/* Today's job count */}
-      <div className="rounded-2xl bg-primary/10 border border-primary/20 p-5">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-xl bg-primary/20 flex items-center justify-center">
-            <Briefcase size={28} className="text-primary" />
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 gap-3">
+        {[
+          { label: 'Jobs This Month', value: summary?.jobsThisMonth ?? '—', icon: ClipboardList, bg: 'rgba(96,165,250,0.1)', ic: '#2563eb' },
+          { label: 'Active Jobs', value: summary?.activeJobs ?? '—', icon: Truck, bg: 'rgba(251,191,36,0.1)', ic: '#d97706' },
+          { label: 'Revenue (Month)', value: summary ? `AED ${fmtAed(summary.revenueThisMonth)}` : '—', icon: TrendingUp, bg: 'rgba(52,211,153,0.1)', ic: '#059669' },
+          { label: 'Total Revenue', value: summary ? `AED ${fmtAed(summary.totalRevenue)}` : '—', icon: Wallet, bg: 'rgba(91,43,201,0.1)', ic: PURPLE },
+        ].map(({ label, value, icon: Icon, bg, ic }) => (
+          <div key={label} className="rounded-xl border border-border bg-card p-3.5">
+            <div className="flex items-center justify-between mb-2">
+              <span style={{ fontSize: 11, color: MUTED, fontWeight: 500 }}>{label}</span>
+              <div style={{ width: 28, height: 28, borderRadius: 8, background: bg, display: 'grid', placeItems: 'center', color: ic }}>
+                <Icon size={14} />
+              </div>
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: INK, fontFamily: "'Bricolage Grotesque', sans-serif" }}>
+              {isLoading ? '…' : value}
+            </div>
           </div>
-          <div>
-            <p className="text-3xl font-bold text-foreground">{isLoading ? '…' : jobs.length}</p>
-            <p className="text-sm text-muted-foreground">job{jobs.length !== 1 ? 's' : ''} scheduled today</p>
-          </div>
-        </div>
+        ))}
       </div>
 
-      {/* Quick actions */}
+      {/* Quick Actions */}
       <div className="space-y-2">
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Quick Actions</p>
-        <div className="grid grid-cols-1 gap-3">
-          <button
-            onClick={() => navigate('/field/jobs')}
-            className="flex items-center gap-4 p-4 rounded-xl border border-border bg-card hover:bg-muted/50 transition-colors text-left"
-          >
-            <div className="w-11 h-11 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
-              <Briefcase size={22} />
-            </div>
-            <div>
-              <p className="font-semibold text-base text-foreground">My Jobs Today</p>
-              <p className="text-sm text-muted-foreground">View and manage today's moving jobs</p>
-            </div>
-          </button>
-
-          <button
-            onClick={() => navigate('/field/survey')}
-            className="flex items-center gap-4 p-4 rounded-xl border border-border bg-card hover:bg-muted/50 transition-colors text-left"
-          >
-            <div className="w-11 h-11 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
-              <ClipboardList size={22} />
-            </div>
-            <div>
-              <p className="font-semibold text-base text-foreground">Survey</p>
-              <p className="text-sm text-muted-foreground">Complete a moving survey with photos</p>
-            </div>
-          </button>
-
-          <button
-            onClick={() => navigate('/field/dispatch')}
-            className="flex items-center gap-4 p-4 rounded-xl border border-border bg-card hover:bg-muted/50 transition-colors text-left"
-          >
-            <div className="w-11 h-11 rounded-lg bg-green-100 text-green-700 flex items-center justify-center shrink-0">
-              <Truck size={22} />
-            </div>
-            <div>
-              <p className="font-semibold text-base text-foreground">Dispatch</p>
-              <p className="text-sm text-muted-foreground">View dispatch notes and crew assignments</p>
-            </div>
-          </button>
+        <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Quick Actions</p>
+        <div className="grid grid-cols-4 gap-2">
+          {[
+            { icon: Briefcase, label: 'Jobs', to: '/field/jobs', color: '#2563eb' },
+            { icon: MapPin, label: 'Visits', to: '/field/visits', color: '#7c3aed' },
+            { icon: FileText, label: 'Quotes', to: '/field/quotes', color: '#059669' },
+            { icon: Receipt, label: 'Invoices', to: '/field/invoices', color: '#d97706' },
+            { icon: Calendar, label: 'Schedule', to: '/field/schedule', color: '#0891b2' },
+            { icon: Truck, label: 'Dispatch', to: '/field/dispatch', color: '#dc2626' },
+            { icon: ClipboardList, label: 'Survey', to: '/field/survey', color: '#7c3aed' },
+            { icon: TrendingUp, label: 'Leads', to: '/field/leads', color: '#ea580c' },
+          ].map(({ icon: Icon, label, to, color }) => (
+            <button
+              key={to}
+              onClick={() => navigate(to)}
+              className="flex flex-col items-center gap-1.5 p-3 rounded-xl border border-border bg-card hover:bg-muted/50 transition-colors"
+            >
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: `${color}15`, display: 'grid', placeItems: 'center', color }}>
+                <Icon size={16} />
+              </div>
+              <span style={{ fontSize: 10, fontWeight: 600, color: INK }}>{label}</span>
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Today's jobs preview */}
-      {!isLoading && jobs.length > 0 && (
+      {/* Today's Jobs */}
+      {!isLoading && todayJobs.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Today's Jobs</p>
+          <div className="flex items-center justify-between">
+            <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Today's Jobs ({todayJobs.length})
+            </p>
+            <button onClick={() => navigate('/field/jobs')} style={{ fontSize: 12, color: PURPLE, fontWeight: 600 }} className="flex items-center gap-1">
+              View all <ArrowRight size={12} />
+            </button>
+          </div>
           <div className="space-y-2">
-            {jobs.slice(0, 3).map(job => (
+            {todayJobs.slice(0, 4).map(job => (
               <button
                 key={job._id}
-                onClick={() => navigate('/field/jobs')}
+                onClick={() => navigate(`/field/jobs/${job._id}`)}
                 className="w-full flex items-center gap-3 p-3 rounded-xl border border-border bg-card hover:bg-muted/50 transition-colors text-left"
               >
+                <div style={{ width: 6, height: 36, borderRadius: 3, background: statusColors[job.status] || '#94a3b8' }} className="shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
-                    <span className="font-semibold text-sm text-foreground">{job.jobNo}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusTone[job.status] ?? 'bg-gray-100 text-gray-700'}`}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: PURPLE, fontFamily: 'monospace' }}>{job.jobNo}</span>
+                    <span style={{ fontSize: 10, color: statusColors[job.status], fontWeight: 600, textTransform: 'capitalize' }}>
                       {job.status.replace(/_/g, ' ')}
                     </span>
                   </div>
-                  <p className="text-sm text-foreground truncate">{job.customer?.fullName}</p>
-                  <p className="text-xs text-muted-foreground truncate">{job.pickupAddress || '—'}</p>
+                  <p style={{ fontSize: 13, fontWeight: 500, color: INK }} className="truncate">{job.customer?.fullName}</p>
+                  <p style={{ fontSize: 11, color: MUTED }} className="truncate">{job.pickupAddress || '—'}</p>
                 </div>
                 {job.scheduledTimeSlot && (
-                  <span className="text-xs font-medium text-primary shrink-0">{job.scheduledTimeSlot}</span>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: PURPLE }} className="shrink-0">{job.scheduledTimeSlot}</span>
                 )}
               </button>
             ))}
-            {jobs.length > 3 && (
+          </div>
+        </div>
+      )}
+
+      {/* Upcoming Jobs */}
+      {!isLoading && nextJobs.length > 0 && (
+        <div className="space-y-2">
+          <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Upcoming</p>
+          <div className="space-y-1.5">
+            {nextJobs.map(job => (
               <button
-                onClick={() => navigate('/field/jobs')}
-                className="w-full text-sm text-primary font-medium py-2"
+                key={job._id}
+                onClick={() => navigate(`/field/jobs/${job._id}`)}
+                className="w-full flex items-center justify-between p-2.5 rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors text-left"
               >
-                View all {jobs.length} jobs →
+                <div className="flex items-center gap-2 min-w-0">
+                  <span style={{ fontSize: 11, fontWeight: 700, color: PURPLE, fontFamily: 'monospace' }}>{job.jobNo}</span>
+                  <span style={{ fontSize: 12, color: INK, fontWeight: 500 }} className="truncate">{job.customer?.fullName}</span>
+                </div>
+                <span style={{ fontSize: 11, color: MUTED }} className="shrink-0 ml-2">
+                  {job.scheduledDate ? new Date(job.scheduledDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—'}
+                </span>
               </button>
-            )}
+            ))}
           </div>
         </div>
       )}
