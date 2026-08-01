@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, MapPin, Users, Truck, Phone, Mail, Calendar, Clock, Package, FileText, Receipt } from 'lucide-react'
+import { ArrowLeft, Users, Truck, Phone, Mail, Calendar, Clock, Package } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingJob, MovingJobStatus } from '../../lib/types'
 import { Spinner } from '../../components/ui'
@@ -156,14 +156,14 @@ export default function FieldJobDetail() {
       )}
 
       {/* Package info */}
-      {job.packageType && (
+      {(job as any).packageType && (
         <div className="rounded-xl border border-border bg-card p-4">
           <p style={{ fontSize: 11, fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Package</p>
-          <InfoRow label="Package" value={job.packageLabel || job.packageType} icon={Package} />
-          {(job.agreedPrice ?? 0) > 0 && (
+          <InfoRow label="Package" value={(job as any).packageLabel || (job as any).packageType} icon={Package} />
+          {((job as any).agreedPrice ?? 0) > 0 && (
             <div className="flex justify-between items-center py-2">
               <span style={{ fontSize: 12, color: MUTED }}>Agreed Price</span>
-              <span style={{ fontSize: 14, fontWeight: 700, color: PURPLE }}>AED {Number(job.agreedPrice || 0).toLocaleString()}</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: PURPLE }}>AED {Number((job as any).agreedPrice || 0).toLocaleString()}</span>
             </div>
           )}
         </div>

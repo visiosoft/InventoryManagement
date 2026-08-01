@@ -3,7 +3,7 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import {
   Home, Briefcase, Truck, LogOut, Menu, X,
   ClipboardList, FileText, Receipt, MapPin,
-  Users, Car, Calendar, TrendingUp, AlertTriangle, UserPlus,
+  Users, Car, Calendar, AlertTriangle, UserPlus,
 } from 'lucide-react'
 import { useAuth } from '../../lib/auth'
 

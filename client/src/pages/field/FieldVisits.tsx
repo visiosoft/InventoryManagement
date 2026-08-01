@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, MapPin, User, Phone, ChevronDown, ChevronUp, Trash2, Upload, X, FileVideo, Camera } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Plus, MapPin, Phone, ChevronDown, ChevronUp, Trash2, Upload, X, FileVideo, Camera } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import { Spinner } from '../../components/ui'
 
@@ -254,7 +254,7 @@ export default function FieldVisits() {
 
                     {/* Images */}
                     {visit.images.length > 0 && (() => {
-                      const photos = visit.images.filter((img, i) => !isVideo(img)).map((img, _, __, i = visit.images.indexOf(img)) => ({ img, origIdx: i }))
+                      const photos = visit.images.filter(img => !isVideo(img)).map((img, _, __, i = visit.images.indexOf(img)) => ({ img, origIdx: i }))
                       const videos = visit.images.filter(img => isVideo(img)).map((img, _, __, i = visit.images.indexOf(img)) => ({ img, origIdx: i }))
                       return (
                         <div className="space-y-3">

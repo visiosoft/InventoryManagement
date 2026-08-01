@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, Search, Phone, Plus } from 'lucide-react'
+import { ChevronRight, Search, Phone } from 'lucide-react'
 import { api } from '../../lib/api'
 import { Spinner } from '../../components/ui'
 

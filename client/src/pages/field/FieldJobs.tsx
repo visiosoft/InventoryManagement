@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { ChevronDown, ChevronUp, MapPin, Users, Search, Filter } from 'lucide-react'
+import { ChevronDown, ChevronUp, MapPin, Users, Search } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingJob, MovingJobStatus } from '../../lib/types'
 import { Spinner } from '../../components/ui'

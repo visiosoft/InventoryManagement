@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, ChevronRight } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
 import { api } from '../../lib/api'
 import { Spinner } from '../../components/ui'
 
