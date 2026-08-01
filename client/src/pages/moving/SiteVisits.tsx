@@ -196,10 +196,10 @@ export default function SiteVisits() {
   }
 
   const handleAddFiles = async (visitId: string, fileList: FileList) => {
-    const MAX = 100 * 1024 * 1024
+    const MAX = 500 * 1024 * 1024
     const all = Array.from(fileList)
     const arr = all.filter(f => f.size <= MAX)
-    if (arr.length < all.length) alert(`${all.length - arr.length} file(s) skipped — max 100 MB each`)
+    if (arr.length < all.length) alert(`${all.length - arr.length} file(s) skipped — max 500 MB each`)
     if (!arr.length) return
     setAddingToVisitId(visitId)
     setAddFileProgress(0)
