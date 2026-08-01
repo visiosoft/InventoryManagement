@@ -77,6 +77,8 @@ export default function SiteVisits() {
   const [editSaving, setEditSaving] = useState(false)
   const [editErr, setEditErr] = useState('')
 
+  const addFileRefs = useRef<Record<string, HTMLInputElement | null>>({})
+
   // convert to job
   const [convertVisit, setConvertVisit] = useState<SiteVisit | null>(null)
   const [custSearch, setCustSearch] = useState('')
@@ -194,7 +196,10 @@ export default function SiteVisits() {
   }
 
   const handleAddFiles = async (visitId: string, fileList: FileList) => {
-    const arr = Array.from(fileList).filter(f => f.size <= 50 * 1024 * 1024)
+    const MAX = 100 * 1024 * 1024
+    const all = Array.from(fileList)
+    const arr = all.filter(f => f.size <= MAX)
+    if (arr.length < all.length) alert(`${all.length - arr.length} file(s) skipped — max 100 MB each`)
     if (!arr.length) return
     setAddingToVisitId(visitId)
     setAddFileProgress(0)
@@ -203,6 +208,7 @@ export default function SiteVisits() {
       arr.forEach(f => fd.append('files', f))
       await api.post(`/site-visits/${visitId}/images`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 300000,
         onUploadProgress: (e) => {
           if (e.total) setAddFileProgress(Math.round((e.loaded * 100) / e.total))
         },
@@ -756,16 +762,13 @@ export default function SiteVisits() {
                               </div>
                             </div>
                           ) : (
-                            <label
-                              className="flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-dashed border-primary/30 text-xs font-medium text-primary hover:bg-primary/5 transition-colors cursor-pointer w-fit"
-                              onClick={(e: React.MouseEvent) => e.stopPropagation()}
-                            >
-                              <Upload size={14} /> Add Photos / Videos
+                            <>
                               <input
+                                ref={el => { addFileRefs.current[visit._id] = el }}
                                 type="file"
                                 multiple
                                 accept="image/*,video/mp4,video/quicktime,video/mov,video/*"
-                                style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', opacity: 0 }}
+                                style={{ display: 'none' }}
                                 onChange={(e) => {
                                   if (e.target.files && e.target.files.length > 0) {
                                     handleAddFiles(visit._id, e.target.files)
@@ -773,7 +776,14 @@ export default function SiteVisits() {
                                   }
                                 }}
                               />
-                            </label>
+                              <button
+                                type="button"
+                                onClick={() => addFileRefs.current[visit._id]?.click()}
+                                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-dashed border-primary/30 text-xs font-medium text-primary hover:bg-primary/5 transition-colors cursor-pointer"
+                              >
+                                <Upload size={14} /> Add Photos / Videos
+                              </button>
+                            </>
                           )}
                         </div>
 

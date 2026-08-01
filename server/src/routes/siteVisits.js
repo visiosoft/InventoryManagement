@@ -5,7 +5,7 @@ import { uploadPublicImage, driveClient, driveConfigured } from '../services/dri
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 50 * 1024 * 1024 },
+  limits: { fileSize: 100 * 1024 * 1024 },
 });
 
 const router = Router();
@@ -178,13 +178,16 @@ router.put('/:id', async (req, res) => {
 
 // Add more images to a visit
 router.post('/:id/images', upload.array('files', 20), async (req, res) => {
+  req.setTimeout(300000);
   try {
     const visit = await SiteVisit.findById(req.params.id);
     if (!visit) return res.status(404).json({ error: 'Site visit not found' });
 
     const newImages = [];
+    const errors = [];
     for (const file of (req.files || [])) {
       try {
+        console.log(`[site-visit] Uploading ${file.originalname} (${(file.size / 1024 / 1024).toFixed(1)}MB, ${file.mimetype})`);
         const result = await uploadPublicImage({
           buffer: file.buffer,
           mimeType: file.mimetype,
@@ -202,12 +205,16 @@ router.post('/:id/images', upload.array('files', 20), async (req, res) => {
           uploadedAt: new Date(),
         });
       } catch (uploadErr) {
-        console.error('[site-visit] Drive upload failed:', uploadErr.message);
+        console.error('[site-visit] Drive upload failed for', file.originalname, ':', uploadErr.message);
+        errors.push(`${file.originalname}: ${uploadErr.message}`);
       }
     }
 
     visit.images.push(...newImages);
     await visit.save();
+    if (errors.length > 0 && newImages.length === 0) {
+      return res.status(500).json({ error: `Upload failed: ${errors.join('; ')}` });
+    }
     res.json(visit.images);
   } catch (err) {
     res.status(500).json({ error: err.message });
