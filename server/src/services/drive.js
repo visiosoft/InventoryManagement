@@ -86,7 +86,7 @@ async function getOrCreateVendorFolder(drive, vendorName) {
   return getOrCreateFolder(drive, safeVendor, vendorRootId);
 }
 
-export async function uploadPublicImage({ buffer, filename, mimeType, customerName }) {
+export async function uploadPublicImage({ buffer, stream, filename, mimeType, customerName }) {
   requireDrive();
   const drive = driveClient();
   const parentId = customerName
@@ -95,7 +95,7 @@ export async function uploadPublicImage({ buffer, filename, mimeType, customerNa
 
   const { data } = await drive.files.create({
     requestBody: { name: filename, parents: [parentId] },
-    media: { mimeType, body: Readable.from(buffer) },
+    media: { mimeType, body: stream || Readable.from(buffer) },
     fields: 'id, webViewLink',
     supportsAllDrives: true,
   });

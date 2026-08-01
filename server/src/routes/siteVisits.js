@@ -1,10 +1,13 @@
 import { Router } from 'express';
 import multer from 'multer';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { SiteVisit, nextSiteVisitNo, MovingJob, nextMovingJobNo, Customer } from '../models/index.js';
 import { uploadPublicImage, driveClient, driveConfigured } from '../services/drive.js';
 
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage: multer.diskStorage({ destination: os.tmpdir() }),
   limits: { fileSize: 500 * 1024 * 1024 },
 });
 
@@ -46,11 +49,12 @@ router.post('/', upload.array('files', 20), async (req, res) => {
     for (const file of (req.files || [])) {
       try {
         const result = await uploadPublicImage({
-          buffer: file.buffer,
+          stream: fs.createReadStream(file.path),
           mimeType: file.mimetype,
           filename: `site-visit-${visitNo}-${Date.now()}-${file.originalname}`,
           customerName: customerName || 'SiteVisits',
         });
+        fs.unlink(file.path, () => {});
         images.push({
           url: result.url,
           filename: file.originalname.replace(/\s+/g, '_'),
@@ -189,11 +193,12 @@ router.post('/:id/images', upload.array('files', 20), async (req, res) => {
       try {
         console.log(`[site-visit] Uploading ${file.originalname} (${(file.size / 1024 / 1024).toFixed(1)}MB, ${file.mimetype})`);
         const result = await uploadPublicImage({
-          buffer: file.buffer,
+          stream: fs.createReadStream(file.path),
           mimeType: file.mimetype,
           filename: `site-visit-${visit.visitNo}-${Date.now()}-${file.originalname}`,
           customerName: visit.customerName || 'SiteVisits',
         });
+        fs.unlink(file.path, () => {});
         newImages.push({
           url: result.url,
           filename: file.originalname.replace(/\s+/g, '_'),
