@@ -14,7 +14,7 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
 }
 
 function SmartHome() {
-  const { user, hasPermission } = useAuth()
+  const { hasPermission } = useAuth()
   const hasMoving = hasPermission('moving_dashboard')
   const hasStorage = hasPermission('units') || hasPermission('dashboard')
   const isMovingOnly = hasMoving && !hasStorage
