@@ -416,20 +416,22 @@ export default function MovingInvoiceDetail() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid rgba(20,8,31,0.06)' }}>
-                  {['Date', 'Method', 'Notes', 'Amount', ''].map((h, i) => (
-                    <th key={h || 'actions'} style={{ padding: '10px 16px', fontSize: 11, fontWeight: 600, color: MUTED, textAlign: i === 3 ? 'right' : 'left', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
-                  ))}
+                  <th style={{ padding: '10px 16px', fontSize: 11, fontWeight: 600, color: MUTED, textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.05em', width: 130 }}>Date</th>
+                  <th style={{ padding: '10px 16px', fontSize: 11, fontWeight: 600, color: MUTED, textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.05em', width: 110 }}>Method</th>
+                  <th style={{ padding: '10px 16px', fontSize: 11, fontWeight: 600, color: MUTED, textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Notes</th>
+                  <th style={{ padding: '10px 16px', fontSize: 11, fontWeight: 600, color: MUTED, textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.05em', width: 130 }}>Amount</th>
+                  <th style={{ padding: '10px 16px', width: 80 }} />
                 </tr>
               </thead>
               <tbody>
                 {(invoice.paymentHistory ?? []).map((p, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid rgba(20,8,31,0.04)' }} className="hover:bg-[#FAF8F5] transition-colors">
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: INK }}>{dt(p.date)}</td>
+                    <td style={{ padding: '12px 16px', fontSize: 13, color: INK, whiteSpace: 'nowrap' }}>{dt(p.date)}</td>
                     <td style={{ padding: '12px 16px', fontSize: 13, color: INK, textTransform: 'capitalize' }}>{p.method.replace('_', ' ')}</td>
                     <td style={{ padding: '12px 16px', fontSize: 13, color: MUTED }}>{p.notes || '—'}</td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: '#059669', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>AED {fmt(p.amount)}</td>
-                    <td style={{ padding: '12px 16px' }}>
-                      <div className="flex items-center gap-1">
+                    <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: '#059669', textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>AED {fmt(p.amount)}</td>
+                    <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                      <div className="flex items-center justify-end gap-1">
                         <button type="button" onClick={() => setEditingPayment({ idx: i, amount: String(p.amount), method: p.method, date: p.date ? new Date(p.date).toISOString().slice(0, 10) : '', notes: p.notes || '' })}
                           className="p-1.5 rounded-md hover:bg-muted transition-colors" title="Edit payment">
                           <Pencil size={13} style={{ color: MUTED }} />
