@@ -175,6 +175,46 @@ router.post('/:id/record-payment', async (req, res) => {
   }
 });
 
+// Update a payment entry
+router.put('/:id/payments/:idx', async (req, res) => {
+  try {
+    const invoice = await MovingInvoice.findById(req.params.id);
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+    const idx = Number(req.params.idx);
+    if (idx < 0 || idx >= invoice.paymentHistory.length) return res.status(404).json({ error: 'Payment entry not found' });
+    const { amount, method, date, notes } = req.body;
+    if (amount !== undefined) invoice.paymentHistory[idx].amount = Number(amount);
+    if (method !== undefined) invoice.paymentHistory[idx].method = method;
+    if (date !== undefined) invoice.paymentHistory[idx].date = new Date(date);
+    if (notes !== undefined) invoice.paymentHistory[idx].notes = notes;
+    const totalPaid = invoice.depositPaid + invoice.paymentHistory.reduce((s, p) => s + p.amount, 0);
+    invoice.balanceDue = Math.max(0, invoice.total - totalPaid);
+    invoice.status = invoice.balanceDue <= 0 ? 'paid' : invoice.paymentHistory.length > 0 ? 'partial' : invoice.status;
+    await invoice.save();
+    res.json(invoice);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Delete a payment entry
+router.delete('/:id/payments/:idx', async (req, res) => {
+  try {
+    const invoice = await MovingInvoice.findById(req.params.id);
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+    const idx = Number(req.params.idx);
+    if (idx < 0 || idx >= invoice.paymentHistory.length) return res.status(404).json({ error: 'Payment entry not found' });
+    invoice.paymentHistory.splice(idx, 1);
+    const totalPaid = invoice.depositPaid + invoice.paymentHistory.reduce((s, p) => s + p.amount, 0);
+    invoice.balanceDue = Math.max(0, invoice.total - totalPaid);
+    invoice.status = invoice.balanceDue <= 0 ? 'paid' : invoice.paymentHistory.length > 0 ? 'partial' : 'sent';
+    await invoice.save();
+    res.json(invoice);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // Generate PDF (with optional share token for public access)
 router.get('/:id/pdf', async (req, res) => {
   try {

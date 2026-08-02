@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Download, Share2, Edit, Plus, Trash2, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react'
+import { ArrowLeft, Download, Share2, Edit, Plus, Trash2, RefreshCw, AlertCircle, CheckCircle, Pencil } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingInvoice, MovingInvoiceStatus } from '../../lib/types'
 import { Badge, Button, Field, Input, Modal, Select, Spinner, Textarea } from '../../components/ui'
@@ -129,6 +129,22 @@ export default function MovingInvoiceDetail() {
       qc.invalidateQueries({ queryKey: ['moving-invoices'] })
     },
     onError: () => {},
+  })
+
+  const [editingPayment, setEditingPayment] = useState<{ idx: number; amount: string; method: string; date: string; notes: string } | null>(null)
+  const [deletingPaymentIdx, setDeletingPaymentIdx] = useState<number | null>(null)
+
+  const updatePaymentMut = useMutation({
+    mutationFn: (data: { idx: number; amount: string; method: string; date: string; notes: string }) =>
+      api.put(`/moving-invoices/${id}/payments/${data.idx}`, { amount: Number(data.amount), method: data.method, date: data.date, notes: data.notes }),
+    onSuccess: () => { invalidate(); setEditingPayment(null) },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  const deletePaymentMut = useMutation({
+    mutationFn: (idx: number) => api.delete(`/moving-invoices/${id}/payments/${idx}`),
+    onSuccess: () => { invalidate(); setDeletingPaymentIdx(null) },
+    onError: (e) => setErr(apiError(e)),
   })
 
   const [deleteConfirm, setDeleteConfirm] = useState(false)
@@ -402,8 +418,8 @@ export default function MovingInvoiceDetail() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid rgba(20,8,31,0.06)' }}>
-                  {['Date', 'Method', 'Notes', 'Amount'].map((h, i) => (
-                    <th key={h} style={{ padding: '10px 16px', fontSize: 11, fontWeight: 600, color: MUTED, textAlign: i === 3 ? 'right' : 'left', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
+                  {['Date', 'Method', 'Notes', 'Amount', ''].map((h, i) => (
+                    <th key={h || 'actions'} style={{ padding: '10px 16px', fontSize: 11, fontWeight: 600, color: MUTED, textAlign: i === 3 ? 'right' : 'left', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -411,9 +427,21 @@ export default function MovingInvoiceDetail() {
                 {(invoice.paymentHistory ?? []).map((p, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid rgba(20,8,31,0.04)' }} className="hover:bg-[#FAF8F5] transition-colors">
                     <td style={{ padding: '12px 16px', fontSize: 13, color: INK }}>{dt(p.date)}</td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: INK, textTransform: 'capitalize' }}>{p.method}</td>
+                    <td style={{ padding: '12px 16px', fontSize: 13, color: INK, textTransform: 'capitalize' }}>{p.method.replace('_', ' ')}</td>
                     <td style={{ padding: '12px 16px', fontSize: 13, color: MUTED }}>{p.notes || '—'}</td>
                     <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: '#059669', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>AED {fmt(p.amount)}</td>
+                    <td style={{ padding: '12px 16px' }}>
+                      <div className="flex items-center gap-1">
+                        <button type="button" onClick={() => setEditingPayment({ idx: i, amount: String(p.amount), method: p.method, date: p.date ? new Date(p.date).toISOString().slice(0, 10) : '', notes: p.notes || '' })}
+                          className="p-1.5 rounded-md hover:bg-muted transition-colors" title="Edit payment">
+                          <Pencil size={13} style={{ color: MUTED }} />
+                        </button>
+                        <button type="button" onClick={() => setDeletingPaymentIdx(i)}
+                          className="p-1.5 rounded-md hover:bg-red-50 transition-colors" title="Delete payment">
+                          <Trash2 size={13} className="text-red-500" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -428,7 +456,17 @@ export default function MovingInvoiceDetail() {
                     <p style={{ fontSize: 13, fontWeight: 500, color: INK, textTransform: 'capitalize' }}>{p.method}</p>
                     <p style={{ fontSize: 12, color: MUTED }}>{dt(p.date)}</p>
                   </div>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#059669', whiteSpace: 'nowrap' }}>AED {fmt(p.amount)}</span>
+                  <div className="flex items-center gap-2">
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#059669', whiteSpace: 'nowrap' }}>AED {fmt(p.amount)}</span>
+                    <button type="button" onClick={() => setEditingPayment({ idx: i, amount: String(p.amount), method: p.method, date: p.date ? new Date(p.date).toISOString().slice(0, 10) : '', notes: p.notes || '' })}
+                      className="p-1 rounded-md hover:bg-muted transition-colors">
+                      <Pencil size={12} style={{ color: MUTED }} />
+                    </button>
+                    <button type="button" onClick={() => setDeletingPaymentIdx(i)}
+                      className="p-1 rounded-md hover:bg-red-50 transition-colors">
+                      <Trash2 size={12} className="text-red-500" />
+                    </button>
+                  </div>
                 </div>
                 {p.notes && <p style={{ fontSize: 12, color: MUTED, marginTop: 4 }}>{p.notes}</p>}
               </div>
@@ -718,6 +756,51 @@ export default function MovingInvoiceDetail() {
             <Button variant="outline" onClick={() => setDeleteConfirm(false)}>Cancel</Button>
             <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={() => deleteMut.mutate()} disabled={deleteMut.isPending}>
               {deleteMut.isPending ? 'Deleting…' : 'Delete Invoice'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit Payment Modal */}
+      <Modal open={!!editingPayment} title="Edit Payment" onClose={() => setEditingPayment(null)}>
+        {editingPayment && (
+          <form onSubmit={(e) => { e.preventDefault(); updatePaymentMut.mutate(editingPayment) }} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="Date">
+                <Input type="date" value={editingPayment.date} onChange={(e) => setEditingPayment({ ...editingPayment, date: e.target.value })} required />
+              </Field>
+              <Field label="Amount (AED)">
+                <Input type="number" min="0.01" step="0.01" value={editingPayment.amount} onChange={(e) => setEditingPayment({ ...editingPayment, amount: e.target.value })} required />
+              </Field>
+              <Field label="Method">
+                <Select value={editingPayment.method} onChange={(e) => setEditingPayment({ ...editingPayment, method: e.target.value })}>
+                  {['cash', 'bank_transfer', 'cheque', 'card', 'other'].map(m => (
+                    <option key={m} value={m}>{m.replace('_', ' ')}</option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Notes">
+                <Input value={editingPayment.notes} onChange={(e) => setEditingPayment({ ...editingPayment, notes: e.target.value })} placeholder="Reference" />
+              </Field>
+            </div>
+            {err && <p className="text-sm text-red-600">{err}</p>}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" type="button" onClick={() => setEditingPayment(null)}>Cancel</Button>
+              <Button type="submit" disabled={updatePaymentMut.isPending}>{updatePaymentMut.isPending ? 'Saving…' : 'Save'}</Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* Delete Payment Confirmation */}
+      <Modal open={deletingPaymentIdx !== null} title="Delete Payment" onClose={() => setDeletingPaymentIdx(null)}>
+        <div className="space-y-4">
+          <p className="text-sm">Are you sure you want to delete this payment entry? The invoice balance will be recalculated.</p>
+          {err && <p className="text-sm text-red-600">{err}</p>}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setDeletingPaymentIdx(null)}>Cancel</Button>
+            <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={() => { if (deletingPaymentIdx !== null) deletePaymentMut.mutate(deletingPaymentIdx) }} disabled={deletePaymentMut.isPending}>
+              {deletePaymentMut.isPending ? 'Deleting…' : 'Delete Payment'}
             </Button>
           </div>
         </div>
