@@ -3,6 +3,49 @@ import { MovingLead, MovingJob, Customer, nextMovingJobNo } from '../models/inde
 
 const router = Router();
 
+// ── Public endpoint for WordPress landing pages (no auth) ────────────────────
+export const publicLeadRouter = Router();
+
+publicLeadRouter.post('/', async (req, res) => {
+  try {
+    const b = req.body;
+    const isMoving = /moving/i.test(b.storing_for || '') || /moving/i.test(b.unit_label || '');
+    const serviceType = isMoving ? 'moving' : 'storage';
+
+    const notes = [
+      b.summary_text,
+      b.unit_size ? `Unit size: ${b.unit_size}` : '',
+      b.unit_label ? `Label: ${b.unit_label}` : '',
+      b.emirate ? `Emirate: ${b.emirate}` : '',
+      b.promo_code ? `Promo: ${b.promo_code}` : '',
+      b.monthly_rent && Number(b.monthly_rent) ? `Monthly rent: AED ${b.monthly_rent}` : '',
+      b.supplies_text && b.supplies_text !== 'No supplies selected' ? `Supplies: ${b.supplies_text}` : '',
+      b.due_today && Number(b.due_today) ? `Due today: AED ${b.due_today}` : '',
+    ].filter(Boolean).join('\n');
+
+    const lead = await MovingLead.create({
+      prospectName: b.full_name || '',
+      prospectPhone: b.mobile || '',
+      prospectEmail: b.email || '',
+      source: 'web_form',
+      status: 'new',
+      serviceType: b.storing_for || serviceType,
+      moveDate: b.move_in_date ? new Date(b.move_in_date) : undefined,
+      notes,
+      timeline: [{
+        text: `Lead from ${b.source_page_name || 'Landing page'}`,
+        author: 'Website',
+        at: new Date(),
+      }],
+    });
+
+    res.status(201).json({ ok: true, id: lead._id });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+// ─────────────────────────────────────────────────────────────────────────────
+
 // List leads
 router.get('/', async (req, res) => {
   try {

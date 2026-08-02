@@ -29,7 +29,7 @@ import whatsappRoutes from './routes/whatsapp.js';
 import workerRoutes from './routes/workers.js';
 import truckRoutes from './routes/trucks.js';
 import movingJobRoutes, { publicUploadRouter as movingJobPublicUpload, publicShareRouter as movingJobPublicShare } from './routes/movingJobs.js';
-import movingLeadRoutes from './routes/movingLeads.js';
+import movingLeadRoutes, { publicLeadRouter as movingLeadPublic } from './routes/movingLeads.js';
 import movingQuoteRoutes from './routes/movingQuotes.js';
 import movingInvoiceRoutes from './routes/movingInvoices.js';
 import movingReportRoutes from './routes/movingReports.js';
@@ -86,6 +86,7 @@ app.use('/api/crew-auth', crewAuthRoutes);
 app.use('/api/crew-portal', crewPortalRoutes);
 app.use('/api/moving-jobs/public-upload', movingJobPublicUpload);
 app.use('/api/moving-jobs/share', movingJobPublicShare);
+app.use('/api/moving-leads/public', movingLeadPublic);
 // Zoho webhook must be reachable without a JWT.
 app.use('/api/contracts/zoho-webhook', (req, _res, next) => next());
 // WhatsApp webhook verification and events must be reachable without a JWT.
