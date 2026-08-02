@@ -1444,6 +1444,10 @@ export default function ContractDetail() {
                     <span className="text-muted-foreground">Monthly</span>
                     <span className="font-medium">AED {formatMoney(c.rate)}</span>
                   </div>
+                  <div className="flex justify-between py-2">
+                    <span className="text-muted-foreground">Total quotation</span>
+                    <span className="font-medium">AED {formatMoney(c.totalQuotation || theoreticalTotal2)}</span>
+                  </div>
                   {c.paymentMethod && (
                     <div className="flex justify-between py-2">
                       <span className="text-muted-foreground">Method</span>

@@ -1743,6 +1743,27 @@ function InvoiceDetailScreen() {
             } catch (e: any) { Alert.alert('Error', e.message); }
           }} />
         </View>
+
+        {/* Edit & Delete actions */}
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
+          <TouchableOpacity onPress={() => go('newInvoice', undefined, invoice._id)} activeOpacity={0.85}
+            style={{ flex: 1, height: 46, borderRadius: 16, backgroundColor: C.white, borderWidth: 1, borderColor: C.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+            <Icon name="edit-2" size={15} color={C.purple} />
+            <Text style={{ fontFamily: F.bold, fontSize: 14, color: C.purple }}>Edit</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => {
+            Alert.alert('Delete Invoice', `Are you sure you want to delete ${invoice.invoiceNo || 'this invoice'}? This cannot be undone.`, [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Delete', style: 'destructive', onPress: async () => {
+                try { await api.deleteInvoice(invoice._id); toast('Invoice deleted'); go('invoices'); } catch (e: any) { Alert.alert('Error', e.message); }
+              }},
+            ]);
+          }} activeOpacity={0.85}
+            style={{ flex: 1, height: 46, borderRadius: 16, backgroundColor: C.redBg, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+            <Icon name="trash-2" size={15} color={C.red} />
+            <Text style={{ fontFamily: F.bold, fontSize: 14, color: C.red }}>Delete</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </View>
   );
@@ -1750,8 +1771,10 @@ function InvoiceDetailScreen() {
 
 /* ═══ NEW INVOICE ═══ */
 function NewInvoiceScreen() {
-  const { go } = useApp();
+  const { s, go } = useApp();
   const { toast } = useToast();
+  const editId = s.selectedItemId;
+  const isEdit = !!editId;
   const [customerId, setCustomerId] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerSearch, setCustomerSearch] = useState('');
@@ -1759,8 +1782,31 @@ function NewInvoiceScreen() {
   const [items, setItems] = useState([{ id: 1, name: '', desc: '', qty: 1, rate: 0 }]);
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [loadingEdit, setLoadingEdit] = useState(isEdit);
   const [err, setErr] = useState('');
   let nextId = useRef(2);
+
+  useEffect(() => {
+    if (!editId) return;
+    (async () => {
+      try {
+        const inv = await api.getInvoice(editId);
+        if (inv.customer) {
+          setCustomerId(inv.customer._id || inv.customer);
+          setCustomerName(inv.customer.fullName || '');
+        }
+        if (inv.items?.length) {
+          setItems(inv.items.map((it: any, i: number) => ({
+            id: i + 1, name: it.description || it.name || '', desc: it.subDescription || '',
+            qty: it.qty || 1, rate: it.rate || it.amount || 0,
+          })));
+          nextId.current = inv.items.length + 1;
+        }
+        setNotes(inv.notes || '');
+      } catch {}
+      setLoadingEdit(false);
+    })();
+  }, [editId]);
 
   useEffect(() => {
     if (customerSearch.length < 2) { setCustomers([]); return; }
@@ -1778,22 +1824,34 @@ function NewInvoiceScreen() {
   const vat = Math.round(subTotal * 0.05);
   const total = subTotal + vat;
 
-  const onCreate = async () => {
+  const onSave = async () => {
     if (!customerId) { setErr('Select a customer'); return; }
     if (!items[0].name) { setErr('Add at least one item'); return; }
     setSaving(true); setErr('');
     try {
       const mapped = items.filter(it => it.name).map(it => ({ description: it.name, subDescription: it.desc, qty: it.qty, rate: it.rate, amount: it.qty * it.rate }));
-      await api.createInvoice({ customer: customerId, items: mapped, subTotal, total, notes });
-      toast('Invoice created');
+      if (isEdit) {
+        await api.updateInvoice(editId, { customer: customerId, items: mapped, subTotal, total, notes });
+        toast('Invoice updated');
+      } else {
+        await api.createInvoice({ customer: customerId, items: mapped, subTotal, total, notes });
+        toast('Invoice created');
+      }
       go('invoices');
     } catch (e: any) { setErr(e.message); }
     setSaving(false);
   };
 
+  if (loadingEdit) return (
+    <View style={{ flex: 1 }}>
+      <BuilderHeader title="Edit invoice" onBack={() => go('invoices')} />
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><ActivityIndicator color={C.purple} size="large" /></View>
+    </View>
+  );
+
   return (
     <View style={{ flex: 1 }}>
-      <BuilderHeader title="New invoice" onBack={() => go('invoices')} />
+      <BuilderHeader title={isEdit ? 'Edit invoice' : 'New invoice'} onBack={() => go('invoices')} />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 30 }} keyboardShouldPersistTaps="handled">
           <Text style={[st.sectionLabelText, { marginTop: 16, marginBottom: 8 }]}>CUSTOMER</Text>
@@ -1890,7 +1948,7 @@ function NewInvoiceScreen() {
 
           {!!err && <Text style={st.errText}>{err}</Text>}
           <View style={{ height: 16 }} />
-          <PrimaryButton label={saving ? 'Creating…' : 'Create invoice'} onPress={onCreate} disabled={saving} />
+          <PrimaryButton label={saving ? 'Saving…' : isEdit ? 'Update invoice' : 'Create invoice'} onPress={onSave} disabled={saving} />
         </ScrollView>
       </KeyboardAvoidingView>
     </View>

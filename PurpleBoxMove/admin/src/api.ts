@@ -131,4 +131,8 @@ export const api = {
 
   createInvoice: (data: any) =>
     req<any>('/moving-invoices', { method: 'POST', body: JSON.stringify(data) }),
+  updateInvoice: (id: string, data: any) =>
+    req<any>(`/moving-invoices/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteInvoice: (id: string) =>
+    req<{ ok: boolean }>(`/moving-invoices/${id}`, { method: 'DELETE' }),
 };
