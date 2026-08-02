@@ -15,7 +15,9 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
 
 function SmartHome() {
   const { user, hasPermission } = useAuth()
-  const isMovingOnly = user?.role !== 'admin' && hasPermission('moving_dashboard') && !hasPermission('units')
+  const hasMoving = hasPermission('moving_dashboard')
+  const hasStorage = hasPermission('units') || hasPermission('dashboard')
+  const isMovingOnly = hasMoving && !hasStorage
   if (isMovingOnly) {
     return <Navigate to="/moving" replace />
   }

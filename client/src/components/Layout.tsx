@@ -92,7 +92,7 @@ export default function Layout() {
   const [profileOpen, setProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
   const isAdmin = user?.role === 'admin'
-  const isMovingOnly = !isAdmin && hasPermission('moving_dashboard') && !hasPermission('units')
+  const isMovingOnly = hasPermission('moving_dashboard') && !hasPermission('units') && !hasPermission('dashboard')
 
   // Close sidebar on route change (mobile)
   useEffect(() => { setSidebarOpen(false); setProfileOpen(false) }, [location.pathname])
