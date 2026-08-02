@@ -397,12 +397,10 @@ export default function MovingInvoiceDetail() {
               <span>Total</span>
               <span style={{ fontVariantNumeric: 'tabular-nums' }}>AED {fmt(total)}</span>
             </div>
-            {(invoice.balanceDue ?? 0) > 0 && (
-              <div className="flex gap-4 sm:gap-8 mt-1" style={{ fontSize: 13, fontWeight: 600, color: '#EF4444' }}>
-                <span>Balance Due</span>
-                <span style={{ fontVariantNumeric: 'tabular-nums' }}>AED {fmt(invoice.balanceDue!)}</span>
-              </div>
-            )}
+            <div className="flex gap-4 sm:gap-8 mt-1" style={{ fontSize: 13, fontWeight: 600, color: (invoice.balanceDue ?? 0) > 0 ? '#EF4444' : '#059669' }}>
+              <span>Balance Due</span>
+              <span style={{ fontVariantNumeric: 'tabular-nums' }}>AED {fmt(invoice.balanceDue ?? 0)}</span>
+            </div>
           </div>
         </div>
       </div>
