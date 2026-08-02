@@ -203,7 +203,7 @@ export default function MovingInvoiceDetail() {
             {createJobMut.isPending ? 'Creating…' : 'Create Job'}
           </Button>
         )}
-        {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
+        {invoice.status !== 'cancelled' && (
           <Button size="sm" onClick={() => setPayModal(true)}>Record Payment</Button>
         )}
         {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
