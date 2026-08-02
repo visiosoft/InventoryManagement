@@ -947,6 +947,7 @@ const movingInvoicePaymentSchema = new Schema(
     amount: { type: Number, required: true },
     method: { type: String, enum: ['cash', 'bank_transfer', 'card', 'online', 'other'], default: 'cash' },
     notes: { type: String, default: '' },
+    receivedBy: { type: String, default: '' },
   },
   { _id: false }
 );

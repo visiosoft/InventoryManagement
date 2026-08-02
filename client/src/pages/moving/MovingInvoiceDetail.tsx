@@ -420,6 +420,7 @@ export default function MovingInvoiceDetail() {
                   <th style={{ padding: '10px 16px', fontSize: 11, fontWeight: 600, color: MUTED, textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.05em', width: 110 }}>Method</th>
                   <th style={{ padding: '10px 16px', fontSize: 11, fontWeight: 600, color: MUTED, textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Notes</th>
                   <th style={{ padding: '10px 16px', fontSize: 11, fontWeight: 600, color: MUTED, textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.05em', width: 130 }}>Amount</th>
+                  <th style={{ padding: '10px 16px', fontSize: 11, fontWeight: 600, color: MUTED, textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.05em', width: 130 }}>Received By</th>
                   <th style={{ padding: '10px 16px', width: 80 }} />
                 </tr>
               </thead>
@@ -430,6 +431,7 @@ export default function MovingInvoiceDetail() {
                     <td style={{ padding: '12px 16px', fontSize: 13, color: INK, textTransform: 'capitalize' }}>{p.method.replace('_', ' ')}</td>
                     <td style={{ padding: '12px 16px', fontSize: 13, color: MUTED }}>{p.notes || '—'}</td>
                     <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: '#059669', textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>AED {fmt(p.amount)}</td>
+                    <td style={{ padding: '12px 16px', fontSize: 13, color: MUTED }}>{p.receivedBy || '—'}</td>
                     <td style={{ padding: '12px 16px', textAlign: 'right' }}>
                       <div className="flex items-center justify-end gap-1">
                         <button type="button" onClick={() => setEditingPayment({ idx: i, amount: String(p.amount), method: p.method, date: p.date ? new Date(p.date).toISOString().slice(0, 10) : '', notes: p.notes || '' })}
@@ -469,6 +471,7 @@ export default function MovingInvoiceDetail() {
                   </div>
                 </div>
                 {p.notes && <p style={{ fontSize: 12, color: MUTED, marginTop: 4 }}>{p.notes}</p>}
+                {p.receivedBy && <p style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>Received by: {p.receivedBy}</p>}
               </div>
             ))}
           </div>

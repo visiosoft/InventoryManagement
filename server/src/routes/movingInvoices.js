@@ -60,6 +60,11 @@ router.post('/', async (req, res) => {
     const invoiceNo = await nextMovingInvoiceNo();
     const body = req.body;
     const balanceDue = (body.total || 0) - (body.depositPaid || 0);
+    if (!body.dueDate) {
+      const base = body.invoiceDate ? new Date(body.invoiceDate) : new Date();
+      base.setDate(base.getDate() + 1);
+      body.dueDate = base;
+    }
     const invoice = await MovingInvoice.create({ ...body, invoiceNo, balanceDue });
     res.status(201).json(invoice);
   } catch (err) {
@@ -160,7 +165,8 @@ router.post('/:id/record-payment', async (req, res) => {
     const invoice = await MovingInvoice.findById(req.params.id);
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
 
-    invoice.paymentHistory.push({ amount: Number(amount), method, date: date ? new Date(date) : new Date(), notes });
+    const receivedBy = req.user.name || req.user.email || '';
+    invoice.paymentHistory.push({ amount: Number(amount), method, date: date ? new Date(date) : new Date(), notes, receivedBy });
     const totalPaid = invoice.depositPaid + invoice.paymentHistory.reduce((s, p) => s + p.amount, 0);
     invoice.balanceDue = Math.max(0, invoice.total - totalPaid);
     invoice.status = invoice.balanceDue <= 0 ? 'paid' : 'partial';
@@ -182,11 +188,12 @@ router.put('/:id/payments/:idx', async (req, res) => {
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
     const idx = Number(req.params.idx);
     if (idx < 0 || idx >= invoice.paymentHistory.length) return res.status(404).json({ error: 'Payment entry not found' });
-    const { amount, method, date, notes } = req.body;
+    const { amount, method, date, notes, receivedBy } = req.body;
     if (amount !== undefined) invoice.paymentHistory[idx].amount = Number(amount);
     if (method !== undefined) invoice.paymentHistory[idx].method = method;
     if (date !== undefined) invoice.paymentHistory[idx].date = new Date(date);
     if (notes !== undefined) invoice.paymentHistory[idx].notes = notes;
+    if (receivedBy !== undefined) invoice.paymentHistory[idx].receivedBy = receivedBy;
     const totalPaid = invoice.depositPaid + invoice.paymentHistory.reduce((s, p) => s + p.amount, 0);
     invoice.balanceDue = Math.max(0, invoice.total - totalPaid);
     invoice.status = invoice.balanceDue <= 0 ? 'paid' : invoice.paymentHistory.length > 0 ? 'partial' : invoice.status;

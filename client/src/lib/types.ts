@@ -699,6 +699,7 @@ export interface MovingPaymentEntry {
   amount: number
   method: string
   notes?: string
+  receivedBy?: string
 }
 
 export type MovingInvoiceStatus = 'draft' | 'sent' | 'paid' | 'partial' | 'cancelled'
