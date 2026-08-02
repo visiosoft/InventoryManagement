@@ -591,7 +591,7 @@ export default function InvoiceDetail() {
 
     const paid = Math.min(invoice.paymentMade ?? 0, invoice.total)
     const balance = Math.max(0, invoice.total - paid)
-    const canPay = !['paid', 'cancelled'].includes(invoice.status)
+    const canPay = !['cancelled'].includes(invoice.status)
 
     return (
         <div style={{ background: '#FDFCFA', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
