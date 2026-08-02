@@ -153,6 +153,50 @@ router.post('/:id/convert-to-invoice', async (req, res) => {
   }
 });
 
+// Send quote via WhatsApp
+router.post('/:id/send-whatsapp', async (req, res) => {
+  try {
+    const quote = await MovingQuote.findById(req.params.id)
+      .populate('customer', 'fullName phone email');
+    if (!quote) return res.status(404).json({ error: 'Quote not found' });
+
+    const customer = quote.customer;
+    if (!customer?.phone) return res.status(400).json({ error: 'Customer has no phone number' });
+
+    if (!quote.shareToken) {
+      quote.shareToken = crypto.randomUUID();
+      await quote.save();
+    }
+
+    const baseUrl = process.env.APP_URL || req.headers.origin || '';
+    const pdfUrl = `${baseUrl}/api/moving-quotes/${quote._id}/pdf?token=${quote.shareToken}`;
+
+    const { sendWhatsAppText, whatsappSendConfigured } = await import('../services/whatsapp.js');
+    if (!whatsappSendConfigured()) {
+      return res.status(400).json({ error: 'WhatsApp is not configured' });
+    }
+
+    const msg = [
+      `Hi ${customer.fullName},`,
+      ``,
+      `Please find your quotation *${quote.quoteNo}* from PurpleBox Moving.`,
+      ``,
+      `Total: *AED ${(quote.total || 0).toLocaleString()}*`,
+      ``,
+      `📄 View quote: ${pdfUrl}`,
+      ``,
+      `If you have any questions, feel free to reach out.`,
+      ``,
+      `Thank you! — PurpleBox Moving`,
+    ].join('\n');
+
+    await sendWhatsAppText({ to: customer.phone, body: msg });
+    res.json({ ok: true, phone: customer.phone });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Delete quote
 router.delete('/:id', async (req, res) => {
   try {

@@ -79,9 +79,56 @@ export const api = {
 
   searchCustomers: (search: string) =>
     req<{ data: any[] }>(`/customers?search=${encodeURIComponent(search)}&limit=20`),
+  createCustomer: (data: { fullName: string; phone?: string; email?: string }) =>
+    req<any>('/customers', { method: 'POST', body: JSON.stringify(data) }),
 
   getWorkers: () => req<any[]>('/workers'),
   getTrucks: () => req<any[]>('/trucks'),
   getInvoices: (p?: Record<string, string>) =>
     req<any[]>(`/moving-invoices${qs(p)}`),
+  getInvoice: (id: string) => req<any>(`/moving-invoices/${id}`),
+  sendInvoiceWhatsApp: (id: string) =>
+    req<{ payUrl: string; token: string; balanceDue: number }>(`/moving-invoices/${id}/payment-link`, { method: 'POST' }),
+  getInvoiceShareToken: (id: string) =>
+    req<{ token: string }>(`/moving-invoices/${id}/share-token`, { method: 'POST' }),
+
+  getQuotes: (p?: Record<string, string>) =>
+    req<any[]>(`/moving-quotes${qs(p)}`),
+  getQuote: (id: string) => req<any>(`/moving-quotes/${id}`),
+  createQuote: (data: any) =>
+    req<any>('/moving-quotes', { method: 'POST', body: JSON.stringify(data) }),
+  sendQuoteWhatsApp: (id: string) =>
+    req<{ ok: boolean; phone: string }>(`/moving-quotes/${id}/send-whatsapp`, { method: 'POST' }),
+  getQuoteShareToken: (id: string) =>
+    req<{ token: string }>(`/moving-quotes/${id}/share-token`, { method: 'POST' }),
+
+  getSiteVisits: () => req<any[]>('/site-visits'),
+  createSiteVisit: async (data: {
+    visitDate: string; customerName: string; customerPhone: string;
+    address: string; notes: string;
+    files?: { uri: string; name: string; type: string }[];
+  }) => {
+    const form = new FormData();
+    form.append('visitDate', data.visitDate);
+    form.append('customerName', data.customerName);
+    form.append('customerPhone', data.customerPhone);
+    form.append('address', data.address);
+    form.append('notes', data.notes);
+    if (data.files) {
+      data.files.forEach(f => form.append('files', f as any));
+    }
+    const headers: Record<string, string> = {};
+    if (TOKEN) headers['Authorization'] = `Bearer ${TOKEN}`;
+    const res = await fetch(`${API_BASE}/site-visits`, {
+      method: 'POST', headers, body: form,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || 'Create failed');
+    }
+    return res.json();
+  },
+
+  createInvoice: (data: any) =>
+    req<any>('/moving-invoices', { method: 'POST', body: JSON.stringify(data) }),
 };

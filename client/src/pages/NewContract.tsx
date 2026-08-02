@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Check, ChevronDown, FileText, Files, Layers, Plus, X } from 'lucide-react'
 import { api, apiError, unitTypeApi } from '../lib/api'
@@ -28,18 +28,18 @@ function computeBreakdown(
 ): BreakdownSection[] {
   const totalDays = Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000)
   if (totalDays <= 0 || rate <= 0) return []
-  const dpp = DAYS_PER_PERIOD[billing]
-  const fmt = (n: number) => formatMoney(Math.round(n * 100) / 100)
+  const dpp    = DAYS_PER_PERIOD[billing]
+  const fmt    = (n: number) => formatMoney(Math.round(n * 100) / 100)
 
   // Cap to last COMPLETE 4-week period so the partial trailing period is absorbed by the deposit.
-  const rawWeeks = Math.ceil(totalDays / dpp)
-  const fullPeriods = Math.floor(rawWeeks / 4)
-  const totalWeeks = fullPeriods > 1 ? fullPeriods * 4 : rawWeeks
-  const discountWeeks = billing === 'weekly' ? 4 : 1
+  const rawWeeks       = Math.ceil(totalDays / dpp)
+  const fullPeriods    = Math.floor(rawWeeks / 4)
+  const totalWeeks     = fullPeriods > 1 ? fullPeriods * 4 : rawWeeks
+  const discountWeeks  = billing === 'weekly' ? 4 : 1
   const firstCount = Math.min(discountWeeks, totalWeeks)
 
   // rate = monthly price; weekly payment = rate/4
-  const weeklyRate = Math.round((rate / 4) * 100) / 100
+  const weeklyRate     = Math.round((rate / 4) * 100) / 100
   const discountedRate = Math.round(weeklyRate * (1 - discountPct / 100) * 100) / 100
 
   const rows: BreakdownSection[] = []
@@ -48,7 +48,7 @@ function computeBreakdown(
   if (discountPct > 0) {
     const month1Full = Math.round(weeklyRate * firstCount * 100) / 100
     const month1Disc = Math.round(discountedRate * firstCount * 100) / 100
-    const saved = Math.round((month1Full - month1Disc) * 100) / 100
+    const saved      = Math.round((month1Full - month1Disc) * 100) / 100
     const detail = firstCount === 4
       ? `${fmt(rate)}/mo × ${100 - discountPct}% = ${fmt(month1Disc)}`
       : `${firstCount} wks × ${fmt(weeklyRate)} × ${100 - discountPct}% = ${fmt(month1Disc)}`
@@ -67,17 +67,17 @@ function computeBreakdown(
   }
 
   // ── Remaining weeks grouped into months of 4 ──
-  let remaining = totalWeeks - firstCount
-  let monthNum = 2
+  let remaining  = totalWeeks - firstCount
+  let monthNum   = 2
   let weekOffset = firstCount
 
   while (remaining > 0) {
     const weeksThisMonth = Math.min(4, remaining)
-    const isPartial = weeksThisMonth < 4
-    const wkStart = weekOffset + 1
-    const wkEnd = weekOffset + weeksThisMonth
-    const monthAmt = Math.round(weeklyRate * weeksThisMonth * 100) / 100
-    const detail = isPartial
+    const isPartial      = weeksThisMonth < 4
+    const wkStart        = weekOffset + 1
+    const wkEnd          = weekOffset + weeksThisMonth
+    const monthAmt       = Math.round(weeklyRate * weeksThisMonth * 100) / 100
+    const detail         = isPartial
       ? `Wk ${wkStart}${wkEnd > wkStart ? `–${wkEnd}` : ''} · ${weeksThisMonth} × ${fmt(weeklyRate)}`
       : `Wk ${wkStart}–${wkEnd} · ${fmt(rate)}/mo`
     rows.push({
@@ -85,7 +85,7 @@ function computeBreakdown(
       detail,
       amount: monthAmt,
     })
-    remaining -= weeksThisMonth
+    remaining  -= weeksThisMonth
     weekOffset += weeksThisMonth
     monthNum++
   }
@@ -281,9 +281,15 @@ function ModePicker({ onPick }: { onPick: (m: Mode) => void }) {
 // ── Unit availability card ────────────────────────────────────────────────────
 type UnitAvail = 'available' | 'prebookable' | 'booked' | 'maintenance'
 
-function unitAvailability(u: Unit, _contracts: Contract[], _startDate: string, _endDate: string): UnitAvail {
+function unitAvailability(u: Unit, contracts: Contract[], startDate: string, endDate: string): UnitAvail {
   if (u.status === 'maintenance') return 'maintenance'
-  // Units can be booked by multiple customers — never block as 'booked'
+  const conflict = contracts.find(
+    (c) =>
+      c.unit?._id === u._id &&
+      ['draft', 'pending_signature', 'active'].includes(c.status) &&
+      hasDateOverlap(startDate, endDate, c.startDate, c.endDate)
+  )
+  if (conflict) return 'booked'
   if (u.status === 'available') return 'available'
   return 'prebookable'
 }
@@ -313,7 +319,6 @@ const availOrder: Record<UnitAvail, number> = { available: 0, prebookable: 1, bo
 export default function NewContract() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
-  const qc = useQueryClient()
 
   const [mode, setMode] = useState<Mode | null>(params.get('unit') ? 'single' : null)
   const [step, setStep] = useState(0)
@@ -336,20 +341,18 @@ export default function NewContract() {
   const [floorFilter, setFloorFilter] = useState('')
   const [showBooked, setShowBooked] = useState(false)
 
-  const { data: customersPage } = useQuery<{ data: Customer[] }>({
-    queryKey: ['customers-all'],
-    queryFn: () => api.get('/customers', { params: { limit: 500 } }).then((r) => r.data),
+  const { data: customers = [] } = useQuery<Customer[]>({
+    queryKey: ['customers', ''],
+    queryFn: () => api.get('/customers').then((r) => r.data),
   })
-  const customers = customersPage?.data ?? []
   const { data: units = [], isLoading: unitsLoading } = useQuery<Unit[]>({
     queryKey: ['units'],
     queryFn: () => api.get('/units').then((r) => r.data),
   })
-  const { data: contractsPage } = useQuery<{ data: Contract[] }>({
-    queryKey: ['contracts-all'],
-    queryFn: () => api.get('/contracts', { params: { limit: 1000 } }).then((r) => r.data),
+  const { data: contracts = [] } = useQuery<Contract[]>({
+    queryKey: ['contracts'],
+    queryFn: () => api.get('/contracts').then((r) => r.data),
   })
-  const contracts = contractsPage?.data ?? []
   const { data: unitTypes = [] } = useQuery<UnitType[]>({
     queryKey: ['unit-types'],
     queryFn: () => unitTypeApi.list(),
@@ -501,29 +504,16 @@ export default function NewContract() {
       if (results.length === 1) navigate(`/contracts/${results[0].data._id}`)
       else navigate('/contracts')
     },
-    onError: (e) => { setError(apiError(e)); setStep(skipUnitStep ? 1 : 2) },
+    onError: (e) => { setError(apiError(e)); setStep(2) },
   })
 
-  // Skip unit step in single mode when unit is pre-selected via URL
-  const skipUnitStep = mode === 'single' && Boolean(params.get('unit'))
-  const steps = skipUnitStep
-    ? ['Customer', 'Terms', 'Review']
-    : ['Customer', mode === 'single' ? 'Unit' : 'Units', 'Terms', 'Review']
-  const canNext = skipUnitStep
-    ? [
-      Boolean(customerId),
-      Boolean(startDate && endDate > startDate && selectedUnits.every((u) => getUnitRate(u) > 0)),
-      true,
-    ][step]
-    : [
-      Boolean(customerId),
-      unitIds.length > 0,
-      Boolean(startDate && endDate > startDate && selectedUnits.every((u) => getUnitRate(u) > 0)),
-      true,
-    ][step]
-
-  // Map internal step index to logical content step (0=Customer, 1=Unit, 2=Terms, 3=Review)
-  const contentStep = skipUnitStep ? (step === 0 ? 0 : step + 1) : step
+  const steps = ['Customer', mode === 'single' ? 'Unit' : 'Units', 'Terms', 'Review']
+  const canNext = [
+    Boolean(customerId),
+    unitIds.length > 0 && overlappingUnitIds.length === 0,
+    Boolean(startDate && endDate > startDate && selectedUnits.every((u) => getUnitRate(u) > 0) && overlappingUnitIds.length === 0),
+    true,
+  ][step]
 
   // Availability counts
   const availCount = useMemo(() => [...unitAvailMap.values()].filter((v) => v === 'available').length, [unitAvailMap])
@@ -597,7 +587,7 @@ export default function NewContract() {
         <CardBody className="pt-4 space-y-4">
 
           {/* ── Step 0: Customer ─────────────────────────────────── */}
-          {contentStep === 0 && (
+          {step === 0 && (
             <>
               <Field label="Customer">
                 <CustomerCombobox customers={customers} value={customerId} onChange={setCustomerId} onAddNew={() => setAddCustOpen(true)} />
@@ -618,7 +608,7 @@ export default function NewContract() {
           )}
 
           {/* ── Step 1: Unit(s) ──────────────────────────────────── */}
-          {contentStep === 1 && (
+          {step === 1 && (
             <>
               {/* Date range for availability check */}
               <div className="rounded-lg border bg-muted/40 px-3 py-2.5 space-y-2">
@@ -691,8 +681,6 @@ export default function NewContract() {
                   <option value="">All floors</option>
                   <option value="F1">Floor F1</option>
                   <option value="F2">Floor F2</option>
-                  <option value="F3">Floor F3</option>
-                  <option value="Shed">Shed</option>
                 </Select>
                 <Select value={sizeFilter} onChange={(e) => setSizeFilter(e.target.value)} className="w-36">
                   <option value="">All sizes</option>
@@ -720,7 +708,7 @@ export default function NewContract() {
                       {list.map((u) => {
                         const avail = unitAvailMap.get(u._id) ?? 'maintenance'
                         const selected = unitIds.includes(u._id)
-                        const disabled = avail === 'maintenance'
+                        const disabled = avail === 'maintenance' || avail === 'booked'
                         const conflict = conflictMap.get(u._id)
                         return (
                           <button
@@ -806,7 +794,7 @@ export default function NewContract() {
           )}
 
           {/* ── Step 2: Terms ────────────────────────────────────── */}
-          {contentStep === 2 && (() => {
+          {step === 2 && (() => {
             const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : ''
             const firstUnit = selectedUnits[0] ?? ({} as Unit)
             const displayRate = mode === 'combined'
@@ -1029,7 +1017,7 @@ export default function NewContract() {
           })()}
 
           {/* ── Step 3: Review ───────────────────────────────────── */}
-          {contentStep === 3 && (
+          {step === 3 && (
             <div className="space-y-3 text-sm">
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -1080,7 +1068,7 @@ export default function NewContract() {
                           <span>{u.unitNumber}{u.sizeSqf != null ? <span className="ml-1.5 font-normal text-muted-foreground">{u.sizeSqf} sq ft</span> : null}</span>
                           <span className="text-muted-foreground font-normal">
                             {formatMoney(r)}/mo
-                            <span className="ml-1.5 opacity-60 text-[10px]">({formatMoney(Math.round(r / 4 * 100) / 100)}/wk)</span>
+                            <span className="ml-1.5 opacity-60 text-[10px]">({formatMoney(Math.round(r/4*100)/100)}/wk)</span>
                           </span>
                           <span>{formatMoney(totalDue)}</span>
                         </div>
@@ -1150,7 +1138,7 @@ export default function NewContract() {
             <Button variant="outline" onClick={() => step === 0 ? navigate(-1) : setStep(step - 1)}>
               {step === 0 ? 'Cancel' : 'Back'}
             </Button>
-            {step < steps.length - 1 ? (
+            {step < 3 ? (
               <Button disabled={!canNext} onClick={() => setStep(step + 1)}>Continue</Button>
             ) : (
               <Button disabled={create.isPending || overlappingUnitIds.length > 0} onClick={() => create.mutate()}>
@@ -1167,7 +1155,7 @@ export default function NewContract() {
       <AddCustomerModal
         open={addCustOpen}
         onClose={() => setAddCustOpen(false)}
-        onCreated={(customer) => { qc.invalidateQueries({ queryKey: ['customers-all'] }); setCustomerId(customer._id) }}
+        onCreated={(customer) => { setCustomerId(customer._id) }}
       />
     </div>
   )
