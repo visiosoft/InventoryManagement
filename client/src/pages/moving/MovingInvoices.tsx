@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
-import { Search, Receipt, ArrowRight, AlertCircle, CheckCircle2, Clock, Trash2 } from 'lucide-react'
+import { Search, Receipt, ArrowRight, AlertCircle, CheckCircle2, Clock, Trash2, Plus, X } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
-import type { MovingInvoice, MovingInvoiceStatus } from '../../lib/types'
-import { Badge, Button, Modal, Spinner } from '../../components/ui'
+import type { Customer, MovingInvoice, MovingInvoiceStatus } from '../../lib/types'
+import { Badge, Button, Field, Input, Modal, Spinner, Textarea } from '../../components/ui'
 import { formatDate } from '../../lib/utils'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
@@ -57,14 +57,77 @@ function fmtAedShort(n: number) {
   return fmtAed(n)
 }
 
+type LineItem = { description: string; qty: number; rate: number; amount: number }
+const emptyItem = (): LineItem => ({ description: '', qty: 1, rate: 0, amount: 0 })
+const today = () => new Date().toISOString().slice(0, 10)
+const tomorrow = () => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10) }
+
 export default function MovingInvoices() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
+  const navigate = useNavigate()
   const qc = useQueryClient()
   const [filterStatus, setFilterStatus] = useState<MovingInvoiceStatus | ''>('')
   const [search, setSearch] = useState('')
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [err, setErr] = useState('')
+
+  // New invoice modal state
+  const [newModal, setNewModal] = useState(false)
+  const [custSearch, setCustSearch] = useState('')
+  const [custId, setCustId] = useState('')
+  const [custName, setCustName] = useState('')
+  const [invDate, setInvDate] = useState(today)
+  const [dueDate, setDueDate] = useState(tomorrow)
+  const [lineItems, setLineItems] = useState<LineItem[]>([emptyItem()])
+  const [deposit, setDeposit] = useState('')
+  const [invNotes, setInvNotes] = useState('')
+  const [newErr, setNewErr] = useState('')
+
+  const { data: custPage } = useQuery<{ data: Customer[] }>({
+    queryKey: ['customers-search', custSearch],
+    queryFn: () => api.get('/customers', { params: { search: custSearch, limit: 20 } }).then(r => r.data),
+    enabled: custSearch.length > 0,
+  })
+  const custResults = custPage?.data ?? []
+
+  const createMut = useMutation({
+    mutationFn: (body: Record<string, unknown>) => api.post('/moving-invoices', body).then(r => r.data),
+    onSuccess: (inv) => {
+      qc.invalidateQueries({ queryKey: ['moving-invoices'] })
+      setNewModal(false)
+      navigate(`/moving/invoices/${inv._id}`)
+    },
+    onError: (e) => setNewErr(apiError(e)),
+  })
+
+  function resetNewForm() {
+    setCustSearch(''); setCustId(''); setCustName('')
+    setInvDate(today()); setDueDate(tomorrow())
+    setLineItems([emptyItem()]); setDeposit(''); setInvNotes(''); setNewErr('')
+  }
+
+  function updateLine(idx: number, field: keyof LineItem, val: string) {
+    setLineItems(prev => prev.map((it, i) => {
+      if (i !== idx) return it
+      const updated = { ...it, [field]: field === 'description' ? val : Number(val) }
+      if (field === 'qty' || field === 'rate') updated.amount = updated.qty * updated.rate
+      return updated
+    }))
+  }
+
+  function submitNewInvoice(e: React.FormEvent) {
+    e.preventDefault()
+    if (!custId) { setNewErr('Please select a customer'); return }
+    const validItems = lineItems.filter(it => it.description && it.amount > 0)
+    if (validItems.length === 0) { setNewErr('Add at least one line item'); return }
+    const total = validItems.reduce((s, it) => s + it.amount, 0)
+    createMut.mutate({
+      customer: custId, invoiceDate: invDate, dueDate,
+      items: validItems, total, depositPaid: Number(deposit) || 0,
+      notes: invNotes,
+    })
+  }
 
   const { data: allInvoices = [], isLoading } = useQuery<MovingInvoice[]>({
     queryKey: ['moving-invoices'],
@@ -114,6 +177,9 @@ export default function MovingInvoices() {
           <div style={{ ...HEADING, fontSize: 26, fontWeight: 700, color: INK }}>Moving Invoices</div>
           <div style={{ fontSize: 14, color: MUTED, marginTop: 4 }}>{allInvoices.length} invoices total</div>
         </div>
+        <Button onClick={() => { resetNewForm(); setNewModal(true) }}>
+          <Plus size={15} className="mr-1" />New Invoice
+        </Button>
       </div>
 
       {/* Stat cards */}
@@ -280,6 +346,104 @@ export default function MovingInvoices() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      {/* New Invoice Modal */}
+      <Modal open={newModal} title="New Invoice" onClose={() => setNewModal(false)} className="max-w-3xl w-[90vw]">
+        <form onSubmit={submitNewInvoice} className="space-y-5">
+          {/* Customer */}
+          <div>
+            <label className="text-sm font-medium text-foreground mb-1.5 block">Customer</label>
+            {custId ? (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-muted/30">
+                <span className="flex-1 text-sm font-medium">{custName}</span>
+                <button type="button" onClick={() => { setCustId(''); setCustName(''); setCustSearch('') }}>
+                  <X size={14} className="text-muted-foreground" />
+                </button>
+              </div>
+            ) : (
+              <div className="relative">
+                <Input value={custSearch} onChange={e => setCustSearch(e.target.value)} placeholder="Search customer…" />
+                {custSearch && custResults.length > 0 && (
+                  <div className="absolute z-20 mt-1 w-full bg-card border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {custResults.map(c => (
+                      <button key={c._id} type="button"
+                        onClick={() => { setCustId(c._id); setCustName(c.fullName); setCustSearch('') }}
+                        className="w-full text-left px-3 py-2 hover:bg-muted/60 text-sm transition-colors"
+                      >
+                        <span className="font-medium">{c.fullName}</span>
+                        {c.phone && <span className="text-muted-foreground ml-2">{c.phone}</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Dates */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <Field label="Invoice Date"><Input type="date" value={invDate} onChange={e => setInvDate(e.target.value)} required /></Field>
+            <Field label="Due Date"><Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} required /></Field>
+            <Field label="Deposit Paid (AED)"><Input type="number" min="0" step="0.01" value={deposit} onChange={e => setDeposit(e.target.value)} placeholder="0" /></Field>
+          </div>
+
+          {/* Line Items */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium text-foreground">Line Items</label>
+              <button type="button" onClick={() => setLineItems(prev => [...prev, emptyItem()])}
+                className="flex items-center gap-1 text-xs font-medium hover:opacity-80 transition-opacity" style={{ color: PURPLE }}>
+                <Plus size={13} />Add row
+              </button>
+            </div>
+            <div className="space-y-2">
+              {lineItems.map((it, i) => (
+                <div key={i} className="grid grid-cols-12 gap-2 items-end">
+                  <div className="col-span-5">
+                    {i === 0 && <span className="text-[11px] text-muted-foreground mb-1 block">Description</span>}
+                    <Input value={it.description} onChange={e => updateLine(i, 'description', e.target.value)} placeholder="Service" />
+                  </div>
+                  <div className="col-span-2">
+                    {i === 0 && <span className="text-[11px] text-muted-foreground mb-1 block">Qty</span>}
+                    <Input type="number" min="1" value={it.qty} onChange={e => updateLine(i, 'qty', e.target.value)} />
+                  </div>
+                  <div className="col-span-2">
+                    {i === 0 && <span className="text-[11px] text-muted-foreground mb-1 block">Rate</span>}
+                    <Input type="number" min="0" step="0.01" value={it.rate || ''} onChange={e => updateLine(i, 'rate', e.target.value)} />
+                  </div>
+                  <div className="col-span-2">
+                    {i === 0 && <span className="text-[11px] text-muted-foreground mb-1 block">Amount</span>}
+                    <Input type="number" value={it.amount || ''} readOnly className="bg-muted/30" />
+                  </div>
+                  <div className="col-span-1 flex justify-center">
+                    {lineItems.length > 1 && (
+                      <button type="button" onClick={() => setLineItems(prev => prev.filter((_, j) => j !== i))}
+                        className="p-1 rounded hover:bg-red-50 transition-colors"><Trash2 size={13} className="text-red-500" /></button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="text-right mt-2 text-sm font-semibold" style={{ color: INK }}>
+              Total: AED {lineItems.reduce((s, it) => s + it.amount, 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+          </div>
+
+          {/* Notes */}
+          <Field label="Notes (optional)">
+            <Textarea value={invNotes} onChange={e => setInvNotes(e.target.value)} placeholder="Any notes…" rows={2} />
+          </Field>
+
+          {newErr && <p className="text-sm text-red-600">{newErr}</p>}
+
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setNewModal(false)}>Cancel</Button>
+            <Button type="submit" disabled={createMut.isPending}>
+              {createMut.isPending ? 'Creating…' : 'Create Invoice'}
+            </Button>
+          </div>
+        </form>
       </Modal>
     </div>
   )

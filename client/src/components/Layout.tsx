@@ -160,7 +160,7 @@ export default function Layout() {
           )
         })}
 
-        {!isMovingOnly && isAdmin && (
+        {!isMovingOnly && isAdmin && hasPermission('quotes') && (
           <NavLink to="/approvals" className={({ isActive }) => navLinkCls(isActive)}>
             <ShieldCheck size={15} />Approvals
           </NavLink>

@@ -206,7 +206,7 @@ export default function MovingInvoiceDetail() {
         {invoice.status !== 'cancelled' && (
           <Button size="sm" onClick={() => setPayModal(true)}>Record Payment</Button>
         )}
-        {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
+        {invoice.status !== 'cancelled' && (
           <Button
             size="sm"
             variant="outline"
@@ -286,11 +286,9 @@ export default function MovingInvoiceDetail() {
             <span className="hidden sm:inline">Open in Zoho ↗</span><span className="sm:hidden">Zoho ↗</span>
           </a>
         )}
-        {invoice.status !== 'paid' && (
-          <Button size="sm" variant="outline" className="text-red-600 border-red-300 hover:bg-red-50" onClick={() => setDeleteConfirm(true)}>
-            <Trash2 size={13} className="mr-1" /><span className="hidden sm:inline">Delete</span>
-          </Button>
-        )}
+        <Button size="sm" variant="outline" className="text-red-600 border-red-300 hover:bg-red-50" onClick={() => setDeleteConfirm(true)}>
+          <Trash2 size={13} className="mr-1" /><span className="hidden sm:inline">Delete</span>
+        </Button>
       </div>
 
       {err && <p className="text-sm text-red-600 mb-4">{err}</p>}
@@ -336,7 +334,7 @@ export default function MovingInvoiceDetail() {
       <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, overflow: 'hidden', marginBottom: 24 }}>
         <div style={{ padding: '16px 24px', borderBottom: '1px solid rgba(20,8,31,0.06)' }} className="flex items-center justify-between">
           <div style={{ ...HEADING, fontSize: 15, fontWeight: 700, color: INK }}>Line Items</div>
-          {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
+          {invoice.status !== 'cancelled' && (
             <Button size="sm" variant="outline" onClick={() => { setItems(invoice.items as typeof items); setItemsModal(true) }}>
               <Edit size={13} className="mr-1" />Edit Items
             </Button>
