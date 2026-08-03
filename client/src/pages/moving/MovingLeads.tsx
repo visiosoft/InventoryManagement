@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useLocation } from 'react-router-dom'
-import { Plus, Search, Trash2, Users, Phone, Calendar, MapPin, UserPlus } from 'lucide-react'
+import { Plus, Search, Trash2, Users, Phone, Calendar, MapPin, UserPlus, MessageCircle } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingLead, MovingLeadSource, MovingLeadStatus } from '../../lib/types'
 import { Badge, Button, Field, Input, Modal, Select, Spinner, Textarea } from '../../components/ui'
@@ -246,10 +246,24 @@ export default function MovingLeads() {
                       </div>
                     )}
                   </div>
-                  <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteId(l._id) }}
-                    className="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors shrink-0" style={{ color: MUTED }}>
-                    <Trash2 size={14} />
-                  </button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {(l.prospectPhone || l.customer?.phone) && (
+                      <>
+                        <a href={`https://wa.me/${(l.prospectPhone || l.customer?.phone || '').replace(/[^0-9]/g, '')}`} target="_blank" rel="noreferrer"
+                          onClick={e => e.stopPropagation()} className="p-1.5 rounded-lg hover:bg-green-50 transition-colors">
+                          <MessageCircle size={14} className="text-green-600" />
+                        </a>
+                        <a href={`tel:${l.prospectPhone || l.customer?.phone}`}
+                          onClick={e => e.stopPropagation()} className="p-1.5 rounded-lg hover:bg-blue-50 transition-colors">
+                          <Phone size={14} className="text-blue-600" />
+                        </a>
+                      </>
+                    )}
+                    <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteId(l._id) }}
+                      className="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors" style={{ color: MUTED }}>
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
               </Link>
             ))}
@@ -282,9 +296,23 @@ export default function MovingLeads() {
                         <Badge tone={statusTone[l.status]} className="text-xs">{l.status.replace(/_/g, ' ')}</Badge>
                       </td>
                       <td style={{ padding: '14px 16px', textAlign: 'right' }}>
-                        <button onClick={() => setDeleteId(l._id)} className="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors" style={{ color: MUTED }}>
-                          <Trash2 size={14} />
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          {(l.prospectPhone || l.customer?.phone) && (
+                            <>
+                              <a href={`https://wa.me/${(l.prospectPhone || l.customer?.phone || '').replace(/[^0-9]/g, '')}`} target="_blank" rel="noreferrer"
+                                className="p-1.5 rounded-lg hover:bg-green-50 transition-colors" title="WhatsApp">
+                                <MessageCircle size={14} className="text-green-600" />
+                              </a>
+                              <a href={`tel:${l.prospectPhone || l.customer?.phone}`}
+                                className="p-1.5 rounded-lg hover:bg-blue-50 transition-colors" title="Call">
+                                <Phone size={14} className="text-blue-600" />
+                              </a>
+                            </>
+                          )}
+                          <button onClick={() => setDeleteId(l._id)} className="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors" style={{ color: MUTED }}>
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
