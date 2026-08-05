@@ -239,9 +239,18 @@ export default function FloorMap() {
     setZoom(Math.round(z * 100) / 100)
   }
 
+  // Default to a readable zoom: smallest unit renders ~48px, canvas scrolls for the rest
   const hasDoc = !!doc
   useEffect(() => {
-    const t = setTimeout(fitZoom, 60)
+    const t = setTimeout(() => {
+      const d = stateRef.current.doc
+      if (!d) return
+      const f = d.floors[Math.min(stateRef.current.floorIdx, d.floors.length - 1)]
+      if (!f) return
+      const unitShapes = f.shapes.filter(s => s.type === 'unit')
+      const minSide = unitShapes.length ? Math.min(...unitShapes.map(u => Math.min(u.w, u.h))) : 3
+      setZoom(round2(Math.min(60, Math.max(16, 48 / minSide))))
+    }, 60)
     return () => clearTimeout(t)
   }, [floorIdx, hasDoc])
 
@@ -1019,7 +1028,7 @@ export default function FloorMap() {
               <button type="button" onClick={() => setZoom(z => Math.max(4, round2(z / 1.25)))} title="Zoom out"
                 className="h-8 w-8 rounded-full cursor-pointer hover:bg-muted/50 font-bold" style={{ border: 'none', background: 'transparent', color: '#4A4357', fontSize: 16 }}>−</button>
               <span style={{ fontSize: 12, fontWeight: 600, color: '#4A4357', minWidth: 40, textAlign: 'center' }}>{Math.round(zoom / 16 * 100)}%</span>
-              <button type="button" onClick={() => setZoom(z => Math.min(40, round2(z * 1.25)))} title="Zoom in"
+              <button type="button" onClick={() => setZoom(z => Math.min(60, round2(z * 1.25)))} title="Zoom in"
                 className="h-8 w-8 rounded-full cursor-pointer hover:bg-muted/50 font-bold" style={{ border: 'none', background: 'transparent', color: '#4A4357', fontSize: 16 }}>+</button>
               <span style={{ width: 1, height: 18, background: 'rgba(20,8,31,.12)' }} />
               <button type="button" onClick={fitZoom} title="Fit floor to screen"
