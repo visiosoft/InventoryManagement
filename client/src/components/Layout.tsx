@@ -23,13 +23,11 @@ const navGroups = [
     items: [
       { to: '/units', label: 'Search Units', icon: Box, perm: 'units' },
       { to: '/floor-map', label: 'Floor Map', icon: MapIcon, perm: 'units' },
-      { to: '/sites', label: 'Sites', icon: Building2, perm: 'units' },
     ],
   },
   {
     title: 'Sales',
     items: [
-      { to: '/customers', label: 'Customers', icon: Users, perm: 'customers' },
       { to: '/leads', label: 'Leads', icon: UserPlus, perm: 'leads' },
       { to: '/quotations', label: 'Quotations', icon: ScrollText, perm: 'quotes' },
       { to: '/contracts', label: 'Contracts', icon: Briefcase, perm: 'contracts' },
@@ -40,6 +38,8 @@ const navGroups = [
 const profileMenuItems = [
   { to: '/invoices', label: 'Invoices', icon: ReceiptText, perm: 'invoices' },
   { to: '/documents', label: 'Documents', icon: FolderOpen, perm: 'documents' },
+  { to: '/customers', label: 'Customers', icon: Users, perm: 'customers' },
+  { to: '/sites', label: 'Sites', icon: Building2, perm: 'units' },
   { to: '/settings', label: 'Settings', icon: Settings, perm: 'settings' },
 ]
 
