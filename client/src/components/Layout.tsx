@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ShieldCheck, ScrollText, CalendarCheck, RefreshCw, Map as MapIcon } from 'lucide-react'
+import { LayoutDashboard, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ShieldCheck, ScrollText, CalendarCheck, RefreshCw, Map as MapIcon, Mail } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { cn } from '../lib/utils'
@@ -32,6 +32,7 @@ const profileMenuItems = [
   { to: '/documents', label: 'Documents', icon: FolderOpen, perm: 'documents' },
   { to: '/customers', label: 'Tenants', icon: Users, perm: 'customers' },
   { to: '/sites', label: 'Sites', icon: Building2, perm: 'units' },
+  { to: '/settings/templates', label: 'Message Templates', icon: Mail, perm: 'settings' },
   { to: '/settings', label: 'Settings', icon: Settings, perm: 'settings' },
 ]
 
@@ -44,6 +45,7 @@ const reportItems = [
   { to: '/reports/vacancies', label: 'Upcoming Vacancies', icon: CalendarOff, perm: 'reports_vacancies' },
   { to: '/reports/overdue', label: 'Overdue Payments', icon: AlertTriangle, perm: 'reports_overdue' },
   { to: '/reports/expiring', label: 'Expiring Contracts', icon: Clock, perm: 'reports_expiring' },
+  { to: '/reports/income', label: 'Income Analysis', icon: TrendingUp, perm: 'reports_finances' },
 ]
 
 const navBottom: { to: string; label: string; icon: any; perm: string }[] = []

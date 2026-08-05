@@ -728,86 +728,6 @@ function PaymentRow({
   )
 }
 
-// ── Contract timeline (notes / follow-ups) ────────────────────────────────────
-function ContractTimeline({ notes, onAdd, onDelete, addBusy }: {
-  notes: ContractNote[]
-  onAdd: (text: string) => void
-  onDelete: (idx: number) => void
-  addBusy: boolean
-}) {
-  const [text, setText] = useState('')
-
-  function submit(e: FormEvent) {
-    e.preventDefault()
-    if (!text.trim()) return
-    onAdd(text.trim())
-    setText('')
-  }
-
-  const fmtAt = (d: string) => {
-    const dt = new Date(d)
-    return (
-      dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) +
-      ' · ' +
-      dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-    )
-  }
-
-  return (
-    <div className="space-y-4">
-      {/* Add note form */}
-      <form onSubmit={submit} className="flex gap-2 items-end">
-        <Textarea
-          className="flex-1 resize-none"
-          placeholder="Type a note or follow-up — what did you discuss, what's the next step…"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          rows={2}
-        />
-        <Button type="submit" disabled={addBusy || !text.trim()} className="shrink-0">
-          {addBusy ? 'Saving…' : 'Add note'}
-        </Button>
-      </form>
-
-      {notes.length === 0 ? (
-        <p className="text-xs text-muted-foreground text-center py-4">No notes yet. Add your first note above.</p>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {[...notes].reverse().map((note, ri) => {
-            const origIdx = notes.length - 1 - ri
-            return (
-              <div
-                key={ri}
-                className="rounded-lg border bg-white px-4 py-3"
-                style={{ borderColor: 'rgba(20,8,31,.10)', borderLeft: '3px solid #C9B6FF' }}
-              >
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-[10px] font-bold leading-none shrink-0" style={{ color: '#756E80' }}>#{notes.length - ri}</span>
-                    <time className="text-[10px] leading-none shrink-0" style={{ color: '#756E80' }}>{fmtAt(note.at)}</time>
-                    {note.author && (
-                      <span className="text-[10px] font-semibold truncate" style={{ color: '#4A4357' }}>· {note.author}</span>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    title="Delete note"
-                    onClick={() => { if (confirm('Delete this note?')) onDelete(origIdx) }}
-                    className="opacity-40 hover:opacity-80 transition-opacity cursor-pointer shrink-0"
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
-                <p className="text-sm leading-relaxed whitespace-pre-wrap break-words" style={{ color: '#14081F' }}>{note.text}</p>
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ── Section divider row ────────────────────────────────────────────────────────
 function SectionRow({ label, count, total, tone, action }: {
   label: string; count: number; total: number; tone: string; action?: React.ReactNode
@@ -959,12 +879,6 @@ export default function ContractDetail() {
   const addNote = useMutation({
     mutationFn: (text: string) =>
       api.post(`/contracts/${id}/notes`, { text, author: user?.name || '' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['contract', id] }),
-    onError: (e) => setError(apiError(e)),
-  })
-
-  const deleteNote = useMutation({
-    mutationFn: (idx: number) => api.delete(`/contracts/${id}/notes/${idx}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['contract', id] }),
     onError: (e) => setError(apiError(e)),
   })
