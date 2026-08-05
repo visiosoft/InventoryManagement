@@ -308,18 +308,27 @@ export default function Units() {
         </Card>
       )}
 
-      {/* Unit detail modal */}
-      <Modal open={!!selected} onClose={() => { setSelected(null); setError('') }} title={selected ? `Unit ${selected.unitNumber}` : ''}>
-        {selected && (
-          <UnitDetail
-            unit={selected}
-            onUpdate={(body) => updateUnit.mutate({ id: selected._id, ...body })}
-            onDelete={() => deleteUnit.mutate(selected._id)}
-            error={error}
-            busy={updateUnit.isPending || deleteUnit.isPending}
-          />
-        )}
-      </Modal>
+      {/* Unit detail panel */}
+      {selected && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div className="absolute inset-0 bg-black/20" onClick={() => { setSelected(null); setError('') }} />
+          <div className="relative w-full max-w-md bg-white dark:bg-gray-900 shadow-xl overflow-y-auto">
+            <div className="sticky top-0 bg-white dark:bg-gray-900 border-b px-5 py-4 flex items-center justify-between z-10">
+              <h2 className="text-lg font-bold">Unit {selected.unitNumber}</h2>
+              <button onClick={() => { setSelected(null); setError('') }} className="p-1 hover:bg-muted rounded cursor-pointer text-muted-foreground hover:text-foreground">✕</button>
+            </div>
+            <div className="p-5">
+              <UnitDetail
+                unit={selected}
+                onUpdate={(body) => updateUnit.mutate({ id: selected._id, ...body })}
+                onDelete={() => deleteUnit.mutate(selected._id)}
+                error={error}
+                busy={updateUnit.isPending || deleteUnit.isPending}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add unit modal */}
       <Modal open={adding} onClose={() => { setAdding(false); setError('') }} title="Add unit">

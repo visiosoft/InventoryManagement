@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { CalendarDays, CheckCircle2, Download, FileText, FilePlus, MessageSquare, PenLine, Plus, ShieldCheck, Upload, X, XCircle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -850,6 +850,7 @@ function SectionRow({ label, count, total, tone, action }: {
 // ── Main page ──────────────────────────────────────────────────────────────────
 export default function ContractDetail() {
   const { id } = useParams()
+  const navigate = useNavigate()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const qc = useQueryClient()
@@ -1139,7 +1140,7 @@ export default function ContractDetail() {
     <div>
       {/* Breadcrumb */}
       <div className="flex items-center gap-1.5 text-sm text-muted-foreground mb-3">
-        <Link to="/contracts" className="hover:text-foreground transition-colors">Contracts</Link>
+        <button onClick={() => navigate(-1)} className="hover:text-foreground transition-colors cursor-pointer">← Back</button>
         <span>/</span>
         <span className="text-foreground font-medium">{c.contractNo}</span>
       </div>
@@ -1474,12 +1475,12 @@ export default function ContractDetail() {
           {activeTab === 'payments' && (
             <Card>
               <CardHeader title="Payment schedule"
-                subtitle={payments.length === 0 && depositCoveredInvoices.length === 0 ? 'No invoices yet' : `${paidGroups.length + depositCoveredInvoices.length} of ${invoiceGroups.length + depositCoveredInvoices.length} invoice${(invoiceGroups.length + depositCoveredInvoices.length) !== 1 ? 's' : ''} paid · ${formatMoney(totalPaid)} collected`}
+                subtitle={payments.length === 0 ? 'No invoices yet' : `${paidGroups.length} of ${invoiceGroups.length} invoice${invoiceGroups.length !== 1 ? 's' : ''} paid · ${formatMoney(totalPaid)} collected`}
                 action={
                   <Button size="sm" variant="outline" onClick={() => setShowInvoiceModal(true)}><FilePlus size={13} /> Invoice</Button>
                 }
               />
-              {payments.length === 0 && depositCoveredInvoices.length === 0 ? (
+              {payments.length === 0 ? (
                 <CardBody><p className="text-sm text-muted-foreground text-center py-6">No payments yet. Use the <strong>Invoice</strong> button to generate an invoice.</p></CardBody>
               ) : (
                 <Table>
@@ -1536,33 +1537,6 @@ export default function ContractDetail() {
                         ))}
                       </>
                     )}
-                    {depositCoveredInvoices.length > 0 && (
-                      <>
-                        <tr>
-                          <td colSpan={6} className="px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400 bg-blue-50/60 dark:bg-blue-950/20 border-t">
-                            Deposit Covered — {depositCoveredInvoices.length} invoice{depositCoveredInvoices.length !== 1 ? 's' : ''} · AED 0.00
-                          </td>
-                        </tr>
-                        {depositCoveredInvoices.map((inv: any, i: number) => (
-                          <tr key={inv._id} className="opacity-70 hover:bg-muted/30">
-                            <Td className="text-muted-foreground">{unpaidGroups.length + paidGroups.length + i + 1}</Td>
-                            <Td>
-                              <a href={`/invoices/${inv._id}`} className="text-primary text-xs hover:underline font-medium">{inv.invoiceNo}</a>
-                            </Td>
-                            <Td className="text-xs text-muted-foreground">
-                              {inv.dueDate ? new Date(inv.dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
-                            </Td>
-                            <Td className="font-medium">0.00</Td>
-                            <Td>
-                              <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40 px-2 py-0.5 rounded-full">
-                                Deposit
-                              </span>
-                            </Td>
-                            <Td />
-                          </tr>
-                        ))}
-                      </>
-                    )}
                   </tbody>
                 </Table>
               )}
@@ -1587,15 +1561,6 @@ export default function ContractDetail() {
                       )}
                     </tbody>
                   </table>
-                </div>
-              )}
-              {payments.length > 0 && unpaidGroups.length === 0 && standalonePayments.filter(p => p.status !== 'paid').length === 0 && c.status === 'active' && (
-                <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 mx-4 mb-4">
-                  <div>
-                    <div className="text-sm font-medium">All invoices paid</div>
-                    <div className="text-xs text-muted-foreground">Create a custom invoice for the next period</div>
-                  </div>
-                  <Button size="sm" onClick={() => setShowInvoiceModal(true)}><FilePlus size={13} /> Invoice</Button>
                 </div>
               )}
             </Card>

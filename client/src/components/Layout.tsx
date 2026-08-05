@@ -81,6 +81,59 @@ const subLinkCls = (isActive: boolean) => cn(
     : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8'
 )
 
+const PAGE_TITLES: Record<string, string> = {
+  '/': 'Dashboard',
+  '/quotes': 'Book Unit',
+  '/units': 'Search Units',
+  '/customers': 'Customers',
+  '/leads': 'Leads',
+  '/quotations': 'Quotations',
+  '/contracts': 'Contracts',
+  '/invoices': 'Invoices',
+  '/documents': 'Documents',
+  '/settings': 'Settings',
+  '/approvals': 'Approvals',
+  '/users': 'User Management',
+  '/backup': 'Backup',
+  '/moving': 'Moving Dashboard',
+  '/moving/schedule': 'Schedule Jobs',
+  '/moving/visits': 'Site Visits',
+  '/moving/jobs': 'Jobs List',
+  '/moving/jobs/new': 'New Job',
+  '/moving/leads': 'Leads',
+  '/moving/workers': 'Workers',
+  '/moving/fleet': 'Fleet',
+  '/moving-inventory': 'Inventory',
+  '/moving/quotes': 'Quotes',
+  '/moving/invoices': 'Invoices',
+  '/moving/dispatch': 'Dispatch',
+  '/moving/claims': 'Claims',
+  '/moving/reports': 'Reports',
+  '/reports/monthly': 'Monthly Payments',
+  '/reports/units': 'Unit Revenue',
+  '/reports/finances': 'Finances',
+  '/reports/forecast': 'Forecast',
+  '/reports/contracts': 'Contracts Report',
+  '/reports/vacancies': 'Upcoming Vacancies',
+  '/reports/overdue': 'Overdue Payments',
+  '/reports/expiring': 'Expiring Contracts',
+  '/whatsapp': 'WhatsApp',
+}
+
+function getPageTitle(pathname: string): string {
+  if (PAGE_TITLES[pathname]) return PAGE_TITLES[pathname]
+  const segments = pathname.split('/').filter(Boolean)
+  if (segments.length >= 2) {
+    const parent = '/' + segments.slice(0, 2).join('/')
+    if (PAGE_TITLES[parent]) return PAGE_TITLES[parent]
+  }
+  if (segments.length >= 1) {
+    const parent = '/' + segments[0]
+    if (PAGE_TITLES[parent]) return PAGE_TITLES[parent]
+  }
+  return ''
+}
+
 export default function Layout() {
   const { user, logout, hasPermission } = useAuth()
   const navigate = useNavigate()
@@ -89,6 +142,7 @@ export default function Layout() {
   const [reportsOpen, setReportsOpen] = useState(onReportsRoute)
   const [dark, setDark] = useState(() => localStorage.getItem('pb_theme') === 'dark')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('pb_sidebar_collapsed') === 'true')
   const [profileOpen, setProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
   const isAdmin = user?.role === 'admin'
@@ -266,8 +320,14 @@ export default function Layout() {
     <div className="flex min-h-screen bg-background">
 
       {/* ── Desktop sidebar ─────────────────────────────────────── */}
-      <aside className="hidden md:flex fixed inset-y-0 left-0 w-56 bg-sidebar text-sidebar-foreground flex-col z-30 shadow-xl">
+      <aside className={cn("hidden md:flex fixed inset-y-0 left-0 bg-sidebar text-sidebar-foreground flex-col z-30 shadow-xl transition-all duration-200", collapsed ? 'w-[60px]' : 'w-56')}>
         <SidebarContent />
+        <button
+          onClick={() => { setCollapsed(c => { localStorage.setItem('pb_sidebar_collapsed', String(!c)); return !c }) }}
+          className="absolute -right-3 top-20 h-6 w-6 rounded-full bg-sidebar border border-white/20 flex items-center justify-center text-sidebar-muted hover:text-sidebar-foreground cursor-pointer shadow-md z-40"
+        >
+          <ChevronDown size={12} className={cn('transition-transform', collapsed ? '-rotate-90' : 'rotate-90')} />
+        </button>
       </aside>
 
       {/* ── Mobile sidebar drawer ───────────────────────────────── */}
@@ -310,7 +370,8 @@ export default function Layout() {
       {/* ── Main content ────────────────────────────────────────── */}
       <main className="flex-1 md:ml-56 pt-14 md:pt-0 min-w-0" style={{ background: '#FBF8F2' }}>
         {/* Desktop top bar with profile dropdown */}
-        <div className="hidden md:flex items-center justify-end h-14 px-6 border-b border-border/40">
+        <div className="hidden md:flex items-center justify-between h-14 px-6 border-b border-border/40">
+          <h1 className="text-lg font-semibold" style={{ color: '#14081F' }}>{getPageTitle(location.pathname)}</h1>
           <div ref={profileRef} className="relative">
             <button
               onClick={() => setProfileOpen(o => !o)}

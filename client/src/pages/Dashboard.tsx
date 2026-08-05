@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { GripVertical } from 'lucide-react'
+import { GripVertical, X } from 'lucide-react'
 import { Box, FileText, TrendingUp } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { api, apiError } from '../lib/api'
@@ -12,7 +12,9 @@ import { formatDate, formatMoney } from '../lib/utils'
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
 const INK = '#14081F'
 const MUTED_CLR = '#756E80'
-const CREAM = '#FDFCFA'
+const PURPLE = '#5B2BC9'
+const PURPLE_LIGHT = '#F7F3FF'
+const PURPLE_BORDER = '#EDE5FF'
 
 type WidgetId =
   | 'stats'
@@ -87,6 +89,26 @@ function WidgetShell({
   )
 }
 
+function MoveKpiCard({ label, value, lastMonth, onClick }: { label: string; value: number; lastMonth: number; onClick?: () => void }) {
+  const diff = value - lastMonth
+  const diffColor = diff > 0 ? '#10b981' : diff < 0 ? '#ef4444' : MUTED_CLR
+  return (
+    <div onClick={onClick} style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 20, cursor: onClick ? 'pointer' : 'default' }} className="hover:shadow-md transition-shadow">
+      <div className="flex items-center justify-between">
+        <div>
+          <p style={{ fontSize: 12, color: MUTED_CLR }}>{label}</p>
+          <p style={{ fontSize: 32, fontWeight: 700, color: INK, marginTop: 6 }}>{value}</p>
+          <div className="flex items-center gap-2 mt-1">
+            <span style={{ fontSize: 12, fontWeight: 600, color: diffColor }}>{diff > 0 ? '+' : ''}{diff}</span>
+            <span style={{ fontSize: 11, color: MUTED_CLR }}>vs {lastMonth} last month</span>
+          </div>
+        </div>
+        <div style={{ width: 6, height: 40, borderRadius: 3, background: 'rgba(20,8,31,0.08)' }} />
+      </div>
+    </div>
+  )
+}
+
 function StatCard({ icon: Icon, label, value, sub, tone }: { icon: typeof Box; label: string; value: string; sub?: string; tone: string }) {
   return (
     <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 20 }}>
@@ -107,6 +129,7 @@ function StatCard({ icon: Icon, label, value, sub, tone }: { icon: typeof Box; l
 export default function Dashboard() {
   const [layout, setLayout] = useState<WidgetId[]>(() => safeLoadLayout())
   const [dragged, setDragged] = useState<WidgetId | null>(null)
+  const [movePanel, setMovePanel] = useState<'in' | 'out' | 'available' | null>(null)
 
   const { data, isLoading, isError, error, refetch } = useQuery<Summary>({
     queryKey: ['summary'],
@@ -187,12 +210,68 @@ export default function Dashboard() {
       if (!data) return {} as Record<WidgetId, React.ReactNode>
       return ({
         stats: (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-            <StatCard icon={TrendingUp} label="Occupancy" value={`${data.occupancyPct}%`} sub={`${data.byStatus.occupied + data.byStatus.reserved} of ${data.byStatus.available + data.byStatus.occupied + data.byStatus.reserved} rentable units`} tone="bg-[#111218]/10 text-[#111218] dark:text-[#8AAF82]" />
-            <StatCard icon={Box} label="Available units" value={String(data.byStatus.available)} sub="Ready to rent" tone="bg-[#4C8CE4]/15 text-[#4C8CE4] dark:text-[#8AAF82]" />
-            <StatCard icon={Box} label="Reserved units" value={String(data.byStatus.reserved)} sub="Booked, not occupied" tone="bg-[#FFF799]/15 text-[#111218] dark:text-[#FFF799]" />
-            <StatCard icon={Box} label="Maintenance" value={String(data.byStatus.maintenance)} sub="Unavailable stock" tone="bg-slate-500/15 text-slate-600 dark:text-slate-400" />
-            <StatCard icon={FileText} label="Active contracts" value={String(data.activeContracts)} sub={`${data.expiringContracts.length} expiring in 15 days`} tone="bg-blue-500/15 text-blue-600 dark:text-blue-400" />
+          <div className="space-y-[18px]">
+            <div className="grid grid-cols-1 lg:grid-cols-[1.35fr_1fr_1fr] gap-[18px]">
+              {/* Occupancy - dark card */}
+              <div style={{ padding: 24, borderRadius: 22, background: '#1A0B33', color: '#FFF', display: 'flex', flexDirection: 'column', gap: 20, boxShadow: '0 8px 24px rgba(20,8,31,.10)' }}>
+                <div className="flex items-center justify-between">
+                  <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#A78BFA' }}>Occupancy</div>
+                </div>
+                <div className="flex items-end gap-3 flex-wrap">
+                  <div style={{ ...HEADING, fontWeight: 700, fontSize: 56, lineHeight: 0.9, letterSpacing: '-0.04em' }} className="sm:!text-[76px]">{data.occupancyPct}%</div>
+                  <div style={{ fontSize: 13, color: '#DDD0FF', paddingBottom: 10 }}>{data.byStatus.occupied + data.byStatus.reserved} of {data.byStatus.available + data.byStatus.occupied + data.byStatus.reserved}<br/>rentable units</div>
+                </div>
+                <div className="flex flex-col gap-[10px]">
+                  <div style={{ height: 10, borderRadius: 999, background: 'rgba(255,255,255,.14)', overflow: 'hidden', display: 'flex' }}>
+                    <div style={{ width: `${data.occupancyPct}%`, background: 'linear-gradient(90deg, #7C4DFF, #A78BFA)' }} />
+                  </div>
+                  <div className="flex justify-between" style={{ fontSize: 12, color: 'rgba(221,208,255,.75)' }}>
+                    <span>{data.byStatus.occupied + data.byStatus.reserved} occupied</span>
+                    <span>{data.byStatus.available} available</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Available units */}
+              <div onClick={() => setMovePanel('available')} style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 14, boxShadow: '0 1px 2px rgba(20,8,31,.05)', cursor: 'pointer' }} className="hover:shadow-md transition-shadow">
+                <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Available units</div>
+                <div style={{ ...HEADING, fontWeight: 700, fontSize: 56, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{data.byStatus.available}</div>
+                <div style={{ fontSize: 13, color: '#4A4357' }}>Ready to rent</div>
+                <div className="flex flex-wrap gap-[6px] mt-auto">
+                  {data.bySize.filter(s => s.available > 0).map(s => (
+                    <div key={s.sizeSqf} style={{ fontSize: 12, fontWeight: 600, padding: '5px 10px', borderRadius: 8, background: PURPLE_LIGHT, color: '#4A1FA0' }}>{s.available} × {s.sizeSqf}</div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Active contracts */}
+              <div style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 14, boxShadow: '0 1px 2px rgba(20,8,31,.05)' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Active contracts</div>
+                <div style={{ ...HEADING, fontWeight: 700, fontSize: 56, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{data.activeContracts}</div>
+                <div style={{ fontSize: 13, color: '#4A4357' }}>{data.expiringContracts.length} expiring in 15 days</div>
+              </div>
+            </div>
+
+            {/* Move-in / Move-out */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-[18px]">
+              {(['in', 'out'] as const).map(type => {
+                const val = type === 'in' ? data.moveInsThisMonth : data.moveOutsThisMonth
+                const last = type === 'in' ? data.moveInsLastMonth : data.moveOutsLastMonth
+                const diff = val - last
+                const diffColor = diff < 0 ? '#B3261E' : '#1B7A4B'
+                return (
+                  <div key={type} onClick={() => setMovePanel(type)} style={{ padding: '22px 24px', borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', cursor: 'pointer' }} className="hover:shadow-md transition-shadow">
+                    <div className="flex flex-col gap-2">
+                      <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>{type === 'in' ? 'Move-ins this month' : 'Move-outs this month'}</div>
+                      <div className="flex items-baseline gap-3 flex-wrap">
+                        <div style={{ ...HEADING, fontWeight: 700, fontSize: 36, lineHeight: 0.9, letterSpacing: '-0.03em' }} className="sm:!text-[48px]">{val}</div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: diffColor }}>{diff > 0 ? '+' : ''}{diff} vs {last} last month</div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         ),
         'units-by-size': (
@@ -274,7 +353,7 @@ export default function Dashboard() {
               <EmptyState message="No contracts expiring in the next 15 days." />
             ) : (
               <ul className="divide-y divide-border">
-                {data.expiringContracts.map((c) => {
+                {data.expiringContracts.slice(0, 15).map((c) => {
                   const daysLeft = Math.ceil((new Date(c.endDate).getTime() - Date.now()) / 86400000)
                   const endFmt = new Date(c.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
                   const urgency = daysLeft <= 3 ? 'text-destructive' : daysLeft <= 7 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'
@@ -400,22 +479,26 @@ export default function Dashboard() {
   }
 
   return (
-    <div style={{ background: CREAM, borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
-      <div className="mb-7">
-        <div style={{ ...HEADING, fontSize: 26, fontWeight: 700, color: INK }}>Dashboard</div>
-        <div style={{ fontSize: 14, color: MUTED_CLR, marginTop: 4 }}>Facility overview at a glance (drag cards to reorder)</div>
+    <div style={{ background: '#FBF8F2', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 flex-wrap mb-7">
+        <div className="flex flex-col gap-2">
+          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#4A1FA0' }}>Al Quoz facility</div>
+          <div style={{ ...HEADING, fontWeight: 700, fontSize: 42, lineHeight: 1.02, letterSpacing: '-0.03em', color: INK }}>Dashboard</div>
+          <div style={{ fontSize: 15, color: '#4A4357' }}>Facility overview at a glance</div>
+        </div>
       </div>
 
       {draftInvoices > 0 && (
         <Link
           to="/invoices?status=draft"
-          className="mb-4 flex items-center justify-between rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm dark:border-amber-800 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-950/50 transition-colors"
+          className="mb-5 flex items-center gap-[18px] transition-colors hover:brightness-95"
+          style={{ padding: '16px 20px', borderRadius: 18, background: '#F6F0E4', border: '1px solid #EDE3CF' }}
         >
-          <span className="flex items-center gap-2 font-medium text-amber-800 dark:text-amber-300">
-            <FileText size={15} />
-            {draftInvoices} draft invoice{draftInvoices !== 1 ? 's' : ''} awaiting send
-          </span>
-          <span className="text-xs text-amber-700 dark:text-amber-400">Review &amp; send →</span>
+          <div style={{ flex: 'none', width: 38, height: 38, borderRadius: 11, background: '#FFF', border: '1px solid #EDE3CF', display: 'grid', placeItems: 'center', ...HEADING, fontWeight: 700, fontSize: 16, color: '#4A1FA0' }}>{draftInvoices}</div>
+          <div className="flex-1 min-w-0">
+            <div style={{ fontSize: 15, fontWeight: 600, color: INK }}>{draftInvoices} draft invoice{draftInvoices !== 1 ? 's' : ''} awaiting send</div>
+          </div>
+          <div style={{ flex: 'none', display: 'flex', alignItems: 'center', height: 40, padding: '0 20px', borderRadius: 999, background: PURPLE, color: '#FFF', fontSize: 14, fontWeight: 600 }}>Review & send</div>
         </Link>
       )}
 
@@ -463,6 +546,110 @@ export default function Dashboard() {
           return null
         })}
       </div>
+
+      {/* Detail panel */}
+      {movePanel && data && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div className="absolute inset-0 bg-black/20" onClick={() => setMovePanel(null)} />
+          <div className="relative w-full max-w-md bg-white dark:bg-gray-900 shadow-xl overflow-y-auto animate-in slide-in-from-right">
+            <div className="sticky top-0 bg-white dark:bg-gray-900 border-b px-5 py-4 flex items-center justify-between z-10">
+              <h2 style={{ ...HEADING, fontSize: 18, fontWeight: 700, color: INK }}>
+                {movePanel === 'in' ? 'Move-ins this month' : movePanel === 'out' ? 'Move-outs this month' : 'Available Units'}
+              </h2>
+              <button onClick={() => setMovePanel(null)} className="p-1 hover:bg-muted rounded cursor-pointer"><X size={18} /></button>
+            </div>
+            <div className="p-5 space-y-2">
+              {movePanel === 'available' ? (
+                (data.availableUnitsList ?? []).length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-8">No available units.</p>
+                ) : (data.availableUnitsList ?? []).map((u: any) => (
+                  <Link key={u._id} to={`/units`} onClick={() => setMovePanel(null)}
+                    className="block rounded-lg border px-4 py-3 hover:bg-muted/50 transition-colors">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="font-medium text-sm">Unit {u.unitNumber}</p>
+                        <p className="text-xs text-muted-foreground">{u.floor} · {u.sizeSqf} sq ft</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="text-sm font-semibold" style={{ color: INK }}>AED {(u.monthlyRent ?? 0).toLocaleString()}</span>
+                        <span className="text-[10px] text-muted-foreground block">/ month</span>
+                      </div>
+                    </div>
+                  </Link>
+                ))
+              ) : (() => {
+                const list = (movePanel === 'in' ? data.moveInsList : data.moveOutsList) ?? []
+                return list.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-8">No {movePanel === 'in' ? 'move-ins' : 'move-outs'} this month.</p>
+                ) : list.map((c: any) => (
+                  <Link key={c._id} to={`/contracts/${c._id}`} onClick={() => setMovePanel(null)}
+                    className="block rounded-lg border px-4 py-3 hover:bg-muted/50 transition-colors">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="font-medium text-sm">{c.customer?.fullName || '—'}</p>
+                        <p className="text-xs text-muted-foreground">{c.contractNo} · Unit {c.unit?.unitNumber || '—'}</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="text-xs text-muted-foreground block">
+                          {new Date(movePanel === 'in' ? c.startDate : c.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                        </span>
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${c.paymentStatus === 'paid' ? 'bg-emerald-100 text-emerald-700' :
+                            c.paymentStatus === 'pending' ? 'bg-amber-100 text-amber-700' :
+                              'bg-muted text-muted-foreground'
+                          }`}>
+                          {c.paymentStatus === 'paid' ? 'Paid' : c.paymentStatus === 'pending' ? 'Pending' : 'No invoice'}
+                        </span>
+                      </div>
+                    </div>
+                  </Link>
+                ))
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AvailableUnitsPanel({ bySize, onClose }: { bySize: { sizeSqf: string; available: number }[]; onClose: () => void }) {
+  const { data: units = [] } = useQuery<any[]>({
+    queryKey: ['units-available'],
+    queryFn: () => api.get('/units', { params: { status: 'available' } }).then(r => Array.isArray(r.data) ? r.data : r.data.data ?? []),
+  })
+
+  const grouped = bySize.filter(s => s.available > 0).map(s => ({
+    size: s.sizeSqf,
+    units: units.filter((u: any) => `${u.sizeSqf} sq ft` === s.sizeSqf && u.status === 'available'),
+  }))
+
+  return (
+    <div className="space-y-4">
+      {grouped.map(g => (
+        <div key={g.size}>
+          <div className="flex items-center justify-between mb-2">
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#4A1FA0' }}>{g.size}</span>
+            <span className="text-xs text-muted-foreground">{g.units.length} available</span>
+          </div>
+          <div className="space-y-1.5">
+            {g.units.map((u: any) => (
+              <Link key={u._id} to={`/units`} onClick={onClose}
+                className="block rounded-lg border px-4 py-2.5 hover:bg-muted/50 transition-colors">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <span className="font-medium text-sm">{u.unitNumber}</span>
+                    <span className="text-xs text-muted-foreground ml-2">{u.floor}</span>
+                  </div>
+                  <span className="text-xs font-medium text-muted-foreground">{u.price ? `AED ${u.price}/4wk` : ''}</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      ))}
+      {grouped.length === 0 && (
+        <p className="text-sm text-muted-foreground text-center py-8">No available units.</p>
+      )}
     </div>
   )
 }

@@ -44,7 +44,7 @@ router.get('/summary', async (_req, res) => {
     { $set: { status: 'overdue' } }
   );
 
-  const [revenueAgg, dueAgg, expiring, overdue, activeContracts] = await Promise.all([
+  const [revenueAgg, dueAgg, expiring, overdue, activeContracts, moveInsThisMonthList, moveOutsThisMonthList, moveInsLastMonth, moveOutsLastMonth] = await Promise.all([
     Payment.aggregate([
       { $match: { status: 'paid', paidDate: { $gte: monthStart, $lt: monthEnd } } },
       { $group: { _id: null, total: { $sum: '$amount' } } },
@@ -62,7 +62,30 @@ router.get('/summary', async (_req, res) => {
       .sort({ dueDate: 1 })
       .limit(20),
     Contract.countDocuments({ status: 'active' }),
+    Contract.find({ status: { $in: ['active', 'ended'] }, startDate: { $gte: monthStart, $lt: monthEnd } })
+      .populate('customer', 'fullName').populate('unit', 'unitNumber').sort({ startDate: 1 }).lean(),
+    Contract.find({ status: 'ended', endDate: { $gte: monthStart, $lt: monthEnd } })
+      .populate('customer', 'fullName').populate('unit', 'unitNumber').sort({ endDate: 1 }).lean(),
+    Contract.countDocuments({ status: { $in: ['active', 'ended'] }, startDate: { $gte: new Date(now.getFullYear(), now.getMonth() - 1, 1), $lt: monthStart } }),
+    Contract.countDocuments({ status: 'ended', endDate: { $gte: new Date(now.getFullYear(), now.getMonth() - 1, 1), $lt: monthStart } }),
   ]);
+
+  // Attach payment status to move-in/out lists
+  const allMoveIds = [...moveInsThisMonthList, ...moveOutsThisMonthList].map(c => c._id);
+  if (allMoveIds.length > 0) {
+    const paymentsByContract = await Payment.aggregate([
+      { $match: { contract: { $in: allMoveIds } } },
+      { $group: { _id: '$contract', total: { $sum: '$amount' }, paid: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } } } },
+    ]);
+    const payMap = new Map(paymentsByContract.map(p => [String(p._id), p]));
+    for (const c of [...moveInsThisMonthList, ...moveOutsThisMonthList]) {
+      const pay = payMap.get(String(c._id));
+      c.paymentStatus = pay ? (pay.paid >= pay.total ? 'paid' : 'pending') : 'no_invoice';
+    }
+  }
+
+  const moveInsThisMonth = moveInsThisMonthList.length;
+  const moveOutsThisMonth = moveOutsThisMonthList.length;
 
   const rentable = byStatus.available + byStatus.occupied + byStatus.reserved;
   res.json({
@@ -76,6 +99,13 @@ router.get('/summary', async (_req, res) => {
     expectedThisMonth: (revenueAgg[0]?.total || 0) + (dueAgg[0]?.total || 0),
     expiringContracts: expiring,
     overduePayments: overdue,
+    moveInsThisMonth,
+    moveInsLastMonth,
+    moveOutsThisMonth,
+    moveOutsLastMonth,
+    moveInsList: moveInsThisMonthList,
+    moveOutsList: moveOutsThisMonthList,
+    availableUnitsList: units.filter(u => u.status === 'available').map(u => ({ _id: u._id, unitNumber: u.unitNumber, floor: u.floor, sizeSqf: u.sizeSqf, monthlyRent: u.monthlyRent })),
   });
 });
 
@@ -192,9 +222,9 @@ router.get('/tenant-payments', async (req, res) => {
   const now = new Date();
   const raw = req.query.month; // 'YYYY-MM'
   const year = raw ? parseInt(raw.split('-')[0]) : now.getFullYear();
-  const mon  = raw ? parseInt(raw.split('-')[1]) - 1 : now.getMonth();
+  const mon = raw ? parseInt(raw.split('-')[1]) - 1 : now.getMonth();
   const monthStart = new Date(year, mon, 1);
-  const monthEnd   = new Date(year, mon + 1, 1);
+  const monthEnd = new Date(year, mon + 1, 1);
 
   await Payment.updateMany(
     { status: 'pending', dueDate: { $lt: now } },
@@ -236,17 +266,17 @@ router.get('/tenant-payments', async (req, res) => {
 
   const rows = Array.from(contractMap.values()).map((entry) => {
     const ps = entry.payments;
-    const total   = ps.reduce((s, p) => s + Number(p.amount || 0), 0);
+    const total = ps.reduce((s, p) => s + Number(p.amount || 0), 0);
     const paidAmt = ps.filter((p) => p.status === 'paid').reduce((s, p) => s + Number(p.amount || 0), 0);
     const allPaid = ps.every((p) => p.status === 'paid');
     const anyOverdue = ps.some((p) => p.status === 'overdue');
-    const status  = allPaid ? 'paid' : anyOverdue ? 'overdue' : 'pending';
+    const status = allPaid ? 'paid' : anyOverdue ? 'overdue' : 'pending';
     const latestPaidDate = ps.filter((p) => p.paidDate).map((p) => p.paidDate).sort().pop() || null;
     const methods = [...new Set(ps.filter((p) => p.method).map((p) => p.method))];
     return { ...entry, total, paidAmt, status, latestPaidDate, methods };
   });
 
-  const paid    = rows.filter((r) => r.status === 'paid');
+  const paid = rows.filter((r) => r.status === 'paid');
   const pending = rows.filter((r) => r.status !== 'paid');
 
   res.json({
@@ -254,9 +284,9 @@ router.get('/tenant-payments', async (req, res) => {
     monthISO: `${year}-${String(mon + 1).padStart(2, '0')}`,
     paid,
     pending,
-    totalPaid:    paid.reduce((s, r) => s + r.total, 0),
+    totalPaid: paid.reduce((s, r) => s + r.total, 0),
     totalPending: pending.reduce((s, r) => s + r.total, 0),
-    countPaid:    paid.length,
+    countPaid: paid.length,
     countPending: pending.length,
   });
 });
@@ -344,7 +374,7 @@ router.get('/unit-revenue', async (req, res) => {
 router.get('/expenses-breakdown', async (req, res) => {
   const year = Number(req.query.year) || new Date().getFullYear();
   const yearStart = new Date(year, 0, 1);
-  const yearEnd   = new Date(year + 1, 0, 1);
+  const yearEnd = new Date(year + 1, 0, 1);
 
   const expenses = await Expense.find({
     expenseDate: { $gte: yearStart, $lt: yearEnd },

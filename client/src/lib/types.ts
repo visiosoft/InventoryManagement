@@ -491,6 +491,13 @@ export interface Summary {
   expectedThisMonth: number
   expiringContracts: Contract[]
   overduePayments: Payment[]
+  moveInsThisMonth: number
+  moveInsLastMonth: number
+  moveOutsThisMonth: number
+  moveOutsLastMonth: number
+  moveInsList: Contract[]
+  moveOutsList: Contract[]
+  availableUnitsList: { _id: string; unitNumber: string; floor: string; sizeSqf: number; monthlyRent: number }[]
 }
 
 // ── Moving Business Types ────────────────────────────────────────────────────
