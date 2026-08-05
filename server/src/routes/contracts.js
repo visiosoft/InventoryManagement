@@ -119,7 +119,19 @@ router.get('/', async (req, res) => {
     populateAll(Contract.find(filter)).sort({ createdAt: -1 }).skip(skip).limit(limit),
     Contract.countDocuments(filter),
   ]);
-  res.json({ data: contracts, total, page, pages: Math.ceil(total / limit), limit });
+
+  // Attach document counts so the list can flag contracts with no documents
+  const ids = contracts.map((c) => c._id);
+  const docCounts = ids.length
+    ? await Document.aggregate([
+        { $match: { contract: { $in: ids } } },
+        { $group: { _id: '$contract', count: { $sum: 1 } } },
+      ])
+    : [];
+  const docMap = new Map(docCounts.map((d) => [String(d._id), d.count]));
+  const rows = contracts.map((c) => ({ ...c.toObject(), documentCount: docMap.get(String(c._id)) ?? 0 }));
+
+  res.json({ data: rows, total, page, pages: Math.ceil(total / limit), limit });
 });
 
 // Latest notes across all contracts (for dashboard)

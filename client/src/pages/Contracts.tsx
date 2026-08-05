@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Plus, Search, Trash2, X } from 'lucide-react'
+import { Paperclip, Plus, Search, Trash2, X } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import type { Contract } from '../lib/types'
 import {
@@ -317,9 +317,24 @@ export default function Contracts() {
                       />
                     </Td>
                     <Td>
-                      <Link to={`/contracts/${c._id}`} className="font-medium text-primary hover:underline">
-                        {c.contractNo}
-                      </Link>
+                      <span className="inline-flex items-center gap-1.5">
+                        <Link to={`/contracts/${c._id}`} className="font-medium text-primary hover:underline">
+                          {c.contractNo}
+                        </Link>
+                        {typeof c.documentCount === 'number' && (c.documentCount > 0 ? (
+                          <span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+                            style={{ background: '#EAF7EF', color: '#1B7A4B' }}
+                            title={`${c.documentCount} document${c.documentCount !== 1 ? 's' : ''} attached`}>
+                            <Paperclip size={9} />{c.documentCount}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold"
+                            style={{ background: '#FDECEC', color: '#B3261E' }}
+                            title="No documents attached">
+                            <Paperclip size={9} />0
+                          </span>
+                        ))}
+                      </span>
                     </Td>
                     <Td>
                       {c.customer ? (

@@ -428,6 +428,7 @@ export interface Contract {
   customer: Customer
   unit: Unit
   units?: Unit[]
+  documentCount?: number
   billingPeriod: 'weekly' | 'monthly'
   rate: number
   deposit: number
