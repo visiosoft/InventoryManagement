@@ -480,13 +480,6 @@ export default function Dashboard() {
 
   return (
     <div style={{ background: '#FBF8F2', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
-        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 flex-wrap mb-7">
-        <div className="flex flex-col gap-2">
-          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#4A1FA0' }}>Al Quoz facility</div>
-          <div style={{ ...HEADING, fontWeight: 700, fontSize: 42, lineHeight: 1.02, letterSpacing: '-0.03em', color: INK }}>Dashboard</div>
-          <div style={{ fontSize: 15, color: '#4A4357' }}>Facility overview at a glance</div>
-        </div>
-      </div>
 
       {draftInvoices > 0 && (
         <Link
@@ -571,8 +564,14 @@ export default function Dashboard() {
                         <p className="text-xs text-muted-foreground">{u.floor} · {u.sizeSqf} sq ft</p>
                       </div>
                       <div className="text-right shrink-0">
-                        <span className="text-sm font-semibold" style={{ color: INK }}>AED {(u.monthlyRent ?? 0).toLocaleString()}</span>
-                        <span className="text-[10px] text-muted-foreground block">/ month</span>
+                        {u.monthlyRent ? (
+                          <>
+                            <span className="text-sm font-semibold" style={{ color: INK }}>AED {u.monthlyRent.toLocaleString()}</span>
+                            <span className="text-[10px] text-muted-foreground block">/ month</span>
+                          </>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">No price set</span>
+                        )}
                       </div>
                     </div>
                   </Link>
