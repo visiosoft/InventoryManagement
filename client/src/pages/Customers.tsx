@@ -132,9 +132,9 @@ export default function Customers() {
       {/* ── Header ── */}
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 style={{ ...HEADING, color: INK }} className="text-2xl font-bold leading-tight">Customers</h1>
+          <h1 style={{ ...HEADING, color: INK }} className="text-2xl font-bold leading-tight">Tenants</h1>
           {data && (
-            <p style={{ color: MUTED_COLOR }} className="mt-0.5 text-sm">{data.total} customer{data.total !== 1 ? 's' : ''}</p>
+            <p style={{ color: MUTED_COLOR }} className="mt-0.5 text-sm">{data.total} tenant{data.total !== 1 ? 's' : ''}</p>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -153,7 +153,7 @@ export default function Customers() {
             style={{ background: PURPLE, color: '#fff', borderRadius: 10, height: 36, fontSize: 13, fontWeight: 600, padding: '0 14px' }}
             className="inline-flex items-center gap-1.5 transition-opacity hover:opacity-90"
           >
-            <Plus size={15} /> Add customer
+            <Plus size={15} /> Add tenant
           </button>
         </div>
       </div>

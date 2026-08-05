@@ -13,15 +13,11 @@ const navTop = [
 
 const navGroups = [
   {
-    title: '',
-    items: [
-      { to: '/quotes', label: 'Book Unit', icon: FileText, perm: 'quotes' },
-    ],
-  },
-  {
     title: 'Inventory',
     items: [
+      { to: '/quotes', label: 'Book Unit', icon: FileText, perm: 'quotes' },
       { to: '/units', label: 'Search Units', icon: Box, perm: 'units' },
+      { to: '/contracts', label: 'Search Contract / Customer', icon: Briefcase, perm: 'contracts' },
       { to: '/floor-map', label: 'Floor Map', icon: MapIcon, perm: 'units' },
     ],
   },
@@ -30,7 +26,6 @@ const navGroups = [
     items: [
       { to: '/leads', label: 'Leads', icon: UserPlus, perm: 'leads' },
       { to: '/quotations', label: 'Quotations', icon: ScrollText, perm: 'quotes' },
-      { to: '/contracts', label: 'Contracts', icon: Briefcase, perm: 'contracts' },
     ],
   },
 ]
@@ -38,7 +33,7 @@ const navGroups = [
 const profileMenuItems = [
   { to: '/invoices', label: 'Invoices', icon: ReceiptText, perm: 'invoices' },
   { to: '/documents', label: 'Documents', icon: FolderOpen, perm: 'documents' },
-  { to: '/customers', label: 'Customers', icon: Users, perm: 'customers' },
+  { to: '/customers', label: 'Tenants', icon: Users, perm: 'customers' },
   { to: '/sites', label: 'Sites', icon: Building2, perm: 'units' },
   { to: '/settings', label: 'Settings', icon: Settings, perm: 'settings' },
 ]
@@ -92,10 +87,10 @@ const PAGE_TITLES: Record<string, string> = {
   '/units': 'Search Units',
   '/floor-map': 'Floor Map',
   '/sites': 'Sites',
-  '/customers': 'Customers',
+  '/customers': 'Tenants',
   '/leads': 'Leads',
   '/quotations': 'Quotations',
-  '/contracts': 'Contracts',
+  '/contracts': 'Search Contract / Customer',
   '/invoices': 'Invoices',
   '/documents': 'Documents',
   '/settings': 'Settings',
