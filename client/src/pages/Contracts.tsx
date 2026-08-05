@@ -55,6 +55,18 @@ export default function Contracts() {
   const contracts = data?.data ?? []
   const hasFilters = search || status || billing || floor || from || to
 
+  // Full contract value: scheduled payments total from the server, or rate × term fallback
+  const contractValue = (c: Contract) => {
+    if (c.contractAmount) return c.contractAmount
+    if (c.totalAmount) return c.totalAmount
+    if (c.startDate && c.endDate && c.rate) {
+      const days = Math.max(0, (new Date(c.endDate).getTime() - new Date(c.startDate).getTime()) / 86400000)
+      const periods = c.billingPeriod === 'weekly' ? Math.ceil(days / 7) : Math.ceil(days / 28)
+      return Math.round(periods * c.rate * 100) / 100
+    }
+    return 0
+  }
+
   // Group the current page's rows for display
   const PAYMENT_LABELS: Record<string, string> = { paid: 'Fully paid', partial: 'Partially paid', unpaid: 'Unpaid', no_invoice: 'No invoice' }
   const groups = (() => {
@@ -395,7 +407,7 @@ export default function Contracts() {
                     </Td>
                     <Td>
                       <span className="font-medium" title={`${c.billingPeriod === 'weekly' ? 'Weekly' : 'Monthly'} billing · rate ${formatMoney(c.rate)}`}>
-                        {c.contractAmount ? formatMoney(c.contractAmount) : '—'}
+                        {contractValue(c) ? formatMoney(contractValue(c)) : '—'}
                       </span>
                     </Td>
                     <Td>{formatDate(c.startDate)}</Td>
