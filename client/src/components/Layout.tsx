@@ -17,7 +17,7 @@ const navGroups = [
     items: [
       { to: '/quotes', label: 'Book Unit', icon: FileText, perm: 'quotes' },
       { to: '/units', label: 'Search Units', icon: Box, perm: 'units' },
-      { to: '/contracts', label: 'Search Contract / Customer', icon: Briefcase, perm: 'contracts' },
+      { to: '/contracts', label: 'Tenants', icon: Briefcase, perm: 'contracts' },
       { to: '/floor-map', label: 'Floor Map', icon: MapIcon, perm: 'units' },
     ],
   },
@@ -90,7 +90,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/customers': 'Tenants',
   '/leads': 'Leads',
   '/quotations': 'Quotations',
-  '/contracts': 'Search Contract / Customer',
+  '/contracts': 'Tenants',
   '/invoices': 'Invoices',
   '/documents': 'Documents',
   '/settings': 'Settings',
