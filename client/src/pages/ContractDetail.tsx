@@ -1262,12 +1262,6 @@ export default function ContractDetail() {
   const initials = (c.customer?.fullName ?? '').split(' ').slice(0, 2).map((w: string) => w[0] ?? '').join('').toUpperCase()
   const today2 = new Date(); today2.setHours(0, 0, 0, 0)
   const daysLeft = c.endDate ? Math.ceil((new Date(c.endDate).getTime() - today2.getTime()) / 86400000) : null
-  const contractWeeks2 = c.startDate && c.endDate ? Math.ceil(Math.round((new Date(c.endDate).getTime() - new Date(c.startDate).getTime()) / 86400000) / 7) : 0
-  const wRate2 = Math.round((c.rate / 4) * 100) / 100
-  const dPct2 = Number(c.unit?.discountPct ?? 0)
-  const theoreticalTotal2 = dPct2 > 0
-    ? Math.round((Math.min(4, contractWeeks2) * Math.round(wRate2 * (1 - dPct2 / 100) * 100) / 100 + Math.max(0, contractWeeks2 - 4) * wRate2) * 100) / 100
-    : Math.round(contractWeeks2 * wRate2 * 100) / 100
   const customerPhone = c.customer?.phones?.[0] ?? c.customer?.phone ?? ''
   const waPhone = customerPhone.replace(/\D/g, '').replace(/^00/, '')
   const waText = [`Hello ${c.customer?.fullName ?? 'there'},`, ``, `This is a message regarding your storage contract *${c.contractNo}*.`, `${unitLabel}`, ``, `Thank you – PurpleBox`].join('\n')
