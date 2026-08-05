@@ -105,7 +105,7 @@ router.get('/summary', async (_req, res) => {
     moveOutsLastMonth,
     moveInsList: moveInsThisMonthList,
     moveOutsList: moveOutsThisMonthList,
-    availableUnitsList: units.filter(u => u.status === 'available').map(u => ({ _id: u._id, unitNumber: u.unitNumber, floor: u.floor, sizeSqf: u.sizeSqf, monthlyRent: u.monthlyRent })),
+    availableUnitsList: units.filter(u => u.status === 'available').map(u => ({ _id: u._id, unitNumber: u.unitNumber, floor: u.floor, sizeSqf: u.sizeSqf, monthlyRent: u.price || 0 })),
   });
 });
 
