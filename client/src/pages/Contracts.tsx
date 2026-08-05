@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { Paperclip, Plus, Search, Trash2, X } from 'lucide-react'
@@ -33,15 +33,17 @@ export default function Contracts() {
   const [page, setPage]   = useState(1)
   const [limit, setLimit] = useState(25)
   const [showArchived, setShowArchived] = useState(false)
+  const [sort, setSort] = useState('newest')
+  const [groupBy, setGroupBy] = useState<'none' | 'status' | 'payment' | 'floor' | 'billing'>('none')
 
   // Reset to page 1 when any filter changes
-  useEffect(() => { setPage(1) }, [search, status, billing, floor, from, to, limit, showArchived])
+  useEffect(() => { setPage(1) }, [search, status, billing, floor, from, to, limit, showArchived, sort])
 
   const [deleteTarget, setDeleteTarget] = useState<Contract | null>(null)
   const [deleteError, setDeleteError] = useState('')
   const [selectedContractIds, setSelectedContractIds] = useState<string[]>([])
 
-  const params = { search: search || undefined, status: status || undefined, billing: billing || undefined, floor: floor || undefined, from: from || undefined, to: to || undefined, page, limit, archived: showArchived ? 'true' : undefined }
+  const params = { search: search || undefined, status: status || undefined, billing: billing || undefined, floor: floor || undefined, from: from || undefined, to: to || undefined, page, limit, archived: showArchived ? 'true' : undefined, sort }
 
   const { data, isLoading } = useQuery<PagedContracts>({
     queryKey: ['contracts', params],
@@ -52,6 +54,24 @@ export default function Contracts() {
 
   const contracts = data?.data ?? []
   const hasFilters = search || status || billing || floor || from || to
+
+  // Group the current page's rows for display
+  const PAYMENT_LABELS: Record<string, string> = { paid: 'Fully paid', partial: 'Partially paid', unpaid: 'Unpaid', no_invoice: 'No invoice' }
+  const groups = (() => {
+    if (groupBy === 'none') return [{ label: '', items: contracts }]
+    const keyOf = (c: Contract) =>
+      groupBy === 'status' ? statusLabel(c.status)
+      : groupBy === 'payment' ? PAYMENT_LABELS[c.paymentStatus ?? 'no_invoice']
+      : groupBy === 'floor' ? (c.unit?.floor ? `Floor ${c.unit.floor}` : 'No floor')
+      : c.billingPeriod === 'weekly' ? 'Weekly billing' : 'Monthly billing'
+    const map = new Map<string, Contract[]>()
+    for (const c of contracts) {
+      const k = keyOf(c)
+      if (!map.has(k)) map.set(k, [])
+      map.get(k)!.push(c)
+    }
+    return [...map.entries()].map(([label, items]) => ({ label, items }))
+  })()
   const clearFilters = () => {
     setSearch(''); setStatus(''); setBilling(''); setFloor(''); setFrom(''); setTo('')
   }
@@ -237,6 +257,25 @@ export default function Contracts() {
           <option value="Shed">Shed</option>
         </select>
 
+        <select value={sort} onChange={(e) => setSort(e.target.value)} style={{ ...pillSelect, minWidth: 150 }}>
+          <option value="newest">Sort: Newest first</option>
+          <option value="oldest">Sort: Oldest first</option>
+          <option value="start_asc">Sort: Start date ↑</option>
+          <option value="start_desc">Sort: Start date ↓</option>
+          <option value="end_asc">Sort: End date ↑</option>
+          <option value="end_desc">Sort: End date ↓</option>
+          <option value="rate_desc">Sort: Rate high → low</option>
+          <option value="rate_asc">Sort: Rate low → high</option>
+        </select>
+
+        <select value={groupBy} onChange={(e) => setGroupBy(e.target.value as typeof groupBy)} style={{ ...pillSelect, minWidth: 150 }}>
+          <option value="none">Group: None</option>
+          <option value="status">Group: Status</option>
+          <option value="payment">Group: Payment</option>
+          <option value="floor">Group: Floor</option>
+          <option value="billing">Group: Billing</option>
+        </select>
+
         <div className="flex items-end gap-1">
           <div>
             <p style={{ fontSize: 10, color: MUTED_COLOR, marginBottom: 2 }}>Start from</p>
@@ -295,8 +334,7 @@ export default function Contracts() {
                 <Th>Contract</Th>
                 <Th>Customer</Th>
                 <Th>Unit(s)</Th>
-                <Th>Billing</Th>
-                <Th>Rate</Th>
+                <Th>Contract Amount</Th>
                 <Th>Start</Th>
                 <Th>End</Th>
                 <Th>Status</Th>
@@ -306,7 +344,16 @@ export default function Contracts() {
               </tr>
             </thead>
             <tbody>
-              {contracts.map((c) => {
+              {groups.map((g) => (
+                <Fragment key={g.label || 'all'}>
+                  {g.label && (
+                    <tr>
+                      <td colSpan={11} style={{ background: '#F7F3FF', padding: '6px 14px', fontSize: 12, fontWeight: 700, color: '#4A1FA0' }}>
+                        {g.label} <span style={{ opacity: .6, fontWeight: 600 }}>· {g.items.length}</span>
+                      </td>
+                    </tr>
+                  )}
+                  {g.items.map((c) => {
                 const allUnits = c.units?.length ? c.units : [c.unit]
                 return (
                   <tr key={c._id} className="hover:bg-muted/50">
@@ -346,8 +393,11 @@ export default function Contracts() {
                         </span>
                       )}
                     </Td>
-                    <Td className="capitalize">{c.billingPeriod}</Td>
-                    <Td>{formatMoney(c.rate)}</Td>
+                    <Td>
+                      <span className="font-medium" title={`${c.billingPeriod === 'weekly' ? 'Weekly' : 'Monthly'} billing · rate ${formatMoney(c.rate)}`}>
+                        {c.contractAmount ? formatMoney(c.contractAmount) : '—'}
+                      </span>
+                    </Td>
                     <Td>{formatDate(c.startDate)}</Td>
                     <Td>{formatDate(c.endDate)}</Td>
                     <Td>
@@ -423,6 +473,8 @@ export default function Contracts() {
                   </tr>
                 )
               })}
+                </Fragment>
+              ))}
             </tbody>
           </Table>
           {contracts.length === 0 && (

@@ -432,6 +432,7 @@ export interface Contract {
   paymentStatus?: 'paid' | 'partial' | 'unpaid' | 'no_invoice'
   paidAmount?: number
   totalAmount?: number
+  contractAmount?: number
   overdueCount?: number
   billingPeriod: 'weekly' | 'monthly'
   rate: number

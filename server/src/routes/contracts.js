@@ -115,8 +115,20 @@ router.get('/', async (req, res) => {
   const limit = Math.min(Math.max(1, Number(req.query.limit) || 25), 100);
   const skip = (page - 1) * limit;
 
+  const sortMap = {
+    newest: { createdAt: -1 },
+    oldest: { createdAt: 1 },
+    start_asc: { startDate: 1 },
+    start_desc: { startDate: -1 },
+    end_asc: { endDate: 1 },
+    end_desc: { endDate: -1 },
+    rate_desc: { rate: -1 },
+    rate_asc: { rate: 1 },
+  };
+  const sort = sortMap[req.query.sort] || sortMap.newest;
+
   const [contracts, total] = await Promise.all([
-    populateAll(Contract.find(filter)).sort({ createdAt: -1 }).skip(skip).limit(limit),
+    populateAll(Contract.find(filter)).sort(sort).skip(skip).limit(limit),
     Contract.countDocuments(filter),
   ]);
 
@@ -147,12 +159,20 @@ router.get('/', async (req, res) => {
       : pay.paid >= pay.total ? 'paid'
       : pay.paid > 0 ? 'partial'
       : 'unpaid';
+    // Full contract value: scheduled payments total, or estimated from rate × term
+    let contractAmount = pay ? Math.round(pay.total * 100) / 100 : 0;
+    if (!contractAmount && c.startDate && c.endDate) {
+      const days = Math.max(0, (new Date(c.endDate) - new Date(c.startDate)) / 86400000);
+      const periods = c.billingPeriod === 'weekly' ? Math.ceil(days / 7) : Math.ceil(days / 28);
+      contractAmount = Math.round(periods * (c.rate || 0) * 100) / 100;
+    }
     return {
       ...c.toObject(),
       documentCount: docMap.get(String(c._id)) ?? 0,
       paymentStatus,
       paidAmount: pay ? Math.round(pay.paid * 100) / 100 : 0,
       totalAmount: pay ? Math.round(pay.total * 100) / 100 : 0,
+      contractAmount,
       overdueCount: pay?.overdue ?? 0,
     };
   });
