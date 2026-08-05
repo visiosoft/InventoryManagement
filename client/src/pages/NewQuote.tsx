@@ -890,6 +890,15 @@ export default function NewQuote() {
     setUnitRows((prev) => prev.filter((_, i) => i !== idx))
   }
 
+  // Preselect a unit passed via ?unit=<id or number> (e.g. from the Floor Map)
+  const unitParam = searchParams.get('unit')
+  const autoAddedUnitRef = useRef(false)
+  useEffect(() => {
+    if (autoAddedUnitRef.current || !unitParam || !allUnits) return
+    const u = allUnits.find((x) => x._id === unitParam || x.unitNumber === unitParam)
+    if (u) { addUnit(u); autoAddedUnitRef.current = true }
+  }, [unitParam, allUnits])
+
   useEffect(() => {
     if (!dateRangeFrom && !dateRangeTo) return
     setUnitRows((prev) => prev.map((r) => ({

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import { Spinner } from '../components/ui'
 
@@ -186,6 +187,13 @@ export default function FloorMap() {
     queryKey: ['floor-plan'],
     queryFn: () => api.get('/floor-plan').then(r => r.data),
   })
+
+  type OccInfo = { contractId: string; contractNo: string; customerName: string; startDate: string; endDate: string; status: string }
+  const { data: occupancy = {} } = useQuery<Record<string, OccInfo>>({
+    queryKey: ['floor-plan-occupancy'],
+    queryFn: () => api.get('/floor-plan/occupancy').then(r => r.data),
+  })
+  const navigate = useNavigate()
 
   // First load priority: local autosave → saved system copy → seed from live units
   useEffect(() => {
@@ -1052,18 +1060,51 @@ export default function FloorMap() {
 
               <div className="grid gap-2">
                 {single.status === 'available' && (<>
-                  <button type="button" onClick={() => setUnitStatus('hold')} className="h-11 rounded-xl text-white text-[14px] font-bold cursor-pointer hover:opacity-90" style={{ background: PURPLE, border: 'none' }}>Place on hold</button>
+                  <button type="button" onClick={() => navigate(`/quotes/new?unit=${encodeURIComponent(single.num ?? '')}`)}
+                    className="h-11 rounded-xl text-white text-[14px] font-bold cursor-pointer hover:opacity-90" style={{ background: PURPLE, border: 'none' }}>Book this unit →</button>
+                  <button type="button" onClick={() => setUnitStatus('hold')} className={`${ghostBtn} !h-10 !rounded-xl`} style={ghostBtnStyle}>Place on hold</button>
                   <button type="button" onClick={() => setUnitStatus('occupied')} className={`${ghostBtn} !h-10 !rounded-xl`} style={ghostBtnStyle}>Mark occupied</button>
                 </>)}
                 {single.status === 'hold' && (<>
-                  <button type="button" onClick={() => setUnitStatus('occupied')} className="h-11 rounded-xl text-white text-[14px] font-bold cursor-pointer hover:opacity-90" style={{ background: PURPLE, border: 'none' }}>Mark occupied</button>
+                  <button type="button" onClick={() => navigate(`/quotes/new?unit=${encodeURIComponent(single.num ?? '')}`)}
+                    className="h-11 rounded-xl text-white text-[14px] font-bold cursor-pointer hover:opacity-90" style={{ background: PURPLE, border: 'none' }}>Book this unit →</button>
+                  <button type="button" onClick={() => setUnitStatus('occupied')} className={`${ghostBtn} !h-10 !rounded-xl`} style={ghostBtnStyle}>Mark occupied</button>
                   <button type="button" onClick={() => setUnitStatus('available')} className={`${ghostBtn} !h-10 !rounded-xl`} style={ghostBtnStyle}>Release hold</button>
                 </>)}
                 {single.status === 'occupied' && (<>
-                  <button type="button" onClick={() => setUnitStatus('available')} className="h-11 rounded-xl text-white text-[14px] font-bold cursor-pointer hover:opacity-90" style={{ background: PURPLE, border: 'none' }}>Mark available</button>
+                  <button type="button" onClick={() => setUnitStatus('available')} className={`${ghostBtn} !h-10 !rounded-xl`} style={ghostBtnStyle}>Mark available</button>
                   <button type="button" onClick={() => setUnitStatus('hold')} className={`${ghostBtn} !h-10 !rounded-xl`} style={ghostBtnStyle}>Place on hold</button>
                 </>)}
               </div>
+
+              {/* Who booked it — from live contracts */}
+              {(() => {
+                const occ = occupancy[single.num ?? '']
+                if (!occ) return null
+                return (
+                  <div style={{ borderTop: '1px solid rgba(20,8,31,.10)', paddingTop: 16 }}>
+                    <p style={{ margin: '0 0 11px', fontSize: 12, fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: MUTED }}>Booked by</p>
+                    <div className="grid gap-2">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span style={{ fontSize: 13, color: MUTED }}>Customer</span>
+                        <span style={{ fontSize: 13.5, fontWeight: 700, textAlign: 'right' }}>{occ.customerName || '—'}</span>
+                      </div>
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span style={{ fontSize: 13, color: MUTED }}>Contract</span>
+                        <span style={{ fontSize: 13.5, fontWeight: 600 }}>{occ.contractNo}{occ.status === 'pending_signature' ? ' · pending signature' : ''}</span>
+                      </div>
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span style={{ fontSize: 13, color: MUTED }}>Period</span>
+                        <span style={{ fontSize: 13.5, fontWeight: 600 }}>
+                          {new Date(occ.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' })} → {new Date(occ.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' })}
+                        </span>
+                      </div>
+                      <button type="button" onClick={() => navigate(`/contracts/${occ.contractId}`)}
+                        className={`${ghostBtn} !h-10 !rounded-xl w-full mt-1`} style={ghostBtnStyle}>Open contract →</button>
+                    </div>
+                  </div>
+                )
+              })()}
 
               {similar.length > 0 && (
                 <div style={{ borderTop: '1px solid rgba(20,8,31,.10)', paddingTop: 16 }}>
