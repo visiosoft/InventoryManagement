@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { CalendarDays, CheckCircle2, Download, FileText, FilePlus, MessageSquare, PenLine, Plus, ShieldCheck, Upload, X, XCircle } from 'lucide-react'
@@ -28,7 +28,6 @@ function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, 
   onDone: () => void
 }) {
   const weeklyRate = Math.round((Number(contract.rate || 0) / 4) * 100) / 100
-  const depositAmt = Number(contract.deposit || 0)
   const unitNo = contract.unit?.unitNumber || (contract.units?.[0]?.unitNumber) || '—'
 
   const toISO = (d: Date) => d.toISOString().slice(0, 10)
@@ -60,7 +59,6 @@ function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, 
   const [endDate, setEndDate] = useState(defaultEnd)
   const [dueDate, setDueDate] = useState(toISO(today))
   const [lineItems, setLineItems] = useState<LineItem[]>([{ id: 1, description: `Storage Rent · Unit ${unitNo}`, qty: 1, rate: weeklyRate, amount: weeklyRate }])
-  const [depositPaid, setDepositPaid] = useState('')
   const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -1084,13 +1082,6 @@ export default function ContractDetail() {
   }, 0)
 
   // Deposit-covered invoices: status 'paid', net 0, no payment records linked to them
-  const groupedInvoiceIds = new Set(invoiceGroups.map(g => String(g.invoiceId)))
-  const depositCoveredInvoices = allInvoices.filter((inv) =>
-    inv.status === 'paid' &&
-    Number(inv.total ?? 0) <= 0 &&
-    !groupedInvoiceIds.has(String(inv._id))
-  )
-
   const allUnits = c.units?.length ? c.units : c.unit ? [c.unit] : []
   const unitLabel = allUnits.length > 1
     ? `Units: ${allUnits.map((u) => u?.unitNumber ?? '—').join(', ')}`

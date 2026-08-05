@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { GripVertical, X } from 'lucide-react'
-import { Box, FileText, TrendingUp } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { api, apiError } from '../lib/api'
 import type { Summary } from '../lib/types'
@@ -14,7 +13,6 @@ const INK = '#14081F'
 const MUTED_CLR = '#756E80'
 const PURPLE = '#5B2BC9'
 const PURPLE_LIGHT = '#F7F3FF'
-const PURPLE_BORDER = '#EDE5FF'
 
 type WidgetId =
   | 'stats'
@@ -84,43 +82,6 @@ function WidgetShell({
           {subtitle && <div style={{ color: MUTED_CLR, fontSize: 12, marginTop: 2, paddingLeft: 22 }}>{subtitle}</div>}
         </div>
         <div style={{ padding: '12px 20px 20px' }}>{children}</div>
-      </div>
-    </div>
-  )
-}
-
-function MoveKpiCard({ label, value, lastMonth, onClick }: { label: string; value: number; lastMonth: number; onClick?: () => void }) {
-  const diff = value - lastMonth
-  const diffColor = diff > 0 ? '#10b981' : diff < 0 ? '#ef4444' : MUTED_CLR
-  return (
-    <div onClick={onClick} style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 20, cursor: onClick ? 'pointer' : 'default' }} className="hover:shadow-md transition-shadow">
-      <div className="flex items-center justify-between">
-        <div>
-          <p style={{ fontSize: 12, color: MUTED_CLR }}>{label}</p>
-          <p style={{ fontSize: 32, fontWeight: 700, color: INK, marginTop: 6 }}>{value}</p>
-          <div className="flex items-center gap-2 mt-1">
-            <span style={{ fontSize: 12, fontWeight: 600, color: diffColor }}>{diff > 0 ? '+' : ''}{diff}</span>
-            <span style={{ fontSize: 11, color: MUTED_CLR }}>vs {lastMonth} last month</span>
-          </div>
-        </div>
-        <div style={{ width: 6, height: 40, borderRadius: 3, background: 'rgba(20,8,31,0.08)' }} />
-      </div>
-    </div>
-  )
-}
-
-function StatCard({ icon: Icon, label, value, sub, tone }: { icon: typeof Box; label: string; value: string; sub?: string; tone: string }) {
-  return (
-    <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 20 }}>
-      <div className="flex items-center justify-between">
-        <div>
-          <p style={{ fontSize: 12, color: MUTED_CLR }}>{label}</p>
-          <p style={{ fontSize: 24, fontWeight: 700, color: INK, marginTop: 4 }}>{value}</p>
-          {sub && <p style={{ fontSize: 11, color: MUTED_CLR, marginTop: 2 }}>{sub}</p>}
-        </div>
-        <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${tone}`}>
-          <Icon size={19} />
-        </div>
       </div>
     </div>
   )
@@ -459,7 +420,7 @@ export default function Dashboard() {
   if (isLoading) return <Spinner />
   if (isError || !data) {
     return (
-      <div style={{ background: CREAM, borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+      <div style={{ background: '#FBF8F2', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
         <div className="mb-7">
           <div style={{ ...HEADING, fontSize: 26, fontWeight: 700, color: INK }}>Dashboard</div>
           <div style={{ fontSize: 14, color: MUTED_CLR, marginTop: 4 }}>Facility overview at a glance</div>
@@ -613,44 +574,3 @@ export default function Dashboard() {
   )
 }
 
-function AvailableUnitsPanel({ bySize, onClose }: { bySize: { sizeSqf: string; available: number }[]; onClose: () => void }) {
-  const { data: units = [] } = useQuery<any[]>({
-    queryKey: ['units-available'],
-    queryFn: () => api.get('/units', { params: { status: 'available' } }).then(r => Array.isArray(r.data) ? r.data : r.data.data ?? []),
-  })
-
-  const grouped = bySize.filter(s => s.available > 0).map(s => ({
-    size: s.sizeSqf,
-    units: units.filter((u: any) => `${u.sizeSqf} sq ft` === s.sizeSqf && u.status === 'available'),
-  }))
-
-  return (
-    <div className="space-y-4">
-      {grouped.map(g => (
-        <div key={g.size}>
-          <div className="flex items-center justify-between mb-2">
-            <span style={{ fontSize: 13, fontWeight: 600, color: '#4A1FA0' }}>{g.size}</span>
-            <span className="text-xs text-muted-foreground">{g.units.length} available</span>
-          </div>
-          <div className="space-y-1.5">
-            {g.units.map((u: any) => (
-              <Link key={u._id} to={`/units`} onClick={onClose}
-                className="block rounded-lg border px-4 py-2.5 hover:bg-muted/50 transition-colors">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <span className="font-medium text-sm">{u.unitNumber}</span>
-                    <span className="text-xs text-muted-foreground ml-2">{u.floor}</span>
-                  </div>
-                  <span className="text-xs font-medium text-muted-foreground">{u.price ? `AED ${u.price}/4wk` : ''}</span>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </div>
-      ))}
-      {grouped.length === 0 && (
-        <p className="text-sm text-muted-foreground text-center py-8">No available units.</p>
-      )}
-    </div>
-  )
-}

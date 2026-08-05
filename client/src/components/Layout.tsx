@@ -237,7 +237,7 @@ export default function Layout() {
               <div className="pt-3">
                 <div className="border-t border-white/10 my-1" />
                 <NavLink to="/reports/monthly"
-                  className={({ isActive }) => cn('flex items-center justify-center rounded-lg p-2 transition-all duration-150', onReportsRoute ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8')}
+                  className={() => cn('flex items-center justify-center rounded-lg p-2 transition-all duration-150', onReportsRoute ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8')}
                   title="Reports">
                   <BarChart3 size={18} />
                 </NavLink>
