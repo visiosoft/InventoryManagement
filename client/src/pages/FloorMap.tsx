@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import { Spinner } from '../components/ui'
@@ -18,6 +18,7 @@ interface Shape {
   num?: string
   status?: UnitStatus
   text?: string
+  rate?: number // AED / 4 weeks, for units not (yet) in the system
 }
 
 interface Floor {
@@ -243,11 +244,18 @@ export default function FloorMap() {
     return () => clearTimeout(t)
   }, [floorIdx, hasDoc])
 
-  const unitPriceMap = useMemo(() => {
-    const m = new Map<string, number>()
-    for (const u of apiUnits) if (u.unitNumber && u.price) m.set(String(u.unitNumber), u.price)
+  const unitInfoMap = useMemo(() => {
+    const m = new Map<string, { id: string; price: number | null }>()
+    for (const u of apiUnits) if (u.unitNumber) m.set(String(u.unitNumber), { id: u._id, price: u.price ?? null })
     return m
   }, [apiUnits])
+
+  const qc = useQueryClient()
+  const rateMut = useMutation({
+    mutationFn: ({ id, price }: { id: string; price: number }) => api.put(`/units/${id}`, { price }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['units-for-map'] }); setSaveState('Rate saved to system ✓') },
+    onError: () => setSaveState('Rate save failed — try again'),
+  })
 
   // ── Mutation helpers ────────────────────────────────────────────────────
   const pushUndo = () => {
@@ -615,9 +623,25 @@ export default function FloorMap() {
   const lettableSqft = units.reduce((a, u) => a + areaSqft(u), 0)
   const sizesSqft = units.map(u => Math.round(areaSqft(u)))
   const sizeRange = sizesSqft.length ? `${Math.min(...sizesSqft)}–${Math.max(...sizesSqft)} sqft` : '—'
-  const potentialRevenue = floor ? Math.round(units.reduce((a, u) => a + (unitPriceMap.get(u.num ?? '') ?? areaSqft(u) * floor.rate), 0)) : 0
+  // Effective rate: system unit price → rate stored on the shape → computed from floor rate
+  const unitPrice = (s: Shape) => {
+    const info = unitInfoMap.get(s.num ?? '')
+    if (info?.price) return info.price
+    if (s.rate) return s.rate
+    return Math.round(areaSqft(s) * (floor?.rate ?? 0))
+  }
+  const potentialRevenue = floor ? Math.round(units.reduce((a, u) => a + unitPrice(u), 0)) : 0
 
-  const unitPrice = (s: Shape) => unitPriceMap.get(s.num ?? '') ?? Math.round(areaSqft(s) * (floor?.rate ?? 0))
+  // Save a unit's rate: to the system unit record when it exists, else on the map shape
+  const commitRate = (s: Shape, val: string) => {
+    const price = parseFloat(val)
+    if (isNaN(price) || price < 0) return
+    pushUndoField()
+    updateShapes(shapes => shapes.map(x => x.id === s.id ? { ...x, rate: price } : x))
+    const info = unitInfoMap.get(s.num ?? '')
+    if (info?.id) rateMut.mutate({ id: info.id, price })
+    else setSaveState('Rate saved on map (unit not in system yet)')
+  }
 
   const dimUnit = floor?.system === 'imperial' ? 'ft' : 'm'
   const fmtDim = (m: number) => round2(toDisp(m, floor?.system ?? 'metric'))
@@ -1058,6 +1082,14 @@ export default function FloorMap() {
                 </div>
               </div>
 
+              <label className="grid gap-1">
+                <span style={{ fontSize: 12, color: MUTED }}>Rate (AED / 4 weeks) — saves to the unit record</span>
+                <input key={`vrate-${single.id}`} type="number" step="1" min="0" defaultValue={unitPrice(single) || ''}
+                  onBlur={e => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== unitPrice(single)) commitRate(single, e.target.value) }}
+                  onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                  className={fieldCls} style={fieldStyle} />
+              </label>
+
               <div className="grid gap-2">
                 {single.status === 'available' && (<>
                   <button type="button" onClick={() => navigate(`/quotes/new?unit=${encodeURIComponent(single.num ?? '')}`)}
@@ -1154,6 +1186,13 @@ export default function FloorMap() {
                           </select>
                         </label>
                       </div>
+                      <label className="grid gap-1">
+                        <span style={{ fontSize: 12, color: MUTED }}>Rate (AED / 4 weeks) — saves to the unit record</span>
+                        <input key={`rate-${single.id}`} type="number" step="1" min="0" defaultValue={unitPrice(single) || ''}
+                          onBlur={e => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== unitPrice(single)) commitRate(single, e.target.value) }}
+                          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                          className={fieldCls} style={fieldStyle} />
+                      </label>
                     </>
                   )}
 
