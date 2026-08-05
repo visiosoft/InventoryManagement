@@ -1172,6 +1172,9 @@ export default function FloorMap() {
                   <button type="button" onClick={() => setUnitStatus('available')} className={`${ghostBtn} !h-10 !rounded-xl`} style={ghostBtnStyle}>Release hold</button>
                 </>)}
                 {single.status === 'occupied' && (<>
+                  <button type="button" onClick={() => navigate(`/quotes/new?unit=${encodeURIComponent(single.num ?? '')}`)}
+                    className="h-11 rounded-xl text-white text-[14px] font-bold cursor-pointer hover:opacity-90" style={{ background: PURPLE, border: 'none' }}
+                    title="Occupied units can be booked again, e.g. shared units or a follow-on tenancy">Book this unit →</button>
                   <button type="button" onClick={() => setUnitStatus('available')} className={`${ghostBtn} !h-10 !rounded-xl`} style={ghostBtnStyle}>Mark available</button>
                   <button type="button" onClick={() => setUnitStatus('hold')} className={`${ghostBtn} !h-10 !rounded-xl`} style={ghostBtnStyle}>Place on hold</button>
                 </>)}
