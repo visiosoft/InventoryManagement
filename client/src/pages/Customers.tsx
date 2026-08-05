@@ -5,7 +5,7 @@ import { FileText, FileBadge, Receipt, Plus, Search, Trash2, UserCheck, Merge } 
 import { api, apiError, customerApi } from '../lib/api'
 import type { Customer } from '../lib/types'
 import { Button, Card, EmptyState, Input, Modal, Pagination, Spinner, Table, Td, Th } from '../components/ui'
-import { AddCustomerModal } from '../components/AddCustomerModal'
+import { AddCustomerModal, CustomerForm } from '../components/AddCustomerModal'
 import { formatDate } from '../lib/utils'
 
 // Re-export CustomerForm so existing imports (e.g. CustomerDetail) keep working
@@ -32,6 +32,7 @@ export default function Customers() {
   const [actionError, setActionError] = useState('')
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [editTarget, setEditTarget] = useState<Customer | null>(null)
 
   // Merge state
   const [mergeSource, setMergeSource] = useState<Customer | null>(null)
@@ -49,6 +50,22 @@ export default function Customers() {
   }, [location.state])
 
   useEffect(() => { setPage(1) }, [search, sort, limit])
+
+  // Deep link: /customers?edit=<id> opens that customer's edit modal (e.g. from a contract row)
+  useEffect(() => {
+    const id = new URLSearchParams(location.search).get('edit')
+    if (!id) return
+    api.get(`/customers/${id}`)
+      .then((r) => setEditTarget(r.data.customer ?? r.data))
+      .catch(() => {})
+    navigate('/customers', { replace: true })
+  }, [location.search, navigate])
+
+  const updateCustomer = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: Partial<Customer> }) => api.put(`/customers/${id}`, body),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['customers'] }); setEditTarget(null); setActionError('') },
+    onError: (e) => setActionError(apiError(e)),
+  })
 
   type PagedCustomers = { data: Customer[]; total: number; page: number; pages: number; limit: number }
   const { data, isLoading } = useQuery<PagedCustomers>({
@@ -213,7 +230,10 @@ export default function Customers() {
                     <input type="checkbox" checked={selected.has(c._id)} onChange={() => toggleOne(c._id)} className="cursor-pointer" />
                   </Td>
                   <Td>
-                    <span className="font-medium">{c.fullName}</span>
+                    <button type="button" onClick={() => { setActionError(''); setEditTarget(c) }}
+                      className="font-medium hover:underline cursor-pointer text-left" style={{ color: PURPLE }}>
+                      {c.fullName}
+                    </button>
                     {c.tenantType === 'company' && <span className="ml-1.5 text-[10px] text-muted-foreground">(Co.)</span>}
                   </Td>
                   <Td className="text-muted-foreground text-xs">{c.clientId || '—'}</Td>
@@ -251,6 +271,19 @@ export default function Customers() {
           )}
         </Card>
       )}
+
+      {/* ── Edit tenant modal ── */}
+      <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title={`Edit ${editTarget?.fullName ?? ''}`} wide>
+        {editTarget && (
+          <CustomerForm
+            initial={editTarget}
+            busy={updateCustomer.isPending}
+            error={actionError}
+            submitLabel="Save changes"
+            onSubmit={(b) => updateCustomer.mutate({ id: editTarget._id, body: b })}
+          />
+        )}
+      </Modal>
 
       {/* ── Merge customer modal ── */}
       <Modal
