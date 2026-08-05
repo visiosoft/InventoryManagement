@@ -156,6 +156,7 @@ export default function FloorMap() {
   const [snapOn, setSnapOn] = useState(true)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<'all' | UnitStatus>('all')
+  const [sizeF, setSizeF] = useState<number | null>(null)
   const [repeatN, setRepeatN] = useState(5)
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
   const [saveState, setSaveState] = useState('')
@@ -245,8 +246,8 @@ export default function FloorMap() {
   }, [floorIdx, hasDoc])
 
   const unitInfoMap = useMemo(() => {
-    const m = new Map<string, { id: string; price: number | null }>()
-    for (const u of apiUnits) if (u.unitNumber) m.set(String(u.unitNumber), { id: u._id, price: u.price ?? null })
+    const m = new Map<string, { id: string; price: number | null; sizeSqf: number | null }>()
+    for (const u of apiUnits) if (u.unitNumber) m.set(String(u.unitNumber), { id: u._id, price: u.price ?? null, sizeSqf: u.sizeSqf ?? null })
     return m
   }, [apiUnits])
 
@@ -656,6 +657,12 @@ export default function FloorMap() {
     if (mode !== 'view' || s.type !== 'unit') return false
     if (query && !(s.num ?? '').toLowerCase().includes(query.toLowerCase())) return true
     if (filter !== 'all' && s.status !== filter) return true
+    if (sizeF) {
+      // Use the system size when the unit exists; otherwise the drawn area ±15%
+      const info = unitInfoMap.get(s.num ?? '')
+      if (info?.sizeSqf != null) { if (info.sizeSqf !== sizeF) return true }
+      else if (Math.abs(areaSqft(s) - sizeF) / sizeF > 0.15) return true
+    }
     return false
   }
 
@@ -830,6 +837,11 @@ export default function FloorMap() {
             <button type="button" onClick={() => setFilter('available')} style={filterPill(filter === 'available')}>Available <span style={{ opacity: .6, marginLeft: 5 }}>{availCount}</span></button>
             <button type="button" onClick={() => setFilter('hold')} style={filterPill(filter === 'hold')}>On hold <span style={{ opacity: .6, marginLeft: 5 }}>{holdCount}</span></button>
             <button type="button" onClick={() => setFilter('occupied')} style={filterPill(filter === 'occupied')}>Occupied <span style={{ opacity: .6, marginLeft: 5 }}>{occCount}</span></button>
+            <select value={sizeF ?? ''} onChange={e => setSizeF(e.target.value ? parseInt(e.target.value) : null)}
+              style={{ ...filterPill(sizeF != null), paddingRight: 10 }} className="cursor-pointer">
+              <option value="">All sizes</option>
+              {[25, 35, 50, 75, 100, 150, 200].map(s => <option key={s} value={s}>{s} sqft</option>)}
+            </select>
           </div>
         )}
 
