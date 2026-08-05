@@ -635,7 +635,6 @@ export default function FloorMap() {
     if (s.rate) return s.rate
     return Math.round(areaSqft(s) * (floor?.rate ?? 0))
   }
-  const potentialRevenue = floor ? Math.round(units.reduce((a, u) => a + unitPrice(u), 0)) : 0
 
   // Save a unit's rate: to the system unit record when it exists, else on the map shape
   const commitRate = (s: Shape, val: string) => {
@@ -1314,7 +1313,6 @@ export default function FloorMap() {
               <div className="grid gap-2" style={{ borderTop: '1px solid rgba(20,8,31,.10)', paddingTop: 14 }}>
                 <div className="flex items-baseline justify-between"><span style={{ fontSize: 13, color: MUTED }}>Units on this floor</span><span style={{ fontSize: 14, fontWeight: 700 }}>{units.length}</span></div>
                 <div className="flex items-baseline justify-between"><span style={{ fontSize: 13, color: MUTED }}>Lettable area</span><span style={{ fontSize: 14, fontWeight: 700 }}>{Math.round(lettableSqft).toLocaleString()} sqft</span></div>
-                <div className="flex items-baseline justify-between"><span style={{ fontSize: 13, color: MUTED }}>Potential revenue</span><span style={{ fontSize: 14, fontWeight: 700 }}>AED {potentialRevenue.toLocaleString()} / mo</span></div>
               </div>
 
               <div className="grid gap-2" style={{ borderTop: '1px solid rgba(20,8,31,.10)', paddingTop: 14 }}>
