@@ -8,6 +8,11 @@ export const api = axios.create({ baseURL: apiBaseUrl })
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('pb_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
+  // Scope GET requests to the selected site (server routes that support ?site= filter by it)
+  const site = localStorage.getItem('pb_site_id')
+  if (site && (config.method ?? 'get').toLowerCase() === 'get') {
+    config.params = { ...(config.params || {}), site }
+  }
   return config
 })
 

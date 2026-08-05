@@ -1,13 +1,18 @@
 import { Router } from 'express';
 import { Unit, Contract, Payment, Expense } from '../models/index.js';
+import { siteScope } from '../utils/siteScope.js';
 
 const router = Router();
 
 const SIZE_BUCKETS = [10, 25, 35, 50, 100, 150, 200];
 
 // Dashboard summary: occupancy, revenue this month, expiring soon, overdue.
-router.get('/summary', async (_req, res) => {
-  const units = await Unit.find();
+router.get('/summary', async (req, res) => {
+  const scope = await siteScope(req.query.site);
+  const uF = scope ? scope.unitFilter : {};
+  const cF = scope ? scope.contractFilter : {};
+  const pF = scope ? scope.paymentFilter : {};
+  const units = await Unit.find(uF);
 
   const byStatus = { available: 0, occupied: 0, reserved: 0, maintenance: 0 };
   for (const u of units) byStatus[u.status] += 1;
@@ -46,28 +51,28 @@ router.get('/summary', async (_req, res) => {
 
   const [revenueAgg, dueAgg, expiring, overdue, activeContracts, moveInsThisMonthList, moveOutsThisMonthList, moveInsLastMonth, moveOutsLastMonth] = await Promise.all([
     Payment.aggregate([
-      { $match: { status: 'paid', paidDate: { $gte: monthStart, $lt: monthEnd } } },
+      { $match: { ...pF, status: 'paid', paidDate: { $gte: monthStart, $lt: monthEnd } } },
       { $group: { _id: null, total: { $sum: '$amount' } } },
     ]),
     Payment.aggregate([
-      { $match: { status: { $in: ['pending', 'overdue'] }, dueDate: { $gte: monthStart, $lt: monthEnd } } },
+      { $match: { ...pF, status: { $in: ['pending', 'overdue'] }, dueDate: { $gte: monthStart, $lt: monthEnd } } },
       { $group: { _id: null, total: { $sum: '$amount' } } },
     ]),
-    Contract.find({ status: 'active', endDate: { $gte: now, $lte: in15 } })
+    Contract.find({ ...cF, status: 'active', endDate: { $gte: now, $lte: in15 } })
       .populate('customer', 'fullName')
       .populate({ path: 'unit', select: 'unitNumber' })
       .sort({ endDate: 1 }),
-    Payment.find({ status: 'overdue' })
+    Payment.find({ ...pF, status: 'overdue' })
       .populate({ path: 'contract', populate: [{ path: 'customer', select: 'fullName' }, { path: 'unit', select: 'unitNumber' }] })
       .sort({ dueDate: 1 })
       .limit(20),
-    Contract.countDocuments({ status: 'active' }),
-    Contract.find({ status: { $in: ['active', 'ended'] }, startDate: { $gte: monthStart, $lt: monthEnd } })
+    Contract.countDocuments({ ...cF, status: 'active' }),
+    Contract.find({ ...cF, status: { $in: ['active', 'ended'] }, startDate: { $gte: monthStart, $lt: monthEnd } })
       .populate('customer', 'fullName').populate('unit', 'unitNumber').sort({ startDate: 1 }).lean(),
-    Contract.find({ status: 'ended', endDate: { $gte: monthStart, $lt: monthEnd } })
+    Contract.find({ ...cF, status: 'ended', endDate: { $gte: monthStart, $lt: monthEnd } })
       .populate('customer', 'fullName').populate('unit', 'unitNumber').sort({ endDate: 1 }).lean(),
-    Contract.countDocuments({ status: { $in: ['active', 'ended'] }, startDate: { $gte: new Date(now.getFullYear(), now.getMonth() - 1, 1), $lt: monthStart } }),
-    Contract.countDocuments({ status: 'ended', endDate: { $gte: new Date(now.getFullYear(), now.getMonth() - 1, 1), $lt: monthStart } }),
+    Contract.countDocuments({ ...cF, status: { $in: ['active', 'ended'] }, startDate: { $gte: new Date(now.getFullYear(), now.getMonth() - 1, 1), $lt: monthStart } }),
+    Contract.countDocuments({ ...cF, status: 'ended', endDate: { $gte: new Date(now.getFullYear(), now.getMonth() - 1, 1), $lt: monthStart } }),
   ]);
 
   // Attach payment status to move-in/out lists
@@ -111,6 +116,8 @@ router.get('/summary', async (_req, res) => {
 
 // Revenue by month for the last N months (paid payments).
 router.get('/revenue', async (req, res) => {
+  const scope = await siteScope(req.query.site);
+  const pF = scope ? scope.paymentFilter : {};
   const months = Math.min(Number(req.query.months) || 6, 24);
   const start = new Date();
   start.setMonth(start.getMonth() - (months - 1));
@@ -118,7 +125,7 @@ router.get('/revenue', async (req, res) => {
   start.setHours(0, 0, 0, 0);
 
   const agg = await Payment.aggregate([
-    { $match: { status: 'paid', paidDate: { $gte: start } } },
+    { $match: { ...pF, status: 'paid', paidDate: { $gte: start } } },
     {
       $group: {
         _id: { y: { $year: '$paidDate' }, m: { $month: '$paidDate' } },
@@ -145,8 +152,9 @@ router.get('/revenue', async (req, res) => {
 
 // Availability search: free units, optionally by minimum size and date range.
 router.get('/availability', async (req, res) => {
+  const scope = await siteScope(req.query.site);
   const { minSize, maxSize, from, to } = req.query;
-  const filter = { status: { $nin: ['maintenance'] } };
+  const filter = { ...(scope ? scope.unitFilter : {}), status: { $nin: ['maintenance'] } };
   if (minSize) filter.sizeSqf = { ...filter.sizeSqf, $gte: Number(minSize) };
   if (maxSize) filter.sizeSqf = { ...filter.sizeSqf, $lte: Number(maxSize) };
   const units = await Unit.find(filter).sort({ sizeSqf: 1, unitNumber: 1 });
@@ -174,10 +182,11 @@ router.get('/availability', async (req, res) => {
 
 // Upcoming vacancies: active contracts ending within N days.
 router.get('/vacancies', async (req, res) => {
+  const scope = await siteScope(req.query.site);
   const days = Math.min(Number(req.query.days) || 30, 365);
   const now = new Date();
   const until = new Date(now.getTime() + days * 86400000);
-  const contracts = await Contract.find({ status: 'active', endDate: { $gte: now, $lte: until } })
+  const contracts = await Contract.find({ ...(scope ? scope.contractFilter : {}), status: 'active', endDate: { $gte: now, $lte: until } })
     .populate('customer', 'fullName')
     .populate('unit')
     .sort({ endDate: 1 });
@@ -186,10 +195,11 @@ router.get('/vacancies', async (req, res) => {
 
 // Expiring contracts — active contracts ending within N days (default 30)
 router.get('/expiring', async (req, res) => {
+  const scope = await siteScope(req.query.site);
   const days = Math.min(Number(req.query.days) || 30, 365);
   const now = new Date();
   const until = new Date(now.getTime() + days * 86400000);
-  const contracts = await Contract.find({ status: 'active', endDate: { $gte: now, $lte: until } })
+  const contracts = await Contract.find({ ...(scope ? scope.contractFilter : {}), status: 'active', endDate: { $gte: now, $lte: until } })
     .populate('customer', 'fullName phone')
     .populate('unit', 'unitNumber sizeSqf floor')
     .sort({ endDate: 1 });
@@ -203,7 +213,8 @@ router.get('/overdue', async (req, res) => {
     { status: 'pending', dueDate: { $lt: now } },
     { $set: { status: 'overdue' } }
   );
-  const payments = await Payment.find({ status: 'overdue' })
+  const overdueScope = await siteScope(req.query.site);
+  const payments = await Payment.find({ ...(overdueScope ? overdueScope.paymentFilter : {}), status: 'overdue' })
     .populate({
       path: 'contract',
       populate: [
@@ -232,7 +243,9 @@ router.get('/tenant-payments', async (req, res) => {
   );
 
   // Payments whose due date falls in this month OR were paid in this month
+  const tpScope = await siteScope(req.query.site);
   const payments = await Payment.find({
+    ...(tpScope ? tpScope.paymentFilter : {}),
     $or: [
       { dueDate: { $gte: monthStart, $lt: monthEnd } },
       { status: 'paid', paidDate: { $gte: monthStart, $lt: monthEnd } },
@@ -293,11 +306,12 @@ router.get('/tenant-payments', async (req, res) => {
 
 // ── NEW: Revenue and occupancy breakdown per unit size ─────────────────────────
 router.get('/unit-revenue', async (req, res) => {
+  const scope = await siteScope(req.query.site);
   const [units, activeContracts, revenueAgg] = await Promise.all([
-    Unit.find().sort({ sizeSqf: 1, unitNumber: 1 }),
-    Contract.find({ status: 'active' }).select('unit rate'),
+    Unit.find(scope ? scope.unitFilter : {}).sort({ sizeSqf: 1, unitNumber: 1 }),
+    Contract.find({ ...(scope ? scope.contractFilter : {}), status: 'active' }).select('unit rate'),
     Payment.aggregate([
-      { $match: { status: 'paid' } },
+      { $match: { ...(scope ? scope.paymentFilter : {}), status: 'paid' } },
       {
         $lookup: {
           from: 'contracts',
@@ -434,12 +448,14 @@ router.get('/forecast', async (req, res) => {
   const now = new Date();
   const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
+  const scope = await siteScope(req.query.site);
+  const pF = scope ? scope.paymentFilter : {};
   const [contracts, overdueAgg] = await Promise.all([
-    Contract.find({ status: 'active' })
+    Contract.find({ ...(scope ? scope.contractFilter : {}), status: 'active' })
       .populate('customer', 'fullName')
       .populate('unit', 'unitNumber sizeSqf'),
     Payment.aggregate([
-      { $match: { status: { $in: ['pending', 'overdue'] } } },
+      { $match: { ...pF, status: { $in: ['pending', 'overdue'] } } },
       { $group: { _id: null, total: { $sum: '$amount' } } },
     ]),
   ]);
@@ -447,7 +463,7 @@ router.get('/forecast', async (req, res) => {
   // Historical: actual paid per month (last 3 months)
   const histStart = new Date(now.getFullYear(), now.getMonth() - 2, 1);
   const historicalAgg = await Payment.aggregate([
-    { $match: { status: 'paid', paidDate: { $gte: histStart } } },
+    { $match: { ...pF, status: 'paid', paidDate: { $gte: histStart } } },
     { $group: { _id: { y: { $year: '$paidDate' }, m: { $month: '$paidDate' } }, total: { $sum: '$amount' }, count: { $sum: 1 } } },
     { $sort: { '_id.y': 1, '_id.m': 1 } },
   ]);

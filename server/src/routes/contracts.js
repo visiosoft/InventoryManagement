@@ -8,6 +8,7 @@ import { uploadFile } from '../services/drive.js';
 import { renderContractPdf } from '../services/contractPdf.js';
 import { fillAgreementPdf, agreementTemplateExists } from '../services/agreementPdf.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
+import { siteScope } from '../utils/siteScope.js';
 
 // Renders the contract document: the official Customer Agreement template
 // filled with contract data when available, otherwise the generated fallback.
@@ -105,6 +106,10 @@ router.get('/', async (req, res) => {
     if (matchedUnits.length) or.push({ unit: { $in: matchedUnits.map((u) => u._id) } });
     if (matchedCustomers.length) or.push({ customer: { $in: matchedCustomers.map((c) => c._id) } });
     filter.$or = or;
+  }
+  const scope = await siteScope(req.query.site);
+  if (scope) {
+    filter.$and = [...(filter.$and || []), { $or: [{ unit: { $in: scope.unitIds } }, { units: { $in: scope.unitIds } }] }];
   }
   const page = Math.max(1, Number(req.query.page) || 1);
   const limit = Math.min(Math.max(1, Number(req.query.limit) || 25), 100);

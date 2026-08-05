@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { LayoutDashboard, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ShieldCheck, ScrollText, CalendarCheck, RefreshCw, Map as MapIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../lib/auth'
 import { api } from '../lib/api'
 import { useSite, type Site } from '../lib/site'
@@ -156,6 +156,7 @@ export default function Layout() {
   const isMovingOnly = hasPermission('moving_dashboard') && !hasPermission('units') && !hasPermission('dashboard')
 
   // Site switcher — shown when more than one visible site exists
+  const qc = useQueryClient()
   const { siteId, setSiteId } = useSite()
   const { data: sites = [] } = useQuery<Site[]>({
     queryKey: ['sites'],
@@ -423,7 +424,7 @@ export default function Layout() {
           <div className="flex items-center gap-3">
             <h1 className="text-lg font-semibold" style={{ color: '#14081F' }}>{getPageTitle(location.pathname)}</h1>
             {visibleSites.length > 1 && (
-              <select value={currentSiteId} onChange={e => setSiteId(e.target.value)}
+              <select value={currentSiteId} onChange={e => { setSiteId(e.target.value); qc.invalidateQueries() }}
                 className="h-8 rounded-full border px-3 text-[12.5px] font-semibold cursor-pointer bg-white"
                 style={{ borderColor: 'rgba(20,8,31,.16)', color: '#4A1FA0' }}>
                 {visibleSites.map(s => <option key={s._id} value={s._id}>{s.name}</option>)}

@@ -1,10 +1,12 @@
 import { Router } from 'express';
 import { Unit, Contract } from '../models/index.js';
+import { siteScope } from '../utils/siteScope.js';
 
 const router = Router();
 
 router.get('/', async (req, res) => {
-  const filter = {};
+  const scope = await siteScope(req.query.site);
+  const filter = scope ? { ...scope.unitFilter } : {};
   if (req.query.status) filter.status = req.query.status;
   if (req.query.floor) filter.floor = req.query.floor;
   if (req.query.minSize) filter.sizeSqf = { ...filter.sizeSqf, $gte: Number(req.query.minSize) };

@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { Payment, Contract, Customer, Unit, Invoice, nextInvoiceNo } from '../models/index.js';
 import { renderReceiptPdf } from '../services/receiptPdf.js';
 import { sendWhatsAppText, whatsappSendConfigured, whatsappSendMissing } from '../services/whatsapp.js';
+import { siteScope } from '../utils/siteScope.js';
 
 const router = Router();
 
@@ -10,16 +11,18 @@ const populateAll = (q) =>
   q.populate({ path: 'contract', populate: [{ path: 'customer' }, { path: 'unit' }] });
 
 // Summary totals for the dashboard cards
-router.get('/summary', async (_req, res) => {
+router.get('/summary', async (req, res) => {
+  const scope = await siteScope(req.query.site);
+  const pF = scope ? scope.paymentFilter : {};
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
   const [overdueList, pendingList, paidThisMonth, dueThisMonth] = await Promise.all([
-    Payment.find({ status: 'overdue' }).select('amount'),
-    Payment.find({ status: 'pending' }).select('amount'),
-    Payment.find({ status: 'paid', paidDate: { $gte: monthStart, $lte: monthEnd } }).select('amount'),
-    Payment.find({ status: { $in: ['pending', 'overdue'] }, dueDate: { $gte: monthStart, $lte: monthEnd } }).select('amount'),
+    Payment.find({ ...pF, status: 'overdue' }).select('amount'),
+    Payment.find({ ...pF, status: 'pending' }).select('amount'),
+    Payment.find({ ...pF, status: 'paid', paidDate: { $gte: monthStart, $lte: monthEnd } }).select('amount'),
+    Payment.find({ ...pF, status: { $in: ['pending', 'overdue'] }, dueDate: { $gte: monthStart, $lte: monthEnd } }).select('amount'),
   ]);
 
   const sum = (arr) => arr.reduce((s, p) => s + p.amount, 0);
@@ -57,6 +60,9 @@ router.get('/', async (req, res) => {
     if (contracts.length === 0) return res.json([]);
     filter.contract = { $in: contracts.map((c) => c._id) };
   }
+
+  const scope = await siteScope(req.query.site);
+  if (scope) filter.$and = [...(filter.$and || []), { contract: { $in: scope.contractIds } }];
 
   const payments = await populateAll(Payment.find(filter)).sort({ dueDate: 1 });
   res.json(payments);
