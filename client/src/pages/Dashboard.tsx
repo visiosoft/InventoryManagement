@@ -130,6 +130,7 @@ export default function Dashboard() {
   const [layout, setLayout] = useState<WidgetId[]>(() => safeLoadLayout())
   const [dragged, setDragged] = useState<WidgetId | null>(null)
   const [movePanel, setMovePanel] = useState<'in' | 'out' | 'available' | null>(null)
+  const [sizeFilter, setSizeFilter] = useState<number | null>(null)
 
   const { data, isLoading, isError, error, refetch } = useQuery<Summary>({
     queryKey: ['summary'],
@@ -233,13 +234,13 @@ export default function Dashboard() {
               </div>
 
               {/* Available units */}
-              <div onClick={() => setMovePanel('available')} style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 14, boxShadow: '0 1px 2px rgba(20,8,31,.05)', cursor: 'pointer' }} className="hover:shadow-md transition-shadow">
+              <div onClick={() => { setSizeFilter(null); setMovePanel('available') }} style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 14, boxShadow: '0 1px 2px rgba(20,8,31,.05)', cursor: 'pointer' }} className="hover:shadow-md transition-shadow">
                 <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Available units</div>
                 <div style={{ ...HEADING, fontWeight: 700, fontSize: 56, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{data.byStatus.available}</div>
                 <div style={{ fontSize: 13, color: '#4A4357' }}>Ready to rent</div>
-                <div className="flex flex-wrap gap-[6px] mt-auto">
+                <div className="flex flex-wrap gap-[6px] mt-auto" onClick={e => e.stopPropagation()}>
                   {data.bySize.filter(s => s.available > 0).map(s => (
-                    <div key={s.sizeSqf} style={{ fontSize: 12, fontWeight: 600, padding: '5px 10px', borderRadius: 8, background: PURPLE_LIGHT, color: '#4A1FA0' }}>{s.available} × {s.sizeSqf}</div>
+                    <button key={s.sizeSqf} onClick={() => { setSizeFilter(parseInt(s.sizeSqf)); setMovePanel('available') }} style={{ fontSize: 12, fontWeight: 600, padding: '5px 10px', borderRadius: 8, background: PURPLE_LIGHT, color: '#4A1FA0', cursor: 'pointer', border: 'none' }} className="hover:opacity-80 transition-opacity">{s.available} × {s.sizeSqf}</button>
                   ))}
                 </div>
               </div>
@@ -547,15 +548,16 @@ export default function Dashboard() {
           <div className="relative w-full max-w-md bg-white dark:bg-gray-900 shadow-xl overflow-y-auto animate-in slide-in-from-right">
             <div className="sticky top-0 bg-white dark:bg-gray-900 border-b px-5 py-4 flex items-center justify-between z-10">
               <h2 style={{ ...HEADING, fontSize: 18, fontWeight: 700, color: INK }}>
-                {movePanel === 'in' ? 'Move-ins this month' : movePanel === 'out' ? 'Move-outs this month' : 'Available Units'}
+                {movePanel === 'in' ? 'Move-ins this month' : movePanel === 'out' ? 'Move-outs this month' : sizeFilter ? `Available Units · ${sizeFilter} sq ft` : 'Available Units'}
               </h2>
               <button onClick={() => setMovePanel(null)} className="p-1 hover:bg-muted rounded cursor-pointer"><X size={18} /></button>
             </div>
             <div className="p-5 space-y-2">
-              {movePanel === 'available' ? (
-                (data.availableUnitsList ?? []).length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-8">No available units.</p>
-                ) : (data.availableUnitsList ?? []).map((u: any) => (
+              {movePanel === 'available' ? (() => {
+                const filtered = (data.availableUnitsList ?? []).filter((u: any) => sizeFilter ? u.sizeSqf === sizeFilter : true)
+                return filtered.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-8">No available units{sizeFilter ? ` for ${sizeFilter} sq ft` : ''}.</p>
+                ) : filtered.map((u: any) => (
                   <Link key={u._id} to={`/units`} onClick={() => setMovePanel(null)}
                     className="block rounded-lg border px-4 py-3 hover:bg-muted/50 transition-colors">
                     <div className="flex justify-between items-start">
@@ -576,7 +578,7 @@ export default function Dashboard() {
                     </div>
                   </Link>
                 ))
-              ) : (() => {
+              })() : (() => {
                 const list = (movePanel === 'in' ? data.moveInsList : data.moveOutsList) ?? []
                 return list.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-8">No {movePanel === 'in' ? 'move-ins' : 'move-outs'} this month.</p>
