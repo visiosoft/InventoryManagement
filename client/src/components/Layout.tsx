@@ -1,10 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { LayoutDashboard, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ShieldCheck, ScrollText, CalendarCheck, RefreshCw, Map as MapIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../lib/auth'
-import { api } from '../lib/api'
-import { useSite, type Site } from '../lib/site'
 import { cn } from '../lib/utils'
 
 const navTop = [
@@ -150,16 +147,8 @@ export default function Layout() {
   const isAdmin = user?.role === 'admin'
   const isMovingOnly = hasPermission('moving_dashboard') && !hasPermission('units') && !hasPermission('dashboard')
 
-  // Site switcher — shown when more than one visible site exists
-  const qc = useQueryClient()
-  const { siteId, setSiteId } = useSite()
-  const { data: sites = [] } = useQuery<Site[]>({
-    queryKey: ['sites'],
-    queryFn: () => api.get('/sites').then(r => r.data),
-    enabled: !isMovingOnly,
-  })
-  const visibleSites = sites.filter(s => !s.hidden)
-  const currentSiteId = siteId ?? (sites.find(s => s.isDefault)?._id ?? sites[0]?._id ?? '')
+  // Site switcher disabled for now — clear any previously selected site
+  useEffect(() => { localStorage.removeItem('pb_site_id') }, [])
 
   // Close sidebar on route change (mobile)
   useEffect(() => { setSidebarOpen(false); setProfileOpen(false) }, [location.pathname])
@@ -369,9 +358,10 @@ export default function Layout() {
         <SidebarContent isCollapsed={collapsed} />
         <button
           onClick={() => { setCollapsed(c => { localStorage.setItem('pb_sidebar_collapsed', String(!c)); return !c }) }}
-          className="absolute -right-3 top-20 h-6 w-6 rounded-full bg-sidebar border border-white/20 flex items-center justify-center text-sidebar-muted hover:text-sidebar-foreground cursor-pointer shadow-md z-40"
+          className="shrink-0 flex items-center justify-center h-10 border-t border-white/10 text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/5 cursor-pointer transition-colors"
+          title={collapsed ? 'Expand' : 'Collapse'}
         >
-          <ChevronDown size={12} className={cn('transition-transform', collapsed ? '-rotate-90' : 'rotate-90')} />
+          <ChevronDown size={16} className={cn('transition-transform duration-200', collapsed ? '-rotate-90' : 'rotate-90')} />
         </button>
       </aside>
 
@@ -416,16 +406,7 @@ export default function Layout() {
       <main className={cn("flex-1 pt-14 md:pt-0 min-w-0 transition-all duration-200", collapsed ? 'md:ml-[60px]' : 'md:ml-56')} style={{ background: '#FBF8F2' }}>
         {/* Desktop top bar with profile dropdown */}
         <div className="hidden md:flex items-center justify-between h-14 px-6 border-b border-border/40">
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-semibold" style={{ color: '#14081F' }}>{getPageTitle(location.pathname)}</h1>
-            {visibleSites.length > 1 && (
-              <select value={currentSiteId} onChange={e => { setSiteId(e.target.value); qc.invalidateQueries() }}
-                className="h-8 rounded-full border px-3 text-[12.5px] font-semibold cursor-pointer bg-white"
-                style={{ borderColor: 'rgba(20,8,31,.16)', color: '#4A1FA0' }}>
-                {visibleSites.map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
-              </select>
-            )}
-          </div>
+          <h1 className="text-lg font-semibold" style={{ color: '#14081F' }}>{getPageTitle(location.pathname)}</h1>
           <div ref={profileRef} className="relative">
             <button
               onClick={() => setProfileOpen(o => !o)}
