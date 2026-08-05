@@ -921,7 +921,7 @@ export default function FloorMap() {
             <div>
               <h2 style={{ ...HEADING, fontWeight: 700, fontSize: 26, margin: 0 }}>{floor.name}</h2>
               <p style={{ margin: '5px 0 0', fontSize: 13, color: MUTED }}>
-                {units.length} units · {Math.round(lettableSqft).toLocaleString()} sqft lettable · {fmtDim(floor.width)} × {fmtDim(floor.depth)} {dimUnit}
+                {units.length} units
               </p>
             </div>
             <div className="flex items-center flex-wrap gap-x-4 gap-y-2">
