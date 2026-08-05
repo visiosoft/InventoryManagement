@@ -1113,12 +1113,13 @@ export default function FloorMap() {
                           </select>
                         </label>
                       </div>
-                      <label className="grid gap-1">
-                        <span style={{ fontSize: 12, color: MUTED }}>Area (sqft) — resizes the unit, keeps its proportions</span>
-                        <input type="number" step="1" min="1" value={Math.round(areaSqft(single))} onChange={e => setSingleArea(parseFloat(e.target.value))} className={fieldCls} style={fieldStyle} />
-                      </label>
                     </>
                   )}
+
+                  <label className="grid gap-1">
+                    <span style={{ fontSize: 12, color: MUTED }}>Area (sqft) — resizes it, keeps proportions</span>
+                    <input type="number" step="1" min="1" value={Math.round(areaSqft(single))} onChange={e => setSingleArea(parseFloat(e.target.value))} className={fieldCls} style={fieldStyle} />
+                  </label>
                   {single.type === 'label' && (
                     <label className="grid gap-1">
                       <span style={{ fontSize: 12, color: MUTED }}>Text</span>
