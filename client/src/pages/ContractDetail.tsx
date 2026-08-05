@@ -1018,7 +1018,7 @@ export default function ContractDetail() {
   }
 
   if (isLoading || !data) return <Spinner />
-  const { contract: c, payments, documents, invoices: allInvoices = [] } = data
+  const { contract: c, payments, documents } = data
 
   // Sort and split
   const byDue = (a: Payment, b: Payment) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
