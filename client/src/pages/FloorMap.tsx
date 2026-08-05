@@ -623,9 +623,18 @@ export default function FloorMap() {
   const selShapes = useMemo(() => floor ? floor.shapes.filter(s => sel.includes(s.id)) : [], [floor, sel])
   const single = selShapes.length === 1 ? selShapes[0] : null
   const units = floor?.shapes.filter(s => s.type === 'unit') ?? []
-  const availCount = units.filter(u => u.status === 'available').length
-  const holdCount = units.filter(u => u.status === 'hold').length
-  const occCount = units.filter(u => u.status === 'occupied').length
+  // Size match: system unit size when known, otherwise drawn area within 15%
+  const matchesSize = (s: Shape) => {
+    if (!sizeF) return true
+    const info = unitInfoMap.get(s.num ?? '')
+    if (info?.sizeSqf != null) return info.sizeSqf === sizeF
+    return Math.abs(areaSqft(s) - sizeF) / sizeF <= 0.15
+  }
+  // Counts follow the selected size filter
+  const sizeUnits = units.filter(matchesSize)
+  const availCount = sizeUnits.filter(u => u.status === 'available').length
+  const holdCount = sizeUnits.filter(u => u.status === 'hold').length
+  const occCount = sizeUnits.filter(u => u.status === 'occupied').length
   const lettableSqft = units.reduce((a, u) => a + areaSqft(u), 0)
   const sizesSqft = units.map(u => Math.round(areaSqft(u)))
   const sizeRange = sizesSqft.length ? `${Math.min(...sizesSqft)}–${Math.max(...sizesSqft)} sqft` : '—'
@@ -670,12 +679,7 @@ export default function FloorMap() {
     if (mode !== 'view' || s.type !== 'unit') return false
     if (query && !(s.num ?? '').toLowerCase().includes(query.toLowerCase())) return true
     if (filter !== 'all' && s.status !== filter) return true
-    if (sizeF) {
-      // Use the system size when the unit exists; otherwise the drawn area ±15%
-      const info = unitInfoMap.get(s.num ?? '')
-      if (info?.sizeSqf != null) { if (info.sizeSqf !== sizeF) return true }
-      else if (Math.abs(areaSqft(s) - sizeF) / sizeF > 0.15) return true
-    }
+    if (!matchesSize(s)) return true
     return false
   }
 
@@ -850,7 +854,7 @@ export default function FloorMap() {
               <input type="text" value={query} onChange={e => setQuery(e.target.value)} placeholder="F1-12"
                 style={{ border: 0, outline: 'none', width: 70, fontSize: 13, fontWeight: 600, color: INK, background: 'transparent' }} />
             </div>
-            <button type="button" onClick={() => setFilter('all')} style={filterPill(filter === 'all')}>All</button>
+            <button type="button" onClick={() => setFilter('all')} style={filterPill(filter === 'all')}>All <span style={{ opacity: .6, marginLeft: 5 }}>{sizeUnits.length}</span></button>
             <button type="button" onClick={() => setFilter('available')} style={filterPill(filter === 'available')}>Available <span style={{ opacity: .6, marginLeft: 5 }}>{availCount}</span></button>
             <button type="button" onClick={() => setFilter('hold')} style={filterPill(filter === 'hold')}>On hold <span style={{ opacity: .6, marginLeft: 5 }}>{holdCount}</span></button>
             <button type="button" onClick={() => setFilter('occupied')} style={filterPill(filter === 'occupied')}>Occupied <span style={{ opacity: .6, marginLeft: 5 }}>{occCount}</span></button>
