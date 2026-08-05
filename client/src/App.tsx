@@ -28,6 +28,7 @@ import Login from './pages/Login'
 import SignContract from './pages/SignContract'
 import Dashboard from './pages/Dashboard'
 import Units from './pages/Units'
+import FloorMap from './pages/FloorMap'
 import Customers from './pages/Customers'
 import Contracts from './pages/Contracts'
 import ContractDetail from './pages/ContractDetail'
@@ -130,6 +131,7 @@ export default function App() {
       <Route element={<Layout />}>
         <Route path="/" element={<SmartHome />} />
         <Route path="/units" element={<Units />} />
+        <Route path="/floor-map" element={<PermGuard module="units"><FloorMap /></PermGuard>} />
         <Route path="/customers" element={<Customers />} />
         <Route path="/leads" element={<Leads />} />
         <Route path="/quotes" element={<PermGuard module="quotes"><Quotations /></PermGuard>} />

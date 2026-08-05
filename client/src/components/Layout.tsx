@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ShieldCheck, ScrollText, CalendarCheck, RefreshCw } from 'lucide-react'
+import { LayoutDashboard, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ShieldCheck, ScrollText, CalendarCheck, RefreshCw, Map as MapIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { cn } from '../lib/utils'
@@ -19,6 +19,7 @@ const navGroups = [
     title: 'Inventory',
     items: [
       { to: '/units', label: 'Search Units', icon: Box, perm: 'units' },
+      { to: '/floor-map', label: 'Floor Map', icon: MapIcon, perm: 'units' },
     ],
   },
   {
@@ -85,6 +86,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/': 'Dashboard',
   '/quotes': 'Book Unit',
   '/units': 'Search Units',
+  '/floor-map': 'Floor Map',
   '/customers': 'Customers',
   '/leads': 'Leads',
   '/quotations': 'Quotations',
