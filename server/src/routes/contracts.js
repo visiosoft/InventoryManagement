@@ -120,16 +120,42 @@ router.get('/', async (req, res) => {
     Contract.countDocuments(filter),
   ]);
 
-  // Attach document counts so the list can flag contracts with no documents
+  // Attach document counts and payment status so the list can flag gaps
   const ids = contracts.map((c) => c._id);
-  const docCounts = ids.length
-    ? await Document.aggregate([
-        { $match: { contract: { $in: ids } } },
-        { $group: { _id: '$contract', count: { $sum: 1 } } },
+  const [docCounts, payAgg] = ids.length
+    ? await Promise.all([
+        Document.aggregate([
+          { $match: { contract: { $in: ids } } },
+          { $group: { _id: '$contract', count: { $sum: 1 } } },
+        ]),
+        Payment.aggregate([
+          { $match: { contract: { $in: ids } } },
+          { $group: {
+            _id: '$contract',
+            total: { $sum: '$amount' },
+            paid: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } },
+            overdue: { $sum: { $cond: [{ $eq: ['$status', 'overdue'] }, 1, 0] } },
+          } },
+        ]),
       ])
-    : [];
+    : [[], []];
   const docMap = new Map(docCounts.map((d) => [String(d._id), d.count]));
-  const rows = contracts.map((c) => ({ ...c.toObject(), documentCount: docMap.get(String(c._id)) ?? 0 }));
+  const payMap = new Map(payAgg.map((p) => [String(p._id), p]));
+  const rows = contracts.map((c) => {
+    const pay = payMap.get(String(c._id));
+    const paymentStatus = !pay ? 'no_invoice'
+      : pay.paid >= pay.total ? 'paid'
+      : pay.paid > 0 ? 'partial'
+      : 'unpaid';
+    return {
+      ...c.toObject(),
+      documentCount: docMap.get(String(c._id)) ?? 0,
+      paymentStatus,
+      paidAmount: pay ? Math.round(pay.paid * 100) / 100 : 0,
+      totalAmount: pay ? Math.round(pay.total * 100) / 100 : 0,
+      overdueCount: pay?.overdue ?? 0,
+    };
+  });
 
   res.json({ data: rows, total, page, pages: Math.ceil(total / limit), limit });
 });

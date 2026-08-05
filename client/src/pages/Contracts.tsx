@@ -300,6 +300,8 @@ export default function Contracts() {
                 <Th>Start</Th>
                 <Th>End</Th>
                 <Th>Status</Th>
+                <Th>Invoice</Th>
+                <Th>Docs</Th>
                 <Th />
               </tr>
             </thead>
@@ -317,24 +319,9 @@ export default function Contracts() {
                       />
                     </Td>
                     <Td>
-                      <span className="inline-flex items-center gap-1.5">
-                        <Link to={`/contracts/${c._id}`} className="font-medium text-primary hover:underline">
-                          {c.contractNo}
-                        </Link>
-                        {typeof c.documentCount === 'number' && (c.documentCount > 0 ? (
-                          <span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
-                            style={{ background: '#EAF7EF', color: '#1B7A4B' }}
-                            title={`${c.documentCount} document${c.documentCount !== 1 ? 's' : ''} attached`}>
-                            <Paperclip size={9} />{c.documentCount}
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold"
-                            style={{ background: '#FDECEC', color: '#B3261E' }}
-                            title="No documents attached">
-                            <Paperclip size={9} />0
-                          </span>
-                        ))}
-                      </span>
+                      <Link to={`/contracts/${c._id}`} className="font-medium text-primary hover:underline">
+                        {c.contractNo}
+                      </Link>
                     </Td>
                     <Td>
                       {c.customer ? (
@@ -368,6 +355,51 @@ export default function Contracts() {
                         <Badge tone={contractStatusTone[c.status]}>{statusLabel(c.status)}</Badge>
                         {c.archived && <Badge tone="gray">Archived</Badge>}
                       </div>
+                    </Td>
+                    <Td>
+                      {c.paymentStatus === 'paid' && (
+                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap"
+                          style={{ background: '#EAF7EF', color: '#1B7A4B' }}
+                          title={`Fully paid · ${formatMoney(c.paidAmount ?? 0)}`}>
+                          Fully paid
+                        </span>
+                      )}
+                      {c.paymentStatus === 'partial' && (
+                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap"
+                          style={{ background: '#FDF3D8', color: '#8A6A2F' }}
+                          title={`Paid ${formatMoney(c.paidAmount ?? 0)} of ${formatMoney(c.totalAmount ?? 0)}${c.overdueCount ? ` · ${c.overdueCount} overdue` : ''}`}>
+                          Partial
+                        </span>
+                      )}
+                      {c.paymentStatus === 'unpaid' && (
+                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold whitespace-nowrap"
+                          style={{ background: '#FDECEC', color: '#B3261E' }}
+                          title={`Nothing paid of ${formatMoney(c.totalAmount ?? 0)}${c.overdueCount ? ` · ${c.overdueCount} overdue` : ''}`}>
+                          Unpaid
+                        </span>
+                      )}
+                      {c.paymentStatus === 'no_invoice' && (
+                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap"
+                          style={{ background: '#F3F0EA', color: '#756E80' }}
+                          title="No invoice / payment schedule yet">
+                          No invoice
+                        </span>
+                      )}
+                    </Td>
+                    <Td>
+                      {typeof c.documentCount === 'number' && (c.documentCount > 0 ? (
+                        <span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+                          style={{ background: '#EAF7EF', color: '#1B7A4B' }}
+                          title={`${c.documentCount} document${c.documentCount !== 1 ? 's' : ''} attached`}>
+                          <Paperclip size={9} />{c.documentCount}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold"
+                          style={{ background: '#FDECEC', color: '#B3261E' }}
+                          title="No documents attached">
+                          <Paperclip size={9} />0
+                        </span>
+                      ))}
                     </Td>
                     <Td>
                       {c.archived && (

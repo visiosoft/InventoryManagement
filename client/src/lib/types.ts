@@ -429,6 +429,10 @@ export interface Contract {
   unit: Unit
   units?: Unit[]
   documentCount?: number
+  paymentStatus?: 'paid' | 'partial' | 'unpaid' | 'no_invoice'
+  paidAmount?: number
+  totalAmount?: number
+  overdueCount?: number
   billingPeriod: 'weekly' | 'monthly'
   rate: number
   deposit: number
