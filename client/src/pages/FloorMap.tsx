@@ -242,18 +242,10 @@ export default function FloorMap() {
     setZoom(Math.round(z * 100) / 100)
   }
 
-  // Default to a readable zoom: smallest unit renders ~48px, canvas scrolls for the rest
+  // Default to Fit: whole floor visible on load and floor switch
   const hasDoc = !!doc
   useEffect(() => {
-    const t = setTimeout(() => {
-      const d = stateRef.current.doc
-      if (!d) return
-      const f = d.floors[Math.min(stateRef.current.floorIdx, d.floors.length - 1)]
-      if (!f) return
-      const unitShapes = f.shapes.filter(s => s.type === 'unit')
-      const minSide = unitShapes.length ? Math.min(...unitShapes.map(u => Math.min(u.w, u.h))) : 3
-      setZoom(round2(Math.min(60, Math.max(16, 48 / minSide))))
-    }, 60)
+    const t = setTimeout(fitZoom, 60)
     return () => clearTimeout(t)
   }, [floorIdx, hasDoc])
 
