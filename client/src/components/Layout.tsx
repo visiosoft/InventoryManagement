@@ -1,7 +1,10 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { LayoutDashboard, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ShieldCheck, ScrollText, CalendarCheck, RefreshCw, Map as MapIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../lib/auth'
+import { api } from '../lib/api'
+import { useSite, type Site } from '../lib/site'
 import { cn } from '../lib/utils'
 
 const navTop = [
@@ -20,6 +23,7 @@ const navGroups = [
     items: [
       { to: '/units', label: 'Search Units', icon: Box, perm: 'units' },
       { to: '/floor-map', label: 'Floor Map', icon: MapIcon, perm: 'units' },
+      { to: '/sites', label: 'Sites', icon: Building2, perm: 'units' },
     ],
   },
   {
@@ -87,6 +91,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/quotes': 'Book Unit',
   '/units': 'Search Units',
   '/floor-map': 'Floor Map',
+  '/sites': 'Sites',
   '/customers': 'Customers',
   '/leads': 'Leads',
   '/quotations': 'Quotations',
@@ -150,8 +155,25 @@ export default function Layout() {
   const isAdmin = user?.role === 'admin'
   const isMovingOnly = hasPermission('moving_dashboard') && !hasPermission('units') && !hasPermission('dashboard')
 
+  // Site switcher — shown when more than one visible site exists
+  const { siteId, setSiteId } = useSite()
+  const { data: sites = [] } = useQuery<Site[]>({
+    queryKey: ['sites'],
+    queryFn: () => api.get('/sites').then(r => r.data),
+    enabled: !isMovingOnly,
+  })
+  const visibleSites = sites.filter(s => !s.hidden)
+  const currentSiteId = siteId ?? (sites.find(s => s.isDefault)?._id ?? sites[0]?._id ?? '')
+
   // Close sidebar on route change (mobile)
   useEffect(() => { setSidebarOpen(false); setProfileOpen(false) }, [location.pathname])
+
+  // Listen for sidebar collapse events from other components
+  useEffect(() => {
+    const handler = () => setCollapsed(localStorage.getItem('pb_sidebar_collapsed') === 'true')
+    window.addEventListener('sidebar-collapse', handler)
+    return () => window.removeEventListener('sidebar-collapse', handler)
+  }, [])
 
   // Close profile dropdown on click outside
   useEffect(() => {
@@ -398,7 +420,16 @@ export default function Layout() {
       <main className={cn("flex-1 pt-14 md:pt-0 min-w-0 transition-all duration-200", collapsed ? 'md:ml-[60px]' : 'md:ml-56')} style={{ background: '#FBF8F2' }}>
         {/* Desktop top bar with profile dropdown */}
         <div className="hidden md:flex items-center justify-between h-14 px-6 border-b border-border/40">
-          <h1 className="text-lg font-semibold" style={{ color: '#14081F' }}>{getPageTitle(location.pathname)}</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-lg font-semibold" style={{ color: '#14081F' }}>{getPageTitle(location.pathname)}</h1>
+            {visibleSites.length > 1 && (
+              <select value={currentSiteId} onChange={e => setSiteId(e.target.value)}
+                className="h-8 rounded-full border px-3 text-[12.5px] font-semibold cursor-pointer bg-white"
+                style={{ borderColor: 'rgba(20,8,31,.16)', color: '#4A1FA0' }}>
+                {visibleSites.map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
+              </select>
+            )}
+          </div>
           <div ref={profileRef} className="relative">
             <button
               onClick={() => setProfileOpen(o => !o)}

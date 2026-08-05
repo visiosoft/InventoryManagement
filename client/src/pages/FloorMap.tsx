@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { useSite, unitInSite, type Site } from '../lib/site'
 import { Spinner } from '../components/ui'
 
 // ─── Types ────────────────────────────────────────────────────────────────
@@ -101,7 +102,7 @@ function bumpNum(num: string, by: number): string {
 }
 
 // Seed floors from real units in the database
-function seedFromUnits(units: any[]): FacilityDoc {
+function seedFromUnits(units: any[], facilityName = 'Al Quoz Facility'): FacilityDoc {
   const byFloor = new Map<string, any[]>()
   for (const u of units) {
     const f = (u.floor || 'F1').toString()
@@ -141,16 +142,24 @@ function seedFromUnits(units: any[]): FacilityDoc {
       return { id: uid(), name, prefix, rate: 10, width, depth, system: 'imperial' as const, bgImage: null, bgOpacity: 40, shapes }
     })
 
-  return { facilityName: 'Al Quoz Facility', floors }
+  return { facilityName, floors }
 }
 
 // ─── Component ────────────────────────────────────────────────────────────
 export default function FloorMap() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
-  const [doc, setDoc] = useState<FacilityDoc | null>(() => {
-    try { const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : null } catch { return null }
+  const { siteId } = useSite()
+  const { data: sitesList = [] } = useQuery<Site[]>({
+    queryKey: ['sites'],
+    queryFn: () => api.get('/sites').then(r => r.data),
   })
+  const defaultSiteId = sitesList.find(s => s.isDefault)?._id
+  const siteKey = !siteId || siteId === defaultSiteId ? 'default' : siteId
+  const storeKey = `${STORAGE_KEY}:${siteKey}`
+  const currentSite = sitesList.find(s => s._id === (siteId ?? defaultSiteId))
+
+  const [doc, setDoc] = useState<FacilityDoc | null>(null)
   const [floorIdx, setFloorIdx] = useState(0)
   const [mode, setMode] = useState<'view' | 'edit'>('view')
   const [tool, setTool] = useState<ShapeType | null>(null)
@@ -189,9 +198,21 @@ export default function FloorMap() {
     queryFn: () => api.get('/units').then(r => Array.isArray(r.data) ? r.data : r.data.data ?? []),
   })
 
+  // Load the local copy for this site whenever the site changes
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(storeKey) ?? (siteKey === 'default' ? localStorage.getItem(STORAGE_KEY) : null)
+      setDoc(raw ? JSON.parse(raw) : null)
+    } catch { setDoc(null) }
+    setSel([])
+    setFloorIdx(0)
+    undoRef.current = []
+    redoRef.current = []
+  }, [storeKey])
+
   const { data: serverPlan, isFetched: planFetched } = useQuery<{ doc: FacilityDoc | null; updatedAt: string | null; updatedBy: string }>({
-    queryKey: ['floor-plan'],
-    queryFn: () => api.get('/floor-plan').then(r => r.data),
+    queryKey: ['floor-plan', siteKey],
+    queryFn: () => api.get('/floor-plan', { params: siteId ? { site: siteId } : {} }).then(r => r.data),
   })
 
   type OccInfo = { contractId: string; contractNo: string; customerName: string; startDate: string; endDate: string; status: string }
@@ -201,16 +222,22 @@ export default function FloorMap() {
   })
   const navigate = useNavigate()
 
+  // Units belonging to the selected site only
+  const siteUnits = useMemo(
+    () => apiUnits.filter((u: any) => unitInSite(u.site, siteId, sitesList)),
+    [apiUnits, siteId, sitesList],
+  )
+
   // First load priority: local autosave → saved system copy → seed from live units
   useEffect(() => {
     if (doc || !planFetched || !isFetched) return
     if (serverPlan?.doc && Array.isArray(serverPlan.doc.floors)) setDoc(serverPlan.doc)
-    else setDoc(seedFromUnits(apiUnits))
-  }, [doc, planFetched, isFetched, serverPlan, apiUnits])
+    else setDoc(seedFromUnits(siteUnits, currentSite?.name))
+  }, [doc, planFetched, isFetched, serverPlan, siteUnits, currentSite])
 
   // Save to system (backend database)
   const saveMut = useMutation({
-    mutationFn: (d: FacilityDoc) => api.put('/floor-plan', { doc: d }),
+    mutationFn: (d: FacilityDoc) => api.put('/floor-plan', { doc: d, site: siteId || undefined }),
     onSuccess: () => setSaveState('Saved to system ✓'),
     onError: () => setSaveState('System save failed — try again'),
   })
@@ -225,10 +252,10 @@ export default function FloorMap() {
     if (!doc) return
     setSaveState('Saving…')
     const t = setTimeout(() => {
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(doc)); setSaveState('All changes saved') } catch { setSaveState('Save failed (storage full)') }
+      try { localStorage.setItem(storeKey, JSON.stringify(doc)); setSaveState('All changes saved') } catch { setSaveState('Save failed (storage full)') }
     }, 600)
     return () => clearTimeout(t)
-  }, [doc])
+  }, [doc, storeKey])
 
   const floor = doc?.floors[Math.min(floorIdx, (doc?.floors.length ?? 1) - 1)] ?? null
 
@@ -252,9 +279,9 @@ export default function FloorMap() {
 
   const unitInfoMap = useMemo(() => {
     const m = new Map<string, { id: string; price: number | null; sizeSqf: number | null; notes: string }>()
-    for (const u of apiUnits) if (u.unitNumber) m.set(String(u.unitNumber), { id: u._id, price: u.price ?? null, sizeSqf: u.sizeSqf ?? null, notes: u.notes ?? '' })
+    for (const u of siteUnits) if (u.unitNumber) m.set(String(u.unitNumber), { id: u._id, price: u.price ?? null, sizeSqf: u.sizeSqf ?? null, notes: u.notes ?? '' })
     return m
-  }, [apiUnits])
+  }, [siteUnits])
 
   const qc = useQueryClient()
   const unitMut = useMutation({
@@ -575,7 +602,7 @@ export default function FloorMap() {
   const resetAll = () => {
     if (!window.confirm('Reset the whole map from your live units data? This replaces all floors.')) return
     pushUndo()
-    setDoc(seedFromUnits(apiUnits))
+    setDoc(seedFromUnits(siteUnits, currentSite?.name))
     setFloorIdx(0)
     setSel([])
   }
@@ -820,7 +847,7 @@ export default function FloorMap() {
           {isAdmin && (
             <div className="flex items-center gap-1 p-1" style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', borderRadius: 999 }}>
               <button type="button" onClick={() => { setMode('view'); setTool(null); setSel([]) }} style={pill(mode === 'view')}>Availability</button>
-              <button type="button" onClick={() => { setMode('edit'); setSel([]) }} style={pill(mode === 'edit')} className="hidden md:block">Edit layout</button>
+              <button type="button" onClick={() => { setMode('edit'); setSel([]); localStorage.setItem('pb_sidebar_collapsed', 'true'); window.dispatchEvent(new Event('sidebar-collapse')) }} style={pill(mode === 'edit')} className="hidden md:block">Edit layout</button>
             </div>
           )}
           {isAdmin && (

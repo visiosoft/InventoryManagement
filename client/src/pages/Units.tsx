@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { LayoutGrid, List, Plus, Search } from 'lucide-react'
 import { api, apiError } from '../lib/api'
+import { useSite, unitInSite, type Site } from '../lib/site'
 import type { Unit, Contract } from '../lib/types'
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Table, Td, Th, Textarea, statusLabel, unitStatusTone } from '../components/ui'
 import { cn, formatDate, formatMoney } from '../lib/utils'
@@ -34,11 +35,25 @@ type UnitBody = {
   discountPct: number | null
   shared: boolean
   notes: string
+  site: string | null
 }
 
 function UnitFormFields({ initial }: { initial?: Partial<Unit> }) {
+  const { data: sites = [] } = useQuery<Site[]>({
+    queryKey: ['sites'],
+    queryFn: () => api.get('/sites').then((r) => r.data),
+  })
+  const rawSite = (initial as { site?: string | { _id: string } | null } | undefined)?.site
+  const initialSite = typeof rawSite === 'object' && rawSite ? rawSite._id : rawSite
   return (
     <>
+      {sites.length > 1 && (
+        <Field label="Site">
+          <Select name="site" defaultValue={initialSite || sites.find((s) => s.isDefault)?._id || ''}>
+            {sites.map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
+          </Select>
+        </Field>
+      )}
       <div className="grid grid-cols-2 gap-3">
         <Field label="Unit number"><Input name="unitNumber" defaultValue={initial?.unitNumber} placeholder="F1-45" required /></Field>
         <Field label="Floor">
@@ -83,6 +98,7 @@ function readUnitForm(f: FormData): UnitBody {
     discountPct: num(f.get('discountPct')),
     shared: f.get('shared') === 'on',
     notes: String(f.get('notes') || ''),
+    site: (f.get('site') as string) || null,
   }
 }
 
@@ -97,10 +113,21 @@ export default function Units() {
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState('')
 
-  const { data: units, isLoading } = useQuery<Unit[]>({
+  const { data: allSiteUnits, isLoading } = useQuery<Unit[]>({
     queryKey: ['units'],
     queryFn: () => api.get('/units').then((r) => r.data),
   })
+
+  // Scope to the selected site (units without a site belong to the default site)
+  const { siteId } = useSite()
+  const { data: sitesList = [] } = useQuery<Site[]>({
+    queryKey: ['sites'],
+    queryFn: () => api.get('/sites').then((r) => r.data),
+  })
+  const units = useMemo(
+    () => (allSiteUnits || []).filter((u) => unitInSite((u as Unit & { site?: string | null }).site, siteId, sitesList)),
+    [allSiteUnits, siteId, sitesList],
+  )
 
   const sizeBreakdown = useMemo(() => {
     const map = new Map<number, { available: number; total: number }>()

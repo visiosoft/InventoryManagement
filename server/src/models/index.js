@@ -49,6 +49,7 @@ const unitTypeSchema = new Schema(
 const unitSchema = new Schema(
   {
     unitNumber: { type: String, required: true, unique: true },
+    site: { type: Schema.Types.ObjectId, ref: 'Site', default: null }, // null = default site
     floor: { type: String, default: '' },
     sizeSqf: { type: Number, default: null },
     price: { type: Number, default: null }, // monthly rate (AED)
@@ -1158,6 +1159,15 @@ const floorPlanSchema = new Schema({
   updatedBy: { type: String, default: '' },
 }, { timestamps: true });
 
+// Facility / site — each can have its own units, floor plans and operations
+const siteSchema = new Schema({
+  name: { type: String, required: true },
+  code: { type: String, default: '' },
+  address: { type: String, default: '' },
+  hidden: { type: Boolean, default: false },
+  isDefault: { type: Boolean, default: false },
+}, { timestamps: true });
+
 export const User = model('User', userSchema);
 export const UnitType = model('UnitType', unitTypeSchema);
 export const Unit = model('Unit', unitSchema);
@@ -1203,6 +1213,7 @@ export const Document = model('Document', documentSchema);
 export const AuditLog = model('AuditLog', auditLogSchema);
 export const Counter = model('Counter', counterSchema);
 export const FloorPlan = model('FloorPlan', floorPlanSchema);
+export const Site = model('Site', siteSchema);
 
 export async function nextContractNo() {
   const year = new Date().getFullYear();

@@ -1,7 +1,14 @@
 import { Router } from 'express';
-import { FloorPlan, Contract } from '../models/index.js';
+import { FloorPlan, Contract, Site } from '../models/index.js';
 
 const router = Router();
+
+// One plan per site; the default site keeps the legacy 'default' key
+async function planKey(siteId) {
+  if (!siteId) return 'default';
+  const site = await Site.findById(siteId).select('isDefault').catch(() => null);
+  return site?.isDefault ? 'default' : `site:${siteId}`;
+}
 
 // Who occupies each unit: map of unitNumber -> active contract summary
 router.get('/occupancy', async (_req, res) => {
@@ -28,9 +35,10 @@ router.get('/occupancy', async (_req, res) => {
   res.json(map);
 });
 
-// Get the saved floor plan (single shared document)
-router.get('/', async (_req, res) => {
-  const plan = await FloorPlan.findOne({ key: 'default' });
+// Get the saved floor plan for a site (?site=<id>, omit for the default site)
+router.get('/', async (req, res) => {
+  const key = await planKey(req.query.site);
+  const plan = await FloorPlan.findOne({ key });
   if (!plan) return res.json({ doc: null, updatedAt: null, updatedBy: '' });
   res.json({ doc: plan.doc, updatedAt: plan.updatedAt, updatedBy: plan.updatedBy });
 });
@@ -40,12 +48,13 @@ router.put('/', async (req, res) => {
   if (req.user?.role !== 'admin') {
     return res.status(403).json({ error: 'Only admins can save the floor plan' });
   }
-  const { doc } = req.body || {};
+  const { doc, site } = req.body || {};
   if (!doc || !Array.isArray(doc.floors)) {
     return res.status(400).json({ error: 'Invalid floor plan document' });
   }
+  const key = await planKey(site);
   const plan = await FloorPlan.findOneAndUpdate(
-    { key: 'default' },
+    { key },
     { doc, updatedBy: req.user?.name || req.user?.email || '' },
     { new: true, upsert: true },
   );
