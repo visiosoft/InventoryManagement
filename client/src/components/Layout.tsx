@@ -166,17 +166,19 @@ export default function Layout() {
     localStorage.setItem('pb_theme', dark ? 'dark' : 'light')
   }, [dark])
 
-  const SidebarContent = () => (
+  const SidebarContent = ({ isCollapsed = false }: { isCollapsed?: boolean } = {}) => (
     <>
       {/* Logo */}
-      <div className="flex items-center gap-3 px-4 h-16 border-b border-white/10 shrink-0">
+      <div className={cn("flex items-center h-16 border-b border-white/10 shrink-0", isCollapsed ? 'justify-center px-2' : 'gap-3 px-4')}>
         <div className="h-9 w-9 rounded-xl bg-[#FFF799] flex items-center justify-center shrink-0 shadow">
           <img src="/Invoicelogo_Logo.png" alt="PurpleBox" className="h-7 w-7 object-contain" />
         </div>
-        <div>
-          <div className="font-bold text-sm text-sidebar-foreground leading-tight">PurpleBox</div>
-          <div className="text-[10px] text-sidebar-muted leading-tight">Unit Rental Manager</div>
-        </div>
+        {!isCollapsed && (
+          <div>
+            <div className="font-bold text-sm text-sidebar-foreground leading-tight">PurpleBox</div>
+            <div className="text-[10px] text-sidebar-muted leading-tight">Unit Rental Manager</div>
+          </div>
+        )}
         {/* Close button — mobile only */}
         <button
           onClick={() => setSidebarOpen(false)}
@@ -187,11 +189,12 @@ export default function Layout() {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto px-2.5 py-3 space-y-0.5">
+      <nav className={cn("flex-1 overflow-y-auto py-3 space-y-0.5", isCollapsed ? 'px-1.5' : 'px-2.5')}>
         {!isMovingOnly && navTop.filter(({ perm }) => !perm || hasPermission(perm)).map(({ to, label, icon: Icon }) => (
           <NavLink key={to} to={to} end={to === '/'}
-            className={({ isActive }) => navLinkCls(isActive)}>
-            <Icon size={15} />{label}
+            className={({ isActive }) => isCollapsed ? cn('flex items-center justify-center rounded-lg p-2 transition-all duration-150', isActive ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8') : navLinkCls(isActive)}
+            title={isCollapsed ? label : undefined}>
+            <Icon size={isCollapsed ? 18 : 15} />{!isCollapsed && label}
           </NavLink>
         ))}
 
@@ -200,14 +203,17 @@ export default function Layout() {
           if (visibleItems.length === 0) return null
           return (
             <div key={group.title || visibleItems[0]?.to} className="pt-3">
-              {group.title && (
+              {group.title && !isCollapsed && (
                 <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-sidebar-muted/60">
                   {group.title}
                 </div>
               )}
+              {isCollapsed && group.title && <div className="border-t border-white/10 my-1" />}
               {visibleItems.map(({ to, label, icon: Icon }) => (
-                <NavLink key={to} to={to} className={({ isActive }) => navLinkCls(isActive)}>
-                  <Icon size={15} />{label}
+                <NavLink key={to} to={to}
+                  className={({ isActive }) => isCollapsed ? cn('flex items-center justify-center rounded-lg p-2 transition-all duration-150', isActive ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8') : navLinkCls(isActive)}
+                  title={isCollapsed ? label : undefined}>
+                  <Icon size={isCollapsed ? 18 : 15} />{!isCollapsed && label}
                 </NavLink>
               ))}
             </div>
@@ -215,8 +221,10 @@ export default function Layout() {
         })}
 
         {!isMovingOnly && isAdmin && hasPermission('quotes') && (
-          <NavLink to="/approvals" className={({ isActive }) => navLinkCls(isActive)}>
-            <ShieldCheck size={15} />Approvals
+          <NavLink to="/approvals"
+            className={({ isActive }) => isCollapsed ? cn('flex items-center justify-center rounded-lg p-2 transition-all duration-150', isActive ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8') : navLinkCls(isActive)}
+            title={isCollapsed ? 'Approvals' : undefined}>
+            <ShieldCheck size={isCollapsed ? 18 : 15} />{!isCollapsed && 'Approvals'}
           </NavLink>
         )}
 
@@ -224,6 +232,18 @@ export default function Layout() {
         {!isMovingOnly && (() => {
           const visibleReports = reportItems.filter(({ perm }) => hasPermission(perm))
           if (visibleReports.length === 0) return null
+          if (isCollapsed) {
+            return (
+              <div className="pt-3">
+                <div className="border-t border-white/10 my-1" />
+                <NavLink to="/reports/monthly"
+                  className={({ isActive }) => cn('flex items-center justify-center rounded-lg p-2 transition-all duration-150', onReportsRoute ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8')}
+                  title="Reports">
+                  <BarChart3 size={18} />
+                </NavLink>
+              </div>
+            )
+          }
           return (
             <div className="pt-3">
               <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-sidebar-muted/60">Reports</div>
@@ -252,8 +272,10 @@ export default function Layout() {
         })()}
 
         {!isMovingOnly && navBottom.filter(({ perm }) => !perm || hasPermission(perm)).map(({ to, label, icon: Icon }) => (
-          <NavLink key={to} to={to} className={({ isActive }) => navLinkCls(isActive)}>
-            <Icon size={15} />{label}
+          <NavLink key={to} to={to}
+            className={({ isActive }) => isCollapsed ? cn('flex items-center justify-center rounded-lg p-2 transition-all duration-150', isActive ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8') : navLinkCls(isActive)}
+            title={isCollapsed ? label : undefined}>
+            <Icon size={isCollapsed ? 18 : 15} />{!isCollapsed && label}
           </NavLink>
         ))}
 
@@ -264,12 +286,13 @@ export default function Layout() {
           if (visibleMoving.length === 0) return null
           return (
             <div className="pt-3">
-              <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-sidebar-muted/60">Moving</div>
+              {isCollapsed ? <div className="border-t border-white/10 my-1" /> : <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-sidebar-muted/60">Moving</div>}
               <div className="space-y-0.5">
                 {visibleMoving.map(({ to, label, icon: Icon }) => (
                   <NavLink key={to} to={to} end={to === '/moving'}
-                    className={({ isActive }) => navLinkCls(isActive)}>
-                    <Icon size={15} />{label}
+                    className={({ isActive }) => isCollapsed ? cn('flex items-center justify-center rounded-lg p-2 transition-all duration-150', isActive ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8') : navLinkCls(isActive)}
+                    title={isCollapsed ? label : undefined}>
+                    <Icon size={isCollapsed ? 18 : 15} />{!isCollapsed && label}
                   </NavLink>
                 ))}
               </div>
@@ -279,15 +302,17 @@ export default function Layout() {
       </nav>
 
       {/* Footer */}
-      <div className="shrink-0 border-t border-white/10 p-3 space-y-2">
-        <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-white/5">
+      <div className={cn("shrink-0 border-t border-white/10 space-y-2", isCollapsed ? 'p-1.5' : 'p-3')}>
+        <div className={cn("flex items-center rounded-lg bg-white/5", isCollapsed ? 'justify-center p-1.5' : 'gap-2.5 px-3 py-1.5')}>
           <div className="h-7 w-7 rounded-full bg-[#5B2BC9] flex items-center justify-center text-white text-xs font-bold shrink-0">
             {user?.name?.charAt(0)?.toUpperCase() ?? 'U'}
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-xs font-semibold text-sidebar-foreground truncate">{user?.name}</div>
-            <div className="text-[10px] text-sidebar-muted truncate">{user?.email}</div>
-          </div>
+          {!isCollapsed && (
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-semibold text-sidebar-foreground truncate">{user?.name}</div>
+              <div className="text-[10px] text-sidebar-muted truncate">{user?.email}</div>
+            </div>
+          )}
         </div>
         {/* Dark/Logout visible on mobile only — desktop uses profile dropdown */}
         <div className="flex gap-1 md:hidden">
@@ -321,7 +346,7 @@ export default function Layout() {
 
       {/* ── Desktop sidebar ─────────────────────────────────────── */}
       <aside className={cn("hidden md:flex fixed inset-y-0 left-0 bg-sidebar text-sidebar-foreground flex-col z-30 shadow-xl transition-all duration-200", collapsed ? 'w-[60px]' : 'w-56')}>
-        <SidebarContent />
+        <SidebarContent isCollapsed={collapsed} />
         <button
           onClick={() => { setCollapsed(c => { localStorage.setItem('pb_sidebar_collapsed', String(!c)); return !c }) }}
           className="absolute -right-3 top-20 h-6 w-6 rounded-full bg-sidebar border border-white/20 flex items-center justify-center text-sidebar-muted hover:text-sidebar-foreground cursor-pointer shadow-md z-40"
@@ -368,7 +393,7 @@ export default function Layout() {
       </header>
 
       {/* ── Main content ────────────────────────────────────────── */}
-      <main className="flex-1 md:ml-56 pt-14 md:pt-0 min-w-0" style={{ background: '#FBF8F2' }}>
+      <main className={cn("flex-1 pt-14 md:pt-0 min-w-0 transition-all duration-200", collapsed ? 'md:ml-[60px]' : 'md:ml-56')} style={{ background: '#FBF8F2' }}>
         {/* Desktop top bar with profile dropdown */}
         <div className="hidden md:flex items-center justify-between h-14 px-6 border-b border-border/40">
           <h1 className="text-lg font-semibold" style={{ color: '#14081F' }}>{getPageTitle(location.pathname)}</h1>
