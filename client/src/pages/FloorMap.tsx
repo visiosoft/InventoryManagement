@@ -20,6 +20,7 @@ interface Shape {
   status?: UnitStatus
   text?: string
   rate?: number // AED / 4 weeks, for units not (yet) in the system
+  notes?: string // fallback notes for units not (yet) in the system
 }
 
 interface Floor {
@@ -250,16 +251,16 @@ export default function FloorMap() {
   }, [floorIdx, hasDoc])
 
   const unitInfoMap = useMemo(() => {
-    const m = new Map<string, { id: string; price: number | null; sizeSqf: number | null }>()
-    for (const u of apiUnits) if (u.unitNumber) m.set(String(u.unitNumber), { id: u._id, price: u.price ?? null, sizeSqf: u.sizeSqf ?? null })
+    const m = new Map<string, { id: string; price: number | null; sizeSqf: number | null; notes: string }>()
+    for (const u of apiUnits) if (u.unitNumber) m.set(String(u.unitNumber), { id: u._id, price: u.price ?? null, sizeSqf: u.sizeSqf ?? null, notes: u.notes ?? '' })
     return m
   }, [apiUnits])
 
   const qc = useQueryClient()
-  const rateMut = useMutation({
-    mutationFn: ({ id, price }: { id: string; price: number }) => api.put(`/units/${id}`, { price }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['units-for-map'] }); setSaveState('Rate saved to system ✓') },
-    onError: () => setSaveState('Rate save failed — try again'),
+  const unitMut = useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: Record<string, unknown> }) => api.put(`/units/${id}`, patch),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['units-for-map'] }); setSaveState('Saved to unit record ✓') },
+    onError: () => setSaveState('Unit save failed — try again'),
   })
 
   // ── Mutation helpers ────────────────────────────────────────────────────
@@ -643,8 +644,17 @@ export default function FloorMap() {
     pushUndoField()
     updateShapes(shapes => shapes.map(x => x.id === s.id ? { ...x, rate: price } : x))
     const info = unitInfoMap.get(s.num ?? '')
-    if (info?.id) rateMut.mutate({ id: info.id, price })
+    if (info?.id) unitMut.mutate({ id: info.id, patch: { price } })
     else setSaveState('Rate saved on map (unit not in system yet)')
+  }
+
+  const unitNotes = (s: Shape) => unitInfoMap.get(s.num ?? '')?.notes || s.notes || ''
+  const commitNotes = (s: Shape, notes: string) => {
+    pushUndoField()
+    updateShapes(shapes => shapes.map(x => x.id === s.id ? { ...x, notes } : x))
+    const info = unitInfoMap.get(s.num ?? '')
+    if (info?.id) unitMut.mutate({ id: info.id, patch: { notes } })
+    else setSaveState('Notes saved on map (unit not in system yet)')
   }
 
   const dimUnit = floor?.system === 'imperial' ? 'ft' : 'm'
@@ -1107,6 +1117,14 @@ export default function FloorMap() {
                   onBlur={e => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== unitPrice(single)) commitRate(single, e.target.value) }}
                   onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
                   className={fieldCls} style={fieldStyle} />
+              </label>
+
+              <label className="grid gap-1">
+                <span style={{ fontSize: 12, color: MUTED }}>Notes — saves to the unit record</span>
+                <textarea key={`vnotes-${single.id}`} rows={3} defaultValue={unitNotes(single)}
+                  onBlur={e => { if (e.target.value !== unitNotes(single)) commitNotes(single, e.target.value) }}
+                  className="px-3 py-2 rounded-lg border text-[13px] outline-none w-full resize-y"
+                  style={fieldStyle} placeholder="e.g. 2 keys, payment split across units…" />
               </label>
 
               <div className="grid gap-2">
