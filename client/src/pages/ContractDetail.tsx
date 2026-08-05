@@ -1406,11 +1406,11 @@ export default function ContractDetail() {
                 <div className="space-y-2 pt-1">
                   <div className="flex justify-between text-xs text-muted-foreground font-medium">
                     <span>BALANCE</span>
-                    <span>AED {formatMoney(totalPaid)} / {formatMoney(theoreticalTotal2)}</span>
+                    <span>AED {formatMoney(totalPaid)} / {formatMoney(c.totalQuotation || theoreticalTotal2)}</span>
                   </div>
                   <div className="h-2 rounded-full bg-muted overflow-hidden">
                     <div className="h-full rounded-full bg-emerald-500 transition-all"
-                      style={{ width: `${theoreticalTotal2 > 0 ? Math.min(100, (totalPaid / theoreticalTotal2) * 100) : 0}%` }} />
+                      style={{ width: `${(c.totalQuotation || theoreticalTotal2) > 0 ? Math.min(100, (totalPaid / (c.totalQuotation || theoreticalTotal2)) * 100) : 0}%` }} />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/40 px-3 py-2">
