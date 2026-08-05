@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { Spinner } from '../components/ui'
 
@@ -159,6 +159,7 @@ export default function FloorMap() {
   const [saveState, setSaveState] = useState('')
 
   const planRef = useRef<HTMLDivElement>(null)
+  const canvasWrapRef = useRef<HTMLDivElement>(null)
   const importRef = useRef<HTMLInputElement>(null)
   const bgRef = useRef<HTMLInputElement>(null)
   const undoRef = useRef<string[]>([])
@@ -181,10 +182,29 @@ export default function FloorMap() {
     queryFn: () => api.get('/units').then(r => Array.isArray(r.data) ? r.data : r.data.data ?? []),
   })
 
-  // Seed on first visit
+  const { data: serverPlan, isFetched: planFetched } = useQuery<{ doc: FacilityDoc | null; updatedAt: string | null; updatedBy: string }>({
+    queryKey: ['floor-plan'],
+    queryFn: () => api.get('/floor-plan').then(r => r.data),
+  })
+
+  // First load priority: local autosave → saved system copy → seed from live units
   useEffect(() => {
-    if (!doc && isFetched) setDoc(seedFromUnits(apiUnits))
-  }, [doc, isFetched, apiUnits])
+    if (doc || !planFetched || !isFetched) return
+    if (serverPlan?.doc && Array.isArray(serverPlan.doc.floors)) setDoc(serverPlan.doc)
+    else setDoc(seedFromUnits(apiUnits))
+  }, [doc, planFetched, isFetched, serverPlan, apiUnits])
+
+  // Save to system (backend database)
+  const saveMut = useMutation({
+    mutationFn: (d: FacilityDoc) => api.put('/floor-plan', { doc: d }),
+    onSuccess: () => setSaveState('Saved to system ✓'),
+    onError: () => setSaveState('System save failed — try again'),
+  })
+  const saveToSystem = () => {
+    if (!stateRef.current.doc || saveMut.isPending) return
+    setSaveState('Saving to system…')
+    saveMut.mutate(stateRef.current.doc)
+  }
 
   // Autosave
   useEffect(() => {
@@ -197,6 +217,23 @@ export default function FloorMap() {
   }, [doc])
 
   const floor = doc?.floors[Math.min(floorIdx, (doc?.floors.length ?? 1) - 1)] ?? null
+
+  // Fit the floor to the visible canvas width
+  const fitZoom = () => {
+    const el = canvasWrapRef.current
+    const d = stateRef.current.doc
+    if (!el || !d) return
+    const f = d.floors[Math.min(stateRef.current.floorIdx, d.floors.length - 1)]
+    if (!f) return
+    const z = Math.max(4, Math.min(40, (el.clientWidth - 52) / f.width))
+    setZoom(Math.round(z * 100) / 100)
+  }
+
+  const hasDoc = !!doc
+  useEffect(() => {
+    const t = setTimeout(fitZoom, 60)
+    return () => clearTimeout(t)
+  }, [floorIdx, hasDoc])
 
   const unitPriceMap = useMemo(() => {
     const m = new Map<string, number>()
@@ -671,6 +708,19 @@ export default function FloorMap() {
     updateSelShapes(s => ({ ...s, [key]: v }))
   }
 
+  // Set unit area in sqft directly — scales W/D keeping the current proportions
+  const setSingleArea = (sqft: number) => {
+    if (isNaN(sqft) || sqft <= 0) return
+    pushUndoField()
+    updateSelShapes(s => {
+      const targetM2 = sqft / SQM2SQFT
+      const ratio = s.w / s.h || 1
+      const h = Math.sqrt(targetM2 / ratio)
+      const w = targetM2 / h
+      return { ...s, w: round2(w), h: round2(h) }
+    })
+  }
+
   const setFloorField = (patch: Partial<Floor>) => {
     pushUndoField()
     updateFloor(f => ({ ...f, ...patch }))
@@ -715,6 +765,11 @@ export default function FloorMap() {
             <button type="button" onClick={() => { setMode('view'); setTool(null); setSel([]) }} style={pill(mode === 'view')}>Availability</button>
             <button type="button" onClick={() => { setMode('edit'); setSel([]) }} style={pill(mode === 'edit')} className="hidden md:block">Edit layout</button>
           </div>
+          <button type="button" onClick={saveToSystem} disabled={saveMut.isPending}
+            className="h-9 px-4 rounded-full text-[13px] font-bold cursor-pointer text-white hover:opacity-90 disabled:opacity-60"
+            style={{ background: PURPLE, border: 'none' }}>
+            {saveMut.isPending ? 'Saving…' : 'Save to system'}
+          </button>
           <span style={{ fontSize: 12.5, color: MUTED, whiteSpace: 'nowrap' }}>{saveState}</span>
         </div>
       </div>
@@ -761,10 +816,6 @@ export default function FloorMap() {
               <option value="0.5">Grid 50 cm</option>
               <option value="1">Grid 1 m</option>
             </select>
-            <span style={{ width: 1, height: 22, background: 'rgba(20,8,31,.12)' }} />
-            <button type="button" onClick={() => setZoom(z => Math.max(8, round2(z / 1.25)))} className={ghostBtn} style={ghostBtnStyle}>−</button>
-            <span style={{ fontSize: 12.5, fontWeight: 600, color: '#4A4357', minWidth: 42, textAlign: 'center' }}>{Math.round(zoom / 16 * 100)}%</span>
-            <button type="button" onClick={() => setZoom(z => Math.min(40, round2(z * 1.25)))} className={ghostBtn} style={ghostBtnStyle}>+</button>
             <span style={{ width: 1, height: 22, background: 'rgba(20,8,31,.12)' }} />
             <button type="button" onClick={exportFile} className={ghostBtn} style={ghostBtnStyle}>Export</button>
             <button type="button" onClick={() => importRef.current?.click()} className={ghostBtn} style={ghostBtnStyle}>Import</button>
@@ -837,13 +888,15 @@ export default function FloorMap() {
             </div>
           </div>
 
-          <div
-            style={{
-              flex: 1, minHeight: 420, overflow: 'auto', borderRadius: 16,
-              border: '1px solid rgba(20,8,31,.12)', background: '#EFEBF5',
-              cursor: tool ? 'crosshair' : 'default',
-            }}>
-            <div style={{ padding: 24, display: 'inline-block' }}>
+          <div style={{ position: 'relative', flex: 1, minHeight: 420, display: 'flex', flexDirection: 'column' }}>
+            <div
+              ref={canvasWrapRef}
+              style={{
+                flex: 1, minHeight: 420, overflow: 'auto', borderRadius: 16,
+                border: '1px solid rgba(20,8,31,.12)', background: '#EFEBF5',
+                cursor: tool ? 'crosshair' : 'default',
+              }}>
+              <div style={{ padding: 24, display: 'inline-block' }}>
               <div
                 ref={planRef}
                 data-plan="1"
@@ -910,6 +963,23 @@ export default function FloorMap() {
                   }} />
                 )}
               </div>
+            </div>
+            </div>
+
+            {/* Floating zoom controls — both modes */}
+            <div className="flex items-center gap-1" style={{
+              position: 'absolute', right: 12, bottom: 12, zIndex: 60,
+              background: '#fff', border: '1px solid rgba(20,8,31,.14)', borderRadius: 999,
+              padding: 4, boxShadow: '0 4px 14px rgba(20,8,31,.12)',
+            }}>
+              <button type="button" onClick={() => setZoom(z => Math.max(4, round2(z / 1.25)))} title="Zoom out"
+                className="h-8 w-8 rounded-full cursor-pointer hover:bg-muted/50 font-bold" style={{ border: 'none', background: 'transparent', color: '#4A4357', fontSize: 16 }}>−</button>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#4A4357', minWidth: 40, textAlign: 'center' }}>{Math.round(zoom / 16 * 100)}%</span>
+              <button type="button" onClick={() => setZoom(z => Math.min(40, round2(z * 1.25)))} title="Zoom in"
+                className="h-8 w-8 rounded-full cursor-pointer hover:bg-muted/50 font-bold" style={{ border: 'none', background: 'transparent', color: '#4A4357', fontSize: 16 }}>+</button>
+              <span style={{ width: 1, height: 18, background: 'rgba(20,8,31,.12)' }} />
+              <button type="button" onClick={fitZoom} title="Fit floor to screen"
+                className="h-8 px-3 rounded-full cursor-pointer hover:bg-muted/50" style={{ border: 'none', background: 'transparent', color: '#4A4357', fontSize: 12, fontWeight: 700 }}>Fit</button>
             </div>
           </div>
 
@@ -1028,20 +1098,26 @@ export default function FloorMap() {
               {single && (
                 <div className="grid gap-3.5">
                   {single.type === 'unit' && (
-                    <div className="grid grid-cols-2 gap-2.5">
+                    <>
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <label className="grid gap-1">
+                          <span style={{ fontSize: 12, color: MUTED }}>Unit number</span>
+                          <input type="text" value={single.num ?? ''} onChange={e => setSingleField({ num: e.target.value })} className={fieldCls} style={fieldStyle} />
+                        </label>
+                        <label className="grid gap-1">
+                          <span style={{ fontSize: 12, color: MUTED }}>Status</span>
+                          <select value={single.status ?? 'available'} onChange={e => setSingleField({ status: e.target.value as UnitStatus })} className={fieldCls} style={fieldStyle}>
+                            <option value="available">Available</option>
+                            <option value="hold">On hold</option>
+                            <option value="occupied">Occupied</option>
+                          </select>
+                        </label>
+                      </div>
                       <label className="grid gap-1">
-                        <span style={{ fontSize: 12, color: MUTED }}>Unit number</span>
-                        <input type="text" value={single.num ?? ''} onChange={e => setSingleField({ num: e.target.value })} className={fieldCls} style={fieldStyle} />
+                        <span style={{ fontSize: 12, color: MUTED }}>Area (sqft) — resizes the unit, keeps its proportions</span>
+                        <input type="number" step="1" min="1" value={Math.round(areaSqft(single))} onChange={e => setSingleArea(parseFloat(e.target.value))} className={fieldCls} style={fieldStyle} />
                       </label>
-                      <label className="grid gap-1">
-                        <span style={{ fontSize: 12, color: MUTED }}>Status</span>
-                        <select value={single.status ?? 'available'} onChange={e => setSingleField({ status: e.target.value as UnitStatus })} className={fieldCls} style={fieldStyle}>
-                          <option value="available">Available</option>
-                          <option value="hold">On hold</option>
-                          <option value="occupied">Occupied</option>
-                        </select>
-                      </label>
-                    </div>
+                    </>
                   )}
                   {single.type === 'label' && (
                     <label className="grid gap-1">

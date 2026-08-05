@@ -9,6 +9,7 @@ import { requireAuth } from './middleware/auth.js';
 import { UPLOADS_DIR } from './services/drive.js';
 import authRoutes from './routes/auth.js';
 import unitRoutes from './routes/units.js';
+import floorPlanRoutes from './routes/floorPlans.js';
 import customerRoutes from './routes/customers.js';
 import contractRoutes from './routes/contracts.js';
 import paymentRoutes from './routes/payments.js';
@@ -139,6 +140,7 @@ app.use('/api/site-visits',
 );
 app.use('/api/products', requireAuth, productRoutes);
 app.use('/api/unit-types', requireAuth, unitTypeRoutes);
+app.use('/api/floor-plan', requireAuth, floorPlanRoutes);
 app.use(
   '/api/integrations',
   (req, res, next) =>

@@ -1151,6 +1151,13 @@ const counterSchema = new Schema({
   seq: { type: Number, default: 0 },
 });
 
+// Interactive floor plan document (built in the Floor Map page)
+const floorPlanSchema = new Schema({
+  key: { type: String, default: 'default', unique: true },
+  doc: { type: Schema.Types.Mixed, required: true },
+  updatedBy: { type: String, default: '' },
+}, { timestamps: true });
+
 export const User = model('User', userSchema);
 export const UnitType = model('UnitType', unitTypeSchema);
 export const Unit = model('Unit', unitSchema);
@@ -1195,6 +1202,7 @@ export const Product = model('Product', productSchema);
 export const Document = model('Document', documentSchema);
 export const AuditLog = model('AuditLog', auditLogSchema);
 export const Counter = model('Counter', counterSchema);
+export const FloorPlan = model('FloorPlan', floorPlanSchema);
 
 export async function nextContractNo() {
   const year = new Date().getFullYear();
