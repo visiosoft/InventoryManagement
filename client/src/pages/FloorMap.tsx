@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
+import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/ui'
 
 // ─── Types ────────────────────────────────────────────────────────────────
@@ -144,6 +145,8 @@ function seedFromUnits(units: any[]): FacilityDoc {
 
 // ─── Component ────────────────────────────────────────────────────────────
 export default function FloorMap() {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const [doc, setDoc] = useState<FacilityDoc | null>(() => {
     try { const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : null } catch { return null }
   })
@@ -787,7 +790,7 @@ export default function FloorMap() {
     ? units.filter(u => u.id !== single.id && u.status === 'available' && sizeClass(areaSqft(u)).cls === sizeClass(areaSqft(single)).cls).slice(0, 3)
     : []
 
-  const isEdit = mode === 'edit'
+  const isEdit = mode === 'edit' && isAdmin
   const showViewEmpty = mode === 'view' && !single
   const showUnitPanel = mode === 'view' && !!single && single.type === 'unit'
   const showInspector = isEdit && selShapes.length > 0
@@ -809,16 +812,20 @@ export default function FloorMap() {
           />
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1 p-1" style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', borderRadius: 999 }}>
-            <button type="button" onClick={() => { setMode('view'); setTool(null); setSel([]) }} style={pill(mode === 'view')}>Availability</button>
-            <button type="button" onClick={() => { setMode('edit'); setSel([]) }} style={pill(mode === 'edit')} className="hidden md:block">Edit layout</button>
-          </div>
-          <button type="button" onClick={saveToSystem} disabled={saveMut.isPending}
-            className="h-9 px-4 rounded-full text-[13px] font-bold cursor-pointer text-white hover:opacity-90 disabled:opacity-60"
-            style={{ background: PURPLE, border: 'none' }}>
-            {saveMut.isPending ? 'Saving…' : 'Save to system'}
-          </button>
-          <span style={{ fontSize: 12.5, color: MUTED, whiteSpace: 'nowrap' }}>{saveState}</span>
+          {isAdmin && (
+            <div className="flex items-center gap-1 p-1" style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', borderRadius: 999 }}>
+              <button type="button" onClick={() => { setMode('view'); setTool(null); setSel([]) }} style={pill(mode === 'view')}>Availability</button>
+              <button type="button" onClick={() => { setMode('edit'); setSel([]) }} style={pill(mode === 'edit')} className="hidden md:block">Edit layout</button>
+            </div>
+          )}
+          {isAdmin && (
+            <button type="button" onClick={saveToSystem} disabled={saveMut.isPending}
+              className="h-9 px-4 rounded-full text-[13px] font-bold cursor-pointer text-white hover:opacity-90 disabled:opacity-60"
+              style={{ background: PURPLE, border: 'none' }}>
+              {saveMut.isPending ? 'Saving…' : 'Save to system'}
+            </button>
+          )}
+          {isAdmin && <span style={{ fontSize: 12.5, color: MUTED, whiteSpace: 'nowrap' }}>{saveState}</span>}
         </div>
       </div>
 

@@ -35,8 +35,11 @@ router.get('/', async (_req, res) => {
   res.json({ doc: plan.doc, updatedAt: plan.updatedAt, updatedBy: plan.updatedBy });
 });
 
-// Save (upsert) the floor plan
+// Save (upsert) the floor plan — admins only
 router.put('/', async (req, res) => {
+  if (req.user?.role !== 'admin') {
+    return res.status(403).json({ error: 'Only admins can save the floor plan' });
+  }
   const { doc } = req.body || {};
   if (!doc || !Array.isArray(doc.floors)) {
     return res.status(400).json({ error: 'Invalid floor plan document' });
