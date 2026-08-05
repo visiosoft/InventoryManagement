@@ -23,8 +23,8 @@ export default function Customers() {
   const location = useLocation()
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
-  const [sort, setSort]   = useState('date_added_desc')
-  const [page, setPage]   = useState(1)
+  const [sort, setSort] = useState('date_added_desc')
+  const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(25)
   const [adding, setAdding] = useState(false)
   const [prefill, setPrefill] = useState<Partial<Customer> | null>(null)
@@ -213,7 +213,7 @@ export default function Customers() {
                     <input type="checkbox" checked={selected.has(c._id)} onChange={() => toggleOne(c._id)} className="cursor-pointer" />
                   </Td>
                   <Td>
-                    <Link to={`/customers/${c._id}`} className="font-medium text-primary hover:underline">{c.fullName}</Link>
+                    <span className="font-medium">{c.fullName}</span>
                     {c.tenantType === 'company' && <span className="ml-1.5 text-[10px] text-muted-foreground">(Co.)</span>}
                   </Td>
                   <Td className="text-muted-foreground text-xs">{c.clientId || '—'}</Td>
@@ -379,10 +379,7 @@ export default function Customers() {
               </button>
             </div>
 
-            <div className="flex items-center justify-between pt-1">
-              <Link to={`/customers/${newCustomer._id}`} onClick={() => setNewCustomer(null)} className="text-xs text-primary hover:underline">
-                View customer profile
-              </Link>
+            <div className="flex items-center justify-end pt-1">
               <Button variant="outline" onClick={() => setNewCustomer(null)}>Done</Button>
             </div>
           </div>

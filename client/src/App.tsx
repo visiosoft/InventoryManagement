@@ -29,7 +29,6 @@ import SignContract from './pages/SignContract'
 import Dashboard from './pages/Dashboard'
 import Units from './pages/Units'
 import Customers from './pages/Customers'
-import CustomerDetail from './pages/CustomerDetail'
 import Contracts from './pages/Contracts'
 import ContractDetail from './pages/ContractDetail'
 import NewContract from './pages/NewContract'
@@ -132,7 +131,6 @@ export default function App() {
         <Route path="/" element={<SmartHome />} />
         <Route path="/units" element={<Units />} />
         <Route path="/customers" element={<Customers />} />
-        <Route path="/customers/:id" element={<CustomerDetail />} />
         <Route path="/leads" element={<Leads />} />
         <Route path="/quotes" element={<PermGuard module="quotes"><Quotations /></PermGuard>} />
         <Route path="/quotes/new" element={<PermGuard module="quotes"><NewQuote /></PermGuard>} />
@@ -151,14 +149,14 @@ export default function App() {
         <Route path="/payments" element={<PermGuard module="payments"><Payments /></PermGuard>} />
         <Route path="/documents" element={<PermGuard module="documents"><Documents /></PermGuard>} />
         <Route path="/reports" element={<Reports />} />
-        <Route path="/reports/monthly"   element={<PermGuard module="reports_monthly"><MonthlyReport /></PermGuard>} />
-        <Route path="/reports/units"     element={<PermGuard module="reports_units"><UnitsReport /></PermGuard>} />
-        <Route path="/reports/finances"  element={<PermGuard module="reports_finances"><FinancesReport /></PermGuard>} />
-        <Route path="/reports/forecast"  element={<PermGuard module="reports_forecast"><ForecastReport /></PermGuard>} />
+        <Route path="/reports/monthly" element={<PermGuard module="reports_monthly"><MonthlyReport /></PermGuard>} />
+        <Route path="/reports/units" element={<PermGuard module="reports_units"><UnitsReport /></PermGuard>} />
+        <Route path="/reports/finances" element={<PermGuard module="reports_finances"><FinancesReport /></PermGuard>} />
+        <Route path="/reports/forecast" element={<PermGuard module="reports_forecast"><ForecastReport /></PermGuard>} />
         <Route path="/reports/contracts" element={<PermGuard module="reports_contracts"><ContractsReport /></PermGuard>} />
         <Route path="/reports/vacancies" element={<PermGuard module="reports_vacancies"><UpcomingVacanciesReport /></PermGuard>} />
-        <Route path="/reports/overdue"   element={<PermGuard module="reports_overdue"><OverduePaymentsReport /></PermGuard>} />
-        <Route path="/reports/expiring"  element={<PermGuard module="reports_expiring"><ExpiringContractsReport /></PermGuard>} />
+        <Route path="/reports/overdue" element={<PermGuard module="reports_overdue"><OverduePaymentsReport /></PermGuard>} />
+        <Route path="/reports/expiring" element={<PermGuard module="reports_expiring"><ExpiringContractsReport /></PermGuard>} />
         <Route path="/approvals" element={<AdminGuard><Approvals /></AdminGuard>} />
         <Route path="/users" element={<AdminGuard><UserManagement /></AdminGuard>} />
         <Route path="/backup" element={<AdminGuard><Backup /></AdminGuard>} />

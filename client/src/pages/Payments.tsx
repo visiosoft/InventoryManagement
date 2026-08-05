@@ -19,28 +19,6 @@ interface PaymentSummary {
 }
 
 // ── Summary stat card ──────────────────────────────────────────────────────────
-function StatCard({ label, count, total, tone }: { label: string; count: number; total: number; tone: string }) {
-  const colors: Record<string, string> = {
-    red: 'border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-950/30',
-    amber: 'border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-950/30',
-    green: 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-950/30',
-    blue: 'border-blue-200 bg-blue-50 dark:border-blue-900/40 dark:bg-blue-950/30',
-  }
-  const textColors: Record<string, string> = {
-    red: 'text-red-700 dark:text-red-400',
-    amber: 'text-amber-700 dark:text-amber-400',
-    green: 'text-emerald-700 dark:text-emerald-400',
-    blue: 'text-blue-700 dark:text-blue-400',
-  }
-  return (
-    <div className={`rounded-xl border px-5 py-4 ${colors[tone]}`}>
-      <div className="text-xs text-muted-foreground mb-1">{label}</div>
-      <div className={`text-2xl font-bold ${textColors[tone]}`}>{formatMoney(total)}</div>
-      <div className="text-xs text-muted-foreground mt-0.5">{count} payment{count !== 1 ? 's' : ''}</div>
-    </div>
-  )
-}
-
 // ── Record / Add payment form ──────────────────────────────────────────────────
 function RecordForm({
   payment,
@@ -307,11 +285,22 @@ export default function Payments() {
       />
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        <StatCard label="Overdue" count={summary?.overdue.count ?? 0} total={summary?.overdue.total ?? 0} tone="red" />
-        <StatCard label={`Due in ${currentMonthLabel}`} count={summary?.dueThisMonth.count ?? 0} total={summary?.dueThisMonth.total ?? 0} tone="amber" />
-        <StatCard label={`Paid in ${currentMonthLabel}`} count={summary?.paidThisMonth.count ?? 0} total={summary?.paidThisMonth.total ?? 0} tone="green" />
-        <StatCard label="All pending" count={summary?.pending.count ?? 0} total={summary?.pending.total ?? 0} tone="blue" />
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="rounded-xl border bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900/40 px-5 py-4">
+          <div className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">Received</div>
+          <div className="text-2xl font-bold text-emerald-700 dark:text-emerald-400 mt-1">{formatMoney(summary?.paidThisMonth.total ?? 0)}</div>
+          <div className="text-xs text-emerald-600/70 mt-0.5">{summary?.paidThisMonth.count ?? 0} payments · {currentMonthLabel}</div>
+        </div>
+        <div className="rounded-xl border bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-900/40 px-5 py-4">
+          <div className="text-xs font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wide">Pending</div>
+          <div className="text-2xl font-bold text-amber-700 dark:text-amber-400 mt-1">{formatMoney((summary?.overdue.total ?? 0) + (summary?.pending.total ?? 0))}</div>
+          <div className="text-xs text-amber-600/70 mt-0.5">{(summary?.overdue.count ?? 0) + (summary?.pending.count ?? 0)} payments · {summary?.overdue.count ? `${summary.overdue.count} overdue` : 'none overdue'}</div>
+        </div>
+        <div className="rounded-xl border bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900/40 px-5 py-4">
+          <div className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide">Total</div>
+          <div className="text-2xl font-bold text-blue-700 dark:text-blue-400 mt-1">{formatMoney((summary?.paidThisMonth.total ?? 0) + (summary?.overdue.total ?? 0) + (summary?.pending.total ?? 0))}</div>
+          <div className="text-xs text-blue-600/70 mt-0.5">All payments combined</div>
+        </div>
       </div>
 
       {/* Filters */}
