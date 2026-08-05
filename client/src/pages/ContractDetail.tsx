@@ -753,17 +753,6 @@ function ContractTimeline({ notes, onAdd, onDelete, addBusy }: {
     )
   }
 
-  const noteColors = [
-    'bg-[#fef9c3] border-[#fde047] text-yellow-900',
-    'bg-[#dcfce7] border-[#86efac] text-green-900',
-    'bg-[#dbeafe] border-[#93c5fd] text-blue-900',
-    'bg-[#fce7f3] border-[#f9a8d4] text-pink-900',
-    'bg-[#ede9fe] border-[#c4b5fd] text-violet-900',
-    'bg-[#FFF799]/40 border-[#4C8CE4]/60 text-[#111218]',
-  ]
-
-  const rotations = ['-rotate-1', 'rotate-1', '-rotate-[0.5deg]', 'rotate-[0.8deg]', '-rotate-[1.2deg]', 'rotate-[0.3deg]']
-
   return (
     <div className="space-y-4">
       {/* Add note form */}
@@ -783,40 +772,33 @@ function ContractTimeline({ notes, onAdd, onDelete, addBusy }: {
       {notes.length === 0 ? (
         <p className="text-xs text-muted-foreground text-center py-4">No notes yet. Add your first note above.</p>
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-2">
           {[...notes].reverse().map((note, ri) => {
             const origIdx = notes.length - 1 - ri
-            const color = noteColors[origIdx % noteColors.length]
-            const rot = rotations[origIdx % rotations.length]
             return (
               <div
                 key={ri}
-                className={`relative rounded-sm border-l-4 px-4 pt-3 pb-4 shadow-md transition-transform hover:scale-[1.01] ${color} ${rot}`}
+                className="rounded-lg border bg-white px-4 py-3"
+                style={{ borderColor: 'rgba(20,8,31,.10)', borderLeft: '3px solid #C9B6FF' }}
               >
-                {/* Pin */}
-                <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-white/60 border border-white/80 shadow-sm" />
-
-                {/* Header */}
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-bold opacity-50 leading-none">#{notes.length - ri}</span>
-                    <time className="text-[10px] opacity-60 leading-none">{fmtAt(note.at)}</time>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-[10px] font-bold leading-none shrink-0" style={{ color: '#756E80' }}>#{notes.length - ri}</span>
+                    <time className="text-[10px] leading-none shrink-0" style={{ color: '#756E80' }}>{fmtAt(note.at)}</time>
                     {note.author && (
-                      <span className="text-[10px] font-semibold opacity-70">· {note.author}</span>
+                      <span className="text-[10px] font-semibold truncate" style={{ color: '#4A4357' }}>· {note.author}</span>
                     )}
                   </div>
                   <button
                     type="button"
                     title="Delete note"
                     onClick={() => { if (confirm('Delete this note?')) onDelete(origIdx) }}
-                    className="opacity-40 hover:opacity-80 transition-opacity cursor-pointer"
+                    className="opacity-40 hover:opacity-80 transition-opacity cursor-pointer shrink-0"
                   >
                     <X size={12} />
                   </button>
                 </div>
-
-                {/* Text */}
-                <p className="text-sm leading-relaxed whitespace-pre-wrap break-words font-medium">{note.text}</p>
+                <p className="text-sm leading-relaxed whitespace-pre-wrap break-words" style={{ color: '#14081F' }}>{note.text}</p>
               </div>
             )
           })}
@@ -1373,11 +1355,7 @@ export default function ContractDetail() {
                       <div className="divide-y">
                         {activityEvents.map((ev) => (
                           <div key={ev.id} className="flex gap-3 py-3">
-                            <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${ev.type === 'overdue' ? 'bg-red-100 dark:bg-red-950/40 text-red-600' :
-                              ev.type === 'paid' ? 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600' :
-                                'bg-muted text-muted-foreground'
-                              }`}>
-                              {ev.type === 'overdue' && <XCircle size={15} />}
+                            <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${ev.type === 'paid' ? 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600' : 'bg-muted text-muted-foreground'}`}>
                               {ev.type === 'paid' && <CheckCircle2 size={15} />}
                               {ev.type === 'note' && <MessageSquare size={15} />}
                             </div>
@@ -1389,12 +1367,6 @@ export default function ContractDetail() {
                                 </span>
                               </div>
                               {ev.subtitle && <p className="text-xs text-muted-foreground mt-0.5">{ev.subtitle}</p>}
-                              {ev.type === 'overdue' && (
-                                <button className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
-                                  onClick={() => { const p = overdue.find(x => activityEvents.find(a => a.id === `ovd-${x._id}`)?.id === ev.id); if (p) setRecordingPayment(p) }}>
-                                  <CalendarDays size={11} /> Collect now
-                                </button>
-                              )}
                             </div>
                           </div>
                         ))}
@@ -1458,22 +1430,6 @@ export default function ContractDetail() {
                   </Card>
                 </div>
               </div>
-
-            {/* Notes & Activity */}
-            <Card className="mt-4">
-              <CardHeader title="Notes & Activity"
-                subtitle={c.timeline?.length ? `${c.timeline.length} note${c.timeline.length !== 1 ? 's' : ''}` : 'Track conversations and follow-ups'}
-                action={<MessageSquare size={15} className="text-muted-foreground" />}
-              />
-              <CardBody className="pt-0 space-y-4">
-                <ContractTimeline
-                  notes={c.timeline || []}
-                  onAdd={(text) => addNote.mutate(text)}
-                  onDelete={(idx) => deleteNote.mutate(idx)}
-                  addBusy={addNote.isPending}
-                />
-              </CardBody>
-            </Card>
             </div>
           )}
 
@@ -1595,7 +1551,20 @@ export default function ContractDetail() {
             </Card>
           )}
 
-          {/* ACTIVITY */}
+          {/* Add note — always visible */}
+          <Card className="mt-5">
+            <CardHeader title="Add Note"
+              action={<MessageSquare size={15} className="text-muted-foreground" />}
+            />
+            <CardBody className="pt-0">
+              <form onSubmit={(e) => { e.preventDefault(); const input = (e.currentTarget.elements.namedItem('noteText') as HTMLTextAreaElement); if (input.value.trim()) { addNote.mutate(input.value.trim()); input.value = '' } }} className="flex gap-2 items-end">
+                <Textarea name="noteText" className="flex-1 resize-none" placeholder="Type a note or follow-up..." rows={2} />
+                <Button type="submit" disabled={addNote.isPending} className="shrink-0">
+                  {addNote.isPending ? 'Saving…' : 'Add note'}
+                </Button>
+              </form>
+            </CardBody>
+          </Card>
         </div>
       </div>
 
