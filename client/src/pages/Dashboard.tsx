@@ -172,67 +172,47 @@ export default function Dashboard() {
       if (!data) return {} as Record<WidgetId, React.ReactNode>
       return ({
         stats: (
-          <div className="space-y-[18px]">
-            <div className="grid grid-cols-1 lg:grid-cols-[1.35fr_1fr_1fr] gap-[18px]">
-              {/* Occupancy - dark card */}
-              <div style={{ padding: 24, borderRadius: 22, background: '#1A0B33', color: '#FFF', display: 'flex', flexDirection: 'column', gap: 20, boxShadow: '0 8px 24px rgba(20,8,31,.10)' }}>
-                <div className="flex items-center justify-between">
-                  <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#A78BFA' }}>Occupancy</div>
-                </div>
-                <div className="flex items-end gap-3 flex-wrap">
-                  <div style={{ ...HEADING, fontWeight: 700, fontSize: 56, lineHeight: 0.9, letterSpacing: '-0.04em' }} className="sm:!text-[76px]">{data.occupancyPct}%</div>
-                  <div style={{ fontSize: 13, color: '#DDD0FF', paddingBottom: 10 }}>{data.byStatus.occupied + data.byStatus.reserved} of {data.byStatus.available + data.byStatus.occupied + data.byStatus.reserved}<br/>rentable units</div>
-                </div>
-                <div className="flex flex-col gap-[10px]">
-                  <div style={{ height: 10, borderRadius: 999, background: 'rgba(255,255,255,.14)', overflow: 'hidden', display: 'flex' }}>
-                    <div style={{ width: `${data.occupancyPct}%`, background: 'linear-gradient(90deg, #7C4DFF, #A78BFA)' }} />
-                  </div>
-                  <div className="flex justify-between" style={{ fontSize: 12, color: 'rgba(221,208,255,.75)' }}>
-                    <span>{data.byStatus.occupied + data.byStatus.reserved} occupied</span>
-                    <span>{data.byStatus.available} available</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Available units */}
-              <div onClick={() => { setSizeFilter(null); setMovePanel('available') }} style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 14, boxShadow: '0 1px 2px rgba(20,8,31,.05)', cursor: 'pointer' }} className="hover:shadow-md transition-shadow">
-                <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Available units</div>
-                <div style={{ ...HEADING, fontWeight: 700, fontSize: 56, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{data.byStatus.available}</div>
-                <div style={{ fontSize: 13, color: '#4A4357' }}>Ready to rent</div>
-                <div className="flex flex-wrap gap-[6px] mt-auto" onClick={e => e.stopPropagation()}>
-                  {data.bySize.filter(s => s.available > 0).map(s => (
-                    <button key={s.sizeSqf} onClick={() => { setSizeFilter(parseInt(s.sizeSqf)); setMovePanel('available') }} style={{ fontSize: 12, fontWeight: 600, padding: '5px 10px', borderRadius: 8, background: PURPLE_LIGHT, color: '#4A1FA0', cursor: 'pointer', border: 'none' }} className="hover:opacity-80 transition-opacity">{s.available} × {s.sizeSqf}</button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Active contracts */}
-              <div style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 14, boxShadow: '0 1px 2px rgba(20,8,31,.05)' }}>
-                <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Active contracts</div>
-                <div style={{ ...HEADING, fontWeight: 700, fontSize: 56, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{data.activeContracts}</div>
-                <div style={{ fontSize: 13, color: '#4A4357' }}>{data.expiringContracts.length} expiring in 15 days</div>
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-[18px]">
+            {/* Occupancy - dark card */}
+            <div style={{ padding: 24, borderRadius: 22, background: '#1A0B33', color: '#FFF', display: 'flex', flexDirection: 'column', gap: 16, boxShadow: '0 8px 24px rgba(20,8,31,.10)' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#A78BFA' }}>Occupancy</div>
+              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.04em' }}>{data.occupancyPct}%</div>
+              <div style={{ fontSize: 11, color: '#DDD0FF' }}>{data.byStatus.occupied + data.byStatus.reserved} of {data.byStatus.available + data.byStatus.occupied + data.byStatus.reserved} units</div>
+              <div style={{ height: 6, borderRadius: 999, background: 'rgba(255,255,255,.14)', overflow: 'hidden', display: 'flex' }}>
+                <div style={{ width: `${data.occupancyPct}%`, background: 'linear-gradient(90deg, #7C4DFF, #A78BFA)' }} />
               </div>
             </div>
 
-            {/* Move-in / Move-out */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-[18px]">
-              {(['in', 'out'] as const).map(type => {
-                const val = type === 'in' ? data.moveInsThisMonth : data.moveOutsThisMonth
-                const last = type === 'in' ? data.moveInsLastMonth : data.moveOutsLastMonth
-                const diff = val - last
-                const diffColor = diff < 0 ? '#B3261E' : '#1B7A4B'
-                return (
-                  <div key={type} onClick={() => setMovePanel(type)} style={{ padding: '22px 24px', borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', cursor: 'pointer' }} className="hover:shadow-md transition-shadow">
-                    <div className="flex flex-col gap-2">
-                      <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>{type === 'in' ? 'Move-ins this month' : 'Move-outs this month'}</div>
-                      <div className="flex items-baseline gap-3 flex-wrap">
-                        <div style={{ ...HEADING, fontWeight: 700, fontSize: 36, lineHeight: 0.9, letterSpacing: '-0.03em' }} className="sm:!text-[48px]">{val}</div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: diffColor }}>{diff > 0 ? '+' : ''}{diff} vs {last} last month</div>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
+            {/* Available units */}
+            <div onClick={() => { setSizeFilter(null); setMovePanel('available') }} style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 1px 2px rgba(20,8,31,.05)', cursor: 'pointer' }} className="hover:shadow-md transition-shadow">
+              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Available</div>
+              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{data.byStatus.available}</div>
+              <div className="flex flex-wrap gap-1 mt-auto" onClick={e => e.stopPropagation()}>
+                {data.bySize.filter(s => s.available > 0).slice(0, 3).map(s => (
+                  <button key={s.sizeSqf} onClick={() => { setSizeFilter(parseInt(s.sizeSqf)); setMovePanel('available') }} style={{ fontSize: 10, fontWeight: 600, padding: '3px 6px', borderRadius: 6, background: PURPLE_LIGHT, color: '#4A1FA0', cursor: 'pointer', border: 'none' }} className="hover:opacity-80">{s.available}×{s.sizeSqf.replace(' sq ft', '')}</button>
+                ))}
+              </div>
+            </div>
+
+            {/* Active contracts */}
+            <div style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 1px 2px rgba(20,8,31,.05)' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Active</div>
+              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{data.activeContracts}</div>
+              <div style={{ fontSize: 11, color: '#4A4357', marginTop: 'auto' }}>{data.expiringContracts.length} expiring soon</div>
+            </div>
+
+            {/* Move-ins */}
+            <div onClick={() => setMovePanel('in')} style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 1px 2px rgba(20,8,31,.05)', cursor: 'pointer' }} className="hover:shadow-md transition-shadow">
+              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Move-ins</div>
+              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{data.moveInsThisMonth}</div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: (data.moveInsThisMonth - data.moveInsLastMonth) < 0 ? '#B3261E' : '#1B7A4B', marginTop: 'auto' }}>{(data.moveInsThisMonth - data.moveInsLastMonth) > 0 ? '+' : ''}{data.moveInsThisMonth - data.moveInsLastMonth} vs {data.moveInsLastMonth}</div>
+            </div>
+
+            {/* Move-outs */}
+            <div onClick={() => setMovePanel('out')} style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 1px 2px rgba(20,8,31,.05)', cursor: 'pointer' }} className="hover:shadow-md transition-shadow">
+              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Move-outs</div>
+              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{data.moveOutsThisMonth}</div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: (data.moveOutsThisMonth - data.moveOutsLastMonth) < 0 ? '#B3261E' : '#1B7A4B', marginTop: 'auto' }}>{(data.moveOutsThisMonth - data.moveOutsLastMonth) > 0 ? '+' : ''}{data.moveOutsThisMonth - data.moveOutsLastMonth} vs {data.moveOutsLastMonth}</div>
             </div>
           </div>
         ),
