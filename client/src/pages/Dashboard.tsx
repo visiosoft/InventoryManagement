@@ -354,7 +354,7 @@ export default function Dashboard() {
               <EmptyState message="No contracts expiring in the next 15 days." />
             ) : (
               <ul className="divide-y divide-border">
-                {data.expiringContracts.slice(0, 15).map((c) => {
+                {data.expiringContracts.slice(0, 10).map((c) => {
                   const daysLeft = Math.ceil((new Date(c.endDate).getTime() - Date.now()) / 86400000)
                   const endFmt = new Date(c.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
                   const urgency = daysLeft <= 3 ? 'text-destructive' : daysLeft <= 7 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'

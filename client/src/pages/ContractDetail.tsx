@@ -870,7 +870,7 @@ export default function ContractDetail() {
   const [showInvoiceModal, setShowInvoiceModal] = useState(false)
   const [invoiceOverride, setInvoiceOverride] = useState<{ start: string; end: string } | null>(null)
   const [editModal, setEditModal] = useState(false)
-  const [activeTab, setActiveTab] = useState<'overview' | 'payments' | 'documents' | 'activity'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'payments' | 'documents'>('overview')
 
   const { data, isLoading } = useQuery<ContractDetailData>({
     queryKey: ['contract', id],
@@ -1353,7 +1353,6 @@ export default function ContractDetail() {
               ['overview', 'Overview', 0],
               ['payments', 'Payments', unpaidGroups.length],
               ['documents', 'Documents', 0],
-              ['activity', 'Activity', 0],
             ] as [typeof activeTab, string, number][]).map(([key, label, count]) => (
               <button key={key} onClick={() => setActiveTab(key)}
                 className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px flex items-center gap-1.5 ${activeTab === key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
@@ -1468,6 +1467,22 @@ export default function ContractDetail() {
                   </Card>
                 </div>
               </div>
+
+            {/* Notes & Activity */}
+            <Card className="mt-4">
+              <CardHeader title="Notes & Activity"
+                subtitle={c.timeline?.length ? `${c.timeline.length} note${c.timeline.length !== 1 ? 's' : ''}` : 'Track conversations and follow-ups'}
+                action={<MessageSquare size={15} className="text-muted-foreground" />}
+              />
+              <CardBody className="pt-0 space-y-4">
+                <ContractTimeline
+                  notes={c.timeline || []}
+                  onAdd={(text) => addNote.mutate(text)}
+                  onDelete={(idx) => deleteNote.mutate(idx)}
+                  addBusy={addNote.isPending}
+                />
+              </CardBody>
+            </Card>
             </div>
           )}
 
@@ -1590,22 +1605,6 @@ export default function ContractDetail() {
           )}
 
           {/* ACTIVITY */}
-          {activeTab === 'activity' && (
-            <Card>
-              <CardHeader title="Notes & Activity"
-                subtitle={c.timeline?.length ? `${c.timeline.length} note${c.timeline.length !== 1 ? 's' : ''}` : 'Track conversations and follow-ups'}
-                action={<MessageSquare size={15} className="text-muted-foreground" />}
-              />
-              <CardBody className="pt-0 space-y-4">
-                <ContractTimeline
-                  notes={c.timeline || []}
-                  onAdd={(text) => addNote.mutate(text)}
-                  onDelete={(idx) => deleteNote.mutate(idx)}
-                  addBusy={addNote.isPending}
-                />
-              </CardBody>
-            </Card>
-          )}
         </div>
       </div>
 
