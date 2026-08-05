@@ -52,7 +52,7 @@ export default function IncomeAnalysis() {
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                   <XAxis dataKey="label" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} width={60} tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
-                  <Tooltip formatter={(v: number) => formatMoney(v)} contentStyle={{ borderRadius: 8, fontSize: 12 }} />
+                  <Tooltip formatter={(v) => formatMoney(Number(v))} contentStyle={{ borderRadius: 8, fontSize: 12 }} />
                   <Legend />
                   <Bar dataKey="expected" name="Expected" fill="#4C8CE4" radius={[3, 3, 0, 0]} />
                   <Bar dataKey="actual" name="Received" fill="#10b981" radius={[3, 3, 0, 0]} />
