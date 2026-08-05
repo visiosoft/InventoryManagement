@@ -517,4 +517,108 @@ router.get('/forecast', async (req, res) => {
   });
 });
 
+// ── Income Analysis: Expected vs Actual, discount loss, extras ─────────────────
+router.get('/income-analysis', async (req, res) => {
+  const year = Number(req.query.year) || new Date().getFullYear();
+  const yearStart = new Date(year, 0, 1);
+  const yearEnd = new Date(year + 1, 0, 1);
+
+  const payments = await Payment.aggregate([
+    { $match: { dueDate: { $gte: yearStart, $lt: yearEnd } } },
+    { $lookup: { from: 'contracts', localField: 'contract', foreignField: '_id', as: 'c' } },
+    { $unwind: '$c' },
+    { $lookup: { from: 'units', localField: 'c.unit', foreignField: '_id', as: 'u' } },
+    { $unwind: { path: '$u', preserveNullAndEmptyArrays: true } },
+    { $lookup: { from: 'invoices', localField: 'invoice', foreignField: '_id', as: 'inv' } },
+    { $unwind: { path: '$inv', preserveNullAndEmptyArrays: true } },
+    { $project: {
+      amount: 1, status: 1, dueDate: 1, notes: 1,
+      'c.rate': 1, 'c.contractNo': 1,
+      'u.unitNumber': 1, 'u.sizeSqf': 1, 'u.price': 1, 'u.floor': 1,
+      'inv.items': 1,
+    }},
+  ]);
+
+  const months = Array.from({ length: 12 }, (_, i) => ({
+    month: i + 1,
+    label: new Date(year, i).toLocaleString('en', { month: 'short' }),
+    expected: 0, actual: 0, discountLoss: 0, extras: 0, pending: 0,
+  }));
+
+  const unitMap = new Map();
+
+  for (const p of payments) {
+    const monthIdx = new Date(p.dueDate).getMonth();
+    const m = months[monthIdx];
+    const listPrice = Number(p.u?.price || 0);
+    const contractRate = Number(p.c?.rate || 0);
+    const weeklyList = Math.round((listPrice / 4) * 100) / 100;
+    const weeklyActual = Math.round((contractRate / 4) * 100) / 100;
+    const isDeposit = /security deposit/i.test(p.notes || '');
+
+    // Check invoice items for non-rent extras
+    let extraFromInvoice = 0;
+    if (p.inv?.items) {
+      for (const item of p.inv.items) {
+        if (!/^Storage Rent/i.test(item.itemDetails || '') && !/Security Deposit/i.test(item.itemDetails || '')) {
+          extraFromInvoice += Number(item.amount || 0);
+        }
+      }
+    }
+
+    if (isDeposit) continue;
+
+    if (extraFromInvoice > 0) {
+      m.extras += extraFromInvoice;
+      if (p.status === 'paid') m.actual += p.amount;
+      else m.pending += p.amount;
+      m.expected += p.amount;
+      continue;
+    }
+
+    // Expected at list price
+    const weeks = weeklyActual > 0 ? Math.max(1, Math.round(p.amount / weeklyActual)) : 1;
+    m.expected += weeklyList > 0 ? weeklyList * weeks : p.amount;
+
+    if (p.status === 'paid') m.actual += p.amount;
+    else m.pending += p.amount;
+
+    if (listPrice > 0 && contractRate < listPrice) {
+      m.discountLoss += (weeklyList - weeklyActual) * weeks;
+    }
+
+    // Per unit
+    const unitKey = p.u?.unitNumber || 'Unknown';
+    if (!unitMap.has(unitKey)) {
+      unitMap.set(unitKey, { unitNumber: unitKey, floor: p.u?.floor, sizeSqf: p.u?.sizeSqf, listPrice, expected: 0, actual: 0, discountLoss: 0 });
+    }
+    const uu = unitMap.get(unitKey);
+    uu.expected += weeklyList > 0 ? weeklyList * weeks : p.amount;
+    if (p.status === 'paid') uu.actual += p.amount;
+    if (listPrice > 0 && contractRate < listPrice) {
+      uu.discountLoss += (weeklyList - weeklyActual) * weeks;
+    }
+  }
+
+  for (const m of months) {
+    m.expected = Math.round(m.expected); m.actual = Math.round(m.actual);
+    m.discountLoss = Math.round(m.discountLoss); m.extras = Math.round(m.extras);
+    m.pending = Math.round(m.pending);
+  }
+
+  const byUnit = Array.from(unitMap.values()).map(u => ({
+    ...u, expected: Math.round(u.expected), actual: Math.round(u.actual), discountLoss: Math.round(u.discountLoss),
+  })).sort((a, b) => b.discountLoss - a.discountLoss);
+
+  const totals = {
+    expected: months.reduce((s, m) => s + m.expected, 0),
+    actual: months.reduce((s, m) => s + m.actual, 0),
+    discountLoss: months.reduce((s, m) => s + m.discountLoss, 0),
+    extras: months.reduce((s, m) => s + m.extras, 0),
+    pending: months.reduce((s, m) => s + m.pending, 0),
+  };
+
+  res.json({ year, months, byUnit, totals });
+});
+
 export default router;

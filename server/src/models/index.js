@@ -1215,6 +1215,16 @@ export const Counter = model('Counter', counterSchema);
 export const FloorPlan = model('FloorPlan', floorPlanSchema);
 export const Site = model('Site', siteSchema);
 
+const messageTemplateSchema = new Schema({
+  key: { type: String, required: true, unique: true },
+  label: { type: String, required: true },
+  subject: { type: String, default: '' },
+  emailBody: { type: String, default: '' },
+  whatsappBody: { type: String, default: '' },
+  variables: [String],
+}, { timestamps: true });
+export const MessageTemplate = model('MessageTemplate', messageTemplateSchema);
+
 export async function nextContractNo() {
   const year = new Date().getFullYear();
   const counter = await Counter.findOneAndUpdate(
