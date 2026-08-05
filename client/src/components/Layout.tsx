@@ -486,7 +486,7 @@ export default function Layout() {
           </div>
         </div>
 
-        <div className="p-4 sm:p-6 lg:p-8 max-w-[1400px] mx-auto">
+        <div className={location.pathname === '/floor-map' ? '' : 'p-3 sm:p-4'}>
           <Outlet />
         </div>
       </main>
