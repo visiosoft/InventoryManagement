@@ -2257,6 +2257,29 @@ export default function NewQuote() {
                           {formatMoney(Math.max(0, invoicedTotal - paidTotal))}
                         </p>
                       </div>
+                      <div className="col-span-3 flex items-center gap-3 pt-2 mt-1" style={{ borderTop: '1px solid rgba(20,8,31,0.08)' }}>
+                        <span className="text-xs" style={{ color: MUTED }}>
+                          One invoice <span className="font-semibold" style={{ color: INK }}>{invoice.invoiceNo}</span> covers the schedule below
+                        </span>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const res = await api.get(`/invoices/${invoice._id}/pdf`, { responseType: 'blob' })
+                              window.open(URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' })), '_blank')
+                            } catch (e) { setErr(apiError(e)) }
+                          }}
+                          className="flex items-center gap-1 text-xs font-semibold hover:underline cursor-pointer"
+                          style={{ color: PURPLE }}
+                        >
+                          <Download size={12} /> Invoice PDF
+                        </button>
+                        <a href={`/invoices/${invoice._id}`} target="_blank" rel="noreferrer"
+                          className="flex items-center gap-1 text-xs font-semibold hover:underline"
+                          style={{ color: PURPLE }}>
+                          <ExternalLink size={12} /> Open invoice
+                        </a>
+                      </div>
                     </div>
 
                     {/* Payment schedule */}
