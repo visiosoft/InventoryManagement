@@ -473,8 +473,16 @@ function StepTemplateModal({ step, templates, onSave, onClose }: {
     const VARIABLES = ['@name', '@amount', '@unit', '@dueDate', '@daysLeft', '@contractNo', '@startDate', '@endDate', '@invoiceNo']
 
     return (
-        <Modal open onClose={onClose} title={`Edit Template – ${step.template}`}>
-            <div className="space-y-4">
+        <div className="fixed inset-0 z-50">
+            <div className="absolute inset-0 bg-black/20" onClick={onClose} />
+            <div className="absolute right-0 top-0 h-full w-full max-w-md bg-white dark:bg-gray-900 shadow-xl overflow-y-auto animate-in slide-in-from-right">
+                <div className="sticky top-0 bg-white dark:bg-gray-900 border-b px-5 py-4 flex items-center justify-between z-10">
+                    <h2 className="text-lg font-bold" style={{ fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em', color: '#14081F' }}>
+                        Edit Template – {step.template}
+                    </h2>
+                    <button onClick={onClose} className="p-1 hover:bg-muted rounded cursor-pointer"><X size={18} /></button>
+                </div>
+                <div className="p-5 space-y-4">
                 {/* Template name */}
                 <div>
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Step Label</label>
@@ -575,7 +583,8 @@ function StepTemplateModal({ step, templates, onSave, onClose }: {
                     <Button variant="outline" onClick={onClose}>Cancel</Button>
                     <Button onClick={handleSave}>Save Template</Button>
                 </div>
+                </div>
             </div>
-        </Modal>
+        </div>
     )
 }
