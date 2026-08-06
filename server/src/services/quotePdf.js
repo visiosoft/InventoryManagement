@@ -178,18 +178,21 @@ export function renderQuotePdf({ quote }) {
             amount: periodAmount,
          });
       }
-      // Refundable advance deposit per unit: 4 weeks normally, or the term
-      // length when the stay is shorter than 4 weeks.
+      // Advance rent (one period, max 4 weeks) is collected on the first
+      // invoice. For terms over 4 weeks it prepays the final period and is
+      // already inside the rent above, so it is NOT charged again here — only
+      // short terms (<= 4 weeks) hold it as a refundable amount on top.
       for (const u of quote.units || []) {
          const uDays = u.startDate && u.endDate ? Math.round((new Date(u.endDate) - new Date(u.startDate)) / 86400000) : 0;
-         const uWeeks = Math.min(4, uDays > 0 ? Math.ceil(uDays / 7) : 1);
+         const uTotalWeeks = uDays > 0 ? Math.ceil(uDays / 7) : 1;
+         if (uTotalWeeks > 4) continue;
          const wkFull = Number((u.rate / 4).toFixed(2));
          rows.push({
-            title: `Refundable / Adjustable Security Deposit · Unit ${u.unitNumber}`,
-            sub: 'Adjusted against the final rental period',
-            qty: uWeeks,
+            title: `Refundable Advance · Unit ${u.unitNumber}`,
+            sub: 'Held and refunded or adjusted at the end of the rental',
+            qty: uTotalWeeks,
             rate: wkFull,
-            amount: Number((wkFull * uWeeks).toFixed(2)),
+            amount: Number((wkFull * uTotalWeeks).toFixed(2)),
          });
       }
       for (const a of quote.addOns || []) {

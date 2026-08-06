@@ -298,6 +298,53 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
     return out
   })()
 
+  // Inline payment recording, per invoice
+  const [payFor, setPayFor] = useState<string>('')
+  const [payAmt, setPayAmt] = useState('')
+  const [payWhen, setPayWhen] = useState(() => new Date().toISOString().slice(0, 10))
+  const [payHow, setPayHow] = useState('cash')
+  const recordPay = useMutation({
+    mutationFn: (inv: Invoice) => invoiceApi.recordPayment(inv._id, {
+      amount: Number(payAmt), method: payHow, date: payWhen,
+    }),
+    onSuccess: () => { setPayFor(''); setPayAmt(''); onChanged(); setErr('') },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  async function shareLink(inv: Invoice) {
+    const res = await api.post(`/invoices/${inv._id}/share`)
+    return res.data.url as string
+  }
+  async function sendWhatsApp(inv: Invoice) {
+    try {
+      const pdfUrl = await shareLink(inv)
+      const phone = customerPhone.replace(/\D/g, '').replace(/^00/, '')
+      const msg = `Hello ${customerName},\n\nHere is your invoice ${inv.invoiceNo} for ${formatMoney(inv.total)} AED.\n\nView: ${pdfUrl}\n\nThank you — PurpleBox`
+      window.open(phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
+    } catch (e) { setErr(apiError(e)) }
+  }
+  async function openEmail(inv: Invoice) {
+    try {
+      const pdfUrl = await shareLink(inv)
+      setEmailModal({
+        invoiceId: inv._id, to: customerEmail,
+        subject: `Invoice ${inv.invoiceNo} — PurpleBox`,
+        body: [`Hello ${customerName},`, ``, `Please find your invoice ${inv.invoiceNo} for ${formatMoney(inv.total)} AED.`, ``, `Thank you,`, `PurpleBox`].join('\n'),
+        pdfUrl,
+      })
+    } catch (e) { setErr(apiError(e)) }
+  }
+  async function openPdf(inv: Invoice) {
+    try {
+      const res = await api.get(`/invoices/${inv._id}/pdf`, { responseType: 'blob' })
+      window.open(URL.createObjectURL(res.data), '_blank')
+    } catch (e) { setErr(apiError(e)) }
+  }
+  async function removeInvoice(inv: Invoice) {
+    if (!confirm(`Delete ${inv.invoiceNo}?`)) return
+    try { await api.delete(`/invoices/${inv._id}`); onChanged() } catch (e) { setErr(apiError(e)) }
+  }
+
   const [creatingPeriod, setCreatingPeriod] = useState<number | null>(null)
   async function createPeriodInvoice(p: PeriodPlan) {
     setCreatingPeriod(p.idx)
@@ -343,39 +390,154 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
         </div>
         {periodPlan.map((p) => {
           const dispEnd = new Date(p.to); dispEnd.setDate(dispEnd.getDate() - 1)
+          const inv = p.invoice
+          const paidAmt = inv ? Number(inv.paymentMade || 0) : 0
+          const balance = inv ? Math.round((Number(inv.total || 0) - paidAmt) * 100) / 100 : 0
+          const isPaid = Boolean(inv) && balance <= 0
+          const editingThis = Boolean(inv) && editId === inv!._id
+          const payingThis = Boolean(inv) && payFor === inv!._id
+          // Stage: what this month needs next
+          const stage = !inv
+            ? (p.coveredByAdvance ? 'advance' : 'todo')
+            : isPaid ? 'paid' : inv.status === 'draft' ? 'send' : 'pay'
+          const STAGE_UI: Record<string, { label: string; bg: string; fg: string }> = {
+            advance: { label: 'Covered by advance deposit', bg: '#EDE5FF', fg: '#4A1FA0' },
+            todo: { label: 'Not invoiced yet', bg: CHIP_BG, fg: MUTED },
+            send: { label: 'Draft — send to customer', bg: '#FEF3C7', fg: '#92400E' },
+            pay: { label: `Awaiting payment · ${formatMoney(balance)} AED`, bg: '#DBEAFE', fg: '#1D4ED8' },
+            paid: { label: 'Paid', bg: '#D1FAE5', fg: GREEN },
+          }
+          const ui = STAGE_UI[stage]
+          const act = 'flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold hover:bg-gray-50 cursor-pointer border'
           return (
-            <div key={p.idx} className="flex items-center justify-between gap-3 px-4 py-2.5 border-t" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
-              <div className="min-w-0">
-                <p className="text-xs font-bold" style={{ color: INK }}>Month {p.idx + 1}</p>
-                <p className="text-[11px]" style={{ color: MUTED }}>{dfmt(p.from)} – {dfmt(dispEnd)} · {p.weeks} wk{p.weeks !== 1 ? 's' : ''}</p>
+            <div key={p.idx} className="border-t" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
+              <div className="flex items-center justify-between gap-3 px-4 py-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
+                    style={{ background: isPaid ? '#D1FAE5' : `${PURPLE}12`, color: isPaid ? GREEN : PURPLE }}>
+                    {isPaid ? '✓' : p.idx + 1}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold" style={{ color: INK }}>
+                      Month {p.idx + 1}
+                      {inv && <span className="ml-2 font-semibold" style={{ color: MUTED }}>{inv.invoiceNo}</span>}
+                    </p>
+                    <p className="text-[11px]" style={{ color: MUTED }}>{dfmt(p.from)} – {dfmt(dispEnd)} · {p.weeks} wk{p.weeks !== 1 ? 's' : ''}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-xs font-bold" style={{ color: INK }}>{formatMoney(inv ? Number(inv.total || 0) : p.amount)} AED</span>
+                  <span className="text-[10px] font-semibold px-2 py-1 rounded-full whitespace-nowrap" style={{ background: ui.bg, color: ui.fg }}>{ui.label}</span>
+                </div>
               </div>
-              {p.invoice ? (
-                <span className="text-[11px] font-semibold px-2 py-1 rounded-full shrink-0" style={{ background: '#D1FAE5', color: GREEN }}>
-                  ✓ {p.invoice.invoiceNo} · {formatMoney(p.invoice.total)} AED
-                </span>
-              ) : p.coveredByAdvance ? (
-                <span className="text-[11px] font-semibold px-2 py-1 rounded-full shrink-0" style={{ background: '#EDE5FF', color: '#4A1FA0' }}
-                  title="No invoice needed — the advance deposit collected on the first invoice pays this period">
-                  Covered by advance deposit
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => createPeriodInvoice(p)}
-                  disabled={creatingPeriod !== null}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white shrink-0 disabled:opacity-50 hover:opacity-90 cursor-pointer"
-                  style={{ background: PURPLE }}
-                >
-                  {creatingPeriod === p.idx ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
-                  Create invoice · {formatMoney(p.amount)} AED
-                </button>
+
+              {/* One clear next action per month */}
+              {stage === 'todo' && (
+                <div className="px-4 pb-3">
+                  <button type="button" onClick={() => createPeriodInvoice(p)} disabled={creatingPeriod !== null}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white disabled:opacity-50 hover:opacity-90 cursor-pointer"
+                    style={{ background: PURPLE }}>
+                    {creatingPeriod === p.idx ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+                    Create invoice · {formatMoney(p.amount)} AED
+                  </button>
+                </div>
+              )}
+
+              {inv && !editingThis && !payingThis && (
+                <div className="flex flex-wrap items-center gap-1.5 px-4 pb-3">
+                  {stage === 'send' && (<>
+                    <button type="button" onClick={() => sendWhatsApp(inv)} className={`${act} text-white border-transparent`} style={{ background: '#25D366' }}>
+                      <Send size={12} /> Send on WhatsApp
+                    </button>
+                    <button type="button" onClick={() => openEmail(inv)} className={act} style={{ color: '#3B82F6', borderColor: 'rgba(20,8,31,0.12)' }}>
+                      <Mail size={12} /> Email
+                    </button>
+                  </>)}
+                  {stage === 'pay' && (
+                    <button type="button"
+                      onClick={() => { setPayFor(inv._id); setPayAmt(String(balance)); setPayWhen(new Date().toISOString().slice(0, 10)) }}
+                      className={`${act} text-white border-transparent`} style={{ background: PURPLE }}>
+                      <CreditCard size={12} /> Record payment · {formatMoney(balance)} AED
+                    </button>
+                  )}
+                  {stage === 'pay' && (
+                    <button type="button" onClick={() => sendWhatsApp(inv)} className={act} style={{ color: '#25D366', borderColor: 'rgba(20,8,31,0.12)' }}>
+                      <Send size={12} /> Resend
+                    </button>
+                  )}
+                  <button type="button" onClick={() => openPdf(inv)} className={act} style={{ color: MUTED, borderColor: 'rgba(20,8,31,0.12)' }}>
+                    <Download size={12} /> PDF
+                  </button>
+                  {!isPaid && paidAmt === 0 && (<>
+                    <button type="button" onClick={() => startEdit(inv)} className={act} style={{ color: MUTED, borderColor: 'rgba(20,8,31,0.12)' }}>
+                      <FileText size={12} /> Edit
+                    </button>
+                    <button type="button" onClick={() => removeInvoice(inv)} className={act} style={{ color: '#EF4444', borderColor: 'rgba(20,8,31,0.12)' }}>
+                      <Trash2 size={12} /> Delete
+                    </button>
+                  </>)}
+                </div>
+              )}
+
+              {/* Inline record-payment form */}
+              {inv && payingThis && (
+                <div className="px-4 pb-3 space-y-2 rounded-b-xl" style={{ background: `${PURPLE}05` }}>
+                  <div className="grid grid-cols-3 gap-2 pt-2">
+                    <Field label="Amount (AED)">
+                      <Input type="number" min={0.01} step="0.01" value={payAmt} onChange={(e) => setPayAmt(e.target.value)} className="h-8 text-xs" />
+                    </Field>
+                    <Field label="Date">
+                      <Input type="date" value={payWhen} onChange={(e) => setPayWhen(e.target.value)} className="h-8 text-xs" />
+                    </Field>
+                    <Field label="Method">
+                      <select value={payHow} onChange={(e) => setPayHow(e.target.value)} className="w-full h-8 rounded-lg border bg-card px-2 text-xs">
+                        <option value="cash">Cash</option>
+                        <option value="bank_transfer">Bank transfer</option>
+                        <option value="card">Card</option>
+                        <option value="cheque">Cheque</option>
+                      </select>
+                    </Field>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => recordPay.mutate(inv)} disabled={recordPay.isPending || !Number(payAmt)}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white disabled:opacity-50 cursor-pointer"
+                      style={{ background: GREEN }}>
+                      {recordPay.isPending ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />} Confirm payment
+                    </button>
+                    <button type="button" onClick={() => setPayFor('')} className="text-[11px] font-medium hover:underline cursor-pointer" style={{ color: MUTED }}>Cancel</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Inline edit */}
+              {inv && editingThis && (
+                <div className="px-4 pb-3 space-y-2 rounded-b-xl" style={{ background: `${PURPLE}05` }}>
+                  <div className="pt-2"><ItemEditor items={editItems} onChange={setEditItems} /></div>
+                  <div className="flex items-center justify-between">
+                    <Field label="Due date">
+                      <Input type="date" value={editDue} onChange={(e) => setEditDue(e.target.value)} className="h-8 text-xs w-40" />
+                    </Field>
+                    <span className="text-xs font-bold" style={{ color: INK }}>Total {formatMoney(editTotal)} AED</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => save.mutate(inv)} disabled={save.isPending}
+                      className="px-4 py-2 rounded-xl text-xs font-semibold text-white disabled:opacity-50 cursor-pointer" style={{ background: PURPLE }}>
+                      {save.isPending ? 'Saving…' : 'Save changes'}
+                    </button>
+                    <button type="button" onClick={() => { setEditId(''); editingInvRef.current = null }} className="text-[11px] font-medium hover:underline cursor-pointer" style={{ color: MUTED }}>Cancel</button>
+                  </div>
+                </div>
               )}
             </div>
           )
         })}
       </div>
 
-      {sorted.map((inv) => {
+      {/* Invoices outside the monthly plan (custom / one-off) */}
+      {sorted.some((inv) => !periodPlan.some((p) => p.invoice?._id === inv._id)) && (
+        <p className="text-xs font-bold uppercase tracking-wider pt-1" style={{ color: MUTED }}>Other invoices</p>
+      )}
+      {sorted.filter((inv) => !periodPlan.some((p) => p.invoice?._id === inv._id)).map((inv) => {
         const isEditing = editId === inv._id
         const canEdit = Number(inv.paymentMade || 0) === 0 && inv.status !== 'paid'
         return (
@@ -1022,18 +1184,27 @@ export default function NewQuote() {
     return Math.round((discWeeks * weeklyDisc + fullWeeks * weeklyFull) * 100) / 100
   }
 
-  // Refundable advance deposit: 4 weeks normally, or the term length when shorter
+  // Advance rent collected on the first invoice: one period (max 4 weeks).
+  // For terms longer than 4 weeks it prepays the FINAL period, so it is already
+  // part of the term rent. For terms of 4 weeks or less it is held refundable
+  // on top, since there is no later period to adjust it against.
   function calcUnitAdvance(rate: number, start: string, end: string) {
     const days = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86400000)
     if (days <= 0) return 0
     return Math.round((rate / 4) * Math.min(4, Math.ceil(days / 7)) * 100) / 100
   }
+  function isShortTerm(start: string, end: string) {
+    const days = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86400000)
+    return days > 0 && Math.ceil(days / 7) <= 4
+  }
 
   const unitsTotal = unitRows.reduce((s, u) => s + calcUnitPeriodTotal(u.rate, u.discountPct, u.startDate, u.endDate), 0)
   const advanceTotal = unitRows.reduce((s, u) => s + calcUnitAdvance(u.rate, u.startDate, u.endDate), 0)
+  // Only short terms add the advance on top of the rent
+  const advanceExtra = unitRows.reduce((s, u) => s + (isShortTerm(u.startDate, u.endDate) ? calcUnitAdvance(u.rate, u.startDate, u.endDate) : 0), 0)
   const addOnsTotal = addOnRows.reduce((s, a) => s + a.quantity * a.rate, 0)
   const subTotal = unitsTotal + addOnsTotal
-  const total = subTotal + adjustment + advanceTotal
+  const total = subTotal + adjustment + advanceExtra
 
   useEffect(() => { setErr(''); setSentMsg('') }, [step])
 
@@ -1878,7 +2049,10 @@ export default function NewQuote() {
                     <div className="p-4 rounded-xl border" style={{ borderColor: `${PURPLE}30`, background: `${PURPLE}05` }}>
                       <InfoRow label={`Units (${unitRows.length})`} value={`${formatMoney(unitsTotal)} AED`} />
                       <InfoRow label={`Add-ons (${addOnRows.length})`} value={`${formatMoney(addOnsTotal)} AED`} />
-                      <InfoRow label="Refundable / Adjustable Security Deposit" value={`${formatMoney(advanceTotal)} AED`} />
+                      <InfoRow
+                        label={advanceExtra > 0 ? 'Refundable advance (held)' : 'Advance rent — adjusted against the final period'}
+                        value={advanceExtra > 0 ? `${formatMoney(advanceExtra)} AED` : `${formatMoney(advanceTotal)} AED · included`}
+                      />
                       {Number(deposit) > 0 && <InfoRow label="Security deposit" value={`${formatMoney(Number(deposit))} AED`} />}
                       <div style={{ borderTop: `1px solid ${PURPLE}20` }} className="mt-1 pt-1">
                         <div className="flex items-center justify-between text-base py-1">
