@@ -1466,7 +1466,9 @@ export default function NewQuote() {
   return (
     <div style={{ background: CREAM, minHeight: '100vh', margin: '-1.5rem', padding: '1.5rem' }}>
       <div style={{ borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
-        <div className="max-w-3xl">
+        {/* The unit picker needs the full width to show a useful number of
+            units; the other steps are forms and stay narrow to read well. */}
+        <div className={step === 1 ? '' : 'max-w-3xl'}>
 
           {/* Header */}
           <div className="mb-6">
@@ -1640,7 +1642,7 @@ export default function NewQuote() {
                       <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: PURPLE }}>
                         <CalendarRange size={13} /> Rental Period
                       </p>
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-2 gap-3 max-w-xl">
                         <Field label="Start Date">
                           <Input type="date" value={dateRangeFrom} onChange={(e) => {
                             const v = e.target.value
@@ -1741,7 +1743,7 @@ export default function NewQuote() {
                           </p>
                         </div>
 
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-56 overflow-y-auto pr-1">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 max-h-[26rem] overflow-y-auto pr-1">
                           {filteredUnits.map((u) => {
                             const selected = selectedUnitIds.has(u._id)
                             const blocked = u.status === 'maintenance'
@@ -1762,22 +1764,23 @@ export default function NewQuote() {
                                 onMouseEnter={(e) => { if (u.bookings?.length) setHoverUnit({ unit: u, x: e.clientX, y: e.clientY }) }}
                                 onMouseMove={(e) => { if (u.bookings?.length) setHoverUnit({ unit: u, x: e.clientX, y: e.clientY }) }}
                                 onMouseLeave={() => setHoverUnit(null)}
-                                className="rounded-xl border p-3 text-left transition-all"
+                                className="rounded-lg border px-2 py-1.5 text-left transition-all"
                                 style={{
                                   borderColor: selected ? PURPLE : 'rgba(20,8,31,0.08)',
                                   background: selected ? `${PURPLE}08` : '#fff',
                                   opacity: selected ? 0.45 : blocked ? 0.6 : 1,
                                   cursor: selected || blocked ? 'not-allowed' : 'pointer',
                                 }}
+                                title={`${u.unitNumber} · ${u.sizeSqf} sqft · Floor ${u.floor || '—'} · ${badge.label}`}
                               >
                                 <div className="flex items-center justify-between gap-1">
-                                  <p className="text-sm font-bold" style={{ color: INK }}>{u.unitNumber}</p>
-                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0" style={{ background: badge.bg, color: badge.color }}>
+                                  <p className="text-[13px] font-bold truncate" style={{ color: INK }}>{u.unitNumber}</p>
+                                  <span className="text-[8px] font-bold px-1 py-0.5 rounded-full shrink-0 leading-none" style={{ background: badge.bg, color: badge.color }}>
                                     {badge.label}
                                   </span>
                                 </div>
-                                <p className="text-[11px]" style={{ color: MUTED }}>{u.sizeSqf} sqft · Floor {u.floor || '—'}</p>
-                                <p className="text-xs font-semibold mt-1" style={{ color: PURPLE }}>{formatMoney(u.price || 0)} AED/4wk</p>
+                                <p className="text-[10px] truncate" style={{ color: MUTED }}>{u.sizeSqf} sqft · Floor {u.floor || '—'}</p>
+                                <p className="text-[11px] font-semibold truncate" style={{ color: PURPLE }}>{formatMoney(u.price || 0)} /4wk</p>
                               </button>
                             )
                           })}
