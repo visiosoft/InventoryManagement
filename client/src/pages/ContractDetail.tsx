@@ -1513,6 +1513,10 @@ export default function ContractDetail() {
                             className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border cursor-pointer hover:bg-muted/50">
                             WhatsApp
                           </button>
+                          <button onClick={() => navigate(`/invoices/${inv.invoiceId}`)}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border cursor-pointer hover:bg-muted/50">
+                            Edit
+                          </button>
                           <button onClick={() => { if (confirm(`Delete invoice ${inv.invoiceRef.invoiceNo}?`)) deleteInvoiceGroup.mutate(inv.invoiceId) }}
                             className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border text-destructive cursor-pointer hover:bg-muted/50">
                             Delete
