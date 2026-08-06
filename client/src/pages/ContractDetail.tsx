@@ -1116,16 +1116,17 @@ export default function ContractDetail() {
 
   return (
     <div>
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-1.5 text-sm text-muted-foreground mb-3">
-        <button onClick={() => navigate(-1)} className="hover:text-foreground transition-colors cursor-pointer">← Back</button>
-        <span>/</span>
-        <span className="text-foreground font-medium">{c.contractNo}</span>
-      </div>
+      {/* Back button */}
+      <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 mb-4 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer">
+        <span className="text-lg leading-none">←</span> Back
+      </button>
 
       {/* Title + actions */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-        <h1 className="text-2xl font-bold tracking-tight">Contract overview</h1>
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Contract overview</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">{c.contractNo}</p>
+        </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={() => { setError(''); setEditModal(true) }}>
             <PenLine size={14} /> Edit
