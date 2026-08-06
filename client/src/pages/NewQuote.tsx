@@ -1743,7 +1743,7 @@ export default function NewQuote() {
                           </p>
                         </div>
 
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 max-h-[26rem] overflow-y-auto pr-1">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 max-h-[30rem] overflow-y-auto pr-1">
                           {filteredUnits.map((u) => {
                             const selected = selectedUnitIds.has(u._id)
                             const blocked = u.status === 'maintenance'
@@ -1764,23 +1764,34 @@ export default function NewQuote() {
                                 onMouseEnter={(e) => { if (u.bookings?.length) setHoverUnit({ unit: u, x: e.clientX, y: e.clientY }) }}
                                 onMouseMove={(e) => { if (u.bookings?.length) setHoverUnit({ unit: u, x: e.clientX, y: e.clientY }) }}
                                 onMouseLeave={() => setHoverUnit(null)}
-                                className="rounded-lg border px-2 py-1.5 text-left transition-all"
+                                className="relative rounded-xl border text-left transition-all hover:shadow-sm"
                                 style={{
+                                  padding: 14,
                                   borderColor: selected ? PURPLE : 'rgba(20,8,31,0.08)',
                                   background: selected ? `${PURPLE}08` : '#fff',
-                                  opacity: selected ? 0.45 : blocked ? 0.6 : 1,
+                                  opacity: blocked ? 0.6 : 1,
                                   cursor: selected || blocked ? 'not-allowed' : 'pointer',
                                 }}
                                 title={`${u.unitNumber} · ${u.sizeSqf} sqft · Floor ${u.floor || '—'} · ${badge.label}`}
                               >
-                                <div className="flex items-center justify-between gap-1">
-                                  <p className="text-[13px] font-bold truncate" style={{ color: INK }}>{u.unitNumber}</p>
-                                  <span className="text-[8px] font-bold px-1 py-0.5 rounded-full shrink-0 leading-none" style={{ background: badge.bg, color: badge.color }}>
+                                {selected ? (
+                                  <div style={{ position: 'absolute', top: 12, right: 12, width: 22, height: 22, borderRadius: 999, background: PURPLE, display: 'grid', placeItems: 'center' }}>
+                                    <Check size={13} color="#fff" />
+                                  </div>
+                                ) : (
+                                  <span style={{ position: 'absolute', top: 12, right: 12, fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: badge.bg, color: badge.color }}>
                                     {badge.label}
                                   </span>
+                                )}
+                                <div style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontWeight: 700, fontSize: 17, letterSpacing: '-0.01em', color: INK }}>
+                                  {u.unitNumber}
                                 </div>
-                                <p className="text-[10px] truncate" style={{ color: MUTED }}>{u.sizeSqf} sqft · Floor {u.floor || '—'}</p>
-                                <p className="text-[11px] font-semibold truncate" style={{ color: PURPLE }}>{formatMoney(u.price || 0)} /4wk</p>
+                                <div style={{ fontSize: 13, color: '#756E80', marginTop: 4 }}>
+                                  {u.sizeSqf} sqft · Floor {u.floor || '—'}
+                                </div>
+                                <div style={{ fontSize: 15, fontWeight: 700, color: '#4A1FA0', marginTop: 12 }}>
+                                  {formatMoney(u.price || 0)} AED/4wk
+                                </div>
                               </button>
                             )
                           })}
