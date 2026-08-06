@@ -1493,16 +1493,17 @@ export default function ContractDetail() {
                   const isPaid = inv?.status === 'paid'
                   const isPending = inv && !isPaid
                   const periodEndDisplay = new Date(period.to); periodEndDisplay.setDate(periodEndDisplay.getDate() - 1)
+                  const balance = inv ? inv.total - inv.paidTotal : 0
                   const statusLabel = period.coveredByAdvance
                     ? 'Covered by advance deposit'
                     : isPaid ? 'Paid'
-                    : isPending ? `Pending`
-                    : 'Not invoiced yet'
+                      : isPending ? `Pending · ${formatMoney(balance)} AED`
+                        : 'Not invoiced yet'
                   const statusTone = period.coveredByAdvance
                     ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/30 dark:text-purple-400'
                     : isPaid ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400'
-                    : isPending ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400'
-                    : 'bg-muted text-muted-foreground'
+                      : isPending ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400'
+                        : 'bg-muted text-muted-foreground'
 
                   return (
                     <div key={period.idx} className={`px-4 py-3 ${inv ? 'cursor-pointer hover:bg-muted/30 transition-colors' : ''}`}
