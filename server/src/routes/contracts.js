@@ -2,7 +2,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { isValidObjectId } from 'mongoose';
 import { stampSignature } from '../services/stampSignature.js';
-import { Contract, Customer, Unit, Payment, Document, Invoice, nextContractNo, nextInvoiceNo } from '../models/index.js';
+import { Contract, Customer, Unit, Payment, Document, Invoice, Quote, nextContractNo, nextInvoiceNo } from '../models/index.js';
 import { sendForSignature, downloadSignedPdf, zohoConfigured } from '../services/zoho.js';
 import { uploadFile } from '../services/drive.js';
 import { renderContractPdf } from '../services/contractPdf.js';
@@ -224,6 +224,15 @@ router.get('/pending-approvals', async (req, res) => {
 router.get('/:id', async (req, res) => {
   const contract = await populateAll(Contract.findById(req.params.id));
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
+
+  // Sync totalQuotation from linked quote if available
+  if (contract.quote) {
+    const linkedQuote = await Quote.findById(contract.quote).select('total').lean();
+    if (linkedQuote && Number(linkedQuote.total || 0) > 0 && Number(linkedQuote.total) !== Number(contract.totalQuotation || 0)) {
+      contract.totalQuotation = Number(linkedQuote.total);
+      await Contract.updateOne({ _id: contract._id }, { totalQuotation: linkedQuote.total });
+    }
+  }
 
   // Sync payment record statuses from their linked invoices — fixes cases where payment
   // was recorded via the Invoice page (which updates the Invoice doc) but the Payment
