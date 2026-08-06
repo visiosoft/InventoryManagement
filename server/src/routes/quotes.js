@@ -556,6 +556,8 @@ async function syncContractFromQuote(quote, userName) {
     contract.rate = Number(quote.units.reduce((s, u) => s + toNumber(u.rate), 0).toFixed(2));
     contract.deposit = toNumber(quote.deposit);
     contract.firstMonthDiscountPct = discounts.length === 1 ? discounts[0] : 0;
+    // Keep the contract's quoted value tied to the saved quotation
+    contract.totalQuotation = Number(quote.total || 0);
     contract.timeline.push({ at: new Date(), text: `Contract updated from quote ${quote.quoteNo} by ${userName}`, author: userName });
     await contract.save();
 
@@ -694,7 +696,8 @@ router.post('/:id/convert-to-contract', async (req, res) => {
     quote.timeline.push({ type: 'converted', text: `Converted to contract ${contract.contractNo} by ${userName}`, user: req.user.id });
 
     const invoice = await createFirstInvoiceFromQuote(quote, contract, userName);
-    contract.totalQuotation = Number(invoice.total || contract.totalQuotation);
+    // totalQuotation is the whole quoted contract value — not the first
+    // invoice, which only covers the first period plus the advance.
     contract.timeline.push({ at: new Date(), text: `Draft invoice ${invoice.invoiceNo} generated from quote (prices locked)`, author: userName });
     await contract.save();
     await quote.save();
