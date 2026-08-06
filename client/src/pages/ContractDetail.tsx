@@ -385,26 +385,53 @@ function MethodSelect({ value, onChange }: { value: string; onChange: (v: string
 function RecordPaymentForm({ payment, busy, onSubmit }: {
   payment: Payment
   busy: boolean
-  onSubmit: (body: { method: string; paidDate: string; notes: string }) => void
+  onSubmit: (body: { method: string; paidDate: string; notes: string; amount?: number }) => void
 }) {
+  const invoiceTotal = payment.amount
+  const amountPaid = 0
+  const balanceDue = invoiceTotal - amountPaid
+  const invoiceNo = (payment.invoice as any)?.invoiceNo || ''
+
+  const [amount, setAmount] = useState(String(balanceDue))
   const [method, setMethod] = useState(payment.method || 'cash')
   const [paidDate, setPaidDate] = useState(new Date().toISOString().slice(0, 10))
   const [notes, setNotes] = useState('')
   return (
     <div className="space-y-4">
-      <p className="text-sm">
-        Record <strong>{formatMoney(payment.amount)}</strong> due <strong>{formatDate(payment.dueDate)}</strong> as paid.
-      </p>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Payment method"><MethodSelect value={method} onChange={setMethod} /></Field>
-        <Field label="Paid on"><Input type="date" value={paidDate} onChange={(e) => setPaidDate(e.target.value)} /></Field>
+      {invoiceNo && <p className="text-sm font-medium text-muted-foreground">Record payment — {invoiceNo}</p>}
+      <div className="grid grid-cols-3 gap-3 rounded-lg bg-muted/50 border px-3 py-2.5">
+        <div>
+          <div className="text-[10px] font-semibold text-primary uppercase">Quote total</div>
+          <div className="text-base font-bold">{formatMoney(invoiceTotal)}</div>
+        </div>
+        <div>
+          <div className="text-[10px] font-semibold text-emerald-600 uppercase">Amount paid</div>
+          <div className="text-base font-bold text-emerald-600">{formatMoney(amountPaid)}</div>
+        </div>
+        <div>
+          <div className="text-[10px] font-semibold text-red-500 uppercase">Balance due</div>
+          <div className="text-base font-bold text-red-500">{formatMoney(balanceDue)}</div>
+        </div>
       </div>
-      <Field label="Notes (optional)">
-        <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Reference no., remarks…" />
-      </Field>
-      <Button className="w-full" disabled={busy} onClick={() => onSubmit({ method, paidDate, notes })}>
-        {busy ? 'Saving…' : 'Record payment'}
-      </Button>
+      <p className="text-xs font-semibold text-muted-foreground">Record new payment</p>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Amount (AED)">
+          <Input type="number" min={0.01} step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
+        </Field>
+        <Field label="Date"><Input type="date" value={paidDate} onChange={(e) => setPaidDate(e.target.value)} /></Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Method"><MethodSelect value={method} onChange={setMethod} /></Field>
+        <Field label="Notes (optional)">
+          <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Reference / memo" />
+        </Field>
+      </div>
+      <div className="flex justify-end gap-2 pt-1">
+        <Button variant="outline" onClick={() => onSubmit({ method: '', paidDate: '', notes: '' })} type="button">Done</Button>
+        <Button disabled={busy || !Number(amount)} onClick={() => onSubmit({ method, paidDate, notes, amount: Number(amount) })}>
+          {busy ? 'Saving…' : 'Record payment'}
+        </Button>
+      </div>
     </div>
   )
 }
@@ -1505,7 +1532,7 @@ export default function ContractDetail() {
                       {/* Actions */}
                       {inv && !isPaid && !period.coveredByAdvance && (
                         <div className="flex flex-wrap items-center gap-1.5 mt-2 ml-9">
-                          <button onClick={() => { if (inv.unpaidInGroup.length === 1) setRecordingPayment(inv.unpaidInGroup[0]); else setBulkTarget(inv.unpaidInGroup) }}
+                          <button onClick={() => setRecordingPayment(inv.unpaidInGroup[0])}
                             className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-primary text-primary-foreground cursor-pointer">
                             Record · {formatMoney(inv.total - inv.paidTotal)} AED
                           </button>
@@ -1603,12 +1630,15 @@ export default function ContractDetail() {
       </div>
 
       {/* ── Modals ── */}
-      <Modal open={!!recordingPayment} onClose={() => setRecordingPayment(null)} title="Record payment">
+      <Modal open={!!recordingPayment} onClose={() => setRecordingPayment(null)} title={`Record payment — ${(recordingPayment?.invoice as any)?.invoiceNo || ''}`}>
         {recordingPayment && (
           <RecordPaymentForm
             payment={recordingPayment}
             busy={recordPayment.isPending}
-            onSubmit={(body) => recordPayment.mutate({ paymentId: recordingPayment._id, body })}
+            onSubmit={(body) => {
+              if (!body.paidDate) { setRecordingPayment(null); return }
+              recordPayment.mutate({ paymentId: recordingPayment._id, body })
+            }}
           />
         )}
       </Modal>
