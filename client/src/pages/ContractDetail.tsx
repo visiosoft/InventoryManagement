@@ -1324,13 +1324,45 @@ export default function ContractDetail() {
                               {ev.type === 'note' && <MessageSquare size={15} />}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-start justify-between gap-2">
-                                <p className="text-sm font-medium leading-tight">{ev.title}</p>
-                                <span className="text-xs text-muted-foreground shrink-0">
-                                  {ev.at.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                                </span>
-                              </div>
-                              {ev.subtitle && <p className="text-xs text-muted-foreground mt-0.5">{ev.subtitle}</p>}
+                              {ev.type === 'note' && editingNote?.idx === ev.noteIdx ? (
+                                <div className="space-y-2">
+                                  <Textarea rows={2} value={editingNote.text}
+                                    onChange={(e) => setEditingNote({ idx: editingNote.idx, text: e.target.value })} />
+                                  <div className="flex gap-2">
+                                    <Button size="sm" disabled={editNote.isPending || !editingNote.text.trim()}
+                                      onClick={() => editNote.mutate({ idx: editingNote.idx, text: editingNote.text.trim() })}>
+                                      {editNote.isPending ? 'Saving…' : 'Save'}
+                                    </Button>
+                                    <Button size="sm" variant="outline" onClick={() => setEditingNote(null)}>Cancel</Button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="flex items-start justify-between gap-2">
+                                    <p className="text-sm font-medium leading-tight whitespace-pre-wrap break-words">{ev.title}</p>
+                                    <span className="flex items-center gap-1.5 shrink-0">
+                                      {ev.type === 'note' && ev.noteIdx !== undefined && (
+                                        <>
+                                          <button type="button" title="Edit note"
+                                            onClick={() => setEditingNote({ idx: ev.noteIdx!, text: ev.title })}
+                                            className="text-muted-foreground/50 hover:text-foreground transition-colors cursor-pointer">
+                                            <PenLine size={12} />
+                                          </button>
+                                          <button type="button" title="Delete note"
+                                            onClick={() => { if (confirm('Delete this note?')) deleteNote.mutate(ev.noteIdx!) }}
+                                            className="text-muted-foreground/50 hover:text-destructive transition-colors cursor-pointer">
+                                            <Trash2 size={12} />
+                                          </button>
+                                        </>
+                                      )}
+                                      <span className="text-xs text-muted-foreground">
+                                        {ev.at.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                                      </span>
+                                    </span>
+                                  </div>
+                                  {ev.subtitle && <p className="text-xs text-muted-foreground mt-0.5">{ev.subtitle}</p>}
+                                </>
+                              )}
                             </div>
                           </div>
                         ))}
