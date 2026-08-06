@@ -288,7 +288,16 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
       cursor = pEnd
       i++
     }
-    if (out.length > 1) out[out.length - 1].coveredByAdvance = true
+    // Mark last periods totaling up to 4 weeks as covered by advance deposit
+    if (out.length > 1) {
+      let advWeeksLeft = 4
+      for (let j = out.length - 1; j >= 1 && advWeeksLeft > 0; j--) {
+        if (out[j].weeks <= advWeeksLeft) {
+          out[j].coveredByAdvance = true
+          advWeeksLeft -= out[j].weeks
+        } else break
+      }
+    }
     // Match each period to the CLOSEST invoice by due date, and let an invoice
     // claim only one period — otherwise a later invoice dated a day earlier
     // steals the slot and the period's real invoice drops out of the plan.
