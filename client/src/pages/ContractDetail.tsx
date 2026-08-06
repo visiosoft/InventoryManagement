@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { CalendarDays, CheckCircle2, Download, FileText, FilePlus, MessageSquare, PenLine, Plus, ShieldCheck, Upload, X, XCircle } from 'lucide-react'
+import { CalendarDays, CheckCircle2, Download, FileText, FilePlus, MessageSquare, PenLine, Plus, ShieldCheck, Trash2, Upload, X, XCircle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { AppDocument, Contract, Invoice, Payment } from '../lib/types'
@@ -793,6 +793,12 @@ export default function ContractDetail() {
     onError: (e) => setError(apiError(e)),
   })
 
+  const deleteContract = useMutation({
+    mutationFn: () => api.delete(`/contracts/${id}`),
+    onSuccess: () => navigate('/contracts'),
+    onError: (e) => setError(apiError(e)),
+  })
+
   const recordPayment = useMutation({
     mutationFn: ({ paymentId, body }: { paymentId: string; body: object }) =>
       api.post(`/payments/${paymentId}/record`, body),
@@ -1083,6 +1089,13 @@ export default function ContractDetail() {
               End contract
             </Button>
           )}
+          {['ended', 'cancelled'].includes(c.status) && (
+            <Button size="sm" variant="destructive"
+              onClick={() => { if (confirm('Permanently delete this contract and all its payments/invoices?')) deleteContract.mutate() }}
+              disabled={deleteContract.isPending}>
+              <Trash2 size={14} /> Delete
+            </Button>
+          )}
         </div>
       </div>
 
@@ -1099,9 +1112,17 @@ export default function ContractDetail() {
                 <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-xl font-bold mb-2 select-none">
                   {initials}
                 </div>
-                <span className="font-semibold text-base leading-tight">
-                  {c.customer?.fullName}
-                </span>
+                {c.customer?._id ? (
+                  <Link to={`/customers?edit=${c.customer._id}`}
+                    className="font-semibold text-base leading-tight hover:underline"
+                    title="Open tenant details to view or edit">
+                    {c.customer.fullName}
+                  </Link>
+                ) : (
+                  <span className="font-semibold text-base leading-tight">
+                    {c.customer?.fullName}
+                  </span>
+                )}
                 <p className="text-xs text-muted-foreground mt-0.5">{c.contractNo}</p>
                 <div className="flex items-center gap-1.5 mt-2 flex-wrap justify-center">
                   <Badge tone={contractStatusTone[c.status]}>{statusLabel(c.status)}</Badge>
