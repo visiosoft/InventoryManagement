@@ -1184,9 +1184,9 @@ export default function ContractDetail() {
                         {activityEvents.map((ev) => (
                           <div key={ev.id} className="flex gap-3 py-3">
                             <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${ev.type === 'paid' ? 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600'
-                                : ev.type === 'invoice' ? 'bg-blue-100 dark:bg-blue-950/40 text-blue-600'
-                                  : ev.type === 'document' ? 'bg-purple-100 dark:bg-purple-950/40 text-purple-600'
-                                    : 'bg-muted text-muted-foreground'
+                              : ev.type === 'invoice' ? 'bg-blue-100 dark:bg-blue-950/40 text-blue-600'
+                                : ev.type === 'document' ? 'bg-purple-100 dark:bg-purple-950/40 text-purple-600'
+                                  : 'bg-muted text-muted-foreground'
                               }`}>
                               {ev.type === 'paid' && <CheckCircle2 size={15} />}
                               {ev.type === 'invoice' && <FileText size={15} />}
@@ -1350,7 +1350,7 @@ export default function ContractDetail() {
                             <div className="text-right">
                               <p className="text-base font-bold">{formatMoney(g.total)} AED</p>
                               <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full inline-block mt-1 ${isPaid ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400'
-                                  : 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400'
+                                : 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400'
                                 }`}>
                                 {isPaid ? 'Paid' : `Pending · ${formatMoney(balance)}`}
                               </span>

@@ -455,7 +455,7 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-xs font-bold" style={{ color: INK }}>{formatMoney(inv ? Number(inv.total || 0) : p.amount)} AED</span>
+                  <span className="text-xs font-bold" style={{ color: INK }}>{formatMoney(p.coveredByAdvance ? 0 : (inv ? Number(inv.total || 0) : p.amount))} AED</span>
                   <span className="text-[10px] font-semibold px-2 py-1 rounded-full whitespace-nowrap" style={{ background: ui.bg, color: ui.fg }}>{ui.label}</span>
                 </div>
               </div>
