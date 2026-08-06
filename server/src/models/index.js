@@ -1057,7 +1057,7 @@ const documentSchema = new Schema(
     contract: { type: Schema.Types.ObjectId, ref: 'Contract' },
     customer: { type: Schema.Types.ObjectId, ref: 'Customer' },
     name: { type: String, required: true },
-    type: { type: String, enum: ['contract', 'id_proof', 'other'], default: 'other' },
+    type: { type: String, enum: ['contract', 'id_proof', 'emirates_id', 'passport', 'visa', 'trade_license', 'other'], default: 'other' },
     storage: { type: String, enum: ['drive', 'local'], default: 'local' },
     driveFileId: { type: String, default: '' },
     url: { type: String, default: '' },

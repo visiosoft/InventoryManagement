@@ -39,6 +39,10 @@ export function UploadDocumentForm({ contractId, customerId, onDone }: { contrac
       <Field label="File"><Input type="file" name="file" required className="h-auto py-1.5" /></Field>
       <Field label="Document type">
         <Select name="type" defaultValue="other">
+          <option value="emirates_id">Emirates ID</option>
+          <option value="passport">Passport</option>
+          <option value="visa">Visa</option>
+          <option value="trade_license">Trade License</option>
           <option value="id_proof">ID proof</option>
           <option value="contract">Contract</option>
           <option value="other">Other</option>

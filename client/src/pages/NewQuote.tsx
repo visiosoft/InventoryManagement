@@ -33,6 +33,13 @@ const DEFAULT_ADDONS = [
   { name: 'Lock', description: 'Padlock for storage unit', rate: 80 },
 ]
 
+// Customer document types — ID_DOC_TYPES satisfy the "ID required" gate for contracts
+const DOC_TYPE_LABELS: Record<string, string> = {
+  emirates_id: 'Emirates ID', passport: 'Passport', visa: 'Visa',
+  trade_license: 'Trade License', id_proof: 'ID Proof', contract: 'Contract', other: 'Other',
+}
+const ID_DOC_TYPES = ['emirates_id', 'passport', 'id_proof']
+
 interface UnitBookingInfo { ref: string; customer: string; startDate?: string; endDate?: string; kind?: string }
 interface UnitRow {
   unitId: string
@@ -636,6 +643,7 @@ export default function NewQuote() {
   const [paymentMethod, setPaymentMethod] = useState('')
   const [customerDocs, setCustomerDocs] = useState<{ _id: string; name: string; type: string; url: string }[]>([])
   const [uploadingDoc, setUploadingDoc] = useState(false)
+  const [docType, setDocType] = useState('emirates_id')
   const docInputRef = useRef<HTMLInputElement>(null)
 
   // Contract signing / actions
@@ -1886,13 +1894,26 @@ export default function NewQuote() {
                     <div className="flex items-center justify-between">
                       <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Customer Documents</p>
                       <div className="flex items-center gap-2">
+                        <select
+                          value={docType}
+                          onChange={(e) => setDocType(e.target.value)}
+                          className="h-7 rounded-lg border px-2 text-xs font-medium cursor-pointer"
+                          style={{ borderColor: 'rgba(20,8,31,0.12)', color: INK, background: '#fff' }}
+                          title="Upload type"
+                        >
+                          <option value="emirates_id">Emirates ID</option>
+                          <option value="passport">Passport</option>
+                          <option value="visa">Visa</option>
+                          <option value="trade_license">Trade License</option>
+                          <option value="other">Other</option>
+                        </select>
                         <input
                           ref={docInputRef}
                           type="file"
                           multiple
                           accept=".pdf,.jpg,.jpeg,.png,.webp"
                           className="hidden"
-                          onChange={(e) => handleDocUpload(e.target.files, 'id_proof')}
+                          onChange={(e) => handleDocUpload(e.target.files, docType)}
                         />
                         <button
                           type="button"
@@ -1916,9 +1937,9 @@ export default function NewQuote() {
                               <FileText size={14} style={{ color: PURPLE, flexShrink: 0 }} />
                               <span className="text-xs font-medium truncate" style={{ color: INK }}>{doc.name}</span>
                               <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{
-                                background: doc.type === 'id_proof' ? '#DBEAFE' : `${PURPLE}15`,
-                                color: doc.type === 'id_proof' ? '#1D4ED8' : PURPLE,
-                              }}>{doc.type === 'id_proof' ? 'ID Proof' : doc.type}</span>
+                                background: ID_DOC_TYPES.includes(doc.type) ? '#DBEAFE' : `${PURPLE}15`,
+                                color: ID_DOC_TYPES.includes(doc.type) ? '#1D4ED8' : PURPLE,
+                              }}>{DOC_TYPE_LABELS[doc.type] ?? doc.type}</span>
                             </div>
                             <div className="flex items-center gap-1.5 flex-shrink-0">
                               <a
@@ -2010,17 +2031,17 @@ export default function NewQuote() {
                     <button
                       type="button"
                       onClick={() => createContract.mutate()}
-                      disabled={createContract.isPending || !customerDocs.some((d) => d.type === 'id_proof')}
+                      disabled={createContract.isPending || !customerDocs.some((d) => ID_DOC_TYPES.includes(d.type))}
                       className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40"
-                      style={{ background: PURPLE, cursor: customerDocs.some((d) => d.type === 'id_proof') && !createContract.isPending ? 'pointer' : 'not-allowed' }}
+                      style={{ background: PURPLE, cursor: customerDocs.some((d) => ID_DOC_TYPES.includes(d.type)) && !createContract.isPending ? 'pointer' : 'not-allowed' }}
                     >
                       {createContract.isPending ? <Loader2 size={15} className="animate-spin" /> : <Briefcase size={15} />}
                       {createContract.isPending ? 'Creating…' : 'Create Contract'}
                     </button>
                   </div>
-                  {!customerDocs.some((d) => d.type === 'id_proof') && (
+                  {!customerDocs.some((d) => ID_DOC_TYPES.includes(d.type)) && (
                     <p className="text-xs font-medium" style={{ color: '#B91C1C' }}>
-                      Upload an ID proof document above before creating the contract.
+                      Upload an Emirates ID or passport above before creating the contract.
                     </p>
                   )}
                   <p className="text-xs" style={{ color: MUTED }}>
