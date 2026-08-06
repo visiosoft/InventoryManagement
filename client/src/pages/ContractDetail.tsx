@@ -1505,7 +1505,8 @@ export default function ContractDetail() {
                     : 'bg-muted text-muted-foreground'
 
                   return (
-                    <div key={period.idx} className="px-4 py-3">
+                    <div key={period.idx} className={`px-4 py-3 ${inv ? 'cursor-pointer hover:bg-muted/30 transition-colors' : ''}`}
+                      onClick={() => { if (inv) navigate(`/invoices/${inv.invoiceId}`) }}>
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-3 min-w-0">
                           <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${isPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-primary/10 text-primary'}`}>
@@ -1514,7 +1515,7 @@ export default function ContractDetail() {
                           <div className="min-w-0">
                             <p className="text-sm font-bold">
                               Month {period.idx + 1}
-                              {inv && <span className="ml-2 text-xs font-semibold text-muted-foreground">{inv.invoiceRef.invoiceNo}</span>}
+                              {inv && <span className="ml-2 text-xs font-semibold text-primary">{inv.invoiceRef.invoiceNo}</span>}
                             </p>
                             <p className="text-xs text-muted-foreground">
                               {formatDate(period.from.toISOString())} – {formatDate(periodEndDisplay.toISOString())} · {period.weeks} wk{period.weeks !== 1 ? 's' : ''}
@@ -1529,27 +1530,6 @@ export default function ContractDetail() {
                         </div>
                       </div>
 
-                      {/* Actions */}
-                      {inv && !isPaid && !period.coveredByAdvance && (
-                        <div className="flex flex-wrap items-center gap-1.5 mt-2 ml-9">
-                          <button onClick={() => setRecordingPayment(inv.unpaidInGroup[0])}
-                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-primary text-primary-foreground cursor-pointer">
-                            Record · {formatMoney(inv.total - inv.paidTotal)} AED
-                          </button>
-                          <button onClick={() => { setSendingInvoiceId(inv.invoiceId); sendInvoiceWhatsApp.mutate(inv.invoiceId) }}
-                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border cursor-pointer hover:bg-muted/50">
-                            WhatsApp
-                          </button>
-                          <button onClick={() => navigate(`/invoices/${inv.invoiceId}`)}
-                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border cursor-pointer hover:bg-muted/50">
-                            Edit
-                          </button>
-                          <button onClick={() => { if (confirm(`Delete invoice ${inv.invoiceRef.invoiceNo}?`)) deleteInvoiceGroup.mutate(inv.invoiceId) }}
-                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border text-destructive cursor-pointer hover:bg-muted/50">
-                            Delete
-                          </button>
-                        </div>
-                      )}
                       {!inv && !period.coveredByAdvance && (
                         <div className="mt-2 ml-9">
                           <Button size="sm" variant="outline" onClick={() => {
