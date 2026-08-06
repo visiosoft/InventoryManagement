@@ -609,6 +609,23 @@ export default function NewQuote() {
   // Quote
   const [dateRangeFrom, setDateRangeFrom] = useState('')
   const [dateRangeTo, setDateRangeTo] = useState('')
+  const [customEnd, setCustomEnd] = useState(false)
+
+  // Duration helpers — end date is picked as N weeks from the start date
+  const addWeeksISO = (iso: string, weeks: number) => {
+    const [y, m, d] = iso.split('-').map(Number)
+    return new Date(Date.UTC(y, m - 1, d + weeks * 7)).toISOString().slice(0, 10)
+  }
+  const rangeDays = dateRangeFrom && dateRangeTo
+    ? Math.round((new Date(dateRangeTo).getTime() - new Date(dateRangeFrom).getTime()) / 86400000)
+    : 0
+  const derivedWeeks = rangeDays > 0 && rangeDays % 7 === 0 ? rangeDays / 7 : null
+  const WEEK_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 20, 24, 36, 52]
+  const durationValue = customEnd
+    ? 'custom'
+    : derivedWeeks && WEEK_OPTIONS.includes(derivedWeeks) ? String(derivedWeeks) : (dateRangeTo ? 'custom' : '')
+  const fmtLongDate = (iso: string) =>
+    new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }).replace(/ /g, '-')
   const [deposit, setDeposit] = useState('')
   const [notes, setNotes] = useState('')
   const [unitRows, setUnitRows] = useState<UnitRow[]>([])
@@ -1382,8 +1399,34 @@ export default function NewQuote() {
                     </p>
                     <div className="grid grid-cols-2 gap-3">
                       <Field label="Start Date">
-                        <Input type="date" value={dateRangeFrom} onChange={(e) => setDateRangeFrom(e.target.value)} />
+                        <Input type="date" value={dateRangeFrom} onChange={(e) => {
+                          const v = e.target.value
+                          setDateRangeFrom(v)
+                          // Keep the chosen duration when the start date moves
+                          if (v && !customEnd && derivedWeeks) setDateRangeTo(addWeeksISO(v, derivedWeeks))
+                        }} />
                       </Field>
+                      <Field label="Duration">
+                        <select
+                          value={durationValue}
+                          onChange={(e) => {
+                            const v = e.target.value
+                            if (v === 'custom') { setCustomEnd(true); return }
+                            setCustomEnd(false)
+                            if (!v) return
+                            const start = dateRangeFrom || new Date().toISOString().slice(0, 10)
+                            if (!dateRangeFrom) setDateRangeFrom(start)
+                            setDateRangeTo(addWeeksISO(start, parseInt(v)))
+                          }}
+                          className="w-full h-9 rounded-lg border bg-card px-3 text-sm focus-visible:outline-2 focus-visible:outline-ring cursor-pointer"
+                        >
+                          <option value="">— Select —</option>
+                          {WEEK_OPTIONS.map((w) => <option key={w} value={w}>{w} week{w !== 1 ? 's' : ''}</option>)}
+                          <option value="custom">Custom end date</option>
+                        </select>
+                      </Field>
+                    </div>
+                    {durationValue === 'custom' && (
                       <Field label="End Date">
                         <Input
                           type="date"
@@ -1393,21 +1436,17 @@ export default function NewQuote() {
                           style={dateRangeFrom && dateRangeTo && dateRangeTo <= dateRangeFrom ? { borderColor: '#EF4444' } : undefined}
                         />
                       </Field>
-                    </div>
-                    {dateRangeFrom && dateRangeTo && (() => {
-                      const ms = new Date(dateRangeTo).getTime() - new Date(dateRangeFrom).getTime()
-                      const days = Math.round(ms / 86400000)
-                      if (days <= 0) return (
+                    )}
+                    {dateRangeFrom && dateRangeTo && (
+                      rangeDays <= 0 ? (
                         <p className="text-xs font-medium" style={{ color: '#EF4444' }}>End date must be after start date</p>
-                      )
-                      const totalWeeks = Math.ceil(days / 7)
-                      const durationLabel = `${totalWeeks} week${totalWeeks !== 1 ? 's' : ''}`
-                      return (
+                      ) : (
                         <p className="text-xs font-medium" style={{ color: MUTED }}>
-                          {days} day{days !== 1 ? 's' : ''} · {durationLabel}
+                          Ends on <span className="font-bold" style={{ color: PURPLE }}>{fmtLongDate(dateRangeTo)}</span>
+                          {' '}· {rangeDays} day{rangeDays !== 1 ? 's' : ''} · {Math.ceil(rangeDays / 7)} week{Math.ceil(rangeDays / 7) !== 1 ? 's' : ''}
                         </p>
                       )
-                    })()}
+                    )}
                   </div>
 
                   {/* Units — visible only after dates are set */}
