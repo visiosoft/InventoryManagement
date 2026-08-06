@@ -132,7 +132,7 @@ function ItemEditor({ items, onChange }: { items: EditItem[]; onChange: (items: 
             <Field label="Description" className="sm:col-span-2">
               <Input value={it.itemDetails} onChange={(e) => update(idx, 'itemDetails', e.target.value)} className="h-8 text-xs" />
             </Field>
-            <Field label="Qty">
+            <Field label="Wks">
               <Input type="number" min={0} value={it.quantity} onChange={(e) => update(idx, 'quantity', Number(e.target.value))} className="h-8 text-xs" />
             </Field>
             <Field label="Rate">

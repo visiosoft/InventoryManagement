@@ -168,7 +168,7 @@ function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, 
         </div>
         <div className="rounded-lg border overflow-hidden">
           <div className="grid grid-cols-[1fr_60px_90px_90px_32px] gap-2 px-3 py-2 bg-muted/50 text-xs font-medium text-muted-foreground">
-            <span>Description</span><span>Qty</span><span>Rate</span><span>Amount</span><span />
+            <span>Description</span><span>Wks</span><span>Rate</span><span>Amount</span><span />
           </div>
           <div className="divide-y">
             {lineItems.map((it, i) => (
