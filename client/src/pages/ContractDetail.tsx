@@ -977,6 +977,11 @@ export default function ContractDetail() {
     return s + Math.round(unpaidRent * 100) / 100
   }, 0)
 
+  // Payments with no linked invoice must still show (and be deletable)
+  const standaloneUnpaid = standalonePayments.filter(p => p.status !== 'paid').sort(byDue)
+  const standalonePaid = standalonePayments.filter(p => p.status === 'paid').sort(byDue)
+  const totalStandaloneUnpaid = standaloneUnpaid.filter(p => !isDepositPayment(p)).reduce((s, p) => s + p.amount, 0)
+
   // Deposit-covered invoices: status 'paid', net 0, no payment records linked to them
   const allUnits = c.units?.length ? c.units : c.unit ? [c.unit] : []
   const unitLabel = allUnits.length > 1
@@ -1362,9 +1367,9 @@ export default function ContractDetail() {
                 <Table>
                   <thead><tr><Th>#</Th><Th>Invoice</Th><Th>Period</Th><Th>Amount</Th><Th>Status</Th><Th /></tr></thead>
                   <tbody>
-                    {unpaidGroups.length > 0 && (
+                    {(unpaidGroups.length > 0 || standaloneUnpaid.length > 0) && (
                       <>
-                        <SectionRow label="Upcoming" count={unpaidGroups.length} total={totalUnpaidGroups} tone="amber" />
+                        <SectionRow label="Upcoming" count={unpaidGroups.length + standaloneUnpaid.length} total={totalUnpaidGroups + totalStandaloneUnpaid} tone="amber" />
                         {unpaidGroups.map((g, i) => (
                           <InvoiceGroupRow key={g.invoiceId} g={g} index={i + 1}
                             onRecord={() => { if (g.unpaidInGroup.length === 1) setRecordingPayment(g.unpaidInGroup[0]); else setBulkTarget(g.unpaidInGroup) }}
@@ -1382,7 +1387,7 @@ export default function ContractDetail() {
                             }}
                           />
                         ))}
-                        {standalonePayments.filter(p => p.status !== 'paid').map((p) => (
+                        {standaloneUnpaid.map((p) => (
                           <PaymentRow key={p._id} p={p} index={0} rate={c.rate} isFirstForInvoice={false}
                             onRecord={() => setRecordingPayment(p)} onEdit={() => setEditingPayment(p)}
                             onUnrecord={() => { if (confirm('Unrecord this payment?')) unrecordPayment.mutate(p._id) }}
@@ -1392,9 +1397,9 @@ export default function ContractDetail() {
                         ))}
                       </>
                     )}
-                    {paidGroups.length > 0 && (
+                    {(paidGroups.length > 0 || standalonePaid.length > 0) && (
                       <>
-                        <SectionRow label="Paid" count={paidGroups.length} total={totalPaid} tone="green" />
+                        <SectionRow label="Paid" count={paidGroups.length + standalonePaid.length} total={totalPaid} tone="green" />
                         {paidGroups.map((g, i) => (
                           <InvoiceGroupRow key={g.invoiceId} g={g} index={unpaidGroups.length + i + 1}
                             onRecord={() => { }}
@@ -1403,7 +1408,7 @@ export default function ContractDetail() {
                             sendingInvoice={sendInvoiceWhatsApp.isPending && sendingInvoiceId === g.invoiceId}
                           />
                         ))}
-                        {standalonePayments.filter(p => p.status === 'paid').map((p) => (
+                        {standalonePaid.map((p) => (
                           <PaymentRow key={p._id} p={p} index={0} rate={c.rate} isFirstForInvoice={false}
                             onRecord={() => setRecordingPayment(p)} onEdit={() => setEditingPayment(p)}
                             onUnrecord={() => { if (confirm('Unrecord this payment?')) unrecordPayment.mutate(p._id) }}
