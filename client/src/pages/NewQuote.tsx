@@ -18,8 +18,7 @@ const STEPS = [
   { key: 'units', label: 'Units', icon: Box },
   { key: 'quote', label: 'Quotation', icon: FileText },
   { key: 'contract', label: 'Contract', icon: Briefcase },
-  { key: 'invoice', label: 'Invoice', icon: ReceiptIcon },
-  { key: 'receipt', label: 'Receipt', icon: CreditCard },
+  { key: 'invoice', label: 'Invoice & Payment', icon: ReceiptIcon },
 ] as const
 
 const INK = '#14081F'
@@ -305,11 +304,19 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
   const [payAmt, setPayAmt] = useState('')
   const [payWhen, setPayWhen] = useState(() => new Date().toISOString().slice(0, 10))
   const [payHow, setPayHow] = useState('cash')
+  const [payReceipt, setPayReceipt] = useState<File | null>(null)
   const recordPay = useMutation({
-    mutationFn: (inv: Invoice) => invoiceApi.recordPayment(inv._id, {
-      amount: Number(payAmt), method: payHow, date: payWhen,
-    }),
-    onSuccess: () => { setPayFor(''); setPayAmt(''); onChanged(); setErr('') },
+    mutationFn: async (inv: Invoice) => {
+      const res = await invoiceApi.recordPayment(inv._id, { amount: Number(payAmt), method: payHow, date: payWhen })
+      if (payReceipt) {
+        const form = new FormData()
+        const ext = payReceipt.name.includes('.') ? payReceipt.name.slice(payReceipt.name.lastIndexOf('.')) : ''
+        form.append('files', new File([payReceipt], `Receipt ${payWhen}${ext}`, { type: payReceipt.type }))
+        await invoiceApi.uploadAttachments(inv._id, form)
+      }
+      return res
+    },
+    onSuccess: () => { setPayFor(''); setPayAmt(''); setPayReceipt(null); onChanged(); setErr('') },
     onError: (e) => setErr(apiError(e)),
   })
 
@@ -532,6 +539,12 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
                       </select>
                     </Field>
                   </div>
+                  <Field label="Receipt (optional)">
+                    <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp"
+                      onChange={(e) => setPayReceipt(e.target.files?.[0] ?? null)}
+                      className="w-full text-[11px] file:mr-2 file:px-2 file:py-1 file:rounded-lg file:border-0 file:text-[11px] file:font-semibold file:cursor-pointer"
+                      style={{ color: MUTED }} />
+                  </Field>
                   <div className="flex items-center gap-2">
                     <button type="button" onClick={() => recordPay.mutate(inv)} disabled={recordPay.isPending || !Number(payAmt)}
                       className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white disabled:opacity-50 cursor-pointer"
@@ -1487,8 +1500,8 @@ export default function NewQuote() {
   ]
 
   function canOpenStep(i: number): boolean {
-    if (i >= step) return false
-    return stepDone[i]
+    if (i === step) return false
+    return true
   }
 
   if (resumeLoading) {
@@ -2503,279 +2516,34 @@ export default function NewQuote() {
                     quoteTotal={total}
                   />
                 )}
-              </div>
-            )}
 
-            {/* ── Step 6: Receipt / Payment ── */}
-            {step === 5 && (
-              <div className="space-y-5">
-                <SectionTitle title="Payment & Receipt" subtitle="Record the customer's payment and attach the receipt" />
-
-                {!invoice ? (
-                  <div className="text-sm text-center py-8 rounded-xl" style={{ background: CHIP_BG, color: MUTED }}>
-                    Create the contract first — the invoice comes with it.
-                  </div>
-                ) : (
-                  <>
-                    <div className="grid grid-cols-3 gap-3 p-4 rounded-xl text-sm" style={{ background: CHIP_BG }}>
-                      <div>
-                        <p className="text-xs" style={{ color: MUTED }}>Invoice total</p>
-                        <p className="font-bold" style={{ color: INK }}>{formatMoney(invoicedTotal)}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs" style={{ color: MUTED }}>Paid</p>
-                        <p className="font-bold" style={{ color: GREEN }}>{formatMoney(paidTotal)}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs" style={{ color: MUTED }}>Balance</p>
-                        <p className="font-bold" style={{ color: invoicedTotal - paidTotal > 0 ? '#B91C1C' : GREEN }}>
-                          {formatMoney(Math.max(0, invoicedTotal - paidTotal))}
-                        </p>
-                      </div>
-                      <div className="col-span-3 flex items-center gap-3 pt-2 mt-1" style={{ borderTop: '1px solid rgba(20,8,31,0.08)' }}>
-                        <span className="text-xs" style={{ color: MUTED }}>
-                          One invoice <span className="font-semibold" style={{ color: INK }}>{invoice.invoiceNo}</span> covers the schedule below
-                        </span>
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            try {
-                              const res = await api.get(`/invoices/${invoice._id}/pdf`, { responseType: 'blob' })
-                              window.open(URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' })), '_blank')
-                            } catch (e) { setErr(apiError(e)) }
-                          }}
-                          className="flex items-center gap-1 text-xs font-semibold hover:underline cursor-pointer"
-                          style={{ color: PURPLE }}
-                        >
-                          <Download size={12} /> Invoice PDF
-                        </button>
-                        <a href={`/invoices/${invoice._id}`} target="_blank" rel="noreferrer"
-                          className="flex items-center gap-1 text-xs font-semibold hover:underline"
-                          style={{ color: PURPLE }}>
-                          <ExternalLink size={12} /> Open invoice
-                        </a>
-                      </div>
+                {/* Approval status */}
+                {approvalStatus === 'pending' && (
+                  <div className="flex items-center gap-3 p-4 rounded-xl" style={{ background: '#EDE9FE' }}>
+                    <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: `${PURPLE}20` }}>
+                      <ShieldCheck size={18} style={{ color: PURPLE }} />
                     </div>
-
-                    {/* Payment schedule */}
-                    {contract && (() => {
-                      const cStart = new Date(contract.startDate)
-                      const cEnd = new Date(contract.endDate)
-                      const monthlyRate = Number(contract.rate || 0)
-                      const discPct = Number((contract as any).firstMonthDiscountPct ?? (contract as any).discountPct ?? 0)
-                      const discountedMonthly = Math.round((monthlyRate - (monthlyRate * discPct) / 100) * 100) / 100
-                      const weeklyRate = Math.round((monthlyRate / 4) * 100) / 100
-                      const periods: { label: string; from: Date; to: Date; weeks: number; amount: number; type: string; note?: string }[] = []
-
-                      // First period — capped at the contract term (a 2-week stay bills 2 weeks)
-                      const termDays = Math.max(0, Math.round((cEnd.getTime() - cStart.getTime()) / 86400000))
-                      const termWeeks = Math.max(1, Math.ceil(termDays / 7))
-                      const firstWeeks = Math.min(4, termWeeks)
-                      const weeklyDisc = Math.round((discountedMonthly / 4) * 100) / 100
-                      const firstEnd = new Date(cStart)
-                      firstEnd.setDate(firstEnd.getDate() + firstWeeks * 7)
-                      periods.push({
-                        label: `Rent (First ${firstWeeks} week${firstWeeks !== 1 ? 's' : ''})`,
-                        from: new Date(cStart), to: firstEnd, weeks: firstWeeks,
-                        amount: firstWeeks === 4 ? discountedMonthly : Math.round(weeklyDisc * firstWeeks * 100) / 100,
-                        type: 'rent', note: discPct > 0 ? `${discPct}% off` : undefined,
-                      })
-
-                      // Advance deposit — matches the first period length, no discount
-                      periods.push({
-                        label: `Advance Rent (${firstWeeks} week${firstWeeks !== 1 ? 's' : ''})`,
-                        from: new Date(cStart), to: firstEnd, weeks: firstWeeks,
-                        amount: firstWeeks === 4 ? monthlyRate : Math.round(weeklyRate * firstWeeks * 100) / 100,
-                        type: 'advance',
-                      })
-
-                      // Middle periods (if any)
-                      let cursor = new Date(firstEnd)
-                      const lastPeriodStart = new Date(cEnd)
-                      lastPeriodStart.setDate(lastPeriodStart.getDate() - 28)
-                      let periodNum = 2
-                      while (cursor < lastPeriodStart && cursor < cEnd) {
-                        const pEnd = new Date(cursor)
-                        pEnd.setDate(pEnd.getDate() + 28)
-                        const actualEnd = pEnd > cEnd ? cEnd : pEnd
-                        const pDays = Math.round((actualEnd.getTime() - cursor.getTime()) / 86400000)
-                        const pWeeks = Math.ceil(pDays / 7)
-                        periods.push({
-                          label: `Rent Period ${periodNum}`,
-                          from: new Date(cursor),
-                          to: actualEnd,
-                          weeks: pWeeks,
-                          amount: Math.round(weeklyRate * pWeeks * 100) / 100,
-                          type: 'upcoming',
-                        })
-                        cursor = new Date(pEnd)
-                        periodNum++
-                      }
-
-                      const fmtD = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
-                      const grandTotal = periods.reduce((s, p) => s + p.amount, 0)
-
-                      return (
-                        <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
-                          <div className="flex items-center justify-between px-4 py-2.5" style={{ background: CHIP_BG }}>
-                            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Payment Schedule</p>
-                            <p className="text-xs font-bold" style={{ color: INK }}>{formatMoney(grandTotal)} AED</p>
-                          </div>
-                          <div className="divide-y" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
-                            {periods.map((p, i) => {
-                              const isCollected = p.type === 'rent' || p.type === 'advance'
-                              return (
-                                <div key={i} className="flex items-center justify-between px-4 py-2.5">
-                                  <div className="flex items-center gap-3 min-w-0">
-                                    <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
-                                      style={{ background: isCollected ? `${GREEN}15` : `${PURPLE}10` }}>
-                                      {isCollected
-                                        ? <Check size={13} style={{ color: GREEN }} />
-                                        : <span className="text-[10px] font-bold" style={{ color: PURPLE }}>{i + 1}</span>}
-                                    </div>
-                                    <div className="min-w-0">
-                                      <p className="text-xs font-semibold" style={{ color: INK }}>{p.label}</p>
-                                      <p className="text-[10px]" style={{ color: MUTED }}>
-                                        {fmtD(p.from)} – {fmtD(p.to)} · {p.weeks} wk{p.weeks !== 1 ? 's' : ''} × {formatMoney(p.amount / p.weeks)}/wk
-                                        {p.note ? ` · ${p.note}` : ''}
-                                      </p>
-                                    </div>
-                                  </div>
-                                  <div className="text-right flex-shrink-0">
-                                    <p className="text-xs font-bold" style={{ color: INK }}>{formatMoney(p.amount)} AED</p>
-                                    <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
-                                      style={isCollected
-                                        ? { background: '#D1FAE5', color: GREEN }
-                                        : { background: `${PURPLE}10`, color: PURPLE }
-                                      }>
-                                      {p.type === 'rent' ? 'due now' : p.type === 'advance' ? 'advance' : 'upcoming'}
-                                    </span>
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      )
-                    })()}
-
-                    {/* Payment history */}
-                    {(() => {
-                      const allPayments = (flowData?.invoices || []).flatMap((inv) =>
-                        (inv.paymentHistory || []).map((p, idx) => ({ ...p, invoiceNo: inv.invoiceNo, invId: inv._id, idx }))
-                      )
-                      return allPayments.length > 0 ? (
-                        <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
-                          <div className="px-4 py-2.5" style={{ background: CHIP_BG }}>
-                            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Payment History ({allPayments.length})</p>
-                          </div>
-                          <div className="divide-y" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
-                            {allPayments.map((p, i) => (
-                              <div key={i} className="flex items-center justify-between px-4 py-2.5">
-                                <div className="flex items-center gap-3 min-w-0">
-                                  <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: `${GREEN}15` }}>
-                                    <Check size={13} style={{ color: GREEN }} />
-                                  </div>
-                                  <div className="min-w-0">
-                                    <p className="text-xs font-semibold" style={{ color: INK }}>{formatMoney(p.amount)} AED</p>
-                                    <p className="text-[10px]" style={{ color: MUTED }}>
-                                      {new Date(p.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} · {(p.method || 'cash').replace(/_/g, ' ')}
-                                      {p.notes ? ` · ${p.notes}` : ''}
-                                    </p>
-                                  </div>
-                                </div>
-                                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: '#D1FAE5', color: GREEN }}>paid</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : null
-                    })()}
-
-                    {paidTotal > 0 && paidTotal < invoicedTotal && (
-                      <div className="p-3 rounded-xl text-xs font-medium" style={{ background: '#FEF3C7', color: '#92400E' }}>
-                        Partially paid — {formatMoney(invoicedTotal - paidTotal)} AED remaining
-                      </div>
-                    )}
-                    {paidTotal >= invoicedTotal && paidTotal > 0 && <DoneBanner text={`Fully paid — ${formatMoney(paidTotal)} AED received`} />}
-
-                    {invoicedTotal - paidTotal > 0 && (
-                      <div className="space-y-3">
-                        <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>
-                          {paidTotal > 0 ? 'Add Another Payment' : 'Record Payment'}
-                        </p>
-                        {(flowData?.invoices || []).length > 1 && (
-                          <Field label="Pay against invoice">
-                            <Select value={payInvoiceId || (flowData?.invoices || []).find((i) => i.status !== 'paid')?._id || ''} onChange={(e) => setPayInvoiceId(e.target.value)}>
-                              {(flowData?.invoices || []).filter((i) => i.status !== 'paid').map((i) => (
-                                <option key={i._id} value={i._id}>{i.invoiceNo} — {formatMoney(i.total)} AED (paid {formatMoney(i.paymentMade || 0)})</option>
-                              ))}
-                            </Select>
-                          </Field>
-                        )}
-                        <div className="grid grid-cols-2 gap-3">
-                          <Field label="Amount (AED)">
-                            <Input type="number" min={0.01} step="0.01" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} placeholder={String(invoicedTotal - paidTotal)} />
-                          </Field>
-                          <Field label="Date">
-                            <Input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} />
-                          </Field>
-                          <Field label="Method">
-                            <Select value={payMethod} onChange={(e) => setPayMethod(e.target.value)}>
-                              <option value="cash">Cash</option>
-                              <option value="bank_transfer">Bank transfer</option>
-                              <option value="card">Card</option>
-                              <option value="cheque">Cheque</option>
-                              <option value="other">Other</option>
-                            </Select>
-                          </Field>
-                          <Field label="Receipt (optional)">
-                            <Input type="file" accept="image/*,.pdf" className="h-auto py-1.5" onChange={(e) => setReceiptFile(e.target.files?.[0] ?? null)} />
-                          </Field>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => recordPayment.mutate()}
-                          disabled={recordPayment.isPending}
-                          className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
-                          style={{ background: PURPLE }}
-                        >
-                          {recordPayment.isPending ? <Loader2 size={15} className="animate-spin" /> : <CreditCard size={15} />}
-                          {recordPayment.isPending ? 'Recording…' : paidTotal > 0 ? 'Record Partial Payment' : 'Record Payment'}
-                        </button>
-                        <p className="text-[11px]" style={{ color: MUTED }}>Invoice & payment will auto-sync to Zoho Books</p>
-                      </div>
-                    )}
-                    {/* Approval status */}
-                    {approvalStatus === 'pending' && (
-                      <div className="flex items-center gap-3 p-4 rounded-xl" style={{ background: '#EDE9FE' }}>
-                        <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: `${PURPLE}20` }}>
-                          <ShieldCheck size={18} style={{ color: PURPLE }} />
-                        </div>
-                        <div>
-                          <p className="text-sm font-semibold" style={{ color: INK }}>Sent for admin approval</p>
-                          <p className="text-xs" style={{ color: MUTED }}>Waiting for an admin to review and approve this booking.</p>
-                        </div>
-                      </div>
-                    )}
-                    {approvalStatus === 'approved' && (
-                      <div className="flex flex-col items-center py-8 gap-3">
-                        <div style={{ width: 64, height: 64, borderRadius: 20, background: '#D1FAE5', display: 'grid', placeItems: 'center' }}>
-                          <CheckCircle2 size={32} style={{ color: GREEN }} />
-                        </div>
-                        <p className="text-sm font-bold" style={{ color: GREEN }}>Approved — contract is ready for activation</p>
-                      </div>
-                    )}
-                    {approvalStatus === 'rejected' && (
-                      <div className="p-3 rounded-xl text-sm" style={{ background: '#FEE2E2', color: '#B91C1C' }}>
-                        Rejected{contract?.approvalNote ? `: ${contract.approvalNote}` : ''}
-                      </div>
-                    )}
-                  </>
+                    <div>
+                      <p className="text-sm font-semibold" style={{ color: INK }}>Sent for admin approval</p>
+                      <p className="text-xs" style={{ color: MUTED }}>Waiting for an admin to review and approve this booking.</p>
+                    </div>
+                  </div>
+                )}
+                {approvalStatus === 'approved' && (
+                  <div className="flex flex-col items-center py-8 gap-3">
+                    <div style={{ width: 64, height: 64, borderRadius: 20, background: '#D1FAE5', display: 'grid', placeItems: 'center' }}>
+                      <CheckCircle2 size={32} style={{ color: GREEN }} />
+                    </div>
+                    <p className="text-sm font-bold" style={{ color: GREEN }}>Approved — contract is ready for activation</p>
+                  </div>
+                )}
+                {approvalStatus === 'rejected' && (
+                  <div className="p-3 rounded-xl text-sm" style={{ background: '#FEE2E2', color: '#B91C1C' }}>
+                    Rejected{contract?.approvalNote ? `: ${contract.approvalNote}` : ''}
+                  </div>
                 )}
               </div>
             )}
-
 
             {err && (
               <p className="mt-4 text-sm px-3 py-2 rounded-lg" style={{ color: '#b91c1c', background: '#fef2f2' }}>

@@ -318,6 +318,19 @@ router.post('/', async (req, res) => {
 
   // Units can be booked for multiple customers simultaneously — no overlap check needed.
 
+  // Auto-calculate totalQuotation = full contract value for the entire term
+  const totalDaysAll = Math.round((end - start) / 86400000);
+  const totalWeeksAll = Math.ceil(totalDaysAll / 7);
+  const weeklyRateAll = Math.round((Number(rate || 0) / 4) * 100) / 100;
+  const discPct = Number(req.body.firstMonthDiscountPct || 0);
+  let totalQuotation = 0;
+  for (let i = 0; i < totalWeeksAll; i++) {
+    totalQuotation += (discPct > 0 && i < 4)
+      ? Math.round(weeklyRateAll * (1 - discPct / 100) * 100) / 100
+      : weeklyRateAll;
+  }
+  totalQuotation = Math.round(totalQuotation * 100) / 100;
+
   const contract = await Contract.create({
     contractNo: await nextContractNo(),
     customer,
@@ -325,6 +338,7 @@ router.post('/', async (req, res) => {
     units: allUnitIds.length > 1 ? allUnitIds : [],
     billingPeriod, rate, deposit, startDate, endDate, notes,
     firstMonthDiscountPct: Number(req.body.firstMonthDiscountPct || 0),
+    totalQuotation,
     status: 'draft',
   });
 

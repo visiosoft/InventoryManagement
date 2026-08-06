@@ -582,17 +582,19 @@ function QuoteDetailPanel({ quote }: { quote: Quote }) {
 
   const isBooked = linkedContract?.status === 'active'
   const flowSteps: FlowStep[] = [
-    ...(q.lead ? ([{ key: 'lead', label: 'Lead', state: 'done' }] as FlowStep[]) : []),
+    ...(q.lead ? ([{ key: 'lead', label: 'Lead', state: 'done', to: `/leads` }] as FlowStep[]) : []),
     {
       key: 'quote', label: 'Quote', detail: q.quoteNo,
       state: q.status === 'rejected' ? 'blocked' : ['accepted', 'sent'].includes(q.status) || linkedContract ? 'done' : 'current',
+      to: `/quotes/${q._id}`,
     },
     {
       key: 'contract', label: 'Contract', detail: linkedContract?.contractNo,
       state: linkedContract ? 'done' : q.status === 'accepted' ? 'current' : 'upcoming',
+      to: linkedContract ? `/contracts/${linkedContract._id}` : undefined,
     },
-    { key: 'invoice', label: 'Invoice', state: linkedContract ? 'done' : 'upcoming' },
-    { key: 'payment', label: 'Payment', state: isBooked ? 'done' : 'upcoming' },
+    { key: 'invoice', label: 'Invoice', state: linkedContract ? 'done' : 'upcoming', to: linkedContract ? `/contracts/${linkedContract._id}` : undefined },
+    { key: 'payment', label: 'Payment', state: isBooked ? 'done' : 'upcoming', to: linkedContract ? `/contracts/${linkedContract._id}` : undefined },
     { key: 'approval', label: 'Approval', state: isBooked ? 'done' : linkedContract ? 'current' : 'upcoming' },
     { key: 'booked', label: 'Booked', state: isBooked ? 'done' : 'upcoming' },
   ]

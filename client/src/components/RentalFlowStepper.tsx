@@ -151,15 +151,15 @@ export function RentalFlowStepper({ steps }: { steps: FlowStep[] }) {
               )}
               <div className="flex flex-col items-center w-16 sm:w-20">
                 {s.to ? (
-                  <Link to={s.to} className="flex flex-col items-center hover:opacity-80 transition-opacity">
+                  <Link to={s.to} className="flex flex-col items-center hover:opacity-80 transition-opacity cursor-pointer">
                     {dot}
                     {label}
                   </Link>
                 ) : (
-                  <>
+                  <div className="flex flex-col items-center">
                     {dot}
                     {label}
-                  </>
+                  </div>
                 )}
               </div>
             </li>
