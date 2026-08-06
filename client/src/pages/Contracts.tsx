@@ -30,7 +30,7 @@ export default function Contracts() {
   const [floor, setFloor] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
-  const [page, setPage]   = useState(1)
+  const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(25)
   const [showArchived, setShowArchived] = useState(false)
   const [sort, setSort] = useState('newest')
@@ -73,9 +73,9 @@ export default function Contracts() {
     if (groupBy === 'none') return [{ label: '', items: contracts }]
     const keyOf = (c: Contract) =>
       groupBy === 'status' ? statusLabel(c.status)
-      : groupBy === 'payment' ? PAYMENT_LABELS[c.paymentStatus ?? 'no_invoice']
-      : groupBy === 'floor' ? (c.unit?.floor ? `Floor ${c.unit.floor}` : 'No floor')
-      : c.billingPeriod === 'weekly' ? 'Weekly billing' : 'Monthly billing'
+        : groupBy === 'payment' ? PAYMENT_LABELS[c.paymentStatus ?? 'no_invoice']
+          : groupBy === 'floor' ? (c.unit?.floor ? `Floor ${c.unit.floor}` : 'No floor')
+            : c.billingPeriod === 'weekly' ? 'Weekly billing' : 'Monthly billing'
     const map = new Map<string, Contract[]>()
     for (const c of contracts) {
       const k = keyOf(c)
@@ -366,121 +366,121 @@ export default function Contracts() {
                     </tr>
                   )}
                   {g.items.map((c) => {
-                const allUnits = c.units?.length ? c.units : [c.unit]
-                return (
-                  <tr key={c._id} className="hover:bg-muted/50">
-                    <Td>
-                      <input
-                        type="checkbox"
-                        checked={selectedContractIds.includes(c._id)}
-                        onChange={() => toggleContractSelection(c._id)}
-                        aria-label={`Select contract ${c.contractNo}`}
-                      />
-                    </Td>
-                    <Td>
-                      <Link to={`/contracts/${c._id}`} className="font-medium text-primary hover:underline">
-                        {c.contractNo}
-                      </Link>
-                    </Td>
-                    <Td>
-                      {c.customer ? c.customer.fullName : '—'}
-                    </Td>
-                    <Td>
-                      {allUnits.length === 1 ? (
-                        <span>
-                          {c.unit?.unitNumber}{' '}
-                          <span className="text-muted-foreground text-xs">({c.unit?.sizeSqf ?? '—'} sqf)</span>
-                        </span>
-                      ) : (
-                        <span className="flex flex-wrap gap-1">
-                          {allUnits.map((u) => (
-                            <span key={u._id} className="rounded bg-accent px-1.5 py-0.5 text-[11px] font-medium">
-                              {u.unitNumber}
+                    const allUnits = c.units?.length ? c.units : [c.unit]
+                    return (
+                      <tr key={c._id} className="hover:bg-muted/50">
+                        <Td>
+                          <input
+                            type="checkbox"
+                            checked={selectedContractIds.includes(c._id)}
+                            onChange={() => toggleContractSelection(c._id)}
+                            aria-label={`Select contract ${c.contractNo}`}
+                          />
+                        </Td>
+                        <Td>
+                          <Link to={`/contracts/${c._id}`} className="font-medium text-primary hover:underline">
+                            {c.contractNo}
+                          </Link>
+                        </Td>
+                        <Td>
+                          {c.customer ? c.customer.fullName : '—'}
+                        </Td>
+                        <Td>
+                          {allUnits.length === 1 ? (
+                            <span>
+                              {c.unit?.unitNumber}{' '}
+                              <span className="text-muted-foreground text-xs">({c.unit?.sizeSqf ?? '—'} sqf)</span>
+                            </span>
+                          ) : (
+                            <span className="flex flex-wrap gap-1">
+                              {allUnits.map((u) => (
+                                <span key={u._id} className="rounded bg-accent px-1.5 py-0.5 text-[11px] font-medium">
+                                  {u.unitNumber}
+                                </span>
+                              ))}
+                            </span>
+                          )}
+                        </Td>
+                        <Td>
+                          <span className="font-medium" title={`${c.billingPeriod === 'weekly' ? 'Weekly' : 'Monthly'} billing · rate ${formatMoney(c.rate)}`}>
+                            {contractValue(c) ? formatMoney(contractValue(c)) : '—'}
+                          </span>
+                        </Td>
+                        <Td>{formatDate(c.startDate)}</Td>
+                        <Td>{formatDate(c.endDate)}</Td>
+                        <Td>
+                          <div className="flex items-center gap-1">
+                            <Badge tone={contractStatusTone[c.status]}>{statusLabel(c.status)}</Badge>
+                            {c.archived && <Badge tone="gray">Archived</Badge>}
+                          </div>
+                        </Td>
+                        <Td>
+                          {c.paymentStatus === 'paid' && (
+                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap"
+                              style={{ background: '#EAF7EF', color: '#1B7A4B' }}
+                              title={`Fully paid · ${formatMoney(c.paidAmount ?? 0)}`}>
+                              Fully paid
+                            </span>
+                          )}
+                          {c.paymentStatus === 'partial' && (
+                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap"
+                              style={{ background: '#FDF3D8', color: '#8A6A2F' }}
+                              title={`Paid ${formatMoney(c.paidAmount ?? 0)} of ${formatMoney(c.totalAmount ?? 0)}${c.overdueCount ? ` · ${c.overdueCount} overdue` : ''}`}>
+                              Partial
+                            </span>
+                          )}
+                          {c.paymentStatus === 'unpaid' && (
+                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold whitespace-nowrap"
+                              style={{ background: '#FDECEC', color: '#B3261E' }}
+                              title={`Nothing paid of ${formatMoney(c.totalAmount ?? 0)}${c.overdueCount ? ` · ${c.overdueCount} overdue` : ''}`}>
+                              Unpaid
+                            </span>
+                          )}
+                          {c.paymentStatus === 'no_invoice' && (
+                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap"
+                              style={{ background: '#F3F0EA', color: '#756E80' }}
+                              title="No invoice / payment schedule yet">
+                              No invoice
+                            </span>
+                          )}
+                        </Td>
+                        <Td>
+                          {typeof c.documentCount === 'number' && (c.documentCount > 0 ? (
+                            <span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+                              style={{ background: '#EAF7EF', color: '#1B7A4B' }}
+                              title={`${c.documentCount} document${c.documentCount !== 1 ? 's' : ''} attached`}>
+                              <Paperclip size={9} />{c.documentCount}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold"
+                              style={{ background: '#FDECEC', color: '#B3261E' }}
+                              title="No documents attached">
+                              <Paperclip size={9} />0
                             </span>
                           ))}
-                        </span>
-                      )}
-                    </Td>
-                    <Td>
-                      <span className="font-medium" title={`${c.billingPeriod === 'weekly' ? 'Weekly' : 'Monthly'} billing · rate ${formatMoney(c.rate)}`}>
-                        {contractValue(c) ? formatMoney(contractValue(c)) : '—'}
-                      </span>
-                    </Td>
-                    <Td>{formatDate(c.startDate)}</Td>
-                    <Td>{formatDate(c.endDate)}</Td>
-                    <Td>
-                      <div className="flex items-center gap-1">
-                        <Badge tone={contractStatusTone[c.status]}>{statusLabel(c.status)}</Badge>
-                        {c.archived && <Badge tone="gray">Archived</Badge>}
-                      </div>
-                    </Td>
-                    <Td>
-                      {c.paymentStatus === 'paid' && (
-                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap"
-                          style={{ background: '#EAF7EF', color: '#1B7A4B' }}
-                          title={`Fully paid · ${formatMoney(c.paidAmount ?? 0)}`}>
-                          Fully paid
-                        </span>
-                      )}
-                      {c.paymentStatus === 'partial' && (
-                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap"
-                          style={{ background: '#FDF3D8', color: '#8A6A2F' }}
-                          title={`Paid ${formatMoney(c.paidAmount ?? 0)} of ${formatMoney(c.totalAmount ?? 0)}${c.overdueCount ? ` · ${c.overdueCount} overdue` : ''}`}>
-                          Partial
-                        </span>
-                      )}
-                      {c.paymentStatus === 'unpaid' && (
-                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold whitespace-nowrap"
-                          style={{ background: '#FDECEC', color: '#B3261E' }}
-                          title={`Nothing paid of ${formatMoney(c.totalAmount ?? 0)}${c.overdueCount ? ` · ${c.overdueCount} overdue` : ''}`}>
-                          Unpaid
-                        </span>
-                      )}
-                      {c.paymentStatus === 'no_invoice' && (
-                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap"
-                          style={{ background: '#F3F0EA', color: '#756E80' }}
-                          title="No invoice / payment schedule yet">
-                          No invoice
-                        </span>
-                      )}
-                    </Td>
-                    <Td>
-                      {typeof c.documentCount === 'number' && (c.documentCount > 0 ? (
-                        <span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
-                          style={{ background: '#EAF7EF', color: '#1B7A4B' }}
-                          title={`${c.documentCount} document${c.documentCount !== 1 ? 's' : ''} attached`}>
-                          <Paperclip size={9} />{c.documentCount}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold"
-                          style={{ background: '#FDECEC', color: '#B3261E' }}
-                          title="No documents attached">
-                          <Paperclip size={9} />0
-                        </span>
-                      ))}
-                    </Td>
-                    <Td>
-                      {c.archived && (
-                        <button
-                          onClick={() => archiveContract.mutate({ id: c._id, archived: false })}
-                          className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
-                          title="Unarchive contract"
-                          disabled={archiveContract.isPending}
-                        >
-                          Unarchive
-                        </button>
-                      )}
-                      <button
-                        onClick={() => { setDeleteTarget(c); setDeleteError('') }}
-                        className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
-                        title="Delete contract"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </Td>
-                  </tr>
-                )
-              })}
+                        </Td>
+                        <Td>
+                          {c.archived && (
+                            <button
+                              onClick={() => archiveContract.mutate({ id: c._id, archived: false })}
+                              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
+                              title="Unarchive contract"
+                              disabled={archiveContract.isPending}
+                            >
+                              Unarchive
+                            </button>
+                          )}
+                          <button
+                            onClick={() => { setDeleteTarget(c); setDeleteError('') }}
+                            className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+                            title="Delete contract"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </Td>
+                      </tr>
+                    )
+                  })}
                 </Fragment>
               ))}
             </tbody>

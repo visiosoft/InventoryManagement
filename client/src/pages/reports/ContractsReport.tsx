@@ -58,7 +58,7 @@ export default function ContractsReport() {
                     ...(summary.bySize ?? []).map((s: any) => {
                       const rentable = s.total - s.maintenance
                       return [s.sizeSqf, s.total, s.available, s.occupied, s.maintenance,
-                        rentable ? Math.round(s.occupied / rentable * 100) : 0]
+                      rentable ? Math.round(s.occupied / rentable * 100) : 0]
                     }),
                   ])}>
                   <Download size={13} /> CSV

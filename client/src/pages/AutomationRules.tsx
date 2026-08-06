@@ -483,106 +483,106 @@ function StepTemplateModal({ step, templates, onSave, onClose }: {
                     <button onClick={onClose} className="p-1 hover:bg-muted rounded cursor-pointer"><X size={18} /></button>
                 </div>
                 <div className="p-5 space-y-4">
-                {/* Template name */}
-                <div>
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Step Label</label>
-                    <input
-                        value={templateName}
-                        onChange={(e) => setTemplateName(e.target.value)}
-                        className="mt-1 w-full h-9 border rounded-lg px-3 text-sm bg-background"
-                    />
-                </div>
+                    {/* Template name */}
+                    <div>
+                        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Step Label</label>
+                        <input
+                            value={templateName}
+                            onChange={(e) => setTemplateName(e.target.value)}
+                            className="mt-1 w-full h-9 border rounded-lg px-3 text-sm bg-background"
+                        />
+                    </div>
 
-                {/* Load from existing template */}
-                <div>
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Load from Template</label>
-                    <select
-                        onChange={(e) => { if (e.target.value) loadFromTemplate(e.target.value) }}
-                        defaultValue=""
-                        className="mt-1 w-full h-9 border rounded-lg px-3 text-sm bg-background"
-                    >
-                        <option value="">— Select to pre-fill —</option>
-                        {templates.map(t => <option key={t._id} value={t.key}>{t.label}</option>)}
-                    </select>
-                </div>
+                    {/* Load from existing template */}
+                    <div>
+                        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Load from Template</label>
+                        <select
+                            onChange={(e) => { if (e.target.value) loadFromTemplate(e.target.value) }}
+                            defaultValue=""
+                            className="mt-1 w-full h-9 border rounded-lg px-3 text-sm bg-background"
+                        >
+                            <option value="">— Select to pre-fill —</option>
+                            {templates.map(t => <option key={t._id} value={t.key}>{t.label}</option>)}
+                        </select>
+                    </div>
 
-                {/* Channel tabs */}
-                <div className="flex gap-1 border-b">
-                    <button
-                        onClick={() => setTab('email')}
-                        className={`flex items-center gap-1.5 px-3 pb-2 text-sm font-semibold cursor-pointer ${tab === 'email' ? 'text-primary border-b-2 border-primary -mb-px' : 'text-muted-foreground'}`}
-                    >
-                        <Mail size={13} /> Email
-                    </button>
-                    <button
-                        onClick={() => setTab('whatsapp')}
-                        className={`flex items-center gap-1.5 px-3 pb-2 text-sm font-semibold cursor-pointer ${tab === 'whatsapp' ? 'text-emerald-600 border-b-2 border-emerald-500 -mb-px' : 'text-muted-foreground'}`}
-                    >
-                        <MessageCircle size={13} /> WhatsApp
-                    </button>
-                </div>
+                    {/* Channel tabs */}
+                    <div className="flex gap-1 border-b">
+                        <button
+                            onClick={() => setTab('email')}
+                            className={`flex items-center gap-1.5 px-3 pb-2 text-sm font-semibold cursor-pointer ${tab === 'email' ? 'text-primary border-b-2 border-primary -mb-px' : 'text-muted-foreground'}`}
+                        >
+                            <Mail size={13} /> Email
+                        </button>
+                        <button
+                            onClick={() => setTab('whatsapp')}
+                            className={`flex items-center gap-1.5 px-3 pb-2 text-sm font-semibold cursor-pointer ${tab === 'whatsapp' ? 'text-emerald-600 border-b-2 border-emerald-500 -mb-px' : 'text-muted-foreground'}`}
+                        >
+                            <MessageCircle size={13} /> WhatsApp
+                        </button>
+                    </div>
 
-                {tab === 'email' && (
-                    <div className="space-y-3">
-                        <div>
-                            <label className="text-xs font-medium text-muted-foreground">Subject</label>
-                            <input
-                                value={emailSubject}
-                                onChange={(e) => setEmailSubject(e.target.value)}
-                                placeholder="e.g. Payment Reminder – @invoiceNo"
-                                className="mt-1 w-full h-9 border rounded-lg px-3 text-sm bg-background"
-                            />
+                    {tab === 'email' && (
+                        <div className="space-y-3">
+                            <div>
+                                <label className="text-xs font-medium text-muted-foreground">Subject</label>
+                                <input
+                                    value={emailSubject}
+                                    onChange={(e) => setEmailSubject(e.target.value)}
+                                    placeholder="e.g. Payment Reminder – @invoiceNo"
+                                    className="mt-1 w-full h-9 border rounded-lg px-3 text-sm bg-background"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs font-medium text-muted-foreground">Body</label>
+                                <Textarea
+                                    value={emailBody}
+                                    onChange={(e) => setEmailBody(e.target.value)}
+                                    rows={6}
+                                    placeholder="Dear @name, ..."
+                                    className="mt-1"
+                                />
+                            </div>
                         </div>
+                    )}
+
+                    {tab === 'whatsapp' && (
                         <div>
-                            <label className="text-xs font-medium text-muted-foreground">Body</label>
+                            <label className="text-xs font-medium text-muted-foreground">WhatsApp Message</label>
                             <Textarea
-                                value={emailBody}
-                                onChange={(e) => setEmailBody(e.target.value)}
+                                value={whatsappBody}
+                                onChange={(e) => setWhatsappBody(e.target.value)}
                                 rows={6}
-                                placeholder="Dear @name, ..."
+                                placeholder="Hello @name, ..."
                                 className="mt-1"
                             />
                         </div>
-                    </div>
-                )}
+                    )}
 
-                {tab === 'whatsapp' && (
+                    {/* Variables */}
                     <div>
-                        <label className="text-xs font-medium text-muted-foreground">WhatsApp Message</label>
-                        <Textarea
-                            value={whatsappBody}
-                            onChange={(e) => setWhatsappBody(e.target.value)}
-                            rows={6}
-                            placeholder="Hello @name, ..."
-                            className="mt-1"
-                        />
+                        <label className="text-xs font-medium text-muted-foreground">Available Variables</label>
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                            {VARIABLES.map(v => (
+                                <button
+                                    key={v}
+                                    type="button"
+                                    onClick={() => {
+                                        if (tab === 'email') setEmailBody(b => b + v)
+                                        else setWhatsappBody(b => b + v)
+                                    }}
+                                    className="text-[11px] font-mono px-2 py-0.5 rounded bg-muted border text-muted-foreground hover:text-foreground cursor-pointer"
+                                >
+                                    {v}
+                                </button>
+                            ))}
+                        </div>
                     </div>
-                )}
 
-                {/* Variables */}
-                <div>
-                    <label className="text-xs font-medium text-muted-foreground">Available Variables</label>
-                    <div className="flex flex-wrap gap-1.5 mt-1.5">
-                        {VARIABLES.map(v => (
-                            <button
-                                key={v}
-                                type="button"
-                                onClick={() => {
-                                    if (tab === 'email') setEmailBody(b => b + v)
-                                    else setWhatsappBody(b => b + v)
-                                }}
-                                className="text-[11px] font-mono px-2 py-0.5 rounded bg-muted border text-muted-foreground hover:text-foreground cursor-pointer"
-                            >
-                                {v}
-                            </button>
-                        ))}
+                    <div className="flex justify-end gap-2 pt-2">
+                        <Button variant="outline" onClick={onClose}>Cancel</Button>
+                        <Button onClick={handleSave}>Save Template</Button>
                     </div>
-                </div>
-
-                <div className="flex justify-end gap-2 pt-2">
-                    <Button variant="outline" onClick={onClose}>Cancel</Button>
-                    <Button onClick={handleSave}>Save Template</Button>
-                </div>
                 </div>
             </div>
         </div>

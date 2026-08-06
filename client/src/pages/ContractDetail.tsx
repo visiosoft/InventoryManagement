@@ -1723,73 +1723,73 @@ export default function ContractDetail() {
               <button onClick={() => setEditModal(false)} className="p-1 hover:bg-muted rounded cursor-pointer"><X size={18} /></button>
             </div>
             <div className="p-5">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault()
-              const f = new FormData(e.currentTarget)
-              updateContract.mutate({
-                rate: Number(f.get('rate')),
-                deposit: Number(f.get('deposit')),
-                totalQuotation: Number(f.get('totalQuotation')) || undefined,
-                billingPeriod: String(f.get('billingPeriod')),
-                startDate: String(f.get('startDate')),
-                endDate: String(f.get('endDate')),
-                paymentMethod: String(f.get('paymentMethod') || ''),
-                firstPaymentDate: f.get('firstPaymentDate') ? String(f.get('firstPaymentDate')) : undefined,
-                notes: String(f.get('notes') || ''),
-              })
-            }}
-            className="space-y-4"
-          >
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Monthly Rate (AED)">
-                <Input name="rate" type="number" min="0" step="0.01" defaultValue={c.rate} required />
-              </Field>
-              <Field label="Deposit (AED)">
-                <Input name="deposit" type="number" min="0" step="0.01" defaultValue={c.deposit} />
-              </Field>
-              <Field label="Total Quotation (AED)">
-                <Input name="totalQuotation" type="number" min="0" step="0.01" defaultValue={c.totalQuotation} />
-              </Field>
-              <Field label="Billing Period">
-                <Select name="billingPeriod" defaultValue={c.billingPeriod}>
-                  <option value="weekly">Weekly</option>
-                  <option value="monthly">4 Weeks (Monthly)</option>
-                </Select>
-              </Field>
-              <Field label="Payment Method">
-                <Select name="paymentMethod" defaultValue={c.paymentMethod || ''}>
-                  <option value="">— Select —</option>
-                  <option value="cash">Cash</option>
-                  <option value="bank_transfer">Bank Transfer</option>
-                  <option value="cheque">Cheque</option>
-                  <option value="card">Card</option>
-                </Select>
-              </Field>
-              <Field label="Start Date">
-                <Input name="startDate" type="date" defaultValue={c.startDate?.slice(0, 10)} required />
-              </Field>
-              <Field label="End Date">
-                <Input name="endDate" type="date" defaultValue={c.endDate?.slice(0, 10)} required />
-              </Field>
-              <Field label="First Payment Date">
-                <Input name="firstPaymentDate" type="date" defaultValue={c.firstPaymentDate?.slice(0, 10)} />
-              </Field>
-              <Field label="Notes" className="col-span-2">
-                <Textarea name="notes" rows={3} defaultValue={c.notes || ''} placeholder="Internal notes about this contract" />
-              </Field>
-            </div>
-            <div className="rounded-lg bg-muted/50 border px-3 py-2 text-xs text-muted-foreground">
-              <strong>Note:</strong> Customer and unit cannot be changed here. To change these, end this contract and create a new one.
-            </div>
-            {error && <p className="text-xs text-destructive">{error}</p>}
-            <div className="flex justify-end gap-2 pt-2 border-t">
-              <Button type="button" variant="outline" onClick={() => setEditModal(false)}>Cancel</Button>
-              <Button type="submit" disabled={updateContract.isPending}>
-                {updateContract.isPending ? 'Saving…' : 'Save Changes'}
-              </Button>
-            </div>
-          </form>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  const f = new FormData(e.currentTarget)
+                  updateContract.mutate({
+                    rate: Number(f.get('rate')),
+                    deposit: Number(f.get('deposit')),
+                    totalQuotation: Number(f.get('totalQuotation')) || undefined,
+                    billingPeriod: String(f.get('billingPeriod')),
+                    startDate: String(f.get('startDate')),
+                    endDate: String(f.get('endDate')),
+                    paymentMethod: String(f.get('paymentMethod') || ''),
+                    firstPaymentDate: f.get('firstPaymentDate') ? String(f.get('firstPaymentDate')) : undefined,
+                    notes: String(f.get('notes') || ''),
+                  })
+                }}
+                className="space-y-4"
+              >
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="Monthly Rate (AED)">
+                    <Input name="rate" type="number" min="0" step="0.01" defaultValue={c.rate} required />
+                  </Field>
+                  <Field label="Deposit (AED)">
+                    <Input name="deposit" type="number" min="0" step="0.01" defaultValue={c.deposit} />
+                  </Field>
+                  <Field label="Total Quotation (AED)">
+                    <Input name="totalQuotation" type="number" min="0" step="0.01" defaultValue={c.totalQuotation} />
+                  </Field>
+                  <Field label="Billing Period">
+                    <Select name="billingPeriod" defaultValue={c.billingPeriod}>
+                      <option value="weekly">Weekly</option>
+                      <option value="monthly">4 Weeks (Monthly)</option>
+                    </Select>
+                  </Field>
+                  <Field label="Payment Method">
+                    <Select name="paymentMethod" defaultValue={c.paymentMethod || ''}>
+                      <option value="">— Select —</option>
+                      <option value="cash">Cash</option>
+                      <option value="bank_transfer">Bank Transfer</option>
+                      <option value="cheque">Cheque</option>
+                      <option value="card">Card</option>
+                    </Select>
+                  </Field>
+                  <Field label="Start Date">
+                    <Input name="startDate" type="date" defaultValue={c.startDate?.slice(0, 10)} required />
+                  </Field>
+                  <Field label="End Date">
+                    <Input name="endDate" type="date" defaultValue={c.endDate?.slice(0, 10)} required />
+                  </Field>
+                  <Field label="First Payment Date">
+                    <Input name="firstPaymentDate" type="date" defaultValue={c.firstPaymentDate?.slice(0, 10)} />
+                  </Field>
+                  <Field label="Notes" className="col-span-2">
+                    <Textarea name="notes" rows={3} defaultValue={c.notes || ''} placeholder="Internal notes about this contract" />
+                  </Field>
+                </div>
+                <div className="rounded-lg bg-muted/50 border px-3 py-2 text-xs text-muted-foreground">
+                  <strong>Note:</strong> Customer and unit cannot be changed here. To change these, end this contract and create a new one.
+                </div>
+                {error && <p className="text-xs text-destructive">{error}</p>}
+                <div className="flex justify-end gap-2 pt-2 border-t">
+                  <Button type="button" variant="outline" onClick={() => setEditModal(false)}>Cancel</Button>
+                  <Button type="submit" disabled={updateContract.isPending}>
+                    {updateContract.isPending ? 'Saving…' : 'Save Changes'}
+                  </Button>
+                </div>
+              </form>
             </div>
           </div>
         </div>

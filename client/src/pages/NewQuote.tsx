@@ -361,108 +361,108 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
 
             {/* Action bar — hidden while editing */}
             {!isEditing && (
-            <div className="flex items-center gap-px border-t" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
-              {canEdit && (
-                <>
-                  <button type="button" onClick={() => startEdit(inv)} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors" style={{ color: PURPLE }}>
-                    <FileText size={13} /> Edit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (!confirm(`Delete ${inv.invoiceNo}?`)) return
-                      try {
-                        await api.delete(`/invoices/${inv._id}`)
-                        onChanged()
-                      } catch (e: any) { setErr(apiError(e)) }
-                    }}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors text-red-500"
-                  >
-                    <Trash2 size={13} /> Delete
-                  </button>
-                </>
-              )}
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    const shareRes = await api.post(`/invoices/${inv._id}/share`)
-                    const pdfUrl = shareRes.data.url
-                    const phone = customerPhone.replace(/\D/g, '').replace(/^00/, '')
-                    const msg = `Hello ${customerName},\n\nHere is your invoice ${inv.invoiceNo} for ${formatMoney(inv.total)} AED.\n\nView: ${pdfUrl}\n\nThank you — PurpleBox`
-                    window.open(phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
-                  } catch (e: any) { setErr(apiError(e)) }
-                }}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors"
-                style={{ color: '#25D366' }}
-              >
-                <Send size={13} /> WhatsApp
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    const shareRes = await api.post(`/invoices/${inv._id}/share`)
-                    const pdfUrl = shareRes.data.url
-                    setEmailModal({
-                      invoiceId: inv._id,
-                      to: customerEmail,
-                      subject: `Invoice ${inv.invoiceNo} — PurpleBox`,
-                      body: [
-                        `Hello ${customerName},`,
-                        ``,
-                        `Please find your invoice ${inv.invoiceNo} for ${formatMoney(inv.total)} AED.`,
-                        ``,
-                        `Thank you,`,
-                        `PurpleBox`,
-                      ].join('\n'),
-                      pdfUrl,
-                    })
-                  } catch (e: any) { setErr(apiError(e)) }
-                }}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors"
-                style={{ color: '#3B82F6' }}
-              >
-                <Mail size={13} /> Email
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  const res = await api.get(`/invoices/${inv._id}/pdf`, { responseType: 'blob' })
-                  const url = URL.createObjectURL(res.data)
-                  window.open(url, '_blank')
-                }}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors"
-                style={{ color: MUTED }}
-              >
-                <Download size={13} /> PDF
-              </button>
-              {inv.zohoBooksSyncId ? (
-                <a
-                  href={`https://books.zoho.com/app/908459713#/invoices/${inv.zohoBooksSyncId}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors"
-                  style={{ color: '#047857' }}
-                >
-                  <ExternalLink size={13} /> Open in Zoho
-                </a>
-              ) : (
+              <div className="flex items-center gap-px border-t" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
+                {canEdit && (
+                  <>
+                    <button type="button" onClick={() => startEdit(inv)} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors" style={{ color: PURPLE }}>
+                      <FileText size={13} /> Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!confirm(`Delete ${inv.invoiceNo}?`)) return
+                        try {
+                          await api.delete(`/invoices/${inv._id}`)
+                          onChanged()
+                        } catch (e: any) { setErr(apiError(e)) }
+                      }}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors text-red-500"
+                    >
+                      <Trash2 size={13} /> Delete
+                    </button>
+                  </>
+                )}
                 <button
                   type="button"
                   onClick={async () => {
                     try {
-                      await api.post(`/invoices/${inv._id}/sync-zoho-books`)
-                      onChanged()
+                      const shareRes = await api.post(`/invoices/${inv._id}/share`)
+                      const pdfUrl = shareRes.data.url
+                      const phone = customerPhone.replace(/\D/g, '').replace(/^00/, '')
+                      const msg = `Hello ${customerName},\n\nHere is your invoice ${inv.invoiceNo} for ${formatMoney(inv.total)} AED.\n\nView: ${pdfUrl}\n\nThank you — PurpleBox`
+                      window.open(phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
                     } catch (e: any) { setErr(apiError(e)) }
                   }}
                   className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors"
-                  style={{ color: '#047857' }}
+                  style={{ color: '#25D366' }}
                 >
-                  <Upload size={13} /> Sync Zoho
+                  <Send size={13} /> WhatsApp
                 </button>
-              )}
-            </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const shareRes = await api.post(`/invoices/${inv._id}/share`)
+                      const pdfUrl = shareRes.data.url
+                      setEmailModal({
+                        invoiceId: inv._id,
+                        to: customerEmail,
+                        subject: `Invoice ${inv.invoiceNo} — PurpleBox`,
+                        body: [
+                          `Hello ${customerName},`,
+                          ``,
+                          `Please find your invoice ${inv.invoiceNo} for ${formatMoney(inv.total)} AED.`,
+                          ``,
+                          `Thank you,`,
+                          `PurpleBox`,
+                        ].join('\n'),
+                        pdfUrl,
+                      })
+                    } catch (e: any) { setErr(apiError(e)) }
+                  }}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors"
+                  style={{ color: '#3B82F6' }}
+                >
+                  <Mail size={13} /> Email
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const res = await api.get(`/invoices/${inv._id}/pdf`, { responseType: 'blob' })
+                    const url = URL.createObjectURL(res.data)
+                    window.open(url, '_blank')
+                  }}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors"
+                  style={{ color: MUTED }}
+                >
+                  <Download size={13} /> PDF
+                </button>
+                {inv.zohoBooksSyncId ? (
+                  <a
+                    href={`https://books.zoho.com/app/908459713#/invoices/${inv.zohoBooksSyncId}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors"
+                    style={{ color: '#047857' }}
+                  >
+                    <ExternalLink size={13} /> Open in Zoho
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await api.post(`/invoices/${inv._id}/sync-zoho-books`)
+                        onChanged()
+                      } catch (e: any) { setErr(apiError(e)) }
+                    }}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors"
+                    style={{ color: '#047857' }}
+                  >
+                    <Upload size={13} /> Sync Zoho
+                  </button>
+                )}
+              </div>
             )}
           </div>
         )
@@ -802,7 +802,7 @@ export default function NewQuote() {
       Boolean(invoice),
       paidTotal > 0,
     ]
-    quoteApi.updateFlowStep(quoteId, step, done).catch(() => {})
+    quoteApi.updateFlowStep(quoteId, step, done).catch(() => { })
   }, [quoteId, step])
 
   // Auto-match customer from lead phone (new flows only)
@@ -1223,882 +1223,750 @@ export default function NewQuote() {
 
   return (
     <div style={{ background: CREAM, minHeight: '100vh', margin: '-1.5rem', padding: '1.5rem' }}>
-    <div style={{ borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
-      <div className="max-w-3xl">
+      <div style={{ borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+        <div className="max-w-3xl">
 
-        {/* Header */}
-        <div className="mb-6">
-          <h1 style={{ fontFamily: "'Bricolage Grotesque', sans-serif", color: INK, fontSize: '2rem', fontWeight: 700, letterSpacing: '-0.02em' }}>
-            Book Unit
-          </h1>
-          <p style={{ color: MUTED, fontSize: '0.875rem', marginTop: '0.375rem' }}>
-            {customerName || lead?.fullName
-              ? <>For <span style={{ color: PURPLE, fontWeight: 600 }}>{customerName || lead?.fullName}</span> — complete every step in one place</>
-              : 'Lead to booking — complete every step in one place'}
-          </p>
-        </div>
+          {/* Header */}
+          <div className="mb-6">
+            <h1 style={{ fontFamily: "'Bricolage Grotesque', sans-serif", color: INK, fontSize: '2rem', fontWeight: 700, letterSpacing: '-0.02em' }}>
+              Book Unit
+            </h1>
+            <p style={{ color: MUTED, fontSize: '0.875rem', marginTop: '0.375rem' }}>
+              {customerName || lead?.fullName
+                ? <>For <span style={{ color: PURPLE, fontWeight: 600 }}>{customerName || lead?.fullName}</span> — complete every step in one place</>
+                : 'Lead to booking — complete every step in one place'}
+            </p>
+          </div>
 
-        {/* Stepper */}
-        <div className="flex items-center mb-8 gap-1">
-          {STEPS.map((s, i) => {
-            const done = stepDone[i] && i !== step
-            const active = i === step
-            const Icon = s.icon
-            const clickable = canOpenStep(i)
-            return (
-              <div key={s.key} className="flex items-center" style={{ flex: i < STEPS.length - 1 ? 1 : undefined }}>
-                <button
-                  type="button"
-                  onClick={() => { if (clickable) setStep(i) }}
-                  className="flex flex-col sm:flex-row items-center gap-1.5 sm:gap-2 shrink-0"
-                  style={{ cursor: clickable ? 'pointer' : 'default' }}
-                >
-                  <div
-                    className="flex items-center justify-center rounded-full transition-all"
-                    style={{
-                      width: 36, height: 36,
-                      background: done ? GREEN : active ? PURPLE : '#fff',
-                      border: done || active ? 'none' : `2px solid ${CHIP_BG}`,
-                      color: done || active ? '#fff' : MUTED,
-                    }}
+          {/* Stepper */}
+          <div className="flex items-center mb-8 gap-1">
+            {STEPS.map((s, i) => {
+              const done = stepDone[i] && i !== step
+              const active = i === step
+              const Icon = s.icon
+              const clickable = canOpenStep(i)
+              return (
+                <div key={s.key} className="flex items-center" style={{ flex: i < STEPS.length - 1 ? 1 : undefined }}>
+                  <button
+                    type="button"
+                    onClick={() => { if (clickable) setStep(i) }}
+                    className="flex flex-col sm:flex-row items-center gap-1.5 sm:gap-2 shrink-0"
+                    style={{ cursor: clickable ? 'pointer' : 'default' }}
                   >
-                    {done ? <Check size={15} /> : <Icon size={15} />}
-                  </div>
-                  <span
-                    className="text-[10px] sm:text-xs font-medium"
-                    style={{ color: active ? INK : done ? GREEN : MUTED, whiteSpace: 'nowrap' }}
-                  >
-                    {s.label}
-                  </span>
-                </button>
-                {i < STEPS.length - 1 && (
-                  <div
-                    className="flex-1 mx-1 sm:mx-3 hidden sm:block"
-                    style={{ height: 2, background: stepDone[i] ? GREEN : CHIP_BG, borderRadius: 1, transition: 'background 0.3s' }}
-                  />
-                )}
-              </div>
-            )
-          })}
-        </div>
-
-        {/* Step Card */}
-        <div
-          style={{
-            background: '#fff', borderRadius: 18, border: '1px solid rgba(20,8,31,0.06)',
-            padding: '2rem 2.25rem', boxShadow: '0 1px 3px rgba(20,8,31,0.04)', minHeight: 320,
-          }}
-        >
-          {/* ── Step 1: Customer ── */}
-          {step === 0 && (
-            <div className="space-y-5">
-              <div className="flex items-center justify-between">
-                <SectionTitle title="Customer" subtitle="Who is this rental for?" />
-                <button
-                  type="button"
-                  onClick={() => setShowCustomerModal(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium"
-                  style={{ background: `${PURPLE}10`, color: PURPLE }}
-                >
-                  <Plus size={14} /> New Customer
-                </button>
-              </div>
-
-              {!customerId ? (
-                <>
-                  <div className="relative">
-                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: MUTED }} />
-                    <Input
-                      value={customerSearch}
-                      onChange={(e) => setCustomerSearch(e.target.value)}
-                      placeholder="Search by name, phone, or email…"
-                      className="pl-9"
-                      autoComplete="off"
-                    />
-                  </div>
-                  {customerSearch && customers.length > 0 && (
-                    <div className="border rounded-xl divide-y text-sm max-h-56 overflow-y-auto" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
-                      {customers.map((c) => (
-                        <button
-                          key={c._id}
-                          type="button"
-                          className="w-full text-left px-4 py-3 hover:bg-gray-50"
-                          onClick={() => { setCustomerId(c._id); setCustomerName(c.fullName); setCustomerPhone(c.phone || ''); setCustomerEmail(c.email || ''); setCustomerSearch('') }}
-                        >
-                          <div className="font-medium" style={{ color: INK }}>{c.fullName}</div>
-                          <div className="text-xs" style={{ color: MUTED }}>{c.phone || c.email || 'No contact'}</div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {lead && !customerSearch && (
-                    <div className="flex items-center justify-between gap-3 p-4 rounded-xl" style={{ background: CHIP_BG }}>
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold" style={{ color: INK }}>{lead.fullName}</p>
-                        <p className="text-xs" style={{ color: MUTED }}>{lead.phone}{lead.email ? ` · ${lead.email}` : ''} — from lead</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => createCustomerMut.mutate({
-                          fullName: lead.fullName, phone: lead.phone || '', email: lead.email || '',
-                          tenantType: 'individual', notes: lead.notes || '',
-                        })}
-                        disabled={createCustomerMut.isPending}
-                        className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white disabled:opacity-60"
-                        style={{ background: PURPLE }}
-                      >
-                        {createCustomerMut.isPending ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-                        Create customer from lead
-                      </button>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="flex items-center gap-4 p-4 rounded-xl" style={{ background: CHIP_BG }}>
-                  <div className="flex items-center justify-center rounded-full" style={{ width: 44, height: 44, background: `${PURPLE}15`, color: PURPLE }}>
-                    <User size={20} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold" style={{ color: INK }}>{customerName}</p>
-                    {customerPhone && <p className="text-xs" style={{ color: MUTED }}>{customerPhone}</p>}
-                  </div>
-                  {!quoteLocked && (
-                    <button
-                      type="button"
-                      onClick={() => { setCustomerId(''); setCustomerName(''); setCustomerPhone(''); setCustomerEmail(''); setCustomerSearch('') }}
-                      className="text-xs font-medium px-3 py-1 rounded-lg"
-                      style={{ color: PURPLE, background: '#fff' }}
+                    <div
+                      className="flex items-center justify-center rounded-full transition-all"
+                      style={{
+                        width: 36, height: 36,
+                        background: done ? GREEN : active ? PURPLE : '#fff',
+                        border: done || active ? 'none' : `2px solid ${CHIP_BG}`,
+                        color: done || active ? '#fff' : MUTED,
+                      }}
                     >
-                      Change
-                    </button>
+                      {done ? <Check size={15} /> : <Icon size={15} />}
+                    </div>
+                    <span
+                      className="text-[10px] sm:text-xs font-medium"
+                      style={{ color: active ? INK : done ? GREEN : MUTED, whiteSpace: 'nowrap' }}
+                    >
+                      {s.label}
+                    </span>
+                  </button>
+                  {i < STEPS.length - 1 && (
+                    <div
+                      className="flex-1 mx-1 sm:mx-3 hidden sm:block"
+                      style={{ height: 2, background: stepDone[i] ? GREEN : CHIP_BG, borderRadius: 1, transition: 'background 0.3s' }}
+                    />
                   )}
                 </div>
-              )}
-            </div>
-          )}
+              )
+            })}
+          </div>
 
-          {/* ── Step 2: Select / search units ── */}
-          {step === 1 && (
-            <div className="space-y-5">
-              <SectionTitle
-                title="Select Units"
-                subtitle={quoteLocked ? 'Locked — this contract is fully booked' : 'Set the rental period, then search and pick units'}
-              />
-
-              {quoteLocked ? (
-                <div className="p-4 rounded-xl" style={{ background: CHIP_BG }}>
-                  {unitRows.map((u) => (
-                    <InfoRow key={u.unitId} label={`${u.unitNumber} · ${u.startDate} → ${u.endDate}`} value={`${formatMoney(u.rate - (u.rate * u.discountPct) / 100)} AED/4wk`} />
-                  ))}
+          {/* Step Card */}
+          <div
+            style={{
+              background: '#fff', borderRadius: 18, border: '1px solid rgba(20,8,31,0.06)',
+              padding: '2rem 2.25rem', boxShadow: '0 1px 3px rgba(20,8,31,0.04)', minHeight: 320,
+            }}
+          >
+            {/* ── Step 1: Customer ── */}
+            {step === 0 && (
+              <div className="space-y-5">
+                <div className="flex items-center justify-between">
+                  <SectionTitle title="Customer" subtitle="Who is this rental for?" />
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomerModal(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium"
+                    style={{ background: `${PURPLE}10`, color: PURPLE }}
+                  >
+                    <Plus size={14} /> New Customer
+                  </button>
                 </div>
-              ) : (
-                <>
-                  {/* Rental period */}
-                  <div className="p-4 rounded-xl space-y-3" style={{ background: CHIP_BG }}>
-                    <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: PURPLE }}>
-                      <CalendarRange size={13} /> Rental Period
-                    </p>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Field label="Start Date">
-                        <Input type="date" value={dateRangeFrom} onChange={(e) => {
-                          const v = e.target.value
-                          setDateRangeFrom(v)
-                          // Keep the chosen duration when the start date moves
-                          if (v && !customEnd && derivedWeeks) setDateRangeTo(addWeeksISO(v, derivedWeeks))
-                        }} />
-                      </Field>
-                      <Field label="Duration">
-                        <select
-                          value={durationValue}
-                          onChange={(e) => {
-                            const v = e.target.value
-                            if (v === 'custom') { setCustomEnd(true); return }
-                            setCustomEnd(false)
-                            if (!v) return
-                            const start = dateRangeFrom || new Date().toISOString().slice(0, 10)
-                            if (!dateRangeFrom) setDateRangeFrom(start)
-                            setDateRangeTo(addWeeksISO(start, parseInt(v)))
-                          }}
-                          className="w-full h-9 rounded-lg border bg-card px-3 text-sm focus-visible:outline-2 focus-visible:outline-ring cursor-pointer"
+
+                {!customerId ? (
+                  <>
+                    <div className="relative">
+                      <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: MUTED }} />
+                      <Input
+                        value={customerSearch}
+                        onChange={(e) => setCustomerSearch(e.target.value)}
+                        placeholder="Search by name, phone, or email…"
+                        className="pl-9"
+                        autoComplete="off"
+                      />
+                    </div>
+                    {customerSearch && customers.length > 0 && (
+                      <div className="border rounded-xl divide-y text-sm max-h-56 overflow-y-auto" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
+                        {customers.map((c) => (
+                          <button
+                            key={c._id}
+                            type="button"
+                            className="w-full text-left px-4 py-3 hover:bg-gray-50"
+                            onClick={() => { setCustomerId(c._id); setCustomerName(c.fullName); setCustomerPhone(c.phone || ''); setCustomerEmail(c.email || ''); setCustomerSearch('') }}
+                          >
+                            <div className="font-medium" style={{ color: INK }}>{c.fullName}</div>
+                            <div className="text-xs" style={{ color: MUTED }}>{c.phone || c.email || 'No contact'}</div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {lead && !customerSearch && (
+                      <div className="flex items-center justify-between gap-3 p-4 rounded-xl" style={{ background: CHIP_BG }}>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold" style={{ color: INK }}>{lead.fullName}</p>
+                          <p className="text-xs" style={{ color: MUTED }}>{lead.phone}{lead.email ? ` · ${lead.email}` : ''} — from lead</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => createCustomerMut.mutate({
+                            fullName: lead.fullName, phone: lead.phone || '', email: lead.email || '',
+                            tenantType: 'individual', notes: lead.notes || '',
+                          })}
+                          disabled={createCustomerMut.isPending}
+                          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white disabled:opacity-60"
+                          style={{ background: PURPLE }}
                         >
-                          <option value="">— Select —</option>
-                          {WEEK_OPTIONS.map((w) => <option key={w} value={w}>{w} week{w !== 1 ? 's' : ''}</option>)}
-                          <option value="custom">Custom end date</option>
-                        </select>
-                      </Field>
-                    </div>
-                    {durationValue === 'custom' && (
-                      <Field label="End Date">
-                        <Input
-                          type="date"
-                          value={dateRangeTo}
-                          min={dateRangeFrom || undefined}
-                          onChange={(e) => setDateRangeTo(e.target.value)}
-                          style={dateRangeFrom && dateRangeTo && dateRangeTo <= dateRangeFrom ? { borderColor: '#EF4444' } : undefined}
-                        />
-                      </Field>
+                          {createCustomerMut.isPending ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                          Create customer from lead
+                        </button>
+                      </div>
                     )}
-                    {dateRangeFrom && dateRangeTo && (
-                      rangeDays <= 0 ? (
-                        <p className="text-xs font-medium" style={{ color: '#EF4444' }}>End date must be after start date</p>
-                      ) : (
-                        <p className="text-xs font-medium" style={{ color: MUTED }}>
-                          Ends on <span className="font-bold" style={{ color: PURPLE }}>{fmtLongDate(dateRangeTo)}</span>
-                          {' '}· {rangeDays} day{rangeDays !== 1 ? 's' : ''} · {Math.ceil(rangeDays / 7)} week{Math.ceil(rangeDays / 7) !== 1 ? 's' : ''}
-                        </p>
-                      )
-                    )}
-                  </div>
-
-                  {/* Units — visible only after dates are set */}
-                  {dateRangeFrom && dateRangeTo && dateRangeTo > dateRangeFrom && (unitsLoading ? (
-                    <div className="py-8 flex justify-center"><Spinner /></div>
-                  ) : (
-                    <div className="space-y-3">
-                      <div className="flex flex-wrap gap-1.5">
-                        {UNIT_FILTERS.map((f) => {
-                          const active = unitStatusFilter === f.key
-                          return (
-                            <button
-                              key={f.key}
-                              type="button"
-                              onClick={() => setUnitStatusFilter(f.key)}
-                              className="px-3 py-1.5 rounded-full text-xs font-medium"
-                              style={{ background: active ? PURPLE : CHIP_BG, color: active ? '#fff' : MUTED }}
-                            >
-                              {f.label}
-                            </button>
-                          )
-                        })}
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div style={{ height: 36, borderRadius: 10, background: CHIP_BG }} className="flex items-center gap-2 px-3">
-                          <Search size={14} color={MUTED} />
-                          <input
-                            value={unitSearch}
-                            onChange={(e) => setUnitSearch(e.target.value)}
-                            placeholder="Search unit no…"
-                            style={{ background: 'transparent', outline: 'none', border: 'none', fontSize: 13, color: INK, width: 120 }}
-                          />
-                        </div>
-                        <div style={{ height: 36, borderRadius: 10, background: CHIP_BG }} className="px-1">
-                          <select value={sizeFilter} onChange={(e) => setSizeFilter(e.target.value)} style={{ height: 36, background: 'transparent', outline: 'none', border: 'none', fontSize: 13, color: INK, fontWeight: 500, paddingRight: 8, paddingLeft: 8 }}>
-                            <option value="">All sizes</option>
-                            {sizeOptions.map((s) => <option key={s} value={s}>{s} sqft</option>)}
-                          </select>
-                        </div>
-                        <div style={{ height: 36, borderRadius: 10, background: CHIP_BG }} className="px-1">
-                          <select value={floorFilter} onChange={(e) => setFloorFilter(e.target.value)} style={{ height: 36, background: 'transparent', outline: 'none', border: 'none', fontSize: 13, color: INK, fontWeight: 500, paddingRight: 8, paddingLeft: 8 }}>
-                            <option value="">All floors</option>
-                            {floorOptions.map((f) => <option key={f} value={f}>Floor {f}</option>)}
-                          </select>
-                        </div>
-                        <p className="text-xs font-semibold ml-auto" style={{ color: MUTED }}>
-                          {filteredUnits.length} unit{filteredUnits.length !== 1 ? 's' : ''}
-                          {!dateRangeFrom || !dateRangeTo ? ' (set dates to check the period)' : ''}
-                        </p>
-                      </div>
-
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-56 overflow-y-auto pr-1">
-                        {filteredUnits.map((u) => {
-                          const selected = selectedUnitIds.has(u._id)
-                          const blocked = u.status === 'maintenance'
-                          const badge = u.bookedInPeriod
-                            ? { label: 'Booked', bg: '#FEE2E2', color: '#B91C1C' }
-                            : u.status === 'occupied'
-                              ? { label: 'Rented', bg: '#FEE2E2', color: '#B91C1C' }
-                              : u.status === 'reserved'
-                                ? { label: 'Reserved', bg: '#FEF3C7', color: '#B45309' }
-                                : u.status === 'maintenance'
-                                  ? { label: 'Maintenance', bg: CHIP_BG, color: MUTED }
-                                  : { label: 'Available', bg: '#D1FAE5', color: '#047857' }
-                          return (
-                            <button
-                              key={u._id}
-                              type="button"
-                              onClick={() => { if (!selected && !blocked) addUnit(u) }}
-                              onMouseEnter={(e) => { if (u.bookings?.length) setHoverUnit({ unit: u, x: e.clientX, y: e.clientY }) }}
-                              onMouseMove={(e) => { if (u.bookings?.length) setHoverUnit({ unit: u, x: e.clientX, y: e.clientY }) }}
-                              onMouseLeave={() => setHoverUnit(null)}
-                              className="rounded-xl border p-3 text-left transition-all"
-                              style={{
-                                borderColor: selected ? PURPLE : 'rgba(20,8,31,0.08)',
-                                background: selected ? `${PURPLE}08` : '#fff',
-                                opacity: selected ? 0.45 : blocked ? 0.6 : 1,
-                                cursor: selected || blocked ? 'not-allowed' : 'pointer',
-                              }}
-                            >
-                              <div className="flex items-center justify-between gap-1">
-                                <p className="text-sm font-bold" style={{ color: INK }}>{u.unitNumber}</p>
-                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0" style={{ background: badge.bg, color: badge.color }}>
-                                  {badge.label}
-                                </span>
-                              </div>
-                              <p className="text-[11px]" style={{ color: MUTED }}>{u.sizeSqf} sqft · Floor {u.floor || '—'}</p>
-                              <p className="text-xs font-semibold mt-1" style={{ color: PURPLE }}>{formatMoney(u.price || 0)} AED/4wk</p>
-                            </button>
-                          )
-                        })}
-                      </div>
-                      {filteredUnits.length === 0 && (
-                        <div className="text-sm text-center py-6 rounded-xl" style={{ background: CHIP_BG, color: MUTED }}>
-                          No units match these filters.
-                        </div>
-                      )}
+                  </>
+                ) : (
+                  <div className="flex items-center gap-4 p-4 rounded-xl" style={{ background: CHIP_BG }}>
+                    <div className="flex items-center justify-center rounded-full" style={{ width: 44, height: 44, background: `${PURPLE}15`, color: PURPLE }}>
+                      <User size={20} />
                     </div>
-                  ))}
-
-                  {/* Selected units */}
-                  {unitRows.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>
-                        Selected Units ({unitRows.length})
-                      </p>
-                      {unitRows.map((u, idx) => {
-                        const uDays = Math.round((new Date(u.endDate).getTime() - new Date(u.startDate).getTime()) / 86400000)
-                        const uTw = Math.ceil(uDays / 7)
-                        const uDurLabel = `${uTw} week${uTw !== 1 ? 's' : ''}`
-                        const weeklyFull = u.rate / 4
-                        const weeklyDisc = weeklyFull - (weeklyFull * (u.discountPct || 0)) / 100
-                        const periodTotal = calcUnitPeriodTotal(u.rate, u.discountPct, u.startDate, u.endDate)
-                        return (
-                        <div key={u.unitId} className="rounded-xl border p-3 space-y-2" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <span className="text-sm font-bold" style={{ color: INK }}>{u.unitNumber}</span>
-                              <span className="text-xs ml-2" style={{ color: MUTED }}>{u.sizeSqf} sqft</span>
-                            </div>
-                            <button type="button" onClick={() => removeUnit(idx)} className="text-red-500 hover:text-red-600">
-                              <Trash2 size={15} />
-                            </button>
-                          </div>
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                            <Field label="Start">
-                              <Input type="date" value={u.startDate} onChange={(e) => updateUnit(idx, 'startDate', e.target.value)} className="h-8 text-xs" />
-                            </Field>
-                            <Field label="End">
-                              <Input type="date" value={u.endDate} onChange={(e) => updateUnit(idx, 'endDate', e.target.value)} className="h-8 text-xs" />
-                            </Field>
-                            <Field label="Rate/4wk">
-                              <Input type="number" min={0} value={u.rate} onChange={(e) => updateUnit(idx, 'rate', Number(e.target.value))} className="h-8 text-xs" />
-                            </Field>
-                            <Field label="Disc 4 weeks %">
-                              <Input type="number" min={0} max={100} value={u.discountPct || ''} onChange={(e) => updateUnit(idx, 'discountPct', Number(e.target.value))} className="h-8 text-xs" placeholder="0" />
-                            </Field>
-                          </div>
-                          {uDays > 0 && (
-                            <div className="flex items-center justify-between pt-1 border-t" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
-                              <p className="text-[11px]" style={{ color: MUTED }}>
-                                {(u.discountPct || 0) > 0 && uTw > 0
-                                  ? `4 wks × ${formatMoney(weeklyDisc)} AED/wk (${u.discountPct}% off)${uTw > 4 ? ` + ${uTw - 4} wk${uTw - 4 !== 1 ? 's' : ''} × ${formatMoney(weeklyFull)} AED/wk` : ''}`
-                                  : `${uDurLabel} · ${formatMoney(weeklyFull)} AED/wk`}
-                              </p>
-                              <p className="text-xs font-bold" style={{ color: PURPLE }}>
-                                {formatMoney(periodTotal)} AED
-                              </p>
-                            </div>
-                          )}
-                          {(u.existingBookings?.length ?? 0) > 0 && (
-                            <div className="rounded-lg p-2.5 space-y-1.5" style={{ background: '#FEF3C7' }}>
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: '#F59E0B', color: '#fff' }}>SHARED</span>
-                                <span className="text-[10px] font-semibold" style={{ color: '#92400E' }}>Existing bookings on this unit</span>
-                              </div>
-                              {u.existingBookings!.map((b, bi) => (
-                                <div key={bi} className="text-[10px]" style={{ color: '#78350F' }}>
-                                  <span className="font-semibold">{b.customer || 'Unknown'}</span>
-                                  {b.startDate && b.endDate && (
-                                    <span> · {formatDate(b.startDate)} → {formatDate(b.endDate)}</span>
-                                  )}
-                                  <span className="opacity-60"> · {b.ref}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                        )
-                      })}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold" style={{ color: INK }}>{customerName}</p>
+                      {customerPhone && <p className="text-xs" style={{ color: MUTED }}>{customerPhone}</p>}
                     </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-
-          {/* ── Step 3: Quotation (pricing, add-ons, totals) ── */}
-          {step === 2 && (
-            <div className="space-y-5">
-              <SectionTitle
-                title="Quotation"
-                subtitle={quoteLocked ? 'Locked — this contract is fully booked' : 'Deposit, add-ons and final pricing'}
-              />
-
-              {quoteLocked ? (
-                <>
-                  <DoneBanner text={`Quote saved · ${formatMoney(total)} AED total`} />
-                  <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
-                    {/* Header */}
-                    <div className="flex items-center justify-between px-4 py-3" style={{ background: CHIP_BG }}>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold" style={{ color: INK }}>{quoteNo || 'Quotation'}</span>
-                        <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold" style={{ background: '#DBEAFE', color: '#1D4ED8' }}>sent</span>
-                      </div>
-                      <span className="text-sm font-bold" style={{ color: PURPLE }}>{formatMoney(total)} AED</span>
-                    </div>
-                    {/* Body */}
-                    <div className="px-4 py-3 space-y-1">
-                      {unitRows.map((u) => {
-                        const d = Math.round((new Date(u.endDate).getTime() - new Date(u.startDate).getTime()) / 86400000)
-                        const tw = Math.ceil(d / 7)
-                        const durLabel = `${tw} week${tw !== 1 ? 's' : ''}`
-                        const discounted = u.rate - (u.rate * u.discountPct) / 100
-                        const weeklyRate = discounted / 4
-                        const periodTotal = calcUnitPeriodTotal(u.rate, u.discountPct, u.startDate, u.endDate)
-                        return (
-                          <div key={u.unitId} className="py-1">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-semibold" style={{ color: INK }}>{u.unitNumber}</span>
-                              <span className="text-xs font-bold" style={{ color: PURPLE }}>{formatMoney(periodTotal)} AED</span>
-                            </div>
-                            <p className="text-[10px]" style={{ color: MUTED }}>
-                              {formatMoney(weeklyRate)} AED/wk × {durLabel}
-                            </p>
-                          </div>
-                        )
-                      })}
-                      {addOnRows.filter((a) => a.name).map((a, i) => (
-                        <InfoRow key={i} label={`${a.name} ×${a.quantity}`} value={`${formatMoney(a.quantity * a.rate)} AED`} />
-                      ))}
-                      <div style={{ borderTop: `1px solid ${PURPLE}20` }} className="mt-1 pt-1">
-                        <InfoRow label="Total" value={`${formatMoney(total)} AED`} />
-                      </div>
-                    </div>
-                    {/* Action bar */}
-                    <div className="flex items-center gap-px border-t" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
+                    {!quoteLocked && (
                       <button
                         type="button"
-                        onClick={() => sendQuote.mutate('whatsapp')}
-                        disabled={sendQuote.isPending}
-                        className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors disabled:opacity-60"
-                        style={{ color: '#25D366' }}
-                      >
-                        <Send size={13} /> WhatsApp
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => sendQuote.mutate('email')}
-                        disabled={sendQuote.isPending}
-                        className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors disabled:opacity-60"
-                        style={{ color: '#3B82F6' }}
-                      >
-                        <Mail size={13} /> Email
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => downloadQuote.mutate()}
-                        disabled={downloadQuote.isPending}
-                        className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors disabled:opacity-60"
-                        style={{ color: MUTED }}
-                      >
-                        <Download size={13} /> PDF
-                      </button>
-                    </div>
-                  </div>
-                  {sentMsg && <DoneBanner text={sentMsg} />}
-                  {quoteEmailSent && <DoneBanner text={quoteEmailSent} />}
-                </>
-              ) : (
-                <>
-                  {/* Selected units summary */}
-                  <div className="p-4 rounded-xl" style={{ background: CHIP_BG }}>
-                    <div className="flex items-center justify-between mb-1">
-                      <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Units ({unitRows.length})</p>
-                      <button
-                        type="button"
-                        onClick={() => setStep(1)}
-                        className="text-xs font-medium px-2.5 py-1 rounded-lg"
+                        onClick={() => { setCustomerId(''); setCustomerName(''); setCustomerPhone(''); setCustomerEmail(''); setCustomerSearch('') }}
+                        className="text-xs font-medium px-3 py-1 rounded-lg"
                         style={{ color: PURPLE, background: '#fff' }}
                       >
-                        Edit units
+                        Change
                       </button>
-                    </div>
-                    {unitRows.map((u) => {
-                      const d = Math.round((new Date(u.endDate).getTime() - new Date(u.startDate).getTime()) / 86400000)
-                      const tw = Math.ceil(d / 7)
-                      const durLabel2 = `${tw} week${tw !== 1 ? 's' : ''}`
-                      const discounted = u.rate - (u.rate * u.discountPct) / 100
-                      const weeklyRate = discounted / 4
-                      const periodTotal = calcUnitPeriodTotal(u.rate, u.discountPct, u.startDate, u.endDate)
-                      return (
-                        <div key={u.unitId} className="py-1.5" style={{ borderBottom: `1px solid rgba(20,8,31,0.06)` }}>
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-semibold" style={{ color: INK }}>{u.unitNumber}</span>
-                            <span className="text-xs font-bold" style={{ color: PURPLE }}>{formatMoney(periodTotal)} AED</span>
-                          </div>
-                          <p className="text-[11px] mt-0.5" style={{ color: MUTED }}>
-                            {u.startDate} → {u.endDate} · {d} days · {durLabel2}
-                          </p>
-                          <p className="text-[11px]" style={{ color: MUTED }}>
-                            Rate: {formatMoney(weeklyRate)} AED/wk × {durLabel2}
-                            {u.discountPct ? ` · ${u.discountPct}% off` : ''}
-                          </p>
-                        </div>
-                      )
-                    })}
+                    )}
                   </div>
+                )}
+              </div>
+            )}
 
-                  {/* Add-ons */}
-                  <div className="space-y-2">
-                    <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Add-ons (optional)</p>
-                    <div className="flex flex-wrap gap-2">
-                      {DEFAULT_ADDONS.map((preset) => (
-                        <button
-                          key={preset.name}
-                          type="button"
-                          onClick={() => addAddOn(preset)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
-                          style={{ background: `${PURPLE}10`, color: PURPLE }}
-                        >
-                          <Plus size={12} /> {preset.name} ({formatMoney(preset.rate)} AED)
-                        </button>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => addAddOn()}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border"
-                        style={{ color: MUTED, borderColor: 'rgba(20,8,31,0.12)' }}
-                      >
-                        <Plus size={12} /> Custom
-                      </button>
-                    </div>
-                    {addOnRows.map((a, idx) => (
-                      <div key={idx} className="rounded-xl border p-3" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
-                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 items-end">
-                          <Field label="Name">
-                            <Input value={a.name} onChange={(e) => updateAddOn(idx, 'name', e.target.value)} className="h-8 text-xs" />
-                          </Field>
-                          <Field label="Description">
-                            <Input value={a.description} onChange={(e) => updateAddOn(idx, 'description', e.target.value)} className="h-8 text-xs" />
-                          </Field>
-                          <Field label="Qty">
-                            <Input type="number" min={1} value={a.quantity} onChange={(e) => updateAddOn(idx, 'quantity', Number(e.target.value))} className="h-8 text-xs" />
-                          </Field>
-                          <Field label="Rate">
-                            <Input type="number" min={0} value={a.rate} onChange={(e) => updateAddOn(idx, 'rate', Number(e.target.value))} className="h-8 text-xs" />
-                          </Field>
-                          <div className="flex items-center justify-between pb-1.5">
-                            <span className="text-xs font-bold" style={{ color: INK }}>{formatMoney(a.quantity * a.rate)} AED</span>
-                            <button type="button" onClick={() => removeAddOn(idx)} className="text-red-500 hover:text-red-600 ml-2">
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
+            {/* ── Step 2: Select / search units ── */}
+            {step === 1 && (
+              <div className="space-y-5">
+                <SectionTitle
+                  title="Select Units"
+                  subtitle={quoteLocked ? 'Locked — this contract is fully booked' : 'Set the rental period, then search and pick units'}
+                />
+
+                {quoteLocked ? (
+                  <div className="p-4 rounded-xl" style={{ background: CHIP_BG }}>
+                    {unitRows.map((u) => (
+                      <InfoRow key={u.unitId} label={`${u.unitNumber} · ${u.startDate} → ${u.endDate}`} value={`${formatMoney(u.rate - (u.rate * u.discountPct) / 100)} AED/4wk`} />
                     ))}
                   </div>
-
-                  {/* Notes */}
-                  <Field label="Notes">
-                    <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes…" />
-                  </Field>
-
-                  <div className="p-4 rounded-xl border" style={{ borderColor: `${PURPLE}30`, background: `${PURPLE}05` }}>
-                    <InfoRow label={`Units (${unitRows.length})`} value={`${formatMoney(unitsTotal)} AED`} />
-                    <InfoRow label={`Add-ons (${addOnRows.length})`} value={`${formatMoney(addOnsTotal)} AED`} />
-                    {Number(deposit) > 0 && <InfoRow label="Security deposit" value={`${formatMoney(Number(deposit))} AED`} />}
-                    <div style={{ borderTop: `1px solid ${PURPLE}20` }} className="mt-1 pt-1">
-                      <div className="flex items-center justify-between text-base py-1">
-                        <span className="font-bold" style={{ color: INK }}>Total</span>
-                        <span className="font-bold" style={{ color: PURPLE }}>{formatMoney(total)} AED</span>
+                ) : (
+                  <>
+                    {/* Rental period */}
+                    <div className="p-4 rounded-xl space-y-3" style={{ background: CHIP_BG }}>
+                      <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: PURPLE }}>
+                        <CalendarRange size={13} /> Rental Period
+                      </p>
+                      <div className="grid grid-cols-2 gap-3">
+                        <Field label="Start Date">
+                          <Input type="date" value={dateRangeFrom} onChange={(e) => {
+                            const v = e.target.value
+                            setDateRangeFrom(v)
+                            // Keep the chosen duration when the start date moves
+                            if (v && !customEnd && derivedWeeks) setDateRangeTo(addWeeksISO(v, derivedWeeks))
+                          }} />
+                        </Field>
+                        <Field label="Duration">
+                          <select
+                            value={durationValue}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              if (v === 'custom') { setCustomEnd(true); return }
+                              setCustomEnd(false)
+                              if (!v) return
+                              const start = dateRangeFrom || new Date().toISOString().slice(0, 10)
+                              if (!dateRangeFrom) setDateRangeFrom(start)
+                              setDateRangeTo(addWeeksISO(start, parseInt(v)))
+                            }}
+                            className="w-full h-9 rounded-lg border bg-card px-3 text-sm focus-visible:outline-2 focus-visible:outline-ring cursor-pointer"
+                          >
+                            <option value="">— Select —</option>
+                            {WEEK_OPTIONS.map((w) => <option key={w} value={w}>{w} week{w !== 1 ? 's' : ''}</option>)}
+                            <option value="custom">Custom end date</option>
+                          </select>
+                        </Field>
                       </div>
+                      {durationValue === 'custom' && (
+                        <Field label="End Date">
+                          <Input
+                            type="date"
+                            value={dateRangeTo}
+                            min={dateRangeFrom || undefined}
+                            onChange={(e) => setDateRangeTo(e.target.value)}
+                            style={dateRangeFrom && dateRangeTo && dateRangeTo <= dateRangeFrom ? { borderColor: '#EF4444' } : undefined}
+                          />
+                        </Field>
+                      )}
+                      {dateRangeFrom && dateRangeTo && (
+                        rangeDays <= 0 ? (
+                          <p className="text-xs font-medium" style={{ color: '#EF4444' }}>End date must be after start date</p>
+                        ) : (
+                          <p className="text-xs font-medium" style={{ color: MUTED }}>
+                            Ends on <span className="font-bold" style={{ color: PURPLE }}>{fmtLongDate(dateRangeTo)}</span>
+                            {' '}· {rangeDays} day{rangeDays !== 1 ? 's' : ''} · {Math.ceil(rangeDays / 7)} week{Math.ceil(rangeDays / 7) !== 1 ? 's' : ''}
+                          </p>
+                        )
+                      )}
                     </div>
-                  </div>
 
-                  {/* Share bar — visible after Save Quote & Send */}
-                  {showShareBar && (
-                    <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
-                      <div className="px-4 py-3" style={{ background: CHIP_BG }}>
-                        <p className="text-sm font-bold" style={{ color: INK, fontFamily: "'Bricolage Grotesque', sans-serif" }}>
-                          Share quotation
-                        </p>
-                        <p className="text-xs mt-0.5" style={{ color: MUTED }}>
-                          Delivers the PDF to {customerName || 'the customer'}.
-                        </p>
+                    {/* Units — visible only after dates are set */}
+                    {dateRangeFrom && dateRangeTo && dateRangeTo > dateRangeFrom && (unitsLoading ? (
+                      <div className="py-8 flex justify-center"><Spinner /></div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap gap-1.5">
+                          {UNIT_FILTERS.map((f) => {
+                            const active = unitStatusFilter === f.key
+                            return (
+                              <button
+                                key={f.key}
+                                type="button"
+                                onClick={() => setUnitStatusFilter(f.key)}
+                                className="px-3 py-1.5 rounded-full text-xs font-medium"
+                                style={{ background: active ? PURPLE : CHIP_BG, color: active ? '#fff' : MUTED }}
+                              >
+                                {f.label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div style={{ height: 36, borderRadius: 10, background: CHIP_BG }} className="flex items-center gap-2 px-3">
+                            <Search size={14} color={MUTED} />
+                            <input
+                              value={unitSearch}
+                              onChange={(e) => setUnitSearch(e.target.value)}
+                              placeholder="Search unit no…"
+                              style={{ background: 'transparent', outline: 'none', border: 'none', fontSize: 13, color: INK, width: 120 }}
+                            />
+                          </div>
+                          <div style={{ height: 36, borderRadius: 10, background: CHIP_BG }} className="px-1">
+                            <select value={sizeFilter} onChange={(e) => setSizeFilter(e.target.value)} style={{ height: 36, background: 'transparent', outline: 'none', border: 'none', fontSize: 13, color: INK, fontWeight: 500, paddingRight: 8, paddingLeft: 8 }}>
+                              <option value="">All sizes</option>
+                              {sizeOptions.map((s) => <option key={s} value={s}>{s} sqft</option>)}
+                            </select>
+                          </div>
+                          <div style={{ height: 36, borderRadius: 10, background: CHIP_BG }} className="px-1">
+                            <select value={floorFilter} onChange={(e) => setFloorFilter(e.target.value)} style={{ height: 36, background: 'transparent', outline: 'none', border: 'none', fontSize: 13, color: INK, fontWeight: 500, paddingRight: 8, paddingLeft: 8 }}>
+                              <option value="">All floors</option>
+                              {floorOptions.map((f) => <option key={f} value={f}>Floor {f}</option>)}
+                            </select>
+                          </div>
+                          <p className="text-xs font-semibold ml-auto" style={{ color: MUTED }}>
+                            {filteredUnits.length} unit{filteredUnits.length !== 1 ? 's' : ''}
+                            {!dateRangeFrom || !dateRangeTo ? ' (set dates to check the period)' : ''}
+                          </p>
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-56 overflow-y-auto pr-1">
+                          {filteredUnits.map((u) => {
+                            const selected = selectedUnitIds.has(u._id)
+                            const blocked = u.status === 'maintenance'
+                            const badge = u.bookedInPeriod
+                              ? { label: 'Booked', bg: '#FEE2E2', color: '#B91C1C' }
+                              : u.status === 'occupied'
+                                ? { label: 'Rented', bg: '#FEE2E2', color: '#B91C1C' }
+                                : u.status === 'reserved'
+                                  ? { label: 'Reserved', bg: '#FEF3C7', color: '#B45309' }
+                                  : u.status === 'maintenance'
+                                    ? { label: 'Maintenance', bg: CHIP_BG, color: MUTED }
+                                    : { label: 'Available', bg: '#D1FAE5', color: '#047857' }
+                            return (
+                              <button
+                                key={u._id}
+                                type="button"
+                                onClick={() => { if (!selected && !blocked) addUnit(u) }}
+                                onMouseEnter={(e) => { if (u.bookings?.length) setHoverUnit({ unit: u, x: e.clientX, y: e.clientY }) }}
+                                onMouseMove={(e) => { if (u.bookings?.length) setHoverUnit({ unit: u, x: e.clientX, y: e.clientY }) }}
+                                onMouseLeave={() => setHoverUnit(null)}
+                                className="rounded-xl border p-3 text-left transition-all"
+                                style={{
+                                  borderColor: selected ? PURPLE : 'rgba(20,8,31,0.08)',
+                                  background: selected ? `${PURPLE}08` : '#fff',
+                                  opacity: selected ? 0.45 : blocked ? 0.6 : 1,
+                                  cursor: selected || blocked ? 'not-allowed' : 'pointer',
+                                }}
+                              >
+                                <div className="flex items-center justify-between gap-1">
+                                  <p className="text-sm font-bold" style={{ color: INK }}>{u.unitNumber}</p>
+                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0" style={{ background: badge.bg, color: badge.color }}>
+                                    {badge.label}
+                                  </span>
+                                </div>
+                                <p className="text-[11px]" style={{ color: MUTED }}>{u.sizeSqf} sqft · Floor {u.floor || '—'}</p>
+                                <p className="text-xs font-semibold mt-1" style={{ color: PURPLE }}>{formatMoney(u.price || 0)} AED/4wk</p>
+                              </button>
+                            )
+                          })}
+                        </div>
+                        {filteredUnits.length === 0 && (
+                          <div className="text-sm text-center py-6 rounded-xl" style={{ background: CHIP_BG, color: MUTED }}>
+                            No units match these filters.
+                          </div>
+                        )}
                       </div>
+                    ))}
+
+                    {/* Selected units */}
+                    {unitRows.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>
+                          Selected Units ({unitRows.length})
+                        </p>
+                        {unitRows.map((u, idx) => {
+                          const uDays = Math.round((new Date(u.endDate).getTime() - new Date(u.startDate).getTime()) / 86400000)
+                          const uTw = Math.ceil(uDays / 7)
+                          const uDurLabel = `${uTw} week${uTw !== 1 ? 's' : ''}`
+                          const weeklyFull = u.rate / 4
+                          const weeklyDisc = weeklyFull - (weeklyFull * (u.discountPct || 0)) / 100
+                          const periodTotal = calcUnitPeriodTotal(u.rate, u.discountPct, u.startDate, u.endDate)
+                          return (
+                            <div key={u.unitId} className="rounded-xl border p-3 space-y-2" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <span className="text-sm font-bold" style={{ color: INK }}>{u.unitNumber}</span>
+                                  <span className="text-xs ml-2" style={{ color: MUTED }}>{u.sizeSqf} sqft</span>
+                                </div>
+                                <button type="button" onClick={() => removeUnit(idx)} className="text-red-500 hover:text-red-600">
+                                  <Trash2 size={15} />
+                                </button>
+                              </div>
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                <Field label="Start">
+                                  <Input type="date" value={u.startDate} onChange={(e) => updateUnit(idx, 'startDate', e.target.value)} className="h-8 text-xs" />
+                                </Field>
+                                <Field label="End">
+                                  <Input type="date" value={u.endDate} onChange={(e) => updateUnit(idx, 'endDate', e.target.value)} className="h-8 text-xs" />
+                                </Field>
+                                <Field label="Rate/4wk">
+                                  <Input type="number" min={0} value={u.rate} onChange={(e) => updateUnit(idx, 'rate', Number(e.target.value))} className="h-8 text-xs" />
+                                </Field>
+                                <Field label="Disc 4 weeks %">
+                                  <Input type="number" min={0} max={100} value={u.discountPct || ''} onChange={(e) => updateUnit(idx, 'discountPct', Number(e.target.value))} className="h-8 text-xs" placeholder="0" />
+                                </Field>
+                              </div>
+                              {uDays > 0 && (
+                                <div className="flex items-center justify-between pt-1 border-t" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
+                                  <p className="text-[11px]" style={{ color: MUTED }}>
+                                    {(u.discountPct || 0) > 0 && uTw > 0
+                                      ? `4 wks × ${formatMoney(weeklyDisc)} AED/wk (${u.discountPct}% off)${uTw > 4 ? ` + ${uTw - 4} wk${uTw - 4 !== 1 ? 's' : ''} × ${formatMoney(weeklyFull)} AED/wk` : ''}`
+                                      : `${uDurLabel} · ${formatMoney(weeklyFull)} AED/wk`}
+                                  </p>
+                                  <p className="text-xs font-bold" style={{ color: PURPLE }}>
+                                    {formatMoney(periodTotal)} AED
+                                  </p>
+                                </div>
+                              )}
+                              {(u.existingBookings?.length ?? 0) > 0 && (
+                                <div className="rounded-lg p-2.5 space-y-1.5" style={{ background: '#FEF3C7' }}>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: '#F59E0B', color: '#fff' }}>SHARED</span>
+                                    <span className="text-[10px] font-semibold" style={{ color: '#92400E' }}>Existing bookings on this unit</span>
+                                  </div>
+                                  {u.existingBookings!.map((b, bi) => (
+                                    <div key={bi} className="text-[10px]" style={{ color: '#78350F' }}>
+                                      <span className="font-semibold">{b.customer || 'Unknown'}</span>
+                                      {b.startDate && b.endDate && (
+                                        <span> · {formatDate(b.startDate)} → {formatDate(b.endDate)}</span>
+                                      )}
+                                      <span className="opacity-60"> · {b.ref}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* ── Step 3: Quotation (pricing, add-ons, totals) ── */}
+            {step === 2 && (
+              <div className="space-y-5">
+                <SectionTitle
+                  title="Quotation"
+                  subtitle={quoteLocked ? 'Locked — this contract is fully booked' : 'Deposit, add-ons and final pricing'}
+                />
+
+                {quoteLocked ? (
+                  <>
+                    <DoneBanner text={`Quote saved · ${formatMoney(total)} AED total`} />
+                    <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
+                      {/* Header */}
+                      <div className="flex items-center justify-between px-4 py-3" style={{ background: CHIP_BG }}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold" style={{ color: INK }}>{quoteNo || 'Quotation'}</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold" style={{ background: '#DBEAFE', color: '#1D4ED8' }}>sent</span>
+                        </div>
+                        <span className="text-sm font-bold" style={{ color: PURPLE }}>{formatMoney(total)} AED</span>
+                      </div>
+                      {/* Body */}
+                      <div className="px-4 py-3 space-y-1">
+                        {unitRows.map((u) => {
+                          const d = Math.round((new Date(u.endDate).getTime() - new Date(u.startDate).getTime()) / 86400000)
+                          const tw = Math.ceil(d / 7)
+                          const durLabel = `${tw} week${tw !== 1 ? 's' : ''}`
+                          const discounted = u.rate - (u.rate * u.discountPct) / 100
+                          const weeklyRate = discounted / 4
+                          const periodTotal = calcUnitPeriodTotal(u.rate, u.discountPct, u.startDate, u.endDate)
+                          return (
+                            <div key={u.unitId} className="py-1">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-semibold" style={{ color: INK }}>{u.unitNumber}</span>
+                                <span className="text-xs font-bold" style={{ color: PURPLE }}>{formatMoney(periodTotal)} AED</span>
+                              </div>
+                              <p className="text-[10px]" style={{ color: MUTED }}>
+                                {formatMoney(weeklyRate)} AED/wk × {durLabel}
+                              </p>
+                            </div>
+                          )
+                        })}
+                        {addOnRows.filter((a) => a.name).map((a, i) => (
+                          <InfoRow key={i} label={`${a.name} ×${a.quantity}`} value={`${formatMoney(a.quantity * a.rate)} AED`} />
+                        ))}
+                        <div style={{ borderTop: `1px solid ${PURPLE}20` }} className="mt-1 pt-1">
+                          <InfoRow label="Total" value={`${formatMoney(total)} AED`} />
+                        </div>
+                      </div>
+                      {/* Action bar */}
                       <div className="flex items-center gap-px border-t" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
                         <button
                           type="button"
-                          onClick={() => { if (validateQuote()) sendQuote.mutate('whatsapp') }}
+                          onClick={() => sendQuote.mutate('whatsapp')}
                           disabled={sendQuote.isPending}
                           className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors disabled:opacity-60"
                           style={{ color: '#25D366' }}
                         >
-                          {sendQuote.isPending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} WhatsApp
+                          <Send size={13} /> WhatsApp
                         </button>
                         <button
                           type="button"
-                          onClick={() => { if (validateQuote()) sendQuote.mutate('email') }}
+                          onClick={() => sendQuote.mutate('email')}
                           disabled={sendQuote.isPending}
                           className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors disabled:opacity-60"
                           style={{ color: '#3B82F6' }}
                         >
-                          {sendQuote.isPending ? <Loader2 size={13} className="animate-spin" /> : <Mail size={13} />} Email
+                          <Mail size={13} /> Email
                         </button>
                         <button
                           type="button"
-                          onClick={() => { if (validateQuote()) downloadQuote.mutate() }}
+                          onClick={() => downloadQuote.mutate()}
                           disabled={downloadQuote.isPending}
                           className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors disabled:opacity-60"
                           style={{ color: MUTED }}
                         >
-                          {downloadQuote.isPending ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />} PDF
+                          <Download size={13} /> PDF
                         </button>
                       </div>
-                      {sentMsg && <DoneBanner text={sentMsg} />}
                     </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-
-          {/* ── Step 4: Contract ── */}
-          {step === 3 && (
-            <div className="space-y-5">
-              <SectionTitle title="Contract" subtitle="Create the contract from the quotation — terms are locked from the quote" />
-
-              {!contract ? (
-                <>
-                  <div className="p-4 rounded-xl" style={{ background: CHIP_BG }}>
-                    <InfoRow label="Customer" value={customerName} />
-                    <InfoRow label="Period" value={`${dateRangeFrom} → ${dateRangeTo}`} />
-                    <InfoRow label="Units" value={unitRows.map((u) => u.unitNumber).join(', ')} />
-                    <InfoRow label={`Total (${dateRangeFrom && dateRangeTo ? Math.ceil(Math.round((new Date(dateRangeTo).getTime() - new Date(dateRangeFrom).getTime()) / 86400000) / 7) : 0} weeks)`} value={`${formatMoney(total)} AED`} />
-                    {Number(deposit) > 0 && <InfoRow label="Deposit" value={`${formatMoney(Number(deposit))} AED`} />}
-                  </div>
-
-                  {/* Customer documents upload */}
-                  <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Customer Documents</p>
-                      <div className="flex items-center gap-2">
-                        <select
-                          value={docType}
-                          onChange={(e) => setDocType(e.target.value)}
-                          className="h-7 rounded-lg border px-2 text-xs font-medium cursor-pointer"
-                          style={{ borderColor: 'rgba(20,8,31,0.12)', color: INK, background: '#fff' }}
-                          title="Upload type"
-                        >
-                          <option value="emirates_id">Emirates ID</option>
-                          <option value="passport">Passport</option>
-                          <option value="visa">Visa</option>
-                          <option value="trade_license">Trade License</option>
-                          <option value="other">Other</option>
-                        </select>
-                        <input
-                          ref={docInputRef}
-                          type="file"
-                          multiple
-                          accept=".pdf,.jpg,.jpeg,.png,.webp"
-                          className="hidden"
-                          onChange={(e) => handleDocUpload(e.target.files, docType)}
-                        />
+                    {sentMsg && <DoneBanner text={sentMsg} />}
+                    {quoteEmailSent && <DoneBanner text={quoteEmailSent} />}
+                  </>
+                ) : (
+                  <>
+                    {/* Selected units summary */}
+                    <div className="p-4 rounded-xl" style={{ background: CHIP_BG }}>
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Units ({unitRows.length})</p>
                         <button
                           type="button"
-                          onClick={() => docInputRef.current?.click()}
-                          disabled={uploadingDoc}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium disabled:opacity-60"
-                          style={{ background: `${PURPLE}10`, color: PURPLE }}
+                          onClick={() => setStep(1)}
+                          className="text-xs font-medium px-2.5 py-1 rounded-lg"
+                          style={{ color: PURPLE, background: '#fff' }}
                         >
-                          {uploadingDoc ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Upload
+                          Edit units
                         </button>
                       </div>
-                    </div>
-                    <p className="text-xs" style={{ color: MUTED }}>
-                      Upload customer Emirates ID, passport, or other documents. These are required before creating a contract.
-                    </p>
-                    {customerDocs.length > 0 ? (
-                      <div className="space-y-1.5">
-                        {customerDocs.map((doc) => (
-                          <div key={doc._id} className="flex items-center justify-between px-3 py-2 rounded-lg" style={{ background: CHIP_BG }}>
-                            <div className="flex items-center gap-2 min-w-0">
-                              <FileText size={14} style={{ color: PURPLE, flexShrink: 0 }} />
-                              <span className="text-xs font-medium truncate" style={{ color: INK }}>{doc.name}</span>
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{
-                                background: ID_DOC_TYPES.includes(doc.type) ? '#DBEAFE' : `${PURPLE}15`,
-                                color: ID_DOC_TYPES.includes(doc.type) ? '#1D4ED8' : PURPLE,
-                              }}>{DOC_TYPE_LABELS[doc.type] ?? doc.type}</span>
+                      {unitRows.map((u) => {
+                        const d = Math.round((new Date(u.endDate).getTime() - new Date(u.startDate).getTime()) / 86400000)
+                        const tw = Math.ceil(d / 7)
+                        const durLabel2 = `${tw} week${tw !== 1 ? 's' : ''}`
+                        const discounted = u.rate - (u.rate * u.discountPct) / 100
+                        const weeklyRate = discounted / 4
+                        const periodTotal = calcUnitPeriodTotal(u.rate, u.discountPct, u.startDate, u.endDate)
+                        return (
+                          <div key={u.unitId} className="py-1.5" style={{ borderBottom: `1px solid rgba(20,8,31,0.06)` }}>
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-semibold" style={{ color: INK }}>{u.unitNumber}</span>
+                              <span className="text-xs font-bold" style={{ color: PURPLE }}>{formatMoney(periodTotal)} AED</span>
                             </div>
-                            <div className="flex items-center gap-1.5 flex-shrink-0">
-                              <a
-                                href={doc.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="p-1 rounded hover:bg-white transition-colors"
-                                style={{ color: MUTED }}
-                              >
-                                <Eye size={13} />
-                              </a>
-                              <button
-                                type="button"
-                                onClick={() => removeDoc(doc._id)}
-                                className="p-1 rounded hover:bg-white transition-colors text-red-400 hover:text-red-600"
-                              >
-                                <X size={13} />
+                            <p className="text-[11px] mt-0.5" style={{ color: MUTED }}>
+                              {u.startDate} → {u.endDate} · {d} days · {durLabel2}
+                            </p>
+                            <p className="text-[11px]" style={{ color: MUTED }}>
+                              Rate: {formatMoney(weeklyRate)} AED/wk × {durLabel2}
+                              {u.discountPct ? ` · ${u.discountPct}% off` : ''}
+                            </p>
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    {/* Add-ons */}
+                    <div className="space-y-2">
+                      <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Add-ons (optional)</p>
+                      <div className="flex flex-wrap gap-2">
+                        {DEFAULT_ADDONS.map((preset) => (
+                          <button
+                            key={preset.name}
+                            type="button"
+                            onClick={() => addAddOn(preset)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
+                            style={{ background: `${PURPLE}10`, color: PURPLE }}
+                          >
+                            <Plus size={12} /> {preset.name} ({formatMoney(preset.rate)} AED)
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => addAddOn()}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border"
+                          style={{ color: MUTED, borderColor: 'rgba(20,8,31,0.12)' }}
+                        >
+                          <Plus size={12} /> Custom
+                        </button>
+                      </div>
+                      {addOnRows.map((a, idx) => (
+                        <div key={idx} className="rounded-xl border p-3" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
+                          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 items-end">
+                            <Field label="Name">
+                              <Input value={a.name} onChange={(e) => updateAddOn(idx, 'name', e.target.value)} className="h-8 text-xs" />
+                            </Field>
+                            <Field label="Description">
+                              <Input value={a.description} onChange={(e) => updateAddOn(idx, 'description', e.target.value)} className="h-8 text-xs" />
+                            </Field>
+                            <Field label="Qty">
+                              <Input type="number" min={1} value={a.quantity} onChange={(e) => updateAddOn(idx, 'quantity', Number(e.target.value))} className="h-8 text-xs" />
+                            </Field>
+                            <Field label="Rate">
+                              <Input type="number" min={0} value={a.rate} onChange={(e) => updateAddOn(idx, 'rate', Number(e.target.value))} className="h-8 text-xs" />
+                            </Field>
+                            <div className="flex items-center justify-between pb-1.5">
+                              <span className="text-xs font-bold" style={{ color: INK }}>{formatMoney(a.quantity * a.rate)} AED</span>
+                              <button type="button" onClick={() => removeAddOn(idx)} className="text-red-500 hover:text-red-600 ml-2">
+                                <Trash2 size={14} />
                               </button>
                             </div>
                           </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div
-                        onClick={() => docInputRef.current?.click()}
-                        className="flex flex-col items-center justify-center py-6 rounded-xl border-2 border-dashed cursor-pointer hover:border-purple-300 transition-colors"
-                        style={{ borderColor: 'rgba(20,8,31,0.12)' }}
-                      >
-                        <Upload size={20} style={{ color: MUTED }} />
-                        <p className="text-xs mt-1.5 font-medium" style={{ color: MUTED }}>Click to upload Emirates ID / Passport</p>
-                        <p className="text-[10px] mt-0.5" style={{ color: MUTED }}>PDF, JPG, PNG up to 15 MB</p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Authorized persons */}
-                  <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>
-                        Authorized persons ({authorizedPersons.length})
-                      </p>
-                      <button
-                        type="button"
-                        onClick={addPerson}
-                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium"
-                        style={{ background: `${PURPLE}10`, color: PURPLE }}
-                      >
-                        <Plus size={12} /> Add person
-                      </button>
+                        </div>
+                      ))}
                     </div>
-                    {authorizedPersons.length === 0 && (
-                      <p className="text-xs" style={{ color: MUTED }}>
-                        No authorized persons — only the customer can access the unit. Add family members or staff who may also access it.
-                      </p>
-                    )}
-                    {authorizedPersons.map((p, idx) => (
-                      <div key={idx} className="rounded-xl border p-3" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
-                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 items-end">
-                          <Field label="Name">
-                            <Input value={p.name} onChange={(e) => updatePerson(idx, 'name', e.target.value)} className="h-8 text-xs" placeholder="Full name" />
-                          </Field>
-                          <Field label="Phone">
-                            <Input value={p.phone || ''} onChange={(e) => updatePerson(idx, 'phone', e.target.value)} className="h-8 text-xs" placeholder="+971…" />
-                          </Field>
-                          <Field label="Relation">
-                            <Input value={p.relation || ''} onChange={(e) => updatePerson(idx, 'relation', e.target.value)} className="h-8 text-xs" placeholder="e.g. Spouse, Staff" />
-                          </Field>
-                          <Field label="ID Type">
-                            <Select value={p.idType || ''} onChange={(e) => updatePerson(idx, 'idType', e.target.value)} className="h-8 text-xs">
-                              <option value="">—</option>
-                              <option value="Emirates ID">Emirates ID</option>
-                              <option value="Passport">Passport</option>
-                            </Select>
-                          </Field>
-                          <div className="flex items-end gap-1.5">
-                            <Field label="ID Number" className="flex-1">
-                              <Input value={p.idNumber || ''} onChange={(e) => updatePerson(idx, 'idNumber', e.target.value)} className="h-8 text-xs" />
-                            </Field>
-                            <button type="button" onClick={() => removePerson(idx)} className="text-red-500 hover:text-red-600 pb-2">
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
+
+                    {/* Notes */}
+                    <Field label="Notes">
+                      <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes…" />
+                    </Field>
+
+                    <div className="p-4 rounded-xl border" style={{ borderColor: `${PURPLE}30`, background: `${PURPLE}05` }}>
+                      <InfoRow label={`Units (${unitRows.length})`} value={`${formatMoney(unitsTotal)} AED`} />
+                      <InfoRow label={`Add-ons (${addOnRows.length})`} value={`${formatMoney(addOnsTotal)} AED`} />
+                      {Number(deposit) > 0 && <InfoRow label="Security deposit" value={`${formatMoney(Number(deposit))} AED`} />}
+                      <div style={{ borderTop: `1px solid ${PURPLE}20` }} className="mt-1 pt-1">
+                        <div className="flex items-center justify-between text-base py-1">
+                          <span className="font-bold" style={{ color: INK }}>Total</span>
+                          <span className="font-bold" style={{ color: PURPLE }}>{formatMoney(total)} AED</span>
                         </div>
                       </div>
-                    ))}
-                  </div>
+                    </div>
 
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => createContract.mutate()}
-                      disabled={createContract.isPending || !customerDocs.some((d) => ID_DOC_TYPES.includes(d.type))}
-                      className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40"
-                      style={{ background: PURPLE, cursor: customerDocs.some((d) => ID_DOC_TYPES.includes(d.type)) && !createContract.isPending ? 'pointer' : 'not-allowed' }}
-                    >
-                      {createContract.isPending ? <Loader2 size={15} className="animate-spin" /> : <Briefcase size={15} />}
-                      {createContract.isPending ? 'Creating…' : 'Create Contract'}
-                    </button>
-                  </div>
-                  {!customerDocs.some((d) => ID_DOC_TYPES.includes(d.type)) && (
-                    <p className="text-xs font-medium" style={{ color: '#B91C1C' }}>
-                      Upload an Emirates ID or passport above before creating the contract.
-                    </p>
-                  )}
-                  <p className="text-xs" style={{ color: MUTED }}>
-                    Creates a draft contract with the options above and auto-generates the first invoice.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <DoneBanner text={`Contract ${contract.contractNo} created`} />
-                  <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
-                    {/* Header */}
-                    <div className="flex items-center justify-between px-4 py-3" style={{ background: CHIP_BG }}>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold" style={{ color: INK }}>{contract.contractNo}</span>
-                        <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold" style={{
-                          background: contract.status === 'active' ? '#D1FAE5' : contract.status === 'cancelled' ? '#FEE2E2' : '#DBEAFE',
-                          color: contract.status === 'active' ? GREEN : contract.status === 'cancelled' ? '#B91C1C' : '#1D4ED8',
-                        }}>{contract.status.replace(/_/g, ' ')}</span>
+                    {/* Share bar — visible after Save Quote & Send */}
+                    {showShareBar && (
+                      <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
+                        <div className="px-4 py-3" style={{ background: CHIP_BG }}>
+                          <p className="text-sm font-bold" style={{ color: INK, fontFamily: "'Bricolage Grotesque', sans-serif" }}>
+                            Share quotation
+                          </p>
+                          <p className="text-xs mt-0.5" style={{ color: MUTED }}>
+                            Delivers the PDF to {customerName || 'the customer'}.
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-px border-t" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
+                          <button
+                            type="button"
+                            onClick={() => { if (validateQuote()) sendQuote.mutate('whatsapp') }}
+                            disabled={sendQuote.isPending}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors disabled:opacity-60"
+                            style={{ color: '#25D366' }}
+                          >
+                            {sendQuote.isPending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} WhatsApp
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { if (validateQuote()) sendQuote.mutate('email') }}
+                            disabled={sendQuote.isPending}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors disabled:opacity-60"
+                            style={{ color: '#3B82F6' }}
+                          >
+                            {sendQuote.isPending ? <Loader2 size={13} className="animate-spin" /> : <Mail size={13} />} Email
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { if (validateQuote()) downloadQuote.mutate() }}
+                            disabled={downloadQuote.isPending}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors disabled:opacity-60"
+                            style={{ color: MUTED }}
+                          >
+                            {downloadQuote.isPending ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />} PDF
+                          </button>
+                        </div>
+                        {sentMsg && <DoneBanner text={sentMsg} />}
                       </div>
-                      <span className="text-sm font-bold" style={{ color: PURPLE }}>{formatMoney(total)} AED / {dateRangeFrom && dateRangeTo ? Math.ceil(Math.round((new Date(dateRangeTo).getTime() - new Date(dateRangeFrom).getTime()) / 86400000) / 7) : 0} weeks</span>
-                    </div>
-                    {/* Body */}
-                    <div className="px-4 py-3 space-y-1">
-                      <InfoRow label="Term" value={`${formatDate(contract.startDate)} → ${formatDate(contract.endDate)}`} />
-                      {paymentMethod && <InfoRow label="Payment" value={paymentMethod.replace(/_/g, ' ')} />}
-                      {authorizedPersons.length > 0 && <InfoRow label="Authorized persons" value={authorizedPersons.map((p) => p.name).filter(Boolean).join(', ') || `${authorizedPersons.length}`} />}
-                    </div>
-                  </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
 
-                  {signingLink && (
-                    <div className="p-3 rounded-xl space-y-2" style={{ background: CHIP_BG }}>
-                      <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Signing link (valid 7 days)</p>
-                      <p className="text-xs break-all" style={{ color: INK }}>{signingLink}</p>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => { navigator.clipboard.writeText(signingLink); setLinkCopied(true) }}
-                          className="px-3 py-1.5 rounded-lg text-xs font-medium border hover:bg-gray-50"
-                          style={{ color: INK, borderColor: 'rgba(20,8,31,0.15)' }}
-                        >
-                          {linkCopied ? 'Copied!' : 'Copy link'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const phone = customerPhone.replace(/\D/g, '').replace(/^00/, '')
-                            const msg = `Hello ${customerName},\n\nPlease review and sign your storage contract ${contract.contractNo}:\n${signingLink}\n\nThank you — PurpleBox`
-                            window.open(phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
-                          }}
-                          className="px-3 py-1.5 rounded-lg text-xs font-medium text-white"
-                          style={{ background: '#25D366' }}
-                        >
-                          Send via WhatsApp
-                        </button>
-                      </div>
-                    </div>
-                  )}
+            {/* ── Step 4: Contract ── */}
+            {step === 3 && (
+              <div className="space-y-5">
+                <SectionTitle title="Contract" subtitle="Create the contract from the quotation — terms are locked from the quote" />
 
-                  {contract.status === 'cancelled' && (
-                    <div className="p-3 rounded-xl text-sm" style={{ background: '#FEE2E2', color: '#B91C1C' }}>
-                      This contract was cancelled. Edit the quotation and create a new contract if needed.
+                {!contract ? (
+                  <>
+                    <div className="p-4 rounded-xl" style={{ background: CHIP_BG }}>
+                      <InfoRow label="Customer" value={customerName} />
+                      <InfoRow label="Period" value={`${dateRangeFrom} → ${dateRangeTo}`} />
+                      <InfoRow label="Units" value={unitRows.map((u) => u.unitNumber).join(', ')} />
+                      <InfoRow label={`Total (${dateRangeFrom && dateRangeTo ? Math.ceil(Math.round((new Date(dateRangeTo).getTime() - new Date(dateRangeFrom).getTime()) / 86400000) / 7) : 0} weeks)`} value={`${formatMoney(total)} AED`} />
+                      {Number(deposit) > 0 && <InfoRow label="Deposit" value={`${formatMoney(Number(deposit))} AED`} />}
                     </div>
-                  )}
 
-                  {/* Contract options — editable until booked */}
-                  {!isBooked && (
+                    {/* Customer documents upload */}
                     <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
                       <div className="flex items-center justify-between">
-                        <p className="text-xs font-semibold" style={{ color: INK }}>
+                        <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Customer Documents</p>
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={docType}
+                            onChange={(e) => setDocType(e.target.value)}
+                            className="h-7 rounded-lg border px-2 text-xs font-medium cursor-pointer"
+                            style={{ borderColor: 'rgba(20,8,31,0.12)', color: INK, background: '#fff' }}
+                            title="Upload type"
+                          >
+                            <option value="emirates_id">Emirates ID</option>
+                            <option value="passport">Passport</option>
+                            <option value="visa">Visa</option>
+                            <option value="trade_license">Trade License</option>
+                            <option value="other">Other</option>
+                          </select>
+                          <input
+                            ref={docInputRef}
+                            type="file"
+                            multiple
+                            accept=".pdf,.jpg,.jpeg,.png,.webp"
+                            className="hidden"
+                            onChange={(e) => handleDocUpload(e.target.files, docType)}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => docInputRef.current?.click()}
+                            disabled={uploadingDoc}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium disabled:opacity-60"
+                            style={{ background: `${PURPLE}10`, color: PURPLE }}
+                          >
+                            {uploadingDoc ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Upload
+                          </button>
+                        </div>
+                      </div>
+                      <p className="text-xs" style={{ color: MUTED }}>
+                        Upload customer Emirates ID, passport, or other documents. These are required before creating a contract.
+                      </p>
+                      {customerDocs.length > 0 ? (
+                        <div className="space-y-1.5">
+                          {customerDocs.map((doc) => (
+                            <div key={doc._id} className="flex items-center justify-between px-3 py-2 rounded-lg" style={{ background: CHIP_BG }}>
+                              <div className="flex items-center gap-2 min-w-0">
+                                <FileText size={14} style={{ color: PURPLE, flexShrink: 0 }} />
+                                <span className="text-xs font-medium truncate" style={{ color: INK }}>{doc.name}</span>
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{
+                                  background: ID_DOC_TYPES.includes(doc.type) ? '#DBEAFE' : `${PURPLE}15`,
+                                  color: ID_DOC_TYPES.includes(doc.type) ? '#1D4ED8' : PURPLE,
+                                }}>{DOC_TYPE_LABELS[doc.type] ?? doc.type}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 flex-shrink-0">
+                                <a
+                                  href={doc.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="p-1 rounded hover:bg-white transition-colors"
+                                  style={{ color: MUTED }}
+                                >
+                                  <Eye size={13} />
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={() => removeDoc(doc._id)}
+                                  className="p-1 rounded hover:bg-white transition-colors text-red-400 hover:text-red-600"
+                                >
+                                  <X size={13} />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div
+                          onClick={() => docInputRef.current?.click()}
+                          className="flex flex-col items-center justify-center py-6 rounded-xl border-2 border-dashed cursor-pointer hover:border-purple-300 transition-colors"
+                          style={{ borderColor: 'rgba(20,8,31,0.12)' }}
+                        >
+                          <Upload size={20} style={{ color: MUTED }} />
+                          <p className="text-xs mt-1.5 font-medium" style={{ color: MUTED }}>Click to upload Emirates ID / Passport</p>
+                          <p className="text-[10px] mt-0.5" style={{ color: MUTED }}>PDF, JPG, PNG up to 15 MB</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Authorized persons */}
+                    <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>
                           Authorized persons ({authorizedPersons.length})
                         </p>
                         <button
@@ -2112,7 +1980,7 @@ export default function NewQuote() {
                       </div>
                       {authorizedPersons.length === 0 && (
                         <p className="text-xs" style={{ color: MUTED }}>
-                          No authorized persons — only the customer can access the unit.
+                          No authorized persons — only the customer can access the unit. Add family members or staff who may also access it.
                         </p>
                       )}
                       {authorizedPersons.map((p, idx) => (
@@ -2145,629 +2013,761 @@ export default function NewQuote() {
                           </div>
                         </div>
                       ))}
+                    </div>
 
+                    <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        onClick={() => saveContractOptions.mutate()}
-                        disabled={saveContractOptions.isPending}
-                        className="px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
-                        style={{ background: PURPLE }}
+                        onClick={() => createContract.mutate()}
+                        disabled={createContract.isPending || !customerDocs.some((d) => ID_DOC_TYPES.includes(d.type))}
+                        className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40"
+                        style={{ background: PURPLE, cursor: customerDocs.some((d) => ID_DOC_TYPES.includes(d.type)) && !createContract.isPending ? 'pointer' : 'not-allowed' }}
                       >
-                        {saveContractOptions.isPending ? 'Saving…' : 'Save Contract Options'}
+                        {createContract.isPending ? <Loader2 size={15} className="animate-spin" /> : <Briefcase size={15} />}
+                        {createContract.isPending ? 'Creating…' : 'Create Contract'}
                       </button>
-                      {sentMsg === 'Contract options saved' && <DoneBanner text={sentMsg} />}
                     </div>
-                  )}
-
-                  {/* Action bar — after saving options */}
-                  {['draft', 'pending_signature'].includes(contract.status) && (
+                    {!customerDocs.some((d) => ID_DOC_TYPES.includes(d.type)) && (
+                      <p className="text-xs font-medium" style={{ color: '#B91C1C' }}>
+                        Upload an Emirates ID or passport above before creating the contract.
+                      </p>
+                    )}
+                    <p className="text-xs" style={{ color: MUTED }}>
+                      Creates a draft contract with the options above and auto-generates the first invoice.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <DoneBanner text={`Contract ${contract.contractNo} created`} />
                     <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
-                      <div className="flex items-center gap-px" style={{ background: '#fff' }}>
-                        <button
-                          type="button"
-                          onClick={() => setSigningOpen(true)}
-                          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors"
-                          style={{ color: INK }}
-                        >
-                          <FileText size={13} /> Sign
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => createSigningLink.mutate()}
-                          disabled={createSigningLink.isPending}
-                          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors disabled:opacity-60"
-                          style={{ color: '#3B82F6' }}
-                        >
-                          {createSigningLink.isPending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} Send link
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => { if (confirm('Cancel this contract?')) cancelContract.mutate() }}
-                          disabled={cancelContract.isPending}
-                          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors disabled:opacity-60"
-                          style={{ color: '#DC2626' }}
-                        >
-                          <Trash2 size={13} /> Cancel
-                        </button>
+                      {/* Header */}
+                      <div className="flex items-center justify-between px-4 py-3" style={{ background: CHIP_BG }}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold" style={{ color: INK }}>{contract.contractNo}</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold" style={{
+                            background: contract.status === 'active' ? '#D1FAE5' : contract.status === 'cancelled' ? '#FEE2E2' : '#DBEAFE',
+                            color: contract.status === 'active' ? GREEN : contract.status === 'cancelled' ? '#B91C1C' : '#1D4ED8',
+                          }}>{contract.status.replace(/_/g, ' ')}</span>
+                        </div>
+                        <span className="text-sm font-bold" style={{ color: PURPLE }}>{formatMoney(total)} AED / {dateRangeFrom && dateRangeTo ? Math.ceil(Math.round((new Date(dateRangeTo).getTime() - new Date(dateRangeFrom).getTime()) / 86400000) / 7) : 0} weeks</span>
+                      </div>
+                      {/* Body */}
+                      <div className="px-4 py-3 space-y-1">
+                        <InfoRow label="Term" value={`${formatDate(contract.startDate)} → ${formatDate(contract.endDate)}`} />
+                        {paymentMethod && <InfoRow label="Payment" value={paymentMethod.replace(/_/g, ' ')} />}
+                        {authorizedPersons.length > 0 && <InfoRow label="Authorized persons" value={authorizedPersons.map((p) => p.name).filter(Boolean).join(', ') || `${authorizedPersons.length}`} />}
                       </div>
                     </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
 
-          {/* ── Step 5: Invoice ── */}
-          {step === 4 && (
-            <div className="space-y-5">
-              <SectionTitle title="Invoices" subtitle="Edit the first invoice or add a next-period invoice — suggested from the last one" />
-
-              {!contract ? (
-                <div className="text-sm text-center py-8 rounded-xl" style={{ background: CHIP_BG, color: MUTED }}>
-                  Create the contract first — the first invoice is generated automatically.
-                </div>
-              ) : (
-                <InvoiceStep
-                  contract={contract}
-                  invoices={flowData?.invoices || []}
-                  customerId={customerId}
-                  customerName={customerName}
-                  customerPhone={customerPhone}
-                  customerEmail={customerEmail}
-                  onChanged={() => { qc.invalidateQueries({ queryKey: ['flow-contract'] }); setZohoSyncing(false) }}
-                  handleRef={invoiceHandleRef}
-                  onEditingChange={(v) => { setInvoiceEditing(v); if (!v) setZohoSyncing(false) }}
-                />
-              )}
-            </div>
-          )}
-
-          {/* ── Step 6: Receipt / Payment ── */}
-          {step === 5 && (
-            <div className="space-y-5">
-              <SectionTitle title="Payment & Receipt" subtitle="Record the customer's payment and attach the receipt" />
-
-              {!invoice ? (
-                <div className="text-sm text-center py-8 rounded-xl" style={{ background: CHIP_BG, color: MUTED }}>
-                  Create the contract first — the invoice comes with it.
-                </div>
-              ) : (
-                <>
-                  <div className="grid grid-cols-3 gap-3 p-4 rounded-xl text-sm" style={{ background: CHIP_BG }}>
-                    <div>
-                      <p className="text-xs" style={{ color: MUTED }}>Invoice total</p>
-                      <p className="font-bold" style={{ color: INK }}>{formatMoney(invoicedTotal)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs" style={{ color: MUTED }}>Paid</p>
-                      <p className="font-bold" style={{ color: GREEN }}>{formatMoney(paidTotal)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs" style={{ color: MUTED }}>Balance</p>
-                      <p className="font-bold" style={{ color: invoicedTotal - paidTotal > 0 ? '#B91C1C' : GREEN }}>
-                        {formatMoney(Math.max(0, invoicedTotal - paidTotal))}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Payment schedule */}
-                  {contract && (() => {
-                    const cStart = new Date(contract.startDate)
-                    const cEnd = new Date(contract.endDate)
-                    const monthlyRate = Number(contract.rate || 0)
-                    const discPct = Number((contract as any).firstMonthDiscountPct ?? (contract as any).discountPct ?? 0)
-                    const discountedMonthly = Math.round((monthlyRate - (monthlyRate * discPct) / 100) * 100) / 100
-                    const weeklyRate = Math.round((monthlyRate / 4) * 100) / 100
-                    const periods: { label: string; from: Date; to: Date; weeks: number; amount: number; type: string; note?: string }[] = []
-
-                    // First 4 weeks — rent (with discount if any)
-                    const firstEnd = new Date(cStart)
-                    firstEnd.setDate(firstEnd.getDate() + 28)
-                    periods.push({ label: 'Rent (First 4 weeks)', from: new Date(cStart), to: firstEnd, weeks: 4, amount: discountedMonthly, type: 'rent', note: discPct > 0 ? `${discPct}% off` : undefined })
-
-                    // Advance — always 4 weeks (no discount)
-                    periods.push({ label: 'Advance Rent (4 weeks)', from: new Date(cStart), to: firstEnd, weeks: 4, amount: monthlyRate, type: 'advance' })
-
-                    // Middle periods (if any)
-                    let cursor = new Date(firstEnd)
-                    const lastPeriodStart = new Date(cEnd)
-                    lastPeriodStart.setDate(lastPeriodStart.getDate() - 28)
-                    let periodNum = 2
-                    while (cursor < lastPeriodStart && cursor < cEnd) {
-                      const pEnd = new Date(cursor)
-                      pEnd.setDate(pEnd.getDate() + 28)
-                      const actualEnd = pEnd > cEnd ? cEnd : pEnd
-                      const pDays = Math.round((actualEnd.getTime() - cursor.getTime()) / 86400000)
-                      const pWeeks = Math.ceil(pDays / 7)
-                      periods.push({
-                        label: `Rent Period ${periodNum}`,
-                        from: new Date(cursor),
-                        to: actualEnd,
-                        weeks: pWeeks,
-                        amount: Math.round(weeklyRate * pWeeks * 100) / 100,
-                        type: 'upcoming',
-                      })
-                      cursor = new Date(pEnd)
-                      periodNum++
-                    }
-
-                    const fmtD = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
-                    const grandTotal = periods.reduce((s, p) => s + p.amount, 0)
-
-                    return (
-                      <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
-                        <div className="flex items-center justify-between px-4 py-2.5" style={{ background: CHIP_BG }}>
-                          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Payment Schedule</p>
-                          <p className="text-xs font-bold" style={{ color: INK }}>{formatMoney(grandTotal)} AED</p>
+                    {signingLink && (
+                      <div className="p-3 rounded-xl space-y-2" style={{ background: CHIP_BG }}>
+                        <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Signing link (valid 7 days)</p>
+                        <p className="text-xs break-all" style={{ color: INK }}>{signingLink}</p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => { navigator.clipboard.writeText(signingLink); setLinkCopied(true) }}
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium border hover:bg-gray-50"
+                            style={{ color: INK, borderColor: 'rgba(20,8,31,0.15)' }}
+                          >
+                            {linkCopied ? 'Copied!' : 'Copy link'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const phone = customerPhone.replace(/\D/g, '').replace(/^00/, '')
+                              const msg = `Hello ${customerName},\n\nPlease review and sign your storage contract ${contract.contractNo}:\n${signingLink}\n\nThank you — PurpleBox`
+                              window.open(phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
+                            }}
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium text-white"
+                            style={{ background: '#25D366' }}
+                          >
+                            Send via WhatsApp
+                          </button>
                         </div>
-                        <div className="divide-y" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
-                          {periods.map((p, i) => {
-                            const isCollected = p.type === 'rent' || p.type === 'advance'
-                            return (
+                      </div>
+                    )}
+
+                    {contract.status === 'cancelled' && (
+                      <div className="p-3 rounded-xl text-sm" style={{ background: '#FEE2E2', color: '#B91C1C' }}>
+                        This contract was cancelled. Edit the quotation and create a new contract if needed.
+                      </div>
+                    )}
+
+                    {/* Contract options — editable until booked */}
+                    {!isBooked && (
+                      <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-semibold" style={{ color: INK }}>
+                            Authorized persons ({authorizedPersons.length})
+                          </p>
+                          <button
+                            type="button"
+                            onClick={addPerson}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium"
+                            style={{ background: `${PURPLE}10`, color: PURPLE }}
+                          >
+                            <Plus size={12} /> Add person
+                          </button>
+                        </div>
+                        {authorizedPersons.length === 0 && (
+                          <p className="text-xs" style={{ color: MUTED }}>
+                            No authorized persons — only the customer can access the unit.
+                          </p>
+                        )}
+                        {authorizedPersons.map((p, idx) => (
+                          <div key={idx} className="rounded-xl border p-3" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
+                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 items-end">
+                              <Field label="Name">
+                                <Input value={p.name} onChange={(e) => updatePerson(idx, 'name', e.target.value)} className="h-8 text-xs" placeholder="Full name" />
+                              </Field>
+                              <Field label="Phone">
+                                <Input value={p.phone || ''} onChange={(e) => updatePerson(idx, 'phone', e.target.value)} className="h-8 text-xs" placeholder="+971…" />
+                              </Field>
+                              <Field label="Relation">
+                                <Input value={p.relation || ''} onChange={(e) => updatePerson(idx, 'relation', e.target.value)} className="h-8 text-xs" placeholder="e.g. Spouse, Staff" />
+                              </Field>
+                              <Field label="ID Type">
+                                <Select value={p.idType || ''} onChange={(e) => updatePerson(idx, 'idType', e.target.value)} className="h-8 text-xs">
+                                  <option value="">—</option>
+                                  <option value="Emirates ID">Emirates ID</option>
+                                  <option value="Passport">Passport</option>
+                                </Select>
+                              </Field>
+                              <div className="flex items-end gap-1.5">
+                                <Field label="ID Number" className="flex-1">
+                                  <Input value={p.idNumber || ''} onChange={(e) => updatePerson(idx, 'idNumber', e.target.value)} className="h-8 text-xs" />
+                                </Field>
+                                <button type="button" onClick={() => removePerson(idx)} className="text-red-500 hover:text-red-600 pb-2">
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+
+                        <button
+                          type="button"
+                          onClick={() => saveContractOptions.mutate()}
+                          disabled={saveContractOptions.isPending}
+                          className="px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
+                          style={{ background: PURPLE }}
+                        >
+                          {saveContractOptions.isPending ? 'Saving…' : 'Save Contract Options'}
+                        </button>
+                        {sentMsg === 'Contract options saved' && <DoneBanner text={sentMsg} />}
+                      </div>
+                    )}
+
+                    {/* Action bar — after saving options */}
+                    {['draft', 'pending_signature'].includes(contract.status) && (
+                      <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
+                        <div className="flex items-center gap-px" style={{ background: '#fff' }}>
+                          <button
+                            type="button"
+                            onClick={() => setSigningOpen(true)}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors"
+                            style={{ color: INK }}
+                          >
+                            <FileText size={13} /> Sign
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => createSigningLink.mutate()}
+                            disabled={createSigningLink.isPending}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors disabled:opacity-60"
+                            style={{ color: '#3B82F6' }}
+                          >
+                            {createSigningLink.isPending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} Send link
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { if (confirm('Cancel this contract?')) cancelContract.mutate() }}
+                            disabled={cancelContract.isPending}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors disabled:opacity-60"
+                            style={{ color: '#DC2626' }}
+                          >
+                            <Trash2 size={13} /> Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* ── Step 5: Invoice ── */}
+            {step === 4 && (
+              <div className="space-y-5">
+                <SectionTitle title="Invoices" subtitle="Edit the first invoice or add a next-period invoice — suggested from the last one" />
+
+                {!contract ? (
+                  <div className="text-sm text-center py-8 rounded-xl" style={{ background: CHIP_BG, color: MUTED }}>
+                    Create the contract first — the first invoice is generated automatically.
+                  </div>
+                ) : (
+                  <InvoiceStep
+                    contract={contract}
+                    invoices={flowData?.invoices || []}
+                    customerId={customerId}
+                    customerName={customerName}
+                    customerPhone={customerPhone}
+                    customerEmail={customerEmail}
+                    onChanged={() => { qc.invalidateQueries({ queryKey: ['flow-contract'] }); setZohoSyncing(false) }}
+                    handleRef={invoiceHandleRef}
+                    onEditingChange={(v) => { setInvoiceEditing(v); if (!v) setZohoSyncing(false) }}
+                  />
+                )}
+              </div>
+            )}
+
+            {/* ── Step 6: Receipt / Payment ── */}
+            {step === 5 && (
+              <div className="space-y-5">
+                <SectionTitle title="Payment & Receipt" subtitle="Record the customer's payment and attach the receipt" />
+
+                {!invoice ? (
+                  <div className="text-sm text-center py-8 rounded-xl" style={{ background: CHIP_BG, color: MUTED }}>
+                    Create the contract first — the invoice comes with it.
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-3 gap-3 p-4 rounded-xl text-sm" style={{ background: CHIP_BG }}>
+                      <div>
+                        <p className="text-xs" style={{ color: MUTED }}>Invoice total</p>
+                        <p className="font-bold" style={{ color: INK }}>{formatMoney(invoicedTotal)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs" style={{ color: MUTED }}>Paid</p>
+                        <p className="font-bold" style={{ color: GREEN }}>{formatMoney(paidTotal)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs" style={{ color: MUTED }}>Balance</p>
+                        <p className="font-bold" style={{ color: invoicedTotal - paidTotal > 0 ? '#B91C1C' : GREEN }}>
+                          {formatMoney(Math.max(0, invoicedTotal - paidTotal))}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Payment schedule */}
+                    {contract && (() => {
+                      const cStart = new Date(contract.startDate)
+                      const cEnd = new Date(contract.endDate)
+                      const monthlyRate = Number(contract.rate || 0)
+                      const discPct = Number((contract as any).firstMonthDiscountPct ?? (contract as any).discountPct ?? 0)
+                      const discountedMonthly = Math.round((monthlyRate - (monthlyRate * discPct) / 100) * 100) / 100
+                      const weeklyRate = Math.round((monthlyRate / 4) * 100) / 100
+                      const periods: { label: string; from: Date; to: Date; weeks: number; amount: number; type: string; note?: string }[] = []
+
+                      // First 4 weeks — rent (with discount if any)
+                      const firstEnd = new Date(cStart)
+                      firstEnd.setDate(firstEnd.getDate() + 28)
+                      periods.push({ label: 'Rent (First 4 weeks)', from: new Date(cStart), to: firstEnd, weeks: 4, amount: discountedMonthly, type: 'rent', note: discPct > 0 ? `${discPct}% off` : undefined })
+
+                      // Advance — always 4 weeks (no discount)
+                      periods.push({ label: 'Advance Rent (4 weeks)', from: new Date(cStart), to: firstEnd, weeks: 4, amount: monthlyRate, type: 'advance' })
+
+                      // Middle periods (if any)
+                      let cursor = new Date(firstEnd)
+                      const lastPeriodStart = new Date(cEnd)
+                      lastPeriodStart.setDate(lastPeriodStart.getDate() - 28)
+                      let periodNum = 2
+                      while (cursor < lastPeriodStart && cursor < cEnd) {
+                        const pEnd = new Date(cursor)
+                        pEnd.setDate(pEnd.getDate() + 28)
+                        const actualEnd = pEnd > cEnd ? cEnd : pEnd
+                        const pDays = Math.round((actualEnd.getTime() - cursor.getTime()) / 86400000)
+                        const pWeeks = Math.ceil(pDays / 7)
+                        periods.push({
+                          label: `Rent Period ${periodNum}`,
+                          from: new Date(cursor),
+                          to: actualEnd,
+                          weeks: pWeeks,
+                          amount: Math.round(weeklyRate * pWeeks * 100) / 100,
+                          type: 'upcoming',
+                        })
+                        cursor = new Date(pEnd)
+                        periodNum++
+                      }
+
+                      const fmtD = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+                      const grandTotal = periods.reduce((s, p) => s + p.amount, 0)
+
+                      return (
+                        <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
+                          <div className="flex items-center justify-between px-4 py-2.5" style={{ background: CHIP_BG }}>
+                            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Payment Schedule</p>
+                            <p className="text-xs font-bold" style={{ color: INK }}>{formatMoney(grandTotal)} AED</p>
+                          </div>
+                          <div className="divide-y" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
+                            {periods.map((p, i) => {
+                              const isCollected = p.type === 'rent' || p.type === 'advance'
+                              return (
+                                <div key={i} className="flex items-center justify-between px-4 py-2.5">
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
+                                      style={{ background: isCollected ? `${GREEN}15` : `${PURPLE}10` }}>
+                                      {isCollected
+                                        ? <Check size={13} style={{ color: GREEN }} />
+                                        : <span className="text-[10px] font-bold" style={{ color: PURPLE }}>{i + 1}</span>}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-semibold" style={{ color: INK }}>{p.label}</p>
+                                      <p className="text-[10px]" style={{ color: MUTED }}>
+                                        {fmtD(p.from)} – {fmtD(p.to)} · {p.weeks} wk{p.weeks !== 1 ? 's' : ''} × {formatMoney(p.amount / p.weeks)}/wk
+                                        {p.note ? ` · ${p.note}` : ''}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div className="text-right flex-shrink-0">
+                                    <p className="text-xs font-bold" style={{ color: INK }}>{formatMoney(p.amount)} AED</p>
+                                    <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
+                                      style={isCollected
+                                        ? { background: '#D1FAE5', color: GREEN }
+                                        : { background: `${PURPLE}10`, color: PURPLE }
+                                      }>
+                                      {p.type === 'rent' ? 'due now' : p.type === 'advance' ? 'advance' : 'upcoming'}
+                                    </span>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })()}
+
+                    {/* Payment history */}
+                    {(() => {
+                      const allPayments = (flowData?.invoices || []).flatMap((inv) =>
+                        (inv.paymentHistory || []).map((p, idx) => ({ ...p, invoiceNo: inv.invoiceNo, invId: inv._id, idx }))
+                      )
+                      return allPayments.length > 0 ? (
+                        <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
+                          <div className="px-4 py-2.5" style={{ background: CHIP_BG }}>
+                            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Payment History ({allPayments.length})</p>
+                          </div>
+                          <div className="divide-y" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
+                            {allPayments.map((p, i) => (
                               <div key={i} className="flex items-center justify-between px-4 py-2.5">
                                 <div className="flex items-center gap-3 min-w-0">
-                                  <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
-                                    style={{ background: isCollected ? `${GREEN}15` : `${PURPLE}10` }}>
-                                    {isCollected
-                                      ? <Check size={13} style={{ color: GREEN }} />
-                                      : <span className="text-[10px] font-bold" style={{ color: PURPLE }}>{i + 1}</span>}
+                                  <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: `${GREEN}15` }}>
+                                    <Check size={13} style={{ color: GREEN }} />
                                   </div>
                                   <div className="min-w-0">
-                                    <p className="text-xs font-semibold" style={{ color: INK }}>{p.label}</p>
+                                    <p className="text-xs font-semibold" style={{ color: INK }}>{formatMoney(p.amount)} AED</p>
                                     <p className="text-[10px]" style={{ color: MUTED }}>
-                                      {fmtD(p.from)} – {fmtD(p.to)} · {p.weeks} wk{p.weeks !== 1 ? 's' : ''} × {formatMoney(p.amount / p.weeks)}/wk
-                                      {p.note ? ` · ${p.note}` : ''}
+                                      {new Date(p.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} · {(p.method || 'cash').replace(/_/g, ' ')}
+                                      {p.notes ? ` · ${p.notes}` : ''}
                                     </p>
                                   </div>
                                 </div>
-                                <div className="text-right flex-shrink-0">
-                                  <p className="text-xs font-bold" style={{ color: INK }}>{formatMoney(p.amount)} AED</p>
-                                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
-                                    style={isCollected
-                                      ? { background: '#D1FAE5', color: GREEN }
-                                      : { background: `${PURPLE}10`, color: PURPLE }
-                                    }>
-                                    {p.type === 'rent' ? 'due now' : p.type === 'advance' ? 'advance' : 'upcoming'}
-                                  </span>
-                                </div>
+                                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: '#D1FAE5', color: GREEN }}>paid</span>
                               </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )
-                  })()}
-
-                  {/* Payment history */}
-                  {(() => {
-                    const allPayments = (flowData?.invoices || []).flatMap((inv) =>
-                      (inv.paymentHistory || []).map((p, idx) => ({ ...p, invoiceNo: inv.invoiceNo, invId: inv._id, idx }))
-                    )
-                    return allPayments.length > 0 ? (
-                      <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
-                        <div className="px-4 py-2.5" style={{ background: CHIP_BG }}>
-                          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Payment History ({allPayments.length})</p>
-                        </div>
-                        <div className="divide-y" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
-                          {allPayments.map((p, i) => (
-                            <div key={i} className="flex items-center justify-between px-4 py-2.5">
-                              <div className="flex items-center gap-3 min-w-0">
-                                <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: `${GREEN}15` }}>
-                                  <Check size={13} style={{ color: GREEN }} />
-                                </div>
-                                <div className="min-w-0">
-                                  <p className="text-xs font-semibold" style={{ color: INK }}>{formatMoney(p.amount)} AED</p>
-                                  <p className="text-[10px]" style={{ color: MUTED }}>
-                                    {new Date(p.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} · {(p.method || 'cash').replace(/_/g, ' ')}
-                                    {p.notes ? ` · ${p.notes}` : ''}
-                                  </p>
-                                </div>
-                              </div>
-                              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: '#D1FAE5', color: GREEN }}>paid</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null
-                  })()}
-
-                  {paidTotal > 0 && paidTotal < invoicedTotal && (
-                    <div className="p-3 rounded-xl text-xs font-medium" style={{ background: '#FEF3C7', color: '#92400E' }}>
-                      Partially paid — {formatMoney(invoicedTotal - paidTotal)} AED remaining
-                    </div>
-                  )}
-                  {paidTotal >= invoicedTotal && paidTotal > 0 && <DoneBanner text={`Fully paid — ${formatMoney(paidTotal)} AED received`} />}
-
-                  {invoicedTotal - paidTotal > 0 && (
-                    <div className="space-y-3">
-                      <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>
-                        {paidTotal > 0 ? 'Add Another Payment' : 'Record Payment'}
-                      </p>
-                      {(flowData?.invoices || []).length > 1 && (
-                        <Field label="Pay against invoice">
-                          <Select value={payInvoiceId || (flowData?.invoices || []).find((i) => i.status !== 'paid')?._id || ''} onChange={(e) => setPayInvoiceId(e.target.value)}>
-                            {(flowData?.invoices || []).filter((i) => i.status !== 'paid').map((i) => (
-                              <option key={i._id} value={i._id}>{i.invoiceNo} — {formatMoney(i.total)} AED (paid {formatMoney(i.paymentMade || 0)})</option>
                             ))}
-                          </Select>
-                        </Field>
-                      )}
-                      <div className="grid grid-cols-2 gap-3">
-                        <Field label="Amount (AED)">
-                          <Input type="number" min={0.01} step="0.01" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} placeholder={String(invoicedTotal - paidTotal)} />
-                        </Field>
-                        <Field label="Date">
-                          <Input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} />
-                        </Field>
-                        <Field label="Method">
-                          <Select value={payMethod} onChange={(e) => setPayMethod(e.target.value)}>
-                            <option value="cash">Cash</option>
-                            <option value="bank_transfer">Bank transfer</option>
-                            <option value="card">Card</option>
-                            <option value="cheque">Cheque</option>
-                            <option value="other">Other</option>
-                          </Select>
-                        </Field>
-                        <Field label="Receipt (optional)">
-                          <Input type="file" accept="image/*,.pdf" className="h-auto py-1.5" onChange={(e) => setReceiptFile(e.target.files?.[0] ?? null)} />
-                        </Field>
+                          </div>
+                        </div>
+                      ) : null
+                    })()}
+
+                    {paidTotal > 0 && paidTotal < invoicedTotal && (
+                      <div className="p-3 rounded-xl text-xs font-medium" style={{ background: '#FEF3C7', color: '#92400E' }}>
+                        Partially paid — {formatMoney(invoicedTotal - paidTotal)} AED remaining
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => recordPayment.mutate()}
-                        disabled={recordPayment.isPending}
-                        className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
-                        style={{ background: PURPLE }}
-                      >
-                        {recordPayment.isPending ? <Loader2 size={15} className="animate-spin" /> : <CreditCard size={15} />}
-                        {recordPayment.isPending ? 'Recording…' : paidTotal > 0 ? 'Record Partial Payment' : 'Record Payment'}
-                      </button>
-                      <p className="text-[11px]" style={{ color: MUTED }}>Invoice & payment will auto-sync to Zoho Books</p>
-                    </div>
-                  )}
-                  {/* Approval status */}
-                  {approvalStatus === 'pending' && (
-                    <div className="flex items-center gap-3 p-4 rounded-xl" style={{ background: '#EDE9FE' }}>
-                      <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: `${PURPLE}20` }}>
-                        <ShieldCheck size={18} style={{ color: PURPLE }} />
+                    )}
+                    {paidTotal >= invoicedTotal && paidTotal > 0 && <DoneBanner text={`Fully paid — ${formatMoney(paidTotal)} AED received`} />}
+
+                    {invoicedTotal - paidTotal > 0 && (
+                      <div className="space-y-3">
+                        <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>
+                          {paidTotal > 0 ? 'Add Another Payment' : 'Record Payment'}
+                        </p>
+                        {(flowData?.invoices || []).length > 1 && (
+                          <Field label="Pay against invoice">
+                            <Select value={payInvoiceId || (flowData?.invoices || []).find((i) => i.status !== 'paid')?._id || ''} onChange={(e) => setPayInvoiceId(e.target.value)}>
+                              {(flowData?.invoices || []).filter((i) => i.status !== 'paid').map((i) => (
+                                <option key={i._id} value={i._id}>{i.invoiceNo} — {formatMoney(i.total)} AED (paid {formatMoney(i.paymentMade || 0)})</option>
+                              ))}
+                            </Select>
+                          </Field>
+                        )}
+                        <div className="grid grid-cols-2 gap-3">
+                          <Field label="Amount (AED)">
+                            <Input type="number" min={0.01} step="0.01" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} placeholder={String(invoicedTotal - paidTotal)} />
+                          </Field>
+                          <Field label="Date">
+                            <Input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} />
+                          </Field>
+                          <Field label="Method">
+                            <Select value={payMethod} onChange={(e) => setPayMethod(e.target.value)}>
+                              <option value="cash">Cash</option>
+                              <option value="bank_transfer">Bank transfer</option>
+                              <option value="card">Card</option>
+                              <option value="cheque">Cheque</option>
+                              <option value="other">Other</option>
+                            </Select>
+                          </Field>
+                          <Field label="Receipt (optional)">
+                            <Input type="file" accept="image/*,.pdf" className="h-auto py-1.5" onChange={(e) => setReceiptFile(e.target.files?.[0] ?? null)} />
+                          </Field>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => recordPayment.mutate()}
+                          disabled={recordPayment.isPending}
+                          className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
+                          style={{ background: PURPLE }}
+                        >
+                          {recordPayment.isPending ? <Loader2 size={15} className="animate-spin" /> : <CreditCard size={15} />}
+                          {recordPayment.isPending ? 'Recording…' : paidTotal > 0 ? 'Record Partial Payment' : 'Record Payment'}
+                        </button>
+                        <p className="text-[11px]" style={{ color: MUTED }}>Invoice & payment will auto-sync to Zoho Books</p>
                       </div>
-                      <div>
-                        <p className="text-sm font-semibold" style={{ color: INK }}>Sent for admin approval</p>
-                        <p className="text-xs" style={{ color: MUTED }}>Waiting for an admin to review and approve this booking.</p>
+                    )}
+                    {/* Approval status */}
+                    {approvalStatus === 'pending' && (
+                      <div className="flex items-center gap-3 p-4 rounded-xl" style={{ background: '#EDE9FE' }}>
+                        <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: `${PURPLE}20` }}>
+                          <ShieldCheck size={18} style={{ color: PURPLE }} />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold" style={{ color: INK }}>Sent for admin approval</p>
+                          <p className="text-xs" style={{ color: MUTED }}>Waiting for an admin to review and approve this booking.</p>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                  {approvalStatus === 'approved' && (
-                    <div className="flex flex-col items-center py-8 gap-3">
-                      <div style={{ width: 64, height: 64, borderRadius: 20, background: '#D1FAE5', display: 'grid', placeItems: 'center' }}>
-                        <CheckCircle2 size={32} style={{ color: GREEN }} />
+                    )}
+                    {approvalStatus === 'approved' && (
+                      <div className="flex flex-col items-center py-8 gap-3">
+                        <div style={{ width: 64, height: 64, borderRadius: 20, background: '#D1FAE5', display: 'grid', placeItems: 'center' }}>
+                          <CheckCircle2 size={32} style={{ color: GREEN }} />
+                        </div>
+                        <p className="text-sm font-bold" style={{ color: GREEN }}>Approved — contract is ready for activation</p>
                       </div>
-                      <p className="text-sm font-bold" style={{ color: GREEN }}>Approved — contract is ready for activation</p>
-                    </div>
-                  )}
-                  {approvalStatus === 'rejected' && (
-                    <div className="p-3 rounded-xl text-sm" style={{ background: '#FEE2E2', color: '#B91C1C' }}>
-                      Rejected{contract?.approvalNote ? `: ${contract.approvalNote}` : ''}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
+                    )}
+                    {approvalStatus === 'rejected' && (
+                      <div className="p-3 rounded-xl text-sm" style={{ background: '#FEE2E2', color: '#B91C1C' }}>
+                        Rejected{contract?.approvalNote ? `: ${contract.approvalNote}` : ''}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
 
 
-          {err && (
-            <p className="mt-4 text-sm px-3 py-2 rounded-lg" style={{ color: '#b91c1c', background: '#fef2f2' }}>
-              {err}
-            </p>
-          )}
+            {err && (
+              <p className="mt-4 text-sm px-3 py-2 rounded-lg" style={{ color: '#b91c1c', background: '#fef2f2' }}>
+                {err}
+              </p>
+            )}
 
-          {/* Navigation */}
-          <div className="flex items-center justify-between mt-8 pt-5" style={{ borderTop: '1px solid rgba(20,8,31,0.06)' }}>
-            <div>
-              {step > 0 ? (
-                <button type="button" onClick={() => setStep((s) => s - 1)} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium hover:bg-gray-50" style={{ color: MUTED }}>
-                  <ChevronLeft size={16} /> Back
-                </button>
-              ) : (
-                <button type="button" onClick={() => navigate(-1)} className="px-4 py-2 rounded-xl text-sm font-medium hover:bg-gray-50" style={{ color: MUTED }}>
-                  Cancel
-                </button>
-              )}
-            </div>
-
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-medium hidden sm:block" style={{ color: MUTED }}>
-                Step {step + 1} of {STEPS.length}
-              </span>
-
-              {step === 0 && (
-                <button
-                  type="button"
-                  onClick={() => { if (!customerId) { setErr('Please select a customer'); return } setStep(1) }}
-                  className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold text-white hover:opacity-90"
-                  style={{ background: PURPLE }}
-                >
-                  Next <ChevronRight size={16} />
-                </button>
-              )}
-              {step === 1 && (
-                <button
-                  type="button"
-                  onClick={() => { if (quoteLocked || validateUnits()) setStep(2) }}
-                  className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold text-white hover:opacity-90"
-                  style={{ background: PURPLE }}
-                >
-                  Next <ChevronRight size={16} />
-                </button>
-              )}
-              {step === 2 && (
-                quoteLocked ? (
-                  <button type="button" onClick={() => setStep(3)} className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold text-white hover:opacity-90" style={{ background: PURPLE }}>
-                    Next <ChevronRight size={16} />
+            {/* Navigation */}
+            <div className="flex items-center justify-between mt-8 pt-5" style={{ borderTop: '1px solid rgba(20,8,31,0.06)' }}>
+              <div>
+                {step > 0 ? (
+                  <button type="button" onClick={() => setStep((s) => s - 1)} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium hover:bg-gray-50" style={{ color: MUTED }}>
+                    <ChevronLeft size={16} /> Back
                   </button>
                 ) : (
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => { if (validateQuote()) saveQuote.mutate() }}
-                      disabled={saveQuote.isPending}
-                      className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold border hover:opacity-90 disabled:opacity-60"
-                      style={{ borderColor: PURPLE, color: PURPLE }}
-                    >
-                      {saveQuote.isPending ? 'Saving…' : 'Save Quote & Send'}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!quoteId}
-                      onClick={() => setStep(3)}
-                      className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40"
-                      style={{ background: PURPLE, cursor: quoteId ? 'pointer' : 'not-allowed' }}
-                    >
-                      Continue <ChevronRight size={16} />
-                    </button>
-                  </div>
-                )
-              )}
-              {step >= 3 && step < STEPS.length - 1 && (
-                <div className="flex items-center gap-2">
-                  {step === 4 && invoiceEditing && (
-                    <button
-                      type="button"
-                      onClick={() => { setZohoSyncing(true); invoiceHandleRef.current?.saveAndSync() }}
-                      disabled={zohoSyncing}
-                      className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90"
-                      style={{ background: GREEN }}
-                    >
-                      {zohoSyncing ? <><Loader2 size={14} className="animate-spin" /> Syncing…</> : 'Save & Sync to Zoho'}
-                    </button>
-                  )}
-                  {!(step === 4 && invoiceEditing) && (() => {
-                    const syncedInv = (flowData?.invoices || []).find((i) => i.zohoBooksSyncId)
-                    return syncedInv ? (
-                      <a
-                        href={`https://books.zoho.com/app/908459713#/invoices/${syncedInv.zohoBooksSyncId}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold text-white hover:opacity-90"
-                        style={{ background: GREEN }}
-                      >
-                        <ExternalLink size={14} /> Open in Zoho
-                      </a>
-                    ) : null
-                  })()}
+                  <button type="button" onClick={() => navigate(-1)} className="px-4 py-2 rounded-xl text-sm font-medium hover:bg-gray-50" style={{ color: MUTED }}>
+                    Cancel
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-medium hidden sm:block" style={{ color: MUTED }}>
+                  Step {step + 1} of {STEPS.length}
+                </span>
+
+                {step === 0 && (
                   <button
                     type="button"
-                    onClick={() => setStep((s) => s + 1)}
-                    disabled={(step === 3 && !contractId) || (step === 4 && invoiceEditing)}
-                    className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90"
+                    onClick={() => { if (!customerId) { setErr('Please select a customer'); return } setStep(1) }}
+                    className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold text-white hover:opacity-90"
                     style={{ background: PURPLE }}
                   >
                     Next <ChevronRight size={16} />
                   </button>
-                </div>
-              )}
-              {step === STEPS.length - 1 && (
-                approvalStatus === 'pending' || approvalStatus === 'approved' ? (
-                  <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: approvalStatus === 'approved' ? GREEN : MUTED }}>
-                    <ShieldCheck size={16} />
-                    {approvalStatus === 'approved' ? 'Approved' : 'Sent for approval'}
-                  </div>
-                ) : (
+                )}
+                {step === 1 && (
                   <button
                     type="button"
-                    onClick={() => {
-                      if (paidTotal <= 0) {
-                        setErr('Please record at least one payment before sending for approval.')
-                        return
-                      }
-                      sendForApproval.mutate()
-                    }}
-                    disabled={sendForApproval.isPending || paidTotal <= 0}
-                    className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90"
-                    style={{ background: GREEN }}
+                    onClick={() => { if (quoteLocked || validateUnits()) setStep(2) }}
+                    className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold text-white hover:opacity-90"
+                    style={{ background: PURPLE }}
                   >
-                    {sendForApproval.isPending ? <Loader2 size={15} className="animate-spin" /> : <ShieldCheck size={15} />}
-                    {sendForApproval.isPending ? 'Sending…' : 'Send for Approval'}
+                    Next <ChevronRight size={16} />
                   </button>
-                )
+                )}
+                {step === 2 && (
+                  quoteLocked ? (
+                    <button type="button" onClick={() => setStep(3)} className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold text-white hover:opacity-90" style={{ background: PURPLE }}>
+                      Next <ChevronRight size={16} />
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => { if (validateQuote()) saveQuote.mutate() }}
+                        disabled={saveQuote.isPending}
+                        className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold border hover:opacity-90 disabled:opacity-60"
+                        style={{ borderColor: PURPLE, color: PURPLE }}
+                      >
+                        {saveQuote.isPending ? 'Saving…' : 'Save Quote & Send'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!quoteId}
+                        onClick={() => setStep(3)}
+                        className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40"
+                        style={{ background: PURPLE, cursor: quoteId ? 'pointer' : 'not-allowed' }}
+                      >
+                        Continue <ChevronRight size={16} />
+                      </button>
+                    </div>
+                  )
+                )}
+                {step >= 3 && step < STEPS.length - 1 && (
+                  <div className="flex items-center gap-2">
+                    {step === 4 && invoiceEditing && (
+                      <button
+                        type="button"
+                        onClick={() => { setZohoSyncing(true); invoiceHandleRef.current?.saveAndSync() }}
+                        disabled={zohoSyncing}
+                        className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90"
+                        style={{ background: GREEN }}
+                      >
+                        {zohoSyncing ? <><Loader2 size={14} className="animate-spin" /> Syncing…</> : 'Save & Sync to Zoho'}
+                      </button>
+                    )}
+                    {!(step === 4 && invoiceEditing) && (() => {
+                      const syncedInv = (flowData?.invoices || []).find((i) => i.zohoBooksSyncId)
+                      return syncedInv ? (
+                        <a
+                          href={`https://books.zoho.com/app/908459713#/invoices/${syncedInv.zohoBooksSyncId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold text-white hover:opacity-90"
+                          style={{ background: GREEN }}
+                        >
+                          <ExternalLink size={14} /> Open in Zoho
+                        </a>
+                      ) : null
+                    })()}
+                    <button
+                      type="button"
+                      onClick={() => setStep((s) => s + 1)}
+                      disabled={(step === 3 && !contractId) || (step === 4 && invoiceEditing)}
+                      className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90"
+                      style={{ background: PURPLE }}
+                    >
+                      Next <ChevronRight size={16} />
+                    </button>
+                  </div>
+                )}
+                {step === STEPS.length - 1 && (
+                  approvalStatus === 'pending' || approvalStatus === 'approved' ? (
+                    <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: approvalStatus === 'approved' ? GREEN : MUTED }}>
+                      <ShieldCheck size={16} />
+                      {approvalStatus === 'approved' ? 'Approved' : 'Sent for approval'}
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (paidTotal <= 0) {
+                          setErr('Please record at least one payment before sending for approval.')
+                          return
+                        }
+                        sendForApproval.mutate()
+                      }}
+                      disabled={sendForApproval.isPending || paidTotal <= 0}
+                      className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90"
+                      style={{ background: GREEN }}
+                    >
+                      {sendForApproval.isPending ? <Loader2 size={15} className="animate-spin" /> : <ShieldCheck size={15} />}
+                      {sendForApproval.isPending ? 'Sending…' : 'Send for Approval'}
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Booking details tooltip (hover on rented/booked units) */}
+        {hoverUnit && (hoverUnit.unit.bookings?.length ?? 0) > 0 && (
+          <div
+            className="pointer-events-none"
+            style={{
+              position: 'fixed',
+              left: Math.min(hoverUnit.x + 14, window.innerWidth - 300),
+              top: Math.min(hoverUnit.y + 14, window.innerHeight - 160),
+              zIndex: 60,
+              width: 280,
+              background: INK,
+              color: '#fff',
+              borderRadius: 12,
+              padding: '0.75rem 0.875rem',
+              boxShadow: '0 8px 24px rgba(20,8,31,0.35)',
+            }}
+          >
+            <p className="text-xs font-bold mb-2" style={{ fontFamily: "'Bricolage Grotesque', sans-serif" }}>
+              {hoverUnit.unit.unitNumber} — booking details
+            </p>
+            <div className="space-y-2">
+              {(hoverUnit.unit.bookings || []).slice(0, 4).map((b, i) => (
+                <div key={i} className="text-[11px] leading-snug">
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className="px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide shrink-0"
+                      style={{
+                        background: b.kind === 'quote' ? '#3B82F6' : b.kind === 'current' ? '#6B7280' : '#EF4444',
+                        color: '#fff',
+                      }}
+                    >
+                      {b.kind === 'quote' ? 'Quote' : b.kind === 'current' ? 'Current' : 'Contract'}
+                    </span>
+                    <span className="font-semibold truncate">{b.ref}</span>
+                  </div>
+                  <p className="mt-0.5 opacity-90">{b.customer || 'Unknown customer'}</p>
+                  {b.startDate && b.endDate && (
+                    <p className="opacity-70">{formatDate(b.startDate)} → {formatDate(b.endDate)}</p>
+                  )}
+                </div>
+              ))}
+              {(hoverUnit.unit.bookings || []).length > 4 && (
+                <p className="text-[10px] opacity-60">+{(hoverUnit.unit.bookings || []).length - 4} more</p>
               )}
             </div>
           </div>
-        </div>
-      </div>
+        )}
 
-      {/* Booking details tooltip (hover on rented/booked units) */}
-      {hoverUnit && (hoverUnit.unit.bookings?.length ?? 0) > 0 && (
-        <div
-          className="pointer-events-none"
-          style={{
-            position: 'fixed',
-            left: Math.min(hoverUnit.x + 14, window.innerWidth - 300),
-            top: Math.min(hoverUnit.y + 14, window.innerHeight - 160),
-            zIndex: 60,
-            width: 280,
-            background: INK,
-            color: '#fff',
-            borderRadius: 12,
-            padding: '0.75rem 0.875rem',
-            boxShadow: '0 8px 24px rgba(20,8,31,0.35)',
-          }}
-        >
-          <p className="text-xs font-bold mb-2" style={{ fontFamily: "'Bricolage Grotesque', sans-serif" }}>
-            {hoverUnit.unit.unitNumber} — booking details
-          </p>
-          <div className="space-y-2">
-            {(hoverUnit.unit.bookings || []).slice(0, 4).map((b, i) => (
-              <div key={i} className="text-[11px] leading-snug">
-                <div className="flex items-center gap-1.5">
-                  <span
-                    className="px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide shrink-0"
-                    style={{
-                      background: b.kind === 'quote' ? '#3B82F6' : b.kind === 'current' ? '#6B7280' : '#EF4444',
-                      color: '#fff',
-                    }}
-                  >
-                    {b.kind === 'quote' ? 'Quote' : b.kind === 'current' ? 'Current' : 'Contract'}
-                  </span>
-                  <span className="font-semibold truncate">{b.ref}</span>
-                </div>
-                <p className="mt-0.5 opacity-90">{b.customer || 'Unknown customer'}</p>
-                {b.startDate && b.endDate && (
-                  <p className="opacity-70">{formatDate(b.startDate)} → {formatDate(b.endDate)}</p>
-                )}
+        {/* Sign in person */}
+        <Modal open={signingOpen} onClose={() => setSigningOpen(false)} title="Sign contract in person" wide>
+          {contract && (
+            <SignInPersonModal
+              contractNo={contract.contractNo}
+              customerName={customerName}
+              busy={signInPerson.isPending}
+              error={err}
+              onSign={(body) => signInPerson.mutate(body)}
+              onClose={() => setSigningOpen(false)}
+            />
+          )}
+        </Modal>
+
+        {/* Create Customer Modal */}
+        <Modal open={showCustomerModal} title="Create New Customer" onClose={() => setShowCustomerModal(false)}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              const f = new FormData(e.currentTarget)
+              createCustomerMut.mutate({
+                fullName: String(f.get('fullName') || ''),
+                phone: String(f.get('phone') || ''),
+                email: String(f.get('email') || ''),
+                tenantType: String(f.get('tenantType') || 'individual'),
+                address: String(f.get('address') || ''),
+                notes: String(f.get('notes') || ''),
+              })
+            }}
+            className="space-y-4"
+          >
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Full Name"><Input name="fullName" defaultValue={lead?.fullName || ''} required /></Field>
+              <Field label="Type">
+                <Select name="tenantType" defaultValue="individual">
+                  <option value="individual">Individual</option>
+                  <option value="company">Company</option>
+                </Select>
+              </Field>
+              <Field label="Phone"><Input name="phone" defaultValue={lead?.phone || ''} /></Field>
+              <Field label="Email"><Input name="email" type="email" defaultValue={lead?.email || ''} /></Field>
+              <Field label="Address" className="col-span-2"><Input name="address" /></Field>
+              <Field label="Notes" className="col-span-2"><Textarea name="notes" rows={2} /></Field>
+            </div>
+            {err && <p className="text-sm text-red-600">{err}</p>}
+            <div className="flex justify-end gap-2">
+              <Button type="submit" disabled={createCustomerMut.isPending}>
+                {createCustomerMut.isPending ? 'Creating…' : 'Create & Select'}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+
+        {/* Quote email compose modal */}
+        <Modal open={!!quoteEmailModal} onClose={() => setQuoteEmailModal(null)} title="Send Quote Email" wide>
+          {quoteEmailModal && (
+            <div className="space-y-4">
+              <Field label="To">
+                <Input
+                  type="email"
+                  value={quoteEmailModal.to}
+                  onChange={(e) => setQuoteEmailModal({ ...quoteEmailModal, to: e.target.value })}
+                  placeholder="customer@email.com"
+                />
+              </Field>
+              <Field label="Subject">
+                <Input
+                  value={quoteEmailModal.subject}
+                  onChange={(e) => setQuoteEmailModal({ ...quoteEmailModal, subject: e.target.value })}
+                />
+              </Field>
+              <Field label="Body">
+                <Textarea
+                  value={quoteEmailModal.body}
+                  onChange={(e) => setQuoteEmailModal({ ...quoteEmailModal, body: e.target.value })}
+                  rows={8}
+                />
+              </Field>
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: CHIP_BG }}>
+                <FileText size={14} style={{ color: PURPLE }} />
+                <span className="text-xs flex-1" style={{ color: INK }}>Quote PDF will be attached automatically</span>
               </div>
-            ))}
-            {(hoverUnit.unit.bookings || []).length > 4 && (
-              <p className="text-[10px] opacity-60">+{(hoverUnit.unit.bookings || []).length - 4} more</p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Sign in person */}
-      <Modal open={signingOpen} onClose={() => setSigningOpen(false)} title="Sign contract in person" wide>
-        {contract && (
-          <SignInPersonModal
-            contractNo={contract.contractNo}
-            customerName={customerName}
-            busy={signInPerson.isPending}
-            error={err}
-            onSign={(body) => signInPerson.mutate(body)}
-            onClose={() => setSigningOpen(false)}
-          />
-        )}
-      </Modal>
-
-      {/* Create Customer Modal */}
-      <Modal open={showCustomerModal} title="Create New Customer" onClose={() => setShowCustomerModal(false)}>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            const f = new FormData(e.currentTarget)
-            createCustomerMut.mutate({
-              fullName: String(f.get('fullName') || ''),
-              phone: String(f.get('phone') || ''),
-              email: String(f.get('email') || ''),
-              tenantType: String(f.get('tenantType') || 'individual'),
-              address: String(f.get('address') || ''),
-              notes: String(f.get('notes') || ''),
-            })
-          }}
-          className="space-y-4"
-        >
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Full Name"><Input name="fullName" defaultValue={lead?.fullName || ''} required /></Field>
-            <Field label="Type">
-              <Select name="tenantType" defaultValue="individual">
-                <option value="individual">Individual</option>
-                <option value="company">Company</option>
-              </Select>
-            </Field>
-            <Field label="Phone"><Input name="phone" defaultValue={lead?.phone || ''} /></Field>
-            <Field label="Email"><Input name="email" type="email" defaultValue={lead?.email || ''} /></Field>
-            <Field label="Address" className="col-span-2"><Input name="address" /></Field>
-            <Field label="Notes" className="col-span-2"><Textarea name="notes" rows={2} /></Field>
-          </div>
-          {err && <p className="text-sm text-red-600">{err}</p>}
-          <div className="flex justify-end gap-2">
-            <Button type="submit" disabled={createCustomerMut.isPending}>
-              {createCustomerMut.isPending ? 'Creating…' : 'Create & Select'}
-            </Button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Quote email compose modal */}
-      <Modal open={!!quoteEmailModal} onClose={() => setQuoteEmailModal(null)} title="Send Quote Email" wide>
-        {quoteEmailModal && (
-          <div className="space-y-4">
-            <Field label="To">
-              <Input
-                type="email"
-                value={quoteEmailModal.to}
-                onChange={(e) => setQuoteEmailModal({ ...quoteEmailModal, to: e.target.value })}
-                placeholder="customer@email.com"
-              />
-            </Field>
-            <Field label="Subject">
-              <Input
-                value={quoteEmailModal.subject}
-                onChange={(e) => setQuoteEmailModal({ ...quoteEmailModal, subject: e.target.value })}
-              />
-            </Field>
-            <Field label="Body">
-              <Textarea
-                value={quoteEmailModal.body}
-                onChange={(e) => setQuoteEmailModal({ ...quoteEmailModal, body: e.target.value })}
-                rows={8}
-              />
-            </Field>
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: CHIP_BG }}>
-              <FileText size={14} style={{ color: PURPLE }} />
-              <span className="text-xs flex-1" style={{ color: INK }}>Quote PDF will be attached automatically</span>
+              <div className="flex justify-end gap-2 pt-2 border-t" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
+                <button
+                  type="button"
+                  onClick={() => setQuoteEmailModal(null)}
+                  disabled={quoteEmailSending}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold border hover:opacity-80 transition-opacity disabled:opacity-50"
+                  style={{ color: INK, borderColor: 'rgba(20,8,31,0.15)' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={quoteEmailSending || !quoteEmailModal.to}
+                  onClick={async () => {
+                    setQuoteEmailSending(true)
+                    try {
+                      const toAddr = quoteEmailModal.to
+                      await api.post(`/quotes/${quoteId}/send-email`, {
+                        to: toAddr,
+                        subject: quoteEmailModal.subject,
+                        body: quoteEmailModal.body,
+                      })
+                      setQuoteEmailModal(null)
+                      setQuoteEmailSent(`Email sent to ${toAddr}`)
+                      setErr('')
+                    } catch (e: any) {
+                      setErr(apiError(e))
+                    } finally {
+                      setQuoteEmailSending(false)
+                    }
+                  }}
+                  className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+                  style={{ background: PURPLE }}
+                >
+                  {quoteEmailSending ? <><Loader2 size={14} className="animate-spin" /> Sending…</> : <><Send size={14} /> Send Email</>}
+                </button>
+              </div>
             </div>
-            <div className="flex justify-end gap-2 pt-2 border-t" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
-              <button
-                type="button"
-                onClick={() => setQuoteEmailModal(null)}
-                disabled={quoteEmailSending}
-                className="px-4 py-2 rounded-xl text-sm font-semibold border hover:opacity-80 transition-opacity disabled:opacity-50"
-                style={{ color: INK, borderColor: 'rgba(20,8,31,0.15)' }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={quoteEmailSending || !quoteEmailModal.to}
-                onClick={async () => {
-                  setQuoteEmailSending(true)
-                  try {
-                    const toAddr = quoteEmailModal.to
-                    await api.post(`/quotes/${quoteId}/send-email`, {
-                      to: toAddr,
-                      subject: quoteEmailModal.subject,
-                      body: quoteEmailModal.body,
-                    })
-                    setQuoteEmailModal(null)
-                    setQuoteEmailSent(`Email sent to ${toAddr}`)
-                    setErr('')
-                  } catch (e: any) {
-                    setErr(apiError(e))
-                  } finally {
-                    setQuoteEmailSending(false)
-                  }
-                }}
-                className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-50"
-                style={{ background: PURPLE }}
-              >
-                {quoteEmailSending ? <><Loader2 size={14} className="animate-spin" /> Sending…</> : <><Send size={14} /> Send Email</>}
-              </button>
-            </div>
-          </div>
-        )}
-      </Modal>
-    </div>
+          )}
+        </Modal>
+      </div>
     </div>
   )
 }

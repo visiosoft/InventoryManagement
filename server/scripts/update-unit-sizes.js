@@ -21,7 +21,7 @@ async function syncUnits(units) {
     const sizeSqf = parseFloat(u.size_category);
     if (!Number.isFinite(sizeSqf) || sizeSqf <= 0) { skipped++; continue; }
 
-    const price  = parseFloat(u.price) || 0;
+    const price = parseFloat(u.price) || 0;
     const status = u.manual_status === 'rented' ? 'occupied' : 'available';
 
     const result = await Unit.updateOne(
@@ -54,40 +54,40 @@ async function syncTenants(tenants) {
   let created = 0, found = 0;
 
   for (const t of tenants) {
-    const phones  = JSON.parse(t.phones  || '[]');
-    const phone   = (phones[0] || '').trim();
-    const phoneN  = normalizePhone(phone);
-    const email   = (t.email || '').trim().toLowerCase();
+    const phones = JSON.parse(t.phones || '[]');
+    const phone = (phones[0] || '').trim();
+    const phoneN = normalizePhone(phone);
+    const email = (t.email || '').trim().toLowerCase();
 
     // Try to find by phone or email
     const query = [];
     if (phoneN) query.push({ phone: { $regex: phoneN.slice(-9) } });
-    if (email)  query.push({ email });
+    if (email) query.push({ email });
     const existing = query.length
       ? await Customer.findOne({ $or: query }).select('_id')
       : null;
 
     const accessPersons = JSON.parse(t.access_persons || '[]').map(p => ({
-      name:     p.name     || '',
-      phone:    p.phone    || '',
+      name: p.name || '',
+      phone: p.phone || '',
       relation: p.relation || '',
-      idType:   p.id_type  || '',
-      idNumber: p.id_number|| '',
+      idType: p.id_type || '',
+      idNumber: p.id_number || '',
     }));
 
     const allPhones = JSON.parse(t.phones || '[]').map(p => p.trim()).filter(Boolean);
 
     const customerFields = {
-      fullName:       t.full_name,
-      clientId:       t.client_id       || '',
-      tenantType:     t.tenant_type     === 'company' ? 'company' : 'individual',
+      fullName: t.full_name,
+      clientId: t.client_id || '',
+      tenantType: t.tenant_type === 'company' ? 'company' : 'individual',
       phone,
-      phones:         allPhones,
+      phones: allPhones,
       email,
-      nationality:    t.nationality     || '',
-      address:        t.address         || '',
-      emiratesId:     t.emirates_id     || '',
-      eidExpiry:      t.eid_expiry      ? new Date(t.eid_expiry)      : undefined,
+      nationality: t.nationality || '',
+      address: t.address || '',
+      emiratesId: t.emirates_id || '',
+      eidExpiry: t.eid_expiry ? new Date(t.eid_expiry) : undefined,
       passportNumber: t.passport_number || '',
       passportExpiry: t.passport_expiry ? new Date(t.passport_expiry) : undefined,
       accessPersons,
@@ -146,7 +146,7 @@ async function syncContracts(contracts, backupUnits, customerByTenantId, backup)
     }
 
     const billingPeriod = c.duration_weeks ? 'weekly' : 'monthly';
-    const rate          = backupUnit.price;
+    const rate = backupUnit.price;
 
     // Map backup status to our enum
     const statusMap = { active: 'active', ended: 'ended', cancelled: 'cancelled' };
@@ -155,45 +155,47 @@ async function syncContracts(contracts, backupUnits, customerByTenantId, backup)
     // Pull authorized persons from the tenant record
     const tenant = backup.tenants.find(t => String(t.id) === String(c.tenant_id));
     const authorizedPersons = JSON.parse(tenant?.access_persons || '[]').map(p => ({
-      name:     p.name      || '',
-      phone:    p.phone     || '',
-      relation: p.relation  || '',
-      idType:   p.id_type   || '',
+      name: p.name || '',
+      phone: p.phone || '',
+      relation: p.relation || '',
+      idType: p.id_type || '',
       idNumber: p.id_number || '',
     }));
 
     const fields = {
-      customer:           customerId,
-      unit:               backupUnit.dbId,
+      customer: customerId,
+      unit: backupUnit.dbId,
       billingPeriod,
       rate,
-      deposit:            0,
-      startDate:          new Date(c.move_in_date),
-      endDate:            new Date(c.move_out_date),
+      deposit: 0,
+      startDate: new Date(c.move_in_date),
+      endDate: new Date(c.move_out_date),
       status,
-      paymentMethod:      c.payment_method || '',
-      firstPaymentDate:   c.first_payment_date ? new Date(c.first_payment_date) : undefined,
-      nextPaymentDate:    c.next_payment_date  ? new Date(c.next_payment_date)  : undefined,
-      signedDocUrl:       c.signed_pdf_path    || '',
-      notes:              c.notes || '',
+      paymentMethod: c.payment_method || '',
+      firstPaymentDate: c.first_payment_date ? new Date(c.first_payment_date) : undefined,
+      nextPaymentDate: c.next_payment_date ? new Date(c.next_payment_date) : undefined,
+      signedDocUrl: c.signed_pdf_path || '',
+      notes: c.notes || '',
       authorizedPersons,
-      source:             'import_json',
+      source: 'import_json',
       externalId,
-      importedAt:         new Date(),
+      importedAt: new Date(),
     };
 
     const existing = await Contract.findOne({ externalId }).select('_id status');
 
     if (existing) {
-      await Contract.updateOne({ _id: existing._id }, { $set: {
-        status,
-        rate,
-        endDate:          new Date(c.move_out_date),
-        paymentMethod:    c.payment_method || '',
-        firstPaymentDate: c.first_payment_date ? new Date(c.first_payment_date) : undefined,
-        nextPaymentDate:  c.next_payment_date  ? new Date(c.next_payment_date)  : undefined,
-        signedDocUrl:     c.signed_pdf_path    || '',
-      } });
+      await Contract.updateOne({ _id: existing._id }, {
+        $set: {
+          status,
+          rate,
+          endDate: new Date(c.move_out_date),
+          paymentMethod: c.payment_method || '',
+          firstPaymentDate: c.first_payment_date ? new Date(c.first_payment_date) : undefined,
+          nextPaymentDate: c.next_payment_date ? new Date(c.next_payment_date) : undefined,
+          signedDocUrl: c.signed_pdf_path || '',
+        }
+      });
       console.log(`  Updated  contract ${c.id} (unit ${primaryId} → ${status})`);
       updated++;
     } else {

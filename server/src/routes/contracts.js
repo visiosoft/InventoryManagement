@@ -136,20 +136,22 @@ router.get('/', async (req, res) => {
   const ids = contracts.map((c) => c._id);
   const [docCounts, payAgg] = ids.length
     ? await Promise.all([
-        Document.aggregate([
-          { $match: { contract: { $in: ids } } },
-          { $group: { _id: '$contract', count: { $sum: 1 } } },
-        ]),
-        Payment.aggregate([
-          { $match: { contract: { $in: ids } } },
-          { $group: {
+      Document.aggregate([
+        { $match: { contract: { $in: ids } } },
+        { $group: { _id: '$contract', count: { $sum: 1 } } },
+      ]),
+      Payment.aggregate([
+        { $match: { contract: { $in: ids } } },
+        {
+          $group: {
             _id: '$contract',
             total: { $sum: '$amount' },
             paid: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } },
             overdue: { $sum: { $cond: [{ $eq: ['$status', 'overdue'] }, 1, 0] } },
-          } },
-        ]),
-      ])
+          }
+        },
+      ]),
+    ])
     : [[], []];
   const docMap = new Map(docCounts.map((d) => [String(d._id), d.count]));
   const payMap = new Map(payAgg.map((p) => [String(p._id), p]));
@@ -157,8 +159,8 @@ router.get('/', async (req, res) => {
     const pay = payMap.get(String(c._id));
     const paymentStatus = !pay ? 'no_invoice'
       : pay.paid >= pay.total ? 'paid'
-      : pay.paid > 0 ? 'partial'
-      : 'unpaid';
+        : pay.paid > 0 ? 'partial'
+          : 'unpaid';
     // Full contract value: scheduled payments total, or estimated from rate × term
     let contractAmount = pay ? Math.round(pay.total * 100) / 100 : 0;
     if (!contractAmount && c.startDate && c.endDate) {

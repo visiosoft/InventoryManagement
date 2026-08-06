@@ -19,7 +19,7 @@ export default function UpcomingVacanciesReport() {
     queryFn: () => api.get('/reports/vacancies', { params: { days } }).then(r => r.data),
   })
 
-  const totalRate      = vacancies.reduce((s, c) => s + Number(c.rate || 0), 0)
+  const totalRate = vacancies.reduce((s, c) => s + Number(c.rate || 0), 0)
 
   return (
     <div>
@@ -97,8 +97,8 @@ export default function UpcomingVacanciesReport() {
                     <Td>{formatDate(c.endDate)}</Td>
                     <Td className={
                       dl <= 3 ? 'text-destructive font-bold' :
-                      dl <= 7 ? 'text-amber-600 dark:text-amber-400 font-semibold' :
-                      'text-muted-foreground'
+                        dl <= 7 ? 'text-amber-600 dark:text-amber-400 font-semibold' :
+                          'text-muted-foreground'
                     }>
                       {dl} day{dl !== 1 ? 's' : ''}
                     </Td>

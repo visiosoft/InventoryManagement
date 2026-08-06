@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Check, ChevronDown, FileText, Files, Layers, Plus, X } from 'lucide-react'
 import { api, apiError, unitTypeApi } from '../lib/api'
 import type { Contract, Customer, Unit, UnitType } from '../lib/types'
-import { Badge, Button, Card, CardBody, Field, Input, PageHeader, Select, Spinner, Textarea } from '../components/ui'
+import { Button, Card, CardBody, Field, Input, PageHeader, Select, Spinner, Textarea } from '../components/ui'
 import { AddCustomerModal } from '../components/AddCustomerModal'
 import { cn, formatMoney } from '../lib/utils'
 
@@ -28,18 +28,18 @@ function computeBreakdown(
 ): BreakdownSection[] {
   const totalDays = Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000)
   if (totalDays <= 0 || rate <= 0) return []
-  const dpp    = DAYS_PER_PERIOD[billing]
-  const fmt    = (n: number) => formatMoney(Math.round(n * 100) / 100)
+  const dpp = DAYS_PER_PERIOD[billing]
+  const fmt = (n: number) => formatMoney(Math.round(n * 100) / 100)
 
   // Cap to last COMPLETE 4-week period so the partial trailing period is absorbed by the deposit.
-  const rawWeeks       = Math.ceil(totalDays / dpp)
-  const fullPeriods    = Math.floor(rawWeeks / 4)
-  const totalWeeks     = fullPeriods > 1 ? fullPeriods * 4 : rawWeeks
-  const discountWeeks  = billing === 'weekly' ? 4 : 1
+  const rawWeeks = Math.ceil(totalDays / dpp)
+  const fullPeriods = Math.floor(rawWeeks / 4)
+  const totalWeeks = fullPeriods > 1 ? fullPeriods * 4 : rawWeeks
+  const discountWeeks = billing === 'weekly' ? 4 : 1
   const firstCount = Math.min(discountWeeks, totalWeeks)
 
   // rate = monthly price; weekly payment = rate/4
-  const weeklyRate     = Math.round((rate / 4) * 100) / 100
+  const weeklyRate = Math.round((rate / 4) * 100) / 100
   const discountedRate = Math.round(weeklyRate * (1 - discountPct / 100) * 100) / 100
 
   const rows: BreakdownSection[] = []
@@ -48,7 +48,7 @@ function computeBreakdown(
   if (discountPct > 0) {
     const month1Full = Math.round(weeklyRate * firstCount * 100) / 100
     const month1Disc = Math.round(discountedRate * firstCount * 100) / 100
-    const saved      = Math.round((month1Full - month1Disc) * 100) / 100
+    const saved = Math.round((month1Full - month1Disc) * 100) / 100
     const detail = firstCount === 4
       ? `${fmt(rate)}/mo × ${100 - discountPct}% = ${fmt(month1Disc)}`
       : `${firstCount} wks × ${fmt(weeklyRate)} × ${100 - discountPct}% = ${fmt(month1Disc)}`
@@ -67,17 +67,17 @@ function computeBreakdown(
   }
 
   // ── Remaining weeks grouped into months of 4 ──
-  let remaining  = totalWeeks - firstCount
-  let monthNum   = 2
+  let remaining = totalWeeks - firstCount
+  let monthNum = 2
   let weekOffset = firstCount
 
   while (remaining > 0) {
     const weeksThisMonth = Math.min(4, remaining)
-    const isPartial      = weeksThisMonth < 4
-    const wkStart        = weekOffset + 1
-    const wkEnd          = weekOffset + weeksThisMonth
-    const monthAmt       = Math.round(weeklyRate * weeksThisMonth * 100) / 100
-    const detail         = isPartial
+    const isPartial = weeksThisMonth < 4
+    const wkStart = weekOffset + 1
+    const wkEnd = weekOffset + weeksThisMonth
+    const monthAmt = Math.round(weeklyRate * weeksThisMonth * 100) / 100
+    const detail = isPartial
       ? `Wk ${wkStart}${wkEnd > wkStart ? `–${wkEnd}` : ''} · ${weeksThisMonth} × ${fmt(weeklyRate)}`
       : `Wk ${wkStart}–${wkEnd} · ${fmt(rate)}/mo`
     rows.push({
@@ -85,7 +85,7 @@ function computeBreakdown(
       detail,
       amount: monthAmt,
     })
-    remaining  -= weeksThisMonth
+    remaining -= weeksThisMonth
     weekOffset += weeksThisMonth
     monthNum++
   }
@@ -1063,7 +1063,7 @@ export default function NewContract() {
                           <span>{u.unitNumber}{u.sizeSqf != null ? <span className="ml-1.5 font-normal text-muted-foreground">{u.sizeSqf} sq ft</span> : null}</span>
                           <span className="text-muted-foreground font-normal">
                             {formatMoney(r)}/mo
-                            <span className="ml-1.5 opacity-60 text-[10px]">({formatMoney(Math.round(r/4*100)/100)}/wk)</span>
+                            <span className="ml-1.5 opacity-60 text-[10px]">({formatMoney(Math.round(r / 4 * 100) / 100)}/wk)</span>
                           </span>
                           <span>{formatMoney(totalDue)}</span>
                         </div>
