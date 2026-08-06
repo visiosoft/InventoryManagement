@@ -838,12 +838,22 @@ export default function ContractDetail() {
       i++
     }
     if (out.length > 1) out[out.length - 1].coveredByAdvance = true
-    // Match invoices to periods by due date
+    // Match invoices to periods by due date. Each invoice can only claim one
+    // period, so a second invoice dated in the same window is never swallowed.
+    const claimed = new Set<string>()
     for (const p of out) {
-      p.invoice = invoiceGroups.find(g => Math.abs(g.earliestDue.getTime() - p.from.getTime()) < 4 * 86400000)
+      const hit = invoiceGroups.find(g =>
+        !claimed.has(g.invoiceId) && Math.abs(g.earliestDue.getTime() - p.from.getTime()) < 4 * 86400000
+      )
+      if (hit) { p.invoice = hit; claimed.add(hit.invoiceId) }
     }
     return out
   })()
+
+  // Invoices that don't line up with a period (extra or custom ones) must still
+  // be visible — they count towards the totals either way.
+  const plannedInvoiceIds = new Set(billingPlan.map(p => p.invoice?.invoiceId).filter(Boolean) as string[])
+  const extraInvoices = invoiceGroups.filter(g => !plannedInvoiceIds.has(g.invoiceId))
 
   const unitLabel = allUnits.length > 1
     ? `Units: ${allUnits.map((u) => u?.unitNumber ?? '—').join(', ')}`
@@ -1320,6 +1330,39 @@ export default function ContractDetail() {
                           </Button>
                         </div>
                       )}
+                    </div>
+                  )
+                })}
+
+                {/* Invoices outside the plan — extra or custom ones */}
+                {extraInvoices.map((g) => {
+                  const isPaid = g.status === 'paid'
+                  const balance = g.total - g.paidTotal
+                  return (
+                    <div key={g.invoiceId} className="px-4 py-3 cursor-pointer hover:bg-muted/30 transition-colors"
+                      onClick={() => navigate(`/invoices/${g.invoiceId}`)}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${isPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                            {isPaid ? '✓' : '+'}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold">
+                              Additional invoice
+                              <span className="ml-2 text-xs font-semibold text-primary">{g.invoiceRef.invoiceNo}</span>
+                            </p>
+                            <p className="text-xs text-muted-foreground">{g.periodLabel}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-sm font-bold">{formatMoney(g.total)} AED</span>
+                          <span className={`text-[10px] font-semibold px-2 py-1 rounded-full whitespace-nowrap ${isPaid
+                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400'
+                            : 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400'}`}>
+                            {isPaid ? 'Paid' : `Pending · ${formatMoney(balance)} AED`}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   )
                 })}

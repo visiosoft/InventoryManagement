@@ -289,8 +289,14 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
       i++
     }
     if (out.length > 1) out[out.length - 1].coveredByAdvance = true
+    // One invoice claims at most one period, so a second invoice dated in the
+    // same window stays visible instead of being swallowed by the first.
+    const claimed = new Set<string>()
     for (const p of out) {
-      p.invoice = sorted.find((inv) => inv.dueDate && Math.abs(new Date(inv.dueDate).getTime() - p.from.getTime()) < 4 * 86400000)
+      const hit = sorted.find((inv) =>
+        !claimed.has(inv._id) && inv.dueDate && Math.abs(new Date(inv.dueDate).getTime() - p.from.getTime()) < 4 * 86400000
+      )
+      if (hit) { p.invoice = hit; claimed.add(hit._id) }
     }
     return out
   })()
