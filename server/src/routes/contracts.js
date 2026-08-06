@@ -344,27 +344,30 @@ router.post('/', async (req, res) => {
 
   await Promise.all(allUnitIds.map((uid) => syncUnitStatus(uid)));
 
-  // Auto-generate first invoice if requested
+  // Auto-generate first invoice if requested (covers first billing period only)
   if (req.body.generateInvoice) {
     const unitNo = primaryUnitDoc.unitNumber || '-';
     const fmt = (d) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    const totalDays = Math.round((end - start) / 86400000);
     const monthlyRate = Number(rate || 0);
     const weeklyRate = Math.round((monthlyRate / 4) * 100) / 100;
-    const totalWeeks = Math.ceil(totalDays / 7);
+    // First billing period = 4 weeks (28 days) or remainder if contract is shorter
+    const periodEnd = new Date(start); periodEnd.setDate(periodEnd.getDate() + 28);
+    const actualEnd = periodEnd > end ? end : periodEnd;
+    const periodDays = Math.round((actualEnd - start) / 86400000);
+    const periodWeeks = Math.max(1, Math.ceil(periodDays / 7));
     const discountPct = Number(req.body.firstMonthDiscountPct || 0);
     const weekAmounts = [];
-    for (let i = 0; i < totalWeeks; i++) {
+    for (let i = 0; i < periodWeeks; i++) {
       weekAmounts.push(discountPct > 0 && i < 4
         ? Math.round(weeklyRate * (1 - discountPct / 100) * 100) / 100
         : weeklyRate);
     }
     const periodTotal = Math.round(weekAmounts.reduce((s, a) => s + a, 0) * 100) / 100;
-    const displayEnd = fmt(new Date(end - 86400000));
+    const displayEnd = fmt(new Date(actualEnd - 86400000));
     const items = [{
       sortOrder: 0,
       itemDetails: `Storage rental — Unit ${unitNo}, ${fmt(start)} – ${displayEnd}`,
-      quantity: totalWeeks,
+      quantity: periodWeeks,
       rate: weeklyRate,
       discountPct: discountPct > 0 ? discountPct : 0,
       amount: periodTotal,

@@ -483,8 +483,9 @@ async function createFirstInvoiceFromQuote(quote, contract, userName) {
     const invoiceTotal = Number(items.reduce((s, it) => s + it.amount, 0).toFixed(2));
     const dueDate = new Date(Math.min(...quote.units.map((u) => new Date(u.startDate).getTime())));
 
+    const unitNo = quote.units[0]?.unitNumber || '-';
     const invoice = await Invoice.create({
-        invoiceNo: await nextInvoiceNo(),
+        invoiceNo: await nextInvoiceNo(unitNo, contract._id),
         customer: quote.customer,
         invoiceDate: new Date(),
         dueDate,
@@ -692,6 +693,7 @@ router.post('/:id/convert-to-contract', async (req, res) => {
     quote.timeline.push({ type: 'converted', text: `Converted to contract ${contract.contractNo} by ${userName}`, user: req.user.id });
 
     const invoice = await createFirstInvoiceFromQuote(quote, contract, userName);
+    contract.totalQuotation = Number(invoice.total || contract.totalQuotation);
     contract.timeline.push({ at: new Date(), text: `Draft invoice ${invoice.invoiceNo} generated from quote (prices locked)`, author: userName });
     await contract.save();
     await quote.save();
