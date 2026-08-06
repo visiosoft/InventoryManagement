@@ -226,10 +226,10 @@ router.get('/:id', async (req, res) => {
   const contract = await populateAll(Contract.findById(req.params.id));
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
 
-  // Sync totalQuotation from linked quote if available
-  if (contract.quote) {
+  // Sync totalQuotation from linked quote only if not yet set
+  if (contract.quote && !contract.totalQuotation) {
     const linkedQuote = await Quote.findById(contract.quote).select('total').lean();
-    if (linkedQuote && Number(linkedQuote.total || 0) > 0 && Number(linkedQuote.total) !== Number(contract.totalQuotation || 0)) {
+    if (linkedQuote && Number(linkedQuote.total || 0) > 0) {
       contract.totalQuotation = Number(linkedQuote.total);
       await Contract.updateOne({ _id: contract._id }, { totalQuotation: linkedQuote.total });
     }
