@@ -1801,18 +1801,10 @@ export default function NewQuote() {
                     ))}
                   </div>
 
-                  {/* Deposit + notes + total */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <Field label="Security Deposit (AED)">
-                      <Input type="number" min={0} value={deposit} onChange={(e) => setDeposit(e.target.value)} placeholder="0" />
-                    </Field>
-                    <Field label="Adjustment (AED)">
-                      <Input type="number" value={adjustment} onChange={(e) => setAdjustment(Number(e.target.value))} />
-                    </Field>
-                    <Field label="Notes" className="col-span-2">
-                      <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes…" />
-                    </Field>
-                  </div>
+                  {/* Notes */}
+                  <Field label="Notes">
+                    <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes…" />
+                  </Field>
 
                   <div className="p-4 rounded-xl border" style={{ borderColor: `${PURPLE}30`, background: `${PURPLE}05` }}>
                     <InfoRow label={`Units (${unitRows.length})`} value={`${formatMoney(unitsTotal)} AED`} />
