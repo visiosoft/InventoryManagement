@@ -113,14 +113,13 @@ function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, 
     setBusy(true); setErr('')
     try {
       const validItems = lineItems.filter(it => it.description.trim() && it.amount > 0)
-      const extraItems = validItems.slice(1).map(it => ({
-        description: it.description, amount: it.amount, type: 'charge' as const
-      }))
       await api.post(`/contracts/${contract._id}/generate-custom-invoice`, {
         startDate, endDate, dueDate, notes,
         discountPct: 0,
-        extraItems,
-        // Pass the first item's total as the rent amount by setting weeks = qty at rate
+        // Send the lines as entered — the server bills these verbatim
+        items: validItems.map(it => ({
+          description: it.description.trim(), quantity: it.qty, rate: it.rate, amount: it.amount,
+        })),
       })
       onDone()
     } catch (e) { setErr(apiError(e)) }

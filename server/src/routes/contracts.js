@@ -909,7 +909,7 @@ router.post('/:id/generate-custom-invoice', async (req, res) => {
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
   if (!contract.customer?._id) return res.status(400).json({ error: 'Contract has no customer' });
 
-  const { startDate, endDate, dueDate, notes, isDeposit, discountPct: rawDiscount, extraItems: rawExtras } = req.body;
+  const { startDate, endDate, dueDate, notes, isDeposit, discountPct: rawDiscount, extraItems: rawExtras, items: rawItems } = req.body;
   const fmt = (d) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   const unitNo = contract.unit?.unitNumber || '-';
 
@@ -1011,7 +1011,21 @@ router.post('/:id/generate-custom-invoice', async (req, res) => {
     });
   });
 
-  const subTotal = Math.round(items.reduce((s, it) => s + it.amount, 0) * 100) / 100;
+  // Line items typed into the invoice form win over the date-derived rent
+  // line — otherwise the amounts entered there are silently replaced.
+  const explicitItems = (Array.isArray(rawItems) ? rawItems : [])
+    .map((it, i) => ({
+      sortOrder: i,
+      itemDetails: String(it.description ?? it.itemDetails ?? '').trim(),
+      quantity: Number(it.quantity ?? it.qty ?? 1) || 1,
+      rate: Number(it.rate ?? 0),
+      discountPct: Number(it.discountPct || 0),
+      amount: Math.round(Number(it.amount ?? 0) * 100) / 100,
+    }))
+    .filter((it) => it.itemDetails && it.amount !== 0);
+
+  const finalItems = explicitItems.length ? explicitItems : items;
+  const subTotal = Math.round(finalItems.reduce((s, it) => s + it.amount, 0) * 100) / 100;
 
   const invoice = await Invoice.create({
     invoiceNo: await nextInvoiceNo(unitNo, contract._id),
@@ -1020,24 +1034,29 @@ router.post('/:id/generate-custom-invoice', async (req, res) => {
     dueDate: dueDate ? new Date(dueDate) : end,
     orderNumber: contract.contractNo,
     terms: 'Due on receipt',
-    subject: `Storage Rent ${fmt(start)} – ${displayEnd} · ${contract.contractNo}`,
-    items,
+    subject: explicitItems.length
+      ? `${finalItems[0].itemDetails} · ${contract.contractNo}`
+      : `Storage Rent ${fmt(start)} – ${displayEnd} · ${contract.contractNo}`,
+    items: finalItems,
     customerNotes: notes || '',
     subTotal, total: subTotal, paymentMade: 0, status: 'sent',
   });
 
-  // One monthly payment record for the rent portion
+  // One payment record covering what was actually invoiced
   await Payment.create({
     contract: contract._id,
     invoice: invoice._id,
-    amount: periodSubTotal,
+    amount: explicitItems.length ? subTotal : periodSubTotal,
     dueDate: dueDate ? new Date(dueDate) : start,
     status: 'pending',
-    notes: `Storage Rent ${fmt(start)} – ${displayEnd} · Unit ${unitNo}`,
+    notes: explicitItems.length
+      ? `${finalItems[0].itemDetails} · Unit ${unitNo}`
+      : `Storage Rent ${fmt(start)} – ${displayEnd} · Unit ${unitNo}`,
   });
 
-  // If first invoice, also add the deposit payment record
-  const isFirstInvoice = priorInvoiceIds.filter(Boolean).length === 0;
+  // If first invoice, also add the deposit payment record. Skipped for custom
+  // invoices — those bill exactly the lines the user entered.
+  const isFirstInvoice = priorInvoiceIds.filter(Boolean).length === 0 && !explicitItems.length;
   if (isFirstInvoice) {
     await Payment.create({
       contract: contract._id,
