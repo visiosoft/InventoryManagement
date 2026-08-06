@@ -61,16 +61,29 @@ function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, 
   const [startDate, setStartDate] = useState(defaultStart)
   const [endDate, setEndDate] = useState(defaultEnd)
   const [dueDate, setDueDate] = useState(toISO(today))
-  const [lineItems, setLineItems] = useState<LineItem[]>(
-    blank
-      ? [{ id: 1, description: '', qty: 1, rate: 0, amount: 0 }]
-      : [{ id: 1, description: `Storage Rent · Unit ${unitNo}`, qty: 1, rate: weeklyRate, amount: weeklyRate }]
-  )
+
+  // Determine if first invoice — if so, include advance payment line
+  const isFirstInvoice = payments.length === 0
+  const monthlyRate = Number(contract.rate || 0)
+  const totalQuotation = Number(contract.totalQuotation || 0)
+  const alreadyInvoiced = payments.reduce((s, p) => s + p.amount, 0)
+  const remainingToInvoice = Math.max(0, totalQuotation - alreadyInvoiced)
+
+  const buildDefaultItems = (): LineItem[] => {
+    if (blank) return [{ id: 1, description: '', qty: 1, rate: 0, amount: 0 }]
+    const items: LineItem[] = [{ id: 1, description: `Storage Rent · Unit ${unitNo}`, qty: 4, rate: weeklyRate, amount: Math.round(4 * weeklyRate * 100) / 100 }]
+    if (isFirstInvoice) {
+      items.push({ id: 2, description: `Advance Payment (4 weeks) · Unit ${unitNo}`, qty: 4, rate: weeklyRate, amount: Math.round(4 * weeklyRate * 100) / 100 })
+    }
+    return items
+  }
+
+  const [lineItems, setLineItems] = useState<LineItem[]>(buildDefaultItems())
   const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
-  // Auto-calculate weeks when dates change
+  // Auto-calculate weeks when dates change (only updates the first rent line)
   useEffect(() => {
     const s = new Date(startDate), e = new Date(endDate)
     const days = Math.round((e.getTime() - s.getTime()) / 86400000)
