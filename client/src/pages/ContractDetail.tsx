@@ -851,62 +851,6 @@ export default function ContractDetail() {
   // Deposit-covered invoices: status 'paid', net 0, no payment records linked to them
   const allUnits = c.units?.length ? c.units : c.unit ? [c.unit] : []
 
-  // Billing plan: split contract term into periods based on user preference
-  type BillingPeriod = { idx: number; from: Date; to: Date; weeks: number; amount: number; invoice?: InvoiceGroup; coveredByAdvance: boolean }
-  const weeklyRateCalc = Math.round((c.rate / 4) * 100) / 100
-  const [billingView, setBillingView] = useState<'monthly' | 'single'>(c.billingPeriod === 'weekly' ? 'single' : 'monthly')
-  const billingPlan: BillingPeriod[] = (() => {
-    if (!c.startDate || !c.endDate) return []
-    const start = new Date(c.startDate)
-    const end = new Date(c.endDate)
-    const out: BillingPeriod[] = []
-
-    if (billingView === 'single') {
-      const days = Math.round((end.getTime() - start.getTime()) / 86400000)
-      const weeks = Math.max(1, Math.ceil(days / 7))
-      out.push({ idx: 0, from: start, to: end, weeks, amount: Math.round(weeklyRateCalc * weeks * 100) / 100, coveredByAdvance: false })
-    } else {
-      let cursor = new Date(start)
-      let i = 0
-      while (cursor < end && i < 40) {
-        const pEnd = new Date(cursor); pEnd.setDate(pEnd.getDate() + 28)
-        const actualEnd = pEnd > end ? end : pEnd
-        const days = Math.round((actualEnd.getTime() - cursor.getTime()) / 86400000)
-        const weeks = Math.max(1, Math.ceil(days / 7))
-        out.push({ idx: i, from: new Date(cursor), to: actualEnd, weeks, amount: Math.round(weeklyRateCalc * weeks * 100) / 100, coveredByAdvance: false })
-        cursor = pEnd
-        i++
-      }
-      if (out.length > 1) out[out.length - 1].coveredByAdvance = true
-    }
-    // Match each period to the CLOSEST invoice by due date, and let an invoice
-    // claim only one period — otherwise a later invoice dated a day earlier
-    // steals the slot and the period's real invoice is pushed out of the plan.
-    const claimed = new Set<string>()
-    for (const p of out) {
-      let best: InvoiceGroup | undefined
-      let bestGap = Infinity
-      for (const g of invoiceGroups) {
-        if (claimed.has(g.invoiceId)) continue
-        // Prefer the period the invoice bills; fall back to its due date when
-        // it doesn't state one. An anchor landing anywhere inside the period
-        // counts, since a due date is often just "today" rather than the
-        // period's start — closest to the start still wins.
-        const anchor = g.periodStart ?? g.earliestDue
-        const withinPeriod = anchor >= p.from && anchor < p.to
-        const gap = Math.abs(anchor.getTime() - p.from.getTime())
-        if ((withinPeriod || gap < 4 * 86400000) && gap < bestGap) { best = g; bestGap = gap }
-      }
-      if (best) { p.invoice = best; claimed.add(best.invoiceId) }
-    }
-    return out
-  })()
-
-  // Invoices that don't line up with a period (extra or custom ones) must still
-  // be visible — they count towards the totals either way.
-  const plannedInvoiceIds = new Set(billingPlan.map(p => p.invoice?.invoiceId).filter(Boolean) as string[])
-  const extraInvoices = invoiceGroups.filter(g => !plannedInvoiceIds.has(g.invoiceId))
-
   const unitLabel = allUnits.length > 1
     ? `Units: ${allUnits.map((u) => u?.unitNumber ?? '—').join(', ')}`
     : allUnits.length === 1
@@ -1342,154 +1286,74 @@ export default function ContractDetail() {
           {/* PAYMENTS */}
           {activeTab === 'payments' && (
             <Card>
-              <CardHeader title="Billing Plan"
-                subtitle={`${formatDate(c.startDate)} → ${formatDate(c.endDate)} · ${billingPlan.length} period${billingPlan.length !== 1 ? 's' : ''}`}
-                action={
-                  <div className="flex items-center gap-2">
-                    <div className="flex rounded-lg border overflow-hidden text-[11px] font-semibold">
-                      <button onClick={() => setBillingView('monthly')} className={`px-3 py-1.5 cursor-pointer ${billingView === 'monthly' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}>Monthly</button>
-                      <button onClick={() => setBillingView('single')} className={`px-3 py-1.5 cursor-pointer ${billingView === 'single' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}>Single</button>
-                    </div>
-                    <Button size="sm" variant="outline" onClick={() => setShowInvoiceModal(true)}><FilePlus size={13} /> Invoice</Button>
-                  </div>
-                }
+              <CardHeader title="Invoices"
+                action={<Button size="sm" variant="outline" onClick={() => setShowInvoiceModal(true)}><FilePlus size={13} /> Create Invoice</Button>}
               />
-              <div className="divide-y">
-                {billingPlan.map((period) => {
-                  const inv = period.invoice
-                  const isPaid = inv?.status === 'paid'
-                  const isPending = inv && !isPaid
-                  const periodEndDisplay = new Date(period.to); periodEndDisplay.setDate(periodEndDisplay.getDate() - 1)
-                  const balance = inv ? inv.total - inv.paidTotal : 0
-                  const statusLabel = period.coveredByAdvance
-                    ? 'Covered by advance deposit'
-                    : isPaid ? 'Paid'
-                      : isPending ? `Pending · ${formatMoney(balance)} AED`
-                        : 'Not invoiced yet'
-                  const statusTone = period.coveredByAdvance
-                    ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/30 dark:text-purple-400'
-                    : isPaid ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400'
-                      : isPending ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400'
-                        : 'bg-muted text-muted-foreground'
+              {/* Summary bar */}
+              <div className="grid grid-cols-4 gap-3 px-4 pb-4">
+                <div className="rounded-lg border px-3 py-2.5 text-center">
+                  <div className="text-[10px] font-semibold text-muted-foreground uppercase">Contract Total</div>
+                  <div className="text-base font-bold mt-0.5">{formatMoney(totalOwed)}</div>
+                </div>
+                <div className="rounded-lg border px-3 py-2.5 text-center">
+                  <div className="text-[10px] font-semibold text-blue-600 uppercase">Invoiced</div>
+                  <div className="text-base font-bold text-blue-600 mt-0.5">{formatMoney(invoiceGroups.reduce((s, g) => s + g.total, 0))}</div>
+                </div>
+                <div className="rounded-lg border px-3 py-2.5 text-center">
+                  <div className="text-[10px] font-semibold text-emerald-600 uppercase">Received</div>
+                  <div className="text-base font-bold text-emerald-600 mt-0.5">{formatMoney(totalPaid)}</div>
+                </div>
+                <div className="rounded-lg border px-3 py-2.5 text-center">
+                  <div className="text-[10px] font-semibold text-amber-600 uppercase">Remaining</div>
+                  <div className="text-base font-bold text-amber-600 mt-0.5">{formatMoney(Math.max(0, totalOwed - invoiceGroups.reduce((s, g) => s + g.total, 0)))}</div>
+                </div>
+              </div>
 
-                  return (
-                    <div key={period.idx} className={`px-4 py-3 ${inv ? 'cursor-pointer hover:bg-muted/30 transition-colors' : ''}`}
-                      onClick={() => { if (inv) navigate(`/invoices/${inv.invoiceId}`) }}>
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${isPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-primary/10 text-primary'}`}>
-                            {isPaid ? '✓' : period.idx + 1}
-                          </span>
-                          <div className="min-w-0">
-                            <p className="text-sm font-bold">
-                              {billingView === 'single' ? 'Full term' : `Month ${period.idx + 1}`}
-                              {inv && <span className="ml-2 text-xs font-semibold text-primary">{inv.invoiceRef.invoiceNo}</span>}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {formatDate(period.from.toISOString())} – {formatDate(periodEndDisplay.toISOString())} · {period.weeks} wk{period.weeks !== 1 ? 's' : ''}
-                            </p>
+              {/* Invoice list */}
+              {invoiceGroups.length === 0 ? (
+                <CardBody><p className="text-sm text-muted-foreground text-center py-6">No invoices yet. Click <strong>Create Invoice</strong> to generate one.</p></CardBody>
+              ) : (
+                <div className="divide-y">
+                  {invoiceGroups.map((g, i) => {
+                    const isPaid = g.status === 'paid'
+                    const balance = g.total - g.paidTotal
+                    return (
+                      <div key={g.invoiceId} className="px-4 py-3 cursor-pointer hover:bg-muted/30 transition-colors"
+                        onClick={() => navigate(`/invoices/${g.invoiceId}`)}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${isPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-primary/10 text-primary'}`}>
+                              {isPaid ? '✓' : i + 1}
+                            </span>
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold text-primary">{g.invoiceRef.invoiceNo}</p>
+                              <p className="text-xs text-muted-foreground">{g.periodLabel}</p>
+                            </div>
                           </div>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-sm font-bold">{formatMoney(inv ? inv.total : period.amount)} AED</span>
-                          <span className={`text-[10px] font-semibold px-2 py-1 rounded-full whitespace-nowrap ${statusTone}`}>
-                            {statusLabel}
-                          </span>
-                          {inv && (
-                            <button type="button" title={`Delete ${inv.invoiceRef.invoiceNo}`}
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-sm font-bold">{formatMoney(g.total)} AED</span>
+                            <span className={`text-[10px] font-semibold px-2 py-1 rounded-full whitespace-nowrap ${
+                              isPaid ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400'
+                              : 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400'
+                            }`}>
+                              {isPaid ? 'Paid' : `Pending · ${formatMoney(balance)}`}
+                            </span>
+                            <button type="button" title="Delete"
                               onClick={(e) => {
                                 e.stopPropagation()
-                                if (confirm(`Delete invoice ${inv.invoiceRef.invoiceNo}? This also removes its payment schedule.`)) deleteInvoice.mutate(inv.invoiceId)
+                                if (confirm(`Delete invoice ${g.invoiceRef.invoiceNo}?`)) deleteInvoice.mutate(g.invoiceId)
                               }}
                               disabled={deleteInvoice.isPending}
                               className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer disabled:opacity-50">
                               <Trash2 size={13} />
                             </button>
-                          )}
-                        </div>
-                      </div>
-
-                      {!inv && (
-                        <div className="mt-2 ml-9" onClick={(e) => e.stopPropagation()}>
-                          <Button size="sm" variant="outline" onClick={() => {
-                            const toISO = (d: Date) => d.toISOString().slice(0, 10)
-                            setInvoiceOverride({ start: toISO(period.from), end: toISO(period.to) })
-                            setInvoiceBlank(false)
-                            setShowInvoiceModal(true)
-                          }}>
-                            <FilePlus size={12} /> Create invoice · {formatMoney(period.amount)} AED
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-
-                {/* Invoices outside the plan — extra or custom ones */}
-                {extraInvoices.map((g) => {
-                  const isPaid = g.status === 'paid'
-                  const balance = g.total - g.paidTotal
-                  return (
-                    <div key={g.invoiceId} className="px-4 py-3 cursor-pointer hover:bg-muted/30 transition-colors"
-                      onClick={() => navigate(`/invoices/${g.invoiceId}`)}>
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${isPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                            {isPaid ? '✓' : '+'}
-                          </span>
-                          <div className="min-w-0">
-                            <p className="text-sm font-bold">
-                              Additional invoice
-                              <span className="ml-2 text-xs font-semibold text-primary">{g.invoiceRef.invoiceNo}</span>
-                            </p>
-                            <p className="text-xs text-muted-foreground">{g.periodLabel}</p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-sm font-bold">{formatMoney(g.total)} AED</span>
-                          <span className={`text-[10px] font-semibold px-2 py-1 rounded-full whitespace-nowrap ${isPaid
-                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400'
-                            : 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400'}`}>
-                            {isPaid ? 'Paid' : `Pending · ${formatMoney(balance)} AED`}
-                          </span>
-                          {g.paidTotal <= 0 && (
-                            <button type="button" title={`Delete ${g.invoiceRef.invoiceNo}`}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                if (confirm(`Delete invoice ${g.invoiceRef.invoiceNo}? This also removes its payment schedule.`)) deleteInvoice.mutate(g.invoiceId)
-                              }}
-                              disabled={deleteInvoice.isPending}
-                              className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer disabled:opacity-50">
-                              <Trash2 size={13} />
-                            </button>
-                          )}
-                        </div>
                       </div>
-                    </div>
-                  )
-                })}
-              </div>
-              {/* Summary */}
-              <div className="border-t mx-0">
-                <table className="w-full text-sm">
-                  <tbody>
-                    <tr>
-                      <td className="px-4 py-2 text-muted-foreground" colSpan={4}>Total Invoiced</td>
-                      <td className="px-4 py-2 text-right font-medium" colSpan={2}>AED {formatMoney(totalOwed)}</td>
-                    </tr>
-                    <tr className="bg-emerald-50/50 dark:bg-emerald-950/10">
-                      <td className="px-4 py-2 text-emerald-700 dark:text-emerald-400 font-medium" colSpan={4}>Total Received</td>
-                      <td className="px-4 py-2 text-right font-bold text-emerald-700 dark:text-emerald-400" colSpan={2}>AED {formatMoney(totalPaid)}</td>
-                    </tr>
-                    {(totalOverdue + totalPending) > 0 && (
-                      <tr className="bg-red-50/50 dark:bg-red-950/10 border-t">
-                        <td className="px-4 py-2 text-red-600 dark:text-red-400 font-medium" colSpan={4}>Balance Due</td>
-                        <td className="px-4 py-2 text-right font-bold text-red-600 dark:text-red-400" colSpan={2}>AED {formatMoney(totalOwed - totalPaid)}</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                    )
+                  })}
+                </div>
+              )}
             </Card>
           )}
 
