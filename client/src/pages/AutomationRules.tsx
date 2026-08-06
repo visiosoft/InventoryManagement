@@ -160,7 +160,7 @@ export default function AutomationRules() {
     if (isLoading) return <Spinner />
 
     return (
-        <div className="max-w-[920px] mx-auto px-4 sm:px-6 py-8">
+        <div className="px-2 py-4">
             <h1 className="text-2xl font-bold tracking-tight">Automation Rules</h1>
             <p className="text-sm text-muted-foreground mt-1">
                 Configure when automatic reminders are sent to clients, and how often.
