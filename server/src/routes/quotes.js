@@ -408,16 +408,22 @@ async function createFirstInvoiceFromQuote(quote, contract, userName) {
         const rem = days % 28;
         const extraWeeks = rem > 0 ? Math.ceil(rem / 7) : 0;
         const totalWeeks = fullMonths * 4 + extraWeeks;
-        const rentAmount = Number((weeklyRate * (totalWeeks || 1)).toFixed(2));
+        const tw = totalWeeks || 1;
 
-        const displayEnd = new Date(periodEnd);
+        // First invoice bills only the FIRST period (up to 4 weeks). Later
+        // months are invoiced per period ("Add next period"), and the advance
+        // deposit covers the final period.
+        const firstWeeks = Math.min(4, tw);
+        const rentAmount = Number((weeklyRate * firstWeeks).toFixed(2));
+        const firstPeriodEnd = new Date(periodStart);
+        firstPeriodEnd.setDate(firstPeriodEnd.getDate() + firstWeeks * 7);
+        const displayEnd = new Date(Math.min(firstPeriodEnd.getTime(), periodEnd.getTime()));
         displayEnd.setDate(displayEnd.getDate() - 1);
         const wkRate = Number((rate / 4).toFixed(2));
-        const tw = totalWeeks || 1;
         items.push({
             sortOrder: items.length,
             itemDetails: `Storage Rent ${fmt(periodStart)} – ${fmt(displayEnd)} · Unit ${u.unitNumber}`,
-            quantity: tw,
+            quantity: firstWeeks,
             rate: wkRate,
             discountPct,
             amount: rentAmount,
