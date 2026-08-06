@@ -224,7 +224,6 @@ const contractSchema = new Schema(
     deposit: { type: Number, default: 0 },
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
-    autoRenew: { type: Boolean, default: false },
     status: {
       type: String,
       enum: ['draft', 'pending_signature', 'active', 'ended', 'cancelled'],

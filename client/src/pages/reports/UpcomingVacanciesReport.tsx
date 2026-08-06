@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Building2, CalendarOff, Download, RefreshCw } from 'lucide-react'
+import { Building2, CalendarOff, Download } from 'lucide-react'
 import { api } from '../../lib/api'
 import { Button, Card, CardHeader, EmptyState, PageHeader, Select, Spinner, Table, Td, Th } from '../../components/ui'
 import { formatDate, formatMoney } from '../../lib/utils'
@@ -19,8 +19,6 @@ export default function UpcomingVacanciesReport() {
     queryFn: () => api.get('/reports/vacancies', { params: { days } }).then(r => r.data),
   })
 
-  const autoRenewCount = vacancies.filter(c => c.autoRenew).length
-  const noRenewCount   = vacancies.length - autoRenewCount
   const totalRate      = vacancies.reduce((s, c) => s + Number(c.rate || 0), 0)
 
   return (
@@ -40,11 +38,11 @@ export default function UpcomingVacanciesReport() {
             {vacancies.length > 0 && (
               <Button size="sm" variant="outline" onClick={() =>
                 downloadCsv('upcoming-vacancies.csv', [
-                  ['Contract', 'Customer', 'Unit', 'Size (sqf)', 'End Date', 'Days Left', 'Auto-renew', 'Weekly Rate (AED)'],
+                  ['Contract', 'Customer', 'Unit', 'Size (sqf)', 'End Date', 'Days Left', 'Weekly Rate (AED)'],
                   ...vacancies.map(c => [
                     c.contractNo, c.customer?.fullName, c.unit?.unitNumber,
                     c.unit?.sizeSqf ?? '', c.endDate, daysUntil(c.endDate),
-                    c.autoRenew ? 'Yes' : 'No', c.rate,
+                    c.rate,
                   ]),
                 ])}>
                 <Download size={13} /> CSV
@@ -57,12 +55,8 @@ export default function UpcomingVacanciesReport() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
         <StatCard label={`Ending in ${days} days`} value={String(vacancies.length)} icon={CalendarOff}
           tone={vacancies.length > 0 ? 'amber' : 'green'} />
-        <StatCard label="Auto-renewing" value={String(autoRenewCount)} icon={RefreshCw} tone="green"
-          sub="will renew automatically" />
-        <StatCard label="Vacating" value={String(noRenewCount)} icon={Building2}
-          tone={noRenewCount > 0 ? 'red' : 'green'} sub="units becoming available" />
         <StatCard label="Revenue at Risk" value={`AED ${formatMoney(totalRate)}`} icon={Building2}
-          tone={noRenewCount > 0 ? 'red' : 'green'} sub="monthly rate of vacating units" />
+          tone={vacancies.length > 0 ? 'red' : 'green'} sub="monthly rate of ending contracts" />
       </div>
 
       {isLoading ? <Spinner /> : vacancies.length === 0 ? (
@@ -83,7 +77,6 @@ export default function UpcomingVacanciesReport() {
                 <Th>End Date</Th>
                 <Th>Days Left</Th>
                 <Th>Weekly Rate</Th>
-                <Th>Auto-renew</Th>
               </tr>
             </thead>
             <tbody>
@@ -111,15 +104,6 @@ export default function UpcomingVacanciesReport() {
                     </Td>
                     <Td className="text-muted-foreground">
                       {c.rate ? `AED ${formatMoney(c.rate)}` : '—'}
-                    </Td>
-                    <Td>
-                      <span className={`text-xs font-semibold rounded-full px-2 py-0.5 ${
-                        c.autoRenew
-                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                          : 'bg-muted text-muted-foreground'
-                      }`}>
-                        {c.autoRenew ? 'Yes' : 'No'}
-                      </span>
                     </Td>
                   </tr>
                 )

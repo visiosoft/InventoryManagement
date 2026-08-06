@@ -161,7 +161,7 @@ export default function ContractsReport() {
                   <thead>
                     <tr>
                       <Th>Contract</Th><Th>Customer</Th><Th>Unit</Th>
-                      <Th>Size</Th><Th>End Date</Th><Th>Auto-renew</Th>
+                      <Th>Size</Th><Th>End Date</Th>
                     </tr>
                   </thead>
                   <tbody>
@@ -176,9 +176,6 @@ export default function ContractsReport() {
                         <Td>{c.unit?.unitNumber}</Td>
                         <Td className="text-muted-foreground">{c.unit?.sizeSqf ? `${c.unit.sizeSqf} sqf` : '—'}</Td>
                         <Td>{formatDate(c.endDate)}</Td>
-                        <Td className={c.autoRenew ? 'text-emerald-600' : 'text-muted-foreground'}>
-                          {c.autoRenew ? 'Yes' : 'No'}
-                        </Td>
                       </tr>
                     ))}
                   </tbody>

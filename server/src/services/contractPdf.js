@@ -55,7 +55,6 @@ export function renderContractPdf({ contract, customer, unit }) {
     row('Duration:', `${weeks} Weeks`);
     row('Start Date:', fmt(contract.startDate));
     row('End Date:', fmt(contract.endDate));
-    row('Auto-Renew:', contract.autoRenew ? 'Yes' : 'No');
     doc.moveDown(0.6);
 
     doc.fontSize(13).font('Helvetica-Bold').text('4. Conditions');

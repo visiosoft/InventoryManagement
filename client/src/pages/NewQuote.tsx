@@ -71,7 +71,6 @@ interface ContractDetailData {
     startDate: string
     endDate: string
     rate: number
-    autoRenew?: boolean
     paymentMethod?: string
     authorizedPersons?: AccessPerson[]
   }
@@ -639,7 +638,6 @@ export default function NewQuote() {
 
   // Contract options
   const [authorizedPersons, setAuthorizedPersons] = useState<AccessPerson[]>([])
-  const [autoRenew, setAutoRenew] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState('')
   const [customerDocs, setCustomerDocs] = useState<{ _id: string; name: string; type: string; url: string }[]>([])
   const [uploadingDoc, setUploadingDoc] = useState(false)
@@ -787,7 +785,6 @@ export default function NewQuote() {
     if (!contract || optionsHydratedRef.current === contract._id) return
     optionsHydratedRef.current = contract._id
     setAuthorizedPersons(contract.authorizedPersons || [])
-    setAutoRenew(Boolean(contract.autoRenew))
     setPaymentMethod(contract.paymentMethod || '')
   }, [contract])
 
@@ -1097,7 +1094,6 @@ export default function NewQuote() {
 
   const contractOptionsBody = () => ({
     authorizedPersons: authorizedPersons.filter((p) => p.name?.trim()),
-    autoRenew,
     paymentMethod,
   })
 
@@ -2059,7 +2055,6 @@ export default function NewQuote() {
                     <div className="px-4 py-3 space-y-1">
                       <InfoRow label="Term" value={`${formatDate(contract.startDate)} → ${formatDate(contract.endDate)}`} />
                       {paymentMethod && <InfoRow label="Payment" value={paymentMethod.replace(/_/g, ' ')} />}
-                      {autoRenew && <InfoRow label="Auto-renew" value="Yes" />}
                       {authorizedPersons.length > 0 && <InfoRow label="Authorized persons" value={authorizedPersons.map((p) => p.name).filter(Boolean).join(', ') || `${authorizedPersons.length}`} />}
                     </div>
                   </div>

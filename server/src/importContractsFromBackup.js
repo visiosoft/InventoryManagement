@@ -339,7 +339,6 @@ async function run() {
                 deposit: 0,
                 startDate: moveIn,
                 endDate: moveOut,
-                autoRenew: toBool(src.auto_renew),
                 status: normalizeStatus(src.status),
                 paymentMethod: String(src.payment_method || '').trim(),
                 firstPaymentDate: toDate(src.first_payment_date),

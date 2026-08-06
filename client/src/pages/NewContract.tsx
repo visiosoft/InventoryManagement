@@ -335,7 +335,6 @@ export default function NewContract() {
   })
   const [rate, setRate] = useState<number | ''>('')
   const [deposit, setDeposit] = useState<number | ''>('')
-  const [autoRenew, setAutoRenew] = useState(false)
   const [notes, setNotes] = useState('')
   const [sizeFilter, setSizeFilter] = useState('')
   const [floorFilter, setFloorFilter] = useState('')
@@ -484,7 +483,7 @@ export default function NewContract() {
           units: selectedUnits.map((u) => u._id),
           billingPeriod: billing, rate: r,
           deposit: deposit === '' ? 0 : deposit,
-          startDate, endDate, autoRenew, notes,
+          startDate, endDate, notes,
           firstMonthDiscountPct: pct,
         }).then((res) => [res])
       }
@@ -495,7 +494,7 @@ export default function NewContract() {
           customer: customerId, unit: u._id,
           billingPeriod: billing, rate: r,
           deposit: deposit === '' ? 0 : deposit,
-          startDate, endDate, autoRenew, notes,
+          startDate, endDate, notes,
           firstMonthDiscountPct: pct,
         })
       }))
@@ -997,10 +996,6 @@ export default function NewContract() {
                     <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Other</h3>
                   </div>
                   <div className="px-4 py-3 space-y-3">
-                    <label className="flex items-center gap-2 text-sm cursor-pointer">
-                      <input type="checkbox" checked={autoRenew} onChange={(e) => setAutoRenew(e.target.checked)} className="accent-(--primary)" />
-                      Auto-renew at end of term
-                    </label>
                     <Field label="Notes"><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
                   </div>
                 </section>
@@ -1124,7 +1119,6 @@ export default function NewContract() {
                     {mode === 'multi' && ` · ${selectedUnits.length} contracts`}
                     {mode === 'combined' && ` · ${selectedUnits.length} units · 1 contract`}
                     {' '}· ≈ {monthlyPeriods} monthly invoice{monthlyPeriods !== 1 ? 's' : ''}
-                    {autoRenew && <Badge tone="purple" className="ml-2">Auto-renew</Badge>}
                   </span>
                   <strong>{formatMoney(totalValue)}</strong>
                 </div>

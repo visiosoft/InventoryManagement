@@ -170,7 +170,6 @@ async function syncContracts(contracts, backupUnits, customerByTenantId, backup)
       deposit:            0,
       startDate:          new Date(c.move_in_date),
       endDate:            new Date(c.move_out_date),
-      autoRenew:          c.auto_renew === '1',
       status,
       paymentMethod:      c.payment_method || '',
       firstPaymentDate:   c.first_payment_date ? new Date(c.first_payment_date) : undefined,
@@ -188,7 +187,6 @@ async function syncContracts(contracts, backupUnits, customerByTenantId, backup)
     if (existing) {
       await Contract.updateOne({ _id: existing._id }, { $set: {
         status,
-        autoRenew:        c.auto_renew === '1',
         rate,
         endDate:          new Date(c.move_out_date),
         paymentMethod:    c.payment_method || '',

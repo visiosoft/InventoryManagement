@@ -623,7 +623,6 @@ router.post('/:id/convert-to-contract', async (req, res) => {
         endDate,
         firstMonthDiscountPct,
         notes: noteParts.join('\n'),
-        autoRenew: Boolean(req.body?.autoRenew),
         paymentMethod: String(req.body?.paymentMethod || ''),
         authorizedPersons,
         totalQuotation: Number(quote.total || 0),

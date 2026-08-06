@@ -439,7 +439,6 @@ export interface Contract {
   deposit: number
   startDate: string
   endDate: string
-  autoRenew: boolean
   status: ContractStatus
   archived?: boolean
   zohoRequestId?: string

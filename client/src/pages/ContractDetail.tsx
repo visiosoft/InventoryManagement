@@ -1232,12 +1232,6 @@ export default function ContractDetail() {
                     <span className="font-medium">{c.paymentMethod}</span>
                   </div>
                 )}
-                <div className="flex justify-between py-2 items-center">
-                  <span className="text-muted-foreground">Auto-renew</span>
-                  <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${c.autoRenew ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' : 'bg-muted text-muted-foreground'}`}>
-                    {c.autoRenew ? 'On' : 'Off'}
-                  </span>
-                </div>
                 {customerPhone && (
                   <div className="flex justify-between py-2 items-center gap-2">
                     <span className="text-muted-foreground shrink-0">Phone</span>
@@ -1740,7 +1734,6 @@ export default function ContractDetail() {
                 billingPeriod: String(f.get('billingPeriod')),
                 startDate: String(f.get('startDate')),
                 endDate: String(f.get('endDate')),
-                autoRenew: f.get('autoRenew') === 'true',
                 paymentMethod: String(f.get('paymentMethod') || ''),
                 firstPaymentDate: f.get('firstPaymentDate') ? String(f.get('firstPaymentDate')) : undefined,
                 notes: String(f.get('notes') || ''),
@@ -1781,12 +1774,6 @@ export default function ContractDetail() {
               </Field>
               <Field label="First Payment Date">
                 <Input name="firstPaymentDate" type="date" defaultValue={c.firstPaymentDate?.slice(0, 10)} />
-              </Field>
-              <Field label="Auto Renew">
-                <Select name="autoRenew" defaultValue={c.autoRenew ? 'true' : 'false'}>
-                  <option value="true">Yes</option>
-                  <option value="false">No</option>
-                </Select>
               </Field>
               <Field label="Notes" className="col-span-2">
                 <Textarea name="notes" rows={3} defaultValue={c.notes || ''} placeholder="Internal notes about this contract" />

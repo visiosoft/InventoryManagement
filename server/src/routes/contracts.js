@@ -294,7 +294,7 @@ router.get('/:id', async (req, res) => {
 
 // Create a contract (draft). Generates the payment schedule and reserves the unit(s).
 router.post('/', async (req, res) => {
-  const { customer, unit, units: extraUnits, billingPeriod, rate, deposit, startDate, endDate, autoRenew, notes, firstMonthDiscountPct } = req.body;
+  const { customer, unit, units: extraUnits, billingPeriod, rate, deposit, startDate, endDate, notes, firstMonthDiscountPct } = req.body;
 
   // Determine all unit IDs covered by this contract.
   // `extraUnits` (array) is supplied when creating a single contract for multiple units.
@@ -321,7 +321,7 @@ router.post('/', async (req, res) => {
     customer,
     unit: allUnitIds[0],
     units: allUnitIds.length > 1 ? allUnitIds : [],
-    billingPeriod, rate, deposit, startDate, endDate, autoRenew, notes,
+    billingPeriod, rate, deposit, startDate, endDate, notes,
     firstMonthDiscountPct: Number(req.body.firstMonthDiscountPct || 0),
     status: 'draft',
   });
@@ -663,7 +663,7 @@ router.post('/:id/sign-inperson', async (req, res) => {
   }
 });
 
-// Update editable fields on a contract (rate, deposit, dates, notes, payment method, auto-renew).
+// Update editable fields on a contract (rate, deposit, dates, notes, payment method).
 // Primary unit cannot be changed, but the additional units[] array can be updated here.
 router.put('/:id', async (req, res) => {
   try {
@@ -675,7 +675,7 @@ router.put('/:id', async (req, res) => {
       return res.status(403).json({ error: 'Only an admin can edit a booked contract' });
     }
 
-    const allowed = ['rate', 'deposit', 'startDate', 'endDate', 'billingPeriod', 'autoRenew', 'paymentMethod', 'firstPaymentDate', 'notes', 'totalQuotation'];
+    const allowed = ['rate', 'deposit', 'startDate', 'endDate', 'billingPeriod', 'paymentMethod', 'firstPaymentDate', 'notes', 'totalQuotation'];
     for (const key of allowed) {
       if (req.body[key] !== undefined) {
         contract[key] = key.endsWith('Date') && req.body[key] ? new Date(req.body[key]) : req.body[key];
