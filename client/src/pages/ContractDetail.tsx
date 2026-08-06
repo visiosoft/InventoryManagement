@@ -13,6 +13,7 @@ import {
 } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
 import { UploadDocumentForm } from './Documents'
+import { CustomerForm } from '../components/AddCustomerModal'
 
 // ── Custom invoice generator modal ────────────────────────────────────────────
 type ContractDetailData = {
@@ -770,6 +771,8 @@ export default function ContractDetail() {
   const [showInvoiceModal, setShowInvoiceModal] = useState(false)
   const [invoiceOverride, setInvoiceOverride] = useState<{ start: string; end: string } | null>(null)
   const [editModal, setEditModal] = useState(false)
+  const [editCustomerModal, setEditCustomerModal] = useState(false)
+  const [customerError, setCustomerError] = useState('')
   const [activeTab, setActiveTab] = useState<'overview' | 'payments' | 'documents'>('overview')
 
   const { data, isLoading } = useQuery<ContractDetailData>({
@@ -880,6 +883,12 @@ export default function ContractDetail() {
     mutationFn: (body: Record<string, unknown>) => api.put(`/contracts/${id}`, body),
     onSuccess: () => { invalidate(); setEditModal(false); setError('') },
     onError: (e) => setError(apiError(e)),
+  })
+
+  const updateCustomer = useMutation({
+    mutationFn: (body: Record<string, unknown>) => api.put(`/customers/${(c?.customer as { _id?: string })?._id}`, body),
+    onSuccess: () => { invalidate(); setEditCustomerModal(false); setCustomerError('') },
+    onError: (e) => setCustomerError(apiError(e)),
   })
 
   const addNote = useMutation({
@@ -1113,11 +1122,12 @@ export default function ContractDetail() {
                   {initials}
                 </div>
                 {c.customer?._id ? (
-                  <Link to={`/customers?edit=${c.customer._id}`}
-                    className="font-semibold text-base leading-tight hover:underline"
-                    title="Open tenant details to view or edit">
+                  <button type="button"
+                    onClick={() => { setCustomerError(''); setEditCustomerModal(true) }}
+                    className="font-semibold text-base leading-tight hover:underline cursor-pointer"
+                    title="View or edit tenant details">
                     {c.customer.fullName}
-                  </Link>
+                  </button>
                 ) : (
                   <span className="font-semibold text-base leading-tight">
                     {c.customer?.fullName}
@@ -1635,6 +1645,19 @@ export default function ContractDetail() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      {/* ── Edit Tenant Modal ── */}
+      <Modal open={editCustomerModal} onClose={() => setEditCustomerModal(false)} title={`Edit ${c.customer?.fullName ?? 'tenant'}`} wide>
+        {editCustomerModal && c.customer && (
+          <CustomerForm
+            initial={c.customer}
+            busy={updateCustomer.isPending}
+            error={customerError}
+            submitLabel="Save changes"
+            onSubmit={(b) => updateCustomer.mutate(b)}
+          />
+        )}
       </Modal>
 
       {/* ── Edit Contract Modal ── */}
