@@ -967,6 +967,21 @@ router.post('/:id/notes', async (req, res) => {
   res.json(contract.timeline);
 });
 
+// Edit a timeline note by index
+router.put('/:id/notes/:idx', async (req, res) => {
+  const contract = await Contract.findById(req.params.id);
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  const idx = Number(req.params.idx);
+  if (!Number.isInteger(idx) || idx < 0 || idx >= contract.timeline.length) {
+    return res.status(400).json({ error: 'Invalid note index' });
+  }
+  const text = String(req.body?.text || '').trim();
+  if (!text) return res.status(400).json({ error: 'Note text is required' });
+  contract.timeline[idx].text = text;
+  await contract.save();
+  res.json(contract.timeline);
+});
+
 // Delete a timeline note by index
 router.delete('/:id/notes/:idx', async (req, res) => {
   const contract = await Contract.findById(req.params.id);

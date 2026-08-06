@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import multer from 'multer';
-import { Customer, Invoice, Payment, nextInvoiceNo } from '../models/index.js';
+import { Customer, Invoice, Payment, Contract, nextInvoiceNo } from '../models/index.js';
+import { archivePdf } from '../utils/archivePdf.js';
 import { parseCsv } from '../services/csv.js';
 import { renderInvoicePdf } from '../services/invoicePdf.js';
 import { uploadFile } from '../services/drive.js';
@@ -11,6 +12,24 @@ import { zohoBooksConfigured, createZohoInvoice, recordZohoPayment } from '../se
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+// Archive a rendered invoice PDF into the Documents section (fire-and-forget)
+function archiveInvoicePdf(invoice, pdf) {
+    const run = async () => {
+        const contract = invoice.orderNumber
+            ? await Contract.findOne({ contractNo: invoice.orderNumber }).select('_id')
+            : null;
+        await archivePdf({
+            buffer: pdf,
+            name: `${invoice.invoiceNo}.pdf`,
+            customerId: invoice.customer?._id ?? invoice.customer,
+            customerName: invoice.customer?.fullName,
+            contractId: contract?._id,
+            sourceUpdatedAt: invoice.updatedAt,
+        });
+    };
+    run().catch(() => { });
+}
 
 const DEFAULT_BANK_INFORMATION =
     'Account Number: 019101745789\n' +
@@ -354,6 +373,7 @@ router.get('/public/:token/pdf', async (req, res) => {
     }
 
     const pdf = await renderInvoicePdf({ invoice });
+    archiveInvoicePdf(invoice, pdf);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${invoice.invoiceNo}.pdf"`);
     res.send(pdf);
@@ -634,6 +654,7 @@ router.get('/:id/pdf', async (req, res) => {
     }
 
     const pdf = await renderInvoicePdf({ invoice });
+    archiveInvoicePdf(invoice, pdf);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${invoice.invoiceNo}.pdf"`);
     res.send(pdf);
@@ -766,6 +787,7 @@ router.post('/:id/send-email', async (req, res) => {
         const bodyText = body || `Dear ${invoice.customer.fullName},\n\nPlease find your invoice ${invoice.invoiceNo} for AED ${Number(invoice.total || 0).toFixed(2)} attached.\n\nThank you,\nPurpleBox`;
         const bodyHtml = bodyText.replace(/\n/g, '<br/>');
         const pdf = await renderInvoicePdf({ invoice });
+        archiveInvoicePdf(invoice, pdf);
         await sendMail({
             to: email,
             subject: subjectLine,

@@ -773,6 +773,7 @@ export default function ContractDetail() {
   const [editModal, setEditModal] = useState(false)
   const [editCustomerModal, setEditCustomerModal] = useState(false)
   const [customerError, setCustomerError] = useState('')
+  const [editingNote, setEditingNote] = useState<{ idx: number; text: string } | null>(null)
   const [activeTab, setActiveTab] = useState<'overview' | 'payments' | 'documents'>('overview')
 
   const { data, isLoading } = useQuery<ContractDetailData>({
@@ -898,6 +899,19 @@ export default function ContractDetail() {
     onError: (e) => setError(apiError(e)),
   })
 
+  const editNote = useMutation({
+    mutationFn: ({ idx, text }: { idx: number; text: string }) =>
+      api.put(`/contracts/${id}/notes/${idx}`, { text }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['contract', id] }); setEditingNote(null) },
+    onError: (e) => setError(apiError(e)),
+  })
+
+  const deleteNote = useMutation({
+    mutationFn: (idx: number) => api.delete(`/contracts/${id}/notes/${idx}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['contract', id] }),
+    onError: (e) => setError(apiError(e)),
+  })
+
   const createSigningLink = useMutation({
     mutationFn: () => api.post(`/contracts/${id}/create-signing-link`),
     onSuccess: (res) => {
@@ -1018,7 +1032,7 @@ export default function ContractDetail() {
   const waUrl = waPhone ? `https://wa.me/${waPhone}?text=${encodeURIComponent(waText)}` : `https://wa.me/?text=${encodeURIComponent(waText)}`
 
   // Activity feed
-  type ActivityEvent = { id: string; type: 'overdue' | 'paid' | 'note'; at: Date; title: string; subtitle: string }
+  type ActivityEvent = { id: string; type: 'overdue' | 'paid' | 'note'; at: Date; title: string; subtitle: string; noteIdx?: number }
   const activityEvents: ActivityEvent[] = []
   // Group paid payments by invoice — show one activity row per invoice (month), not per week
   const paidByInvoice = new Map<string, typeof paid>()
@@ -1038,8 +1052,8 @@ export default function ContractDetail() {
     const period = inv?.invoiceNo ? ` · ${inv.invoiceNo}` : ''
     activityEvents.push({ id: `paid-${group[0]._id}`, type: 'paid', at: latestPaid, title: 'Payment received', subtitle: `${c.paymentMethod ?? 'Cash'}${period} · ${formatMoney(total)}` })
   }
-  for (const note of (c.timeline ?? [])) {
-    activityEvents.push({ id: `note-${note.at}`, type: 'note', at: new Date(note.at), title: note.text, subtitle: note.author ? `by ${note.author}` : '' })
+  for (const [noteIdx, note] of (c.timeline ?? []).entries()) {
+    activityEvents.push({ id: `note-${noteIdx}-${note.at}`, type: 'note', at: new Date(note.at), title: note.text, subtitle: note.author ? `by ${note.author}` : '', noteIdx })
   }
   activityEvents.sort((a, b) => b.at.getTime() - a.at.getTime())
 

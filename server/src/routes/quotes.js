@@ -3,8 +3,20 @@ import crypto from 'crypto';
 import { Contract, Customer, Invoice, Lead, Payment, Quote, Unit, nextQuoteNo, nextContractNo, nextInvoiceNo } from '../models/index.js';
 import { renderQuotePdf } from '../services/quotePdf.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
+import { archivePdf } from '../utils/archivePdf.js';
 
 const router = Router();
+
+// Archive a rendered quotation PDF into the Documents section (fire-and-forget)
+function archiveQuotePdf(quote, pdf) {
+    archivePdf({
+        buffer: pdf,
+        name: `${quote.quoteNo}.pdf`,
+        customerId: quote.customer?._id ?? quote.customer,
+        customerName: quote.customer?.fullName,
+        sourceUpdatedAt: quote.updatedAt,
+    }).catch(() => { });
+}
 
 function toNumber(v, d = 0) {
     const n = Number(v);
@@ -124,6 +136,7 @@ router.get('/public/:token/pdf', async (req, res) => {
         .populate('customer', 'fullName email phone address');
     if (!quote) return res.status(404).json({ error: 'Quote not found or link expired' });
     const pdf = await renderQuotePdf({ quote });
+    archiveQuotePdf(quote, pdf);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${quote.quoteNo}.pdf"`);
     res.send(pdf);
@@ -164,6 +177,7 @@ router.post('/:id/send-email', async (req, res) => {
     if (!to) return res.status(400).json({ error: 'Customer has no email address' });
 
     const pdf = await renderQuotePdf({ quote });
+    archiveQuotePdf(quote, pdf);
     const userName = req.user.name || req.user.email || 'user';
     const subjectLine = req.body?.subject || `Storage Quotation ${quote.quoteNo} — PurpleBox`;
     const bodyText = req.body?.body ||
@@ -637,6 +651,7 @@ router.get('/:id/pdf', async (req, res) => {
     const quote = await Quote.findById(req.params.id).populate('customer', 'fullName email phone address');
     if (!quote) return res.status(404).json({ error: 'Quote not found' });
     const pdf = await renderQuotePdf({ quote });
+    archiveQuotePdf(quote, pdf);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${quote.quoteNo}.pdf"`);
     res.send(pdf);

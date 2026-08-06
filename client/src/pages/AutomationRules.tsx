@@ -6,7 +6,7 @@ import {
     Pencil, Plus, PlusCircle, Repeat, Search, Trash2, X,
 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
-import { Badge, Button, Modal, Spinner, Textarea } from '../components/ui'
+import { Badge, Button, Spinner, Textarea } from '../components/ui'
 import { formatDate } from '../lib/utils'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -301,7 +301,7 @@ export default function AutomationRules() {
 }
 
 // ── Rule Card ────────────────────────────────────────────────────────────────
-function RuleCard({ rule, templates, onToggleEnabled, onToggleEmail, onToggleWhatsApp, onAddStep, onRemoveStep, onUpdateStep, onEditTemplate, onChangeRecurringDays, onDelete }: {
+function RuleCard({ rule, templates: _templates, onToggleEnabled, onToggleEmail, onToggleWhatsApp, onAddStep, onRemoveStep, onUpdateStep, onEditTemplate, onChangeRecurringDays, onDelete }: {
     rule: AutomationRule
     templates: MessageTemplate[]
     onToggleEnabled: () => void
