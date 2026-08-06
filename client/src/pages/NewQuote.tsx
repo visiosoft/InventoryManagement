@@ -272,28 +272,56 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
     })))
   }
 
-  // Suggest the next 4-week rent invoice from the most recent invoice's rent lines.
-  function startAddSuggested() {
-    const last = sorted[sorted.length - 1]
-    const rentItems = (last?.items || []).filter((it) => /^Storage Rent/i.test(it.itemDetails))
-    const baseDue = last?.dueDate ? new Date(last.dueDate) : new Date(contract.startDate)
-    const nextStart = new Date(baseDue); nextStart.setDate(nextStart.getDate() + 28)
-    const nextEnd = new Date(nextStart); nextEnd.setDate(nextEnd.getDate() + 27)
-    const rows: EditItem[] = (rentItems.length ? rentItems : [{ itemDetails: `Storage Rent · Unit`, quantity: 1, rate: contract.rate, discountPct: 0, amount: contract.rate }]).map((it, i) => {
-      // Full period at full rate (no first-period discount), dates shifted 4 weeks forward
-      const unitPart = (it.itemDetails.match(/· (Unit .+)$/) || [])[1] || ''
-      return {
-        sortOrder: i,
-        itemDetails: `Storage Rent ${dfmt(nextStart)} – ${dfmt(nextEnd)}${unitPart ? ` · ${unitPart}` : ''}`,
-        quantity: it.quantity || 1,
-        rate: it.rate,
-        discountPct: 0,
-        amount: (it.quantity || 1) * it.rate,
-      }
-    })
-    setNewItems(rows)
-    setNewDue(nextStart.toISOString().slice(0, 10))
-    setAdding(true)
+  // ── Billing plan: the contract term split into 4-week periods, each matched
+  //    to its invoice (by due date) so months can be invoiced with one click. ──
+  type PeriodPlan = { idx: number; from: Date; to: Date; weeks: number; amount: number; invoice?: Invoice; coveredByAdvance: boolean }
+  const weeklyRate = Math.round((contract.rate / 4) * 100) / 100
+  const periodPlan: PeriodPlan[] = (() => {
+    const start = new Date(contract.startDate)
+    const end = new Date(contract.endDate)
+    const out: PeriodPlan[] = []
+    let cursor = new Date(start)
+    let i = 0
+    while (cursor < end && i < 40) {
+      const pEnd = new Date(cursor); pEnd.setDate(pEnd.getDate() + 28)
+      const actualEnd = pEnd > end ? end : pEnd
+      const days = Math.round((actualEnd.getTime() - cursor.getTime()) / 86400000)
+      const weeks = Math.max(1, Math.ceil(days / 7))
+      out.push({ idx: i, from: new Date(cursor), to: actualEnd, weeks, amount: Math.round(weeklyRate * weeks * 100) / 100, coveredByAdvance: false })
+      cursor = pEnd
+      i++
+    }
+    if (out.length > 1) out[out.length - 1].coveredByAdvance = true
+    for (const p of out) {
+      p.invoice = sorted.find((inv) => inv.dueDate && Math.abs(new Date(inv.dueDate).getTime() - p.from.getTime()) < 4 * 86400000)
+    }
+    return out
+  })()
+
+  const [creatingPeriod, setCreatingPeriod] = useState<number | null>(null)
+  async function createPeriodInvoice(p: PeriodPlan) {
+    setCreatingPeriod(p.idx)
+    const dispEnd = new Date(p.to); dispEnd.setDate(dispEnd.getDate() - 1)
+    try {
+      await invoiceApi.create({
+        customer: customerId,
+        invoiceDate: new Date().toISOString().slice(0, 10),
+        dueDate: p.from.toISOString().slice(0, 10),
+        orderNumber: contract.contractNo,
+        terms: 'Due on receipt',
+        subject: `Storage Rent · ${contract.contractNo}`,
+        items: [{
+          sortOrder: 0,
+          itemDetails: `Storage Rent ${dfmt(p.from)} – ${dfmt(dispEnd)}`,
+          quantity: p.weeks, rate: weeklyRate, discountPct: 0,
+          amount: Math.round(weeklyRate * p.weeks * 100) / 100,
+        }],
+        status: 'draft',
+      })
+      onChanged()
+      setErr('')
+    } catch (e) { setErr(apiError(e)) }
+    setCreatingPeriod(null)
   }
 
   function startAddBlank() {
@@ -307,6 +335,46 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
 
   return (
     <div className="space-y-4">
+      {/* ── Billing plan: one row per month, one click to invoice it ── */}
+      <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
+        <div className="px-4 py-2.5 flex items-center justify-between" style={{ background: CHIP_BG }}>
+          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Billing plan</p>
+          <p className="text-[11px]" style={{ color: MUTED }}>{dfmt(new Date(contract.startDate))} → {dfmt(new Date(contract.endDate))}</p>
+        </div>
+        {periodPlan.map((p) => {
+          const dispEnd = new Date(p.to); dispEnd.setDate(dispEnd.getDate() - 1)
+          return (
+            <div key={p.idx} className="flex items-center justify-between gap-3 px-4 py-2.5 border-t" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
+              <div className="min-w-0">
+                <p className="text-xs font-bold" style={{ color: INK }}>Month {p.idx + 1}</p>
+                <p className="text-[11px]" style={{ color: MUTED }}>{dfmt(p.from)} – {dfmt(dispEnd)} · {p.weeks} wk{p.weeks !== 1 ? 's' : ''}</p>
+              </div>
+              {p.invoice ? (
+                <span className="text-[11px] font-semibold px-2 py-1 rounded-full shrink-0" style={{ background: '#D1FAE5', color: GREEN }}>
+                  ✓ {p.invoice.invoiceNo} · {formatMoney(p.invoice.total)} AED
+                </span>
+              ) : p.coveredByAdvance ? (
+                <span className="text-[11px] font-semibold px-2 py-1 rounded-full shrink-0" style={{ background: '#EDE5FF', color: '#4A1FA0' }}
+                  title="No invoice needed — the advance deposit collected on the first invoice pays this period">
+                  Covered by advance deposit
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => createPeriodInvoice(p)}
+                  disabled={creatingPeriod !== null}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white shrink-0 disabled:opacity-50 hover:opacity-90 cursor-pointer"
+                  style={{ background: PURPLE }}
+                >
+                  {creatingPeriod === p.idx ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+                  Create invoice · {formatMoney(p.amount)} AED
+                </button>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
       {sorted.map((inv) => {
         const isEditing = editId === inv._id
         const canEdit = Number(inv.paymentMade || 0) === 0 && inv.status !== 'paid'
@@ -490,11 +558,8 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
         </div>
       ) : (
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={startAddSuggested} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ background: PURPLE }}>
-            <Plus size={14} /> Add next period (4 weeks)
-          </button>
           <button type="button" onClick={startAddBlank} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold border hover:bg-gray-50" style={{ color: INK, borderColor: 'rgba(20,8,31,0.15)' }}>
-            <Plus size={14} /> Blank invoice
+            <Plus size={14} /> Custom invoice
           </button>
         </div>
       )}
