@@ -1326,11 +1326,11 @@ export default function ContractDetail() {
                             <div className="flex-1 min-w-0">
                               {ev.type === 'note' && editingNote?.idx === ev.noteIdx ? (
                                 <div className="space-y-2">
-                                  <Textarea rows={2} value={editingNote.text}
-                                    onChange={(e) => setEditingNote({ idx: editingNote.idx, text: e.target.value })} />
+                                  <Textarea rows={2} value={editingNote!.text}
+                                    onChange={(e) => setEditingNote({ idx: editingNote!.idx, text: e.target.value })} />
                                   <div className="flex gap-2">
-                                    <Button size="sm" disabled={editNote.isPending || !editingNote.text.trim()}
-                                      onClick={() => editNote.mutate({ idx: editingNote.idx, text: editingNote.text.trim() })}>
+                                    <Button size="sm" disabled={editNote.isPending || !editingNote!.text.trim()}
+                                      onClick={() => editNote.mutate({ idx: editingNote!.idx, text: editingNote!.text.trim() })}>
                                       {editNote.isPending ? 'Saving…' : 'Save'}
                                     </Button>
                                     <Button size="sm" variant="outline" onClick={() => setEditingNote(null)}>Cancel</Button>
