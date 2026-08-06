@@ -851,26 +851,34 @@ export default function ContractDetail() {
   // Deposit-covered invoices: status 'paid', net 0, no payment records linked to them
   const allUnits = c.units?.length ? c.units : c.unit ? [c.unit] : []
 
-  // Billing plan: split contract term into 4-week periods (matching booking flow)
+  // Billing plan: split contract term into periods based on user preference
   type BillingPeriod = { idx: number; from: Date; to: Date; weeks: number; amount: number; invoice?: InvoiceGroup; coveredByAdvance: boolean }
   const weeklyRateCalc = Math.round((c.rate / 4) * 100) / 100
+  const [billingView, setBillingView] = useState<'monthly' | 'single'>(c.billingPeriod === 'weekly' ? 'single' : 'monthly')
   const billingPlan: BillingPeriod[] = (() => {
     if (!c.startDate || !c.endDate) return []
     const start = new Date(c.startDate)
     const end = new Date(c.endDate)
     const out: BillingPeriod[] = []
-    let cursor = new Date(start)
-    let i = 0
-    while (cursor < end && i < 40) {
-      const pEnd = new Date(cursor); pEnd.setDate(pEnd.getDate() + 28)
-      const actualEnd = pEnd > end ? end : pEnd
-      const days = Math.round((actualEnd.getTime() - cursor.getTime()) / 86400000)
+
+    if (billingView === 'single') {
+      const days = Math.round((end.getTime() - start.getTime()) / 86400000)
       const weeks = Math.max(1, Math.ceil(days / 7))
-      out.push({ idx: i, from: new Date(cursor), to: actualEnd, weeks, amount: Math.round(weeklyRateCalc * weeks * 100) / 100, coveredByAdvance: false })
-      cursor = pEnd
-      i++
+      out.push({ idx: 0, from: start, to: end, weeks, amount: Math.round(weeklyRateCalc * weeks * 100) / 100, coveredByAdvance: false })
+    } else {
+      let cursor = new Date(start)
+      let i = 0
+      while (cursor < end && i < 40) {
+        const pEnd = new Date(cursor); pEnd.setDate(pEnd.getDate() + 28)
+        const actualEnd = pEnd > end ? end : pEnd
+        const days = Math.round((actualEnd.getTime() - cursor.getTime()) / 86400000)
+        const weeks = Math.max(1, Math.ceil(days / 7))
+        out.push({ idx: i, from: new Date(cursor), to: actualEnd, weeks, amount: Math.round(weeklyRateCalc * weeks * 100) / 100, coveredByAdvance: false })
+        cursor = pEnd
+        i++
+      }
+      if (out.length > 1) out[out.length - 1].coveredByAdvance = true
     }
-    if (out.length > 1) out[out.length - 1].coveredByAdvance = true
     // Match each period to the CLOSEST invoice by due date, and let an invoice
     // claim only one period — otherwise a later invoice dated a day earlier
     // steals the slot and the period's real invoice is pushed out of the plan.
@@ -1337,7 +1345,13 @@ export default function ContractDetail() {
               <CardHeader title="Billing Plan"
                 subtitle={`${formatDate(c.startDate)} → ${formatDate(c.endDate)} · ${billingPlan.length} period${billingPlan.length !== 1 ? 's' : ''}`}
                 action={
-                  <Button size="sm" variant="outline" onClick={() => { setInvoiceOverride(null); setInvoiceBlank(true); setShowInvoiceModal(true) }}><FilePlus size={13} /> Invoice</Button>
+                  <div className="flex items-center gap-2">
+                    <div className="flex rounded-lg border overflow-hidden text-[11px] font-semibold">
+                      <button onClick={() => setBillingView('monthly')} className={`px-3 py-1.5 cursor-pointer ${billingView === 'monthly' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}>Monthly</button>
+                      <button onClick={() => setBillingView('single')} className={`px-3 py-1.5 cursor-pointer ${billingView === 'single' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}>Single</button>
+                    </div>
+                    <Button size="sm" variant="outline" onClick={() => setShowInvoiceModal(true)}><FilePlus size={13} /> Invoice</Button>
+                  </div>
                 }
               />
               <div className="divide-y">
@@ -1368,7 +1382,7 @@ export default function ContractDetail() {
                           </span>
                           <div className="min-w-0">
                             <p className="text-sm font-bold">
-                              Month {period.idx + 1}
+                              {billingView === 'single' ? 'Full term' : `Month ${period.idx + 1}`}
                               {inv && <span className="ml-2 text-xs font-semibold text-primary">{inv.invoiceRef.invoiceNo}</span>}
                             </p>
                             <p className="text-xs text-muted-foreground">
