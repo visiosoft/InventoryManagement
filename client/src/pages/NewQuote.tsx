@@ -867,8 +867,6 @@ export default function NewQuote() {
   const [quoteNo, setQuoteNo] = useState('')
   const [showShareBar, setShowShareBar] = useState(false)
   const invoiceHandleRef = useRef<InvoiceStepHandle | null>(null)
-  const [invoiceEditing, setInvoiceEditing] = useState(false)
-  const [zohoSyncing, setZohoSyncing] = useState(false)
   const [quoteEmailModal, setQuoteEmailModal] = useState<{ to: string; subject: string; body: string; quoteUrl: string } | null>(null)
   const [quoteEmailSending, setQuoteEmailSending] = useState(false)
   const [quoteEmailSent, setQuoteEmailSent] = useState('')
@@ -922,13 +920,6 @@ export default function NewQuote() {
   const [signingOpen, setSigningOpen] = useState(false)
   const [signingLink, setSigningLink] = useState('')
   const [linkCopied, setLinkCopied] = useState(false)
-
-  // Receipt
-  const [payAmount, setPayAmount] = useState('')
-  const [payMethod, setPayMethod] = useState('cash')
-  const [payDate, setPayDate] = useState(() => new Date().toISOString().slice(0, 10))
-  const [receiptFile, setReceiptFile] = useState<File | null>(null)
-  const [payInvoiceId, setPayInvoiceId] = useState('')
 
   // ── Lead + resume data ──────────────────────────────────────────────────────
   const { data: lead } = useQuery<Lead>({
@@ -988,7 +979,6 @@ export default function NewQuote() {
   const contract = flowData?.contract
   const invoice = flowData?.invoices?.[0]
   const paidTotal = (flowData?.invoices || []).reduce((s, i) => s + Number(i.paymentMade ?? 0), 0)
-  const invoicedTotal = (flowData?.invoices || []).reduce((s, i) => s + Number(i.total ?? 0), 0)
   const approvalStatus = contract?.approvalStatus ?? 'not_required'
   const isBooked = contract?.status === 'active'
   // Everything stays editable until the contract is fully booked (active)
@@ -1457,31 +1447,6 @@ export default function NewQuote() {
   function removePerson(idx: number) {
     setAuthorizedPersons((prev) => prev.filter((_, i) => i !== idx))
   }
-
-  const recordPayment = useMutation({
-    mutationFn: async () => {
-      const n = Number(payAmount)
-      if (!n || n <= 0) throw new Error('Enter a valid payment amount')
-      const allInvs = flowData?.invoices || []
-      const targetInv = allInvs.find((i) => i._id === payInvoiceId) || allInvs[0]
-      if (!targetInv) throw new Error('No invoice to pay')
-      const inv = await invoiceApi.recordPayment(targetInv._id, { amount: n, method: payMethod, date: payDate })
-      if (receiptFile) {
-        const form = new FormData()
-        const ext = receiptFile.name.includes('.') ? receiptFile.name.slice(receiptFile.name.lastIndexOf('.')) : ''
-        form.append('files', new File([receiptFile], `Receipt ${payDate}${ext}`, { type: receiptFile.type }))
-        await invoiceApi.uploadAttachments(targetInv._id, form)
-      }
-      return inv
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['flow-contract'] })
-      setPayAmount('')
-      setReceiptFile(null)
-      setErr('')
-    },
-    onError: (e) => setErr(e instanceof Error && !('response' in e) ? e.message : apiError(e)),
-  })
 
   const sendForApproval = useMutation({
     mutationFn: () => api.post(`/contracts/${contractId}/send-for-approval`),
@@ -2509,9 +2474,8 @@ export default function NewQuote() {
                     customerName={customerName}
                     customerPhone={customerPhone}
                     customerEmail={customerEmail}
-                    onChanged={() => { qc.invalidateQueries({ queryKey: ['flow-contract'] }); setZohoSyncing(false) }}
+                    onChanged={() => qc.invalidateQueries({ queryKey: ['flow-contract'] })}
                     handleRef={invoiceHandleRef}
-                    onEditingChange={(v) => { setInvoiceEditing(v); if (!v) setZohoSyncing(false) }}
                     quoteId={quoteId}
                     quoteTotal={total}
                   />
@@ -2620,35 +2584,10 @@ export default function NewQuote() {
                 )}
                 {step >= 3 && step < STEPS.length - 1 && (
                   <div className="flex items-center gap-2">
-                    {step === 4 && invoiceEditing && (
-                      <button
-                        type="button"
-                        onClick={() => { setZohoSyncing(true); invoiceHandleRef.current?.saveAndSync() }}
-                        disabled={zohoSyncing}
-                        className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90"
-                        style={{ background: GREEN }}
-                      >
-                        {zohoSyncing ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : 'Save'}
-                      </button>
-                    )}
-                    {!(step === 4 && invoiceEditing) && (() => {
-                      const syncedInv = (flowData?.invoices || []).find((i) => i.zohoBooksSyncId)
-                      return syncedInv ? (
-                        <a
-                          href={`https://books.zoho.com/app/908459713#/invoices/${syncedInv.zohoBooksSyncId}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold text-white hover:opacity-90"
-                          style={{ background: GREEN }}
-                        >
-                          <ExternalLink size={14} /> Open in Zoho
-                        </a>
-                      ) : null
-                    })()}
                     <button
                       type="button"
                       onClick={() => setStep((s) => s + 1)}
-                      disabled={(step === 3 && !contractId) || (step === 4 && invoiceEditing)}
+                      disabled={step === 3 && !contractId}
                       className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90"
                       style={{ background: PURPLE }}
                     >
