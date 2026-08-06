@@ -429,11 +429,12 @@ async function createFirstInvoiceFromQuote(quote, contract, userName) {
             amount: rentAmount,
         });
 
-        // Advance rent: one period (max 4 weeks). For terms longer than 4 weeks
-        // it prepays the FINAL rental period; for shorter terms it is held and
-        // refunded at the end. Never an extra charge on top of the term rent.
-        const advWeeks = Math.min(4, tw);
-        const advAmount = advWeeks >= 4 ? rate : Number((wkRate * advWeeks).toFixed(2));
+        // Advance covers the FINAL rental period, so its length is whatever the
+        // term leaves over after the whole 4-week periods (a 6-week term runs
+        // 4 + 2, so the advance is 2 weeks — not 4). For terms of 4 weeks or
+        // less it is instead held and refunded at the end.
+        const advWeeks = tw % 4 === 0 ? 4 : tw % 4;
+        const advAmount = Number((wkRate * advWeeks).toFixed(2));
         const isShortTerm = tw <= 4;
         advanceTotal += advAmount;
 

@@ -1192,10 +1192,14 @@ export default function NewQuote() {
   // For terms longer than 4 weeks it prepays the FINAL period, so it is already
   // part of the term rent. For terms of 4 weeks or less it is held refundable
   // on top, since there is no later period to adjust it against.
+  // The advance covers the final rental period, so its length is what the term
+  // leaves after the whole 4-week periods (6 weeks runs 4 + 2 → a 2-week advance).
   function calcUnitAdvance(rate: number, start: string, end: string) {
     const days = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86400000)
     if (days <= 0) return 0
-    return Math.round((rate / 4) * Math.min(4, Math.ceil(days / 7)) * 100) / 100
+    const weeks = Math.ceil(days / 7)
+    const advWeeks = weeks % 4 === 0 ? 4 : weeks % 4
+    return Math.round((rate / 4) * advWeeks * 100) / 100
   }
   function isShortTerm(start: string, end: string) {
     const days = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86400000)
