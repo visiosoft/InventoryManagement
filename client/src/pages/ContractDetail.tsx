@@ -1630,18 +1630,28 @@ export default function ContractDetail() {
       </div>
 
       {/* ── Modals ── */}
-      <Modal open={!!recordingPayment} onClose={() => setRecordingPayment(null)} title={`Record payment — ${(recordingPayment?.invoice as any)?.invoiceNo || ''}`}>
-        {recordingPayment && (
-          <RecordPaymentForm
-            payment={recordingPayment}
-            busy={recordPayment.isPending}
-            onSubmit={(body) => {
-              if (!body.paidDate) { setRecordingPayment(null); return }
-              recordPayment.mutate({ paymentId: recordingPayment._id, body })
-            }}
-          />
-        )}
-      </Modal>
+      {/* Record payment — right panel */}
+      {recordingPayment && (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/20" onClick={() => setRecordingPayment(null)} />
+          <div className="absolute right-0 top-0 h-full w-full max-w-md bg-card shadow-xl overflow-y-auto animate-in slide-in-from-right border-l">
+            <div className="sticky top-0 bg-card border-b px-5 py-4 flex items-center justify-between z-10">
+              <h2 className="text-base font-bold">Record payment — {(recordingPayment.invoice as any)?.invoiceNo || ''}</h2>
+              <button onClick={() => setRecordingPayment(null)} className="text-muted-foreground hover:text-foreground cursor-pointer"><X size={18} /></button>
+            </div>
+            <div className="p-5">
+              <RecordPaymentForm
+                payment={recordingPayment}
+                busy={recordPayment.isPending}
+                onSubmit={(body) => {
+                  if (!body.paidDate) { setRecordingPayment(null); return }
+                  recordPayment.mutate({ paymentId: recordingPayment._id, body })
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       <Modal open={!!editingPayment} onClose={() => setEditingPayment(null)} title="Edit payment">
         {editingPayment && (
