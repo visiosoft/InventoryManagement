@@ -163,12 +163,13 @@ router.get('/', async (req, res) => {
       : pay.paid >= pay.total ? 'paid'
         : pay.paid > 0 ? 'partial'
           : 'unpaid';
-    // Full contract value: scheduled payments total, or estimated from rate × term
-    let contractAmount = pay ? Math.round(pay.total * 100) / 100 : 0;
+    // Full contract value: totalQuotation (from quote), or payments total, or rate × term
+    let contractAmount = Number(c.totalQuotation || 0);
+    if (!contractAmount && pay) contractAmount = Math.round(pay.total * 100) / 100;
     if (!contractAmount && c.startDate && c.endDate) {
       const days = Math.max(0, (new Date(c.endDate) - new Date(c.startDate)) / 86400000);
-      const periods = c.billingPeriod === 'weekly' ? Math.ceil(days / 7) : Math.ceil(days / 28);
-      contractAmount = Math.round(periods * (c.rate || 0) * 100) / 100;
+      const weeks = Math.ceil(days / 7);
+      contractAmount = Math.round(weeks * ((c.rate || 0) / 4) * 100) / 100;
     }
     return {
       ...c.toObject(),
