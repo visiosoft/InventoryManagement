@@ -250,7 +250,7 @@ router.get('/:id', async (req, res) => {
       ...(contract.customer?._id ? [{ customer: contract.customer._id }] : []),
     ],
   })
-    .select('invoiceNo status dueDate invoiceDate total paymentMade items subject createdAt paymentHistory')
+    .select('invoiceNo status dueDate invoiceDate total paymentMade items subject createdAt paymentHistory attachments')
     .sort({ dueDate: 1 });
 
   // Reconcile: if an invoice's total exceeds the sum of its linked payment records
