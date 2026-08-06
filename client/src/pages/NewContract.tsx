@@ -341,17 +341,23 @@ export default function NewContract() {
   const [floorFilter, setFloorFilter] = useState('')
   const [showBooked, setShowBooked] = useState(false)
 
+  // /customers and /contracts return { data, total, page, ... } — unwrap them,
+  // and ask for the full set: a partial page of contracts would hide booking
+  // conflicts and show already-booked units as available.
+  const unwrap = <T,>(payload: unknown): T[] =>
+    Array.isArray(payload) ? payload as T[] : ((payload as { data?: T[] })?.data ?? [])
+
   const { data: customers = [] } = useQuery<Customer[]>({
-    queryKey: ['customers', ''],
-    queryFn: () => api.get('/customers').then((r) => r.data),
+    queryKey: ['customers', 'all'],
+    queryFn: () => api.get('/customers', { params: { limit: 9999 } }).then((r) => unwrap<Customer>(r.data)),
   })
   const { data: units = [], isLoading: unitsLoading } = useQuery<Unit[]>({
     queryKey: ['units'],
-    queryFn: () => api.get('/units').then((r) => r.data),
+    queryFn: () => api.get('/units').then((r) => unwrap<Unit>(r.data)),
   })
   const { data: contracts = [] } = useQuery<Contract[]>({
-    queryKey: ['contracts'],
-    queryFn: () => api.get('/contracts').then((r) => r.data),
+    queryKey: ['contracts', 'all-for-availability'],
+    queryFn: () => api.get('/contracts', { params: { limit: 1000 } }).then((r) => unwrap<Contract>(r.data)),
   })
   const { data: unitTypes = [] } = useQuery<UnitType[]>({
     queryKey: ['unit-types'],

@@ -112,7 +112,9 @@ router.get('/', async (req, res) => {
     filter.$and = [...(filter.$and || []), { $or: [{ unit: { $in: scope.unitIds } }, { units: { $in: scope.unitIds } }] }];
   }
   const page = Math.max(1, Number(req.query.page) || 1);
-  const limit = Math.min(Math.max(1, Number(req.query.limit) || 25), 100);
+  // Cap allows a full fetch: the booking screen needs every open contract to
+  // detect unit conflicts, and a truncated page would show booked units free.
+  const limit = Math.min(Math.max(1, Number(req.query.limit) || 25), 2000);
   const skip = (page - 1) * limit;
 
   const sortMap = {
