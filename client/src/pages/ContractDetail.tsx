@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { CalendarDays, CheckCircle2, Download, FileText, FilePlus, MessageSquare, PenLine, Plus, ShieldCheck, Trash2, Upload, X, XCircle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -801,7 +801,9 @@ export default function ContractDetail() {
   const [editCustomerModal, setEditCustomerModal] = useState(false)
   const [customerError, setCustomerError] = useState('')
   const [editingNote, setEditingNote] = useState<{ idx: number; text: string } | null>(null)
-  const [activeTab, setActiveTab] = useState<'overview' | 'payments' | 'documents'>('overview')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab = (searchParams.get('tab') as 'overview' | 'payments' | 'documents') || 'overview'
+  const setActiveTab = (tab: 'overview' | 'payments' | 'documents') => setSearchParams({ tab }, { replace: true })
 
   const { data, isLoading } = useQuery<ContractDetailData>({
     queryKey: ['contract', id],
