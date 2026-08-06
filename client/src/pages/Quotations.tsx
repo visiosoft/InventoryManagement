@@ -59,9 +59,6 @@ function FlowProgress({ stepsDone, currentStep }: { stepsDone?: boolean[]; curre
 
 const DEFAULT_ADDONS = [
   { name: 'Lock', description: 'Padlock for storage unit', rate: 80 },
-  { name: 'Insurance', description: 'Content insurance coverage', rate: 150 },
-  { name: 'Shelving', description: 'Metal shelving rack', rate: 75 },
-  { name: 'Climate Control', description: 'Temperature controlled environment', rate: 200 },
 ]
 
 interface UnitRow {
