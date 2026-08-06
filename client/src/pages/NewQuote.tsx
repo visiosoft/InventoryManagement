@@ -172,7 +172,7 @@ export interface InvoiceStepHandle {
   saveAndSync: () => void
 }
 
-function InvoiceStep({ contract, invoices, customerId, customerName, customerPhone, customerEmail, onChanged, handleRef, onEditingChange }: {
+function InvoiceStep({ contract, invoices, customerId, customerName, customerPhone, customerEmail, onChanged, handleRef, onEditingChange, quoteId, quoteTotal }: {
   contract: { _id: string; contractNo: string; startDate: string; endDate: string; rate: number }
   invoices: Invoice[]
   customerId: string
@@ -182,6 +182,8 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
   onChanged: () => void
   handleRef?: React.MutableRefObject<InvoiceStepHandle | null>
   onEditingChange?: (editing: boolean) => void
+  quoteId?: string
+  quoteTotal?: number
 }) {
   const [editId, setEditId] = useState('')
   const [editItems, setEditItems] = useState<EditItem[]>([])
@@ -345,6 +347,21 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
     try { await api.delete(`/invoices/${inv._id}`); onChanged() } catch (e) { setErr(apiError(e)) }
   }
 
+  // The first invoice must always mirror the accepted quote. When it drifts
+  // (quote edited, or built before a pricing rule changed) offer a rebuild.
+  const firstInvoice = periodPlan[0]?.invoice ?? sorted[0]
+  const invoicedFirst = firstInvoice ? Number(firstInvoice.total || 0) : 0
+  const quoteMismatch = Boolean(
+    quoteId && quoteTotal && firstInvoice &&
+    Number(firstInvoice.paymentMade || 0) === 0 &&
+    Math.abs(invoicedFirst - quoteTotal) > 0.5,
+  )
+  const rebuild = useMutation({
+    mutationFn: () => api.post(`/quotes/${quoteId}/rebuild-invoice`),
+    onSuccess: () => { onChanged(); setErr('') },
+    onError: (e) => setErr(apiError(e)),
+  })
+
   const [creatingPeriod, setCreatingPeriod] = useState<number | null>(null)
   async function createPeriodInvoice(p: PeriodPlan) {
     setCreatingPeriod(p.idx)
@@ -382,6 +399,23 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
 
   return (
     <div className="space-y-4">
+      {/* The invoice must match the quotation the customer accepted */}
+      {quoteMismatch && (
+        <div className="rounded-xl border p-3 flex items-center justify-between gap-3 flex-wrap" style={{ borderColor: '#FCD34D', background: '#FFFBEB' }}>
+          <div className="min-w-0">
+            <p className="text-xs font-bold" style={{ color: '#92400E' }}>Invoice doesn’t match the quotation</p>
+            <p className="text-[11px]" style={{ color: '#92400E' }}>
+              Quote is {formatMoney(quoteTotal || 0)} AED but {firstInvoice?.invoiceNo} is {formatMoney(invoicedFirst)} AED.
+            </p>
+          </div>
+          <button type="button" onClick={() => rebuild.mutate()} disabled={rebuild.isPending}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white disabled:opacity-50 cursor-pointer shrink-0"
+            style={{ background: '#D97706' }}>
+            {rebuild.isPending ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} Rebuild from quotation
+          </button>
+        </div>
+      )}
+
       {/* ── Billing plan: one row per month, one click to invoice it ── */}
       <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
         <div className="px-4 py-2.5 flex items-center justify-between" style={{ background: CHIP_BG }}>
@@ -2448,7 +2482,7 @@ export default function NewQuote() {
             {/* ── Step 5: Invoice ── */}
             {step === 4 && (
               <div className="space-y-5">
-                <SectionTitle title="Invoices" subtitle="Edit the first invoice or add a next-period invoice — suggested from the last one" />
+                <SectionTitle title="Invoices" subtitle="One row per rental month — create, send and collect each in a single click" />
 
                 {!contract ? (
                   <div className="text-sm text-center py-8 rounded-xl" style={{ background: CHIP_BG, color: MUTED }}>
@@ -2465,6 +2499,8 @@ export default function NewQuote() {
                     onChanged={() => { qc.invalidateQueries({ queryKey: ['flow-contract'] }); setZohoSyncing(false) }}
                     handleRef={invoiceHandleRef}
                     onEditingChange={(v) => { setInvoiceEditing(v); if (!v) setZohoSyncing(false) }}
+                    quoteId={quoteId}
+                    quoteTotal={total}
                   />
                 )}
               </div>

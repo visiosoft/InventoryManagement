@@ -429,18 +429,31 @@ async function createFirstInvoiceFromQuote(quote, contract, userName) {
             amount: rentAmount,
         });
 
-        // Advance security deposit: 4 weeks normally, but for terms shorter than
-        // 4 weeks it matches the rent period (e.g. a 2-week stay deposits 2 weeks).
-        const depositWeeks = Math.min(4, tw);
-        const depositAmount = depositWeeks >= 4 ? rate : Number((wkRate * depositWeeks).toFixed(2));
-        advanceTotal += depositAmount;
+        // Advance rent: one period (max 4 weeks). For terms longer than 4 weeks
+        // it prepays the FINAL rental period; for shorter terms it is held and
+        // refunded at the end. Never an extra charge on top of the term rent.
+        const advWeeks = Math.min(4, tw);
+        const advAmount = advWeeks >= 4 ? rate : Number((wkRate * advWeeks).toFixed(2));
+        const isShortTerm = tw <= 4;
+        advanceTotal += advAmount;
+
+        // Label the advance with the period it prepays (the last one)
+        const advStart = new Date(periodEnd);
+        advStart.setDate(advStart.getDate() - advWeeks * 7);
+        const advEnd = new Date(periodEnd);
+        advEnd.setDate(advEnd.getDate() - 1);
         items.push({
             sortOrder: items.length,
-            itemDetails: `Refundable / Adjustable Security Deposit · Unit ${u.unitNumber}`,
-            quantity: depositWeeks,
+            itemDetails: isShortTerm
+                ? `Refundable Advance · Unit ${u.unitNumber}`
+                : `Advance Rent ${fmt(advStart)} – ${fmt(advEnd)} · Unit ${u.unitNumber}`,
+            description: isShortTerm
+                ? 'Held and refunded or adjusted at the end of the rental'
+                : 'Prepays the final rental period — no invoice is raised for it',
+            quantity: advWeeks,
             rate: wkRate,
             discountPct: 0,
-            amount: depositAmount,
+            amount: advAmount,
         });
     }
 
@@ -564,6 +577,39 @@ async function syncContractFromQuote(quote, userName) {
     await Promise.all(unitIds.map((uid) => syncUnitStatus(uid)));
     return contract;
 }
+
+// Force the contract's unpaid invoices to be rebuilt from the current quote, so
+// the invoice always matches what the customer accepted. Refuses when any
+// invoice already has a payment against it.
+router.post('/:id/rebuild-invoice', async (req, res) => {
+    const quote = await Quote.findById(req.params.id);
+    if (!quote) return res.status(404).json({ error: 'Quote not found' });
+    if (!quote.contract) return res.status(400).json({ error: 'This quote has no contract yet' });
+    const contract = await Contract.findById(quote.contract);
+    if (!contract) return res.status(404).json({ error: 'Contract not found' });
+
+    const invoices = await Invoice.find({ orderNumber: contract.contractNo });
+    const paidOnes = invoices.filter((i) => Number(i.paymentMade || 0) > 0 || i.status === 'paid');
+    if (paidOnes.length) {
+        return res.status(409).json({
+            error: `Cannot rebuild — ${paidOnes.map((i) => i.invoiceNo).join(', ')} already has a recorded payment.`,
+        });
+    }
+
+    const userName = req.user.name || req.user.email || 'user';
+    for (const inv of invoices) {
+        await Payment.deleteMany({ invoice: inv._id });
+        await Invoice.deleteOne({ _id: inv._id });
+    }
+    const invoice = await createFirstInvoiceFromQuote(quote, contract, userName);
+    contract.timeline.push({
+        at: new Date(),
+        text: `Invoice ${invoice.invoiceNo} rebuilt from quote ${quote.quoteNo} by ${userName}`,
+        author: userName,
+    });
+    await contract.save();
+    res.json(invoice);
+});
 
 // Mirrors syncUnitStatus in contracts.js for units touched by a conversion.
 async function syncUnitStatus(unitId) {

@@ -83,24 +83,29 @@ function consolidateItems(items) {
   return normaliseRentItems([merged, ...otherItems]);
 }
 
+const RENT_LINE = /^(Storage Rent|Advance Rent|Refundable Advance|Refundable \/ Adjustable Security Deposit)/;
+
 function normaliseRentItems(items) {
   return items.map(it => {
     // Convert Mongoose subdocument to plain object before spreading
     let obj = (it && typeof it.toObject === 'function') ? it.toObject() : { ...it };
-    // Rename legacy "Advance Rent" to new label
-    if (/^Advance Rent/.test(obj.itemDetails || '')) {
-      obj = { ...obj, itemDetails: obj.itemDetails.replace(/^Advance Rent/, 'Refundable / Adjustable Security Deposit') };
-    }
-    const desc = obj.itemDetails || '';
-    // Convert weekly-quantity rent items to monthly rate (qty=1)
-    if (/^(Storage Rent|Refundable \/ Adjustable Security Deposit)/.test(desc) && Number(obj.quantity ?? 1) > 1) {
-      const monthlyRate = Math.round(Number(obj.quantity) * Number(obj.rate || 0) * 100) / 100;
-      return { ...obj, quantity: 1, rate: monthlyRate };
+    let desc = obj.itemDetails || '';
+
+    // Legacy label: the advance is prepaid rent, not an extra deposit
+    if (/^Refundable \/ Adjustable Security Deposit/.test(desc)) {
+      desc = desc.replace(/^Refundable \/ Adjustable Security Deposit/, 'Advance Rent');
+      obj = { ...obj, itemDetails: desc, description: obj.description || 'Prepays the final rental period' };
     }
     // Rename contract-generated "Security Deposit · Unit X"
     const depMatch = desc.match(/^Security Deposit\s+·\s+Unit\s+(.+)$/);
     if (depMatch) {
-      return { ...obj, itemDetails: `Refundable / Adjustable Security Deposit · Unit ${depMatch[1]}` };
+      desc = `Advance Rent · Unit ${depMatch[1]}`;
+      obj = { ...obj, itemDetails: desc, description: obj.description || 'Prepays the final rental period' };
+    }
+    // Convert weekly-quantity rent items to a single monthly line (qty = 1)
+    if (RENT_LINE.test(desc) && Number(obj.quantity ?? 1) > 1) {
+      const monthlyRate = Math.round(Number(obj.quantity) * Number(obj.rate || 0) * 100) / 100;
+      return { ...obj, quantity: 1, rate: monthlyRate };
     }
     return obj;
   });
