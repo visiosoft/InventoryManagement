@@ -521,14 +521,14 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
                       </select>
                     </Field>
                   </div>
-                  <Field label="Receipt (optional)">
+                  <Field label="Payment receipt *">
                     <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp"
                       onChange={(e) => setPayReceipt(e.target.files?.[0] ?? null)}
                       className="w-full text-[11px] file:mr-2 file:px-2 file:py-1 file:rounded-lg file:border-0 file:text-[11px] file:font-semibold file:cursor-pointer"
                       style={{ color: MUTED }} />
                   </Field>
                   <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => recordPay.mutate(inv)} disabled={recordPay.isPending || !Number(payAmt)}
+                    <button type="button" onClick={() => recordPay.mutate(inv)} disabled={recordPay.isPending || !Number(payAmt) || !payReceipt}
                       className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white disabled:opacity-50 cursor-pointer"
                       style={{ background: GREEN }}>
                       {recordPay.isPending ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />} Confirm payment
@@ -2600,21 +2600,39 @@ export default function NewQuote() {
                       {approvalStatus === 'approved' ? 'Approved' : 'Sent for approval'}
                     </div>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        // Payment first is the norm, but don't trap bookings that
-                        // were collected offline or are approved before payment.
-                        if (paidTotal <= 0 && !window.confirm('No payment has been recorded yet. Send this booking for approval anyway?')) return
-                        sendForApproval.mutate()
-                      }}
-                      disabled={sendForApproval.isPending || !contractId}
-                      className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90"
-                      style={{ background: GREEN }}
-                    >
-                      {sendForApproval.isPending ? <Loader2 size={15} className="animate-spin" /> : <ShieldCheck size={15} />}
-                      {sendForApproval.isPending ? 'Sending…' : 'Send for Approval'}
-                    </button>
+                    (() => {
+                      const allInvoices = flowData?.invoices || []
+                      const invoiceSent = allInvoices.some(i => i.status !== 'draft')
+                      const hasPayment = paidTotal > 0
+                      const hasReceipt = allInvoices.some(i => (i.attachments?.length || 0) > 0)
+                      const canApprove = invoiceSent && hasPayment && hasReceipt
+                      const reasons: string[] = []
+                      if (!invoiceSent) reasons.push('Mark invoice as Sent')
+                      if (!hasPayment) reasons.push('Record a payment')
+                      if (!hasReceipt) reasons.push('Upload payment receipt')
+                      return (
+                        <div className="space-y-2">
+                          {!canApprove && (
+                            <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                              <p className="font-semibold mb-1">Before sending for approval:</p>
+                              <ul className="list-disc pl-4 space-y-0.5">
+                                {reasons.map(r => <li key={r}>{r}</li>)}
+                              </ul>
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => sendForApproval.mutate()}
+                            disabled={sendForApproval.isPending || !contractId || !canApprove}
+                            className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90"
+                            style={{ background: GREEN }}
+                          >
+                            {sendForApproval.isPending ? <Loader2 size={15} className="animate-spin" /> : <ShieldCheck size={15} />}
+                            {sendForApproval.isPending ? 'Sending…' : 'Send for Approval'}
+                          </button>
+                        </div>
+                      )
+                    })()
                   )
                 )}
               </div>
