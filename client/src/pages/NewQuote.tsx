@@ -289,14 +289,19 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
       i++
     }
     if (out.length > 1) out[out.length - 1].coveredByAdvance = true
-    // One invoice claims at most one period, so a second invoice dated in the
-    // same window stays visible instead of being swallowed by the first.
+    // Match each period to the CLOSEST invoice by due date, and let an invoice
+    // claim only one period — otherwise a later invoice dated a day earlier
+    // steals the slot and the period's real invoice drops out of the plan.
     const claimed = new Set<string>()
     for (const p of out) {
-      const hit = sorted.find((inv) =>
-        !claimed.has(inv._id) && inv.dueDate && Math.abs(new Date(inv.dueDate).getTime() - p.from.getTime()) < 4 * 86400000
-      )
-      if (hit) { p.invoice = hit; claimed.add(hit._id) }
+      let best: Invoice | undefined
+      let bestGap = Infinity
+      for (const inv of sorted) {
+        if (claimed.has(inv._id) || !inv.dueDate) continue
+        const gap = Math.abs(new Date(inv.dueDate).getTime() - p.from.getTime())
+        if (gap < 4 * 86400000 && gap < bestGap) { best = inv; bestGap = gap }
+      }
+      if (best) { p.invoice = best; claimed.add(best._id) }
     }
     return out
   })()

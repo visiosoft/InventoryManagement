@@ -23,9 +23,11 @@ type ContractDetailData = {
   invoices?: Invoice[]
 }
 
-function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, onDone }: {
+function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, blank, onDone }: {
   contract: Contract; payments: Payment[]
   overrideStart?: string; overrideEnd?: string
+  /** Start with no line items — for a custom invoice rather than a period one */
+  blank?: boolean
   onDone: () => void
 }) {
   const weeklyRate = Math.round((Number(contract.rate || 0) / 4) * 100) / 100
@@ -59,7 +61,11 @@ function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, 
   const [startDate, setStartDate] = useState(defaultStart)
   const [endDate, setEndDate] = useState(defaultEnd)
   const [dueDate, setDueDate] = useState(toISO(today))
-  const [lineItems, setLineItems] = useState<LineItem[]>([{ id: 1, description: `Storage Rent · Unit ${unitNo}`, qty: 1, rate: weeklyRate, amount: weeklyRate }])
+  const [lineItems, setLineItems] = useState<LineItem[]>(
+    blank
+      ? [{ id: 1, description: '', qty: 1, rate: 0, amount: 0 }]
+      : [{ id: 1, description: `Storage Rent · Unit ${unitNo}`, qty: 1, rate: weeklyRate, amount: weeklyRate }]
+  )
   const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -623,6 +629,8 @@ export default function ContractDetail() {
   const [linkCopied, setLinkCopied] = useState(false)
   const [showInvoiceModal, setShowInvoiceModal] = useState(false)
   const [invoiceOverride, setInvoiceOverride] = useState<{ start: string; end: string } | null>(null)
+  // Custom invoices open with no prefilled lines; period invoices keep theirs
+  const [invoiceBlank, setInvoiceBlank] = useState(false)
   const [editModal, setEditModal] = useState(false)
   const [editCustomerModal, setEditCustomerModal] = useState(false)
   const [customerError, setCustomerError] = useState('')
@@ -678,6 +686,12 @@ export default function ContractDetail() {
     onError: (e) => setError(apiError(e)),
   })
 
+
+  const deleteInvoice = useMutation({
+    mutationFn: (invoiceId: string) => api.delete(`/invoices/${invoiceId}`),
+    onSuccess: () => { invalidate(); qc.invalidateQueries({ queryKey: ['invoices'] }); setError('') },
+    onError: (e) => setError(apiError(e)),
+  })
 
   const addPayment = useMutation({
     mutationFn: (body: object) => api.post('/payments', body),
@@ -838,14 +852,19 @@ export default function ContractDetail() {
       i++
     }
     if (out.length > 1) out[out.length - 1].coveredByAdvance = true
-    // Match invoices to periods by due date. Each invoice can only claim one
-    // period, so a second invoice dated in the same window is never swallowed.
+    // Match each period to the CLOSEST invoice by due date, and let an invoice
+    // claim only one period — otherwise a later invoice dated a day earlier
+    // steals the slot and the period's real invoice is pushed out of the plan.
     const claimed = new Set<string>()
     for (const p of out) {
-      const hit = invoiceGroups.find(g =>
-        !claimed.has(g.invoiceId) && Math.abs(g.earliestDue.getTime() - p.from.getTime()) < 4 * 86400000
-      )
-      if (hit) { p.invoice = hit; claimed.add(hit.invoiceId) }
+      let best: InvoiceGroup | undefined
+      let bestGap = Infinity
+      for (const g of invoiceGroups) {
+        if (claimed.has(g.invoiceId)) continue
+        const gap = Math.abs(g.earliestDue.getTime() - p.from.getTime())
+        if (gap < 4 * 86400000 && gap < bestGap) { best = g; bestGap = gap }
+      }
+      if (best) { p.invoice = best; claimed.add(best.invoiceId) }
     }
     return out
   })()
@@ -1272,7 +1291,7 @@ export default function ContractDetail() {
               <CardHeader title="Billing Plan"
                 subtitle={`${formatDate(c.startDate)} → ${formatDate(c.endDate)} · ${billingPlan.length} period${billingPlan.length !== 1 ? 's' : ''}`}
                 action={
-                  <Button size="sm" variant="outline" onClick={() => setShowInvoiceModal(true)}><FilePlus size={13} /> Invoice</Button>
+                  <Button size="sm" variant="outline" onClick={() => { setInvoiceOverride(null); setInvoiceBlank(true); setShowInvoiceModal(true) }}><FilePlus size={13} /> Invoice</Button>
                 }
               />
               <div className="divide-y">
@@ -1316,6 +1335,17 @@ export default function ContractDetail() {
                           <span className={`text-[10px] font-semibold px-2 py-1 rounded-full whitespace-nowrap ${statusTone}`}>
                             {statusLabel}
                           </span>
+                          {inv && inv.paidTotal <= 0 && (
+                            <button type="button" title={`Delete ${inv.invoiceRef.invoiceNo}`}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                if (confirm(`Delete invoice ${inv.invoiceRef.invoiceNo}? This also removes its payment schedule.`)) deleteInvoice.mutate(inv.invoiceId)
+                              }}
+                              disabled={deleteInvoice.isPending}
+                              className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer disabled:opacity-50">
+                              <Trash2 size={13} />
+                            </button>
+                          )}
                         </div>
                       </div>
 
@@ -1324,6 +1354,7 @@ export default function ContractDetail() {
                           <Button size="sm" variant="outline" onClick={() => {
                             const toISO = (d: Date) => d.toISOString().slice(0, 10)
                             setInvoiceOverride({ start: toISO(period.from), end: toISO(period.to) })
+                            setInvoiceBlank(false)
                             setShowInvoiceModal(true)
                           }}>
                             <FilePlus size={12} /> Create invoice · {formatMoney(period.amount)} AED
@@ -1361,6 +1392,17 @@ export default function ContractDetail() {
                             : 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400'}`}>
                             {isPaid ? 'Paid' : `Pending · ${formatMoney(balance)} AED`}
                           </span>
+                          {g.paidTotal <= 0 && (
+                            <button type="button" title={`Delete ${g.invoiceRef.invoiceNo}`}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                if (confirm(`Delete invoice ${g.invoiceRef.invoiceNo}? This also removes its payment schedule.`)) deleteInvoice.mutate(g.invoiceId)
+                              }}
+                              disabled={deleteInvoice.isPending}
+                              className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer disabled:opacity-50">
+                              <Trash2 size={13} />
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1521,7 +1563,8 @@ export default function ContractDetail() {
             payments={payments}
             overrideStart={invoiceOverride?.start}
             overrideEnd={invoiceOverride?.end}
-            onDone={() => { setShowInvoiceModal(false); setInvoiceOverride(null); invalidate(); qc.invalidateQueries({ queryKey: ['invoices'] }) }}
+            blank={invoiceBlank}
+            onDone={() => { setShowInvoiceModal(false); setInvoiceOverride(null); setInvoiceBlank(false); invalidate(); qc.invalidateQueries({ queryKey: ['invoices'] }) }}
           />
         )}
       </Modal>
