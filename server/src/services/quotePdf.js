@@ -178,6 +178,20 @@ export function renderQuotePdf({ quote }) {
             amount: periodAmount,
          });
       }
+      // Refundable advance deposit per unit: 4 weeks normally, or the term
+      // length when the stay is shorter than 4 weeks.
+      for (const u of quote.units || []) {
+         const uDays = u.startDate && u.endDate ? Math.round((new Date(u.endDate) - new Date(u.startDate)) / 86400000) : 0;
+         const uWeeks = Math.min(4, uDays > 0 ? Math.ceil(uDays / 7) : 1);
+         const wkFull = Number((u.rate / 4).toFixed(2));
+         rows.push({
+            title: `Refundable / Adjustable Security Deposit · Unit ${u.unitNumber}`,
+            sub: 'Adjusted against the final rental period',
+            qty: uWeeks,
+            rate: wkFull,
+            amount: Number((wkFull * uWeeks).toFixed(2)),
+         });
+      }
       for (const a of quote.addOns || []) {
          rows.push({
             title: a.name,

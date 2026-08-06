@@ -423,15 +423,18 @@ async function createFirstInvoiceFromQuote(quote, contract, userName) {
             amount: rentAmount,
         });
 
-        // Always collect 4 weeks advance (no discount on advance)
-        advanceTotal += rate;
+        // Advance security deposit: 4 weeks normally, but for terms shorter than
+        // 4 weeks it matches the rent period (e.g. a 2-week stay deposits 2 weeks).
+        const depositWeeks = Math.min(4, tw);
+        const depositAmount = depositWeeks >= 4 ? rate : Number((wkRate * depositWeeks).toFixed(2));
+        advanceTotal += depositAmount;
         items.push({
             sortOrder: items.length,
             itemDetails: `Refundable / Adjustable Security Deposit · Unit ${u.unitNumber}`,
-            quantity: 4,
+            quantity: depositWeeks,
             rate: wkRate,
             discountPct: 0,
-            amount: rate,
+            amount: depositAmount,
         });
     }
 

@@ -957,10 +957,18 @@ export default function NewQuote() {
     return Math.round((discWeeks * weeklyDisc + fullWeeks * weeklyFull) * 100) / 100
   }
 
+  // Refundable advance deposit: 4 weeks normally, or the term length when shorter
+  function calcUnitAdvance(rate: number, start: string, end: string) {
+    const days = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86400000)
+    if (days <= 0) return 0
+    return Math.round((rate / 4) * Math.min(4, Math.ceil(days / 7)) * 100) / 100
+  }
+
   const unitsTotal = unitRows.reduce((s, u) => s + calcUnitPeriodTotal(u.rate, u.discountPct, u.startDate, u.endDate), 0)
+  const advanceTotal = unitRows.reduce((s, u) => s + calcUnitAdvance(u.rate, u.startDate, u.endDate), 0)
   const addOnsTotal = addOnRows.reduce((s, a) => s + a.quantity * a.rate, 0)
   const subTotal = unitsTotal + addOnsTotal
-  const total = subTotal + adjustment
+  const total = subTotal + adjustment + advanceTotal
 
   useEffect(() => { setErr(''); setSentMsg('') }, [step])
 
@@ -1805,6 +1813,7 @@ export default function NewQuote() {
                     <div className="p-4 rounded-xl border" style={{ borderColor: `${PURPLE}30`, background: `${PURPLE}05` }}>
                       <InfoRow label={`Units (${unitRows.length})`} value={`${formatMoney(unitsTotal)} AED`} />
                       <InfoRow label={`Add-ons (${addOnRows.length})`} value={`${formatMoney(addOnsTotal)} AED`} />
+                      <InfoRow label="Refundable / Adjustable Security Deposit" value={`${formatMoney(advanceTotal)} AED`} />
                       {Number(deposit) > 0 && <InfoRow label="Security deposit" value={`${formatMoney(Number(deposit))} AED`} />}
                       <div style={{ borderTop: `1px solid ${PURPLE}20` }} className="mt-1 pt-1">
                         <div className="flex items-center justify-between text-base py-1">
