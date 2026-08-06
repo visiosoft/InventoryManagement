@@ -432,8 +432,8 @@ async function createFirstInvoiceFromQuote(quote, contract, userName) {
         // Advance covers the FINAL rental period, so its length is whatever the
         // term leaves over after the whole 4-week periods (a 6-week term runs
         // 4 + 2, so the advance is 2 weeks — not 4). For terms of 4 weeks or
-        // less it is instead held and refunded at the end.
-        const advWeeks = tw % 4 === 0 ? 4 : tw % 4;
+        // Advance/security deposit = always 4 weeks, adjusted in the last 4 weeks
+        const advWeeks = Math.min(4, tw);
         const advAmount = Number((wkRate * advWeeks).toFixed(2));
         const isShortTerm = tw <= 4;
         advanceTotal += advAmount;
