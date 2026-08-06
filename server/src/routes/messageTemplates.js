@@ -23,14 +23,47 @@ router.get('/', async (_req, res) => {
 
 // Update a template
 router.put('/:id', async (req, res) => {
-  const { subject, emailBody, whatsappBody } = req.body;
+  const { subject, emailBody, whatsappBody, label } = req.body;
+  const update = { subject, emailBody, whatsappBody };
+  if (label) update.label = label;
   const template = await MessageTemplate.findByIdAndUpdate(
     req.params.id,
-    { subject, emailBody, whatsappBody },
+    update,
     { new: true }
   );
   if (!template) return res.status(404).json({ error: 'Template not found' });
   res.json(template);
+});
+
+// Create a new custom template
+router.post('/', async (req, res) => {
+  try {
+    const { key, label, subject, emailBody, whatsappBody, variables } = req.body;
+    if (!key || !label) return res.status(400).json({ error: 'key and label are required' });
+    const existing = await MessageTemplate.findOne({ key });
+    if (existing) return res.status(409).json({ error: 'Template with this key already exists' });
+    const template = await MessageTemplate.create({
+      key, label, subject: subject || '', emailBody: emailBody || '',
+      whatsappBody: whatsappBody || '', variables: variables || ['@name', '@amount', '@unit', '@dueDate', '@contractNo'],
+    });
+    res.status(201).json(template);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Delete a custom template
+router.delete('/:id', async (req, res) => {
+  try {
+    const template = await MessageTemplate.findById(req.params.id);
+    if (!template) return res.status(404).json({ error: 'Template not found' });
+    const isDefault = DEFAULT_TEMPLATES.some(d => d.key === template.key);
+    if (isDefault) return res.status(400).json({ error: 'Cannot delete built-in templates' });
+    await template.deleteOne();
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Reset a template to default

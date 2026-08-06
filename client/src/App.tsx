@@ -86,6 +86,7 @@ import SharedJobView from './pages/moving/SharedJobView'
 import FieldLogin from './pages/field/FieldLogin'
 import FieldApp from './pages/field/FieldApp'
 import ReminderSettings from './pages/ReminderSettings'
+import AutomationRules from './pages/AutomationRules'
 import Approvals from './pages/Approvals'
 import ForgotPassword from './pages/ForgotPassword'
 import ResetPassword from './pages/ResetPassword'
@@ -170,6 +171,7 @@ export default function App() {
         <Route path="/settings" element={<Settings />} />
         <Route path="/settings/templates" element={<AdminGuard><MessageTemplates /></AdminGuard>} />
         <Route path="/settings/reminders" element={<AdminGuard><ReminderSettings /></AdminGuard>} />
+        <Route path="/settings/automation" element={<AdminGuard><AutomationRules /></AdminGuard>} />
         <Route path="/whatsapp" element={<WhatsApp />} />
         <Route path="/whatsapp/setup" element={<AdminGuard><WhatsAppSetup /></AdminGuard>} />
 

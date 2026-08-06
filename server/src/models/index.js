@@ -1215,6 +1215,54 @@ export const Counter = model('Counter', counterSchema);
 export const FloorPlan = model('FloorPlan', floorPlanSchema);
 export const Site = model('Site', siteSchema);
 
+// ── Automation Rules ──────────────────────────────────────────────────────────
+const automationStepSchema = new Schema({
+  value: { type: Number, default: 7 },
+  direction: { type: String, enum: ['before', 'after'], default: 'before' },
+  template: { type: String, default: '' },
+  emailSubject: { type: String, default: '' },
+  emailBody: { type: String, default: '' },
+  whatsappBody: { type: String, default: '' },
+  immediate: { type: Boolean, default: false },
+}, { _id: false });
+
+const automationRuleSchema = new Schema({
+  name: { type: String, required: true },
+  icon: { type: String, default: 'bell' },
+  triggerEvent: { type: String, default: 'payment_due' },
+  triggerLabel: { type: String, default: '' },
+  relativeLabel: { type: String, default: 'due date' },
+  enabled: { type: Boolean, default: true },
+  emailEnabled: { type: Boolean, default: false },
+  whatsappEnabled: { type: Boolean, default: true },
+  steps: { type: [automationStepSchema], default: [] },
+  recurring: {
+    enabled: { type: Boolean, default: false },
+    everyDays: { type: Number, default: 3 },
+  },
+  custom: { type: Boolean, default: false },
+  order: { type: Number, default: 0 },
+}, { timestamps: true });
+
+const automationLogSchema = new Schema({
+  rule: { type: Schema.Types.ObjectId, ref: 'AutomationRule' },
+  ruleName: { type: String, default: '' },
+  customer: { type: Schema.Types.ObjectId, ref: 'Customer' },
+  contract: { type: Schema.Types.ObjectId, ref: 'Contract' },
+  unit: { type: String, default: '' },
+  channel: { type: String, enum: ['whatsapp', 'email'], required: true },
+  event: { type: String, default: '' },
+  message: { type: String, default: '' },
+  status: { type: String, enum: ['sent', 'failed', 'skipped'], default: 'sent' },
+  error: { type: String, default: '' },
+  sentAt: { type: Date, default: Date.now },
+}, { timestamps: true });
+automationLogSchema.index({ sentAt: -1 });
+automationLogSchema.index({ customer: 1, sentAt: -1 });
+
+export const AutomationRule = model('AutomationRule', automationRuleSchema);
+export const AutomationLog = model('AutomationLog', automationLogSchema);
+
 const messageTemplateSchema = new Schema({
   key: { type: String, required: true, unique: true },
   label: { type: String, required: true },

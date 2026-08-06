@@ -383,11 +383,7 @@ export default function Contracts() {
                       </Link>
                     </Td>
                     <Td>
-                      {c.customer ? (
-                        <Link to={`/customers?edit=${c.customer._id}`} className="hover:underline" title="Open tenant to view or edit">
-                          {c.customer.fullName}
-                        </Link>
-                      ) : '—'}
+                      {c.customer ? c.customer.fullName : '—'}
                     </Td>
                     <Td>
                       {allUnits.length === 1 ? (
