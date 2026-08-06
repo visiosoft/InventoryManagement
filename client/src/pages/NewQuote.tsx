@@ -493,6 +493,9 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
                     <button type="button" onClick={() => openEmail(inv)} className={act} style={{ color: '#3B82F6', borderColor: 'rgba(20,8,31,0.12)' }}>
                       <Mail size={12} /> Email
                     </button>
+                    <button type="button" onClick={async () => { await invoiceApi.updateStatus(inv._id, 'sent'); onChanged() }} className={act} style={{ color: PURPLE, borderColor: 'rgba(20,8,31,0.12)' }}>
+                      <CheckCircle2 size={12} /> Mark Sent
+                    </button>
                   </>)}
                   {stage === 'pay' && (
                     <button type="button"

@@ -241,13 +241,12 @@ function QuoteWizard({
             {i > 0 && <ChevronRight size={14} className="text-muted-foreground" />}
             <button
               onClick={() => setStep(i)}
-              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                i === step
+              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${i === step
                   ? 'bg-primary text-primary-foreground'
                   : i < step
-                  ? 'bg-primary/10 text-primary'
-                  : 'bg-muted text-muted-foreground'
-              }`}
+                    ? 'bg-primary/10 text-primary'
+                    : 'bg-muted text-muted-foreground'
+                }`}
             >
               {i + 1}. {label}
             </button>
@@ -340,11 +339,10 @@ function QuoteWizard({
                       key={u._id}
                       onClick={() => addUnit(u)}
                       disabled={selected}
-                      className={`rounded-lg border p-3 text-left text-sm transition-colors ${
-                        selected
+                      className={`rounded-lg border p-3 text-left text-sm transition-colors ${selected
                           ? 'border-primary bg-primary/5 opacity-60'
                           : 'hover:border-primary hover:bg-primary/5'
-                      }`}
+                        }`}
                     >
                       <div className="font-semibold">{u.unitNumber}</div>
                       <div className="text-xs text-muted-foreground">
