@@ -72,8 +72,12 @@ function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, 
   const buildDefaultItems = (): LineItem[] => {
     if (blank) return [{ id: 1, description: '', qty: 1, rate: 0, amount: 0 }]
     const items: LineItem[] = [{ id: 1, description: `Storage Rent · Unit ${unitNo}`, qty: 4, rate: weeklyRate, amount: Math.round(4 * weeklyRate * 100) / 100 }]
-    if (isFirstInvoice) {
-      items.push({ id: 2, description: `Advance Payment (4 weeks) · Unit ${unitNo}`, qty: 4, rate: weeklyRate, amount: Math.round(4 * weeklyRate * 100) / 100 })
+    if (isFirstInvoice && contractEnd) {
+      // Advance covers last 4 weeks of the contract
+      const advStart = new Date(contractEnd); advStart.setDate(advStart.getDate() - 28)
+      const advEnd = new Date(contractEnd); advEnd.setDate(advEnd.getDate() - 1)
+      const fmt = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+      items.push({ id: 2, description: `Advance Rent ${fmt(advStart)} – ${fmt(advEnd)} · Unit ${unitNo}`, qty: 4, rate: weeklyRate, amount: Math.round(4 * weeklyRate * 100) / 100 })
     }
     return items
   }
@@ -1179,12 +1183,11 @@ export default function ContractDetail() {
                       <div className="divide-y">
                         {activityEvents.map((ev) => (
                           <div key={ev.id} className="flex gap-3 py-3">
-                            <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
-                              ev.type === 'paid' ? 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600'
-                              : ev.type === 'invoice' ? 'bg-blue-100 dark:bg-blue-950/40 text-blue-600'
-                              : ev.type === 'document' ? 'bg-purple-100 dark:bg-purple-950/40 text-purple-600'
-                              : 'bg-muted text-muted-foreground'
-                            }`}>
+                            <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${ev.type === 'paid' ? 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600'
+                                : ev.type === 'invoice' ? 'bg-blue-100 dark:bg-blue-950/40 text-blue-600'
+                                  : ev.type === 'document' ? 'bg-purple-100 dark:bg-purple-950/40 text-purple-600'
+                                    : 'bg-muted text-muted-foreground'
+                              }`}>
                               {ev.type === 'paid' && <CheckCircle2 size={15} />}
                               {ev.type === 'invoice' && <FileText size={15} />}
                               {ev.type === 'document' && <Upload size={15} />}
@@ -1346,10 +1349,9 @@ export default function ContractDetail() {
                           <div className="flex items-center gap-3 shrink-0">
                             <div className="text-right">
                               <p className="text-base font-bold">{formatMoney(g.total)} AED</p>
-                              <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full inline-block mt-1 ${
-                                isPaid ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400'
-                                : 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400'
-                              }`}>
+                              <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full inline-block mt-1 ${isPaid ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400'
+                                  : 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400'
+                                }`}>
                                 {isPaid ? 'Paid' : `Pending · ${formatMoney(balance)}`}
                               </span>
                             </div>
