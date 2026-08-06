@@ -572,7 +572,6 @@ async function syncContractFromQuote(quote, userName) {
     }
     if (removed === invoices.length) {
         const invoice = await createFirstInvoiceFromQuote(quote, contract, userName);
-        contract.totalQuotation = Number(invoice.total || contract.totalQuotation);
         contract.timeline.push({ at: new Date(), text: `Draft invoice ${invoice.invoiceNo} regenerated from updated quote`, author: userName });
         await contract.save();
     }
@@ -695,7 +694,6 @@ router.post('/:id/convert-to-contract', async (req, res) => {
     quote.timeline.push({ type: 'converted', text: `Converted to contract ${contract.contractNo} by ${userName}`, user: req.user.id });
 
     const invoice = await createFirstInvoiceFromQuote(quote, contract, userName);
-    contract.totalQuotation = Number(invoice.total || contract.totalQuotation);
     contract.timeline.push({ at: new Date(), text: `Draft invoice ${invoice.invoiceNo} generated from quote (prices locked)`, author: userName });
     await contract.save();
     await quote.save();
