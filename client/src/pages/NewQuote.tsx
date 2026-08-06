@@ -885,7 +885,7 @@ export default function NewQuote() {
   const [customerEmail, setCustomerEmail] = useState('')
 
   // Quote
-  const [dateRangeFrom, setDateRangeFrom] = useState('')
+  const [dateRangeFrom, setDateRangeFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10) })
   const [dateRangeTo, setDateRangeTo] = useState('')
   const [customEnd, setCustomEnd] = useState(false)
 
@@ -898,7 +898,7 @@ export default function NewQuote() {
     ? Math.round((new Date(dateRangeTo).getTime() - new Date(dateRangeFrom).getTime()) / 86400000)
     : 0
   const derivedWeeks = rangeDays > 0 && rangeDays % 7 === 0 ? rangeDays / 7 : null
-  const WEEK_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 20, 24, 36, 52]
+  const WEEK_OPTIONS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 20, 24, 36, 52]
   const durationValue = customEnd
     ? 'custom'
     : derivedWeeks && WEEK_OPTIONS.includes(derivedWeeks) ? String(derivedWeeks) : (dateRangeTo ? 'custom' : '')
