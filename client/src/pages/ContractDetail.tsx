@@ -1318,26 +1318,28 @@ export default function ContractDetail() {
                     const isPaid = g.status === 'paid'
                     const balance = g.total - g.paidTotal
                     return (
-                      <div key={g.invoiceId} className="px-4 py-3 cursor-pointer hover:bg-muted/30 transition-colors"
+                      <div key={g.invoiceId} className="mx-4 my-3 rounded-xl border cursor-pointer hover:shadow-md transition-shadow"
                         onClick={() => navigate(`/invoices/${g.invoiceId}`)}>
-                        <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center justify-between gap-3 px-4 py-4">
                           <div className="flex items-center gap-3 min-w-0">
-                            <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${isPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-primary/10 text-primary'}`}>
+                            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ${isPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-primary/10 text-primary'}`}>
                               {isPaid ? '✓' : i + 1}
                             </span>
                             <div className="min-w-0">
-                              <p className="text-sm font-bold text-primary">{g.invoiceRef.invoiceNo}</p>
-                              <p className="text-xs text-muted-foreground">{g.periodLabel}</p>
+                              <p className="text-base font-bold text-primary">{g.invoiceRef.invoiceNo}</p>
+                              <p className="text-sm text-muted-foreground">{g.periodLabel}</p>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className="text-sm font-bold">{formatMoney(g.total)} AED</span>
-                            <span className={`text-[10px] font-semibold px-2 py-1 rounded-full whitespace-nowrap ${
-                              isPaid ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400'
-                              : 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400'
-                            }`}>
-                              {isPaid ? 'Paid' : `Pending · ${formatMoney(balance)}`}
-                            </span>
+                          <div className="flex items-center gap-3 shrink-0">
+                            <div className="text-right">
+                              <p className="text-base font-bold">{formatMoney(g.total)} AED</p>
+                              <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full inline-block mt-1 ${
+                                isPaid ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400'
+                                : 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400'
+                              }`}>
+                                {isPaid ? 'Paid' : `Pending · ${formatMoney(balance)}`}
+                              </span>
+                            </div>
                             <button type="button" title="Delete"
                               onClick={(e) => {
                                 e.stopPropagation()
