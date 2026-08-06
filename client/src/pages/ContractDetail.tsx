@@ -1381,7 +1381,7 @@ export default function ContractDetail() {
                           <span className={`text-[10px] font-semibold px-2 py-1 rounded-full whitespace-nowrap ${statusTone}`}>
                             {statusLabel}
                           </span>
-                          {inv && inv.paidTotal <= 0 && (
+                          {inv && (
                             <button type="button" title={`Delete ${inv.invoiceRef.invoiceNo}`}
                               onClick={(e) => {
                                 e.stopPropagation()
@@ -1395,8 +1395,8 @@ export default function ContractDetail() {
                         </div>
                       </div>
 
-                      {!inv && !period.coveredByAdvance && (
-                        <div className="mt-2 ml-9">
+                      {!inv && (
+                        <div className="mt-2 ml-9" onClick={(e) => e.stopPropagation()}>
                           <Button size="sm" variant="outline" onClick={() => {
                             const toISO = (d: Date) => d.toISOString().slice(0, 10)
                             setInvoiceOverride({ start: toISO(period.from), end: toISO(period.to) })
