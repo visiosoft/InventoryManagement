@@ -2269,13 +2269,27 @@ export default function NewQuote() {
                       const weeklyRate = Math.round((monthlyRate / 4) * 100) / 100
                       const periods: { label: string; from: Date; to: Date; weeks: number; amount: number; type: string; note?: string }[] = []
 
-                      // First 4 weeks — rent (with discount if any)
+                      // First period — capped at the contract term (a 2-week stay bills 2 weeks)
+                      const termDays = Math.max(0, Math.round((cEnd.getTime() - cStart.getTime()) / 86400000))
+                      const termWeeks = Math.max(1, Math.ceil(termDays / 7))
+                      const firstWeeks = Math.min(4, termWeeks)
+                      const weeklyDisc = Math.round((discountedMonthly / 4) * 100) / 100
                       const firstEnd = new Date(cStart)
-                      firstEnd.setDate(firstEnd.getDate() + 28)
-                      periods.push({ label: 'Rent (First 4 weeks)', from: new Date(cStart), to: firstEnd, weeks: 4, amount: discountedMonthly, type: 'rent', note: discPct > 0 ? `${discPct}% off` : undefined })
+                      firstEnd.setDate(firstEnd.getDate() + firstWeeks * 7)
+                      periods.push({
+                        label: `Rent (First ${firstWeeks} week${firstWeeks !== 1 ? 's' : ''})`,
+                        from: new Date(cStart), to: firstEnd, weeks: firstWeeks,
+                        amount: firstWeeks === 4 ? discountedMonthly : Math.round(weeklyDisc * firstWeeks * 100) / 100,
+                        type: 'rent', note: discPct > 0 ? `${discPct}% off` : undefined,
+                      })
 
-                      // Advance — always 4 weeks (no discount)
-                      periods.push({ label: 'Advance Rent (4 weeks)', from: new Date(cStart), to: firstEnd, weeks: 4, amount: monthlyRate, type: 'advance' })
+                      // Advance deposit — matches the first period length, no discount
+                      periods.push({
+                        label: `Advance Rent (${firstWeeks} week${firstWeeks !== 1 ? 's' : ''})`,
+                        from: new Date(cStart), to: firstEnd, weeks: firstWeeks,
+                        amount: firstWeeks === 4 ? monthlyRate : Math.round(weeklyRate * firstWeeks * 100) / 100,
+                        type: 'advance',
+                      })
 
                       // Middle periods (if any)
                       let cursor = new Date(firstEnd)
@@ -2548,7 +2562,7 @@ export default function NewQuote() {
                         className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90"
                         style={{ background: GREEN }}
                       >
-                        {zohoSyncing ? <><Loader2 size={14} className="animate-spin" /> Syncing…</> : 'Save & Sync to Zoho'}
+                        {zohoSyncing ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : 'Save'}
                       </button>
                     )}
                     {!(step === 4 && invoiceEditing) && (() => {

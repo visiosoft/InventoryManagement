@@ -220,7 +220,7 @@ export function renderInvoicePdf({ invoice }) {
     const TX  = M;
     const TW  = PW - 2 * M;   // 495.28
     const nW  = 28;            // # column
-    const qW  = 36;            // Qty column
+    const qW  = 0;             // Qty column removed — width folds into description
     const aW  = 90;            // Amount column
     const hasDiscount = (invoice.items || []).some(it => (it.discountPct ?? 0) > 0);
     const dW  = hasDiscount ? 65 : 0;  // Discount column (only when needed)
@@ -233,7 +233,6 @@ export function renderInvoicePdf({ invoice }) {
     doc.font('Helvetica-Bold').fontSize(9).fillColor(WHITE);
     doc.text('#',                  TX + 6,                         y + 8, { width: nW - 6 });
     doc.text('Item & Description', TX + nW + 6,                    y + 8, { width: iW - 12 });
-    doc.text('Qty',                TX + nW + iW,                   y + 8, { width: qW,      align: 'right' });
     doc.text('Rate',               TX + nW + iW + qW,              y + 8, { width: rW,      align: 'right' });
     if (hasDiscount) doc.text('Discount', TX + nW + iW + qW + rW, y + 8, { width: dW, align: 'right' });
     doc.text('Amount',             TX + nW + iW + qW + rW + dW,   y + 8, { width: aW - 8,  align: 'right' });
@@ -258,8 +257,6 @@ export function renderInvoicePdf({ invoice }) {
         doc.text(it.description, TX + nW + 6, y + 20, { width: iW - 12 });
         doc.fontSize(9).fillColor(BLACK);
       }
-      const isRentLine = /^(Storage Rent|Refundable \/ Adjustable Security Deposit)/.test(it.itemDetails || '');
-      doc.text(isRentLine ? '1' : '—', TX + nW + iW, y + 8, { width: qW, align: 'right' });
       doc.text(num(it.rate),           TX + nW + iW + qW,              y + 8, { width: rW, align: 'right' });
       if (hasDiscount) {
         if (discounted) {
