@@ -1292,7 +1292,19 @@ export async function nextQuoteNo() {
   return `QT-${String(counter.seq).padStart(6, '0')}`;
 }
 
-export async function nextInvoiceNo() {
+export async function nextInvoiceNo(unitNumber, contractId) {
+  if (unitNumber && contractId) {
+    // New format: PB-YEAR-UNITNUMBER-INSTALLMENT
+    const year = new Date().getFullYear();
+    const unitKey = unitNumber.replace(/\s+/g, '');
+    const counter = await Counter.findOneAndUpdate(
+      { key: `inv-${contractId}` },
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true }
+    );
+    return `PB-${year}-${unitKey}-${String(counter.seq).padStart(2, '0')}`;
+  }
+  // Fallback legacy format
   const year = new Date().getFullYear();
   const counter = await Counter.findOneAndUpdate(
     { key: `invoice-${year}` },

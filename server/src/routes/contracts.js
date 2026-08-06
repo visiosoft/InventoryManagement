@@ -330,6 +330,54 @@ router.post('/', async (req, res) => {
 
   await Promise.all(allUnitIds.map((uid) => syncUnitStatus(uid)));
 
+  // Auto-generate first invoice if requested
+  if (req.body.generateInvoice) {
+    const unitNo = primaryUnitDoc.unitNumber || '-';
+    const fmt = (d) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const totalDays = Math.round((end - start) / 86400000);
+    const monthlyRate = Number(rate || 0);
+    const weeklyRate = Math.round((monthlyRate / 4) * 100) / 100;
+    const totalWeeks = Math.ceil(totalDays / 7);
+    const discountPct = Number(req.body.firstMonthDiscountPct || 0);
+    const weekAmounts = [];
+    for (let i = 0; i < totalWeeks; i++) {
+      weekAmounts.push(discountPct > 0 && i < 4
+        ? Math.round(weeklyRate * (1 - discountPct / 100) * 100) / 100
+        : weeklyRate);
+    }
+    const periodTotal = Math.round(weekAmounts.reduce((s, a) => s + a, 0) * 100) / 100;
+    const displayEnd = fmt(new Date(end - 86400000));
+    const items = [{
+      sortOrder: 0,
+      itemDetails: `Storage rental — Unit ${unitNo}, ${fmt(start)} – ${displayEnd}`,
+      quantity: totalWeeks,
+      rate: weeklyRate,
+      discountPct: discountPct > 0 ? discountPct : 0,
+      amount: periodTotal,
+    }];
+    const subTotal = periodTotal;
+    const invoice = await Invoice.create({
+      invoiceNo: await nextInvoiceNo(unitNo, contract._id),
+      customer,
+      invoiceDate: new Date(),
+      dueDate: start,
+      orderNumber: contract.contractNo,
+      terms: 'Due on receipt',
+      subject: `Storage rental — Unit ${unitNo}, ${fmt(start)} – ${displayEnd}`,
+      items,
+      customerNotes: '',
+      subTotal, total: subTotal, paymentMade: 0, status: 'sent',
+    });
+    await Payment.create({
+      contract: contract._id,
+      invoice: invoice._id,
+      amount: periodTotal,
+      dueDate: start,
+      status: 'pending',
+      notes: `Storage rental — Unit ${unitNo}, ${fmt(start)} – ${displayEnd}`,
+    });
+  }
+
   const populated = await populateAll(Contract.findById(contract._id));
   res.status(201).json(populated);
 });
@@ -824,7 +872,7 @@ router.post('/:id/generate-custom-invoice', async (req, res) => {
     const amount = Number(contract.deposit || 0);
     if (!amount) return res.status(400).json({ error: 'No deposit amount set on this contract' });
     const invoice = await Invoice.create({
-      invoiceNo: await nextInvoiceNo(),
+      invoiceNo: await nextInvoiceNo(unitNo, contract._id),
       customer: contract.customer._id,
       invoiceDate: new Date(),
       dueDate: dueDate ? new Date(dueDate) : new Date(),
@@ -881,7 +929,7 @@ router.post('/:id/generate-custom-invoice', async (req, res) => {
   // One invoice line item for the whole month period — quantity = weeks, rate = weekly rate
   const items = [{
     sortOrder: 0,
-    itemDetails: `Storage Rent ${fmt(start)} – ${displayEnd} · Unit ${unitNo}`,
+    itemDetails: `Storage rental — Unit ${unitNo}, ${fmt(start)} – ${displayEnd}`,
     quantity: totalWeeks,
     rate: weeklyRate,
     discountPct: hasDiscount ? discountPct : 0,
@@ -920,7 +968,7 @@ router.post('/:id/generate-custom-invoice', async (req, res) => {
   const subTotal = Math.round(items.reduce((s, it) => s + it.amount, 0) * 100) / 100;
 
   const invoice = await Invoice.create({
-    invoiceNo: await nextInvoiceNo(),
+    invoiceNo: await nextInvoiceNo(unitNo, contract._id),
     customer: contract.customer._id,
     invoiceDate: new Date(),
     dueDate: dueDate ? new Date(dueDate) : end,

@@ -336,6 +336,7 @@ export default function NewContract() {
   const [rate, setRate] = useState<number | ''>('')
   const [deposit, setDeposit] = useState<number | ''>('')
   const [notes, setNotes] = useState('')
+  const [generateInvoice, setGenerateInvoice] = useState(true)
   const [sizeFilter, setSizeFilter] = useState('')
   const [floorFilter, setFloorFilter] = useState('')
   const [showBooked, setShowBooked] = useState(false)
@@ -485,6 +486,7 @@ export default function NewContract() {
           deposit: deposit === '' ? 0 : deposit,
           startDate, endDate, notes,
           firstMonthDiscountPct: pct,
+          generateInvoice,
         }).then((res) => [res])
       }
       return Promise.all(selectedUnits.map((u) => {
@@ -496,6 +498,7 @@ export default function NewContract() {
           deposit: deposit === '' ? 0 : deposit,
           startDate, endDate, notes,
           firstMonthDiscountPct: pct,
+          generateInvoice,
         })
       }))
     },
@@ -996,6 +999,10 @@ export default function NewContract() {
                     <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Other</h3>
                   </div>
                   <div className="px-4 py-3 space-y-3">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input type="checkbox" checked={generateInvoice} onChange={(e) => setGenerateInvoice(e.target.checked)} className="accent-(--primary)" />
+                      Generate first invoice automatically
+                    </label>
                     <Field label="Notes"><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
                   </div>
                 </section>
