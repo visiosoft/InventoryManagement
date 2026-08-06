@@ -1091,7 +1091,7 @@ export default function NewQuote() {
   })
 
   // ── Units ──────────────────────────────────────────────────────────────────
-  const [unitStatusFilter, setUnitStatusFilter] = useState<'free' | 'all' | 'available' | 'rented' | 'reserved' | 'booked'>('free')
+  const [unitStatusFilter, setUnitStatusFilter] = useState<'free' | 'all' | 'available' | 'rented' | 'reserved' | 'booked'>('available')
   const [unitSearch, setUnitSearch] = useState('')
   const [sizeFilter, setSizeFilter] = useState('')
   const [floorFilter, setFloorFilter] = useState('')
@@ -1121,8 +1121,8 @@ export default function NewQuote() {
   })
 
   const UNIT_FILTERS: { key: typeof unitStatusFilter; label: string }[] = [
-    { key: 'free', label: 'Free in period' },
     { key: 'available', label: 'Available' },
+    { key: 'free', label: 'Free in period' },
     { key: 'rented', label: 'Rented' },
     { key: 'reserved', label: 'Reserved' },
     { key: 'booked', label: 'Booked in period' },
