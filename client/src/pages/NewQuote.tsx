@@ -522,10 +522,12 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
                     </Field>
                   </div>
                   <Field label="Payment receipt *">
-                    <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp"
-                      onChange={(e) => setPayReceipt(e.target.files?.[0] ?? null)}
-                      className="w-full text-[11px] file:mr-2 file:px-2 file:py-1 file:rounded-lg file:border-0 file:text-[11px] file:font-semibold file:cursor-pointer"
-                      style={{ color: MUTED }} />
+                    <div className="flex items-center gap-2 w-full h-9 rounded-lg border bg-card px-3">
+                      <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp"
+                        onChange={(e) => setPayReceipt(e.target.files?.[0] ?? null)}
+                        className="w-full text-sm file:mr-3 file:px-3 file:py-1 file:rounded-lg file:border-0 file:bg-primary/10 file:text-primary file:text-xs file:font-semibold file:cursor-pointer cursor-pointer" />
+                    </div>
+                    {payReceipt && <p className="text-xs text-emerald-600 mt-1 font-medium">✓ {payReceipt.name}</p>}
                   </Field>
                   <div className="flex items-center gap-2">
                     <button type="button" onClick={() => recordPay.mutate(inv)} disabled={recordPay.isPending || !Number(payAmt) || !payReceipt}
