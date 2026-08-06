@@ -603,6 +603,8 @@ type InvoiceGroup = {
   payments: Payment[]; unpaidInGroup: Payment[]; paidInGroup: Payment[]
   total: number; paidTotal: number; rentTotal: number; depositTotal: number
   earliestDue: Date; latestDue: Date; periodLabel: string
+  /** The period this invoice actually bills, when its lines/notes state one */
+  periodStart?: Date
   status: 'paid' | 'partial' | 'overdue' | 'pending'
 }
 
@@ -796,11 +798,16 @@ export default function ContractDetail() {
     const depositTotal = Math.round(ps.filter(isDepositPayment).reduce((s, p) => s + p.amount, 0) * 100) / 100
     const total = Math.round(ps.reduce((s, p) => s + p.amount, 0) * 100) / 100
     const rentTotal = Math.round((total - depositTotal) * 100) / 100
-    // Extract human-readable period from the rent payment note: "Storage Rent DD Mon YYYY – DD Mon YYYY · Unit X"
-    const rentNote = sorted.find(p => /^Storage Rent/i.test(p.notes || ''))?.notes ?? ''
-    const rangeMatch = rentNote.match(/^Storage Rent (.+?) – (.+?) ·/)
-    const periodLabel = rangeMatch
-      ? `${rangeMatch[1]} – ${rangeMatch[2]}`
+    // Pull the service period out of any payment note or invoice line, e.g.
+    // "... 17 Jul 2026 – 13 Aug 2026 ...". This is what the invoice actually
+    // covers; the due date can be any day (often today) and must not be used
+    // to decide which month an invoice belongs to.
+    const periodText = [
+      ...sorted.map(p => p.notes || ''),
+      ...((invoiceDocFor(invId)?.items ?? []).map(it => it.itemDetails || '')),
+    ].map(parseDateRange).find(Boolean) ?? null
+    const periodLabel = periodText
+      ? `${fmtShortDate(periodText.start)} – ${fmtShortDate(periodText.end)}`
       : fmtShortDate(new Date(sorted[0].dueDate))
     // Paid figure: payment records may lag behind money taken straight against
     // the invoice (recorded in its paymentHistory), so trust whichever is higher.
@@ -819,6 +826,7 @@ export default function ContractDetail() {
       payments: sorted, unpaidInGroup, paidInGroup,
       total, paidTotal,
       rentTotal, depositTotal, periodLabel,
+      periodStart: periodText?.start,
       earliestDue: new Date(sorted[0].dueDate),
       latestDue: new Date(sorted[sorted.length - 1].dueDate),
       status,
@@ -1531,13 +1539,25 @@ export default function ContractDetail() {
         />
       </Modal>
 
-      <Modal open={uploading} onClose={() => setUploading(false)} title="Upload document">
-        <UploadDocumentForm
-          contractId={c._id}
-          customerId={c.customer?._id}
-          onDone={() => { invalidate(); setUploading(false) }}
-        />
-      </Modal>
+      {/* Upload document — right panel */}
+      {uploading && (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/20" onClick={() => setUploading(false)} />
+          <div className="absolute right-0 top-0 h-full w-full max-w-md bg-card shadow-xl overflow-y-auto animate-in slide-in-from-right border-l">
+            <div className="sticky top-0 bg-card border-b px-5 py-4 flex items-center justify-between z-10">
+              <h2 className="text-base font-bold">Upload document</h2>
+              <button onClick={() => setUploading(false)} className="text-muted-foreground hover:text-foreground cursor-pointer"><X size={18} /></button>
+            </div>
+            <div className="p-5">
+              <UploadDocumentForm
+                contractId={c._id}
+                customerId={c.customer?._id}
+                onDone={() => { invalidate(); setUploading(false) }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       <Modal open={signingInPerson} onClose={() => setSigningInPerson(false)} title="Sign contract in person" wide>
         <SignInPersonModal
