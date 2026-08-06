@@ -1209,7 +1209,7 @@ export default function ContractDetail() {
                   <div className="flex justify-between py-2">
                     <span className="text-muted-foreground">Term</span>
                     <span className="font-medium text-right">
-                      {new Date(c.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} → {new Date(c.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                      {Math.ceil(Math.round((new Date(c.endDate).getTime() - new Date(c.startDate).getTime()) / 86400000) / 7)} weeks
                     </span>
                   </div>
                 )}
