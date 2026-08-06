@@ -64,10 +64,6 @@ function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, 
 
   // Determine if first invoice — if so, include advance payment line
   const isFirstInvoice = payments.length === 0
-  const monthlyRate = Number(contract.rate || 0)
-  const totalQuotation = Number(contract.totalQuotation || 0)
-  const alreadyInvoiced = payments.reduce((s, p) => s + p.amount, 0)
-  const remainingToInvoice = Math.max(0, totalQuotation - alreadyInvoiced)
 
   const buildDefaultItems = (): LineItem[] => {
     if (blank) return [{ id: 1, description: '', qty: 1, rate: 0, amount: 0 }]
