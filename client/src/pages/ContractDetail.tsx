@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { CalendarDays, CheckCircle2, Download, FileText, FilePlus, MessageSquare, PenLine, Plus, ShieldCheck, Trash2, Upload, X, XCircle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -9,7 +9,7 @@ import {
   Badge, Button, Card, CardBody, CardHeader, EmptyState,
   Field, Input, Modal, Select, Spinner,
   Table, Td, Th, Textarea,
-  contractStatusTone, paymentStatusTone, statusLabel,
+  contractStatusTone, statusLabel,
 } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
 import { UploadDocumentForm } from './Documents'
@@ -601,181 +601,8 @@ type InvoiceGroup = {
   status: 'paid' | 'partial' | 'overdue' | 'pending'
 }
 
-const groupStatusTone: Record<string, string> = { paid: 'green', partial: 'amber', overdue: 'red', pending: 'amber' }
-const groupStatusLabel: Record<string, string> = { paid: 'Paid', partial: 'Partial', overdue: 'Overdue', pending: 'Pending' }
-
-function InvoiceGroupRow({ g, index, onRecord, onDelete, onSendWhatsApp, sendingInvoice, onGenerateForRemaining }: {
-  g: InvoiceGroup; index: number
-  onRecord: () => void; onDelete: () => void
-  onSendWhatsApp: () => void; sendingInvoice: boolean
-  onGenerateForRemaining?: () => void
-}) {
-  const rowBg = g.status === 'overdue' ? 'bg-red-50/60 dark:bg-red-950/20'
-    : g.status === 'paid' ? 'bg-emerald-50/40 dark:bg-emerald-950/10' : ''
-
-  return (
-    <tr className={`${rowBg} hover:brightness-95`}>
-      <Td className="text-muted-foreground text-xs tabular-nums">{index}</Td>
-      <Td>
-        <Link to={`/invoices/${g.invoiceRef._id}`} className="text-primary hover:underline font-medium text-sm">
-          {g.invoiceRef.invoiceNo}
-        </Link>
-      </Td>
-      <Td className="text-sm text-muted-foreground whitespace-nowrap">
-        {g.periodLabel}
-      </Td>
-      <Td>
-        <span className="font-medium">{formatMoney(g.total)}</span>
-        {g.depositTotal > 0 && (
-          <span className="text-xs text-muted-foreground ml-1.5">(incl. {formatMoney(g.depositTotal)} dep.)</span>
-        )}
-        {g.status === 'partial' && (
-          <span className="text-xs text-muted-foreground ml-1.5">({formatMoney(g.paidTotal)} paid)</span>
-        )}
-      </Td>
-      <Td><Badge tone={groupStatusTone[g.status]}>{groupStatusLabel[g.status]}</Badge></Td>
-      <Td>
-        <div className="flex items-center gap-2 text-xs whitespace-nowrap">
-          <button className="text-emerald-700 hover:underline cursor-pointer" onClick={onSendWhatsApp} disabled={sendingInvoice}>
-            {sendingInvoice ? 'Sending…' : 'WhatsApp'}
-          </button>
-          {g.paidInGroup.length > 0 && (
-            <button
-              className="inline-flex items-center gap-1 text-emerald-700 hover:underline cursor-pointer font-medium"
-              onClick={() => downloadInvoiceReceipt(g.invoiceRef._id)}
-              title="Download invoice PDF"
-            >
-              <FileText size={12} /> Receipt
-            </button>
-          )}
-          {g.status === 'partial' && onGenerateForRemaining && (
-            <button
-              className="inline-flex items-center gap-1 text-primary hover:underline cursor-pointer font-medium"
-              onClick={onGenerateForRemaining}
-              title="Generate a new invoice for the remaining unpaid weeks"
-            >
-              <FilePlus size={12} /> Invoice remaining
-            </button>
-          )}
-          {g.unpaidInGroup.length > 0 && (
-            <Button size="sm" variant="outline" onClick={onRecord}>Record</Button>
-          )}
-          <button className="text-destructive hover:underline cursor-pointer" onClick={onDelete}>Delete</button>
-        </div>
-      </Td>
-    </tr>
-  )
-}
-
-// ── Payment row (standalone payments without invoice) ─────────────────────────
-async function downloadInvoiceReceipt(invoiceId: string) {
-  const res = await fetch(`/api/invoices/${invoiceId}/pdf`, {
-    headers: { Authorization: `Bearer ${localStorage.getItem('pb_token')}` },
-  })
-  if (!res.ok) { alert('Could not generate receipt'); return }
-  const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  window.open(url, '_blank', 'noopener,noreferrer')
-  setTimeout(() => URL.revokeObjectURL(url), 60_000)
-}
-
-function PaymentRow({
-  p,
-  index,
-  rate,
-  isFirstForInvoice,
-  onRecord,
-  onEdit,
-  onUnrecord,
-  onDelete,
-  onSendInvoiceWhatsApp,
-  sendingInvoice,
-}: {
-  p: Payment; index: number; rate: number; isFirstForInvoice: boolean
-  onRecord: () => void; onEdit: () => void; onUnrecord: () => void; onDelete: () => void
-  onSendInvoiceWhatsApp: () => void
-  sendingInvoice: boolean
-}) {
-  // rate is monthly; weekly payment = rate/4. First 4 payments may be discounted.
-  const weeklyRate = Math.round((rate / 4) * 100) / 100
-  const isDiscounted = index < 4 && p.amount < weeklyRate
-  const rowBg =
-    p.status === 'overdue' ? 'bg-red-50/60 dark:bg-red-950/20' :
-      p.status === 'paid' ? 'bg-emerald-50/40 dark:bg-emerald-950/10' : ''
-
-  return (
-    <tr className={`${rowBg} hover:brightness-95`}>
-      <Td className="text-muted-foreground text-xs tabular-nums">{index + 1}</Td>
-      <Td className={`text-sm ${p.status === 'overdue' ? 'text-red-600 font-medium' : ''}`}>
-        {formatDate(p.dueDate)}
-      </Td>
-      <Td>
-        <span className="font-medium">{formatMoney(p.amount)}</span>
-        {isDiscounted && (
-          <span className="ml-1.5 text-xs text-amber-600">(was {formatMoney(weeklyRate)})</span>
-        )}
-      </Td>
-      <Td><Badge tone={paymentStatusTone[p.status]}>{statusLabel(p.status)}</Badge></Td>
-      <Td className="text-sm">{formatDate(p.paidDate) || '—'}</Td>
-      <Td className="text-sm capitalize">{p.method ? p.method.replace('_', ' ') : '—'}</Td>
-      <Td className="text-xs text-muted-foreground max-w-[120px] truncate" title={p.notes}>{p.notes || '—'}</Td>
-      <Td>
-        <div className="flex items-center gap-2 text-xs whitespace-nowrap">
-          {p.invoice && isFirstForInvoice && (
-            <>
-              <Link to={`/invoices/${p.invoice._id}`} className="text-primary hover:underline font-medium">
-                {p.invoice.invoiceNo}
-              </Link>
-              <button
-                className="text-emerald-700 hover:underline cursor-pointer"
-                onClick={onSendInvoiceWhatsApp}
-                disabled={sendingInvoice}
-              >
-                {sendingInvoice ? 'Sending…' : 'WhatsApp'}
-              </button>
-              {p.status === 'paid' && (
-                <button
-                  className="inline-flex items-center gap-1 text-emerald-700 hover:underline cursor-pointer font-medium"
-                  onClick={() => downloadInvoiceReceipt(p.invoice!._id)}
-                  title="Download invoice receipt PDF"
-                >
-                  <FileText size={12} /> Receipt
-                </button>
-              )}
-            </>
-          )}
-          {p.status !== 'paid' && <Button size="sm" variant="outline" onClick={onRecord}>Record</Button>}
-          {p.status === 'paid' && (
-            <button className="text-amber-600 hover:underline cursor-pointer" onClick={onUnrecord}>Unrecord</button>
-          )}
-          <button className="text-primary hover:underline cursor-pointer" onClick={onEdit}>Edit</button>
-          <button className="text-destructive hover:underline cursor-pointer" onClick={onDelete}>Delete</button>
-        </div>
-      </Td>
-    </tr>
-  )
-}
-
-// ── Section divider row ────────────────────────────────────────────────────────
-function SectionRow({ label, count, total, tone, action }: {
-  label: string; count: number; total: number; tone: string; action?: React.ReactNode
-}) {
-  const colors: Record<string, string> = {
-    red: 'bg-red-100/80   text-red-800   dark:bg-red-950/40   dark:text-red-300',
-    amber: 'bg-amber-100/80 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300',
-    green: 'bg-emerald-100/80 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300',
-  }
-  return (
-    <tr className={colors[tone]}>
-      <td colSpan={action ? 7 : 8} className="px-4 py-1.5 text-xs font-semibold uppercase tracking-wide">
-        {label} — {count} invoice{count !== 1 ? 's' : ''} · {formatMoney(total)}
-      </td>
-      {action && <td className="px-3 py-1 text-right">{action}</td>}
-    </tr>
-  )
-}
-
 // ── Main page ──────────────────────────────────────────────────────────────────
+
 export default function ContractDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -794,7 +621,6 @@ export default function ContractDetail() {
   const [signingLink, setSigningLink] = useState('')
   const [signingLinkExpiry, setSigningLinkExpiry] = useState('')
   const [linkCopied, setLinkCopied] = useState(false)
-  const [sendingInvoiceId, setSendingInvoiceId] = useState<string | null>(null)
   const [showInvoiceModal, setShowInvoiceModal] = useState(false)
   const [invoiceOverride, setInvoiceOverride] = useState<{ start: string; end: string } | null>(null)
   const [editModal, setEditModal] = useState(false)
@@ -852,61 +678,11 @@ export default function ContractDetail() {
     onError: (e) => setError(apiError(e)),
   })
 
-  const unrecordPayment = useMutation({
-    mutationFn: (paymentId: string) => api.post(`/payments/${paymentId}/unrecord`),
-    onSuccess: () => invalidate(),
-    onError: (e) => setError(apiError(e)),
-  })
-
-  const deletePayment = useMutation({
-    mutationFn: (paymentId: string) => api.delete(`/payments/${paymentId}`),
-    onSuccess: () => invalidate(),
-    onError: (e) => setError(apiError(e)),
-  })
-
-  const deleteInvoiceGroup = useMutation({
-    mutationFn: async (invoiceId: string) => {
-      await api.delete(`/invoices/${invoiceId}`)
-    },
-    onSuccess: () => { invalidate(); qc.invalidateQueries({ queryKey: ['invoices'] }) },
-    onError: (e) => setError(apiError(e)),
-  })
 
   const addPayment = useMutation({
     mutationFn: (body: object) => api.post('/payments', body),
     onSuccess: () => { invalidate(); setAddingPayment(false) },
     onError: (e) => setError(apiError(e)),
-  })
-
-  const sendInvoiceWhatsApp = useMutation({
-    mutationFn: (invoiceId: string) =>
-      api.post(`/invoices/${invoiceId}/share`).then((r) => r.data as { url: string }),
-    onSuccess: ({ url }) => {
-      const c = data?.contract
-      const phone = (c?.customer as any)?.phone?.replace(/\D/g, '') || ''
-      const invoiceNo = data?.payments
-        .find((p) => (p.invoice as any)?._id === sendingInvoiceId)
-        ?.invoice?.invoiceNo ?? ''
-      const text = [
-        `Hello ${(c?.customer as any)?.fullName ?? 'there'},`,
-        ``,
-        `Your invoice${invoiceNo ? ` *${invoiceNo}*` : ''} from PurpleBox is ready.`,
-        ``,
-        `View & download:`,
-        url,
-        ``,
-        `Thank you – PurpleBox`,
-      ].join('\n')
-      const waUrl = phone
-        ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
-        : `https://wa.me/?text=${encodeURIComponent(text)}`
-      window.open(waUrl, '_blank', 'noopener,noreferrer')
-      setSendingInvoiceId(null)
-    },
-    onError: (e) => {
-      setSendingInvoiceId(null)
-      setError(apiError(e))
-    },
   })
 
   const updateContract = useMutation({
@@ -1004,9 +780,6 @@ export default function ContractDetail() {
     const paidInGroup = ps.filter(p => p.status === 'paid')
     const unpaidInGroup = ps.filter(p => p.status !== 'paid').sort(byDue)
     const anyOverdue = ps.some(p => p.status === 'overdue')
-    const allPaid = unpaidInGroup.length === 0
-    const anyPaid = paidInGroup.length > 0
-    const status: InvoiceGroup['status'] = allPaid ? 'paid' : anyOverdue ? 'overdue' : anyPaid ? 'partial' : 'pending'
     const depositTotal = Math.round(ps.filter(isDepositPayment).reduce((s, p) => s + p.amount, 0) * 100) / 100
     const total = Math.round(ps.reduce((s, p) => s + p.amount, 0) * 100) / 100
     const rentTotal = Math.round((total - depositTotal) * 100) / 100
@@ -1016,11 +789,22 @@ export default function ContractDetail() {
     const periodLabel = rangeMatch
       ? `${rangeMatch[1]} – ${rangeMatch[2]}`
       : fmtShortDate(new Date(sorted[0].dueDate))
+    // Paid figure: payment records may lag behind money taken straight against
+    // the invoice (recorded in its paymentHistory), so trust whichever is higher.
+    const recordPaid = Math.round(paidInGroup.reduce((s, p) => s + p.amount, 0) * 100) / 100
+    const invoiceDoc = (data?.invoices ?? []).find((i) => String(i._id) === String(invId))
+    const invoicePaid = Math.round(Number(invoiceDoc?.paymentMade ?? 0) * 100) / 100
+    const paidTotal = Math.min(Math.max(recordPaid, invoicePaid), total)
+
+    const allPaid = unpaidInGroup.length === 0 || paidTotal >= total - 0.01
+    const anyPaid = paidTotal > 0
+    const status: InvoiceGroup['status'] = allPaid ? 'paid' : anyOverdue ? 'overdue' : anyPaid ? 'partial' : 'pending'
+
     return {
       invoiceId: invId,
       invoiceRef: ps[0].invoice as { _id: string; invoiceNo: string },
       payments: sorted, unpaidInGroup, paidInGroup,
-      total, paidTotal: Math.round(paidInGroup.reduce((s, p) => s + p.amount, 0) * 100) / 100,
+      total, paidTotal,
       rentTotal, depositTotal, periodLabel,
       earliestDue: new Date(sorted[0].dueDate),
       latestDue: new Date(sorted[sorted.length - 1].dueDate),
@@ -1029,17 +813,7 @@ export default function ContractDetail() {
   }).sort((a, b) => a.earliestDue.getTime() - b.earliestDue.getTime())
 
   const unpaidGroups = invoiceGroups.filter(g => g.status !== 'paid')
-  const paidGroups = invoiceGroups.filter(g => g.status === 'paid')
-  // Upcoming total = rent only (exclude security deposit which is a separate liability)
-  const totalUnpaidGroups = unpaidGroups.reduce((s, g) => {
-    const unpaidRent = g.unpaidInGroup.filter(p => !isDepositPayment(p)).reduce((ss, p) => ss + p.amount, 0)
-    return s + Math.round(unpaidRent * 100) / 100
-  }, 0)
 
-  // Payments with no linked invoice must still show (and be deletable)
-  const standaloneUnpaid = standalonePayments.filter(p => p.status !== 'paid').sort(byDue)
-  const standalonePaid = standalonePayments.filter(p => p.status === 'paid').sort(byDue)
-  const totalStandaloneUnpaid = standaloneUnpaid.filter(p => !isDepositPayment(p)).reduce((s, p) => s + p.amount, 0)
 
   // Deposit-covered invoices: status 'paid', net 0, no payment records linked to them
   const allUnits = c.units?.length ? c.units : c.unit ? [c.unit] : []
