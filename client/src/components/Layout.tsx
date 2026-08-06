@@ -358,7 +358,11 @@ export default function Layout() {
 
       {/* ── Desktop sidebar ─────────────────────────────────────── */}
       <aside className={cn("hidden md:flex fixed inset-y-0 left-0 bg-sidebar text-sidebar-foreground flex-col z-30 shadow-xl transition-all duration-200", collapsed ? 'w-[60px]' : 'w-56')}>
-        <SidebarContent isCollapsed={collapsed} />
+        {/* Called, not rendered as <SidebarContent/>: the function is defined
+            inside Layout, so using it as a component would give React a new
+            type every render and remount the nav — losing its scroll position
+            on every navigation. */}
+        {SidebarContent({ isCollapsed: collapsed })}
         <button
           onClick={() => { setCollapsed(c => { localStorage.setItem('pb_sidebar_collapsed', String(!c)); return !c }) }}
           className="shrink-0 flex items-center justify-center h-10 border-t border-white/10 text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/5 cursor-pointer transition-colors"
@@ -378,7 +382,7 @@ export default function Layout() {
           />
           {/* Drawer */}
           <aside className="relative w-64 max-w-[80vw] bg-sidebar text-sidebar-foreground flex flex-col h-full shadow-2xl">
-            <SidebarContent />
+            {SidebarContent()}
           </aside>
         </div>
       )}
