@@ -1305,7 +1305,7 @@ export default function ContractDetail() {
                 </div>
                 <div className="rounded-lg border px-3 py-2.5 text-center">
                   <div className="text-[10px] font-semibold text-amber-600 uppercase">Remaining</div>
-                  <div className="text-base font-bold text-amber-600 mt-0.5">{formatMoney(Math.max(0, totalOwed - invoiceGroups.reduce((s, g) => s + g.total, 0)))}</div>
+                  <div className="text-base font-bold text-amber-600 mt-0.5">{formatMoney(Math.max(0, totalOwed - (data?.invoices ?? []).reduce((s, inv) => s + Number(inv.paymentMade || 0), 0)))}</div>
                 </div>
               </div>
 
