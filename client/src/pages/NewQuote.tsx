@@ -2570,13 +2570,12 @@ export default function NewQuote() {
                     <button
                       type="button"
                       onClick={() => {
-                        if (paidTotal <= 0) {
-                          setErr('Please record at least one payment before sending for approval.')
-                          return
-                        }
+                        // Payment first is the norm, but don't trap bookings that
+                        // were collected offline or are approved before payment.
+                        if (paidTotal <= 0 && !window.confirm('No payment has been recorded yet. Send this booking for approval anyway?')) return
                         sendForApproval.mutate()
                       }}
-                      disabled={sendForApproval.isPending || paidTotal <= 0}
+                      disabled={sendForApproval.isPending || !contractId}
                       className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90"
                       style={{ background: GREEN }}
                     >
