@@ -1013,6 +1013,34 @@ export default function ContractDetail() {
 
   // Deposit-covered invoices: status 'paid', net 0, no payment records linked to them
   const allUnits = c.units?.length ? c.units : c.unit ? [c.unit] : []
+
+  // Billing plan: split contract term into 4-week periods (matching booking flow)
+  type BillingPeriod = { idx: number; from: Date; to: Date; weeks: number; amount: number; invoice?: InvoiceGroup; coveredByAdvance: boolean }
+  const weeklyRateCalc = Math.round((c.rate / 4) * 100) / 100
+  const billingPlan: BillingPeriod[] = (() => {
+    if (!c.startDate || !c.endDate) return []
+    const start = new Date(c.startDate)
+    const end = new Date(c.endDate)
+    const out: BillingPeriod[] = []
+    let cursor = new Date(start)
+    let i = 0
+    while (cursor < end && i < 40) {
+      const pEnd = new Date(cursor); pEnd.setDate(pEnd.getDate() + 28)
+      const actualEnd = pEnd > end ? end : pEnd
+      const days = Math.round((actualEnd.getTime() - cursor.getTime()) / 86400000)
+      const weeks = Math.max(1, Math.ceil(days / 7))
+      out.push({ idx: i, from: new Date(cursor), to: actualEnd, weeks, amount: Math.round(weeklyRateCalc * weeks * 100) / 100, coveredByAdvance: false })
+      cursor = pEnd
+      i++
+    }
+    if (out.length > 1) out[out.length - 1].coveredByAdvance = true
+    // Match invoices to periods by due date
+    for (const p of out) {
+      p.invoice = invoiceGroups.find(g => Math.abs(g.earliestDue.getTime() - p.from.getTime()) < 4 * 86400000)
+    }
+    return out
+  })()
+
   const unitLabel = allUnits.length > 1
     ? `Units: ${allUnits.map((u) => u?.unitNumber ?? '—').join(', ')}`
     : allUnits.length === 1
@@ -1426,95 +1454,107 @@ export default function ContractDetail() {
           {/* PAYMENTS */}
           {activeTab === 'payments' && (
             <Card>
-              <CardHeader title="Payment schedule"
-                subtitle={payments.length === 0 ? 'No invoices yet' : `${paidGroups.length} of ${invoiceGroups.length} invoice${invoiceGroups.length !== 1 ? 's' : ''} paid · ${formatMoney(totalPaid)} collected`}
+              <CardHeader title="Billing Plan"
+                subtitle={`${formatDate(c.startDate)} → ${formatDate(c.endDate)} · ${billingPlan.length} period${billingPlan.length !== 1 ? 's' : ''}`}
                 action={
                   <Button size="sm" variant="outline" onClick={() => setShowInvoiceModal(true)}><FilePlus size={13} /> Invoice</Button>
                 }
               />
-              {payments.length === 0 ? (
-                <CardBody><p className="text-sm text-muted-foreground text-center py-6">No payments yet. Use the <strong>Invoice</strong> button to generate an invoice.</p></CardBody>
-              ) : (
-                <Table>
-                  <thead><tr><Th>#</Th><Th>Invoice</Th><Th>Period</Th><Th>Amount</Th><Th>Status</Th><Th /></tr></thead>
+              <div className="divide-y">
+                {billingPlan.map((period) => {
+                  const inv = period.invoice
+                  const isPaid = inv?.status === 'paid'
+                  const isPending = inv && !isPaid
+                  const periodEndDisplay = new Date(period.to); periodEndDisplay.setDate(periodEndDisplay.getDate() - 1)
+                  const statusLabel = period.coveredByAdvance
+                    ? 'Covered by advance deposit'
+                    : isPaid ? 'Paid'
+                    : isPending ? `Pending`
+                    : 'Not invoiced yet'
+                  const statusTone = period.coveredByAdvance
+                    ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/30 dark:text-purple-400'
+                    : isPaid ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400'
+                    : isPending ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400'
+                    : 'bg-muted text-muted-foreground'
+
+                  return (
+                    <div key={period.idx} className="px-4 py-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${isPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-primary/10 text-primary'}`}>
+                            {isPaid ? '✓' : period.idx + 1}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold">
+                              Month {period.idx + 1}
+                              {inv && <span className="ml-2 text-xs font-semibold text-muted-foreground">{inv.invoiceRef.invoiceNo}</span>}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatDate(period.from.toISOString())} – {formatDate(periodEndDisplay.toISOString())} · {period.weeks} wk{period.weeks !== 1 ? 's' : ''}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-sm font-bold">{formatMoney(inv ? inv.total : period.amount)} AED</span>
+                          <span className={`text-[10px] font-semibold px-2 py-1 rounded-full whitespace-nowrap ${statusTone}`}>
+                            {statusLabel}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      {inv && !isPaid && !period.coveredByAdvance && (
+                        <div className="flex flex-wrap items-center gap-1.5 mt-2 ml-9">
+                          <button onClick={() => { if (inv.unpaidInGroup.length === 1) setRecordingPayment(inv.unpaidInGroup[0]); else setBulkTarget(inv.unpaidInGroup) }}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-primary text-primary-foreground cursor-pointer">
+                            Record · {formatMoney(inv.total - inv.paidTotal)} AED
+                          </button>
+                          <button onClick={() => { setSendingInvoiceId(inv.invoiceId); sendInvoiceWhatsApp.mutate(inv.invoiceId) }}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border cursor-pointer hover:bg-muted/50">
+                            WhatsApp
+                          </button>
+                          <button onClick={() => { if (confirm(`Delete invoice ${inv.invoiceRef.invoiceNo}?`)) deleteInvoiceGroup.mutate(inv.invoiceId) }}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border text-destructive cursor-pointer hover:bg-muted/50">
+                            Delete
+                          </button>
+                        </div>
+                      )}
+                      {!inv && !period.coveredByAdvance && (
+                        <div className="mt-2 ml-9">
+                          <Button size="sm" variant="outline" onClick={() => {
+                            const toISO = (d: Date) => d.toISOString().slice(0, 10)
+                            setInvoiceOverride({ start: toISO(period.from), end: toISO(period.to) })
+                            setShowInvoiceModal(true)
+                          }}>
+                            <FilePlus size={12} /> Create invoice · {formatMoney(period.amount)} AED
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+              {/* Summary */}
+              <div className="border-t mx-0">
+                <table className="w-full text-sm">
                   <tbody>
-                    {(unpaidGroups.length > 0 || standaloneUnpaid.length > 0) && (
-                      <>
-                        <SectionRow label="Upcoming" count={unpaidGroups.length + standaloneUnpaid.length} total={totalUnpaidGroups + totalStandaloneUnpaid} tone="amber" />
-                        {unpaidGroups.map((g, i) => (
-                          <InvoiceGroupRow key={g.invoiceId} g={g} index={i + 1}
-                            onRecord={() => { if (g.unpaidInGroup.length === 1) setRecordingPayment(g.unpaidInGroup[0]); else setBulkTarget(g.unpaidInGroup) }}
-                            onDelete={() => { if (confirm(`Delete invoice ${g.invoiceRef.invoiceNo} and all its payments?`)) deleteInvoiceGroup.mutate(g.invoiceId) }}
-                            onSendWhatsApp={() => { setSendingInvoiceId(g.invoiceId); sendInvoiceWhatsApp.mutate(g.invoiceId) }}
-                            sendingInvoice={sendInvoiceWhatsApp.isPending && sendingInvoiceId === g.invoiceId}
-                            onGenerateForRemaining={() => {
-                              const unpaidDates = g.unpaidInGroup.map(p => new Date(p.dueDate).getTime())
-                              const firstUnpaid = new Date(Math.min(...unpaidDates))
-                              const lastUnpaid = new Date(Math.max(...unpaidDates))
-                              lastUnpaid.setDate(lastUnpaid.getDate() + 7)
-                              const toISO = (d: Date) => d.toISOString().slice(0, 10)
-                              setInvoiceOverride({ start: toISO(firstUnpaid), end: toISO(lastUnpaid) })
-                              setShowInvoiceModal(true)
-                            }}
-                          />
-                        ))}
-                        {standaloneUnpaid.map((p) => (
-                          <PaymentRow key={p._id} p={p} index={0} rate={c.rate} isFirstForInvoice={false}
-                            onRecord={() => setRecordingPayment(p)} onEdit={() => setEditingPayment(p)}
-                            onUnrecord={() => { if (confirm('Unrecord this payment?')) unrecordPayment.mutate(p._id) }}
-                            onDelete={() => { if (confirm('Delete this payment?')) deletePayment.mutate(p._id) }}
-                            onSendInvoiceWhatsApp={() => { }} sendingInvoice={false}
-                          />
-                        ))}
-                      </>
-                    )}
-                    {(paidGroups.length > 0 || standalonePaid.length > 0) && (
-                      <>
-                        <SectionRow label="Paid" count={paidGroups.length + standalonePaid.length} total={totalPaid} tone="green" />
-                        {paidGroups.map((g, i) => (
-                          <InvoiceGroupRow key={g.invoiceId} g={g} index={unpaidGroups.length + i + 1}
-                            onRecord={() => { }}
-                            onDelete={() => { if (confirm(`Delete invoice ${g.invoiceRef.invoiceNo} and all its payments?`)) deleteInvoiceGroup.mutate(g.invoiceId) }}
-                            onSendWhatsApp={() => { setSendingInvoiceId(g.invoiceId); sendInvoiceWhatsApp.mutate(g.invoiceId) }}
-                            sendingInvoice={sendInvoiceWhatsApp.isPending && sendingInvoiceId === g.invoiceId}
-                          />
-                        ))}
-                        {standalonePaid.map((p) => (
-                          <PaymentRow key={p._id} p={p} index={0} rate={c.rate} isFirstForInvoice={false}
-                            onRecord={() => setRecordingPayment(p)} onEdit={() => setEditingPayment(p)}
-                            onUnrecord={() => { if (confirm('Unrecord this payment?')) unrecordPayment.mutate(p._id) }}
-                            onDelete={() => { if (confirm('Delete this payment?')) deletePayment.mutate(p._id) }}
-                            onSendInvoiceWhatsApp={() => { }} sendingInvoice={false}
-                          />
-                        ))}
-                      </>
+                    <tr>
+                      <td className="px-4 py-2 text-muted-foreground" colSpan={4}>Total Invoiced</td>
+                      <td className="px-4 py-2 text-right font-medium" colSpan={2}>AED {formatMoney(totalOwed)}</td>
+                    </tr>
+                    <tr className="bg-emerald-50/50 dark:bg-emerald-950/10">
+                      <td className="px-4 py-2 text-emerald-700 dark:text-emerald-400 font-medium" colSpan={4}>Total Received</td>
+                      <td className="px-4 py-2 text-right font-bold text-emerald-700 dark:text-emerald-400" colSpan={2}>AED {formatMoney(totalPaid)}</td>
+                    </tr>
+                    {(totalOverdue + totalPending) > 0 && (
+                      <tr className="bg-red-50/50 dark:bg-red-950/10 border-t">
+                        <td className="px-4 py-2 text-red-600 dark:text-red-400 font-medium" colSpan={4}>Balance Due</td>
+                        <td className="px-4 py-2 text-right font-bold text-red-600 dark:text-red-400" colSpan={2}>AED {formatMoney(totalOwed - totalPaid)}</td>
+                      </tr>
                     )}
                   </tbody>
-                </Table>
-              )}
-              {/* Summary */}
-              {payments.length > 0 && (
-                <div className="border-t mx-0">
-                  <table className="w-full text-sm">
-                    <tbody>
-                      <tr>
-                        <td className="px-4 py-2 text-muted-foreground" colSpan={4}>Total Invoiced</td>
-                        <td className="px-4 py-2 text-right font-medium" colSpan={2}>AED {formatMoney(totalOwed)}</td>
-                      </tr>
-                      <tr className="bg-emerald-50/50 dark:bg-emerald-950/10">
-                        <td className="px-4 py-2 text-emerald-700 dark:text-emerald-400 font-medium" colSpan={4}>Total Received</td>
-                        <td className="px-4 py-2 text-right font-bold text-emerald-700 dark:text-emerald-400" colSpan={2}>AED {formatMoney(totalPaid)}</td>
-                      </tr>
-                      {(totalOverdue + totalPending) > 0 && (
-                        <tr className="bg-red-50/50 dark:bg-red-950/10 border-t">
-                          <td className="px-4 py-2 text-red-600 dark:text-red-400 font-medium" colSpan={4}>Balance Due</td>
-                          <td className="px-4 py-2 text-right font-bold text-red-600 dark:text-red-400" colSpan={2}>AED {formatMoney(totalOwed - totalPaid)}</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                </table>
+              </div>
             </Card>
           )}
 
