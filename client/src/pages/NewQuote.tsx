@@ -288,14 +288,20 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
       cursor = pEnd
       i++
     }
-    // Mark last periods totaling up to 4 weeks as covered by advance deposit
+    // Mark last periods as covered by advance deposit (always 4 weeks)
+    // and reduce partially-overlapping periods
     if (out.length > 1) {
       let advWeeksLeft = 4
       for (let j = out.length - 1; j >= 1 && advWeeksLeft > 0; j--) {
         if (out[j].weeks <= advWeeksLeft) {
           out[j].coveredByAdvance = true
           advWeeksLeft -= out[j].weeks
-        } else break
+        } else {
+          // Partial overlap: reduce this period's billable weeks
+          out[j].weeks -= advWeeksLeft
+          out[j].amount = Math.round(weeklyRate * out[j].weeks * 100) / 100
+          advWeeksLeft = 0
+        }
       }
     }
     // Match each period to the CLOSEST invoice by due date, and let an invoice
