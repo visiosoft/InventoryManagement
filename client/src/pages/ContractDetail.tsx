@@ -918,7 +918,7 @@ export default function ContractDetail() {
   const waUrl = waPhone ? `https://wa.me/${waPhone}?text=${encodeURIComponent(waText)}` : `https://wa.me/?text=${encodeURIComponent(waText)}`
 
   // Activity feed
-  type ActivityEvent = { id: string; type: 'overdue' | 'paid' | 'note'; at: Date; title: string; subtitle: string; noteIdx?: number }
+  type ActivityEvent = { id: string; type: 'overdue' | 'paid' | 'note' | 'invoice' | 'document'; at: Date; title: string; subtitle: string; noteIdx?: number }
   const activityEvents: ActivityEvent[] = []
   // Group paid payments by invoice — show one activity row per invoice (month), not per week
   const paidByInvoice = new Map<string, typeof paid>()
@@ -935,11 +935,25 @@ export default function ContractDetail() {
       const d = new Date(p.paidDate ?? p.dueDate)
       return d > latest ? d : latest
     }, new Date(0))
-    const period = inv?.invoiceNo ? ` · ${inv.invoiceNo}` : ''
-    activityEvents.push({ id: `paid-${group[0]._id}`, type: 'paid', at: latestPaid, title: 'Payment received', subtitle: `${c.paymentMethod ?? 'Cash'}${period} · ${formatMoney(total)}` })
+    const period = inv?.invoiceNo ? `\n · ${inv.invoiceNo} · ${formatMoney(total)}` : ` · ${formatMoney(total)}`
+    activityEvents.push({ id: `paid-${group[0]._id}`, type: 'paid', at: latestPaid, title: 'Payment received', subtitle: period })
   }
+  // Timeline notes (includes contract creation, approval, signing, etc.)
   for (const [noteIdx, note] of (c.timeline ?? []).entries()) {
     activityEvents.push({ id: `note-${noteIdx}-${note.at}`, type: 'note', at: new Date(note.at), title: note.text, subtitle: note.author ? `by ${note.author}` : '', noteIdx })
+  }
+  // Invoice creation events
+  const allInvoices = data?.invoices ?? []
+  for (const inv of allInvoices) {
+    if (inv.createdAt) {
+      activityEvents.push({ id: `inv-${inv._id}`, type: 'invoice', at: new Date(inv.createdAt), title: `Invoice ${inv.invoiceNo} created`, subtitle: `${formatMoney(inv.total)} AED` })
+    }
+  }
+  // Document upload events
+  for (const doc of documents) {
+    if (doc.createdAt) {
+      activityEvents.push({ id: `doc-${doc._id}`, type: 'document', at: new Date(doc.createdAt), title: `Document uploaded`, subtitle: doc.name })
+    }
   }
   activityEvents.sort((a, b) => b.at.getTime() - a.at.getTime())
 
@@ -1200,8 +1214,15 @@ export default function ContractDetail() {
                       <div className="divide-y">
                         {activityEvents.map((ev) => (
                           <div key={ev.id} className="flex gap-3 py-3">
-                            <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${ev.type === 'paid' ? 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600' : 'bg-muted text-muted-foreground'}`}>
+                            <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+                              ev.type === 'paid' ? 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600'
+                              : ev.type === 'invoice' ? 'bg-blue-100 dark:bg-blue-950/40 text-blue-600'
+                              : ev.type === 'document' ? 'bg-purple-100 dark:bg-purple-950/40 text-purple-600'
+                              : 'bg-muted text-muted-foreground'
+                            }`}>
                               {ev.type === 'paid' && <CheckCircle2 size={15} />}
+                              {ev.type === 'invoice' && <FileText size={15} />}
+                              {ev.type === 'document' && <Upload size={15} />}
                               {ev.type === 'note' && <MessageSquare size={15} />}
                             </div>
                             <div className="flex-1 min-w-0">
