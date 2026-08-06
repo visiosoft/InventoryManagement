@@ -1647,18 +1647,29 @@ export default function ContractDetail() {
         </div>
       </Modal>
 
-      {/* ── Edit Tenant Modal ── */}
-      <Modal open={editCustomerModal} onClose={() => setEditCustomerModal(false)} title={`Edit ${c.customer?.fullName ?? 'tenant'}`} wide>
-        {editCustomerModal && c.customer && (
-          <CustomerForm
-            initial={c.customer}
-            busy={updateCustomer.isPending}
-            error={customerError}
-            submitLabel="Save changes"
-            onSubmit={(b) => updateCustomer.mutate(b)}
-          />
-        )}
-      </Modal>
+      {/* ── Edit Tenant slide-over panel ── */}
+      {editCustomerModal && c.customer && (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/20" onClick={() => setEditCustomerModal(false)} />
+          <div className="absolute right-0 top-0 h-full w-full max-w-md bg-white dark:bg-gray-900 shadow-xl overflow-y-auto animate-in slide-in-from-right">
+            <div className="sticky top-0 bg-white dark:bg-gray-900 border-b px-5 py-4 flex items-center justify-between z-10">
+              <h2 className="text-lg font-bold" style={{ fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em', color: '#14081F' }}>
+                Edit {c.customer.fullName}
+              </h2>
+              <button onClick={() => setEditCustomerModal(false)} className="p-1 hover:bg-muted rounded cursor-pointer"><X size={18} /></button>
+            </div>
+            <div className="p-5">
+              <CustomerForm
+                initial={c.customer}
+                busy={updateCustomer.isPending}
+                error={customerError}
+                submitLabel="Save changes"
+                onSubmit={(b) => updateCustomer.mutate(b)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Edit Contract Modal ── */}
       <Modal open={editModal} onClose={() => setEditModal(false)} title="Edit Contract" wide>
