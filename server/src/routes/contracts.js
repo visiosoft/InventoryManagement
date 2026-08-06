@@ -291,6 +291,35 @@ router.get('/:id', async (req, res) => {
     }
   }
 
+  // Reconcile each invoice's paid figure against its payment history and linked
+  // payment records — the same rule the invoice detail endpoint applies — so the
+  // billing plan shows the true outstanding balance instead of a stale total.
+  for (const inv of invoices) {
+    const historySum = Math.round(
+      (inv.paymentHistory || []).reduce((s, p) => s + Number(p.amount || 0), 0) * 100
+    ) / 100;
+    const linkedPaid = Math.round(
+      paymentsArr
+        .filter((p) => {
+          const pid = p.invoice?._id ? String(p.invoice._id) : String(p.invoice);
+          return pid === String(inv._id) && p.status === 'paid';
+        })
+        .reduce((s, p) => s + Number(p.amount || 0), 0) * 100
+    ) / 100;
+    const invTotal = Number(inv.total || 0);
+    const correctPaid = Math.round(Math.min(Math.max(historySum, linkedPaid), invTotal) * 100) / 100;
+
+    const updates = {};
+    if (Math.abs(correctPaid - Number(inv.paymentMade || 0)) > 0.01) updates.paymentMade = correctPaid;
+    if (correctPaid >= invTotal && invTotal > 0 && inv.status !== 'paid') updates.status = 'paid';
+    else if (correctPaid > 0 && correctPaid < invTotal && inv.status === 'paid') updates.status = 'partial';
+
+    if (Object.keys(updates).length) {
+      await Invoice.findByIdAndUpdate(inv._id, { $set: updates });
+      Object.assign(inv, updates);
+    }
+  }
+
   res.json({ contract, payments: paymentsArr, documents, invoices });
 });
 

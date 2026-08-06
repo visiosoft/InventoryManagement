@@ -983,7 +983,8 @@ export default function ContractDetail() {
 
 
   const totalPaid = paid.reduce((s, p) => s + p.amount, 0)
-  const totalOwed = Number(c.totalQuotation || 0) || payments.reduce((s, p) => s + p.amount, 0)
+  const paymentsTotal = payments.reduce((s, p) => s + p.amount, 0)
+  const totalOwed = Math.max(Number(c.totalQuotation || 0), paymentsTotal)
   // Exclude security deposit records from rent totals — deposit is a separate liability
   const isDepositPayment = (p: Payment) => /^security deposit/i.test(p.notes || '')
   const totalPending = pending.filter(p => !isDepositPayment(p)).reduce((s, p) => s + p.amount, 0)
