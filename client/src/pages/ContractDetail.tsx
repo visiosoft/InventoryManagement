@@ -789,6 +789,18 @@ export default function ContractDetail() {
     else standalonePayments.push(p)
   }
   const fmtShortDate = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  const invoiceDocFor = (invId: string) => (data?.invoices ?? []).find((i) => String(i._id) === String(invId))
+
+  // "17 Jul 2026 – 13 Aug 2026" out of a note or line description. "Sept" is
+  // written by the PDF/invoice builders but Date only parses "Sep".
+  const parseDateRange = (text: string): { start: Date; end: Date } | null => {
+    const m = String(text || '').match(/(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})\s*[–-]\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})/)
+    if (!m) return null
+    const norm = (s: string) => s.replace(/Sept\b/i, 'Sep')
+    const start = new Date(norm(m[1]))
+    const end = new Date(norm(m[2]))
+    return Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) ? null : { start, end }
+  }
 
   const invoiceGroups: InvoiceGroup[] = Array.from(groupMap.entries()).map(([invId, ps]) => {
     const sorted = [...ps].sort(byDue)
@@ -868,8 +880,14 @@ export default function ContractDetail() {
       let bestGap = Infinity
       for (const g of invoiceGroups) {
         if (claimed.has(g.invoiceId)) continue
-        const gap = Math.abs(g.earliestDue.getTime() - p.from.getTime())
-        if (gap < 4 * 86400000 && gap < bestGap) { best = g; bestGap = gap }
+        // Prefer the period the invoice bills; fall back to its due date when
+        // it doesn't state one. An anchor landing anywhere inside the period
+        // counts, since a due date is often just "today" rather than the
+        // period's start — closest to the start still wins.
+        const anchor = g.periodStart ?? g.earliestDue
+        const withinPeriod = anchor >= p.from && anchor < p.to
+        const gap = Math.abs(anchor.getTime() - p.from.getTime())
+        if ((withinPeriod || gap < 4 * 86400000) && gap < bestGap) { best = g; bestGap = gap }
       }
       if (best) { p.invoice = best; claimed.add(best.invoiceId) }
     }

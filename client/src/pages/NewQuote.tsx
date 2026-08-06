@@ -298,8 +298,12 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
       let bestGap = Infinity
       for (const inv of sorted) {
         if (claimed.has(inv._id) || !inv.dueDate) continue
-        const gap = Math.abs(new Date(inv.dueDate).getTime() - p.from.getTime())
-        if (gap < 4 * 86400000 && gap < bestGap) { best = inv; bestGap = gap }
+        // A due date inside the period counts as belonging to it — invoices are
+        // often raised mid-period with "today" as the due date.
+        const due = new Date(inv.dueDate)
+        const withinPeriod = due >= p.from && due < p.to
+        const gap = Math.abs(due.getTime() - p.from.getTime())
+        if ((withinPeriod || gap < 4 * 86400000) && gap < bestGap) { best = inv; bestGap = gap }
       }
       if (best) { p.invoice = best; claimed.add(best._id) }
     }

@@ -1044,7 +1044,10 @@ router.post('/:id/generate-custom-invoice', async (req, res) => {
     subTotal, total: subTotal, paymentMade: 0, status: 'sent',
   });
 
-  // One payment record covering what was actually invoiced
+  // One payment record covering what was actually invoiced. The billed period
+  // is always recorded, since the due date can be any day (typically today)
+  // and the billing plan needs to know which month this invoice belongs to.
+  const periodTag = `${fmt(start)} – ${displayEnd}`;
   await Payment.create({
     contract: contract._id,
     invoice: invoice._id,
@@ -1052,8 +1055,8 @@ router.post('/:id/generate-custom-invoice', async (req, res) => {
     dueDate: dueDate ? new Date(dueDate) : start,
     status: 'pending',
     notes: explicitItems.length
-      ? `${finalItems[0].itemDetails} · Unit ${unitNo}`
-      : `Storage Rent ${fmt(start)} – ${displayEnd} · Unit ${unitNo}`,
+      ? `${finalItems[0].itemDetails} · ${periodTag} · Unit ${unitNo}`
+      : `Storage Rent ${periodTag} · Unit ${unitNo}`,
   });
 
   // If first invoice, also add the deposit payment record. Skipped for custom

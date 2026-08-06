@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Paperclip, Plus, Search, Trash2, X } from 'lucide-react'
+import { Paperclip, Search, Trash2, X } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import type { Contract } from '../lib/types'
 import {
@@ -210,26 +210,6 @@ export default function Contracts() {
               {deleteManyContracts.isPending ? 'Deleting…' : `Delete selected (${selectedContractIds.length})`}
             </button>
           )}
-          <Link to="/contracts/new">
-            <button
-              style={{
-                background: PURPLE,
-                color: '#fff',
-                border: 'none',
-                borderRadius: 12,
-                padding: '10px 22px',
-                fontWeight: 700,
-                fontSize: 14,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                ...HEADING,
-              }}
-            >
-              <Plus size={15} /> New Contract
-            </button>
-          </Link>
         </div>
       </div>
 
