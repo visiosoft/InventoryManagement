@@ -1042,7 +1042,8 @@ export default function ContractDetail() {
   // Document upload events
   for (const doc of documents) {
     if (doc.createdAt) {
-      activityEvents.push({ id: `doc-${doc._id}`, type: 'document', at: new Date(doc.createdAt), title: `Document uploaded`, subtitle: doc.name })
+      const typeLabel = doc.type && doc.type !== 'other' ? ` · ${statusLabel(doc.type)}` : ''
+      activityEvents.push({ id: `doc-${doc._id}`, type: 'document', at: new Date(doc.createdAt), title: `Document uploaded${typeLabel}`, subtitle: doc.name })
     }
   }
   activityEvents.sort((a, b) => b.at.getTime() - a.at.getTime())
