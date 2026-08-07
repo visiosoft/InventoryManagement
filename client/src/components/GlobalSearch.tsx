@@ -107,11 +107,22 @@ export default function GlobalSearch() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  function go(row: Row) {
-    navigate(row.kind === 'contract' ? `/contracts/${row.id}` : `/customers/${row.id}`)
+  async function go(row: Row) {
     setOpen(false)
     setTerm('')
     inputRef.current?.blur()
+    if (row.kind === 'contract') {
+      navigate(`/contracts/${row.id}`)
+      return
+    }
+    // Tenants have no page of their own — go to their latest contract instead
+    try {
+      const r = await api.get('/contracts', { params: { customer: row.id, limit: 1, archived: 'all' } })
+      const contract = (r.data?.data ?? [])[0]
+      navigate(contract ? `/contracts/${contract._id}` : `/customers?search=${encodeURIComponent(row.title)}`)
+    } catch {
+      navigate(`/customers?search=${encodeURIComponent(row.title)}`)
+    }
   }
 
   function onKeyDown(e: React.KeyboardEvent) {

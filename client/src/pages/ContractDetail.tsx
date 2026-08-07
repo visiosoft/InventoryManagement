@@ -79,7 +79,6 @@ function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, 
   }
 
   const [lineItems, setLineItems] = useState<LineItem[]>(buildDefaultItems())
-  const [discount, setDiscount] = useState(0)
   const [includeVat, setIncludeVat] = useState(false)
   const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState(false)
@@ -104,7 +103,7 @@ function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, 
 
   const subtotal = Math.round(lineItems.reduce((s, it) => s + it.amount, 0) * 100) / 100
   const totalDiscount = Math.round(lineItems.reduce((s, it) => s + it.amount * (it.discountPct / 100), 0) * 100) / 100
-  const afterDiscount = Math.round((subtotal - totalDiscount) * (1 - discount / 100) * 100) / 100
+  const afterDiscount = Math.round((subtotal - totalDiscount) * 100) / 100
   const vatAmount = includeVat ? Math.round(afterDiscount * 0.05 * 100) / 100 : 0
   const total = Math.round((afterDiscount + vatAmount) * 100) / 100
 
@@ -118,7 +117,6 @@ function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, 
       const validItems = lineItems.filter(it => it.description.trim() && it.amount > 0)
       await api.post(`/contracts/${contract._id}/generate-custom-invoice`, {
         startDate, endDate, dueDate, notes,
-        discountPct: discount,
         // Send the lines as entered — the server bills these verbatim
         items: validItems.map(it => ({
           description: it.description.trim(), quantity: it.qty, rate: it.rate, amount: it.amount,

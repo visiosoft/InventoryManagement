@@ -400,106 +400,105 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
                     <button onClick={onClose} className="text-muted-foreground hover:text-foreground cursor-pointer"><X size={18} /></button>
                 </div>
                 <div className="p-5">
-            <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                    <Field label="Due Date">
-                        <Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
-                    </Field>
-                    <Field label="Subject">
-                        <Input value={subject} onChange={e => setSubject(e.target.value)} />
-                    </Field>
-                </div>
+                    <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                            <Field label="Due Date">
+                                <Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+                            </Field>
+                            <Field label="Subject">
+                                <Input value={subject} onChange={e => setSubject(e.target.value)} />
+                            </Field>
+                        </div>
 
-                <div>
-                    <div className="text-xs font-semibold text-muted-foreground mb-2">Line items</div>
-                    <div className="rounded-lg border overflow-hidden">
-                        <table className="w-full text-sm">
-                            <thead className="bg-muted/50">
-                                <tr>
-                                    <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Description</th>
-                                    <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground w-16">Qty</th>
-                                    <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground w-24">Rate</th>
-                                    <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground w-24">Discount %</th>
-                                    <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground w-28">Amount (AED)</th>
-                                    <th className="w-8" />
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {items.map((it, idx) => {
-                                    const isWeekly = String(it.itemDetails).startsWith('Week ')
-                                    return (
-                                        <tr key={idx} className="border-t hover:bg-muted/30">
-                                            <td className="px-3 py-2">
-                                                {isWeekly
-                                                    ? <span className="text-xs text-muted-foreground">{it.itemDetails}</span>
-                                                    : <Input value={it.itemDetails} onChange={e => updateDesc(idx, e.target.value)}
-                                                        placeholder="Description" className="h-7 text-xs" />
-                                                }
-                                                <Input value={it.description || ''} onChange={e => setItems(prev => prev.map((item, i) => i !== idx ? item : { ...item, description: e.target.value }))}
-                                                    placeholder="Sub-detail / additional info" className="h-6 text-[11px] mt-1 text-muted-foreground" />
-                                            </td>
-                                            <td className="px-3 py-2 text-right text-muted-foreground text-xs">
-                                                {/^(Storage Rent|Refundable \/ Adjustable Security Deposit)/.test(it.itemDetails ?? '') ? '1' : '—'}
-                                            </td>
-                                            <td className="px-3 py-2 text-right text-muted-foreground text-xs">
-                                                {it.rate > 0 ? formatMoney(it.rate) : '—'}
-                                            </td>
-                                            <td className="px-3 py-2 text-right">
-                                                {isWeekly
-                                                    ? <Input type="number" min={0} max={100} value={it.discountPct}
-                                                        onChange={e => updateDiscount(idx, Number(e.target.value))}
-                                                        className="h-7 text-xs w-20 ml-auto text-right" />
-                                                    : <span className="text-muted-foreground text-xs">—</span>
-                                                }
-                                            </td>
-                                            <td className="px-3 py-2 text-right">
-                                                {isWeekly
-                                                    ? <span className="font-medium text-xs">{formatMoney(it.amount)}</span>
-                                                    : <Input type="number" min={0} step="0.01" value={it.amount}
-                                                        onChange={e => updateAmount(idx, Number(e.target.value))}
-                                                        className="h-7 text-xs w-24 ml-auto text-right" />
-                                                }
-                                            </td>
-                                            <td className="px-3 py-2 text-center">
-                                                {!isWeekly && (
-                                                    <button onClick={() => removeItem(idx)}
-                                                        className="text-destructive hover:opacity-70 text-xs cursor-pointer">✕</button>
-                                                )}
-                                            </td>
+                        <div>
+                            <div className="text-xs font-semibold text-muted-foreground mb-2">Line items</div>
+                            <div className="rounded-lg border overflow-hidden">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-muted/50">
+                                        <tr>
+                                            <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Description</th>
+                                            <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground w-16">Qty</th>
+                                            <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground w-24">Rate</th>
+                                            <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground w-24">Discount %</th>
+                                            <th className="text-right px-3 py-2 text-xs font-medium text-muted-foreground w-28">Amount (AED)</th>
+                                            <th className="w-8" />
                                         </tr>
-                                    )
-                                })}
-                            </tbody>
-                            <tfoot>
-                                <tr className="border-t bg-muted/30">
-                                    <td colSpan={4} className="px-3 py-2">
-                                        <button onClick={addExtra} className="text-xs text-primary hover:underline cursor-pointer">
-                                            + Add extra charge / credit
-                                        </button>
-                                    </td>
-                                    <td className="px-3 py-2 text-right font-semibold text-sm">AED {formatMoney(subTotal)}</td>
-                                    <td />
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                </div>
+                                    </thead>
+                                    <tbody>
+                                        {items.map((it, idx) => {
+                                            const isWeekly = String(it.itemDetails).startsWith('Week ')
+                                            return (
+                                                <tr key={idx} className="border-t hover:bg-muted/30">
+                                                    <td className="px-3 py-2">
+                                                        {isWeekly
+                                                            ? <span className="text-xs text-muted-foreground">{it.itemDetails}</span>
+                                                            : <Input value={it.itemDetails} onChange={e => updateDesc(idx, e.target.value)}
+                                                                placeholder="Description" className="h-7 text-xs" />
+                                                        }
+                                                        <Input value={it.description || ''} onChange={e => setItems(prev => prev.map((item, i) => i !== idx ? item : { ...item, description: e.target.value }))}
+                                                            placeholder="Sub-detail / additional info" className="h-6 text-[11px] mt-1 text-muted-foreground" />
+                                                    </td>
+                                                    <td className="px-3 py-2 text-right text-muted-foreground text-xs">
+                                                        {/^(Storage Rent|Refundable \/ Adjustable Security Deposit)/.test(it.itemDetails ?? '') ? '1' : '—'}
+                                                    </td>
+                                                    <td className="px-3 py-2 text-right text-muted-foreground text-xs">
+                                                        {it.rate > 0 ? formatMoney(it.rate) : '—'}
+                                                    </td>
+                                                    <td className="px-3 py-2 text-right">
+                                                        {isWeekly
+                                                            ? <Input type="number" min={0} max={100} value={it.discountPct}
+                                                                onChange={e => updateDiscount(idx, Number(e.target.value))}
+                                                                className="h-7 text-xs w-20 ml-auto text-right" />
+                                                            : <span className="text-muted-foreground text-xs">—</span>
+                                                        }
+                                                    </td>
+                                                    <td className="px-3 py-2 text-right">
+                                                        {isWeekly
+                                                            ? <span className="font-medium text-xs">{formatMoney(it.amount)}</span>
+                                                            : <Input type="number" min={0} step="0.01" value={it.amount}
+                                                                onChange={e => updateAmount(idx, Number(e.target.value))}
+                                                                className="h-7 text-xs w-24 ml-auto text-right" />
+                                                        }
+                                                    </td>
+                                                    <td className="px-3 py-2 text-center">
+                                                        {!isWeekly && (
+                                                            <button onClick={() => removeItem(idx)}
+                                                                className="text-destructive hover:opacity-70 text-xs cursor-pointer">✕</button>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            )
+                                        })}
+                                    </tbody>
+                                    <tfoot>
+                                        <tr className="border-t bg-muted/30">
+                                            <td colSpan={4} className="px-3 py-2">
+                                                <button onClick={addExtra} className="text-xs text-primary hover:underline cursor-pointer">
+                                                    + Add extra charge / credit
+                                                </button>
+                                            </td>
+                                            <td className="px-3 py-2 text-right font-semibold text-sm">AED {formatMoney(subTotal)}</td>
+                                            <td />
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        </div>
 
-                <Field label="Notes">
-                    <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Customer notes / memo" />
-                </Field>
+                        <Field label="Notes">
+                            <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Customer notes / memo" />
+                        </Field>
 
-                <div className="flex items-center justify-between pt-3 border-t">
-                    {err && <p className="text-xs text-destructive">{err}</p>}
-                    <div className="flex gap-2 ml-auto">
-                        <Button variant="outline" onClick={onClose}>Cancel</Button>
-                        <Button onClick={() => save.mutate()} disabled={save.isPending}>
-                            {save.isPending ? 'Saving…' : 'Save changes'}
-                        </Button>
+                        <div className="flex items-center justify-between pt-3 border-t">
+                            {err && <p className="text-xs text-destructive">{err}</p>}
+                            <div className="flex gap-2 ml-auto">
+                                <Button variant="outline" onClick={onClose}>Cancel</Button>
+                                <Button onClick={() => save.mutate()} disabled={save.isPending}>
+                                    {save.isPending ? 'Saving…' : 'Save changes'}
+                                </Button>
+                            </div>
+                        </div>
                     </div>
-                </div>
-                </div>
-            </div>
                 </div>
             </div>
         </div>
