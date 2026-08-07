@@ -130,7 +130,8 @@ export async function uploadFile({ buffer, filename, mimeType, customerName }) {
     supportsAllDrives: true,
   });
 
-  return { storage: 'drive', driveFileId: data.id, url: data.webViewLink };
+  const url = `https://drive.google.com/uc?export=download&id=${data.id}`;
+  return { storage: 'drive', driveFileId: data.id, url, viewUrl: data.webViewLink };
 }
 
 export async function uploadToVendorFolder({ buffer, filename, mimeType, vendorName }) {
@@ -151,5 +152,6 @@ export async function uploadToVendorFolder({ buffer, filename, mimeType, vendorN
     supportsAllDrives: true,
   });
 
-  return { storage: 'drive', driveFileId: data.id, url: data.webViewLink, viewUrl: data.webViewLink };
+  const url = `https://drive.google.com/uc?export=download&id=${data.id}`;
+  return { storage: 'drive', driveFileId: data.id, url, viewUrl: data.webViewLink };
 }
