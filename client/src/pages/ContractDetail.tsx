@@ -1400,26 +1400,6 @@ export default function ContractDetail() {
               <CardHeader title="Invoices"
                 action={<Button size="sm" variant="outline" onClick={() => setShowInvoiceModal(true)}><FilePlus size={13} /> Create Invoice</Button>}
               />
-              {/* Summary bar */}
-              <div className="grid grid-cols-4 gap-3 px-4 pb-4">
-                <div className="rounded-lg border px-3 py-2.5 text-center">
-                  <div className="text-[10px] font-semibold text-muted-foreground uppercase">Contract Total</div>
-                  <div className="text-base font-bold mt-0.5">{formatMoney(totalOwed)}</div>
-                </div>
-                <div className="rounded-lg border px-3 py-2.5 text-center">
-                  <div className="text-[10px] font-semibold text-blue-600 uppercase">Invoiced</div>
-                  <div className="text-base font-bold text-blue-600 mt-0.5">{formatMoney(invoiceGroups.reduce((s, g) => s + g.total, 0))}</div>
-                </div>
-                <div className="rounded-lg border px-3 py-2.5 text-center">
-                  <div className="text-[10px] font-semibold text-emerald-600 uppercase">Received</div>
-                  <div className="text-base font-bold text-emerald-600 mt-0.5">{formatMoney((data?.invoices ?? []).reduce((s, inv) => s + Number(inv.paymentMade || 0), 0))}</div>
-                </div>
-                <div className="rounded-lg border px-3 py-2.5 text-center">
-                  <div className="text-[10px] font-semibold text-amber-600 uppercase">Remaining</div>
-                  <div className="text-base font-bold text-amber-600 mt-0.5">{formatMoney(Math.max(0, totalOwed - (data?.invoices ?? []).reduce((s, inv) => s + Number(inv.paymentMade || 0), 0)))}</div>
-                </div>
-              </div>
-
               {/* Invoice list */}
               {invoiceGroups.length === 0 ? (
                 <CardBody><p className="text-sm text-muted-foreground text-center py-6">No invoices yet. Click <strong>Create Invoice</strong> to generate one.</p></CardBody>
