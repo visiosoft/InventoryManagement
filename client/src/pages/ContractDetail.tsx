@@ -1097,6 +1097,7 @@ export default function ContractDetail() {
                     {EditRow('Asking Price', 'rate', `AED ${formatMoney(askingPrice)}`, 'number', String(askingPrice))}
                     {EditRow('Leased Price', 'leasedPrice', `AED ${formatMoney(leasedPrice)}`, 'number', String(leasedPrice))}
                     {EditRow('Total Quotation', 'totalQuotation', `AED ${formatMoney(c.totalQuotation || 0)}`, 'number', String(c.totalQuotation || 0))}
+                    {Row('Received', <span className="text-emerald-600">AED {formatMoney(collected)}</span>)}
                     {Row('Remaining', <span className={remaining > 0 ? 'text-destructive' : 'text-emerald-600'}>AED {formatMoney(remaining)}</span>)}
                   </div>
                 )
