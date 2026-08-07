@@ -10,6 +10,10 @@ import { formatDate } from '../lib/utils'
 export function UploadDocumentForm({ contractId, customerId, onDone }: { contractId?: string; customerId?: string; onDone: () => void }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [files, setFiles] = useState<File[]>([])
+  // "Uploading 2 of 5…" — the API takes one file per request, so a batch is
+  // sent as a sequence and we track where we are.
+  const [progress, setProgress] = useState(0)
   const { data: customersPage } = useQuery<{ data: Customer[] }>({
     queryKey: ['customers-all'],
     queryFn: () => api.get('/customers', { params: { limit: 500 } }).then((r) => r.data),
@@ -19,24 +23,59 @@ export function UploadDocumentForm({ contractId, customerId, onDone }: { contrac
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    const form = new FormData(e.currentTarget)
-    if (contractId) form.set('contract', contractId)
-    if (customerId) form.set('customer', customerId)
+    if (!files.length) { setError('Choose at least one file'); return }
+    const fields = new FormData(e.currentTarget)
     setBusy(true)
     setError('')
-    try {
-      await api.post('/documents', form, { headers: { 'Content-Type': 'multipart/form-data' } })
-      onDone()
-    } catch (err) {
-      setError(apiError(err))
-    } finally {
-      setBusy(false)
+    setProgress(0)
+
+    const failed: string[] = []
+    for (let i = 0; i < files.length; i++) {
+      setProgress(i + 1)
+      const form = new FormData()
+      form.set('file', files[i])
+      form.set('type', String(fields.get('type') || 'other'))
+      if (contractId) form.set('contract', contractId)
+      if (customerId) form.set('customer', customerId)
+      else if (fields.get('customer')) form.set('customer', String(fields.get('customer')))
+      // A custom display name only makes sense for a single file; a batch keeps
+      // each file's own name so they stay distinguishable.
+      if (files.length === 1 && fields.get('name')) form.set('name', String(fields.get('name')))
+      try {
+        await api.post('/documents', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+      } catch (err) {
+        failed.push(`${files[i].name}: ${apiError(err)}`)
+      }
     }
+
+    setBusy(false)
+    setProgress(0)
+    if (failed.length === files.length) {
+      setError(failed.join(' · '))
+      return
+    }
+    if (failed.length) {
+      setError(`Uploaded ${files.length - failed.length} of ${files.length}. Failed — ${failed.join(' · ')}`)
+      setFiles([])
+      return
+    }
+    setFiles([])
+    onDone()
   }
 
   return (
     <form onSubmit={submit} className="space-y-4">
-      <Field label="File"><Input type="file" name="file" required className="h-auto py-1.5" /></Field>
+      <Field label={files.length > 1 ? `Files (${files.length} selected)` : 'File'}>
+        <Input type="file" multiple className="h-auto py-1.5"
+          onChange={(e) => { setFiles(Array.from(e.target.files ?? [])); setError('') }} />
+        {files.length > 1 && (
+          <ul className="mt-2 max-h-28 overflow-y-auto rounded-lg border divide-y text-xs">
+            {files.map((f, i) => (
+              <li key={`${f.name}-${i}`} className="px-2.5 py-1 truncate">{f.name}</li>
+            ))}
+          </ul>
+        )}
+      </Field>
       <Field label="Document type">
         <Select name="type" defaultValue="other">
           <option value="emirates_id">Emirates ID</option>
@@ -56,9 +95,15 @@ export function UploadDocumentForm({ contractId, customerId, onDone }: { contrac
           </Select>
         </Field>
       )}
-      <Field label="Display name (optional)"><Input name="name" placeholder="Defaults to file name" /></Field>
+      {files.length <= 1 && (
+        <Field label="Display name (optional)"><Input name="name" placeholder="Defaults to file name" /></Field>
+      )}
       {error && <p className="text-xs text-destructive">{error}</p>}
-      <Button type="submit" className="w-full" disabled={busy}>{busy ? 'Uploading…' : 'Upload'}</Button>
+      <Button type="submit" className="w-full" disabled={busy}>
+        {busy
+          ? files.length > 1 ? `Uploading ${progress} of ${files.length}…` : 'Uploading…'
+          : files.length > 1 ? `Upload ${files.length} files` : 'Upload'}
+      </Button>
     </form>
   )
 }
