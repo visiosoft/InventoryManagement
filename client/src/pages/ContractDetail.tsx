@@ -1284,9 +1284,9 @@ export default function ContractDetail() {
                       allUnits.some((u) => u?.sizeSqf != null)
                         ? `${allUnits.map((u) => (u?.sizeSqf != null ? u.sizeSqf : '—')).join(', ')} sq ft`
                         : '—')}
-                    {EditableRow('Asking Price', 'rate', `AED ${formatMoney(askingPrice)}`, String(askingPrice))}
-                    {EditableRow('Leased Price', 'leasedPrice', `AED ${formatMoney(leasedPrice)}`, String(leasedPrice))}
-                    {EditableRow('Total Quotation', 'totalQuotation', `AED ${formatMoney(c.totalQuotation || 0)}`, String(c.totalQuotation || 0))}
+                    {EditableRow('Asking Price', 'rate', `AED ${formatMoney(askingPrice)}`, String(askingPrice), 'number', '1')}
+                    {EditableRow('Leased Price', 'leasedPrice', `AED ${formatMoney(leasedPrice)}`, String(leasedPrice), 'number', '1')}
+                    {EditableRow('Total Quotation', 'totalQuotation', `AED ${formatMoney(c.totalQuotation || 0)}`, String(c.totalQuotation || 0), 'number', '1')}
                     {Row('Received', <span className="text-emerald-600">AED {formatMoney(collected)}</span>)}
                     {Row('Remaining', <span className={remaining > 0 ? 'text-destructive' : 'text-emerald-600'}>AED {formatMoney(remaining)}</span>)}
                   </div>
