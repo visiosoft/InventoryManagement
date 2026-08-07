@@ -926,6 +926,7 @@ export default function Quotations() {
         <Spinner />
       ) : (
         <Card>
+          <div className="overflow-x-auto">
           <Table>
             <thead>
               <tr>
@@ -933,8 +934,8 @@ export default function Quotations() {
                 <Th>Customer</Th>
                 <Th className="hidden md:table-cell">Progress</Th>
                 <Th className="hidden lg:table-cell">Units</Th>
-                <Th>Status</Th>
-                <Th>Total</Th>
+                <Th className="hidden sm:table-cell">Status</Th>
+                <Th className="hidden sm:table-cell">Total</Th>
                 <Th className="hidden lg:table-cell">Assigned</Th>
                 <Th className="hidden md:table-cell">Date</Th>
                 <Th />
@@ -997,10 +998,10 @@ export default function Quotations() {
                             <span>{q.units?.length || 0}</span>
                           </div>
                         </Td>
-                        <Td>
+                        <Td className="hidden sm:table-cell">
                           <Badge tone={statusTone[q.status]}>{statusLabel(q.status)}</Badge>
                         </Td>
-                        <Td>
+                        <Td className="hidden sm:table-cell">
                           <span className="font-semibold">{formatMoney(q.total)}</span>
                         </Td>
                         <Td className="hidden lg:table-cell">
@@ -1031,6 +1032,7 @@ export default function Quotations() {
               })()}
             </tbody>
           </Table>
+          </div>
           {(quotes || []).length === 0 && <EmptyState message="No bookings found." />}
         </Card>
       )}
