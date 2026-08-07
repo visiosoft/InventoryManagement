@@ -123,6 +123,13 @@ export async function uploadFile({ buffer, filename, mimeType, customerName }) {
     fields: 'id, webViewLink',
     supportsAllDrives: true,
   });
+
+  await drive.permissions.create({
+    fileId: data.id,
+    requestBody: { role: 'reader', type: 'anyone' },
+    supportsAllDrives: true,
+  });
+
   return { storage: 'drive', driveFileId: data.id, url: data.webViewLink };
 }
 
@@ -137,5 +144,12 @@ export async function uploadToVendorFolder({ buffer, filename, mimeType, vendorN
     fields: 'id, webViewLink',
     supportsAllDrives: true,
   });
+
+  await drive.permissions.create({
+    fileId: data.id,
+    requestBody: { role: 'reader', type: 'anyone' },
+    supportsAllDrives: true,
+  });
+
   return { storage: 'drive', driveFileId: data.id, url: data.webViewLink, viewUrl: data.webViewLink };
 }
