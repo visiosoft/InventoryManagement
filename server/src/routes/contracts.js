@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import crypto from 'crypto';
-import { isValidObjectId } from 'mongoose';
+import { isValidObjectId, Types } from 'mongoose';
 import { stampSignature } from '../services/stampSignature.js';
 import { Contract, Customer, Unit, Payment, Document, Invoice, Quote, nextContractNo, nextInvoiceNo } from '../models/index.js';
 import { sendForSignature, downloadSignedPdf, zohoConfigured } from '../services/zoho.js';
@@ -226,22 +226,32 @@ router.get('/:id', async (req, res) => {
   const contract = await populateAll(Contract.findById(req.params.id));
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
 
-  // Sync totalQuotation from linked quote only if not yet set
-  if (contract.quote && !contract.totalQuotation) {
-    const linkedQuote = await Quote.findById(contract.quote).select('total').lean();
-    if (linkedQuote && Number(linkedQuote.total || 0) > 0) {
-      contract.totalQuotation = Number(linkedQuote.total);
-      await Contract.updateOne({ _id: contract._id }, { totalQuotation: linkedQuote.total });
-    }
+  // These reads don't depend on each other — run them together rather than
+  // paying a separate network round-trip for each.
+  const [linkedQuote, paidInvoiceIds, documents, invoices] = await Promise.all([
+    contract.quote && !contract.totalQuotation
+      ? Quote.findById(contract.quote).select('total').lean()
+      : null,
+    // Payment records can lag behind an invoice paid from the Invoice page
+    Invoice.find({ orderNumber: contract.contractNo, status: 'paid' }).distinct('_id'),
+    Document.find({ contract: contract._id }).sort({ createdAt: -1 }),
+    // All invoices linked to this contract by orderNumber or customer
+    Invoice.find({
+      $or: [
+        { orderNumber: contract.contractNo },
+        ...(contract.customer?._id ? [{ customer: contract.customer._id }] : []),
+      ],
+    })
+      .select('invoiceNo status dueDate invoiceDate total paymentMade items subject createdAt paymentHistory attachments')
+      .sort({ dueDate: 1 }),
+  ]);
+
+  // Sync totalQuotation from the linked quote only if not yet set
+  if (linkedQuote && Number(linkedQuote.total || 0) > 0) {
+    contract.totalQuotation = Number(linkedQuote.total);
+    await Contract.updateOne({ _id: contract._id }, { totalQuotation: linkedQuote.total });
   }
 
-  // Sync payment record statuses from their linked invoices — fixes cases where payment
-  // was recorded via the Invoice page (which updates the Invoice doc) but the Payment
-  // records for that invoice were not all updated (e.g. deposit record still 'overdue').
-  const paidInvoiceIds = await Invoice.find({
-    orderNumber: contract.contractNo,
-    status: 'paid',
-  }).distinct('_id');
   if (paidInvoiceIds.length > 0) {
     await Payment.updateMany(
       { contract: contract._id, invoice: { $in: paidInvoiceIds }, status: { $in: ['pending', 'overdue'] } },
@@ -249,24 +259,19 @@ router.get('/:id', async (req, res) => {
     );
   }
 
+  // Must run after the status sync above so it sees the corrected records
   let payments = await Payment.find({ contract: contract._id })
     .populate('invoice', 'invoiceNo status dueDate total paymentHistory')
-    .sort({ dueDate: 1 });
-  const documents = await Document.find({ contract: contract._id }).sort({ createdAt: -1 });
-  // Include all invoices linked to this contract by orderNumber or customer
-  const invoices = await Invoice.find({
-    $or: [
-      { orderNumber: contract.contractNo },
-      ...(contract.customer?._id ? [{ customer: contract.customer._id }] : []),
-    ],
-  })
-    .select('invoiceNo status dueDate invoiceDate total paymentMade items subject createdAt paymentHistory attachments')
     .sort({ dueDate: 1 });
 
   // Reconcile: if an invoice's total exceeds the sum of its linked payment records
   // (e.g. a Lock or extra item was added manually), create/update an adjustment record.
   const unitNo = contract.unit?.unitNumber || '-';
   const paymentsArr = [...payments];
+  // Collected and written once at the end — a write per invoice would cost a
+  // full network round-trip each on every page load.
+  const paymentOps = [];
+  const invoiceOps = [];
   for (const inv of invoices) {
     const invId = String(inv._id);
     const linked = paymentsArr.filter(p => {
@@ -280,24 +285,41 @@ router.get('/:id', async (req, res) => {
     if (diff > 0.01) {
       if (adjRecord) {
         if (Math.abs(adjRecord.amount - diff) > 0.01) {
-          await Payment.findByIdAndUpdate(adjRecord._id, { amount: diff, status: inv.status === 'paid' ? 'paid' : 'pending' });
+          paymentOps.push({
+            updateOne: {
+              filter: { _id: adjRecord._id },
+              update: { $set: { amount: diff, status: inv.status === 'paid' ? 'paid' : 'pending' } },
+            },
+          });
           adjRecord.amount = diff;
         }
       } else {
-        const newAdj = await Payment.create({
+        // Build the record locally so the response can include it without a
+        // second round-trip to read back what we just wrote. bulkWrite skips
+        // schema defaults and timestamps, so set them explicitly.
+        const now = new Date();
+        const doc = {
+          _id: new Types.ObjectId(),
           contract: contract._id,
           invoice: inv._id,
           amount: diff,
           dueDate: linked[0]?.dueDate || inv.dueDate,
           status: inv.status === 'paid' ? 'paid' : 'pending',
           notes: `Invoice adjustment · Unit ${unitNo}`,
+          method: '',
+          recordedBy: '',
+          createdAt: now,
+          updatedAt: now,
+        };
+        paymentOps.push({ insertOne: { document: doc } });
+        paymentsArr.push({
+          ...doc,
+          invoice: { _id: inv._id, invoiceNo: inv.invoiceNo, status: inv.status, dueDate: inv.dueDate, total: inv.total },
         });
-        const populated = await Payment.findById(newAdj._id).populate('invoice', 'invoiceNo status dueDate total');
-        paymentsArr.push(populated);
       }
     } else if (diff < -0.01 && adjRecord) {
       // Invoice total dropped — remove the stale adjustment
-      await Payment.findByIdAndDelete(adjRecord._id);
+      paymentOps.push({ deleteOne: { filter: { _id: adjRecord._id } } });
       const idx = paymentsArr.findIndex(p => String(p._id) === String(adjRecord._id));
       if (idx !== -1) paymentsArr.splice(idx, 1);
     }
@@ -327,9 +349,17 @@ router.get('/:id', async (req, res) => {
     else if (correctPaid > 0 && correctPaid < invTotal && inv.status === 'paid') updates.status = 'partial';
 
     if (Object.keys(updates).length) {
-      await Invoice.findByIdAndUpdate(inv._id, { $set: updates });
+      invoiceOps.push({ updateOne: { filter: { _id: inv._id }, update: { $set: updates } } });
       Object.assign(inv, updates);
     }
+  }
+
+  // One round-trip each, and only when something actually drifted
+  if (paymentOps.length || invoiceOps.length) {
+    await Promise.all([
+      paymentOps.length ? Payment.bulkWrite(paymentOps) : null,
+      invoiceOps.length ? Invoice.bulkWrite(invoiceOps) : null,
+    ]);
   }
 
   res.json({ contract, payments: paymentsArr, documents, invoices });
