@@ -226,43 +226,35 @@ router.get('/:id', async (req, res) => {
   const contract = await populateAll(Contract.findById(req.params.id));
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
 
-  // These reads don't depend on each other — run them together rather than
-  // paying a separate network round-trip for each.
-  const [linkedQuote, paidInvoiceIds, documents, invoices] = await Promise.all([
+  const [linkedQuote, paidInvoiceIds, documents, invoices, payments] = await Promise.all([
     contract.quote && !contract.totalQuotation
       ? Quote.findById(contract.quote).select('total').lean()
       : null,
-    // Payment records can lag behind an invoice paid from the Invoice page
     Invoice.find({ orderNumber: contract.contractNo, status: 'paid' }).distinct('_id'),
-    Document.find({ contract: contract._id }).sort({ createdAt: -1 }),
-    // All invoices linked to this contract by orderNumber or customer
-    Invoice.find({
-      $or: [
-        { orderNumber: contract.contractNo },
-        ...(contract.customer?._id ? [{ customer: contract.customer._id }] : []),
-      ],
-    })
+    Document.find({ contract: contract._id }).sort({ createdAt: -1 }).lean(),
+    Invoice.find({ orderNumber: contract.contractNo })
       .select('invoiceNo status dueDate invoiceDate total paymentMade items subject createdAt paymentHistory attachments')
-      .sort({ dueDate: 1 }),
+      .sort({ dueDate: 1 })
+      .lean(),
+    Payment.find({ contract: contract._id })
+      .populate('invoice', 'invoiceNo status dueDate total paymentHistory')
+      .sort({ dueDate: 1 })
+      .lean(),
   ]);
 
   // Sync totalQuotation from the linked quote only if not yet set
   if (linkedQuote && Number(linkedQuote.total || 0) > 0) {
     contract.totalQuotation = Number(linkedQuote.total);
-    await Contract.updateOne({ _id: contract._id }, { totalQuotation: linkedQuote.total });
+    Contract.updateOne({ _id: contract._id }, { totalQuotation: linkedQuote.total }).exec();
   }
 
+  // Mark payment records as paid if their invoice is already paid
   if (paidInvoiceIds.length > 0) {
-    await Payment.updateMany(
+    Payment.updateMany(
       { contract: contract._id, invoice: { $in: paidInvoiceIds }, status: { $in: ['pending', 'overdue'] } },
       { $set: { status: 'paid' } }
-    );
+    ).exec();
   }
-
-  // Must run after the status sync above so it sees the corrected records
-  let payments = await Payment.find({ contract: contract._id })
-    .populate('invoice', 'invoiceNo status dueDate total paymentHistory')
-    .sort({ dueDate: 1 });
 
   // Reconcile: if an invoice's total exceeds the sum of its linked payment records
   // (e.g. a Lock or extra item was added manually), create/update an adjustment record.
@@ -354,12 +346,13 @@ router.get('/:id', async (req, res) => {
     }
   }
 
-  // One round-trip each, and only when something actually drifted
+  // One round-trip each, and only when something actually drifted.
+  // Fire-and-forget so the response isn't blocked by writes.
   if (paymentOps.length || invoiceOps.length) {
-    await Promise.all([
+    Promise.all([
       paymentOps.length ? Payment.bulkWrite(paymentOps) : null,
       invoiceOps.length ? Invoice.bulkWrite(invoiceOps) : null,
-    ]);
+    ]).catch(() => {});
   }
 
   res.json({ contract, payments: paymentsArr, documents, invoices });

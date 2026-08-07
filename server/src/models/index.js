@@ -1186,7 +1186,7 @@ invoiceSchema.index({ orderNumber: 1 });
 invoiceSchema.index({ customer: 1, createdAt: -1 });
 invoiceSchema.index({ status: 1, dueDate: 1 });
 
-documentSchema.index({ contract: 1 });
+documentSchema.index({ contract: 1, createdAt: -1 });
 documentSchema.index({ customer: 1 });
 documentSchema.index({ name: 1 });
 
