@@ -56,7 +56,7 @@ function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, 
   const defaultEnd = overrideEnd ?? toISO(smartEnd)
 
   type LineItem = { id: number; description: string; qty: number; rate: number; amount: number }
-  const emptyItem = (): LineItem => ({ id: Date.now(), description: '', qty: 1, rate: weeklyRate, amount: weeklyRate })
+  const emptyItem = (): LineItem => ({ id: Date.now(), description: '', qty: 1, rate: 0, amount: 0 })
 
   const [startDate, setStartDate] = useState(defaultStart)
   const [endDate, setEndDate] = useState(defaultEnd)
@@ -79,31 +79,16 @@ function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, 
   }
 
   const [lineItems, setLineItems] = useState<LineItem[]>(buildDefaultItems())
+  const [discount, setDiscount] = useState(0)
   const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
-
-  // Auto-calculate weeks when dates change (only updates the first rent line)
-  useEffect(() => {
-    const s = new Date(startDate), e = new Date(endDate)
-    const days = Math.round((e.getTime() - s.getTime()) / 86400000)
-    if (days > 0) {
-      const weeks = Math.ceil(days / 7)
-      setLineItems(prev => {
-        const first = prev[0]
-        if (first && first.description.startsWith('Storage Rent')) {
-          return [{ ...first, qty: weeks, amount: Math.round(weeks * first.rate * 100) / 100 }, ...prev.slice(1)]
-        }
-        return prev
-      })
-    }
-  }, [startDate, endDate])
 
   function updateLine(idx: number, field: keyof LineItem, val: string) {
     setLineItems(prev => prev.map((it, i) => {
       if (i !== idx) return it
       const updated = { ...it, [field]: field === 'description' ? val : Number(val) }
-      if (field === 'qty' || field === 'rate') updated.amount = Math.round(updated.qty * updated.rate * 100) / 100
+      if (field === 'amount') { updated.qty = 1; updated.rate = updated.amount }
       return updated
     }))
   }
@@ -116,7 +101,8 @@ function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, 
     setLineItems(prev => prev.filter((_, i) => i !== idx))
   }
 
-  const total = Math.round(lineItems.reduce((s, it) => s + it.amount, 0) * 100) / 100
+  const subtotal = Math.round(lineItems.reduce((s, it) => s + it.amount, 0) * 100) / 100
+  const total = Math.round(subtotal * (1 - discount / 100) * 100) / 100
 
   async function submit(e: FormEvent) {
     e.preventDefault()
@@ -128,7 +114,7 @@ function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, 
       const validItems = lineItems.filter(it => it.description.trim() && it.amount > 0)
       await api.post(`/contracts/${contract._id}/generate-custom-invoice`, {
         startDate, endDate, dueDate, notes,
-        discountPct: 0,
+        discountPct: discount,
         // Send the lines as entered — the server bills these verbatim
         items: validItems.map(it => ({
           description: it.description.trim(), quantity: it.qty, rate: it.rate, amount: it.amount,
@@ -163,24 +149,36 @@ function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, 
           </button>
         </div>
         <div className="rounded-lg border overflow-hidden">
-          <div className="grid grid-cols-[1fr_60px_90px_90px_32px] gap-2 px-3 py-2 bg-muted/50 text-xs font-medium text-muted-foreground">
-            <span>Description</span><span>Wks</span><span>Rate</span><span>Amount</span><span />
+          <div className="grid grid-cols-[1fr_120px_32px] gap-2 px-3 py-2 bg-muted/50 text-xs font-medium text-muted-foreground">
+            <span>Description</span><span className="text-right">Amount (AED)</span><span />
           </div>
           <div className="divide-y">
             {lineItems.map((it, i) => (
-              <div key={it.id} className="grid grid-cols-[1fr_60px_90px_90px_32px] gap-2 px-3 py-2 items-center">
+              <div key={it.id} className="grid grid-cols-[1fr_120px_32px] gap-2 px-3 py-2 items-center">
                 <Input value={it.description} onChange={(e) => updateLine(i, 'description', e.target.value)} placeholder="Service" className="text-sm" />
-                <Input type="number" min={1} value={it.qty} onChange={(e) => updateLine(i, 'qty', e.target.value)} className="text-sm text-center" />
-                <Input type="number" min={0} step="0.01" value={it.rate} onChange={(e) => updateLine(i, 'rate', e.target.value)} className="text-sm text-right" />
-                <div className="text-sm font-medium text-right pr-1">{formatMoney(it.amount)}</div>
+                <Input type="number" min={0} step="1" value={it.amount} onChange={(e) => updateLine(i, 'amount', e.target.value)} className="text-sm text-right" />
                 {lineItems.length > 1 ? (
                   <button type="button" onClick={() => removeLine(i)} className="text-muted-foreground hover:text-destructive cursor-pointer"><X size={14} /></button>
                 ) : <span />}
               </div>
             ))}
           </div>
-          <div className="flex justify-end px-3 py-2 border-t bg-muted/30">
-            <span className="text-sm font-semibold">Total: AED {formatMoney(total)}</span>
+          <div className="border-t px-3 py-2 space-y-1">
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-muted-foreground">Subtotal</span>
+              <span>{formatMoney(subtotal)} AED</span>
+            </div>
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-muted-foreground flex items-center gap-2">Discount
+                <input type="number" min={0} max={100} step={1} value={discount} onChange={(e) => setDiscount(Number(e.target.value) || 0)}
+                  className="w-14 text-center border rounded px-1 py-0.5 text-xs" />%
+              </span>
+              {discount > 0 && <span className="text-destructive">-{formatMoney(subtotal - total)} AED</span>}
+            </div>
+            <div className="flex justify-between items-center text-sm font-semibold border-t pt-1">
+              <span>Total</span>
+              <span>{formatMoney(total)} AED</span>
+            </div>
           </div>
         </div>
       </div>

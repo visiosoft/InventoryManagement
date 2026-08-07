@@ -184,7 +184,16 @@ router.post('/:id/record', async (req, res) => {
   payment.paidDate = paidDate ? new Date(paidDate) : new Date();
   payment.recordedBy = req.user?.name || req.user?.email || '';
   if (notes) payment.notes = notes;
+  if (req.body.amount && Number(req.body.amount) > 0) payment.amount = Number(req.body.amount);
   await payment.save();
+
+  // Record who did it on the contract timeline
+  if (payment.contract) {
+    const who = req.user?.name || req.user?.email || 'System';
+    await Contract.findByIdAndUpdate(payment.contract, {
+      $push: { timeline: { text: `Payment recorded — AED ${payment.amount} (${payment.method})`, author: who, at: new Date() } },
+    });
+  }
 
   // Update linked invoice status if all payments for that invoice are now paid
   if (payment.invoice) {

@@ -931,7 +931,18 @@ router.put('/:id', async (req, res) => {
         .filter((p) => p.name);
     }
 
-    await Contract.findByIdAndUpdate(contract._id, { $set });
+    // Log what was changed to the contract timeline
+    const changedKeys = Object.keys($set).filter(k => k !== 'authorizedPersons');
+    if (changedKeys.length) {
+      const who = req.user?.name || req.user?.email || 'System';
+      const summary = changedKeys.join(', ');
+      await Contract.findByIdAndUpdate(contract._id, {
+        $set,
+        $push: { timeline: { text: `Updated ${summary}`, author: who, at: new Date() } },
+      });
+    } else {
+      await Contract.findByIdAndUpdate(contract._id, { $set });
+    }
     const populated = await populateAll(Contract.findById(contract._id));
     res.json(populated);
   } catch (err) {
