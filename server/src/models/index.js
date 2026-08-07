@@ -250,6 +250,7 @@ const contractSchema = new Schema(
     raw: { type: Schema.Types.Mixed },
     notes: { type: String, default: '' },
     firstMonthDiscountPct: { type: Number, default: 0 },
+    leasedPrice: { type: Number, default: 0 },
     authorizedPersons: [accessPersonSchema],
     signingToken: { type: String, default: null },
     signingTokenExpiry: { type: Date, default: null },

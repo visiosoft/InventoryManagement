@@ -646,7 +646,7 @@ function EditContractForm({ contract, unitOptions, busy, error, onSubmit, onCanc
   const [rate, setRate] = useState(String(c.rate ?? ''))
   const asking = Number(rate) || 0
   const [leased, setLeased] = useState(
-    String(Math.round(Number(c.rate || 0) * (1 - Number(c.firstMonthDiscountPct || 0) / 100) * 100) / 100),
+    String(Number(c.leasedPrice) || Math.round(Number(c.rate || 0) * (1 - Number(c.firstMonthDiscountPct || 0) / 100) * 100) / 100),
   )
   const [totalQuotation, setTotalQuotation] = useState(String(c.totalQuotation ?? ''))
   const [notes, setNotes] = useState(c.notes || '')
@@ -696,6 +696,7 @@ function EditContractForm({ contract, unitOptions, busy, error, onSubmit, onCanc
       units: unitIds,
       unitSizes,
       rate: Number(rate) || 0,
+      leasedPrice: Number(leased) || 0,
       firstMonthDiscountPct: asking > 0
         ? Math.round(Math.max(0, 1 - (Number(leased) || 0) / asking) * 10000) / 100
         : 0,
@@ -1173,7 +1174,7 @@ export default function ContractDetail() {
                 // the tenant actually pays, and the weekly figure derives from it.
                 const askingPrice = Number(c.rate || 0)
                 const discountPct = Number((c as { firstMonthDiscountPct?: number }).firstMonthDiscountPct || 0)
-                const leasedPrice = Math.round(askingPrice * (1 - discountPct / 100) * 100) / 100
+                const leasedPrice = Number(c.leasedPrice) || Math.round(askingPrice * (1 - discountPct / 100) * 100) / 100
                 const weeks = c.startDate && c.endDate
                   ? Math.ceil(Math.round((new Date(c.endDate).getTime() - new Date(c.startDate).getTime()) / 86400000) / 7)
                   : null

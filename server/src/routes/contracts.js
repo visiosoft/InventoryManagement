@@ -840,8 +840,8 @@ router.put('/:id', async (req, res) => {
 
     // Use $set to avoid VersionError from concurrent background writes on this document
     const $set = {};
-    const numericFields = ['rate', 'deposit', 'totalQuotation', 'firstMonthDiscountPct'];
-    const allowed = ['rate', 'deposit', 'startDate', 'endDate', 'billingPeriod', 'paymentMethod', 'firstPaymentDate', 'notes', 'totalQuotation', 'firstMonthDiscountPct'];
+    const numericFields = ['rate', 'deposit', 'totalQuotation', 'firstMonthDiscountPct', 'leasedPrice'];
+    const allowed = ['rate', 'deposit', 'startDate', 'endDate', 'billingPeriod', 'paymentMethod', 'firstPaymentDate', 'notes', 'totalQuotation', 'firstMonthDiscountPct', 'leasedPrice'];
     for (const key of allowed) {
       if (req.body[key] === undefined) continue;
       if (key.endsWith('Date')) {
