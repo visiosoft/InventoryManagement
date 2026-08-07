@@ -29,42 +29,42 @@ router.get('/summary', async (req, res) => {
   const [unitStats, unitsBySize, unitsByFloor, availableUnits,
     revenueAgg, dueAgg, expiring, overdue, activeContracts,
     moveInsThisMonthList, moveOutsThisMonthList, moveInsLastMonth, moveOutsLastMonth] = await Promise.all([
-    Unit.aggregate([
-      { $match: uF },
-      { $group: { _id: '$status', count: { $sum: 1 } } },
-    ]),
-    Unit.aggregate([
-      { $match: uF },
-      { $group: { _id: { sizeSqf: '$sizeSqf', status: '$status' }, count: { $sum: 1 } } },
-    ]),
-    Unit.aggregate([
-      { $match: uF },
-      { $group: { _id: { floor: '$floor', status: '$status' }, count: { $sum: 1 } } },
-    ]),
-    Unit.find({ ...uF, status: 'available' }).select('unitNumber floor sizeSqf price').lean(),
-    Payment.aggregate([
-      { $match: { ...pF, status: 'paid', paidDate: { $gte: monthStart, $lt: monthEnd } } },
-      { $group: { _id: null, total: { $sum: '$amount' } } },
-    ]),
-    Payment.aggregate([
-      { $match: { ...pF, status: { $in: ['pending', 'overdue'] }, dueDate: { $gte: monthStart, $lt: monthEnd } } },
-      { $group: { _id: null, total: { $sum: '$amount' } } },
-    ]),
-    Contract.find({ ...cF, status: 'active', endDate: { $gte: now, $lte: in15 } })
-      .populate('customer', 'fullName')
-      .populate('unit', 'unitNumber')
-      .sort({ endDate: 1 }).lean(),
-    Payment.find({ ...pF, status: 'overdue' })
-      .populate({ path: 'contract', select: 'contractNo customer unit', populate: [{ path: 'customer', select: 'fullName' }, { path: 'unit', select: 'unitNumber' }] })
-      .sort({ dueDate: 1 }).limit(20).lean(),
-    Contract.countDocuments({ ...cF, status: 'active' }),
-    Contract.find({ ...cF, status: { $in: ['active', 'ended'] }, startDate: { $gte: monthStart, $lt: monthEnd } })
-      .populate('customer', 'fullName').populate('unit', 'unitNumber').sort({ startDate: 1 }).lean(),
-    Contract.find({ ...cF, status: 'ended', endDate: { $gte: monthStart, $lt: monthEnd } })
-      .populate('customer', 'fullName').populate('unit', 'unitNumber').sort({ endDate: 1 }).lean(),
-    Contract.countDocuments({ ...cF, status: { $in: ['active', 'ended'] }, startDate: { $gte: lastMonthStart, $lt: monthStart } }),
-    Contract.countDocuments({ ...cF, status: 'ended', endDate: { $gte: lastMonthStart, $lt: monthStart } }),
-  ]);
+      Unit.aggregate([
+        { $match: uF },
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ]),
+      Unit.aggregate([
+        { $match: uF },
+        { $group: { _id: { sizeSqf: '$sizeSqf', status: '$status' }, count: { $sum: 1 } } },
+      ]),
+      Unit.aggregate([
+        { $match: uF },
+        { $group: { _id: { floor: '$floor', status: '$status' }, count: { $sum: 1 } } },
+      ]),
+      Unit.find({ ...uF, status: 'available' }).select('unitNumber floor sizeSqf price').lean(),
+      Payment.aggregate([
+        { $match: { ...pF, status: 'paid', paidDate: { $gte: monthStart, $lt: monthEnd } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } },
+      ]),
+      Payment.aggregate([
+        { $match: { ...pF, status: { $in: ['pending', 'overdue'] }, dueDate: { $gte: monthStart, $lt: monthEnd } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } },
+      ]),
+      Contract.find({ ...cF, status: 'active', endDate: { $gte: now, $lte: in15 } })
+        .populate('customer', 'fullName')
+        .populate('unit', 'unitNumber')
+        .sort({ endDate: 1 }).lean(),
+      Payment.find({ ...pF, status: 'overdue' })
+        .populate({ path: 'contract', select: 'contractNo customer unit', populate: [{ path: 'customer', select: 'fullName' }, { path: 'unit', select: 'unitNumber' }] })
+        .sort({ dueDate: 1 }).limit(20).lean(),
+      Contract.countDocuments({ ...cF, status: 'active' }),
+      Contract.find({ ...cF, status: { $in: ['active', 'ended'] }, startDate: { $gte: monthStart, $lt: monthEnd } })
+        .populate('customer', 'fullName').populate('unit', 'unitNumber').sort({ startDate: 1 }).lean(),
+      Contract.find({ ...cF, status: 'ended', endDate: { $gte: monthStart, $lt: monthEnd } })
+        .populate('customer', 'fullName').populate('unit', 'unitNumber').sort({ endDate: 1 }).lean(),
+      Contract.countDocuments({ ...cF, status: { $in: ['active', 'ended'] }, startDate: { $gte: lastMonthStart, $lt: monthStart } }),
+      Contract.countDocuments({ ...cF, status: 'ended', endDate: { $gte: lastMonthStart, $lt: monthStart } }),
+    ]);
 
   // Build unit status counts from aggregation
   const byStatus = { available: 0, occupied: 0, reserved: 0, maintenance: 0 };
@@ -550,12 +550,14 @@ router.get('/income-analysis', async (req, res) => {
     { $unwind: { path: '$u', preserveNullAndEmptyArrays: true } },
     { $lookup: { from: 'invoices', localField: 'invoice', foreignField: '_id', as: 'inv' } },
     { $unwind: { path: '$inv', preserveNullAndEmptyArrays: true } },
-    { $project: {
-      amount: 1, status: 1, dueDate: 1, notes: 1,
-      'c.rate': 1, 'c.contractNo': 1,
-      'u.unitNumber': 1, 'u.sizeSqf': 1, 'u.price': 1, 'u.floor': 1,
-      'inv.items': 1,
-    }},
+    {
+      $project: {
+        amount: 1, status: 1, dueDate: 1, notes: 1,
+        'c.rate': 1, 'c.contractNo': 1,
+        'u.unitNumber': 1, 'u.sizeSqf': 1, 'u.price': 1, 'u.floor': 1,
+        'inv.items': 1,
+      }
+    },
   ]);
 
   const months = Array.from({ length: 12 }, (_, i) => ({

@@ -54,7 +54,7 @@ router.post('/', upload.array('files', 20), async (req, res) => {
           filename: `site-visit-${visitNo}-${Date.now()}-${file.originalname}`,
           customerName: customerName || 'SiteVisits',
         });
-        fs.unlink(file.path, () => {});
+        fs.unlink(file.path, () => { });
         images.push({
           url: result.url,
           filename: file.originalname.replace(/\s+/g, '_'),
@@ -200,7 +200,7 @@ router.post('/:id/images', upload.array('files', 20), async (req, res) => {
           filename: `site-visit-${visit.visitNo}-${Date.now()}-${file.originalname}`,
           customerName: visit.customerName || 'SiteVisits',
         });
-        fs.unlink(file.path, () => {});
+        fs.unlink(file.path, () => { });
         newImages.push({
           url: result.url,
           filename: file.originalname.replace(/\s+/g, '_'),

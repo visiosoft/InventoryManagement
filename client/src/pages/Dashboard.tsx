@@ -539,8 +539,8 @@ export default function Dashboard() {
                           {new Date(movePanel === 'in' ? c.startDate : c.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                         </span>
                         <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${c.paymentStatus === 'paid' ? 'bg-emerald-100 text-emerald-700' :
-                            c.paymentStatus === 'pending' ? 'bg-amber-100 text-amber-700' :
-                              'bg-muted text-muted-foreground'
+                          c.paymentStatus === 'pending' ? 'bg-amber-100 text-amber-700' :
+                            'bg-muted text-muted-foreground'
                           }`}>
                           {c.paymentStatus === 'paid' ? 'Paid' : c.paymentStatus === 'pending' ? 'Pending' : 'No invoice'}
                         </span>

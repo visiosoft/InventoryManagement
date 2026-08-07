@@ -242,10 +242,10 @@ function QuoteWizard({
             <button
               onClick={() => setStep(i)}
               className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${i === step
-                  ? 'bg-primary text-primary-foreground'
-                  : i < step
-                    ? 'bg-primary/10 text-primary'
-                    : 'bg-muted text-muted-foreground'
+                ? 'bg-primary text-primary-foreground'
+                : i < step
+                  ? 'bg-primary/10 text-primary'
+                  : 'bg-muted text-muted-foreground'
                 }`}
             >
               {i + 1}. {label}
@@ -340,8 +340,8 @@ function QuoteWizard({
                       onClick={() => addUnit(u)}
                       disabled={selected}
                       className={`rounded-lg border p-3 text-left text-sm transition-colors ${selected
-                          ? 'border-primary bg-primary/5 opacity-60'
-                          : 'hover:border-primary hover:bg-primary/5'
+                        ? 'border-primary bg-primary/5 opacity-60'
+                        : 'hover:border-primary hover:bg-primary/5'
                         }`}
                     >
                       <div className="font-semibold">{u.unitNumber}</div>
@@ -927,111 +927,111 @@ export default function Quotations() {
       ) : (
         <Card>
           <div className="overflow-x-auto">
-          <Table>
-            <thead>
-              <tr>
-                <Th>Quote #</Th>
-                <Th>Customer</Th>
-                <Th className="hidden md:table-cell">Progress</Th>
-                <Th className="hidden lg:table-cell">Units</Th>
-                <Th className="hidden sm:table-cell">Status</Th>
-                <Th className="hidden sm:table-cell">Total</Th>
-                <Th className="hidden lg:table-cell">Assigned</Th>
-                <Th className="hidden md:table-cell">Date</Th>
-                <Th />
-              </tr>
-            </thead>
-            <tbody>
-              {(() => {
-                const all = quotes || []
-                const now = new Date()
-                const todayStr = now.toISOString().slice(0, 10)
-                const yd = new Date(now); yd.setDate(yd.getDate() - 1)
-                const yesterdayStr = yd.toISOString().slice(0, 10)
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Quote #</Th>
+                  <Th>Customer</Th>
+                  <Th className="hidden md:table-cell">Progress</Th>
+                  <Th className="hidden lg:table-cell">Units</Th>
+                  <Th className="hidden sm:table-cell">Status</Th>
+                  <Th className="hidden sm:table-cell">Total</Th>
+                  <Th className="hidden lg:table-cell">Assigned</Th>
+                  <Th className="hidden md:table-cell">Date</Th>
+                  <Th />
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  const all = quotes || []
+                  const now = new Date()
+                  const todayStr = now.toISOString().slice(0, 10)
+                  const yd = new Date(now); yd.setDate(yd.getDate() - 1)
+                  const yesterdayStr = yd.toISOString().slice(0, 10)
 
-                const groups: { label: string; items: Quote[] }[] = [
-                  { label: 'Today', items: all.filter((q) => (q.createdAt || q.quoteDate)?.slice(0, 10) === todayStr) },
-                  { label: 'Yesterday', items: all.filter((q) => (q.createdAt || q.quoteDate)?.slice(0, 10) === yesterdayStr) },
-                  { label: 'Earlier', items: all.filter((q) => { const d = (q.createdAt || q.quoteDate)?.slice(0, 10); return d !== todayStr && d !== yesterdayStr }) },
-                ]
+                  const groups: { label: string; items: Quote[] }[] = [
+                    { label: 'Today', items: all.filter((q) => (q.createdAt || q.quoteDate)?.slice(0, 10) === todayStr) },
+                    { label: 'Yesterday', items: all.filter((q) => (q.createdAt || q.quoteDate)?.slice(0, 10) === yesterdayStr) },
+                    { label: 'Earlier', items: all.filter((q) => { const d = (q.createdAt || q.quoteDate)?.slice(0, 10); return d !== todayStr && d !== yesterdayStr }) },
+                  ]
 
-                return groups.filter((g) => g.items.length > 0).map((g) => (
-                  <>
-                    <tr key={g.label}>
-                      <td colSpan={9} className="px-3 pt-4 pb-1.5">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">{g.label} ({g.items.length})</span>
-                      </td>
-                    </tr>
-                    {g.items.map((q) => (
-                      <tr
-                        key={q._id}
-                        className="hover:bg-muted/50 cursor-pointer"
-                        onClick={() => navigate(`/quotes/new?quote=${q._id}`)}
-                      >
-                        <Td>
-                          <span className="font-medium">{q.quoteNo}</span>
-                        </Td>
-                        <Td>
-                          <div className="font-medium">{q.customer?.fullName}</div>
-                          {q.customer?.phone && (
-                            <div className="text-xs text-muted-foreground">{q.customer.phone}</div>
-                          )}
-                        </Td>
-                        <Td className="hidden md:table-cell">
-                          <div className="flex flex-col gap-1">
-                            <FlowProgress stepsDone={q.flowStepsDone} currentStep={q.flowStep} />
-                            <span className="text-[10px] text-muted-foreground">
-                              {FLOW_STEP_LABELS[q.flowStep ?? 0]}
-                              {(() => {
-                                const c = typeof q.contract === 'object' && q.contract ? q.contract : null
-                                if (c?.approvalStatus === 'approved') return ' · Approved'
-                                if (c?.approvalStatus === 'pending') return ' · Pending approval'
-                                if (c?.approvalStatus === 'rejected') return ' · Rejected'
-                                return ''
-                              })()}
-                            </span>
-                          </div>
-                        </Td>
-                        <Td className="hidden lg:table-cell">
-                          <div className="flex items-center gap-1">
-                            <Package size={13} className="text-muted-foreground" />
-                            <span>{q.units?.length || 0}</span>
-                          </div>
-                        </Td>
-                        <Td className="hidden sm:table-cell">
-                          <Badge tone={statusTone[q.status]}>{statusLabel(q.status)}</Badge>
-                        </Td>
-                        <Td className="hidden sm:table-cell">
-                          <span className="font-semibold">{formatMoney(q.total)}</span>
-                        </Td>
-                        <Td className="hidden lg:table-cell">
-                          <span className="text-xs text-muted-foreground">
-                            {typeof q.assignedTo === 'object' && q.assignedTo ? q.assignedTo.name : '—'}
-                          </span>
-                        </Td>
-                        <Td className="hidden md:table-cell">{formatDate(q.quoteDate)}</Td>
-                        <Td>
-                          <div className="flex gap-2 text-xs" onClick={(e) => e.stopPropagation()}>
-                            <button onClick={() => navigate(`/quotes/new?quote=${q._id}`)} className="text-primary hover:underline cursor-pointer">
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => {
-                                if (confirm('Delete this quote?')) removeQuote.mutate(q._id)
-                              }}
-                              className="text-destructive hover:underline cursor-pointer"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </Td>
+                  return groups.filter((g) => g.items.length > 0).map((g) => (
+                    <>
+                      <tr key={g.label}>
+                        <td colSpan={9} className="px-3 pt-4 pb-1.5">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">{g.label} ({g.items.length})</span>
+                        </td>
                       </tr>
-                    ))}
-                  </>
-                ))
-              })()}
-            </tbody>
-          </Table>
+                      {g.items.map((q) => (
+                        <tr
+                          key={q._id}
+                          className="hover:bg-muted/50 cursor-pointer"
+                          onClick={() => navigate(`/quotes/new?quote=${q._id}`)}
+                        >
+                          <Td>
+                            <span className="font-medium">{q.quoteNo}</span>
+                          </Td>
+                          <Td>
+                            <div className="font-medium">{q.customer?.fullName}</div>
+                            {q.customer?.phone && (
+                              <div className="text-xs text-muted-foreground">{q.customer.phone}</div>
+                            )}
+                          </Td>
+                          <Td className="hidden md:table-cell">
+                            <div className="flex flex-col gap-1">
+                              <FlowProgress stepsDone={q.flowStepsDone} currentStep={q.flowStep} />
+                              <span className="text-[10px] text-muted-foreground">
+                                {FLOW_STEP_LABELS[q.flowStep ?? 0]}
+                                {(() => {
+                                  const c = typeof q.contract === 'object' && q.contract ? q.contract : null
+                                  if (c?.approvalStatus === 'approved') return ' · Approved'
+                                  if (c?.approvalStatus === 'pending') return ' · Pending approval'
+                                  if (c?.approvalStatus === 'rejected') return ' · Rejected'
+                                  return ''
+                                })()}
+                              </span>
+                            </div>
+                          </Td>
+                          <Td className="hidden lg:table-cell">
+                            <div className="flex items-center gap-1">
+                              <Package size={13} className="text-muted-foreground" />
+                              <span>{q.units?.length || 0}</span>
+                            </div>
+                          </Td>
+                          <Td className="hidden sm:table-cell">
+                            <Badge tone={statusTone[q.status]}>{statusLabel(q.status)}</Badge>
+                          </Td>
+                          <Td className="hidden sm:table-cell">
+                            <span className="font-semibold">{formatMoney(q.total)}</span>
+                          </Td>
+                          <Td className="hidden lg:table-cell">
+                            <span className="text-xs text-muted-foreground">
+                              {typeof q.assignedTo === 'object' && q.assignedTo ? q.assignedTo.name : '—'}
+                            </span>
+                          </Td>
+                          <Td className="hidden md:table-cell">{formatDate(q.quoteDate)}</Td>
+                          <Td>
+                            <div className="flex gap-2 text-xs" onClick={(e) => e.stopPropagation()}>
+                              <button onClick={() => navigate(`/quotes/new?quote=${q._id}`)} className="text-primary hover:underline cursor-pointer">
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => {
+                                  if (confirm('Delete this quote?')) removeQuote.mutate(q._id)
+                                }}
+                                className="text-destructive hover:underline cursor-pointer"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </Td>
+                        </tr>
+                      ))}
+                    </>
+                  ))
+                })()}
+              </tbody>
+            </Table>
           </div>
           {(quotes || []).length === 0 && <EmptyState message="No bookings found." />}
         </Card>

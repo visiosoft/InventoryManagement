@@ -881,15 +881,15 @@ export default function SiteVisits() {
           {isVideo(lightboxImg) ? (
             <div className="w-full max-w-4xl" style={{ maxHeight: '90vh' }} onClick={(e) => e.stopPropagation()}>
               <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
-                  <video
-                    src={lightboxImg.driveFileId
-                      ? `/api/site-visits/drive-stream/${lightboxImg.driveFileId}`
-                      : lightboxImg.url}
-                    controls
-                    autoPlay
-                    playsInline
-                    className="absolute inset-0 w-full h-full rounded-lg object-contain bg-black"
-                  />
+                <video
+                  src={lightboxImg.driveFileId
+                    ? `/api/site-visits/drive-stream/${lightboxImg.driveFileId}`
+                    : lightboxImg.url}
+                  controls
+                  autoPlay
+                  playsInline
+                  className="absolute inset-0 w-full h-full rounded-lg object-contain bg-black"
+                />
               </div>
             </div>
           ) : (

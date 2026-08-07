@@ -4,15 +4,27 @@ import { useNavigate } from 'react-router-dom'
 import { Loader2, Search, X } from 'lucide-react'
 import { api } from '../lib/api'
 
-type Hit = {
+type ContractHit = {
   _id: string
   contractNo: string
   status: string
-  startDate?: string
-  endDate?: string
   customer?: { fullName?: string }
   unit?: { unitNumber?: string }
 }
+
+type CustomerHit = {
+  _id: string
+  fullName: string
+  clientId?: string
+  phone?: string
+  phones?: string[]
+  email?: string
+}
+
+/** A flat list so the keyboard can move across both groups. */
+type Row =
+  | { kind: 'contract'; id: string; title: string; meta: string; tag: string }
+  | { kind: 'customer'; id: string; title: string; meta: string; tag: string }
 
 const PURPLE = '#5B2BC9'
 const MUTED = '#756E80'
@@ -33,14 +45,45 @@ export default function GlobalSearch() {
     return () => clearTimeout(t)
   }, [term])
 
-  const { data: results = [], isFetching } = useQuery<Hit[]>({
+  // Contracts and tenants are searched together: a tenant with no contract yet
+  // still needs to be findable.
+  const { data, isFetching } = useQuery<{ contracts: ContractHit[]; customers: CustomerHit[] }>({
     queryKey: ['global-search', debounced],
-    queryFn: () => api.get('/contracts/search', { params: { q: debounced } }).then(r => r.data),
+    queryFn: async () => {
+      const [contracts, customers] = await Promise.all([
+        api.get('/contracts/search', { params: { q: debounced, limit: 6 } }).then(r => r.data as ContractHit[]),
+        api.get('/customers', { params: { search: debounced, limit: 5 } })
+          .then(r => (Array.isArray(r.data) ? r.data : r.data?.data ?? []) as CustomerHit[]),
+      ])
+      return { contracts, customers }
+    },
     enabled: debounced.length >= 2,
     staleTime: 30_000,
   })
 
-  useEffect(() => { setActive(0) }, [results])
+  const contractRows: Row[] = (data?.contracts ?? []).map(c => ({
+    kind: 'contract' as const,
+    id: c._id,
+    title: c.customer?.fullName || 'Unknown tenant',
+    meta: `${c.unit?.unitNumber ? `Unit ${c.unit.unitNumber}` : 'No unit'} · ${c.status.replace(/_/g, ' ')}`,
+    tag: c.contractNo,
+  }))
+
+  // Skip tenants already shown by one of their contracts
+  const shownNames = new Set(contractRows.map(r => r.title.toLowerCase()))
+  const customerRows: Row[] = (data?.customers ?? [])
+    .filter(c => !shownNames.has((c.fullName || '').toLowerCase()))
+    .map(c => ({
+      kind: 'customer' as const,
+      id: c._id,
+      title: c.fullName,
+      meta: [c.phones?.[0] || c.phone, c.email].filter(Boolean).join(' · ') || 'No contact details',
+      tag: c.clientId || 'Tenant',
+    }))
+
+  const results: Row[] = [...contractRows, ...customerRows]
+
+  useEffect(() => { setActive(0) }, [debounced, data])
 
   // Close when clicking elsewhere
   useEffect(() => {
@@ -64,8 +107,8 @@ export default function GlobalSearch() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  function go(hit: Hit) {
-    navigate(`/contracts/${hit._id}`)
+  function go(row: Row) {
+    navigate(row.kind === 'contract' ? `/contracts/${row.id}` : `/customers?edit=${row.id}`)
     setOpen(false)
     setTerm('')
     inputRef.current?.blur()
@@ -112,29 +155,36 @@ export default function GlobalSearch() {
             <p className="px-4 py-3 text-[12.5px]" style={{ color: MUTED }}>
               {isFetching ? 'Searching…' : `No tenant or contract matches “${debounced}”`}
             </p>
-          ) : results.map((hit, i) => (
-            <button
-              key={hit._id}
-              type="button"
-              onMouseEnter={() => setActive(i)}
-              onClick={() => go(hit)}
-              className="w-full text-left px-4 py-2.5 cursor-pointer border-t first:border-t-0"
-              style={{ borderColor: 'rgba(20,8,31,.06)', background: i === active ? '#F7F3FF' : '#fff' }}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-[13px] font-semibold truncate" style={{ color: '#14081F' }}>
-                  {hit.customer?.fullName || 'Unknown tenant'}
-                </span>
-                <span className="text-[11px] font-semibold shrink-0" style={{ color: PURPLE }}>
-                  {hit.contractNo}
-                </span>
+          ) : results.map((row, i) => {
+            const firstOfKind = i === 0 || results[i - 1].kind !== row.kind
+            return (
+              <div key={`${row.kind}-${row.id}`}>
+                {firstOfKind && (
+                  <div className="px-4 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider"
+                    style={{ color: MUTED, background: '#FAF8FD' }}>
+                    {row.kind === 'contract' ? 'Contracts' : 'Tenants'}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onMouseEnter={() => setActive(i)}
+                  onClick={() => go(row)}
+                  className="w-full text-left px-4 py-2.5 cursor-pointer"
+                  style={{ background: i === active ? '#F7F3FF' : '#fff' }}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[13px] font-semibold truncate" style={{ color: '#14081F' }}>
+                      {row.title}
+                    </span>
+                    <span className="text-[11px] font-semibold shrink-0" style={{ color: PURPLE }}>
+                      {row.tag}
+                    </span>
+                  </div>
+                  <div className="text-[11px] mt-0.5 truncate" style={{ color: MUTED }}>{row.meta}</div>
+                </button>
               </div>
-              <div className="text-[11px] mt-0.5" style={{ color: MUTED }}>
-                {hit.unit?.unitNumber ? `Unit ${hit.unit.unitNumber}` : 'No unit'}
-                {' · '}{hit.status.replace(/_/g, ' ')}
-              </div>
-            </button>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

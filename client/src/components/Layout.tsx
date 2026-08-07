@@ -414,10 +414,9 @@ export default function Layout() {
       <main className={cn("flex-1 pt-14 md:pt-0 min-w-0 transition-all duration-200", collapsed ? 'md:ml-[60px]' : 'md:ml-56')} style={{ background: '#FBF8F2' }}>
         {/* Desktop top bar with profile dropdown */}
         <div className="hidden md:flex items-center justify-between h-14 px-6 border-b border-border/40">
-          <div className="flex items-center gap-5 min-w-0">
-            <h1 className="text-lg font-semibold shrink-0" style={{ color: '#14081F' }}>{getPageTitle(location.pathname)}</h1>
-            {!isMovingOnly && <GlobalSearch />}
-          </div>
+          <h1 className="text-lg font-semibold shrink-0" style={{ color: '#14081F' }}>{getPageTitle(location.pathname)}</h1>
+          <div className="flex items-center gap-3">
+          {!isMovingOnly && <GlobalSearch />}
           <div ref={profileRef} className="relative">
             <button
               onClick={() => setProfileOpen(o => !o)}
@@ -502,6 +501,7 @@ export default function Layout() {
                 </div>
               </div>
             )}
+          </div>
           </div>
         </div>
 
