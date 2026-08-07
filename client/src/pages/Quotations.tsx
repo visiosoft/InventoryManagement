@@ -931,12 +931,12 @@ export default function Quotations() {
               <tr>
                 <Th>Quote #</Th>
                 <Th>Customer</Th>
-                <Th>Progress</Th>
-                <Th>Units</Th>
+                <Th className="hidden md:table-cell">Progress</Th>
+                <Th className="hidden lg:table-cell">Units</Th>
                 <Th>Status</Th>
                 <Th>Total</Th>
-                <Th>Assigned</Th>
-                <Th>Date</Th>
+                <Th className="hidden lg:table-cell">Assigned</Th>
+                <Th className="hidden md:table-cell">Date</Th>
                 <Th />
               </tr>
             </thead>
@@ -976,7 +976,7 @@ export default function Quotations() {
                             <div className="text-xs text-muted-foreground">{q.customer.phone}</div>
                           )}
                         </Td>
-                        <Td>
+                        <Td className="hidden md:table-cell">
                           <div className="flex flex-col gap-1">
                             <FlowProgress stepsDone={q.flowStepsDone} currentStep={q.flowStep} />
                             <span className="text-[10px] text-muted-foreground">
@@ -991,7 +991,7 @@ export default function Quotations() {
                             </span>
                           </div>
                         </Td>
-                        <Td>
+                        <Td className="hidden lg:table-cell">
                           <div className="flex items-center gap-1">
                             <Package size={13} className="text-muted-foreground" />
                             <span>{q.units?.length || 0}</span>
@@ -1003,12 +1003,12 @@ export default function Quotations() {
                         <Td>
                           <span className="font-semibold">{formatMoney(q.total)}</span>
                         </Td>
-                        <Td>
+                        <Td className="hidden lg:table-cell">
                           <span className="text-xs text-muted-foreground">
                             {typeof q.assignedTo === 'object' && q.assignedTo ? q.assignedTo.name : '—'}
                           </span>
                         </Td>
-                        <Td>{formatDate(q.quoteDate)}</Td>
+                        <Td className="hidden md:table-cell">{formatDate(q.quoteDate)}</Td>
                         <Td>
                           <div className="flex gap-2 text-xs" onClick={(e) => e.stopPropagation()}>
                             <button onClick={() => navigate(`/quotes/new?quote=${q._id}`)} className="text-primary hover:underline cursor-pointer">
