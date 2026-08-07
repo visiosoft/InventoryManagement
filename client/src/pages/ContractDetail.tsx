@@ -1011,7 +1011,6 @@ export default function ContractDetail() {
                 // Collected vs still owed, so the sidebar shows the money position
                 // without needing the old balance bar.
                 const collected = payments.filter((p) => p.status === 'paid').reduce((s, p) => s + p.amount, 0)
-                const stillDue = payments.filter((p) => p.status !== 'paid').reduce((s, p) => s + p.amount, 0)
                 const remaining = Math.max(0, totalOwed - collected)
 
                 /** Saves one field straight to the contract and closes the editor. */
@@ -1098,7 +1097,6 @@ export default function ContractDetail() {
                     {EditRow('Asking Price', 'rate', `AED ${formatMoney(askingPrice)}`, 'number', String(askingPrice))}
                     {EditRow('Leased Price', 'leasedPrice', `AED ${formatMoney(leasedPrice)}`, 'number', String(leasedPrice))}
                     {EditRow('Total Quotation', 'totalQuotation', `AED ${formatMoney(c.totalQuotation || 0)}`, 'number', String(c.totalQuotation || 0))}
-                    {Row('Pending', <span className={stillDue > 0 ? 'text-amber-600' : ''}>AED {formatMoney(stillDue)}</span>)}
                     {Row('Remaining', <span className={remaining > 0 ? 'text-destructive' : 'text-emerald-600'}>AED {formatMoney(remaining)}</span>)}
                   </div>
                 )
