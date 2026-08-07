@@ -931,7 +931,7 @@ router.put('/:id', async (req, res) => {
         .filter((p) => p.name);
     }
 
-    await contract.save();
+    await contract.save({ timestamps: true, versionKey: false });
     const populated = await populateAll(Contract.findById(contract._id));
     res.json(populated);
   } catch (err) {
