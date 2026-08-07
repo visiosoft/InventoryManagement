@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Loader2, Search, X } from 'lucide-react'
 import { api } from '../lib/api'
+import { tenantContractPath } from '../lib/tenantContract'
 
 type ContractHit = {
   _id: string
@@ -115,14 +116,8 @@ export default function GlobalSearch() {
       navigate(`/contracts/${row.id}`)
       return
     }
-    // Tenants have no page of their own — go to their latest contract instead
-    try {
-      const r = await api.get('/contracts', { params: { customer: row.id, limit: 1, archived: 'all' } })
-      const contract = (r.data?.data ?? [])[0]
-      navigate(contract ? `/contracts/${contract._id}` : `/contracts?search=${encodeURIComponent(row.title)}`)
-    } catch {
-      navigate(`/contracts?search=${encodeURIComponent(row.title)}`)
-    }
+    // Tenants have no page of their own — go to their contract instead
+    navigate(await tenantContractPath(row.id, row.title))
   }
 
   function onKeyDown(e: React.KeyboardEvent) {
