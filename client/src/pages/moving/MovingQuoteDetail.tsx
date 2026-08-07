@@ -91,6 +91,12 @@ export default function MovingQuoteDetail() {
     onError: (e) => setErr(apiError(e)),
   })
 
+  const deleteMut = useMutation({
+    mutationFn: () => api.delete(`/moving-quotes/${id}`).then(r => r.data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['moving-quotes'] }); navigate('/moving/quotes') },
+    onError: (e) => setErr(apiError(e)),
+  })
+
   const convertToInvoiceMut = useMutation({
     mutationFn: () => api.post(`/moving-quotes/${id}/convert-to-invoice`).then(r => r.data),
     onSuccess: (invoice) => navigate(`/moving/invoices/${invoice._id}`),
@@ -152,6 +158,18 @@ export default function MovingQuoteDetail() {
           }}
         >
           <Download size={13} className="mr-1" />PDF
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="text-red-600 border-red-200 hover:bg-red-50"
+          disabled={deleteMut.isPending}
+          onClick={() => {
+            if (confirm(`Delete quote ${quote.quoteNo}? This cannot be undone.`)) deleteMut.mutate()
+          }}
+        >
+          <Trash2 size={13} className="mr-1" />
+          {deleteMut.isPending ? 'Deleting…' : 'Delete'}
         </Button>
       </div>
 
