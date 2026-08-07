@@ -1362,6 +1362,9 @@ export default function ContractDetail() {
                         <div key={d._id} className="flex items-center gap-2 py-1.5">
                           <FileText size={14} className="text-muted-foreground shrink-0" />
                           <span className="text-xs font-medium truncate flex-1">{d.name}</span>
+                          {d.type && d.type !== 'other' && (
+                            <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded shrink-0">{statusLabel(d.type)}</span>
+                          )}
                           <a href={d.url} target="_blank" rel="noreferrer" className="shrink-0 text-muted-foreground hover:text-foreground transition-colors">
                             <Download size={14} />
                           </a>
