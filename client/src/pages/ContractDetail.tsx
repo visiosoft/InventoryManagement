@@ -1064,53 +1064,43 @@ export default function ContractDetail() {
               </div>
 
               {/* Contract detail rows */}
-              <div className="divide-y border-t text-sm pt-1">
-                {allUnits.map((u, i) => (
-                  <div key={u._id} className="flex justify-between py-2">
-                    <span className="text-muted-foreground">{i === 0 ? 'Unit' : ''}</span>
-                    <span className="font-medium">{u.unitNumber}{u.sizeSqf != null ? ` · ${u.sizeSqf} sq ft` : ''}</span>
+              {(() => {
+                // Asking is the rate before the agreed discount; leased is what
+                // the tenant actually pays, and the weekly figure derives from it.
+                const askingPrice = Number(c.rate || 0)
+                const discountPct = Number((c as { firstMonthDiscountPct?: number }).firstMonthDiscountPct || 0)
+                const leasedPrice = Math.round(askingPrice * (1 - discountPct / 100) * 100) / 100
+                const pricePerWeek = Math.round((leasedPrice / 4) * 100) / 100
+                const weeks = c.startDate && c.endDate
+                  ? Math.ceil(Math.round((new Date(c.endDate).getTime() - new Date(c.startDate).getTime()) / 86400000) / 7)
+                  : null
+                const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
+                  <div className="flex justify-between py-2 gap-3">
+                    <span className="text-muted-foreground shrink-0">{label}</span>
+                    <span className="font-medium text-right">{value}</span>
                   </div>
-                ))}
-                {c.startDate && c.endDate && (
-                  <div className="flex justify-between py-2">
-                    <span className="text-muted-foreground">Term</span>
-                    <span className="font-medium text-right">
-                      {Math.ceil(Math.round((new Date(c.endDate).getTime() - new Date(c.startDate).getTime()) / 86400000) / 7)} weeks
-                    </span>
-                  </div>
-                )}
-                <div className="flex justify-between py-2">
-                  <span className="text-muted-foreground">Weekly</span>
-                  <span className="font-medium">AED {formatMoney(Math.round((c.rate / 4) * 100) / 100)}</span>
-                </div>
-                <div className="flex justify-between py-2 items-center">
-                  <span className="text-muted-foreground">Total quotation</span>
-                  <span className="font-medium flex items-center gap-1.5">
-                    AED {formatMoney(c.totalQuotation || 0)}
-                    <button className="text-primary hover:text-primary/80 cursor-pointer" title="Edit" onClick={() => { setError(''); setEditModal(true) }}>
-                      <PenLine size={11} />
-                    </button>
-                  </span>
-                </div>
-                {c.paymentMethod && (
-                  <div className="flex justify-between py-2">
-                    <span className="text-muted-foreground">Method</span>
-                    <span className="font-medium">{c.paymentMethod}</span>
-                  </div>
-                )}
-                {customerPhone && (
-                  <div className="flex justify-between py-2 items-center gap-2">
-                    <span className="text-muted-foreground shrink-0">Phone</span>
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="font-medium truncate text-right">{customerPhone}</span>
-                      <a href={waUrl} target="_blank" rel="noopener noreferrer"
-                        className="shrink-0 inline-flex items-center gap-0.5 rounded border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:border-emerald-800 dark:text-emerald-400">
-                        <MessageSquare size={9} /> WA
-                      </a>
+                )
+                return (
+                  <div className="divide-y border-t text-sm pt-1">
+                    <Row label="Check In" value={c.startDate ? formatDate(c.startDate) : '—'} />
+                    <Row label="Check Out" value={c.endDate ? formatDate(c.endDate) : '—'} />
+                    <Row label="Number of Weeks" value={weeks ?? '—'} />
+                    <Row label="Unit Number" value={allUnits.length ? allUnits.map((u) => u.unitNumber).join(', ') : '—'} />
+                    <Row label="Asking Price" value={`AED ${formatMoney(askingPrice)}`} />
+                    <Row label="Leased Price" value={`AED ${formatMoney(leasedPrice)}`} />
+                    <Row label="Price Per Week" value={`AED ${formatMoney(pricePerWeek)}`} />
+                    <div className="flex justify-between py-2 items-center gap-3">
+                      <span className="text-muted-foreground shrink-0">Total Quotation</span>
+                      <span className="font-medium flex items-center gap-1.5">
+                        AED {formatMoney(c.totalQuotation || 0)}
+                        <button className="text-primary hover:text-primary/80 cursor-pointer" title="Edit" onClick={() => { setError(''); setEditModal(true) }}>
+                          <PenLine size={11} />
+                        </button>
+                      </span>
                     </div>
                   </div>
-                )}
-              </div>
+                )
+              })()}
 
               {c.signedDocUrl && (
                 <a href={c.signedDocUrl} target="_blank" rel="noreferrer" className="text-primary text-xs hover:underline flex items-center gap-1">
