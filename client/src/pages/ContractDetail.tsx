@@ -1054,7 +1054,7 @@ export default function ContractDetail() {
                   type: 'date' | 'number',
                   initial: string,
                 ) => (
-                  <div key={label} className="flex justify-between py-2 gap-2 items-center min-h-[38px]">
+                  <div key={label} className="flex justify-between py-2 gap-2 items-center min-h-[40px]">
                     <span className="text-muted-foreground shrink-0">{label}</span>
                     {inlineField === key ? (
                       <input
@@ -1063,7 +1063,7 @@ export default function ContractDetail() {
                         step={type === 'number' ? '0.01' : undefined}
                         min={type === 'number' ? '0' : undefined}
                         defaultValue={initial}
-                        className="h-7 w-32 rounded border px-1.5 text-right text-[13px] outline-none focus:border-primary"
+                        className="h-8 w-32 rounded border px-1.5 text-right text-[14px] outline-none focus:border-primary"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') saveInline(key, e.currentTarget.value)
                           if (e.key === 'Escape') setInlineField(null)
@@ -1076,7 +1076,7 @@ export default function ContractDetail() {
                         <button type="button" title={`Edit ${label}`}
                           className="text-primary hover:text-primary/80 cursor-pointer"
                           onClick={() => { setError(''); setInlineField(key) }}>
-                          <PenLine size={11} />
+                          <PenLine size={12} />
                         </button>
                       </span>
                     )}
@@ -1084,7 +1084,7 @@ export default function ContractDetail() {
                 )
 
                 return (
-                  <div className="divide-y border-t text-sm pt-1">
+                  <div className="divide-y border-t text-[15px] pt-1">
                     {EditRow('Check In', 'startDate', c.startDate ? formatDate(c.startDate) : '—', 'date', c.startDate?.slice(0, 10) || '')}
                     {EditRow('Check Out', 'endDate', c.endDate ? formatDate(c.endDate) : '—', 'date', c.endDate?.slice(0, 10) || '')}
                     {Row('Number of Weeks', weeks ?? '—')}
