@@ -216,6 +216,35 @@ router.get('/latest-notes', async (req, res) => {
 });
 
 // List contracts pending admin approval.
+// Typeahead for the global search box: match a contract number, tenant name or
+// unit number and return just enough to render a result row. Declared before
+// '/:id' so the path isn't swallowed by it.
+router.get('/search', async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (q.length < 2) return res.json([]);
+  const limit = Math.min(Math.max(1, Number(req.query.limit) || 8), 25);
+  const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+
+  const [units, customers] = await Promise.all([
+    Unit.find({ unitNumber: re }).select('_id').limit(100).lean(),
+    Customer.find({ fullName: re }).select('_id').limit(100).lean(),
+  ]);
+
+  const or = [{ contractNo: re }];
+  if (units.length) or.push({ unit: { $in: units.map((u) => u._id) } });
+  if (customers.length) or.push({ customer: { $in: customers.map((c) => c._id) } });
+
+  const contracts = await Contract.find({ $or: or, archived: { $ne: true } })
+    .select('contractNo status startDate endDate')
+    .populate('customer', 'fullName')
+    .populate('unit', 'unitNumber')
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .lean();
+
+  res.json(contracts);
+});
+
 router.get('/pending-approvals', async (req, res) => {
   const contracts = await Contract.find({ approvalStatus: 'pending' })
     .populate('customer', 'fullName phone email')

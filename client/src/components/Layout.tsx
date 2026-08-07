@@ -2,6 +2,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { LayoutDashboard, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ShieldCheck, ScrollText, CalendarCheck, RefreshCw, Map as MapIcon, Mail } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
+import GlobalSearch from './GlobalSearch'
 import { cn } from '../lib/utils'
 
 const navTop = [
@@ -413,7 +414,10 @@ export default function Layout() {
       <main className={cn("flex-1 pt-14 md:pt-0 min-w-0 transition-all duration-200", collapsed ? 'md:ml-[60px]' : 'md:ml-56')} style={{ background: '#FBF8F2' }}>
         {/* Desktop top bar with profile dropdown */}
         <div className="hidden md:flex items-center justify-between h-14 px-6 border-b border-border/40">
-          <h1 className="text-lg font-semibold" style={{ color: '#14081F' }}>{getPageTitle(location.pathname)}</h1>
+          <div className="flex items-center gap-5 min-w-0">
+            <h1 className="text-lg font-semibold shrink-0" style={{ color: '#14081F' }}>{getPageTitle(location.pathname)}</h1>
+            {!isMovingOnly && <GlobalSearch />}
+          </div>
           <div ref={profileRef} className="relative">
             <button
               onClick={() => setProfileOpen(o => !o)}
