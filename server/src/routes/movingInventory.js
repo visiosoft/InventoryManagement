@@ -64,6 +64,9 @@ router.post('/items', async (req, res) => {
     if (!Number.isFinite(body.onHand) || body.onHand < 0) return res.status(400).json({ error: 'onHand must be 0 or more' });
     if (!Number.isFinite(body.reorderLevel) || body.reorderLevel < 0) return res.status(400).json({ error: 'reorderLevel must be 0 or more' });
 
+    const existing = await MovingItem.findOne({ sku: body.sku });
+    if (existing) return res.status(409).json({ error: `Item with SKU "${body.sku}" already exists` });
+
     const item = await MovingItem.create(body);
     res.status(201).json(item);
 });

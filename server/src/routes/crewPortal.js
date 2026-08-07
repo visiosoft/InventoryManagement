@@ -105,7 +105,7 @@ router.patch('/jobs/:id/checklist', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.post('/jobs/:id/photos', upload.array('images', 10), async (req, res) => {
+router.post('/jobs/:id/photos', upload.array('images', 20), async (req, res) => {
   try {
     const files = req.files?.map(f => ({
       url: `/uploads/crew-photos/${f.filename}`,

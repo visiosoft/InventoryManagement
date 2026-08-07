@@ -1088,27 +1088,31 @@ router.post('/:id/generate-custom-invoice', async (req, res) => {
 
 // Add a timeline note to a contract
 router.post('/:id/notes', async (req, res) => {
-  const contract = await Contract.findById(req.params.id);
-  if (!contract) return res.status(404).json({ error: 'Contract not found' });
   const text = String(req.body?.text || '').trim();
   if (!text) return res.status(400).json({ error: 'Note text is required' });
-  contract.timeline.push({ text, author: String(req.body?.author || '') });
-  await contract.save();
+  const contract = await Contract.findByIdAndUpdate(
+    req.params.id,
+    { $push: { timeline: { text, author: String(req.body?.author || '') } } },
+    { new: true }
+  );
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
   res.json(contract.timeline);
 });
 
 // Edit a timeline note by index
 router.put('/:id/notes/:idx', async (req, res) => {
-  const contract = await Contract.findById(req.params.id);
-  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  const text = String(req.body?.text || '').trim();
+  if (!text) return res.status(400).json({ error: 'Note text is required' });
   const idx = Number(req.params.idx);
+  const contract = await Contract.findByIdAndUpdate(
+    req.params.id,
+    { $set: { [`timeline.${idx}.text`]: text } },
+    { new: true }
+  );
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
   if (!Number.isInteger(idx) || idx < 0 || idx >= contract.timeline.length) {
     return res.status(400).json({ error: 'Invalid note index' });
   }
-  const text = String(req.body?.text || '').trim();
-  if (!text) return res.status(400).json({ error: 'Note text is required' });
-  contract.timeline[idx].text = text;
-  await contract.save();
   res.json(contract.timeline);
 });
 
@@ -1121,7 +1125,7 @@ router.delete('/:id/notes/:idx', async (req, res) => {
     return res.status(400).json({ error: 'Invalid note index' });
   }
   contract.timeline.splice(idx, 1);
-  await contract.save();
+  await contract.save({ timestamps: false, versionKey: false });
   res.json(contract.timeline);
 });
 
