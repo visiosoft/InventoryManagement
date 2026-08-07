@@ -1225,7 +1225,61 @@ export default function ContractDetail() {
                     {EditableRow('Check Out', 'endDate', c.endDate ? formatDate(c.endDate) : '—', (c.endDate || '').slice(0, 10), 'date')}
                     {EditableRow('Number of Weeks', 'weeks', String(weeks ?? '—'), String(weeks || ''))}
                     {Row('Expiring In', daysLeft === null ? '—' : daysLeft < 0 ? `Expired ${Math.abs(daysLeft)}d ago` : `${daysLeft}d left`)}
-                    {EditableRow('Unit Number', 'unitNumber', allUnits.length ? allUnits.map((u) => u.unitNumber).join(', ') : '—', allUnits.map((u) => u._id).join(','), 'text')}
+                    {/* Unit Number — custom dropdown picker */}
+                    <div className="flex justify-between items-center py-2.5 gap-2 group">
+                      <span className="text-muted-foreground shrink-0 text-sm">Unit Number</span>
+                      {inlineField === 'unitNumber' ? (
+                        <div className="relative">
+                          <input
+                            autoFocus
+                            type="text"
+                            placeholder="Search units…"
+                            className="w-40 text-sm border rounded px-2 py-1 outline-none focus:ring-1 focus:ring-primary"
+                            value={inlineValue}
+                            onChange={(e) => setInlineValue(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Escape') setInlineField(null) }}
+                          />
+                          <div className="absolute right-0 mt-1 w-56 max-h-48 overflow-y-auto bg-white dark:bg-gray-900 border rounded-lg shadow-lg z-50">
+                            {unitOptions
+                              .filter((u) => !inlineValue || u.unitNumber.toLowerCase().includes(inlineValue.toLowerCase()))
+                              .slice(0, 30)
+                              .map((u) => {
+                                const selected = allUnits.some((au) => au._id === u._id)
+                                return (
+                                  <button
+                                    key={u._id}
+                                    type="button"
+                                    className={`w-full text-left px-3 py-1.5 text-sm hover:bg-muted flex items-center justify-between ${selected ? 'bg-primary/5 font-medium' : ''}`}
+                                    onClick={async () => {
+                                      const currentIds = allUnits.map((au) => au._id)
+                                      const newIds = selected ? currentIds.filter((id) => id !== u._id) : [...currentIds, u._id]
+                                      if (!newIds.length) return
+                                      try { await api.put(`/contracts/${id}`, { units: newIds }); invalidate() } catch (e) { setError(apiError(e)) }
+                                    }}
+                                  >
+                                    <span>{u.unitNumber} <span className="text-xs text-muted-foreground">{u.floor}{u.sizeSqf ? ` · ${u.sizeSqf}sqft` : ''}</span></span>
+                                    {selected && <span className="text-primary text-xs">✓</span>}
+                                  </button>
+                                )
+                              })}
+                          </div>
+                          <button type="button" onClick={() => setInlineField(null)} className="absolute -top-1 -right-6 p-0.5 text-muted-foreground hover:text-foreground">
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ) : (
+                        <span
+                          className="font-medium text-right text-sm flex items-center gap-1.5"
+                          onDoubleClick={() => { setInlineField('unitNumber'); setInlineValue('') }}
+                          title="Double-click to edit"
+                        >
+                          {allUnits.length ? allUnits.map((u) => u.unitNumber).join(', ') : '—'}
+                          <button type="button" onClick={() => { setInlineField('unitNumber'); setInlineValue('') }} className="p-1 rounded hover:bg-muted text-muted-foreground/40 hover:text-primary transition-colors cursor-pointer">
+                            <PenLine size={13} />
+                          </button>
+                        </span>
+                      )}
+                    </div>
                     {Row('Unit Size',
                       allUnits.some((u) => u?.sizeSqf != null)
                         ? `${allUnits.map((u) => (u?.sizeSqf != null ? u.sizeSqf : '—')).join(', ')} sq ft`
