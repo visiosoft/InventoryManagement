@@ -785,6 +785,8 @@ export default function ContractDetail() {
   // Custom invoices open with no prefilled lines; period invoices keep theirs
   const [invoiceBlank, setInvoiceBlank] = useState(false)
   const [editModal, setEditModal] = useState(false)
+  const [inlineField, setInlineField] = useState<string | null>(null)
+  const [inlineValue, setInlineValue] = useState('')
 
   // Units to choose from in the edit panel — only fetched once the panel opens
   const { data: unitOptions = [] } = useQuery<Unit[]>({
@@ -1148,34 +1150,64 @@ export default function ContractDetail() {
                 </div>
               </div>
 
-              {/* Contract detail rows */}
+              {/* Contract detail rows — click a value to edit inline */}
               {(() => {
-                // Asking is the rate before the agreed discount; leased is what
-                // the tenant actually pays, and the weekly figure derives from it.
                 const askingPrice = Number(c.rate || 0)
                 const discountPct = Number((c as { firstMonthDiscountPct?: number }).firstMonthDiscountPct || 0)
                 const leasedPrice = Number(c.leasedPrice) || Math.round(askingPrice * (1 - discountPct / 100) * 100) / 100
                 const weeks = c.startDate && c.endDate
                   ? Math.ceil(Math.round((new Date(c.endDate).getTime() - new Date(c.startDate).getTime()) / 86400000) / 7)
                   : null
-                // Collected vs still owed, so the sidebar shows the money position
-                // without needing the old balance bar.
                 const collected = payments.filter((p) => p.status === 'paid').reduce((s, p) => s + p.amount, 0)
                 const remaining = Math.max(0, totalOwed - collected)
 
-                // Plain functions, not components — a component declared here would
-                // get a fresh type each render and remount its subtree.
+                const saveField = async (field: string, val: string) => {
+                  const body: Record<string, unknown> = {}
+                  if (field.includes('Date')) body[field] = val
+                  else body[field] = Number(val) || 0
+                  try { await api.put(`/contracts/${id}`, body); invalidate() } catch (e) { setError(apiError(e)) }
+                  setInlineField(null)
+                }
+
+                const startEdit = (field: string, raw: string) => { setInlineField(field); setInlineValue(raw) }
+
+                const EditableRow = (label: string, field: string, display: string, raw: string, type = 'number') => (
+                  <div key={label} className="flex justify-between items-center py-2 gap-2">
+                    <span className="text-muted-foreground shrink-0 text-sm">{label}</span>
+                    {inlineField === field ? (
+                      <input
+                        autoFocus
+                        type={type}
+                        step={type === 'number' ? '0.01' : undefined}
+                        className="w-32 text-right text-sm font-medium border-b border-primary bg-transparent outline-none px-1 py-0.5"
+                        value={inlineValue}
+                        onChange={(e) => setInlineValue(e.target.value)}
+                        onBlur={() => saveField(field, inlineValue)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') saveField(field, inlineValue); if (e.key === 'Escape') setInlineField(null) }}
+                      />
+                    ) : (
+                      <span
+                        className="font-medium text-right text-sm cursor-pointer hover:text-primary hover:underline decoration-dashed underline-offset-2"
+                        onClick={() => startEdit(field, raw)}
+                        title="Click to edit"
+                      >
+                        {display}
+                      </span>
+                    )}
+                  </div>
+                )
+
                 const Row = (label: string, value: React.ReactNode) => (
                   <div key={label} className="flex justify-between py-2 gap-3">
-                    <span className="text-muted-foreground shrink-0">{label}</span>
-                    <span className="font-medium text-right">{value}</span>
+                    <span className="text-muted-foreground shrink-0 text-sm">{label}</span>
+                    <span className="font-medium text-right text-sm">{value}</span>
                   </div>
                 )
 
                 return (
                   <div className="divide-y border-t text-[15px] pt-1">
-                    {Row('Check In', c.startDate ? formatDate(c.startDate) : '—')}
-                    {Row('Check Out', c.endDate ? formatDate(c.endDate) : '—')}
+                    {EditableRow('Check In', 'startDate', c.startDate ? formatDate(c.startDate) : '—', (c.startDate || '').slice(0, 10), 'date')}
+                    {EditableRow('Check Out', 'endDate', c.endDate ? formatDate(c.endDate) : '—', (c.endDate || '').slice(0, 10), 'date')}
                     {Row('Number of Weeks', weeks ?? '—')}
                     {Row('Expiring In', daysLeft === null ? '—' : daysLeft < 0 ? `Expired ${Math.abs(daysLeft)}d ago` : `${daysLeft}d left`)}
                     {Row('Unit Number', allUnits.length ? allUnits.map((u) => u.unitNumber).join(', ') : '—')}
@@ -1183,9 +1215,9 @@ export default function ContractDetail() {
                       allUnits.some((u) => u?.sizeSqf != null)
                         ? `${allUnits.map((u) => (u?.sizeSqf != null ? u.sizeSqf : '—')).join(', ')} sq ft`
                         : '—')}
-                    {Row('Asking Price', `AED ${formatMoney(askingPrice)}`)}
-                    {Row('Leased Price', `AED ${formatMoney(leasedPrice)}`)}
-                    {Row('Total Quotation', `AED ${formatMoney(c.totalQuotation || 0)}`)}
+                    {EditableRow('Asking Price', 'rate', `AED ${formatMoney(askingPrice)}`, String(askingPrice))}
+                    {EditableRow('Leased Price', 'leasedPrice', `AED ${formatMoney(leasedPrice)}`, String(leasedPrice))}
+                    {EditableRow('Total Quotation', 'totalQuotation', `AED ${formatMoney(c.totalQuotation || 0)}`, String(c.totalQuotation || 0))}
                     {Row('Received', <span className="text-emerald-600">AED {formatMoney(collected)}</span>)}
                     {Row('Remaining', <span className={remaining > 0 ? 'text-destructive' : 'text-emerald-600'}>AED {formatMoney(remaining)}</span>)}
                   </div>
