@@ -11,7 +11,7 @@ router.get('/', async (req, res) => {
   if (req.query.floor) filter.floor = req.query.floor;
   if (req.query.minSize) filter.sizeSqf = { ...filter.sizeSqf, $gte: Number(req.query.minSize) };
   if (req.query.maxSize) filter.sizeSqf = { ...filter.sizeSqf, $lte: Number(req.query.maxSize) };
-  const units = await Unit.find(filter).sort({ floor: 1, unitNumber: 1 });
+  const units = await Unit.find(filter).sort({ floor: 1, unitNumber: 1 }).lean();
   res.json(units);
 });
 

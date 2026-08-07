@@ -276,6 +276,7 @@ contractSchema.index({ unit: 1, status: 1 });
 contractSchema.index({ units: 1, status: 1 });
 contractSchema.index({ customer: 1, createdAt: -1 });
 contractSchema.index({ status: 1, endDate: 1 });
+contractSchema.index({ approvalStatus: 1, updatedAt: -1 });
 
 const quoteItemSchema = new Schema(
   {

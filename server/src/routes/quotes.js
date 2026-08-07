@@ -287,7 +287,8 @@ router.get('/', async (req, res) => {
         .populate('lead', 'fullName phone')
         .populate('contract', 'contractNo status approvalStatus')
         .populate('assignedTo', 'name email')
-        .sort({ createdAt: -1 });
+        .sort({ createdAt: -1 })
+        .lean();
     res.json(quotes);
 });
 

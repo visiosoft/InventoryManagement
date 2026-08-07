@@ -64,7 +64,9 @@ router.get('/', async (req, res) => {
   const scope = await siteScope(req.query.site);
   if (scope) filter.$and = [...(filter.$and || []), { contract: { $in: scope.contractIds } }];
 
-  const payments = await populateAll(Payment.find(filter)).sort({ dueDate: 1 });
+  // Hydrating ~1,600 payments plus their nested contract/customer/unit docs cost
+  // ~7.5s; lean() returns the same JSON in a fraction of that.
+  const payments = await populateAll(Payment.find(filter)).sort({ dueDate: 1 }).lean();
   res.json(payments);
 });
 
