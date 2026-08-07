@@ -32,6 +32,7 @@ import FloorMap from './pages/FloorMap'
 import Sites from './pages/Sites'
 import Customers from './pages/Customers'
 import CustomerDetail from './pages/CustomerDetail'
+import ContractDetailV2 from './pages/ContractDetailV2'
 import Contracts from './pages/Contracts'
 import ContractDetail from './pages/ContractDetail'
 import NewContract from './pages/NewContract'
@@ -155,6 +156,8 @@ export default function App() {
         <Route path="/contracts" element={<Contracts />} />
         <Route path="/contracts/new" element={<NewContract />} />
         <Route path="/contracts/:id" element={<ContractDetail />} />
+        {/* Alternative layout for review — remove once a design is chosen */}
+        <Route path="/contracts/:id/preview" element={<ContractDetailV2 />} />
         <Route path="/payments" element={<PermGuard module="payments"><Payments /></PermGuard>} />
         <Route path="/documents" element={<PermGuard module="documents"><Documents /></PermGuard>} />
         <Route path="/reports" element={<Reports />} />
