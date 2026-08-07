@@ -937,10 +937,11 @@ router.put('/:id', async (req, res) => {
     }
 
     // Log what was changed to the contract timeline with values
+    const fieldLabels = { rate: 'Asking Price', deposit: 'Deposit', totalQuotation: 'Total Quotation', leasedPrice: 'Leased Price', manualReceived: 'Received', startDate: 'Check In', endDate: 'Check Out', billingPeriod: 'Billing Period', paymentMethod: 'Payment Method', firstPaymentDate: 'First Payment Date', firstMonthDiscountPct: 'First Month Discount' };
     const changedKeys = Object.keys($set).filter(k => k !== 'authorizedPersons');
     if (changedKeys.length) {
       const who = req.user?.name || req.user?.email || 'System';
-      const details = changedKeys.map(k => `${k}: ${$set[k] instanceof Date ? $set[k].toISOString().slice(0, 10) : $set[k]}`).join(', ');
+      const details = changedKeys.map(k => `${fieldLabels[k] || k}: ${$set[k] instanceof Date ? $set[k].toISOString().slice(0, 10) : $set[k]}`).join(', ');
       await Contract.findByIdAndUpdate(contract._id, {
         $set,
         $push: { timeline: { text: `Updated ${details}`, author: who, at: new Date() } },

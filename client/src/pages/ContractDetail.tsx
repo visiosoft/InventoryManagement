@@ -812,6 +812,7 @@ export default function ContractDetail() {
   const [editCustomerModal, setEditCustomerModal] = useState(false)
   const [customerError, setCustomerError] = useState('')
   const [editingNote, setEditingNote] = useState<{ idx: number; text: string } | null>(null)
+  const [showAllActivity, setShowAllActivity] = useState(false)
   const [searchParams, setSearchParams] = useSearchParams()
   const activeTab = (searchParams.get('tab') as 'overview' | 'payments' | 'documents') || 'overview'
   const setActiveTab = (tab: 'overview' | 'payments' | 'documents') => setSearchParams({ tab }, { replace: true })
@@ -1371,7 +1372,7 @@ export default function ContractDetail() {
                       <EmptyState message="No activity yet." />
                     ) : (
                       <div className="divide-y">
-                        {activityEvents.map((ev) => (
+                        {(showAllActivity ? activityEvents : activityEvents.slice(0, 10)).map((ev) => (
                           <div key={ev.id} className="flex gap-3 py-3">
                             <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${ev.type === 'paid' ? 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600'
                               : ev.type === 'invoice' ? 'bg-blue-100 dark:bg-blue-950/40 text-blue-600'
@@ -1426,6 +1427,12 @@ export default function ContractDetail() {
                             </div>
                           </div>
                         ))}
+                        {!showAllActivity && activityEvents.length > 10 && (
+                          <button type="button" onClick={() => setShowAllActivity(true)}
+                            className="w-full py-2.5 text-sm font-medium text-primary hover:underline cursor-pointer">
+                            Show more ({activityEvents.length - 10} older)
+                          </button>
+                        )}
                       </div>
                     )}
                   </CardBody>
