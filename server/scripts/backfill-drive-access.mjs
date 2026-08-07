@@ -60,11 +60,12 @@ for (const doc of docs) {
       alreadyOpen++;
     }
 
-    // Match the URL format new uploads use
-    const directUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
-    if (doc.url !== directUrl) {
+    // Match the URL format new uploads use — Drive's viewer page, which opens
+    // PDFs and images in the browser rather than downloading them.
+    const viewUrl = `https://drive.google.com/file/d/${fileId}/view`;
+    if (doc.url !== viewUrl) {
       if (!DRY) {
-        doc.url = directUrl;
+        doc.url = viewUrl;
         await doc.save();
       }
       urlsFixed++;

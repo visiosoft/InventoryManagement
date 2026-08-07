@@ -130,8 +130,16 @@ export async function uploadFile({ buffer, filename, mimeType, customerName }) {
     supportsAllDrives: true,
   });
 
-  const url = `https://drive.google.com/uc?export=download&id=${data.id}`;
-  return { storage: 'drive', driveFileId: data.id, url, viewUrl: data.webViewLink };
+  // Drive's viewer page renders PDFs and images in the browser; the
+  // uc?export=download form forces a file download instead.
+  const url = `https://drive.google.com/file/d/${data.id}/view`;
+  return {
+    storage: 'drive',
+    driveFileId: data.id,
+    url,
+    viewUrl: url,
+    downloadUrl: `https://drive.google.com/uc?export=download&id=${data.id}`,
+  };
 }
 
 export async function uploadToVendorFolder({ buffer, filename, mimeType, vendorName }) {
@@ -152,6 +160,14 @@ export async function uploadToVendorFolder({ buffer, filename, mimeType, vendorN
     supportsAllDrives: true,
   });
 
-  const url = `https://drive.google.com/uc?export=download&id=${data.id}`;
-  return { storage: 'drive', driveFileId: data.id, url, viewUrl: data.webViewLink };
+  // Drive's viewer page renders PDFs and images in the browser; the
+  // uc?export=download form forces a file download instead.
+  const url = `https://drive.google.com/file/d/${data.id}/view`;
+  return {
+    storage: 'drive',
+    driveFileId: data.id,
+    url,
+    viewUrl: url,
+    downloadUrl: `https://drive.google.com/uc?export=download&id=${data.id}`,
+  };
 }
