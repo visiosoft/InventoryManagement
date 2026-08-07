@@ -12,44 +12,36 @@ router.get('/summary', async (req, res) => {
   const uF = scope ? scope.unitFilter : {};
   const cF = scope ? scope.contractFilter : {};
   const pF = scope ? scope.paymentFilter : {};
-  const units = await Unit.find(uF);
-
-  const byStatus = { available: 0, occupied: 0, reserved: 0, maintenance: 0 };
-  for (const u of units) byStatus[u.status] += 1;
-
-  const bySize = SIZE_BUCKETS.map((size) => {
-    const inBucket = units.filter((u) => u.sizeSqf === size);
-    return {
-      sizeSqf: `${size} sq ft`,
-      total: inBucket.length,
-      available: inBucket.filter((u) => u.status === 'available').length,
-      occupied: inBucket.filter((u) => u.status === 'occupied').length,
-      maintenance: inBucket.filter((u) => u.status === 'maintenance').length,
-    };
-  });
-
-  const byFloor = ['F1', 'F2'].map((f) => {
-    const onFloor = units.filter((u) => u.floor === f);
-    return {
-      floor: f,
-      total: onFloor.length,
-      available: onFloor.filter((u) => u.status === 'available').length,
-      occupied: onFloor.filter((u) => u.status === 'occupied').length,
-      maintenance: onFloor.filter((u) => u.status === 'maintenance').length,
-    };
-  });
 
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   const in15 = new Date(now.getTime() + 15 * 86400000);
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
-  await Payment.updateMany(
+  // Fire-and-forget: mark overdue payments without blocking the response
+  Payment.updateMany(
     { status: 'pending', dueDate: { $lt: now } },
     { $set: { status: 'overdue' } }
-  );
+  ).exec();
 
-  const [revenueAgg, dueAgg, expiring, overdue, activeContracts, moveInsThisMonthList, moveOutsThisMonthList, moveInsLastMonth, moveOutsLastMonth] = await Promise.all([
+  // Use aggregation for unit stats instead of loading all unit documents
+  const [unitStats, unitsBySize, unitsByFloor, availableUnits,
+    revenueAgg, dueAgg, expiring, overdue, activeContracts,
+    moveInsThisMonthList, moveOutsThisMonthList, moveInsLastMonth, moveOutsLastMonth] = await Promise.all([
+    Unit.aggregate([
+      { $match: uF },
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+    ]),
+    Unit.aggregate([
+      { $match: uF },
+      { $group: { _id: { sizeSqf: '$sizeSqf', status: '$status' }, count: { $sum: 1 } } },
+    ]),
+    Unit.aggregate([
+      { $match: uF },
+      { $group: { _id: { floor: '$floor', status: '$status' }, count: { $sum: 1 } } },
+    ]),
+    Unit.find({ ...uF, status: 'available' }).select('unitNumber floor sizeSqf price').lean(),
     Payment.aggregate([
       { $match: { ...pF, status: 'paid', paidDate: { $gte: monthStart, $lt: monthEnd } } },
       { $group: { _id: null, total: { $sum: '$amount' } } },
@@ -60,22 +52,52 @@ router.get('/summary', async (req, res) => {
     ]),
     Contract.find({ ...cF, status: 'active', endDate: { $gte: now, $lte: in15 } })
       .populate('customer', 'fullName')
-      .populate({ path: 'unit', select: 'unitNumber' })
-      .sort({ endDate: 1 }),
+      .populate('unit', 'unitNumber')
+      .sort({ endDate: 1 }).lean(),
     Payment.find({ ...pF, status: 'overdue' })
-      .populate({ path: 'contract', populate: [{ path: 'customer', select: 'fullName' }, { path: 'unit', select: 'unitNumber' }] })
-      .sort({ dueDate: 1 })
-      .limit(20),
+      .populate({ path: 'contract', select: 'contractNo customer unit', populate: [{ path: 'customer', select: 'fullName' }, { path: 'unit', select: 'unitNumber' }] })
+      .sort({ dueDate: 1 }).limit(20).lean(),
     Contract.countDocuments({ ...cF, status: 'active' }),
     Contract.find({ ...cF, status: { $in: ['active', 'ended'] }, startDate: { $gte: monthStart, $lt: monthEnd } })
       .populate('customer', 'fullName').populate('unit', 'unitNumber').sort({ startDate: 1 }).lean(),
     Contract.find({ ...cF, status: 'ended', endDate: { $gte: monthStart, $lt: monthEnd } })
       .populate('customer', 'fullName').populate('unit', 'unitNumber').sort({ endDate: 1 }).lean(),
-    Contract.countDocuments({ ...cF, status: { $in: ['active', 'ended'] }, startDate: { $gte: new Date(now.getFullYear(), now.getMonth() - 1, 1), $lt: monthStart } }),
-    Contract.countDocuments({ ...cF, status: 'ended', endDate: { $gte: new Date(now.getFullYear(), now.getMonth() - 1, 1), $lt: monthStart } }),
+    Contract.countDocuments({ ...cF, status: { $in: ['active', 'ended'] }, startDate: { $gte: lastMonthStart, $lt: monthStart } }),
+    Contract.countDocuments({ ...cF, status: 'ended', endDate: { $gte: lastMonthStart, $lt: monthStart } }),
   ]);
 
-  // Attach payment status to move-in/out lists
+  // Build unit status counts from aggregation
+  const byStatus = { available: 0, occupied: 0, reserved: 0, maintenance: 0 };
+  let totalUnits = 0;
+  for (const r of unitStats) { byStatus[r._id] = r.count; totalUnits += r.count; }
+
+  // Build size breakdown from aggregation
+  const sizeMap = new Map();
+  for (const r of unitsBySize) {
+    const s = r._id.sizeSqf;
+    if (!sizeMap.has(s)) sizeMap.set(s, { sizeSqf: `${s} sq ft`, total: 0, available: 0, occupied: 0, maintenance: 0 });
+    const b = sizeMap.get(s);
+    b.total += r.count;
+    if (r._id.status === 'available') b.available += r.count;
+    else if (r._id.status === 'occupied') b.occupied += r.count;
+    else if (r._id.status === 'maintenance') b.maintenance += r.count;
+  }
+  const bySize = SIZE_BUCKETS.filter(s => sizeMap.has(s)).map(s => sizeMap.get(s));
+
+  // Build floor breakdown from aggregation
+  const floorMap = new Map();
+  for (const r of unitsByFloor) {
+    const f = r._id.floor;
+    if (!floorMap.has(f)) floorMap.set(f, { floor: f, total: 0, available: 0, occupied: 0, maintenance: 0 });
+    const b = floorMap.get(f);
+    b.total += r.count;
+    if (r._id.status === 'available') b.available += r.count;
+    else if (r._id.status === 'occupied') b.occupied += r.count;
+    else if (r._id.status === 'maintenance') b.maintenance += r.count;
+  }
+  const byFloor = ['F1', 'F2'].filter(f => floorMap.has(f)).map(f => floorMap.get(f));
+
+  // Attach payment status to move lists in one pass
   const allMoveIds = [...moveInsThisMonthList, ...moveOutsThisMonthList].map(c => c._id);
   if (allMoveIds.length > 0) {
     const paymentsByContract = await Payment.aggregate([
@@ -89,12 +111,9 @@ router.get('/summary', async (req, res) => {
     }
   }
 
-  const moveInsThisMonth = moveInsThisMonthList.length;
-  const moveOutsThisMonth = moveOutsThisMonthList.length;
-
   const rentable = byStatus.available + byStatus.occupied + byStatus.reserved;
   res.json({
-    totalUnits: units.length,
+    totalUnits,
     byStatus,
     bySize,
     byFloor,
@@ -104,13 +123,13 @@ router.get('/summary', async (req, res) => {
     expectedThisMonth: (revenueAgg[0]?.total || 0) + (dueAgg[0]?.total || 0),
     expiringContracts: expiring,
     overduePayments: overdue,
-    moveInsThisMonth,
+    moveInsThisMonth: moveInsThisMonthList.length,
     moveInsLastMonth,
-    moveOutsThisMonth,
+    moveOutsThisMonth: moveOutsThisMonthList.length,
     moveOutsLastMonth,
     moveInsList: moveInsThisMonthList,
     moveOutsList: moveOutsThisMonthList,
-    availableUnitsList: units.filter(u => u.status === 'available').map(u => ({ _id: u._id, unitNumber: u.unitNumber, floor: u.floor, sizeSqf: u.sizeSqf, monthlyRent: u.price || 0 })),
+    availableUnitsList: availableUnits.map(u => ({ _id: u._id, unitNumber: u.unitNumber, floor: u.floor, sizeSqf: u.sizeSqf, monthlyRent: u.price || 0 })),
   });
 });
 
