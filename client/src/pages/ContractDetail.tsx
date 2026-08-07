@@ -648,6 +648,7 @@ function EditContractForm({ contract, unitOptions, busy, error, onSubmit, onCanc
   const [totalQuotation, setTotalQuotation] = useState(String(c.totalQuotation ?? ''))
   const [notes, setNotes] = useState(c.notes || '')
   const [unitSearch, setUnitSearch] = useState('')
+  const [showAllUnits, setShowAllUnits] = useState(false)
 
   const weeks = startDate && endDate
     ? Math.ceil(Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000) / 7)
@@ -662,10 +663,13 @@ function EditContractForm({ contract, unitOptions, busy, error, onSubmit, onCanc
     setEndDate(d.toISOString().slice(0, 10))
   }
 
-  // Only offer units that are free, already on this contract, or shared
-  const selectable = unitOptions.filter(
-    (u) => unitIds.includes(u._id) || u.status === 'available' || u.shared,
-  )
+  // Free units, plus the ones already on this contract and shared units. Taken
+  // units are one toggle away — back-filling old records often means attaching a
+  // unit the system currently shows as occupied.
+  const selectable = showAllUnits
+    ? unitOptions
+    : unitOptions.filter((u) => unitIds.includes(u._id) || u.status === 'available' || u.shared)
+  const hiddenCount = unitOptions.length - selectable.length
   const term = unitSearch.trim().toLowerCase()
   const visible = term
     ? selectable.filter((u) => u.unitNumber.toLowerCase().includes(term) || (u.floor || '').toLowerCase().includes(term))
@@ -734,6 +738,10 @@ function EditContractForm({ contract, unitOptions, busy, error, onSubmit, onCanc
             </label>
           ))}
         </div>
+        <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+          <input type="checkbox" checked={showAllUnits} onChange={(e) => setShowAllUnits(e.target.checked)} />
+          Show all units{!showAllUnits && hiddenCount > 0 ? ` (${hiddenCount} taken hidden)` : ''}
+        </label>
       </Field>
 
       <Field label="Notes">
