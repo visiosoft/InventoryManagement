@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { FileText, MessageCircle, Plus, Search } from 'lucide-react'
@@ -6,7 +6,7 @@ import { api, apiError } from '../lib/api'
 import type { Contract, Payment } from '../lib/types'
 import {
   Badge, Button, Card, EmptyState,
-  Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, Th,
+  Field, Input, Modal, PageHeader, Pagination, Select, Spinner, Table, Td, Th,
   Textarea, paymentStatusTone, statusLabel,
 } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
@@ -191,6 +191,11 @@ export default function Payments() {
   const [status, setStatus] = useState('')
   const [search, setSearch] = useState('')
   const [month, setMonth] = useState('')   // 'YYYY-MM' or ''
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(50)
+
+  // Any filter change invalidates the current page number
+  useEffect(() => { setPage(1) }, [status, search, month, limit])
 
   // Modal state
   const [recording, setRecording] = useState<Payment | null>(null)
@@ -208,12 +213,15 @@ export default function Payments() {
     dateParams.to = `${month}-${String(last).padStart(2, '0')}`
   }
 
-  const queryParams = { ...(status ? { status } : {}), ...(search ? { search } : {}), ...dateParams }
+  const queryParams = { ...(status ? { status } : {}), ...(search ? { search } : {}), ...dateParams, page, limit }
 
-  const { data: payments, isLoading } = useQuery<Payment[]>({
-    queryKey: ['payments', status, search, month],
+  type PagedPayments = { data: Payment[]; total: number; page: number; pages: number; limit: number }
+  const { data: paymentsPage, isLoading } = useQuery<PagedPayments>({
+    queryKey: ['payments', status, search, month, page, limit],
     queryFn: () => api.get('/payments', { params: queryParams }).then((r) => r.data),
+    placeholderData: (prev) => prev,
   })
+  const payments = paymentsPage?.data ?? []
 
   const { data: summary } = useQuery<PaymentSummary>({
     queryKey: ['payments-summary'],
@@ -355,7 +363,7 @@ export default function Payments() {
               </tr>
             </thead>
             <tbody>
-              {(payments || []).map((p) => (
+              {payments.map((p) => (
                 <tr key={p._id} className="hover:bg-muted/50">
                   <Td>
                     <Link to={`/customers/${p.contract?.customer?._id}`} className="font-medium text-primary hover:underline">
@@ -439,12 +447,22 @@ export default function Payments() {
               ))}
             </tbody>
           </Table>
-          {(payments || []).length === 0 && (
+          {payments.length === 0 && (
             <EmptyState message={
               status || search || month
                 ? 'No payments match the current filters.'
                 : 'No payments yet. Payments are created automatically when a contract is activated.'
             } />
+          )}
+          {paymentsPage && paymentsPage.pages > 1 && (
+            <Pagination
+              page={paymentsPage.page}
+              pages={paymentsPage.pages}
+              total={paymentsPage.total}
+              limit={paymentsPage.limit}
+              onPage={setPage}
+              onLimit={setLimit}
+            />
           )}
         </Card>
       )}

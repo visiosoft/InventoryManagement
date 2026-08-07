@@ -57,17 +57,27 @@ router.get('/', async (req, res) => {
     // Also search by contractNo directly
     contractFilter.$or.push({ contractNo: re });
     const contracts = await Contract.find(contractFilter).select('_id');
-    if (contracts.length === 0) return res.json([]);
+    if (contracts.length === 0) {
+      return res.json({ data: [], total: 0, page: 1, pages: 0, limit: 50 });
+    }
     filter.contract = { $in: contracts.map((c) => c._id) };
   }
 
   const scope = await siteScope(req.query.site);
   if (scope) filter.$and = [...(filter.$and || []), { contract: { $in: scope.contractIds } }];
 
-  // Hydrating ~1,600 payments plus their nested contract/customer/unit docs cost
-  // ~7.5s; lean() returns the same JSON in a fraction of that.
-  const payments = await populateAll(Payment.find(filter)).sort({ dueDate: 1 }).lean();
-  res.json(payments);
+  // Paginated: returning every payment with nested populates fetched ~1,600
+  // records per request. lean() skips Mongoose hydration, which dominated the
+  // remaining cost.
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.min(Math.max(1, Number(req.query.limit) || 50), 500);
+  // _id breaks ties: dueDate alone is not a total order, so skip/limit would
+  // drop and repeat records whenever several payments share a due date.
+  const [payments, total] = await Promise.all([
+    populateAll(Payment.find(filter)).sort({ dueDate: 1, _id: 1 }).skip((page - 1) * limit).limit(limit).lean(),
+    Payment.countDocuments(filter),
+  ]);
+  res.json({ data: payments, total, page, pages: Math.ceil(total / limit), limit });
 });
 
 // Partial payment against a single invoice:
