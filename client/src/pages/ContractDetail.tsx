@@ -640,9 +640,6 @@ function EditContractForm({ contract, unitOptions, busy, error, onSubmit, onCanc
   const [startDate, setStartDate] = useState(c.startDate?.slice(0, 10) || '')
   const [endDate, setEndDate] = useState(c.endDate?.slice(0, 10) || '')
   const [unitIds, setUnitIds] = useState<string[]>(held.map((u) => u._id))
-  const [sizes, setSizes] = useState<Record<string, string>>(
-    () => Object.fromEntries(held.map((u) => [u._id, u.sizeSqf != null ? String(u.sizeSqf) : ''])),
-  )
   const [rate, setRate] = useState(String(c.rate ?? ''))
   const asking = Number(rate) || 0
   const [leased, setLeased] = useState(
@@ -676,25 +673,14 @@ function EditContractForm({ contract, unitOptions, busy, error, onSubmit, onCanc
 
   const toggleUnit = (u: Unit) => {
     setUnitIds((prev) => (prev.includes(u._id) ? prev.filter((x) => x !== u._id) : [...prev, u._id]))
-    setSizes((prev) => (prev[u._id] !== undefined ? prev : { ...prev, [u._id]: u.sizeSqf != null ? String(u.sizeSqf) : '' }))
   }
-
-  const chosen = unitIds
-    .map((id) => selectable.find((u) => u._id === id) || held.find((u) => u._id === id))
-    .filter(Boolean) as Unit[]
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    const unitSizes: Record<string, number> = {}
-    for (const id of unitIds) {
-      const n = Number(sizes[id])
-      if (Number.isFinite(n) && n > 0) unitSizes[id] = n
-    }
     onSubmit({
       startDate,
       endDate,
       units: unitIds,
-      unitSizes,
       rate: Number(rate) || 0,
       leasedPrice: Number(leased) || 0,
       firstMonthDiscountPct: asking > 0
@@ -749,21 +735,6 @@ function EditContractForm({ contract, unitOptions, busy, error, onSubmit, onCanc
           ))}
         </div>
       </Field>
-
-      {chosen.length > 0 && (
-        <Field label="Unit Size (sq ft)">
-          <div className="space-y-2">
-            {chosen.map((u) => (
-              <div key={u._id} className="flex items-center gap-2">
-                <span className="text-sm w-20 shrink-0">{u.unitNumber}</span>
-                <Input type="number" min="0" step="1" value={sizes[u._id] ?? ''}
-                  onChange={(e) => setSizes((p) => ({ ...p, [u._id]: e.target.value }))}
-                  placeholder="e.g. 35" />
-              </div>
-            ))}
-          </div>
-        </Field>
-      )}
 
       <Field label="Notes">
         <Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Internal notes about this contract" />
