@@ -10,6 +10,15 @@ function generateOtp() {
   return String(Math.floor(1000 + Math.random() * 9000));
 }
 
+// Entries are otherwise only removed on successful verification, so codes that
+// are never used would stay in memory for the life of the process.
+function pruneExpiredOtps() {
+  const now = Date.now();
+  for (const [phone, entry] of otpStore) {
+    if (now > entry.expiresAt) otpStore.delete(phone);
+  }
+}
+
 function signCustomerToken(customer) {
   return jwt.sign(
     { customerId: customer._id, phone: customer.phone, type: 'customer' },
@@ -40,6 +49,7 @@ router.post('/request-otp', async (req, res) => {
   try {
     const { phone } = req.body;
     if (!phone) return res.status(400).json({ error: 'Phone number is required' });
+    pruneExpiredOtps();
     const code = generateOtp();
     otpStore.set(phone, { code, expiresAt: Date.now() + 5 * 60 * 1000 });
     res.json({ message: 'OTP sent', code });

@@ -6,12 +6,22 @@ const router = Router();
 const otpStore = new Map();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 
+// Entries are otherwise only removed on successful verification, so codes that
+// are never used would stay in memory for the life of the process.
+function pruneExpiredOtps() {
+  const now = Date.now();
+  for (const [phone, entry] of otpStore) {
+    if (now > entry.expires) otpStore.delete(phone);
+  }
+}
+
 router.post('/request-otp', async (req, res) => {
   try {
     const { phone } = req.body;
     if (!phone) return res.status(400).json({ error: 'Phone required' });
     const worker = await Worker.findOne({ phone, status: 'active' });
     if (!worker) return res.status(404).json({ error: 'No active crew member found with this phone' });
+    pruneExpiredOtps();
     const code = String(Math.floor(1000 + Math.random() * 9000));
     otpStore.set(phone, { code, expires: Date.now() + 5 * 60 * 1000 });
     res.json({ message: 'OTP sent', code });

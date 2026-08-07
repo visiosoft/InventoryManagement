@@ -270,6 +270,12 @@ contractSchema.index(
   { externalId: 1 },
   { unique: true, partialFilterExpression: { externalId: { $type: 'string', $gt: '' } } }
 );
+// Hot lookups: contract lists, unit-conflict checks and customer history
+contractSchema.index({ archived: 1, createdAt: -1 });
+contractSchema.index({ unit: 1, status: 1 });
+contractSchema.index({ units: 1, status: 1 });
+contractSchema.index({ customer: 1, createdAt: -1 });
+contractSchema.index({ status: 1, endDate: 1 });
 
 const quoteItemSchema = new Schema(
   {
@@ -1166,6 +1172,29 @@ const siteSchema = new Schema({
   hidden: { type: Boolean, default: false },
   isDefault: { type: Boolean, default: false },
 }, { timestamps: true });
+
+// ── Indexes for the hottest queries ───────────────────────────────────────────
+// Without these, payments/invoices/documents lookups scan the whole collection
+// on every contract page, report and billing plan.
+paymentSchema.index({ contract: 1, dueDate: 1 });
+paymentSchema.index({ invoice: 1 });
+paymentSchema.index({ status: 1, dueDate: 1 });
+paymentSchema.index({ status: 1, paidDate: 1 });
+
+invoiceSchema.index({ orderNumber: 1 });
+invoiceSchema.index({ customer: 1, createdAt: -1 });
+invoiceSchema.index({ status: 1, dueDate: 1 });
+
+documentSchema.index({ contract: 1 });
+documentSchema.index({ customer: 1 });
+documentSchema.index({ name: 1 });
+
+unitSchema.index({ status: 1 });
+unitSchema.index({ site: 1, status: 1 });
+unitSchema.index({ floor: 1, unitNumber: 1 });
+
+customerSchema.index({ fullName: 1 });
+customerSchema.index({ createdAt: -1 });
 
 export const User = model('User', userSchema);
 export const UnitType = model('UnitType', unitTypeSchema);
