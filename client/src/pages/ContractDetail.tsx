@@ -699,7 +699,7 @@ function EditContractForm({ contract, unitOptions, busy, error, onSubmit, onCanc
       firstMonthDiscountPct: asking > 0
         ? Math.round(Math.max(0, 1 - (Number(leased) || 0) / asking) * 10000) / 100
         : 0,
-      totalQuotation: Number(totalQuotation) || undefined,
+      totalQuotation: Number(totalQuotation) || 0,
       notes,
     })
   }
@@ -1191,35 +1191,20 @@ export default function ContractDetail() {
                   </div>
                 )
 
-                /** Same row, plus a pencil that opens the edit panel on the right. */
-                const EditRow = (label: string, value: React.ReactNode) => (
-                  <div key={label} className="flex justify-between py-2 gap-2 items-center">
-                    <span className="text-muted-foreground shrink-0">{label}</span>
-                    <span className="font-medium text-right flex items-center gap-1.5 justify-end">
-                      {value}
-                      <button type="button" title={`Edit ${label}`}
-                        className="text-primary hover:text-primary/80 cursor-pointer"
-                        onClick={() => { setError(''); setEditModal(true) }}>
-                        <PenLine size={12} />
-                      </button>
-                    </span>
-                  </div>
-                )
-
                 return (
                   <div className="divide-y border-t text-[15px] pt-1">
-                    {EditRow('Check In', c.startDate ? formatDate(c.startDate) : '—')}
-                    {EditRow('Check Out', c.endDate ? formatDate(c.endDate) : '—')}
-                    {EditRow('Number of Weeks', weeks ?? '—')}
+                    {Row('Check In', c.startDate ? formatDate(c.startDate) : '—')}
+                    {Row('Check Out', c.endDate ? formatDate(c.endDate) : '—')}
+                    {Row('Number of Weeks', weeks ?? '—')}
                     {Row('Expiring In', daysLeft === null ? '—' : daysLeft < 0 ? `Expired ${Math.abs(daysLeft)}d ago` : `${daysLeft}d left`)}
-                    {EditRow('Unit Number', allUnits.length ? allUnits.map((u) => u.unitNumber).join(', ') : '—')}
-                    {EditRow('Unit Size',
+                    {Row('Unit Number', allUnits.length ? allUnits.map((u) => u.unitNumber).join(', ') : '—')}
+                    {Row('Unit Size',
                       allUnits.some((u) => u?.sizeSqf != null)
                         ? `${allUnits.map((u) => (u?.sizeSqf != null ? u.sizeSqf : '—')).join(', ')} sq ft`
                         : '—')}
-                    {EditRow('Asking Price', `AED ${formatMoney(askingPrice)}`)}
-                    {EditRow('Leased Price', `AED ${formatMoney(leasedPrice)}`)}
-                    {EditRow('Total Quotation', `AED ${formatMoney(c.totalQuotation || 0)}`)}
+                    {Row('Asking Price', `AED ${formatMoney(askingPrice)}`)}
+                    {Row('Leased Price', `AED ${formatMoney(leasedPrice)}`)}
+                    {Row('Total Quotation', `AED ${formatMoney(c.totalQuotation || 0)}`)}
                     {Row('Received', <span className="text-emerald-600">AED {formatMoney(collected)}</span>)}
                     {Row('Remaining', <span className={remaining > 0 ? 'text-destructive' : 'text-emerald-600'}>AED {formatMoney(remaining)}</span>)}
                   </div>
