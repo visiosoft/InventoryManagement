@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Paperclip, Search, Trash2, X } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import type { Contract } from '../lib/types'
@@ -22,8 +22,10 @@ type PagedContracts = { data: Contract[]; total: number; page: number; pages: nu
 
 export default function Contracts() {
   const qc = useQueryClient()
+  // ?search= lets other screens link straight to a filtered list
+  const [urlParams] = useSearchParams()
 
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(urlParams.get('search') || '')
   const [status, setStatus] = useState('')
   const [billing, setBilling] = useState('')
   const [floor, setFloor] = useState('')

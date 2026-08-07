@@ -119,9 +119,9 @@ export default function GlobalSearch() {
     try {
       const r = await api.get('/contracts', { params: { customer: row.id, limit: 1, archived: 'all' } })
       const contract = (r.data?.data ?? [])[0]
-      navigate(contract ? `/contracts/${contract._id}` : `/customers?search=${encodeURIComponent(row.title)}`)
+      navigate(contract ? `/contracts/${contract._id}` : `/contracts?search=${encodeURIComponent(row.title)}`)
     } catch {
-      navigate(`/customers?search=${encodeURIComponent(row.title)}`)
+      navigate(`/contracts?search=${encodeURIComponent(row.title)}`)
     }
   }
 
