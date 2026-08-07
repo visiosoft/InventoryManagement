@@ -179,10 +179,10 @@ export default function Contracts() {
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 mb-6">
         <div>
           <h1 style={{ ...HEADING, color: INK, fontSize: 28, fontWeight: 800, lineHeight: 1.15, margin: 0 }}>
-            Contracts
+            Tenants
           </h1>
           <p style={{ color: MUTED_COLOR, fontSize: 14, marginTop: 4 }}>
-            {data ? `${data.total} contract${data.total !== 1 ? 's' : ''}${hasFilters ? ' (filtered)' : ''}` : ' '}
+            {data ? `${data.total} tenant${data.total !== 1 ? 's' : ''}${hasFilters ? ' (filtered)' : ''}` : ' '}
           </p>
         </div>
         <div className="flex gap-2">
