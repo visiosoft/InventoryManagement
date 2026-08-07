@@ -1112,6 +1112,7 @@ movingClaimSchema.index({ status: 1, createdAt: -1 });
 const siteVisitSchema = new Schema({
   visitNo: { type: String, required: true, unique: true },
   visitDate: { type: Date, required: true },
+  visitTime: { type: String, default: '' },
   customerName: { type: String, default: '' },
   customerPhone: { type: String, default: '' },
   address: { type: String, default: '' },

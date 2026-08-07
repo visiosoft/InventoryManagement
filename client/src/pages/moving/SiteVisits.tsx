@@ -35,6 +35,7 @@ interface SiteVisit {
   _id: string
   visitNo: string
   visitDate: string
+  visitTime: string
   customerName: string
   customerPhone: string
   address: string
@@ -55,6 +56,7 @@ export default function SiteVisits() {
 
   // form state
   const [visitDate, setVisitDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [visitTime, setVisitTime] = useState('')
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
   const [address, setAddress] = useState('')
@@ -69,6 +71,7 @@ export default function SiteVisits() {
   // edit
   const [editId, setEditId] = useState<string | null>(null)
   const [editDate, setEditDate] = useState('')
+  const [editTime, setEditTime] = useState('')
   const [editName, setEditName] = useState('')
   const [editPhone, setEditPhone] = useState('')
   const [editAddr, setEditAddr] = useState('')
@@ -116,6 +119,7 @@ export default function SiteVisits() {
   const resetForm = () => {
     setShowForm(false)
     setVisitDate(new Date().toISOString().slice(0, 10))
+    setVisitTime('')
     setCustomerName('')
     setCustomerPhone('')
     setAddress('')
@@ -136,6 +140,7 @@ export default function SiteVisits() {
     try {
       const fd = new FormData()
       fd.append('visitDate', visitDate)
+      if (visitTime) fd.append('visitTime', visitTime)
       fd.append('customerName', customerName)
       fd.append('customerPhone', customerPhone)
       fd.append('address', address)
@@ -161,6 +166,7 @@ export default function SiteVisits() {
   const startEdit = (visit: SiteVisit) => {
     setEditId(visit._id)
     setEditDate(new Date(visit.visitDate).toISOString().slice(0, 10))
+    setEditTime(visit.visitTime || '')
     setEditName(visit.customerName)
     setEditPhone(visit.customerPhone)
     setEditAddr(visit.address)
@@ -180,6 +186,7 @@ export default function SiteVisits() {
     try {
       await api.put(`/site-visits/${editId}`, {
         visitDate: editDate,
+        visitTime: editTime,
         customerName: editName,
         customerPhone: editPhone,
         address: editAddr,
@@ -320,6 +327,9 @@ export default function SiteVisits() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field label="Visit Date">
                   <Input type="date" value={visitDate} onChange={(e: any) => setVisitDate(e.target.value)} required />
+                </Field>
+                <Field label="Visit Time">
+                  <Input type="time" value={visitTime} onChange={(e: any) => setVisitTime(e.target.value)} />
                 </Field>
                 <Field label="Customer Name">
                   <Input value={customerName} onChange={(e: any) => setCustomerName(e.target.value)} placeholder="e.g. Ahmed Ali" autoFocus />
@@ -501,6 +511,7 @@ export default function SiteVisits() {
                         <span className="font-semibold text-sm" style={{ color: PURPLE }}>{visit.visitNo}</span>
                         <span className="text-xs text-muted-foreground">
                           {new Date(visit.visitDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          {visit.visitTime ? ` · ${visit.visitTime}` : ''}
                         </span>
                         {visit.linkedJob && (
                           <Badge tone="green" className="text-[10px]">Linked to Job</Badge>
@@ -562,6 +573,9 @@ export default function SiteVisits() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <Field label="Visit Date">
                             <Input type="date" value={editDate} onChange={(e: any) => setEditDate(e.target.value)} />
+                          </Field>
+                          <Field label="Visit Time">
+                            <Input type="time" value={editTime} onChange={(e: any) => setEditTime(e.target.value)} />
                           </Field>
                           <Field label="Customer Name">
                             <Input value={editName} onChange={(e: any) => setEditName(e.target.value)} placeholder="e.g. Ahmed Ali" />
@@ -636,8 +650,8 @@ export default function SiteVisits() {
                       <>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                           <div>
-                            <span className="text-xs font-medium text-muted-foreground">Visit Date</span>
-                            <p>{new Date(visit.visitDate).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                            <span className="text-xs font-medium text-muted-foreground">Visit Date & Time</span>
+                            <p>{new Date(visit.visitDate).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}{visit.visitTime ? ` at ${visit.visitTime}` : ''}</p>
                           </div>
                           {visit.customerName && (
                             <div>

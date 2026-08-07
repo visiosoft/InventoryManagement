@@ -43,7 +43,7 @@ router.get('/', async (req, res) => {
 router.post('/', upload.array('files', 20), async (req, res) => {
   try {
     const visitNo = await nextSiteVisitNo();
-    const { visitDate, customerName, customerPhone, address, notes, items } = req.body;
+    const { visitDate, visitTime, customerName, customerPhone, address, notes, items } = req.body;
 
     const images = [];
     for (const file of (req.files || [])) {
@@ -73,6 +73,7 @@ router.post('/', upload.array('files', 20), async (req, res) => {
     const visit = await SiteVisit.create({
       visitNo,
       visitDate: visitDate ? new Date(visitDate) : new Date(),
+      visitTime: visitTime || '',
       customerName: customerName || '',
       customerPhone: customerPhone || '',
       address: address || '',
@@ -163,9 +164,10 @@ router.get('/:id', async (req, res) => {
 // Update visit fields (no file handling)
 router.put('/:id', async (req, res) => {
   try {
-    const { visitDate, customerName, customerPhone, address, notes, items } = req.body;
+    const { visitDate, visitTime, customerName, customerPhone, address, notes, items } = req.body;
     const update = {};
     if (visitDate !== undefined) update.visitDate = new Date(visitDate);
+    if (visitTime !== undefined) update.visitTime = visitTime;
     if (customerName !== undefined) update.customerName = customerName;
     if (customerPhone !== undefined) update.customerPhone = customerPhone;
     if (address !== undefined) update.address = address;
