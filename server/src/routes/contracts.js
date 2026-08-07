@@ -130,7 +130,10 @@ router.get('/', async (req, res) => {
   const sort = sortMap[req.query.sort] || sortMap.newest;
 
   const [contracts, total] = await Promise.all([
-    populateAll(Contract.find(filter)).sort(sort).skip(skip).limit(limit),
+    Contract.find(filter)
+      .populate('customer', 'fullName')
+      .populate('unit', 'unitNumber floor')
+      .sort(sort).skip(skip).limit(limit).lean(),
     Contract.countDocuments(filter),
   ]);
 
@@ -172,7 +175,7 @@ router.get('/', async (req, res) => {
       contractAmount = Math.round(weeks * ((c.rate || 0) / 4) * 100) / 100;
     }
     return {
-      ...c.toObject(),
+      ...c,
       documentCount: docMap.get(String(c._id)) ?? 0,
       paymentStatus,
       paidAmount: pay ? Math.round(pay.paid * 100) / 100 : 0,
@@ -352,7 +355,7 @@ router.get('/:id', async (req, res) => {
     Promise.all([
       paymentOps.length ? Payment.bulkWrite(paymentOps) : null,
       invoiceOps.length ? Invoice.bulkWrite(invoiceOps) : null,
-    ]).catch(() => {});
+    ]).catch(() => { });
   }
 
   res.json({ contract, payments: paymentsArr, documents, invoices });
