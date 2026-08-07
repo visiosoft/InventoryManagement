@@ -1163,8 +1163,20 @@ export default function ContractDetail() {
 
                 const saveField = async (field: string, val: string) => {
                   const body: Record<string, unknown> = {}
-                  if (field.includes('Date')) body[field] = val
-                  else body[field] = Number(val) || 0
+                  if (field === 'weeks') {
+                    const w = Number(val) || 0
+                    if (w > 0 && c.startDate) {
+                      const d = new Date(c.startDate)
+                      d.setDate(d.getDate() + w * 7)
+                      body.endDate = d.toISOString().slice(0, 10)
+                    }
+                  } else if (field === 'unitNumber') {
+                    body.units = val.split(',').map(s => s.trim()).filter(Boolean)
+                  } else if (field.includes('Date')) {
+                    body[field] = val
+                  } else {
+                    body[field] = Number(val) || 0
+                  }
                   try { await api.put(`/contracts/${id}`, body); invalidate() } catch (e) { setError(apiError(e)) }
                   setInlineField(null)
                 }
@@ -1172,7 +1184,7 @@ export default function ContractDetail() {
                 const startEdit = (field: string, raw: string) => { setInlineField(field); setInlineValue(raw) }
 
                 const EditableRow = (label: string, field: string, display: string, raw: string, type = 'number') => (
-                  <div key={label} className="flex justify-between items-center py-2 gap-2">
+                  <div key={label} className="flex justify-between items-center py-2 gap-2 group">
                     <span className="text-muted-foreground shrink-0 text-sm">{label}</span>
                     {inlineField === field ? (
                       <input
@@ -1187,11 +1199,12 @@ export default function ContractDetail() {
                       />
                     ) : (
                       <span
-                        className="font-medium text-right text-sm cursor-pointer hover:text-primary hover:underline decoration-dashed underline-offset-2"
-                        onClick={() => startEdit(field, raw)}
-                        title="Click to edit"
+                        className="font-medium text-right text-sm flex items-center gap-1"
+                        onDoubleClick={() => startEdit(field, raw)}
+                        title="Double-click to edit"
                       >
                         {display}
+                        <PenLine size={11} className="text-muted-foreground/0 group-hover:text-muted-foreground/60 transition-opacity cursor-pointer" onClick={() => startEdit(field, raw)} />
                       </span>
                     )}
                   </div>
@@ -1208,9 +1221,9 @@ export default function ContractDetail() {
                   <div className="divide-y border-t text-[15px] pt-1">
                     {EditableRow('Check In', 'startDate', c.startDate ? formatDate(c.startDate) : '—', (c.startDate || '').slice(0, 10), 'date')}
                     {EditableRow('Check Out', 'endDate', c.endDate ? formatDate(c.endDate) : '—', (c.endDate || '').slice(0, 10), 'date')}
-                    {Row('Number of Weeks', weeks ?? '—')}
+                    {EditableRow('Number of Weeks', 'weeks', String(weeks ?? '—'), String(weeks || ''))}
                     {Row('Expiring In', daysLeft === null ? '—' : daysLeft < 0 ? `Expired ${Math.abs(daysLeft)}d ago` : `${daysLeft}d left`)}
-                    {Row('Unit Number', allUnits.length ? allUnits.map((u) => u.unitNumber).join(', ') : '—')}
+                    {EditableRow('Unit Number', 'unitNumber', allUnits.length ? allUnits.map((u) => u.unitNumber).join(', ') : '—', allUnits.map((u) => u._id).join(','), 'text')}
                     {Row('Unit Size',
                       allUnits.some((u) => u?.sizeSqf != null)
                         ? `${allUnits.map((u) => (u?.sizeSqf != null ? u.sizeSqf : '—')).join(', ')} sq ft`
