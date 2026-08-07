@@ -1635,6 +1635,17 @@ export default function NewQuote() {
                     )}
                   </div>
                 )}
+
+                {customerId && (
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/contracts/new?customer=${customerId}`)}
+                    className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold text-white hover:opacity-90 transition-opacity"
+                    style={{ background: PURPLE }}
+                  >
+                    <Box size={16} /> Book Unit
+                  </button>
+                )}
               </div>
             )}
 
