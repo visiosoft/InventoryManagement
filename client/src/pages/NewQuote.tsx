@@ -1488,15 +1488,29 @@ export default function NewQuote() {
         <div className={step === 1 ? '' : 'max-w-3xl'}>
 
           {/* Header */}
-          <div className="mb-6">
-            <h1 style={{ fontFamily: "'Bricolage Grotesque', sans-serif", color: INK, fontSize: '2rem', fontWeight: 700, letterSpacing: '-0.02em' }}>
-              Book Unit
-            </h1>
-            <p style={{ color: MUTED, fontSize: '0.875rem', marginTop: '0.375rem' }}>
-              {customerName || lead?.fullName
-                ? <>For <span style={{ color: PURPLE, fontWeight: 600 }}>{customerName || lead?.fullName}</span> — complete every step in one place</>
-                : 'Lead to booking — complete every step in one place'}
-            </p>
+          <div className="mb-6 flex items-start justify-between gap-4">
+            <div>
+              <h1 style={{ fontFamily: "'Bricolage Grotesque', sans-serif", color: INK, fontSize: '2rem', fontWeight: 700, letterSpacing: '-0.02em' }}>
+                Book Unit
+              </h1>
+              <p style={{ color: MUTED, fontSize: '0.875rem', marginTop: '0.375rem' }}>
+                {customerName || lead?.fullName
+                  ? <>For <span style={{ color: PURPLE, fontWeight: 600 }}>{customerName || lead?.fullName}</span> — complete every step in one place</>
+                  : 'Lead to booking — complete every step in one place'}
+              </p>
+            </div>
+            {quoteId && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!confirm('Delete this quote and all associated data?')) return
+                  try { await quoteApi.remove(quoteId); navigate('/moving/quotes') } catch (e) { setErr(apiError(e)) }
+                }}
+                className="flex items-center gap-1 text-xs font-medium text-destructive hover:text-destructive/80 shrink-0 mt-2"
+              >
+                <Trash2 size={14} /> Delete
+              </button>
+            )}
           </div>
 
           {/* Stepper */}
