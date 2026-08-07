@@ -55,8 +55,8 @@ function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, 
   const defaultStart = overrideStart ?? toISO(nextStart)
   const defaultEnd = overrideEnd ?? toISO(smartEnd)
 
-  type LineItem = { id: number; description: string; qty: number; rate: number; amount: number }
-  const emptyItem = (): LineItem => ({ id: Date.now(), description: '', qty: 1, rate: 0, amount: 0 })
+  type LineItem = { id: number; description: string; qty: number; rate: number; amount: number; discountPct: number }
+  const emptyItem = (): LineItem => ({ id: Date.now(), description: '', qty: 1, rate: 0, amount: 0, discountPct: 0 })
 
   const [startDate, setStartDate] = useState(defaultStart)
   const [endDate, setEndDate] = useState(defaultEnd)
@@ -66,20 +66,21 @@ function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, 
   const isFirstInvoice = payments.length === 0
 
   const buildDefaultItems = (): LineItem[] => {
-    if (blank) return [{ id: 1, description: '', qty: 1, rate: 0, amount: 0 }]
-    const items: LineItem[] = [{ id: 1, description: `Storage Rent · Unit ${unitNo}`, qty: 4, rate: weeklyRate, amount: Math.round(4 * weeklyRate * 100) / 100 }]
+    if (blank) return [{ id: 1, description: '', qty: 1, rate: 0, amount: 0, discountPct: 0 }]
+    const monthlyAmount = Math.round(4 * weeklyRate * 100) / 100
+    const items: LineItem[] = [{ id: 1, description: `Storage Rent · Unit ${unitNo}`, qty: 1, rate: monthlyAmount, amount: monthlyAmount, discountPct: 0 }]
     if (isFirstInvoice && contractEnd) {
-      // Advance covers last 4 weeks of the contract
       const advStart = new Date(contractEnd); advStart.setDate(advStart.getDate() - 28)
       const advEnd = new Date(contractEnd); advEnd.setDate(advEnd.getDate() - 1)
       const fmt = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-      items.push({ id: 2, description: `Advance Rent ${fmt(advStart)} – ${fmt(advEnd)} · Unit ${unitNo}`, qty: 4, rate: weeklyRate, amount: Math.round(4 * weeklyRate * 100) / 100 })
+      items.push({ id: 2, description: `Advance Rent ${fmt(advStart)} – ${fmt(advEnd)} · Unit ${unitNo}`, qty: 1, rate: monthlyAmount, amount: monthlyAmount, discountPct: 0 })
     }
     return items
   }
 
   const [lineItems, setLineItems] = useState<LineItem[]>(buildDefaultItems())
   const [discount, setDiscount] = useState(0)
+  const [includeVat, setIncludeVat] = useState(false)
   const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -88,7 +89,7 @@ function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, 
     setLineItems(prev => prev.map((it, i) => {
       if (i !== idx) return it
       const updated = { ...it, [field]: field === 'description' ? val : Number(val) }
-      if (field === 'amount') { updated.qty = 1; updated.rate = updated.amount }
+      if (field === 'amount' || field === 'discountPct') { updated.qty = 1; updated.rate = updated.amount }
       return updated
     }))
   }
@@ -102,7 +103,10 @@ function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, 
   }
 
   const subtotal = Math.round(lineItems.reduce((s, it) => s + it.amount, 0) * 100) / 100
-  const total = Math.round(subtotal * (1 - discount / 100) * 100) / 100
+  const totalDiscount = Math.round(lineItems.reduce((s, it) => s + it.amount * (it.discountPct / 100), 0) * 100) / 100
+  const afterDiscount = Math.round((subtotal - totalDiscount) * (1 - discount / 100) * 100) / 100
+  const vatAmount = includeVat ? Math.round(afterDiscount * 0.05 * 100) / 100 : 0
+  const total = Math.round((afterDiscount + vatAmount) * 100) / 100
 
   async function submit(e: FormEvent) {
     e.preventDefault()
@@ -149,36 +153,20 @@ function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, 
           </button>
         </div>
         <div className="rounded-lg border overflow-hidden">
-          <div className="grid grid-cols-[1fr_120px_32px] gap-2 px-3 py-2 bg-muted/50 text-xs font-medium text-muted-foreground">
-            <span>Description</span><span className="text-right">Amount (AED)</span><span />
+          <div className="grid grid-cols-[1fr_100px_70px_32px] gap-2 px-3 py-2 bg-muted/50 text-xs font-medium text-muted-foreground">
+            <span>Description</span><span className="text-right">Amount</span><span className="text-center">Disc %</span><span />
           </div>
           <div className="divide-y">
             {lineItems.map((it, i) => (
-              <div key={it.id} className="grid grid-cols-[1fr_120px_32px] gap-2 px-3 py-2 items-center">
+              <div key={it.id} className="grid grid-cols-[1fr_100px_70px_32px] gap-2 px-3 py-2 items-center">
                 <Input value={it.description} onChange={(e) => updateLine(i, 'description', e.target.value)} placeholder="Service" className="text-sm" />
                 <Input type="number" min={0} step="1" value={it.amount} onChange={(e) => updateLine(i, 'amount', e.target.value)} className="text-sm text-right" />
+                <Input type="number" min={0} max={100} step="1" value={it.discountPct} onChange={(e) => updateLine(i, 'discountPct', e.target.value)} className="text-sm text-center" />
                 {lineItems.length > 1 ? (
                   <button type="button" onClick={() => removeLine(i)} className="text-muted-foreground hover:text-destructive cursor-pointer"><X size={14} /></button>
                 ) : <span />}
               </div>
             ))}
-          </div>
-          <div className="border-t px-3 py-2 space-y-1">
-            <div className="flex justify-between items-center text-sm">
-              <span className="text-muted-foreground">Subtotal</span>
-              <span>{formatMoney(subtotal)} AED</span>
-            </div>
-            <div className="flex justify-between items-center text-sm">
-              <span className="text-muted-foreground flex items-center gap-2">Discount
-                <input type="number" min={0} max={100} step={1} value={discount} onChange={(e) => setDiscount(Number(e.target.value) || 0)}
-                  className="w-14 text-center border rounded px-1 py-0.5 text-xs" />%
-              </span>
-              {discount > 0 && <span className="text-destructive">-{formatMoney(subtotal - total)} AED</span>}
-            </div>
-            <div className="flex justify-between items-center text-sm font-semibold border-t pt-1">
-              <span>Total</span>
-              <span>{formatMoney(total)} AED</span>
-            </div>
           </div>
         </div>
       </div>
@@ -187,6 +175,33 @@ function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, 
       <Field label="Notes (optional)">
         <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any notes..." rows={2} />
       </Field>
+
+      {/* Invoice Summary */}
+      <div className="rounded-xl border bg-muted/30 p-4 space-y-2">
+        <p className="text-sm font-bold">Invoice Summary</p>
+        <div className="space-y-1 text-sm">
+          {lineItems.filter(it => it.amount > 0).map((it, i) => (
+            <div key={i} className="flex justify-between gap-2">
+              <span className="truncate text-muted-foreground">{it.description || `Item ${i + 1}`}</span>
+              <span className="shrink-0">{formatMoney(it.amount)}{it.discountPct > 0 ? <span className="text-destructive text-xs ml-1">-{it.discountPct}%</span> : ''}</span>
+            </div>
+          ))}
+        </div>
+        <div className="border-t pt-2 space-y-1 text-sm">
+          <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{formatMoney(subtotal)}</span></div>
+          {totalDiscount > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Line discounts</span><span className="text-destructive">-{formatMoney(totalDiscount)}</span></div>}
+          <div className="flex justify-between items-center">
+            <label className="text-muted-foreground flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={includeVat} onChange={(e) => setIncludeVat(e.target.checked)} className="accent-primary" />
+              VAT (5%)
+            </label>
+            <span>{includeVat ? formatMoney(vatAmount) : '—'}</span>
+          </div>
+          <div className="flex justify-between font-bold text-base border-t pt-1 mt-1">
+            <span>Total</span><span>{formatMoney(total)} AED</span>
+          </div>
+        </div>
+      </div>
 
       {err && <p className="text-xs text-destructive">{err}</p>}
 
@@ -1662,23 +1677,28 @@ export default function ContractDetail() {
         />
       </Modal>
 
-      <Modal
-        open={showInvoiceModal}
-        onClose={() => { setShowInvoiceModal(false); setInvoiceOverride(null) }}
-        title={invoiceOverride ? 'Generate invoice for remaining weeks' : 'Generate invoice'}
-        wide
-      >
-        {showInvoiceModal && (
-          <GenerateInvoiceModal
-            contract={c}
-            payments={payments}
-            overrideStart={invoiceOverride?.start}
-            overrideEnd={invoiceOverride?.end}
-            blank={invoiceBlank}
-            onDone={() => { setShowInvoiceModal(false); setInvoiceOverride(null); setInvoiceBlank(false); invalidate(); qc.invalidateQueries({ queryKey: ['invoices'] }) }}
-          />
-        )}
-      </Modal>
+      {/* Create Invoice — right panel */}
+      {showInvoiceModal && (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/20" onClick={() => { setShowInvoiceModal(false); setInvoiceOverride(null) }} />
+          <div className="absolute right-0 top-0 h-full w-full max-w-lg bg-card shadow-xl overflow-y-auto animate-in slide-in-from-right border-l">
+            <div className="sticky top-0 bg-card border-b px-5 py-4 flex items-center justify-between z-10">
+              <h2 className="text-base font-bold">{invoiceOverride ? 'Generate invoice for remaining weeks' : 'Create Invoice'}</h2>
+              <button onClick={() => { setShowInvoiceModal(false); setInvoiceOverride(null) }} className="text-muted-foreground hover:text-foreground cursor-pointer"><X size={18} /></button>
+            </div>
+            <div className="p-5">
+              <GenerateInvoiceModal
+                contract={c}
+                payments={payments}
+                overrideStart={invoiceOverride?.start}
+                overrideEnd={invoiceOverride?.end}
+                blank={invoiceBlank}
+                onDone={() => { setShowInvoiceModal(false); setInvoiceOverride(null); setInvoiceBlank(false); invalidate(); qc.invalidateQueries({ queryKey: ['invoices'] }) }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       <Modal open={!!signingLink} onClose={() => { setSigningLink(''); setLinkCopied(false) }} title="Signing link ready">
         <div className="space-y-4">
