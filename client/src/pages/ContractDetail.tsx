@@ -788,14 +788,14 @@ export default function ContractDetail() {
   const [inlineField, setInlineField] = useState<string | null>(null)
   const [inlineValue, setInlineValue] = useState('')
 
-  // Units to choose from in the edit panel — only fetched once the panel opens
+  // Units to choose from in the edit panel or inline unit picker
   const { data: unitOptions = [] } = useQuery<Unit[]>({
     queryKey: ['units', 'contract-edit-picker'],
     queryFn: async () => {
       const r = await api.get('/units', { params: { limit: 2000 } })
       return (Array.isArray(r.data) ? r.data : r.data?.data ?? []) as Unit[]
     },
-    enabled: editModal,
+    enabled: editModal || inlineField === 'unitNumber',
     staleTime: 60_000,
   })
   const [editCustomerModal, setEditCustomerModal] = useState(false)
@@ -1121,7 +1121,7 @@ export default function ContractDetail() {
       {/* ── Main layout ── */}
       <div className="flex flex-col lg:flex-row gap-5 items-start">
         {/* Left sidebar */}
-        <div className="w-full lg:w-72 lg:shrink-0 space-y-4">
+        <div className="w-full lg:w-80 lg:shrink-0 space-y-4">
           <Card>
             <CardBody className="space-y-4">
               {/* Avatar + name */}
@@ -1184,14 +1184,14 @@ export default function ContractDetail() {
                 const startEdit = (field: string, raw: string) => { setInlineField(field); setInlineValue(raw) }
 
                 const EditableRow = (label: string, field: string, display: string, raw: string, type = 'number') => (
-                  <div key={label} className="flex justify-between items-center py-2 gap-2 group">
+                  <div key={label} className="flex justify-between items-center py-2.5 gap-2 group">
                     <span className="text-muted-foreground shrink-0 text-sm">{label}</span>
                     {inlineField === field ? (
                       <input
                         autoFocus
                         type={type}
                         step={type === 'number' ? '0.01' : undefined}
-                        className="w-32 text-right text-sm font-medium border-b border-primary bg-transparent outline-none px-1 py-0.5"
+                        className="w-36 text-right text-sm font-medium border-b border-primary bg-transparent outline-none px-1 py-0.5"
                         value={inlineValue}
                         onChange={(e) => setInlineValue(e.target.value)}
                         onBlur={() => saveField(field, inlineValue)}
@@ -1199,12 +1199,14 @@ export default function ContractDetail() {
                       />
                     ) : (
                       <span
-                        className="font-medium text-right text-sm flex items-center gap-1"
+                        className="font-medium text-right text-sm flex items-center gap-1.5"
                         onDoubleClick={() => startEdit(field, raw)}
                         title="Double-click to edit"
                       >
                         {display}
-                        <PenLine size={11} className="text-muted-foreground/0 group-hover:text-muted-foreground/60 transition-opacity cursor-pointer" onClick={() => startEdit(field, raw)} />
+                        <button type="button" onClick={() => startEdit(field, raw)} className="p-1 rounded hover:bg-muted text-muted-foreground/40 hover:text-primary transition-colors cursor-pointer">
+                          <PenLine size={13} />
+                        </button>
                       </span>
                     )}
                   </div>
