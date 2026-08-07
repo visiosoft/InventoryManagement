@@ -1183,14 +1183,14 @@ export default function ContractDetail() {
 
                 const startEdit = (field: string, raw: string) => { setInlineField(field); setInlineValue(raw) }
 
-                const EditableRow = (label: string, field: string, display: string, raw: string, type = 'number') => (
+                const EditableRow = (label: string, field: string, display: string, raw: string, type = 'number', step = '0.01') => (
                   <div key={label} className="flex justify-between items-center py-2.5 gap-2 group">
                     <span className="text-muted-foreground shrink-0 text-sm">{label}</span>
                     {inlineField === field ? (
                       <input
                         autoFocus
                         type={type}
-                        step={type === 'number' ? '0.01' : undefined}
+                        step={type === 'number' ? step : undefined}
                         className="w-36 text-right text-sm font-medium border-b border-primary bg-transparent outline-none px-1 py-0.5"
                         value={inlineValue}
                         onChange={(e) => setInlineValue(e.target.value)}
@@ -1223,7 +1223,7 @@ export default function ContractDetail() {
                   <div className="divide-y border-t text-[15px] pt-1">
                     {EditableRow('Check In', 'startDate', c.startDate ? formatDate(c.startDate) : '—', (c.startDate || '').slice(0, 10), 'date')}
                     {EditableRow('Check Out', 'endDate', c.endDate ? formatDate(c.endDate) : '—', (c.endDate || '').slice(0, 10), 'date')}
-                    {EditableRow('Number of Weeks', 'weeks', String(weeks ?? '—'), String(weeks || ''))}
+                    {EditableRow('Number of Weeks', 'weeks', String(weeks ?? '—'), String(weeks || ''), 'number', '1')}
                     {Row('Expiring In', daysLeft === null ? '—' : daysLeft < 0 ? `Expired ${Math.abs(daysLeft)}d ago` : `${daysLeft}d left`)}
                     {/* Unit Number — custom dropdown picker */}
                     <div className="flex justify-between items-center py-2.5 gap-2 group">
