@@ -838,7 +838,7 @@ router.put('/:id', async (req, res) => {
       return res.status(403).json({ error: 'Only an admin can edit a booked contract' });
     }
 
-    const allowed = ['rate', 'deposit', 'startDate', 'endDate', 'billingPeriod', 'paymentMethod', 'firstPaymentDate', 'notes', 'totalQuotation'];
+    const allowed = ['rate', 'deposit', 'startDate', 'endDate', 'billingPeriod', 'paymentMethod', 'firstPaymentDate', 'notes', 'totalQuotation', 'firstMonthDiscountPct'];
     for (const key of allowed) {
       if (req.body[key] !== undefined) {
         contract[key] = key.endsWith('Date') && req.body[key] ? new Date(req.body[key]) : req.body[key];

@@ -635,7 +635,6 @@ export default function ContractDetail() {
   const [bulkTarget, setBulkTarget] = useState<Payment[] | null>(null)
   const [addingPayment, setAddingPayment] = useState(false)
   const [uploading, setUploading] = useState(false)
-  const [downloadingPdf, setDownloadingPdf] = useState(false)
   const [signingInPerson, setSigningInPerson] = useState(false)
   const [signError, setSignError] = useState('')
   const [signingLink, setSigningLink] = useState('')
@@ -646,6 +645,8 @@ export default function ContractDetail() {
   // Custom invoices open with no prefilled lines; period invoices keep theirs
   const [invoiceBlank, setInvoiceBlank] = useState(false)
   const [editModal, setEditModal] = useState(false)
+  // Which sidebar field is currently open for inline editing (null = none)
+  const [inlineField, setInlineField] = useState<string | null>(null)
   const [editCustomerModal, setEditCustomerModal] = useState(false)
   const [customerError, setCustomerError] = useState('')
   const [editingNote, setEditingNote] = useState<{ idx: number; text: string } | null>(null)
@@ -762,19 +763,6 @@ export default function ContractDetail() {
     onError: (e) => setSignError(apiError(e)),
   })
 
-  const downloadContractPdf = async () => {
-    if (!c?._id) return
-    try {
-      setDownloadingPdf(true); setError('')
-      const response = await api.get(`/contracts/${c._id}/pdf`, { responseType: 'blob' })
-      const blob = new Blob([response.data], { type: 'application/pdf' })
-      const url = window.URL.createObjectURL(blob)
-      window.open(url, '_blank', 'noopener,noreferrer')
-      window.setTimeout(() => window.URL.revokeObjectURL(url), 60_000)
-    } catch (e) { setError(apiError(e)) }
-    finally { setDownloadingPdf(false) }
-  }
-
   if (isLoading || !data) return <Spinner />
   const { contract: c, payments, documents } = data
 
@@ -786,13 +774,10 @@ export default function ContractDetail() {
     .sort((a, b) => new Date(b.paidDate ?? b.dueDate).getTime() - new Date(a.paidDate ?? a.dueDate).getTime())
 
 
-  const totalPaid = paid.reduce((s, p) => s + p.amount, 0)
   const paymentsTotal = payments.reduce((s, p) => s + p.amount, 0)
   const totalOwed = Math.max(Number(c.totalQuotation || 0), paymentsTotal)
   // Exclude security deposit records from rent totals — deposit is a separate liability
   const isDepositPayment = (p: Payment) => /^security deposit/i.test(p.notes || '')
-  const totalPending = pending.filter(p => !isDepositPayment(p)).reduce((s, p) => s + p.amount, 0)
-  const totalOverdue = overdue.filter(p => !isDepositPayment(p)).reduce((s, p) => s + p.amount, 0)
   // Group payments by invoice → one display row per invoice
   const groupMap = new Map<string, Payment[]>()
   const standalonePayments: Payment[] = []
@@ -864,11 +849,6 @@ export default function ContractDetail() {
   // Deposit-covered invoices: status 'paid', net 0, no payment records linked to them
   const allUnits = c.units?.length ? c.units : c.unit ? [c.unit] : []
 
-  const unitLabel = allUnits.length > 1
-    ? `Units: ${allUnits.map((u) => u?.unitNumber ?? '—').join(', ')}`
-    : allUnits.length === 1
-      ? `Unit ${allUnits[0]?.unitNumber ?? '—'}${allUnits[0]?.sizeSqf != null ? ` · ${allUnits[0].sizeSqf} sq ft` : ''}`
-      : 'No unit assigned'
 
   // allUnpaid for "Pay multiple" header button
   const allUnpaid = [...overdue, ...pending]
@@ -877,10 +857,6 @@ export default function ContractDetail() {
   const initials = (c.customer?.fullName ?? '').split(' ').slice(0, 2).map((w: string) => w[0] ?? '').join('').toUpperCase()
   const today2 = new Date(); today2.setHours(0, 0, 0, 0)
   const daysLeft = c.endDate ? Math.ceil((new Date(c.endDate).getTime() - today2.getTime()) / 86400000) : null
-  const customerPhone = c.customer?.phones?.[0] ?? c.customer?.phone ?? ''
-  const waPhone = customerPhone.replace(/\D/g, '').replace(/^00/, '')
-  const waText = [`Hello ${c.customer?.fullName ?? 'there'},`, ``, `This is a message regarding your storage contract *${c.contractNo}*.`, `${unitLabel}`, ``, `Thank you – PurpleBox`].join('\n')
-  const waUrl = waPhone ? `https://wa.me/${waPhone}?text=${encodeURIComponent(waText)}` : `https://wa.me/?text=${encodeURIComponent(waText)}`
 
   // Activity feed
   type ActivityEvent = { id: string; type: 'overdue' | 'paid' | 'note' | 'invoice' | 'document'; at: Date; title: string; subtitle: string; noteIdx?: number }
@@ -1022,47 +998,6 @@ export default function ContractDetail() {
                 </div>
               </div>
 
-              {/* Message + PDF */}
-              <div className="grid grid-cols-2 gap-2">
-                <a href={waUrl} target="_blank" rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent hover:text-accent-foreground transition-colors">
-                  <MessageSquare size={14} /> Message
-                </a>
-                <Button variant="outline" className="w-full" onClick={downloadContractPdf} disabled={downloadingPdf}>
-                  <Download size={14} /> PDF
-                </Button>
-              </div>
-
-              {/* Balance bar */}
-              <div className="space-y-2 pt-1">
-                <div className="flex justify-between text-xs text-muted-foreground font-medium">
-                  <span>BALANCE</span>
-                  <span>AED {formatMoney(totalPaid)} / {formatMoney(totalOwed)}</span>
-                </div>
-                <div className="h-2 rounded-full bg-muted overflow-hidden">
-                  <div className="h-full rounded-full bg-emerald-500 transition-all"
-                    style={{ width: `${totalOwed > 0 ? Math.min(100, (totalPaid / totalOwed) * 100) : 0}%` }} />
-                </div>
-                {totalOwed > 0 && totalPaid >= totalOwed ? (
-                  <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 px-3 py-3 text-center">
-                    <CheckCircle2 size={20} className="text-emerald-600 dark:text-emerald-400 mx-auto mb-1" />
-                    <div className="text-sm font-bold text-emerald-700 dark:text-emerald-400">Fully Paid</div>
-                    <div className="text-[10px] text-emerald-600/70 mt-0.5">AED {formatMoney(totalPaid)} received</div>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/40 px-3 py-2">
-                      <div className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide">Total Quotation</div>
-                      <div className="text-lg font-bold text-blue-700 dark:text-blue-400">{formatMoney(c.totalQuotation || 0)}</div>
-                    </div>
-                    <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 px-3 py-2">
-                      <div className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wide">Pending</div>
-                      <div className="text-lg font-bold text-amber-700 dark:text-amber-400">{formatMoney(totalOverdue + totalPending)}</div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
               {/* Contract detail rows */}
               {(() => {
                 // Asking is the rate before the agreed discount; leased is what
@@ -1070,34 +1005,101 @@ export default function ContractDetail() {
                 const askingPrice = Number(c.rate || 0)
                 const discountPct = Number((c as { firstMonthDiscountPct?: number }).firstMonthDiscountPct || 0)
                 const leasedPrice = Math.round(askingPrice * (1 - discountPct / 100) * 100) / 100
-                const pricePerWeek = Math.round((leasedPrice / 4) * 100) / 100
                 const weeks = c.startDate && c.endDate
                   ? Math.ceil(Math.round((new Date(c.endDate).getTime() - new Date(c.startDate).getTime()) / 86400000) / 7)
                   : null
-                const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
-                  <div className="flex justify-between py-2 gap-3">
+                // Collected vs still owed, so the sidebar shows the money position
+                // without needing the old balance bar.
+                const collected = payments.filter((p) => p.status === 'paid').reduce((s, p) => s + p.amount, 0)
+                const stillDue = payments.filter((p) => p.status !== 'paid').reduce((s, p) => s + p.amount, 0)
+                const remaining = Math.max(0, totalOwed - collected)
+
+                /** Saves one field straight to the contract and closes the editor. */
+                const saveInline = (key: string, raw: string) => {
+                  setInlineField(null)
+                  const val = raw.trim()
+                  if (!val) return
+                  setError('')
+                  if (key === 'startDate' || key === 'endDate') {
+                    if (val === (c[key] || '').slice(0, 10)) return
+                    updateContract.mutate({ [key]: val })
+                    return
+                  }
+                  // Leased price is stored as a discount off the asking rate
+                  if (key === 'leasedPrice') {
+                    const leased = Number(val)
+                    if (!askingPrice || !Number.isFinite(leased) || leased === leasedPrice) return
+                    const pct = Math.round(Math.max(0, (1 - leased / askingPrice)) * 10000) / 100
+                    updateContract.mutate({ firstMonthDiscountPct: pct })
+                    return
+                  }
+                  const num = Number(val)
+                  if (!Number.isFinite(num) || num === Number((c as unknown as Record<string, unknown>)[key] || 0)) return
+                  updateContract.mutate({ [key]: num })
+                }
+
+                // Plain functions, not components — a component declared here would
+                // get a fresh type each render and remount the input mid-edit.
+                const Row = (label: string, value: React.ReactNode) => (
+                  <div key={label} className="flex justify-between py-2 gap-3">
                     <span className="text-muted-foreground shrink-0">{label}</span>
                     <span className="font-medium text-right">{value}</span>
                   </div>
                 )
-                return (
-                  <div className="divide-y border-t text-sm pt-1">
-                    <Row label="Check In" value={c.startDate ? formatDate(c.startDate) : '—'} />
-                    <Row label="Check Out" value={c.endDate ? formatDate(c.endDate) : '—'} />
-                    <Row label="Number of Weeks" value={weeks ?? '—'} />
-                    <Row label="Unit Number" value={allUnits.length ? allUnits.map((u) => u.unitNumber).join(', ') : '—'} />
-                    <Row label="Asking Price" value={`AED ${formatMoney(askingPrice)}`} />
-                    <Row label="Leased Price" value={`AED ${formatMoney(leasedPrice)}`} />
-                    <Row label="Price Per Week" value={`AED ${formatMoney(pricePerWeek)}`} />
-                    <div className="flex justify-between py-2 items-center gap-3">
-                      <span className="text-muted-foreground shrink-0">Total Quotation</span>
-                      <span className="font-medium flex items-center gap-1.5">
-                        AED {formatMoney(c.totalQuotation || 0)}
-                        <button className="text-primary hover:text-primary/80 cursor-pointer" title="Edit" onClick={() => { setError(''); setEditModal(true) }}>
+
+                /** Same row, but the value flips to an input when the pencil is clicked. */
+                const EditRow = (
+                  label: string,
+                  key: string,
+                  display: React.ReactNode,
+                  type: 'date' | 'number',
+                  initial: string,
+                ) => (
+                  <div key={label} className="flex justify-between py-2 gap-2 items-center min-h-[38px]">
+                    <span className="text-muted-foreground shrink-0">{label}</span>
+                    {inlineField === key ? (
+                      <input
+                        autoFocus
+                        type={type}
+                        step={type === 'number' ? '0.01' : undefined}
+                        min={type === 'number' ? '0' : undefined}
+                        defaultValue={initial}
+                        className="h-7 w-32 rounded border px-1.5 text-right text-[13px] outline-none focus:border-primary"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') saveInline(key, e.currentTarget.value)
+                          if (e.key === 'Escape') setInlineField(null)
+                        }}
+                        onBlur={(e) => saveInline(key, e.currentTarget.value)}
+                      />
+                    ) : (
+                      <span className="font-medium text-right flex items-center gap-1.5 justify-end">
+                        {display}
+                        <button type="button" title={`Edit ${label}`}
+                          className="text-primary hover:text-primary/80 cursor-pointer"
+                          onClick={() => { setError(''); setInlineField(key) }}>
                           <PenLine size={11} />
                         </button>
                       </span>
-                    </div>
+                    )}
+                  </div>
+                )
+
+                return (
+                  <div className="divide-y border-t text-sm pt-1">
+                    {EditRow('Check In', 'startDate', c.startDate ? formatDate(c.startDate) : '—', 'date', c.startDate?.slice(0, 10) || '')}
+                    {EditRow('Check Out', 'endDate', c.endDate ? formatDate(c.endDate) : '—', 'date', c.endDate?.slice(0, 10) || '')}
+                    {Row('Number of Weeks', weeks ?? '—')}
+                    {Row('Expiring In', daysLeft === null ? '—' : daysLeft < 0 ? `Expired ${Math.abs(daysLeft)}d ago` : `${daysLeft}d left`)}
+                    {Row('Unit Number', allUnits.length ? allUnits.map((u) => u.unitNumber).join(', ') : '—')}
+                    {Row('Unit Size',
+                      allUnits.some((u) => u?.sizeSqf != null)
+                        ? `${allUnits.map((u) => (u?.sizeSqf != null ? u.sizeSqf : '—')).join(', ')} sq ft`
+                        : '—')}
+                    {EditRow('Asking Price', 'rate', `AED ${formatMoney(askingPrice)}`, 'number', String(askingPrice))}
+                    {EditRow('Leased Price', 'leasedPrice', `AED ${formatMoney(leasedPrice)}`, 'number', String(leasedPrice))}
+                    {EditRow('Total Quotation', 'totalQuotation', `AED ${formatMoney(c.totalQuotation || 0)}`, 'number', String(c.totalQuotation || 0))}
+                    {Row('Pending', <span className={stillDue > 0 ? 'text-amber-600' : ''}>AED {formatMoney(stillDue)}</span>)}
+                    {Row('Remaining', <span className={remaining > 0 ? 'text-destructive' : 'text-emerald-600'}>AED {formatMoney(remaining)}</span>)}
                   </div>
                 )
               })()}
@@ -1597,13 +1599,9 @@ export default function ContractDetail() {
                   const f = new FormData(e.currentTarget)
                   updateContract.mutate({
                     rate: Number(f.get('rate')),
-                    deposit: Number(f.get('deposit')),
                     totalQuotation: Number(f.get('totalQuotation')) || undefined,
-                    billingPeriod: String(f.get('billingPeriod')),
                     startDate: String(f.get('startDate')),
                     endDate: String(f.get('endDate')),
-                    paymentMethod: String(f.get('paymentMethod') || ''),
-                    firstPaymentDate: f.get('firstPaymentDate') ? String(f.get('firstPaymentDate')) : undefined,
                     notes: String(f.get('notes') || ''),
                   })
                 }}
@@ -1613,35 +1611,14 @@ export default function ContractDetail() {
                   <Field label="Monthly Rate (AED)">
                     <Input name="rate" type="number" min="0" step="0.01" defaultValue={c.rate} required />
                   </Field>
-                  <Field label="Deposit (AED)">
-                    <Input name="deposit" type="number" min="0" step="0.01" defaultValue={c.deposit} />
-                  </Field>
                   <Field label="Total Quotation (AED)">
                     <Input name="totalQuotation" type="number" min="0" step="0.01" defaultValue={c.totalQuotation} />
-                  </Field>
-                  <Field label="Billing Period">
-                    <Select name="billingPeriod" defaultValue={c.billingPeriod}>
-                      <option value="weekly">Weekly</option>
-                      <option value="monthly">4 Weeks (Monthly)</option>
-                    </Select>
-                  </Field>
-                  <Field label="Payment Method">
-                    <Select name="paymentMethod" defaultValue={c.paymentMethod || ''}>
-                      <option value="">— Select —</option>
-                      <option value="cash">Cash</option>
-                      <option value="bank_transfer">Bank Transfer</option>
-                      <option value="cheque">Cheque</option>
-                      <option value="card">Card</option>
-                    </Select>
                   </Field>
                   <Field label="Start Date">
                     <Input name="startDate" type="date" defaultValue={c.startDate?.slice(0, 10)} required />
                   </Field>
                   <Field label="End Date">
                     <Input name="endDate" type="date" defaultValue={c.endDate?.slice(0, 10)} required />
-                  </Field>
-                  <Field label="First Payment Date">
-                    <Input name="firstPaymentDate" type="date" defaultValue={c.firstPaymentDate?.slice(0, 10)} />
                   </Field>
                   <Field label="Notes" className="col-span-2">
                     <Textarea name="notes" rows={3} defaultValue={c.notes || ''} placeholder="Internal notes about this contract" />
