@@ -1169,7 +1169,9 @@ export default function ContractDetail() {
                 const weeks = c.startDate && c.endDate
                   ? Math.ceil(Math.round((new Date(c.endDate).getTime() - new Date(c.startDate).getTime()) / 86400000) / 7)
                   : null
-                const collected = payments.filter((p) => p.status === 'paid').reduce((s, p) => s + p.amount, 0) + Number((c as any).manualReceived || 0)
+                const paidFromRecords = payments.filter((p) => p.status === 'paid').reduce((s, p) => s + p.amount, 0)
+                const manualRcv = Number((c as any).manualReceived || 0)
+                const collected = manualRcv > 0 ? manualRcv : paidFromRecords
                 const remaining = Math.max(0, totalOwed - collected)
 
                 const saveField = async (field: string, val: string) => {
