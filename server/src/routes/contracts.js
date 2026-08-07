@@ -838,30 +838,36 @@ router.put('/:id', async (req, res) => {
       return res.status(403).json({ error: 'Only an admin can edit a booked contract' });
     }
 
+    // Use $set to avoid VersionError from concurrent background writes on this document
+    const $set = {};
     const numericFields = ['rate', 'deposit', 'totalQuotation', 'firstMonthDiscountPct'];
     const allowed = ['rate', 'deposit', 'startDate', 'endDate', 'billingPeriod', 'paymentMethod', 'firstPaymentDate', 'notes', 'totalQuotation', 'firstMonthDiscountPct'];
     for (const key of allowed) {
       if (req.body[key] === undefined) continue;
       if (key.endsWith('Date')) {
-        if (!req.body[key]) { contract[key] = null; continue; }
+        if (!req.body[key]) { $set[key] = null; continue; }
         const d = new Date(req.body[key]);
         if (Number.isNaN(d.getTime())) return res.status(400).json({ error: `${key} is not a valid date` });
-        contract[key] = d;
+        $set[key] = d;
       } else if (numericFields.includes(key)) {
         const n = Number(req.body[key]);
         if (!Number.isFinite(n) || n < 0) return res.status(400).json({ error: `${key} must be a number of 0 or more` });
-        contract[key] = key === 'firstMonthDiscountPct' ? Math.min(100, n) : n;
+        $set[key] = key === 'firstMonthDiscountPct' ? Math.min(100, n) : n;
       } else {
-        contract[key] = req.body[key];
+        $set[key] = req.body[key];
       }
     }
 
-    if (contract.startDate && contract.endDate && contract.endDate <= contract.startDate) {
+    if ($set.startDate && $set.endDate && $set.endDate <= $set.startDate) {
+      return res.status(400).json({ error: 'Check out must be after check in' });
+    }
+    const effectiveStart = $set.startDate || contract.startDate;
+    const effectiveEnd = $set.endDate || contract.endDate;
+    if (effectiveStart && effectiveEnd && effectiveEnd <= effectiveStart) {
       return res.status(400).json({ error: 'Check out must be after check in' });
     }
 
     // Allow updating the full units array (primary unit stays in contract.unit, array holds all).
-    // Reassigning units frees the ones dropped and marks the new ones occupied.
     if (Array.isArray(req.body.units)) {
       const before = (contract.units || []).map((u) => String(u));
       const after = [...new Set(req.body.units.filter(Boolean).map((u) => String(u)))];
@@ -872,7 +878,6 @@ router.put('/:id', async (req, res) => {
       const claimed = after.filter((u) => !before.includes(u));
       const released = before.filter((u) => !after.includes(u));
 
-      // Don't let a newly claimed unit be taken from another live contract
       if (claimed.length) {
         const clash = await Contract.findOne({
           _id: { $ne: contract._id },
@@ -889,11 +894,10 @@ router.put('/:id', async (req, res) => {
         }
       }
 
-      contract.units = after;
-      contract.unit = after[0];
+      $set.units = after;
+      $set.unit = after[0];
 
       if (contract.status === 'active') {
-        // A released unit only goes back to available if no other contract holds it
         for (const unitId of released) {
           const stillHeld = await Contract.countDocuments({
             _id: { $ne: contract._id }, status: 'active', units: unitId,
@@ -906,11 +910,8 @@ router.put('/:id', async (req, res) => {
       }
     }
 
-    // Unit size lives on the unit, not the contract, but is edited from the
-    // contract screen when back-filling records from the old system. Only units
-    // actually on this contract may be touched.
     if (req.body.unitSizes && typeof req.body.unitSizes === 'object') {
-      const onContract = new Set((contract.units || []).map((u) => String(u)));
+      const onContract = new Set(($set.units || contract.units || []).map((u) => String(u)));
       for (const [unitId, sqf] of Object.entries(req.body.unitSizes)) {
         if (!isValidObjectId(unitId) || !onContract.has(String(unitId))) continue;
         const n = Number(sqf);
@@ -918,9 +919,8 @@ router.put('/:id', async (req, res) => {
       }
     }
 
-    // Authorized persons (name required per entry)
     if (Array.isArray(req.body.authorizedPersons)) {
-      contract.authorizedPersons = req.body.authorizedPersons
+      $set.authorizedPersons = req.body.authorizedPersons
         .map((p) => ({
           name: String(p.name || '').trim(),
           phone: String(p.phone || '').trim(),
@@ -931,7 +931,7 @@ router.put('/:id', async (req, res) => {
         .filter((p) => p.name);
     }
 
-    await contract.save({ timestamps: true, versionKey: false });
+    await Contract.findByIdAndUpdate(contract._id, { $set });
     const populated = await populateAll(Contract.findById(contract._id));
     res.json(populated);
   } catch (err) {
