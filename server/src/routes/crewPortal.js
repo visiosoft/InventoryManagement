@@ -129,7 +129,7 @@ router.post('/clock-in', async (req, res) => {
     const now = new Date();
     if (!worker.timeLog) worker.timeLog = [];
     worker.timeLog.push({ type: 'clock_in', time: now });
-    await worker.save().catch(() => {});
+    await worker.save().catch(() => { });
     res.json({ status: 'clocked_in', time: now });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -141,7 +141,7 @@ router.post('/clock-out', async (req, res) => {
     const now = new Date();
     if (!worker.timeLog) worker.timeLog = [];
     worker.timeLog.push({ type: 'clock_out', time: now });
-    await worker.save().catch(() => {});
+    await worker.save().catch(() => { });
     res.json({ status: 'clocked_out', time: now });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
