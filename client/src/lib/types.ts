@@ -456,6 +456,7 @@ export interface Contract {
   approvedAt?: string
   source?: string
   totalQuotation?: number
+  firstMonthDiscountPct?: number
   createdAt?: string
 }
 

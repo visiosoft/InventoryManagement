@@ -845,9 +845,37 @@ router.put('/:id', async (req, res) => {
       }
     }
 
-    // Allow updating the full units array (primary unit stays in contract.unit, array holds all)
+    // Allow updating the full units array (primary unit stays in contract.unit, array holds all).
+    // Reassigning units frees the ones dropped and marks the new ones occupied.
     if (Array.isArray(req.body.units)) {
-      contract.units = req.body.units.filter(Boolean);
+      const before = (contract.units || []).map((u) => String(u));
+      const after = req.body.units.filter(Boolean).map((u) => String(u));
+      contract.units = after;
+      if (after.length) contract.unit = after[0];
+
+      if (contract.status === 'active') {
+        const released = before.filter((u) => !after.includes(u));
+        const claimed = after.filter((u) => !before.includes(u));
+        // A released unit only goes back to available if no other contract holds it
+        for (const unitId of released) {
+          const stillHeld = await Contract.countDocuments({
+            _id: { $ne: contract._id }, status: 'active', units: unitId,
+          });
+          if (!stillHeld) await Unit.updateOne({ _id: unitId }, { $set: { status: 'available' } });
+        }
+        if (claimed.length) {
+          await Unit.updateMany({ _id: { $in: claimed } }, { $set: { status: 'occupied' } });
+        }
+      }
+    }
+
+    // Unit size lives on the unit, not the contract, but is edited from the
+    // contract screen when back-filling records from the old system.
+    if (req.body.unitSizes && typeof req.body.unitSizes === 'object') {
+      for (const [unitId, sqf] of Object.entries(req.body.unitSizes)) {
+        const n = Number(sqf);
+        if (Number.isFinite(n) && n > 0) await Unit.updateOne({ _id: unitId }, { $set: { sizeSqf: n } });
+      }
     }
 
     // Authorized persons (name required per entry)

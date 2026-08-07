@@ -4,7 +4,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { CalendarDays, CheckCircle2, Download, FileText, FilePlus, MessageSquare, PenLine, Plus, ShieldCheck, Trash2, Upload, X, XCircle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
-import type { AppDocument, Contract, Invoice, Payment } from '../lib/types'
+import type { AppDocument, Contract, Invoice, Payment, Unit } from '../lib/types'
 import {
   Badge, Button, Card, CardBody, CardHeader, EmptyState,
   Field, Input, Modal, Select, Spinner,
@@ -623,6 +623,166 @@ type InvoiceGroup = {
 
 // ── Main page ──────────────────────────────────────────────────────────────────
 
+// ── Edit Contract form ────────────────────────────────────────────────────────
+// Covers every field shown in the sidebar so an old-system contract can be
+// keyed in fully here before its documents, invoices and receipts are uploaded.
+function EditContractForm({ contract, unitOptions, busy, error, onSubmit, onCancel }: {
+  contract: Contract
+  unitOptions: Unit[]
+  busy: boolean
+  error: string
+  onSubmit: (body: Record<string, unknown>) => void
+  onCancel: () => void
+}) {
+  const c = contract
+  const held = c.units?.length ? c.units : c.unit ? [c.unit] : []
+
+  const [startDate, setStartDate] = useState(c.startDate?.slice(0, 10) || '')
+  const [endDate, setEndDate] = useState(c.endDate?.slice(0, 10) || '')
+  const [unitIds, setUnitIds] = useState<string[]>(held.map((u) => u._id))
+  const [sizes, setSizes] = useState<Record<string, string>>(
+    () => Object.fromEntries(held.map((u) => [u._id, u.sizeSqf != null ? String(u.sizeSqf) : ''])),
+  )
+  const [rate, setRate] = useState(String(c.rate ?? ''))
+  const asking = Number(rate) || 0
+  const [leased, setLeased] = useState(
+    String(Math.round(Number(c.rate || 0) * (1 - Number(c.firstMonthDiscountPct || 0) / 100) * 100) / 100),
+  )
+  const [totalQuotation, setTotalQuotation] = useState(String(c.totalQuotation ?? ''))
+  const [notes, setNotes] = useState(c.notes || '')
+  const [unitSearch, setUnitSearch] = useState('')
+
+  const weeks = startDate && endDate
+    ? Math.ceil(Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000) / 7)
+    : 0
+
+  // Weeks and Check Out are two views of the same thing — typing weeks moves the
+  // end date rather than being stored separately.
+  const applyWeeks = (w: number) => {
+    if (!startDate || !Number.isFinite(w) || w < 1) return
+    const d = new Date(startDate)
+    d.setDate(d.getDate() + w * 7)
+    setEndDate(d.toISOString().slice(0, 10))
+  }
+
+  // Only offer units that are free, already on this contract, or shared
+  const selectable = unitOptions.filter(
+    (u) => unitIds.includes(u._id) || u.status === 'available' || u.shared,
+  )
+  const term = unitSearch.trim().toLowerCase()
+  const visible = term
+    ? selectable.filter((u) => u.unitNumber.toLowerCase().includes(term) || (u.floor || '').toLowerCase().includes(term))
+    : selectable
+
+  const toggleUnit = (u: Unit) => {
+    setUnitIds((prev) => (prev.includes(u._id) ? prev.filter((x) => x !== u._id) : [...prev, u._id]))
+    setSizes((prev) => (prev[u._id] !== undefined ? prev : { ...prev, [u._id]: u.sizeSqf != null ? String(u.sizeSqf) : '' }))
+  }
+
+  const chosen = unitIds
+    .map((id) => selectable.find((u) => u._id === id) || held.find((u) => u._id === id))
+    .filter(Boolean) as Unit[]
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault()
+    const unitSizes: Record<string, number> = {}
+    for (const id of unitIds) {
+      const n = Number(sizes[id])
+      if (Number.isFinite(n) && n > 0) unitSizes[id] = n
+    }
+    onSubmit({
+      startDate,
+      endDate,
+      units: unitIds,
+      unitSizes,
+      rate: Number(rate) || 0,
+      firstMonthDiscountPct: asking > 0
+        ? Math.round(Math.max(0, 1 - (Number(leased) || 0) / asking) * 10000) / 100
+        : 0,
+      totalQuotation: Number(totalQuotation) || undefined,
+      notes,
+    })
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Check In">
+          <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required />
+        </Field>
+        <Field label="Check Out">
+          <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} required />
+        </Field>
+        <Field label="Number of Weeks">
+          <Input type="number" min="1" value={weeks || ''}
+            onChange={(e) => applyWeeks(Number(e.target.value))}
+            placeholder="e.g. 4" />
+        </Field>
+        <Field label="Asking Price (AED)">
+          <Input type="number" min="0" step="0.01" value={rate} onChange={(e) => setRate(e.target.value)} required />
+        </Field>
+        <Field label="Leased Price (AED)">
+          <Input type="number" min="0" step="0.01" value={leased} onChange={(e) => setLeased(e.target.value)} />
+        </Field>
+        <Field label="Total Quotation (AED)">
+          <Input type="number" min="0" step="0.01" value={totalQuotation} onChange={(e) => setTotalQuotation(e.target.value)} />
+        </Field>
+      </div>
+
+      <Field label={`Units (${unitIds.length} selected)`}>
+        <Input value={unitSearch} onChange={(e) => setUnitSearch(e.target.value)} placeholder="Filter by unit number or floor…" />
+        <div className="mt-2 max-h-44 overflow-y-auto rounded-lg border divide-y">
+          {visible.length === 0 ? (
+            <p className="px-3 py-2 text-xs text-muted-foreground">No matching units</p>
+          ) : visible.map((u) => (
+            <label key={u._id} className="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-muted/50">
+              <input type="checkbox" checked={unitIds.includes(u._id)} onChange={() => toggleUnit(u)} />
+              <span className="font-medium">{u.unitNumber}</span>
+              <span className="text-xs text-muted-foreground">
+                {[u.floor, u.sizeSqf != null ? `${u.sizeSqf} sq ft` : null].filter(Boolean).join(' · ')}
+              </span>
+              {u.status !== 'available' && !unitIds.includes(u._id) && (
+                <span className="ml-auto text-[10px] uppercase text-muted-foreground">{u.status}</span>
+              )}
+            </label>
+          ))}
+        </div>
+      </Field>
+
+      {chosen.length > 0 && (
+        <Field label="Unit Size (sq ft)">
+          <div className="space-y-2">
+            {chosen.map((u) => (
+              <div key={u._id} className="flex items-center gap-2">
+                <span className="text-sm w-20 shrink-0">{u.unitNumber}</span>
+                <Input type="number" min="0" step="1" value={sizes[u._id] ?? ''}
+                  onChange={(e) => setSizes((p) => ({ ...p, [u._id]: e.target.value }))}
+                  placeholder="e.g. 35" />
+              </div>
+            ))}
+          </div>
+        </Field>
+      )}
+
+      <Field label="Notes">
+        <Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Internal notes about this contract" />
+      </Field>
+
+      <div className="rounded-lg bg-muted/50 border px-3 py-2 text-xs text-muted-foreground">
+        <strong>Received</strong> and <strong>Remaining</strong> are totalled from this contract's
+        payment records — add them from the Payments tab rather than here. The tenant cannot be
+        changed on an existing contract.
+      </div>
+
+      {error && <p className="text-xs text-destructive">{error}</p>}
+      <div className="flex justify-end gap-2 pt-2 border-t">
+        <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
+        <Button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save Changes'}</Button>
+      </div>
+    </form>
+  )
+}
+
 export default function ContractDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -645,8 +805,17 @@ export default function ContractDetail() {
   // Custom invoices open with no prefilled lines; period invoices keep theirs
   const [invoiceBlank, setInvoiceBlank] = useState(false)
   const [editModal, setEditModal] = useState(false)
-  // Which sidebar field is currently open for inline editing (null = none)
-  const [inlineField, setInlineField] = useState<string | null>(null)
+
+  // Units to choose from in the edit panel — only fetched once the panel opens
+  const { data: unitOptions = [] } = useQuery<Unit[]>({
+    queryKey: ['units', 'contract-edit-picker'],
+    queryFn: async () => {
+      const r = await api.get('/units', { params: { limit: 2000 } })
+      return (Array.isArray(r.data) ? r.data : r.data?.data ?? []) as Unit[]
+    },
+    enabled: editModal,
+    staleTime: 60_000,
+  })
   const [editCustomerModal, setEditCustomerModal] = useState(false)
   const [customerError, setCustomerError] = useState('')
   const [editingNote, setEditingNote] = useState<{ idx: number; text: string } | null>(null)
@@ -1013,32 +1182,8 @@ export default function ContractDetail() {
                 const collected = payments.filter((p) => p.status === 'paid').reduce((s, p) => s + p.amount, 0)
                 const remaining = Math.max(0, totalOwed - collected)
 
-                /** Saves one field straight to the contract and closes the editor. */
-                const saveInline = (key: string, raw: string) => {
-                  setInlineField(null)
-                  const val = raw.trim()
-                  if (!val) return
-                  setError('')
-                  if (key === 'startDate' || key === 'endDate') {
-                    if (val === (c[key] || '').slice(0, 10)) return
-                    updateContract.mutate({ [key]: val })
-                    return
-                  }
-                  // Leased price is stored as a discount off the asking rate
-                  if (key === 'leasedPrice') {
-                    const leased = Number(val)
-                    if (!askingPrice || !Number.isFinite(leased) || leased === leasedPrice) return
-                    const pct = Math.round(Math.max(0, (1 - leased / askingPrice)) * 10000) / 100
-                    updateContract.mutate({ firstMonthDiscountPct: pct })
-                    return
-                  }
-                  const num = Number(val)
-                  if (!Number.isFinite(num) || num === Number((c as unknown as Record<string, unknown>)[key] || 0)) return
-                  updateContract.mutate({ [key]: num })
-                }
-
                 // Plain functions, not components — a component declared here would
-                // get a fresh type each render and remount the input mid-edit.
+                // get a fresh type each render and remount its subtree.
                 const Row = (label: string, value: React.ReactNode) => (
                   <div key={label} className="flex justify-between py-2 gap-3">
                     <span className="text-muted-foreground shrink-0">{label}</span>
@@ -1046,57 +1191,35 @@ export default function ContractDetail() {
                   </div>
                 )
 
-                /** Same row, but the value flips to an input when the pencil is clicked. */
-                const EditRow = (
-                  label: string,
-                  key: string,
-                  display: React.ReactNode,
-                  type: 'date' | 'number',
-                  initial: string,
-                ) => (
-                  <div key={label} className="flex justify-between py-2 gap-2 items-center min-h-[40px]">
+                /** Same row, plus a pencil that opens the edit panel on the right. */
+                const EditRow = (label: string, value: React.ReactNode) => (
+                  <div key={label} className="flex justify-between py-2 gap-2 items-center">
                     <span className="text-muted-foreground shrink-0">{label}</span>
-                    {inlineField === key ? (
-                      <input
-                        autoFocus
-                        type={type}
-                        step={type === 'number' ? '0.01' : undefined}
-                        min={type === 'number' ? '0' : undefined}
-                        defaultValue={initial}
-                        className="h-8 w-32 rounded border px-1.5 text-right text-[14px] outline-none focus:border-primary"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') saveInline(key, e.currentTarget.value)
-                          if (e.key === 'Escape') setInlineField(null)
-                        }}
-                        onBlur={(e) => saveInline(key, e.currentTarget.value)}
-                      />
-                    ) : (
-                      <span className="font-medium text-right flex items-center gap-1.5 justify-end">
-                        {display}
-                        <button type="button" title={`Edit ${label}`}
-                          className="text-primary hover:text-primary/80 cursor-pointer"
-                          onClick={() => { setError(''); setInlineField(key) }}>
-                          <PenLine size={12} />
-                        </button>
-                      </span>
-                    )}
+                    <span className="font-medium text-right flex items-center gap-1.5 justify-end">
+                      {value}
+                      <button type="button" title={`Edit ${label}`}
+                        className="text-primary hover:text-primary/80 cursor-pointer"
+                        onClick={() => { setError(''); setEditModal(true) }}>
+                        <PenLine size={12} />
+                      </button>
+                    </span>
                   </div>
                 )
 
                 return (
                   <div className="divide-y border-t text-[15px] pt-1">
-                    {EditRow('Check In', 'startDate', c.startDate ? formatDate(c.startDate) : '—', 'date', c.startDate?.slice(0, 10) || '')}
-                    {EditRow('Check Out', 'endDate', c.endDate ? formatDate(c.endDate) : '—', 'date', c.endDate?.slice(0, 10) || '')}
-                    {Row('Number of Weeks', weeks ?? '—')}
+                    {EditRow('Check In', c.startDate ? formatDate(c.startDate) : '—')}
+                    {EditRow('Check Out', c.endDate ? formatDate(c.endDate) : '—')}
+                    {EditRow('Number of Weeks', weeks ?? '—')}
                     {Row('Expiring In', daysLeft === null ? '—' : daysLeft < 0 ? `Expired ${Math.abs(daysLeft)}d ago` : `${daysLeft}d left`)}
-                    {Row('Unit Number', allUnits.length ? allUnits.map((u) => u.unitNumber).join(', ') : '—')}
-                    {Row('Unit Size',
+                    {EditRow('Unit Number', allUnits.length ? allUnits.map((u) => u.unitNumber).join(', ') : '—')}
+                    {EditRow('Unit Size',
                       allUnits.some((u) => u?.sizeSqf != null)
                         ? `${allUnits.map((u) => (u?.sizeSqf != null ? u.sizeSqf : '—')).join(', ')} sq ft`
                         : '—')}
-                    {EditRow('Asking Price', 'rate', `AED ${formatMoney(askingPrice)}`, 'number', String(askingPrice))}
-                    {EditRow('Leased Price', 'leasedPrice', `AED ${formatMoney(leasedPrice)}`, 'number', String(leasedPrice))}
-                    {EditRow('Total Quotation', 'totalQuotation', `AED ${formatMoney(c.totalQuotation || 0)}`, 'number', String(c.totalQuotation || 0))}
+                    {EditRow('Asking Price', `AED ${formatMoney(askingPrice)}`)}
+                    {EditRow('Leased Price', `AED ${formatMoney(leasedPrice)}`)}
+                    {EditRow('Total Quotation', `AED ${formatMoney(c.totalQuotation || 0)}`)}
                     {Row('Received', <span className="text-emerald-600">AED {formatMoney(collected)}</span>)}
                     {Row('Remaining', <span className={remaining > 0 ? 'text-destructive' : 'text-emerald-600'}>AED {formatMoney(remaining)}</span>)}
                   </div>
@@ -1592,48 +1715,14 @@ export default function ContractDetail() {
               <button onClick={() => setEditModal(false)} className="p-1 hover:bg-muted rounded cursor-pointer"><X size={18} /></button>
             </div>
             <div className="p-5">
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  const f = new FormData(e.currentTarget)
-                  updateContract.mutate({
-                    rate: Number(f.get('rate')),
-                    totalQuotation: Number(f.get('totalQuotation')) || undefined,
-                    startDate: String(f.get('startDate')),
-                    endDate: String(f.get('endDate')),
-                    notes: String(f.get('notes') || ''),
-                  })
-                }}
-                className="space-y-4"
-              >
-                <div className="grid grid-cols-2 gap-4">
-                  <Field label="Monthly Rate (AED)">
-                    <Input name="rate" type="number" min="0" step="0.01" defaultValue={c.rate} required />
-                  </Field>
-                  <Field label="Total Quotation (AED)">
-                    <Input name="totalQuotation" type="number" min="0" step="0.01" defaultValue={c.totalQuotation} />
-                  </Field>
-                  <Field label="Start Date">
-                    <Input name="startDate" type="date" defaultValue={c.startDate?.slice(0, 10)} required />
-                  </Field>
-                  <Field label="End Date">
-                    <Input name="endDate" type="date" defaultValue={c.endDate?.slice(0, 10)} required />
-                  </Field>
-                  <Field label="Notes" className="col-span-2">
-                    <Textarea name="notes" rows={3} defaultValue={c.notes || ''} placeholder="Internal notes about this contract" />
-                  </Field>
-                </div>
-                <div className="rounded-lg bg-muted/50 border px-3 py-2 text-xs text-muted-foreground">
-                  <strong>Note:</strong> Customer and unit cannot be changed here. To change these, end this contract and create a new one.
-                </div>
-                {error && <p className="text-xs text-destructive">{error}</p>}
-                <div className="flex justify-end gap-2 pt-2 border-t">
-                  <Button type="button" variant="outline" onClick={() => setEditModal(false)}>Cancel</Button>
-                  <Button type="submit" disabled={updateContract.isPending}>
-                    {updateContract.isPending ? 'Saving…' : 'Save Changes'}
-                  </Button>
-                </div>
-              </form>
+              <EditContractForm
+                contract={c}
+                unitOptions={unitOptions}
+                busy={updateContract.isPending}
+                error={error}
+                onSubmit={(body) => updateContract.mutate(body)}
+                onCancel={() => setEditModal(false)}
+              />
             </div>
           </div>
         </div>
