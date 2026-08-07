@@ -96,20 +96,20 @@ export default function Dashboard() {
   const { data, isLoading, isError, error, refetch } = useQuery<Summary>({
     queryKey: ['summary'],
     queryFn: () => api.get('/reports/summary').then((r) => r.data),
-    staleTime: 2 * 60_000,
+    staleTime: 5 * 60_000,
   })
 
   type LatestNote = { contractId: string; contractNo: string; customerName: string; at: string; text: string; author: string }
   const { data: latestNotes = [] } = useQuery<LatestNote[]>({
     queryKey: ['latest-notes'],
     queryFn: () => api.get('/contracts/latest-notes?limit=30').then((r) => r.data),
-    staleTime: 2 * 60_000,
+    staleTime: 5 * 60_000,
   })
 
   const { data: draftInvoicesPage } = useQuery<{ total: number }>({
     queryKey: ['invoices-draft-count'],
     queryFn: () => api.get('/invoices', { params: { status: 'draft', limit: 1 } }).then((r) => r.data),
-    staleTime: 2 * 60_000,
+    staleTime: 5 * 60_000,
   })
   const draftInvoices = draftInvoicesPage?.total ?? 0
 
