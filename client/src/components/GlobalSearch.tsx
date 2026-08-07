@@ -154,7 +154,7 @@ export default function GlobalSearch() {
           onChange={e => { setTerm(e.target.value); setOpen(true) }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
-          placeholder="Search tenant, contract no, unit…"
+          placeholder="Search tenant, phone, contract no, unit…"
           className="flex-1 bg-transparent outline-none text-[13px]"
           style={{ color: '#14081F' }}
         />

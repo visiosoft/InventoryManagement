@@ -9,6 +9,7 @@ import { renderContractPdf } from '../services/contractPdf.js';
 import { fillAgreementPdf, agreementTemplateExists } from '../services/agreementPdf.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { siteScope } from '../utils/siteScope.js';
+import { phoneClauses } from '../utils/phoneSearch.js';
 
 // Renders the contract document: the official Customer Agreement template
 // filled with contract data when available, otherwise the generated fallback.
@@ -100,7 +101,7 @@ router.get('/', async (req, res) => {
     const re = new RegExp(req.query.search.trim(), 'i');
     const [matchedUnits, matchedCustomers] = await Promise.all([
       Unit.find({ unitNumber: re }).select('_id'),
-      Customer.find({ fullName: re }).select('_id'),
+      Customer.find({ $or: [{ fullName: re }, { clientId: re }, { email: re }, ...phoneClauses(req.query.search)] }).select('_id'),
     ]);
     const or = [{ contractNo: re }];
     if (matchedUnits.length) or.push({ unit: { $in: matchedUnits.map((u) => u._id) } });
@@ -225,9 +226,13 @@ router.get('/search', async (req, res) => {
   const limit = Math.min(Math.max(1, Number(req.query.limit) || 8), 25);
   const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
 
+  // Tenants are matched on name, contact details and client ID — a phone number
+  // needs its own digits-only match because of the mixed stored formats.
+  const customerOr = [{ fullName: re }, { clientId: re }, { email: re }, ...phoneClauses(q)];
+
   const [units, customers] = await Promise.all([
     Unit.find({ unitNumber: re }).select('_id').limit(100).lean(),
-    Customer.find({ fullName: re }).select('_id').limit(100).lean(),
+    Customer.find({ $or: customerOr }).select('_id').limit(100).lean(),
   ]);
 
   const or = [{ contractNo: re }];

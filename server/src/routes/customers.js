@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { Customer, Contract, Document, Payment, Invoice, Unit, Quote } from '../models/index.js';
 import { requireAdmin } from '../middleware/auth.js';
+import { phoneClauses } from '../utils/phoneSearch.js';
 
 const router = Router();
 
@@ -51,6 +52,8 @@ router.get('/', async (req, res) => {
       { passportNumber: re },
       { notes: re },
       { tenantType: re },
+      // Digits-only match so a local number finds an international one
+      ...phoneClauses(req.query.search),
     ];
   }
 
