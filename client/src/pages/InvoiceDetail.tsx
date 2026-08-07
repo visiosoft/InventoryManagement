@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Download, AlertCircle, CheckCircle2, Clock, Pencil, MessageCircle, RefreshCw, Trash2 } from 'lucide-react'
+import { ArrowLeft, Download, AlertCircle, CheckCircle2, Clock, Pencil, MessageCircle, RefreshCw, Trash2, X } from 'lucide-react'
 import { api, apiError, invoiceApi } from '../lib/api'
 import type { Invoice, InvoicePaymentEntry, InvoiceStatus } from '../lib/types'
 import {
@@ -392,7 +392,14 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
     const subTotal = items.reduce((s, it) => s + Number(it.amount || 0), 0)
 
     return (
-        <Modal open wide title={`Edit ${docLabel(invoice)} ${invoice.invoiceNo}`} onClose={onClose}>
+        <div className="fixed inset-0 z-50">
+            <div className="absolute inset-0 bg-black/20" onClick={onClose} />
+            <div className="absolute right-0 top-0 h-full w-full max-w-lg bg-card shadow-xl overflow-y-auto animate-in slide-in-from-right border-l">
+                <div className="sticky top-0 bg-card border-b px-5 py-4 flex items-center justify-between z-10">
+                    <h2 className="text-base font-bold">Edit {docLabel(invoice)} {invoice.invoiceNo}</h2>
+                    <button onClick={onClose} className="text-muted-foreground hover:text-foreground cursor-pointer"><X size={18} /></button>
+                </div>
+                <div className="p-5">
             <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                     <Field label="Due Date">
@@ -491,8 +498,11 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
                         </Button>
                     </div>
                 </div>
+                </div>
             </div>
-        </Modal>
+                </div>
+            </div>
+        </div>
     )
 }
 
