@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { FileText, FileBadge, Receipt, Plus, Search, Trash2, UserCheck, Merge } from 'lucide-react'
 import { api, apiError, customerApi } from '../lib/api'
 import type { Customer } from '../lib/types'
@@ -230,10 +230,10 @@ export default function Customers() {
                     <input type="checkbox" checked={selected.has(c._id)} onChange={() => toggleOne(c._id)} className="cursor-pointer" />
                   </Td>
                   <Td>
-                    <button type="button" onClick={() => { setActionError(''); setEditTarget(c) }}
+                    <Link to={`/customers/${c._id}`}
                       className="font-medium hover:underline cursor-pointer text-left" style={{ color: PURPLE }}>
                       {c.fullName}
-                    </button>
+                    </Link>
                     {c.tenantType === 'company' && <span className="ml-1.5 text-[10px] text-muted-foreground">(Co.)</span>}
                   </Td>
                   <Td className="text-muted-foreground text-xs">{c.clientId || '—'}</Td>

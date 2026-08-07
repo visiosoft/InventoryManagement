@@ -31,6 +31,7 @@ import Units from './pages/Units'
 import FloorMap from './pages/FloorMap'
 import Sites from './pages/Sites'
 import Customers from './pages/Customers'
+import CustomerDetail from './pages/CustomerDetail'
 import Contracts from './pages/Contracts'
 import ContractDetail from './pages/ContractDetail'
 import NewContract from './pages/NewContract'
@@ -138,6 +139,7 @@ export default function App() {
         <Route path="/floor-map" element={<PermGuard module="units"><FloorMap /></PermGuard>} />
         <Route path="/sites" element={<PermGuard module="units"><Sites /></PermGuard>} />
         <Route path="/customers" element={<Customers />} />
+        <Route path="/customers/:id" element={<CustomerDetail />} />
         <Route path="/leads" element={<Leads />} />
         <Route path="/quotes" element={<PermGuard module="quotes"><Quotations /></PermGuard>} />
         <Route path="/quotes/new" element={<PermGuard module="quotes"><NewQuote /></PermGuard>} />

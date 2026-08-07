@@ -108,7 +108,7 @@ export default function GlobalSearch() {
   }, [])
 
   function go(row: Row) {
-    navigate(row.kind === 'contract' ? `/contracts/${row.id}` : `/customers?edit=${row.id}`)
+    navigate(row.kind === 'contract' ? `/contracts/${row.id}` : `/customers/${row.id}`)
     setOpen(false)
     setTerm('')
     inputRef.current?.blur()
