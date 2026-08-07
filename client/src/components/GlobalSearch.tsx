@@ -9,6 +9,8 @@ type ContractHit = {
   _id: string
   contractNo: string
   status: string
+  startDate?: string
+  endDate?: string
   customer?: { fullName?: string }
   unit?: { unitNumber?: string }
 }
@@ -52,7 +54,7 @@ export default function GlobalSearch() {
     queryKey: ['global-search', debounced],
     queryFn: async () => {
       const [contracts, customers] = await Promise.all([
-        api.get('/contracts/search', { params: { q: debounced, limit: 6 } }).then(r => r.data as ContractHit[]),
+        api.get('/contracts/search', { params: { q: debounced, limit: 12 } }).then(r => r.data as ContractHit[]),
         api.get('/customers', { params: { search: debounced, limit: 5 } })
           .then(r => (Array.isArray(r.data) ? r.data : r.data?.data ?? []) as CustomerHit[]),
       ])
@@ -62,13 +64,24 @@ export default function GlobalSearch() {
     staleTime: 30_000,
   })
 
-  const contractRows: Row[] = (data?.contracts ?? []).map(c => ({
-    kind: 'contract' as const,
-    id: c._id,
-    title: c.customer?.fullName || 'Unknown tenant',
-    meta: `${c.unit?.unitNumber ? `Unit ${c.unit.unitNumber}` : 'No unit'} · ${c.status.replace(/_/g, ' ')}`,
-    tag: c.contractNo,
-  }))
+  // One row per contract — a tenant with two contracts is listed twice, each
+  // row opening its own contract. Rows for the same tenant sit together.
+  const shortDate = (d?: string) =>
+    d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }) : ''
+  const contractRows: Row[] = (data?.contracts ?? [])
+    .slice()
+    .sort((a, b) => (a.customer?.fullName || '').localeCompare(b.customer?.fullName || ''))
+    .map(c => ({
+      kind: 'contract' as const,
+      id: c._id,
+      title: c.customer?.fullName || 'Unknown tenant',
+      meta: [
+        c.unit?.unitNumber ? `Unit ${c.unit.unitNumber}` : 'No unit',
+        c.status.replace(/_/g, ' '),
+        c.startDate && c.endDate ? `${shortDate(c.startDate)} – ${shortDate(c.endDate)}` : '',
+      ].filter(Boolean).join(' · '),
+      tag: c.contractNo,
+    }))
 
   // Skip tenants already shown by one of their contracts
   const shownNames = new Set(contractRows.map(r => r.title.toLowerCase()))
