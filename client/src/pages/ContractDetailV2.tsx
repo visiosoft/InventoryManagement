@@ -1,13 +1,15 @@
-import { useQuery } from '@tanstack/react-query'
+import { useState, type FormEvent } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Download, FileText, MessageSquare, Pencil, Receipt } from 'lucide-react'
-import { api } from '../lib/api'
+import { ArrowLeft, Download, FileText, MessageSquare, Pencil, Receipt, X } from 'lucide-react'
+import { api, apiError } from '../lib/api'
 import type { AppDocument, Contract, Invoice, Payment } from '../lib/types'
 import {
-  Badge, EmptyState, Spinner, Table, Td, Th,
+  Badge, Button, EmptyState, Field, Input, Select, Spinner, Table, Td, Th, Textarea,
   contractStatusTone, paymentStatusTone, statusLabel,
 } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
+import { CustomerForm } from '../components/AddCustomerModal'
 
 const PURPLE = '#5B2BC9'
 const INK = '#14081F'
@@ -58,12 +60,45 @@ function StatBox({ icon, label, value, color }: { icon: React.ReactNode; label: 
 export default function ContractDetailV2() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const qc = useQueryClient()
+  const [editing, setEditing] = useState(false)
+  const [editingTenant, setEditingTenant] = useState(false)
+  const [signingLink, setSigningLink] = useState('')
+  const [error, setError] = useState('')
 
   const { data, isLoading } = useQuery<{
     contract: Contract; payments: Payment[]; documents: AppDocument[]; invoices?: Invoice[]
   }>({
     queryKey: ['contract', id],
     queryFn: () => api.get(`/contracts/${id}`).then((r) => r.data),
+  })
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['contract', id] })
+
+  const updateContract = useMutation({
+    mutationFn: (body: Record<string, unknown>) => api.put(`/contracts/${id}`, body),
+    onSuccess: () => { invalidate(); setEditing(false); setError('') },
+    onError: (e) => setError(apiError(e)),
+  })
+
+  // Status changes: activate / mark-signed / cancel / end
+  const action = useMutation({
+    mutationFn: (path: string) => api.post(`/contracts/${id}/${path}`),
+    onSuccess: () => { invalidate(); setError('') },
+    onError: (e) => setError(apiError(e)),
+  })
+
+  const createSigningLink = useMutation({
+    mutationFn: () => api.post(`/contracts/${id}/create-signing-link`),
+    onSuccess: (res) => { invalidate(); setSigningLink(res.data.signingUrl); setError('') },
+    onError: (e) => setError(apiError(e)),
+  })
+
+  const updateCustomer = useMutation({
+    mutationFn: (body: Record<string, unknown>) =>
+      api.put(`/customers/${(data?.contract?.customer as { _id?: string })?._id}`, body),
+    onSuccess: () => { invalidate(); setEditingTenant(false); setError('') },
+    onError: (e) => setError(apiError(e)),
   })
 
   if (isLoading || !data) return <div className="flex justify-center py-20"><Spinner /></div>
@@ -121,17 +156,61 @@ export default function ContractDetailV2() {
                 <MessageSquare size={14} /> Message
               </a>
             )}
-            <Link to={`/contracts/${c._id}`}>
-              <button type="button"
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold border-2 hover:opacity-80 transition-opacity"
+            <button type="button" onClick={() => { setError(''); setEditing(true) }}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold border-2 hover:opacity-80 transition-opacity"
+              style={{ borderColor: PURPLE, color: PURPLE }}>
+              <Pencil size={14} /> Edit
+            </button>
+            {c.status === 'active' && (
+              <button type="button" onClick={() => createSigningLink.mutate()} disabled={createSigningLink.isPending}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold border-2 hover:opacity-80 transition-opacity disabled:opacity-60"
                 style={{ borderColor: PURPLE, color: PURPLE }}>
-                <Pencil size={14} /> Manage
+                <Pencil size={14} /> {createSigningLink.isPending ? 'Generating…' : 'Allow re-sign'}
               </button>
-            </Link>
+            )}
+            {['draft', 'pending_signature'].includes(c.status) && (
+              <button type="button" onClick={() => createSigningLink.mutate()} disabled={createSigningLink.isPending}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold border-2 hover:opacity-80 transition-opacity disabled:opacity-60"
+                style={{ borderColor: PURPLE, color: PURPLE }}>
+                <Pencil size={14} /> {createSigningLink.isPending ? 'Generating…' : 'Send signing link'}
+              </button>
+            )}
+            {c.status === 'draft' && (
+              <button type="button" onClick={() => action.mutate('activate')} disabled={action.isPending}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-60"
+                style={{ background: '#047857' }}>
+                Activate
+              </button>
+            )}
+            {c.status === 'pending_signature' && (
+              <button type="button" onClick={() => action.mutate('mark-signed')} disabled={action.isPending}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-60"
+                style={{ background: '#047857' }}>
+                Mark as signed
+              </button>
+            )}
+            {c.status === 'active' && (
+              <button type="button"
+                onClick={() => { if (confirm('End this contract and free the unit?')) action.mutate('end') }}
+                disabled={action.isPending}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-60"
+                style={{ background: '#DC2626' }}>
+                End contract
+              </button>
+            )}
+            {['draft', 'pending_signature'].includes(c.status) && (
+              <button type="button"
+                onClick={() => { if (confirm('Cancel this contract?')) action.mutate('cancel') }}
+                disabled={action.isPending}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-60"
+                style={{ background: '#DC2626' }}>
+                Cancel
+              </button>
+            )}
             <a href={`/api/contracts/${c._id}/pdf`} target="_blank" rel="noreferrer">
               <button type="button"
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white hover:opacity-90 transition-opacity"
-                style={{ background: PURPLE }}>
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold border-2 hover:opacity-80 transition-opacity"
+                style={{ borderColor: 'rgba(20,8,31,0.2)', color: MUTED }}>
                 <Download size={15} /> PDF
               </button>
             </a>
@@ -153,7 +232,15 @@ export default function ContractDetailV2() {
             <InfoRow label="Total Quotation" value={`AED ${formatMoney(c.totalQuotation || 0)}`} />
           </SectionCard>
 
-          <SectionCard title="Tenant">
+          <SectionCard
+            title="Tenant"
+            action={customer?._id ? (
+              <button type="button" onClick={() => { setError(''); setEditingTenant(true) }}
+                className="flex items-center gap-1 text-xs font-semibold hover:underline cursor-pointer" style={{ color: PURPLE }}>
+                <Pencil size={12} /> Edit
+              </button>
+            ) : undefined}
+          >
             <InfoRow label="Name" value={customer?.fullName} />
             <InfoRow label="Client ID" value={customer?.clientId} />
             <InfoRow label="Email" value={customer?.email} />
@@ -271,6 +358,129 @@ export default function ContractDetailV2() {
           )}
         </div>
       </div>
+
+      {/* Edit tenant — same form the tenant pages use */}
+      {editingTenant && customer && (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/20" onClick={() => setEditingTenant(false)} />
+          <div className="absolute right-0 top-0 h-full w-full max-w-md bg-white dark:bg-gray-900 shadow-xl overflow-y-auto animate-in slide-in-from-right">
+            <div className="sticky top-0 bg-white dark:bg-gray-900 border-b px-5 py-4 flex items-center justify-between z-10">
+              <h2 className="text-lg font-bold" style={{ ...HEADING, color: INK }}>Edit {customer.fullName}</h2>
+              <button onClick={() => setEditingTenant(false)} className="p-1 hover:bg-muted rounded cursor-pointer"><X size={18} /></button>
+            </div>
+            <div className="p-5">
+              <CustomerForm
+                initial={customer}
+                busy={updateCustomer.isPending}
+                error={error}
+                submitLabel="Save changes"
+                onSubmit={(b) => updateCustomer.mutate(b as Record<string, unknown>)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Signing link, once generated */}
+      {signingLink && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setSigningLink('')} />
+          <div className="relative w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-base font-bold" style={{ ...HEADING, color: INK }}>Signing link ready</h2>
+              <button onClick={() => setSigningLink('')} className="p-1 hover:bg-muted rounded cursor-pointer"><X size={18} /></button>
+            </div>
+            <p className="text-xs mb-2" style={{ color: MUTED }}>Share this link with the tenant to sign the contract.</p>
+            <div className="flex items-center gap-2">
+              <input readOnly value={signingLink} className="flex-1 h-9 rounded-lg border px-3 text-xs" />
+              <Button type="button" onClick={() => navigator.clipboard.writeText(signingLink)}>Copy</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit contract — same fields and endpoint as the original page */}
+      {editing && (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/20" onClick={() => setEditing(false)} />
+          <div className="absolute right-0 top-0 h-full w-full max-w-md bg-white dark:bg-gray-900 shadow-xl overflow-y-auto animate-in slide-in-from-right">
+            <div className="sticky top-0 bg-white dark:bg-gray-900 border-b px-5 py-4 flex items-center justify-between z-10">
+              <h2 className="text-lg font-bold" style={{ ...HEADING, color: INK }}>Edit {c.contractNo}</h2>
+              <button onClick={() => setEditing(false)} className="p-1 hover:bg-muted rounded cursor-pointer"><X size={18} /></button>
+            </div>
+            <form
+              className="p-5 space-y-4"
+              onSubmit={(e: FormEvent<HTMLFormElement>) => {
+                e.preventDefault()
+                const f = new FormData(e.currentTarget)
+                updateContract.mutate({
+                  rate: Number(f.get('rate')),
+                  deposit: Number(f.get('deposit')),
+                  totalQuotation: Number(f.get('totalQuotation')) || undefined,
+                  billingPeriod: String(f.get('billingPeriod')),
+                  startDate: String(f.get('startDate')),
+                  endDate: String(f.get('endDate')),
+                  autoRenew: f.get('autoRenew') === 'true',
+                  paymentMethod: String(f.get('paymentMethod') || ''),
+                  notes: String(f.get('notes') || ''),
+                })
+              }}
+            >
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Asking Price / 4 weeks (AED)">
+                  <Input name="rate" type="number" min="0" step="0.01" defaultValue={c.rate} required />
+                </Field>
+                <Field label="Deposit (AED)">
+                  <Input name="deposit" type="number" min="0" step="0.01" defaultValue={c.deposit} />
+                </Field>
+                <Field label="Total Quotation (AED)">
+                  <Input name="totalQuotation" type="number" min="0" step="0.01" defaultValue={c.totalQuotation} />
+                </Field>
+                <Field label="Billing Period">
+                  <Select name="billingPeriod" defaultValue={c.billingPeriod}>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">4 Weeks (Monthly)</option>
+                  </Select>
+                </Field>
+                <Field label="Check In">
+                  <Input name="startDate" type="date" defaultValue={c.startDate?.slice(0, 10)} required />
+                </Field>
+                <Field label="Check Out">
+                  <Input name="endDate" type="date" defaultValue={c.endDate?.slice(0, 10)} required />
+                </Field>
+                <Field label="Payment Method">
+                  <Select name="paymentMethod" defaultValue={c.paymentMethod || ''}>
+                    <option value="">— Select —</option>
+                    <option value="cash">Cash</option>
+                    <option value="bank_transfer">Bank Transfer</option>
+                    <option value="cheque">Cheque</option>
+                    <option value="card">Card</option>
+                  </Select>
+                </Field>
+                <Field label="Auto Renew">
+                  <Select name="autoRenew" defaultValue={(c as { autoRenew?: boolean }).autoRenew ? 'true' : 'false'}>
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                  </Select>
+                </Field>
+                <Field label="Notes" className="col-span-2">
+                  <Textarea name="notes" rows={3} defaultValue={c.notes || ''} placeholder="Internal notes about this contract" />
+                </Field>
+              </div>
+              <div className="rounded-lg bg-muted/50 border px-3 py-2 text-xs text-muted-foreground">
+                Tenant and unit can't be changed here — end this contract and create a new one instead.
+              </div>
+              {error && <p className="text-xs" style={{ color: '#DC2626' }}>{error}</p>}
+              <div className="flex justify-end gap-2 pt-2 border-t">
+                <Button type="button" variant="outline" onClick={() => setEditing(false)}>Cancel</Button>
+                <Button type="submit" disabled={updateContract.isPending}>
+                  {updateContract.isPending ? 'Saving…' : 'Save changes'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
