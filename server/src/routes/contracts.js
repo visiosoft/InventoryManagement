@@ -936,14 +936,14 @@ router.put('/:id', async (req, res) => {
         .filter((p) => p.name);
     }
 
-    // Log what was changed to the contract timeline
+    // Log what was changed to the contract timeline with values
     const changedKeys = Object.keys($set).filter(k => k !== 'authorizedPersons');
     if (changedKeys.length) {
       const who = req.user?.name || req.user?.email || 'System';
-      const summary = changedKeys.join(', ');
+      const details = changedKeys.map(k => `${k}: ${$set[k] instanceof Date ? $set[k].toISOString().slice(0, 10) : $set[k]}`).join(', ');
       await Contract.findByIdAndUpdate(contract._id, {
         $set,
-        $push: { timeline: { text: `Updated ${summary}`, author: who, at: new Date() } },
+        $push: { timeline: { text: `Updated ${details}`, author: who, at: new Date() } },
       });
     } else {
       await Contract.findByIdAndUpdate(contract._id, { $set });
