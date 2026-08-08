@@ -208,16 +208,12 @@ export default function ContractDetail() {
   const [showReviewContract, setShowReviewContract] = useState(false)
   const [showContractPreview, setShowContractPreview] = useState(false)
   const [showNoticeEditor, setShowNoticeEditor] = useState(false)
-  const [showAddService, setShowAddService] = useState(false)
   const [showAddNotice, setShowAddNotice] = useState(false)
   const [showAddMovingRequest, setShowAddMovingRequest] = useState(false)
   const [selectedUnits, setSelectedUnits] = useState<string[]>([])
   const [error, setError] = useState('')
   const [sendingQuote, setSendingQuote] = useState<string | null>(null)
   const [uploadingDoc, setUploadingDoc] = useState<string | null>(null)
-
-  // Service form
-  const [serviceForm, setServiceForm] = useState({ label: '', amount: '' })
 
   // Notice state
   const [activeNoticeTitle, setActiveNoticeTitle] = useState('')
@@ -971,31 +967,6 @@ PurpleBox`,
                 })}
               </div>
 
-              {/* Services / Add items */}
-              <div style={{ marginTop: 16, borderTop: '1px solid rgba(20,8,31,.10)', paddingTop: 8 }}>
-                <div onClick={() => setShowAddService(true)} style={{ fontSize: 12, fontWeight: 700, color: '#5B2BC9', cursor: 'pointer', padding: 4 }}>+ Add item</div>
-                {showAddService && (
-                  <div style={{ margin: '6px 4px', padding: 10, background: '#F7F3FF', border: '1px solid #DDD0FF', borderRadius: 10, display: 'flex', gap: 10, alignItems: 'flex-end', maxWidth: 400 }}>
-                    <div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: '#756E80', textTransform: 'uppercase', marginBottom: 4 }}>Item</div>
-                      <input value={serviceForm.label} onChange={e => setServiceForm(f => ({ ...f, label: e.target.value }))} placeholder="e.g. Padlock"
-                        style={{ height: 30, width: 130, borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', padding: '0 8px', fontSize: 13 }} />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: '#756E80', textTransform: 'uppercase', marginBottom: 4 }}>Amount</div>
-                      <input value={serviceForm.amount} onChange={e => setServiceForm(f => ({ ...f, amount: e.target.value }))}
-                        style={{ height: 30, width: 90, borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', padding: '0 8px', fontSize: 13, textAlign: 'right' }} />
-                    </div>
-                    <div onClick={() => { setShowAddService(false); setServiceForm({ label: '', amount: '' }) }} style={{ height: 30, padding: '0 12px', borderRadius: 8, background: '#5B2BC9', color: '#fff', display: 'flex', alignItems: 'center', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Add</div>
-                    <div onClick={() => setShowAddService(false)} style={{ height: 30, padding: '0 12px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', display: 'flex', alignItems: 'center', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Cancel</div>
-                  </div>
-                )}
-                {/* Total row */}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '9px 4px 0', fontSize: 13, fontWeight: 700, borderTop: '2px solid rgba(20,8,31,.16)', marginTop: 6 }}>
-                  <span style={{ marginRight: 16 }}>Total</span>
-                  <span>AED {formatMoney(c.totalQuotation || totalOwed)}</span>
-                </div>
-              </div>
             </div>
           )}
 
