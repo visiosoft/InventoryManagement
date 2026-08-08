@@ -61,12 +61,12 @@ export default function ContractDetail() {
   // The actual saved floor plan (from /floor-map) and who occupies each unit
   const { data: planDoc } = useQuery<{ floors: PlanFloor[] } | null>({
     queryKey: ['floor-plan-doc'],
-    queryFn: () => api.get('/floor-plans').then(r => r.data?.doc ?? null),
+    queryFn: () => api.get('/floor-plan').then(r => r.data?.doc ?? null),
     staleTime: 60_000,
   })
   const { data: occupancy = {} } = useQuery<Record<string, { contractId: string; contractNo: string; customerName: string }>>({
     queryKey: ['floor-occupancy'],
-    queryFn: () => api.get('/floor-plans/occupancy').then(r => r.data),
+    queryFn: () => api.get('/floor-plan/occupancy').then(r => r.data),
     staleTime: 60_000,
   })
 
