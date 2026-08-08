@@ -256,6 +256,17 @@ const contractSchema = new Schema(
     signingTokenExpiry: { type: Date, default: null },
     totalQuotation: { type: Number, default: 0 },
     manualReceived: { type: Number, default: 0 },
+    // Per-unit booking terms — dates and price for each unit on a multi-unit
+    // contract. Falls back to the contract-level fields when absent.
+    unitTerms: [
+      {
+        unit: { type: Schema.Types.ObjectId, ref: 'Unit' },
+        startDate: { type: Date, default: null },
+        endDate: { type: Date, default: null },
+        leasedPrice: { type: Number, default: null },
+        manualReceived: { type: Number, default: null },
+      },
+    ],
     archived: { type: Boolean, default: false },
     timeline: [
       {

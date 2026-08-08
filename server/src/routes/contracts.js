@@ -924,6 +924,41 @@ router.put('/:id', async (req, res) => {
       }
     }
 
+    // Per-unit booking terms. Only units on the contract may carry a term; the
+    // contract-level date span follows the terms so the rest of the app
+    // (expiry, reports) keeps seeing one coherent range.
+    if (Array.isArray(req.body.unitTerms)) {
+      const onContract = new Set(
+        ($set.units || contract.units || []).map((u) => String(u)).concat(contract.unit ? [String(contract.unit)] : []),
+      );
+      const terms = [];
+      for (const t of req.body.unitTerms) {
+        if (!t || !isValidObjectId(t.unit) || !onContract.has(String(t.unit))) continue;
+        const term = { unit: t.unit };
+        for (const dk of ['startDate', 'endDate']) {
+          if (!t[dk]) continue;
+          const d = new Date(t[dk]);
+          if (Number.isNaN(d.getTime())) return res.status(400).json({ error: `${dk} is not a valid date` });
+          term[dk] = d;
+        }
+        if (term.startDate && term.endDate && term.endDate <= term.startDate) {
+          return res.status(400).json({ error: 'Check out must be after check in' });
+        }
+        for (const nk of ['leasedPrice', 'manualReceived']) {
+          if (t[nk] === undefined || t[nk] === null || t[nk] === '') continue;
+          const n = Number(t[nk]);
+          if (!Number.isFinite(n) || n < 0) return res.status(400).json({ error: `${nk} must be a number of 0 or more` });
+          term[nk] = n;
+        }
+        terms.push(term);
+      }
+      $set.unitTerms = terms;
+      const starts = terms.map((t) => t.startDate).filter(Boolean);
+      const ends = terms.map((t) => t.endDate).filter(Boolean);
+      if (starts.length) $set.startDate = new Date(Math.min(...starts.map((d) => d.getTime())));
+      if (ends.length) $set.endDate = new Date(Math.max(...ends.map((d) => d.getTime())));
+    }
+
     if (Array.isArray(req.body.authorizedPersons)) {
       $set.authorizedPersons = req.body.authorizedPersons
         .map((p) => ({
@@ -938,10 +973,12 @@ router.put('/:id', async (req, res) => {
 
     // Log what was changed to the contract timeline with values
     const fieldLabels = { rate: 'Asking Price', deposit: 'Deposit', totalQuotation: 'Total Quotation', leasedPrice: 'Leased Price', manualReceived: 'Received', startDate: 'Check In', endDate: 'Check Out', billingPeriod: 'Billing Period', paymentMethod: 'Payment Method', firstPaymentDate: 'First Payment Date', firstMonthDiscountPct: 'First Month Discount' };
-    const changedKeys = Object.keys($set).filter(k => k !== 'authorizedPersons');
-    if (changedKeys.length) {
+    const changedKeys = Object.keys($set).filter(k => k !== 'authorizedPersons' && k !== 'unitTerms' && k !== 'units' && k !== 'unit');
+    if (changedKeys.length || $set.unitTerms) {
       const who = req.user?.name || req.user?.email || 'System';
-      const details = changedKeys.map(k => `${fieldLabels[k] || k}: ${$set[k] instanceof Date ? $set[k].toISOString().slice(0, 10) : $set[k]}`).join(', ');
+      const parts = changedKeys.map(k => `${fieldLabels[k] || k}: ${$set[k] instanceof Date ? $set[k].toISOString().slice(0, 10) : $set[k]}`);
+      if ($set.unitTerms) parts.push('unit booking terms');
+      const details = parts.join(', ');
       await Contract.findByIdAndUpdate(contract._id, {
         $set,
         $push: { timeline: { text: `Updated ${details}`, author: who, at: new Date() } },

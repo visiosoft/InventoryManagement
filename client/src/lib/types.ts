@@ -458,6 +458,14 @@ export interface Contract {
   totalQuotation?: number
   firstMonthDiscountPct?: number
   leasedPrice?: number
+  manualReceived?: number
+  unitTerms?: {
+    unit: string
+    startDate?: string | null
+    endDate?: string | null
+    leasedPrice?: number | null
+    manualReceived?: number | null
+  }[]
   createdAt?: string
 }
 

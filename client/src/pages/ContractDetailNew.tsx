@@ -309,19 +309,32 @@ export default function ContractDetail() {
     }
   }
 
-  // Inline edit helpers
-  const saveInlineField = async (field: string, val: string) => {
-    const body: Record<string, unknown> = {}
-    if (field === 'startDate' || field === 'endDate') body[field] = val
-    else if (field === 'weeks') {
-      const w = Number(val)
-      if (w > 0 && c.startDate) {
-        const d = new Date(c.startDate)
-        d.setDate(d.getDate() + w * 7)
-        body.endDate = d.toISOString().slice(0, 10)
+  // Per-unit terms with contract-level fallback
+  const termFor = (unitId: string) => (c.unitTerms ?? []).find(t => String(t.unit) === unitId)
+
+  const saveUnitTerm = async (unitId: string, patch: { startDate?: string; endDate?: string; leasedPrice?: number; manualReceived?: number; weeks?: number }) => {
+    const targets = selectedUnits.length > 1 && selectedUnits.includes(unitId) ? selectedUnits : [unitId]
+    const map = new Map<string, { unit: string; startDate?: string | null; endDate?: string | null; leasedPrice?: number | null; manualReceived?: number | null }>()
+    for (const t of c.unitTerms ?? []) map.set(String(t.unit), { ...t, unit: String(t.unit) })
+    for (const uid of targets) {
+      const cur = map.get(uid) ?? {
+        unit: uid,
+        startDate: c.startDate?.slice(0, 10) ?? null,
+        endDate: c.endDate?.slice(0, 10) ?? null,
+        leasedPrice: null,
+        manualReceived: null,
       }
-    } else body[field] = Number(val) || 0
-    try { await api.put(`/contracts/${id}`, body); invalidate() } catch (e: any) { setError(apiError(e)) }
+      if (patch.startDate !== undefined) cur.startDate = patch.startDate
+      if (patch.endDate !== undefined) cur.endDate = patch.endDate
+      if (patch.leasedPrice !== undefined) cur.leasedPrice = patch.leasedPrice
+      if (patch.manualReceived !== undefined) cur.manualReceived = patch.manualReceived
+      if (patch.weeks !== undefined) {
+        const base = (cur.startDate || c.startDate)?.slice(0, 10)
+        if (base) cur.endDate = addWeeks(base, patch.weeks)
+      }
+      map.set(uid, cur)
+    }
+    try { await api.put(`/contracts/${id}`, { unitTerms: [...map.values()] }); invalidate() } catch (e: any) { setError(apiError(e)) }
   }
 
   const weeks = c.startDate && c.endDate
@@ -620,6 +633,7 @@ export default function ContractDetail() {
                 {selectedUnits.length > 0 ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12 }}>
                     <span style={{ fontWeight: 700 }}>{selectedUnits.length} selected</span>
+                    {selectedUnits.length > 1 && <span style={{ color: '#756E80' }}>edits to a checked row apply to all checked rows</span>}
                     <span onClick={prefillContract} style={{ fontWeight: 700, color: '#5B2BC9', cursor: 'pointer' }}>Create contract from selection</span>
                   </div>
                 ) : <div />}
@@ -706,8 +720,15 @@ export default function ContractDetail() {
                   <span /><span /><span>Check In</span><span>Check Out</span><span style={{ textAlign: 'right' }}>Asking</span><span style={{ textAlign: 'right' }}>Lease</span><span style={{ textAlign: 'right' }}>Weeks</span><span style={{ textAlign: 'right' }}>Total</span><span style={{ textAlign: 'right' }}>Received</span><span style={{ textAlign: 'right' }}>Pending</span><span>Next Booking</span>
                 </div>
                 {allUnits.map(u => {
-                  const unitTotal = c.totalQuotation || totalOwed
-                  const unitReceived = Number((c as any).manualReceived || 0) || paidTotal
+                  const term = termFor(u._id)
+                  const rStart = term?.startDate ?? c.startDate
+                  const rEnd = term?.endDate ?? c.endDate
+                  const rWeeks = rStart && rEnd
+                    ? Math.max(1, Math.ceil(Math.round((new Date(rEnd).getTime() - new Date(rStart).getTime()) / 86400000) / 7))
+                    : null
+                  const rLease = term?.leasedPrice ?? leasedPrice
+                  const unitTotal = rWeeks ? Math.round((rLease / 4) * rWeeks * 100) / 100 : (c.totalQuotation || totalOwed)
+                  const unitReceived = term?.manualReceived ?? (allUnits.length === 1 ? (Number(c.manualReceived || 0) || paidTotal) : 0)
                   const unitPending = Math.max(0, unitTotal - unitReceived)
                   return (
                     <div key={u._id} style={{ marginTop: 10 }}>
@@ -718,24 +739,24 @@ export default function ContractDetail() {
                           {c.status === 'draft' && <span style={{ background: '#FEF3C7', color: '#92400E', fontSize: 10, padding: '1px 6px', borderRadius: 6, fontWeight: 600 }}>Draft</span>}
                         </span>
                         {/* Check In — native date picker, saves on pick */}
-                        <input type="date" key={`ci-${c.startDate}`} defaultValue={c.startDate?.slice(0, 10) || ''}
-                          onChange={e => { if (e.target.value) saveInlineField('startDate', e.target.value) }}
+                        <input type="date" key={`ci-${u._id}-${rStart}`} defaultValue={rStart?.slice(0, 10) || ''}
+                          onChange={e => { if (e.target.value) saveUnitTerm(u._id, { startDate: e.target.value }) }}
                           style={cellInput(112)} />
 
                         {/* Check Out */}
-                        <input type="date" key={`co-${c.endDate}`} defaultValue={c.endDate?.slice(0, 10) || ''}
-                          onChange={e => { if (e.target.value) saveInlineField('endDate', e.target.value) }}
+                        <input type="date" key={`co-${u._id}-${rEnd}`} defaultValue={rEnd?.slice(0, 10) || ''}
+                          onChange={e => { if (e.target.value) saveUnitTerm(u._id, { endDate: e.target.value }) }}
                           style={cellInput(112)} />
 
                         {/* Asking — set on the unit / floor map, not editable here */}
                         <span style={{ textAlign: 'right', color: '#14081F' }}>{formatMoney(askingPrice)}</span>
 
                         {/* Lease — agreed price per 4 weeks */}
-                        <MoneyCell value={leasedPrice} onSave={v => saveInlineField('leasedPrice', v)} />
+                        <MoneyCell value={rLease} onSave={v => saveUnitTerm(u._id, { leasedPrice: Number(v) || 0 })} />
 
-                        {/* Weeks — picking a value moves Check Out */}
-                        <select key={`wk-${weeks}`} defaultValue={String(weeks ?? 4)}
-                          onChange={e => saveInlineField('weeks', e.target.value)}
+                        {/* Weeks — picking a value moves this unit's Check Out */}
+                        <select key={`wk-${u._id}-${rWeeks}`} defaultValue={String(rWeeks ?? 4)}
+                          onChange={e => saveUnitTerm(u._id, { weeks: Number(e.target.value) })}
                           style={{ ...cellInput(64), justifySelf: 'end', cursor: 'pointer' }}>
                           {weeksOpts.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
@@ -743,7 +764,7 @@ export default function ContractDetail() {
                         <span style={{ textAlign: 'right', fontWeight: 700 }}>{formatMoney(unitTotal)}</span>
 
                         {/* Received — manual figure for imported contracts */}
-                        <MoneyCell value={unitReceived} color="#16A34A" onSave={v => saveInlineField('manualReceived', v)} />
+                        <MoneyCell value={unitReceived} color="#16A34A" onSave={v => saveUnitTerm(u._id, { manualReceived: Number(v) || 0 })} />
 
                         <span style={{ textAlign: 'right', color: '#DC2626' }}>{formatMoney(unitPending)}</span>
 
