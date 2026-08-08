@@ -181,6 +181,14 @@ export default function ContractDetail() {
     staleTime: 60_000,
   })
 
+  const { data: tenantContracts = [] } = useQuery<Contract[]>({
+    queryKey: ['contracts', 'for-customer', data?.contract?.customer?._id],
+    queryFn: () => api.get('/contracts', { params: { customer: data?.contract?.customer?._id, archived: 'all', limit: 100 } })
+      .then(r => (r.data?.data ?? []) as Contract[]),
+    enabled: !!data?.contract?.customer?._id,
+    staleTime: 30_000,
+  })
+
   const { data: quotes = [] } = useQuery<Quote[]>({
     queryKey: ['quotes', 'for-customer', data?.contract?.customer?._id],
     queryFn: () => quoteApi.list({ customer: data?.contract?.customer?._id }),
@@ -289,6 +297,12 @@ export default function ContractDetail() {
   const totalOwed = Math.max(Number(c.totalQuotation || 0), payments.reduce((s, p) => s + p.amount, 0))
   const remaining = Math.max(0, totalOwed - paidTotal)
   const nextDuePayment = payments.filter(p => p.status !== 'paid').sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0]
+
+  // Tenant's contracts, active first, ended still visible at the bottom
+  const statusRank: Record<string, number> = { active: 0, pending_signature: 1, draft: 2, ended: 3, cancelled: 4 }
+  const contractRows = [...tenantContracts].sort((a, b) =>
+    (statusRank[a.status] ?? 9) - (statusRank[b.status] ?? 9)
+    || new Date(b.startDate || 0).getTime() - new Date(a.startDate || 0).getTime())
 
   // Unit chips
   const unitChips = allUnits.map(u => ({
@@ -680,6 +694,41 @@ PurpleBox`,
             ))}
             {unitChips.length === 0 && <span style={{ fontSize: 11, color: '#756E80' }}>No units</span>}
           </div>
+
+          {/* Contracts — every agreement this tenant has, current one highlighted */}
+          {contractRows.length > 0 && (
+            <div style={{ borderTop: '1px solid rgba(20,8,31,.10)', paddingTop: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#5B2BC9', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 8 }}>Contracts</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {contractRows.map(row => {
+                  const isCurrent = String(row._id) === String(id)
+                  const tone = row.status === 'active' ? { bg: '#DCFCE7', color: '#15803D' }
+                    : row.status === 'ended' || row.status === 'cancelled' ? { bg: '#F4F1F8', color: '#756E80' }
+                      : { bg: '#FEF3C7', color: '#92400E' }
+                  return (
+                    <div key={row._id}
+                      onClick={() => { if (!isCurrent) navigate(`/contracts/${row._id}`) }}
+                      style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+                        borderRadius: 8, padding: '7px 9px', fontSize: 12, cursor: isCurrent ? 'default' : 'pointer',
+                        background: isCurrent ? '#F7F3FF' : '#fff',
+                        border: isCurrent ? '1px solid #C9B6FF' : '1px solid rgba(20,8,31,.08)',
+                      }}>
+                      <span style={{ minWidth: 0 }}>
+                        <span style={{ fontWeight: 700, color: isCurrent ? '#5B2BC9' : '#14081F', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.contractNo}</span>
+                        {row.startDate && row.endDate && (
+                          <span style={{ fontSize: 10.5, color: '#756E80' }}>{fmtShort(row.startDate)} – {fmtShort(row.endDate)}</span>
+                        )}
+                      </span>
+                      <span style={{ background: tone.bg, color: tone.color, fontSize: 9.5, padding: '2px 7px', borderRadius: 6, fontWeight: 700, textTransform: 'capitalize', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        {row.status?.replace('_', ' ')}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Financials */}
           <div style={{ borderTop: '1px solid rgba(20,8,31,.10)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
