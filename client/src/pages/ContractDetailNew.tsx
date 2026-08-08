@@ -17,6 +17,13 @@ type ContractDetailData = {
 
 type FollowUp = { note: string; date: string; time: string; done?: boolean }
 
+// The floor plan saved from /floor-map — same document the builder writes
+type PlanShape = { id: string; type: string; x: number; y: number; w: number; h: number; num?: string; text?: string; rate?: number }
+type PlanFloor = { id: string; name: string; prefix: string; rate: number; width: number; depth: number; shapes: PlanShape[] }
+
+/** A unit picked for booking: dates and price editable per row. */
+type BookingRow = { unitId: string; unitNumber: string; sizeSqf: number | null; checkIn: string; weeks: number; price: number }
+
 type Tab = 'activity' | 'units' | 'quotations' | 'contracts' | 'documents' | 'moving' | 'notices'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -51,6 +58,18 @@ export default function ContractDetail() {
     staleTime: 60_000,
   })
 
+  // The actual saved floor plan (from /floor-map) and who occupies each unit
+  const { data: planDoc } = useQuery<{ floors: PlanFloor[] } | null>({
+    queryKey: ['floor-plan-doc'],
+    queryFn: () => api.get('/floor-plans').then(r => r.data?.doc ?? null),
+    staleTime: 60_000,
+  })
+  const { data: occupancy = {} } = useQuery<Record<string, { contractId: string; contractNo: string; customerName: string }>>({
+    queryKey: ['floor-occupancy'],
+    queryFn: () => api.get('/floor-plans/occupancy').then(r => r.data),
+    staleTime: 60_000,
+  })
+
   const { data: quotes = [] } = useQuery<Quote[]>({
     queryKey: ['quotes', 'for-customer', data?.contract?.customer?._id],
     queryFn: () => quoteApi.list({ customer: data?.contract?.customer?._id }),
@@ -65,6 +84,7 @@ export default function ContractDetail() {
   const [followUpForm, setFollowUpForm] = useState({ note: '', date: '', time: '' })
   const [showAddBooking, setShowAddBooking] = useState(false)
   const [bookingSearch, setBookingSearch] = useState('')
+  const [bookingRows, setBookingRows] = useState<BookingRow[]>([])
   const [showFacilityMap, setShowFacilityMap] = useState(false)
   const [showCreateContract, setShowCreateContract] = useState(false)
   const [showReviewQuote, setShowReviewQuote] = useState(false)
@@ -116,6 +136,12 @@ export default function ContractDetail() {
   const addNote = useMutation({
     mutationFn: (text: string) => api.post(`/contracts/${id}/notes`, { text, author: user?.name || '' }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['contract', id] }); setNoteText('') },
+    onError: (e) => setError(apiError(e)),
+  })
+
+  const attachUnits = useMutation({
+    mutationFn: (units: string[]) => api.put(`/contracts/${id}`, { units }),
+    onSuccess: () => { invalidate(); setShowAddBooking(false); setShowFacilityMap(false); setBookingRows([]); setError('') },
     onError: (e) => setError(apiError(e)),
   })
 
@@ -246,13 +272,41 @@ export default function ContractDetail() {
     ? availableUnits.filter(u => u.unitNumber.toLowerCase().includes(bookingSearch.toLowerCase()) || (u.floor || '').toLowerCase().includes(bookingSearch.toLowerCase()))
     : availableUnits
 
-  // Facility map zones
-  const zoneMap = new Map<string, Unit[]>()
-  for (const u of unitOptions) {
-    const zone = u.floor || 'Ground'
-    if (!zoneMap.has(zone)) zoneMap.set(zone, [])
-    zoneMap.get(zone)!.push(u)
+  // System unit record for each unit number on the plan
+  const unitByNum = new Map<string, Unit>()
+  for (const u of unitOptions) if (u.unitNumber) unitByNum.set(String(u.unitNumber), u)
+
+  // Same resolution the floor-map builder uses:
+  // system unit price → rate stored on the shape → floor rate × area
+  const resolvePlanPrice = (shape: PlanShape, floor: PlanFloor): number => {
+    const sys = shape.num ? unitByNum.get(shape.num) : undefined
+    if (sys?.price) return sys.price
+    if (shape.rate) return shape.rate
+    return Math.round(shape.w * shape.h * 10.7639 * (floor.rate || 0))
   }
+
+  const addWeeks = (iso: string, w: number) => {
+    if (!iso) return ''
+    const d = new Date(iso)
+    d.setDate(d.getDate() + w * 7)
+    return d.toISOString().slice(0, 10)
+  }
+  const rowTotal = (r: BookingRow) => Math.round((r.price / 4) * r.weeks * 100) / 100
+
+  const toggleBookingUnit = (u: Unit, defaultPrice?: number) => {
+    setBookingRows(prev => prev.some(r => r.unitId === u._id)
+      ? prev.filter(r => r.unitId !== u._id)
+      : [...prev, {
+        unitId: u._id,
+        unitNumber: u.unitNumber,
+        sizeSqf: u.sizeSqf ?? null,
+        checkIn: new Date().toISOString().slice(0, 10),
+        weeks: 4,
+        price: defaultPrice ?? Number(u.price || 0),
+      }])
+  }
+  const patchBookingRow = (unitId: string, patch: Partial<BookingRow>) =>
+    setBookingRows(prev => prev.map(r => r.unitId === unitId ? { ...r, ...patch } : r))
 
   // Notice library
   const noticeLibrary = [
@@ -492,44 +546,77 @@ export default function ContractDetail() {
                 ) : <div />}
                 <div style={{ display: 'flex', gap: 8 }}>
                   <div onClick={() => setShowReviewQuote(true)} style={{ height: 32, padding: '0 14px', borderRadius: 999, border: '1px solid #5B2BC9', color: '#5B2BC9', display: 'flex', alignItems: 'center', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Review quote</div>
-                  <div onClick={() => setShowAddBooking(true)} style={{ height: 32, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.16)', display: 'flex', alignItems: 'center', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>+ Add new booking</div>
+                  <div onClick={() => { setShowAddBooking(true); setShowFacilityMap(true) }} style={{ height: 32, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.16)', display: 'flex', alignItems: 'center', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>+ Add new booking</div>
                 </div>
               </div>
 
               {/* Add booking panel */}
               {showAddBooking && (
                 <div style={{ border: '1px solid #DDD0FF', background: '#F7F3FF', borderRadius: 12, padding: 14, marginBottom: 16 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: '#4A1FA0', marginBottom: 10 }}>Search and select one or more units — each can have its own dates and price</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#4A1FA0', marginBottom: 10 }}>Search or pick units on the facility map — each row has its own start date, weeks and price</div>
                   <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 10 }}>
                     <input placeholder="Search available units…" value={bookingSearch} onChange={e => setBookingSearch(e.target.value)}
                       style={{ height: 36, maxWidth: 260, borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', padding: '0 10px', fontSize: 13 }} />
                     <div onClick={() => setShowFacilityMap(true)} style={{ height: 36, padding: '0 14px', borderRadius: 8, border: '1px solid #5B2BC9', color: '#5B2BC9', display: 'flex', alignItems: 'center', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>View facility map</div>
                   </div>
-                  <div style={{ overflowX: 'auto' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '20px 90px 140px 100px 100px 90px 100px 24px', gap: 8, padding: '0 0 6px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: '#756E80', minWidth: 700 }}>
-                      <span /><span>Unit</span><span>Check In</span><span>Weeks</span><span>Check Out</span><span style={{ textAlign: 'right' }}>Price/4w</span><span style={{ textAlign: 'right' }}>Total</span><span />
+
+                  {/* Search results — checking a unit adds a row below */}
+                  {bookingSearch.trim() && (
+                    <div style={{ maxHeight: 150, overflowY: 'auto', borderRadius: 8, border: '1px solid rgba(20,8,31,.12)', background: '#fff', marginBottom: 12 }}>
+                      {filteredBookingUnits.slice(0, 12).map(u => (
+                        <label key={u._id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', fontSize: 13, cursor: 'pointer', borderBottom: '1px solid rgba(20,8,31,.05)' }}>
+                          <input type="checkbox" checked={bookingRows.some(r => r.unitId === u._id)} onChange={() => toggleBookingUnit(u)} style={{ width: 15, height: 15, cursor: 'pointer' }} />
+                          <span style={{ fontWeight: 700 }}>{u.unitNumber}</span>
+                          <span style={{ color: '#756E80', fontSize: 12 }}>{[u.floor, u.sizeSqf ? `${u.sizeSqf} sqft` : null].filter(Boolean).join(' · ')}</span>
+                          <span style={{ marginLeft: 'auto', color: '#4A4357', fontSize: 12 }}>{u.price ? `AED ${formatMoney(u.price)} / 4w` : '—'}</span>
+                        </label>
+                      ))}
+                      {filteredBookingUnits.length === 0 && (
+                        <div style={{ fontSize: 12, color: '#756E80', padding: '8px 10px' }}>No units match that search.</div>
+                      )}
                     </div>
-                    {filteredBookingUnits.slice(0, 10).map(u => (
-                      <div key={u._id} style={{ display: 'grid', gridTemplateColumns: '20px 90px 140px 100px 100px 90px 100px 24px', gap: 8, alignItems: 'center', padding: '6px 0', minWidth: 700 }}>
-                        <input type="checkbox" style={{ width: 15, height: 15, cursor: 'pointer' }} />
-                        <span style={{ fontWeight: 700, fontSize: 13 }}>{u.unitNumber}</span>
-                        <input type="date" defaultValue={c.startDate?.slice(0, 10)} style={{ height: 30, borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', padding: '0 8px', fontSize: 13 }} />
-                        <select defaultValue="4" style={{ height: 30, borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', padding: '0 6px', fontSize: 13 }}>
-                          {weeksOpts.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
-                        <span style={{ fontSize: 13, color: '#4A4357' }}>—</span>
-                        <input defaultValue={String(u.price || '')} style={{ height: 30, borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', padding: '0 8px', fontSize: 13, textAlign: 'right' }} />
-                        <span style={{ textAlign: 'right', fontWeight: 700, fontSize: 13 }}>{u.price ? formatMoney(u.price) : '—'}</span>
-                        <span />
+                  )}
+
+                  {/* Selected units — dates, weeks and price per row */}
+                  {bookingRows.length > 0 ? (
+                    <div style={{ overflowX: 'auto' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '90px 140px 90px 110px 110px 110px 24px', gap: 8, padding: '0 0 6px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: '#756E80', minWidth: 720 }}>
+                        <span>Unit</span><span>Check In</span><span>Weeks</span><span>Check Out</span><span style={{ textAlign: 'right' }}>Price / 4w</span><span style={{ textAlign: 'right' }}>Total</span><span />
                       </div>
-                    ))}
-                    {filteredBookingUnits.length === 0 && (
-                      <div style={{ fontSize: 12, color: '#756E80', padding: '8px 0' }}>No units match that search.</div>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                    <div onClick={() => setShowAddBooking(false)} style={{ height: 32, padding: '0 14px', borderRadius: 8, background: '#5B2BC9', color: '#fff', display: 'flex', alignItems: 'center', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Confirm selection</div>
-                    <div onClick={() => setShowAddBooking(false)} style={{ height: 32, padding: '0 14px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', display: 'flex', alignItems: 'center', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Cancel</div>
+                      {bookingRows.map(r => (
+                        <div key={r.unitId} style={{ display: 'grid', gridTemplateColumns: '90px 140px 90px 110px 110px 110px 24px', gap: 8, alignItems: 'center', padding: '6px 0', minWidth: 720 }}>
+                          <span style={{ fontWeight: 700, fontSize: 13 }}>{r.unitNumber}{r.sizeSqf ? <span style={{ color: '#756E80', fontWeight: 400, fontSize: 11 }}> {r.sizeSqf}sqft</span> : null}</span>
+                          <input type="date" value={r.checkIn} onChange={e => patchBookingRow(r.unitId, { checkIn: e.target.value })}
+                            style={{ height: 30, borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', padding: '0 8px', fontSize: 13 }} />
+                          <select value={String(r.weeks)} onChange={e => patchBookingRow(r.unitId, { weeks: Number(e.target.value) })}
+                            style={{ height: 30, borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', padding: '0 6px', fontSize: 13 }}>
+                            {weeksOpts.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                          </select>
+                          <span style={{ fontSize: 13, color: '#4A4357' }}>{r.checkIn ? fmtShort(addWeeks(r.checkIn, r.weeks)) : '—'}</span>
+                          <input type="number" min="0" step="1" value={r.price || ''} onChange={e => patchBookingRow(r.unitId, { price: Number(e.target.value) || 0 })}
+                            style={{ height: 30, borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', padding: '0 8px', fontSize: 13, textAlign: 'right' }} />
+                          <span style={{ textAlign: 'right', fontWeight: 700, fontSize: 13 }}>{formatMoney(rowTotal(r))}</span>
+                          <span onClick={() => setBookingRows(prev => prev.filter(x => x.unitId !== r.unitId))} style={{ cursor: 'pointer', color: '#DC2626', fontWeight: 700, textAlign: 'center' }}>×</span>
+                        </div>
+                      ))}
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 16, padding: '8px 24px 0 0', fontSize: 13, fontWeight: 700, borderTop: '1px solid rgba(20,8,31,.12)', marginTop: 4 }}>
+                        <span>Total</span>
+                        <span>AED {formatMoney(bookingRows.reduce((t, r) => t + rowTotal(r), 0))}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12, color: '#756E80', padding: '4px 0' }}>No units selected yet — search above or open the facility map.</div>
+                  )}
+
+                  <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                    <div onClick={() => {
+                      if (!bookingRows.length) return
+                      const ids = [...new Set([...allUnits.map(u => u._id), ...bookingRows.map(r => r.unitId)])]
+                      attachUnits.mutate(ids)
+                    }} style={{ height: 32, padding: '0 14px', borderRadius: 8, background: bookingRows.length ? '#5B2BC9' : '#B9AECB', color: '#fff', display: 'flex', alignItems: 'center', fontSize: 12, fontWeight: 700, cursor: bookingRows.length ? 'pointer' : 'default' }}>
+                      {attachUnits.isPending ? 'Adding…' : `Add ${bookingRows.length || ''} unit${bookingRows.length === 1 ? '' : 's'} to contract`}
+                    </div>
+                    <div onClick={() => { setShowAddBooking(false); setBookingRows([]) }} style={{ height: 32, padding: '0 14px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', display: 'flex', alignItems: 'center', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Cancel</div>
                   </div>
                 </div>
               )}
@@ -1003,36 +1090,81 @@ export default function ContractDetail() {
         </div>
       )}
 
-      {/* Facility Map */}
+      {/* Facility Map — renders the actual plan saved from /floor-map */}
       {showFacilityMap && (
         <div onClick={() => setShowFacilityMap(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(20,8,31,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 24 }}>
-          <div onClick={stopProp} style={{ background: '#fff', borderRadius: 16, padding: '22px 24px', width: 680, maxHeight: '82vh', overflowY: 'auto' }}>
+          <div onClick={stopProp} style={{ background: '#fff', borderRadius: 16, padding: '22px 24px', width: 720, maxWidth: '94vw', maxHeight: '85vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
               <div style={{ fontWeight: 700, fontSize: 16 }}>Facility map</div>
-              <span onClick={() => setShowFacilityMap(false)} style={{ cursor: 'pointer', color: '#756E80', fontSize: 13 }}>Done</span>
-            </div>
-            <div style={{ fontSize: 12, color: '#756E80', marginBottom: 14 }}>Click a unit to select it by size and location — it'll be added to your booking list below.</div>
-            {Array.from(zoneMap.entries()).map(([zone, units]) => (
-              <div key={zone} style={{ marginBottom: 18 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#4A1FA0', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 8 }}>{zone}</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-                  {units.map(u => {
-                    const isOccupied = u.status === 'occupied'
-                    const isOnContract = allUnits.some(au => au._id === u._id)
-                    return (
-                      <div key={u._id} style={{
-                        width: 70, height: 56, borderRadius: 8, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: isOccupied && !isOnContract ? 'not-allowed' : 'pointer',
-                        border: isOnContract ? '2px solid #5B2BC9' : '1px solid rgba(20,8,31,.16)',
-                        background: isOnContract ? '#EDE5FF' : isOccupied ? '#FEE2E2' : '#F0FDF4',
-                      }}>
-                        <span style={{ fontWeight: 700, fontSize: 12, color: isOnContract ? '#5B2BC9' : isOccupied ? '#DC2626' : '#15803D' }}>{u.unitNumber}</span>
-                        <span style={{ fontSize: 10, color: '#756E80' }}>{u.sizeSqf ? `${u.sizeSqf}sqft` : ''}</span>
-                      </div>
-                    )
-                  })}
-                </div>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                {bookingRows.length > 0 && (
+                  <div onClick={() => { setShowFacilityMap(false); setShowAddBooking(true) }}
+                    style={{ height: 32, padding: '0 14px', borderRadius: 8, background: '#5B2BC9', color: '#fff', display: 'flex', alignItems: 'center', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                    Select {bookingRows.length} unit{bookingRows.length === 1 ? '' : 's'}
+                  </div>
+                )}
+                <span onClick={() => setShowFacilityMap(false)} style={{ cursor: 'pointer', color: '#756E80', fontSize: 13 }}>Close</span>
               </div>
-            ))}
+            </div>
+            <div style={{ fontSize: 12, color: '#756E80', marginBottom: 6 }}>Click available units to add them to the booking — click again to remove. Occupied units are locked.</div>
+            <div style={{ display: 'flex', gap: 14, fontSize: 11, color: '#756E80', marginBottom: 14 }}>
+              <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: '#F0FDF4', border: '1px solid #86EFAC', marginRight: 4 }} />Available</span>
+              <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: '#FEE2E2', border: '1px solid #FCA5A5', marginRight: 4 }} />Occupied</span>
+              <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: '#EDE5FF', border: '2px solid #5B2BC9', marginRight: 4 }} />Selected / on this contract</span>
+            </div>
+
+            {!planDoc?.floors?.length && (
+              <div style={{ fontSize: 13, color: '#756E80', padding: '20px 0' }}>
+                No floor plan saved yet — build one on the <a href="/floor-map" style={{ color: '#5B2BC9', fontWeight: 700 }}>Floor Map</a> page first.
+              </div>
+            )}
+
+            {(planDoc?.floors ?? []).map(floor => {
+              const scale = 640 / Math.max(1, floor.width)
+              return (
+                <div key={floor.id} style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#4A1FA0', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 6 }}>{floor.name}</div>
+                  <div style={{ position: 'relative', width: 640, maxWidth: '100%', height: Math.max(60, floor.depth * scale), background: '#FAF8F4', border: '1px solid rgba(20,8,31,.12)', borderRadius: 10, overflow: 'hidden' }}>
+                    {floor.shapes.map(shape => {
+                      const box = {
+                        position: 'absolute' as const,
+                        left: shape.x * scale, top: shape.y * scale,
+                        width: Math.max(2, shape.w * scale), height: Math.max(2, shape.h * scale),
+                      }
+                      if (shape.type !== 'unit') {
+                        return (
+                          <div key={shape.id} style={{ ...box, background: 'rgba(20,8,31,.05)', border: '1px solid rgba(20,8,31,.08)', borderRadius: 2, display: 'grid', placeItems: 'center', overflow: 'hidden' }}>
+                            {(shape.type === 'label' || shape.text) && <span style={{ fontSize: 8, color: '#756E80' }}>{shape.text || ''}</span>}
+                          </div>
+                        )
+                      }
+                      const sys = shape.num ? unitByNum.get(shape.num) : undefined
+                      const occ = shape.num ? occupancy[shape.num] : undefined
+                      const onContract = allUnits.some(u => u.unitNumber === shape.num)
+                      const selected = !!sys && bookingRows.some(r => r.unitId === sys._id)
+                      const occupied = (!!occ || sys?.status === 'occupied') && !onContract && !sys?.shared
+                      const clickable = !!sys && !occupied
+                      const price = resolvePlanPrice(shape, floor)
+                      const bg = selected || onContract ? '#EDE5FF' : occupied ? '#FEE2E2' : '#F0FDF4'
+                      const border = selected || onContract ? '2px solid #5B2BC9' : occupied ? '1px solid #FCA5A5' : '1px solid #86EFAC'
+                      const title = !sys
+                        ? `${shape.num || 'Unit'} — not in the system yet`
+                        : occupied
+                          ? `${shape.num} — occupied${occ ? ` by ${occ.customerName} (${occ.contractNo})` : ''}`
+                          : `${shape.num} · AED ${formatMoney(price)} / 4 weeks${sys.sizeSqf ? ` · ${sys.sizeSqf} sqft` : ''}`
+                      return (
+                        <div key={shape.id} title={title}
+                          onClick={() => { if (clickable && sys) toggleBookingUnit(sys, price) }}
+                          style={{ ...box, background: bg, border, borderRadius: 3, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', cursor: clickable ? 'pointer' : 'not-allowed' }}>
+                          <span style={{ fontSize: Math.min(10, Math.max(7, shape.w * scale / 5)), fontWeight: 700, color: selected || onContract ? '#5B2BC9' : occupied ? '#DC2626' : '#15803D', lineHeight: 1.1 }}>{shape.num}</span>
+                          {shape.h * scale > 26 && <span style={{ fontSize: 7, color: '#756E80', lineHeight: 1.1 }}>{price ? formatMoney(price) : ''}</span>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
