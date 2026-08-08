@@ -337,6 +337,40 @@ export default function ContractDetail() {
     try { await api.put(`/contracts/${id}`, { unitTerms: [...map.values()] }); invalidate() } catch (e: any) { setError(apiError(e)) }
   }
 
+  /** Edits one unit line on a quote (rate or weeks) and saves it back — the
+   * server reprices the line and the totals. */
+  const saveQuoteUnitLine = async (q: Quote, idx: number, patch: { rate?: number; weeks?: number }) => {
+    const units = (q.units ?? []).map((qu, i) => {
+      const base = {
+        unit: typeof qu.unit === 'object' ? qu.unit._id : qu.unit,
+        unitNumber: qu.unitNumber,
+        sizeSqf: qu.sizeSqf,
+        floor: qu.floor,
+        startDate: qu.startDate?.slice(0, 10),
+        endDate: qu.endDate?.slice(0, 10),
+        rate: qu.rate,
+        discountPct: qu.discountPct || 0,
+      }
+      if (i !== idx) return base
+      if (patch.rate !== undefined) base.rate = patch.rate
+      if (patch.weeks !== undefined && base.startDate) base.endDate = addWeeks(base.startDate, patch.weeks)
+      return base
+    })
+    try {
+      await quoteApi.update(q._id, {
+        customer: q.customer._id,
+        quoteDate: q.quoteDate,
+        expiryDate: q.expiryDate?.slice(0, 10),
+        subject: q.subject,
+        notes: q.notes,
+        status: q.status,
+        items: q.items ?? [],
+        units,
+      })
+      qc.invalidateQueries({ queryKey: ['quotes'] })
+    } catch (e: any) { setError(apiError(e)) }
+  }
+
   /** Creates a real quotation from the checked units (all units when none are
    * checked), one line per unit with its own dates and lease price, then jumps
    * to the Quotations tab where it appears loaded. */
@@ -891,8 +925,12 @@ export default function ContractDetail() {
                                 <div style={{ fontSize: 11.5, color: '#756E80', marginTop: 2 }}>{fmtShort(qu.startDate)} – {fmtShort(qu.endDate)}</div>
                               )}
                             </span>
-                            <span style={{ textAlign: 'right', color: '#4A4357' }}>{formatMoney(qu.rate)}</span>
-                            <span style={{ textAlign: 'right', color: '#4A4357' }}>{uWeeks ?? '—'}</span>
+                            <MoneyCell value={qu.rate} onSave={v => saveQuoteUnitLine(q, i, { rate: Number(v) || 0 })} />
+                            <select key={`qw-${q._id}-${i}-${uWeeks}`} defaultValue={String(uWeeks ?? 4)}
+                              onChange={e => saveQuoteUnitLine(q, i, { weeks: Number(e.target.value) })}
+                              style={{ ...cellInput(60), justifySelf: 'end', cursor: 'pointer' }}>
+                              {weeksOpts.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                            </select>
                             <span style={{ textAlign: 'right', fontWeight: 600 }}>{formatMoney(qu.amount)}</span>
                           </div>
                         )
