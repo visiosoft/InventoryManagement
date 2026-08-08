@@ -731,8 +731,8 @@ export default function ContractDetail() {
                           onChange={e => { if (e.target.value) saveInlineField('endDate', e.target.value) }}
                           style={cellInput(112)} />
 
-                        {/* Asking — AED per 4 weeks */}
-                        <MoneyCell value={askingPrice} onSave={v => saveInlineField('rate', v)} />
+                        {/* Asking — set on the unit / floor map, not editable here */}
+                        <span style={{ textAlign: 'right', color: '#14081F' }}>{formatMoney(askingPrice)}</span>
 
                         {/* Lease — agreed price per 4 weeks */}
                         <MoneyCell value={leasedPrice} onSave={v => saveInlineField('leasedPrice', v)} />
