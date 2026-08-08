@@ -1280,8 +1280,8 @@ PurpleBox`)
                   {c.status === 'active' && (
                     <span onClick={() => { if (confirm('End this contract?')) actionMutation.mutate('end') }} style={{ fontSize: 12, fontWeight: 700, color: '#DC2626', cursor: 'pointer' }}>End contract</span>
                   )}
-                  {['ended', 'cancelled'].includes(c.status) && (
-                    <span onClick={() => { if (confirm('Delete this contract permanently?')) deleteContract.mutate() }} style={{ fontSize: 12, fontWeight: 700, color: '#DC2626', cursor: 'pointer' }}>Delete</span>
+                  {['draft', 'ended', 'cancelled'].includes(c.status) && (
+                    <span onClick={() => { if (confirm(`Delete ${c.status === 'draft' ? 'this draft contract' : 'this contract permanently'}? Its payments, documents and invoices go with it.`)) deleteContract.mutate() }} style={{ fontSize: 12, fontWeight: 700, color: '#DC2626', cursor: 'pointer' }}>Delete</span>
                   )}
                   <span onClick={() => setShowReviewContract(true)} style={{ fontSize: 12, fontWeight: 700, color: '#5B2BC9', cursor: 'pointer' }}>Review</span>
                 </span>
