@@ -169,7 +169,7 @@ export default function ContractDetail() {
   const [mapFilter, setMapFilter] = useState<'all' | 'available' | 'hold' | 'occupied'>('all')
   const [mapSizeF, setMapSizeF] = useState<number | null>(null)
   const [showCreateContract, setShowCreateContract] = useState(false)
-  const [showReviewQuote, setShowReviewQuote] = useState(false)
+  const [creatingQuote, setCreatingQuote] = useState(false)
   const [showReviewContract, setShowReviewContract] = useState(false)
   const [showContractPreview, setShowContractPreview] = useState(false)
   const [showNoticeEditor, setShowNoticeEditor] = useState(false)
@@ -337,9 +337,45 @@ export default function ContractDetail() {
     try { await api.put(`/contracts/${id}`, { unitTerms: [...map.values()] }); invalidate() } catch (e: any) { setError(apiError(e)) }
   }
 
-  const weeks = c.startDate && c.endDate
-    ? Math.ceil(Math.round((new Date(c.endDate).getTime() - new Date(c.startDate).getTime()) / 86400000) / 7)
-    : null
+  /** Creates a real quotation from the checked units (all units when none are
+   * checked), one line per unit with its own dates and lease price, then jumps
+   * to the Quotations tab where it appears loaded. */
+  const createQuoteFromUnits = async () => {
+    if (!customer?._id || creatingQuote) return
+    const chosen = selectedUnits.length ? allUnits.filter(u => selectedUnits.includes(u._id)) : allUnits
+    if (!chosen.length) return
+    setCreatingQuote(true)
+    try {
+      const units = chosen.map(u => {
+        const term = (c.unitTerms ?? []).find(t => String(t.unit) === u._id)
+        return {
+          unit: u._id,
+          unitNumber: u.unitNumber,
+          sizeSqf: u.sizeSqf ?? 0,
+          floor: u.floor || '',
+          startDate: (term?.startDate ?? c.startDate)?.slice(0, 10),
+          endDate: (term?.endDate ?? c.endDate)?.slice(0, 10),
+          rate: term?.leasedPrice ?? (Number(c.leasedPrice) || Number(c.rate) || 0),
+          discountPct: 0,
+        }
+      }).filter(u => u.startDate && u.endDate)
+      if (!units.length) { setError('Set check-in and check-out dates first'); setCreatingQuote(false); return }
+      await quoteApi.create({
+        customer: customer._id,
+        expiryDate: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
+        subject: `Storage Quotation — ${units.map(u => u.unitNumber).join(', ')}`,
+        units,
+        items: [],
+      })
+      qc.invalidateQueries({ queryKey: ['quotes'] })
+      setSelectedUnits([])
+      setActiveTab('quotations')
+    } catch (e: any) {
+      setError(apiError(e))
+    } finally {
+      setCreatingQuote(false)
+    }
+  }
 
   const askingPrice = Number(c.rate || 0)
   const discountPct = Number((c as any).firstMonthDiscountPct || 0)
@@ -638,7 +674,9 @@ export default function ContractDetail() {
                   </div>
                 ) : <div />}
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <div onClick={() => setShowReviewQuote(true)} style={{ height: 32, padding: '0 14px', borderRadius: 999, border: '1px solid #5B2BC9', color: '#5B2BC9', display: 'flex', alignItems: 'center', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Review quote</div>
+                  <div onClick={createQuoteFromUnits} style={{ height: 32, padding: '0 14px', borderRadius: 999, border: '1px solid #5B2BC9', color: '#5B2BC9', display: 'flex', alignItems: 'center', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: creatingQuote ? 0.6 : 1 }}>
+                    {creatingQuote ? 'Creating…' : selectedUnits.length ? `Create quote (${selectedUnits.length})` : 'Create quote'}
+                  </div>
                   <div onClick={() => { setShowAddBooking(true); setShowFacilityMap(true) }} style={{ height: 32, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.16)', display: 'flex', alignItems: 'center', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>+ Add new booking</div>
                 </div>
               </div>
@@ -1389,63 +1427,6 @@ export default function ContractDetail() {
             ))}
 
             <div style={{ fontSize: 11.5, color: '#756E80', marginTop: 16 }}>Full terms and conditions apply as set out in the signed Storage License Agreement.</div>
-          </div>
-        </div>
-      )}
-
-      {/* Review Quote Modal */}
-      {showReviewQuote && (
-        <div onClick={() => setShowReviewQuote(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(20,8,31,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 24 }}>
-          <div onClick={stopProp} style={{ background: '#fff', borderRadius: 16, padding: '24px 26px', width: 600, maxHeight: '85vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <div style={{ fontWeight: 700, fontSize: 17 }}>Quotation</div>
-              <span onClick={() => setShowReviewQuote(false)} style={{ cursor: 'pointer', color: '#756E80', fontSize: 13 }}>Close</span>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 16 }}>{customer?.fullName}</div>
-                <div style={{ fontSize: 12, color: '#756E80', marginTop: 4 }}>{customer?.email}</div>
-                <div style={{ fontSize: 12, color: '#756E80' }}>{customer?.phone}</div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 11, color: '#756E80', textTransform: 'uppercase', letterSpacing: '.06em' }}>Amount</div>
-                <div style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontWeight: 800, fontSize: 22, color: '#5B2BC9' }}>AED {formatMoney(c.totalQuotation || totalOwed)}</div>
-              </div>
-            </div>
-
-            {/* Line items from units */}
-            <div style={{ marginTop: 18, borderTop: '2px solid #DDD0FF', borderBottom: '1px solid #DDD0FF', background: '#F7F3FF' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 70px 100px', padding: '8px 4px', fontSize: 11, fontWeight: 700, color: '#5B2BC9', textTransform: 'uppercase', letterSpacing: '.04em' }}>
-                <span>Product / Service</span><span style={{ textAlign: 'right' }}>Lease</span><span style={{ textAlign: 'right' }}>Weeks</span><span style={{ textAlign: 'right' }}>Price</span>
-              </div>
-            </div>
-            {allUnits.map(u => (
-              <div key={u._id} style={{ display: 'grid', gridTemplateColumns: '1fr 100px 70px 100px', padding: '10px 4px', fontSize: 13, borderBottom: '1px solid rgba(20,8,31,.06)' }}>
-                <span>
-                  <span>Storage Unit {u.unitNumber}</span>
-                  <div style={{ fontSize: 11.5, color: '#756E80', marginTop: 2 }}>{fmtShort(c.startDate)} – {fmtShort(c.endDate)}</div>
-                </span>
-                <span style={{ textAlign: 'right', color: '#4A4357' }}>{formatMoney(leasedPrice)}</span>
-                <span style={{ textAlign: 'right', color: '#4A4357' }}>{weeks ?? '—'}</span>
-                <span style={{ textAlign: 'right', fontWeight: 600 }}>{formatMoney(c.totalQuotation || totalOwed)}</span>
-              </div>
-            ))}
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
-              <div style={{ width: 220, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, fontWeight: 800, color: '#5B2BC9', borderTop: '2px solid rgba(20,8,31,.12)', paddingTop: 8 }}>
-                  <span>Total</span><span>AED {formatMoney(c.totalQuotation || totalOwed)}</span>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ fontSize: 12, color: '#756E80', margin: '16px 4px 10px' }}>Send this quote for client acceptance via:</div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <div style={{ height: 36, padding: '0 16px', borderRadius: 8, background: '#5B2BC9', color: '#fff', display: 'flex', alignItems: 'center', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Send via Email</div>
-              <div style={{ height: 36, padding: '0 16px', borderRadius: 8, background: '#16A34A', color: '#fff', display: 'flex', alignItems: 'center', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Send via WhatsApp</div>
-              <div style={{ height: 36, padding: '0 16px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', display: 'flex', alignItems: 'center', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Download PDF</div>
-            </div>
           </div>
         </div>
       )}
