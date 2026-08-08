@@ -1326,6 +1326,23 @@ export async function nextContractNo() {
   return `PB-${year}-${String(counter.seq).padStart(4, '0')}`;
 }
 
+/**
+ * Meaningful contract number: PB-<year>-<unit number> (e.g. PB-2026-F2-09),
+ * with a numeric suffix if that unit signs again the same year. Falls back to
+ * the sequential counter when no unit number is known.
+ */
+export async function contractNoForUnit(unitNumber) {
+  const clean = String(unitNumber || '').replace(/\s+/g, '');
+  if (!clean) return nextContractNo();
+  const year = new Date().getFullYear();
+  const base = `PB-${year}-${clean}`;
+  let candidate = base;
+  let n = 2;
+  // eslint-disable-next-line no-await-in-loop
+  while (await Contract.exists({ contractNo: candidate })) candidate = `${base}-${n++}`;
+  return candidate;
+}
+
 export async function nextQuoteNo() {
   const year = new Date().getFullYear();
   const counter = await Counter.findOneAndUpdate(

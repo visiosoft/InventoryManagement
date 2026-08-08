@@ -651,6 +651,7 @@ PurpleBox`,
             <div>
               <div style={{ fontWeight: 700, fontSize: 15 }}>{customer?.fullName || '—'}</div>
               <div style={{ fontSize: 11, color: '#756E80' }}>{customer?.email || ''}</div>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: '#5B2BC9', marginTop: 2 }}>{c.contractNo}</div>
             </div>
           </div>
 
@@ -1063,6 +1064,23 @@ PurpleBox`,
                         </div>
                       ))}
 
+                      {/* Security deposit as its own line, removable */}
+                      {Number(q.deposit || 0) > 0 && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px 70px 110px', padding: '10px 4px', fontSize: 13, borderBottom: '1px solid rgba(20,8,31,.06)' }}>
+                          <span>
+                            <span style={{ fontWeight: 600 }}>Refundable security deposit</span>
+                            <div style={{ fontSize: 11.5, color: '#756E80', marginTop: 2 }}>Adjusted against the last 4 weeks</div>
+                          </span>
+                          <span />
+                          <span />
+                          <span style={{ textAlign: 'right', fontWeight: 600, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                            {formatMoney(Number(q.deposit))}
+                            <span onClick={() => saveQuote(q, { deposit: 0 })} title="Remove deposit"
+                              style={{ cursor: 'pointer', color: '#DC2626' }}>×</span>
+                          </span>
+                        </div>
+                      )}
+
                       {/* Add item — locks, boxes and other extras */}
                       {itemFormQuote === q._id ? (
                         <div style={{ margin: '8px 0', padding: 10, background: '#F7F3FF', border: '1px solid #DDD0FF', borderRadius: 10, display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
@@ -1107,7 +1125,7 @@ PurpleBox`,
                           </div>
                           {Number(q.deposit || 0) > 0 ? (
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#4A4357', gap: 10 }}>
-                              <span>Refundable security deposit <span style={{ fontSize: 11, color: '#756E80' }}>· adjusted against the last 4 weeks</span></span>
+                              <span>Security deposit</span>
                               <span style={{ whiteSpace: 'nowrap' }}>AED {formatMoney(Number(q.deposit))}</span>
                             </div>
                           ) : (

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import crypto from 'crypto';
-import { Contract, Customer, Invoice, Lead, Payment, Quote, Unit, nextQuoteNo, nextContractNo, nextInvoiceNo } from '../models/index.js';
+import { Contract, Customer, Invoice, Lead, Payment, Quote, Unit, nextQuoteNo, contractNoForUnit, nextInvoiceNo } from '../models/index.js';
 import { renderQuotePdf } from '../services/quotePdf.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { archivePdf } from '../utils/archivePdf.js';
@@ -670,7 +670,7 @@ router.post('/:id/convert-to-contract', async (req, res) => {
         .filter((p) => p.name);
 
     const contract = await Contract.create({
-        contractNo: await nextContractNo(),
+        contractNo: await contractNoForUnit(quote.units[0]?.unitNumber),
         customer: quote.customer,
         unit: unitIds[0],
         units: unitIds.length > 1 ? unitIds : [],

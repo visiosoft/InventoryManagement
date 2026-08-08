@@ -2,7 +2,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { isValidObjectId, Types } from 'mongoose';
 import { stampSignature } from '../services/stampSignature.js';
-import { Contract, Customer, Unit, Payment, Document, Invoice, Quote, nextContractNo, nextInvoiceNo } from '../models/index.js';
+import { Contract, Customer, Unit, Payment, Document, Invoice, Quote, contractNoForUnit, nextInvoiceNo } from '../models/index.js';
 import { sendForSignature, downloadSignedPdf, zohoConfigured } from '../services/zoho.js';
 import { uploadFile } from '../services/drive.js';
 import { renderContractPdf } from '../services/contractPdf.js';
@@ -432,8 +432,9 @@ router.post('/', async (req, res) => {
   }
   totalQuotation = Math.round(totalQuotation * 100) / 100;
 
+  const primaryUnit = await Unit.findById(allUnitIds[0]).select('unitNumber').lean();
   const contract = await Contract.create({
-    contractNo: await nextContractNo(),
+    contractNo: await contractNoForUnit(primaryUnit?.unitNumber),
     customer,
     unit: allUnitIds[0],
     units: allUnitIds.length > 1 ? allUnitIds : [],
