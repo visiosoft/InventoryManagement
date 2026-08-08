@@ -702,8 +702,8 @@ export default function ContractDetail() {
 
               {/* Ledger table */}
               <div style={{ overflowX: 'auto' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '22px 95px 72px 118px 118px 90px 90px 70px 95px 95px 90px 120px', gap: 12, padding: '0 6px 8px', borderBottom: '1px solid rgba(20,8,31,.16)', fontSize: 13, fontWeight: 700, minWidth: 1180 }}>
-                  <span /><span /><span>Type</span><span>Check In</span><span>Check Out</span><span style={{ textAlign: 'right' }}>Asking</span><span style={{ textAlign: 'right' }}>Lease</span><span style={{ textAlign: 'right' }}>Weeks</span><span style={{ textAlign: 'right' }}>Total</span><span style={{ textAlign: 'right' }}>Received</span><span style={{ textAlign: 'right' }}>Pending</span><span>Next Booking</span>
+                <div style={{ display: 'grid', gridTemplateColumns: '22px 95px 118px 118px 90px 90px 70px 95px 95px 90px 120px', gap: 12, padding: '0 6px 8px', borderBottom: '1px solid rgba(20,8,31,.16)', fontSize: 13, fontWeight: 700, minWidth: 1110 }}>
+                  <span /><span /><span>Check In</span><span>Check Out</span><span style={{ textAlign: 'right' }}>Asking</span><span style={{ textAlign: 'right' }}>Lease</span><span style={{ textAlign: 'right' }}>Weeks</span><span style={{ textAlign: 'right' }}>Total</span><span style={{ textAlign: 'right' }}>Received</span><span style={{ textAlign: 'right' }}>Pending</span><span>Next Booking</span>
                 </div>
                 {allUnits.map(u => {
                   const unitTotal = c.totalQuotation || totalOwed
@@ -711,16 +711,12 @@ export default function ContractDetail() {
                   const unitPending = Math.max(0, unitTotal - unitReceived)
                   return (
                     <div key={u._id} style={{ marginTop: 10 }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '22px 95px 72px 118px 118px 90px 90px 70px 95px 95px 90px 120px', gap: 12, alignItems: 'center', padding: '7px 6px', fontSize: 13, minWidth: 1180 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '22px 95px 118px 118px 90px 90px 70px 95px 95px 90px 120px', gap: 12, alignItems: 'center', padding: '7px 6px', fontSize: 13, minWidth: 1110 }}>
                         <input type="checkbox" checked={selectedUnits.includes(u._id)} onChange={() => setSelectedUnits(prev => prev.includes(u._id) ? prev.filter(x => x !== u._id) : [...prev, u._id])} style={{ width: 14, height: 14, cursor: 'pointer' }} />
                         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <span style={{ fontWeight: 700 }}>{u.unitNumber}</span>
                           {c.status === 'draft' && <span style={{ background: '#FEF3C7', color: '#92400E', fontSize: 10, padding: '1px 6px', borderRadius: 6, fontWeight: 600 }}>Draft</span>}
                         </span>
-                        <span style={{ background: u.shared ? '#DDD0FF' : '#EDE5FF', color: u.shared ? '#5B2BC9' : '#4A1FA0', fontSize: 10, padding: '2px 7px', borderRadius: 6, fontWeight: 600, justifySelf: 'start', textTransform: 'capitalize' }}>
-                          {u.shared ? 'Shared' : 'Private'}
-                        </span>
-
                         {/* Check In — native date picker, saves on pick */}
                         <input type="date" key={`ci-${c.startDate}`} defaultValue={c.startDate?.slice(0, 10) || ''}
                           onChange={e => { if (e.target.value) saveInlineField('startDate', e.target.value) }}
