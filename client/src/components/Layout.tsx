@@ -151,6 +151,24 @@ export default function Layout() {
   const isAdmin = user?.role === 'admin'
   const isMovingOnly = hasPermission('moving_dashboard') && !hasPermission('units') && !hasPermission('dashboard')
 
+  // The sidebar shows one business at a time, picked by the tabs at the top.
+  // Everything under /moving belongs to Moving; everything else to Storage.
+  const onMovingRoute = location.pathname.startsWith('/moving')
+  const canSeeMoving = movingNavItems.some(({ perm }) => hasPermission(perm))
+  const canSeeStorage = !isMovingOnly
+  const [section, setSection] = useState<'storage' | 'moving'>(() =>
+    location.pathname.startsWith('/moving') || isMovingOnly ? 'moving' : 'storage')
+
+  // Follow the route, so a link from elsewhere in the app lands on the right tab
+  useEffect(() => {
+    setSection(onMovingRoute ? 'moving' : 'storage')
+  }, [onMovingRoute])
+
+  const switchSection = (next: 'storage' | 'moving') => {
+    setSection(next)
+    navigate(next === 'moving' ? '/moving' : '/')
+  }
+
   // Site switcher disabled for now — clear any previously selected site
   useEffect(() => { localStorage.removeItem('pb_site_id') }, [])
 
@@ -201,9 +219,37 @@ export default function Layout() {
         </button>
       </div>
 
+      {/* Business switcher — only when the user can see both */}
+      {canSeeStorage && canSeeMoving && (
+        isCollapsed ? (
+          <div className="px-1.5 pt-2 space-y-1">
+            <button onClick={() => switchSection('storage')} title="Storage"
+              className={cn('flex w-full items-center justify-center rounded-lg p-2 transition-colors cursor-pointer',
+                section === 'storage' ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8')}>
+              <Box size={18} />
+            </button>
+            <button onClick={() => switchSection('moving')} title="Moving"
+              className={cn('flex w-full items-center justify-center rounded-lg p-2 transition-colors cursor-pointer',
+                section === 'moving' ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8')}>
+              <Truck size={18} />
+            </button>
+          </div>
+        ) : (
+          <div className="mx-2.5 mt-3 grid grid-cols-2 gap-1 rounded-xl bg-white/5 p-1">
+            {([['storage', 'Storage'], ['moving', 'Moving']] as const).map(([key, label]) => (
+              <button key={key} onClick={() => switchSection(key)}
+                className={cn('rounded-lg px-3 py-1.5 text-[12.5px] font-semibold transition-colors cursor-pointer',
+                  section === key ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground')}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )
+      )}
+
       {/* Nav */}
       <nav className={cn("flex-1 overflow-y-auto py-3 space-y-0.5", isCollapsed ? 'px-1.5' : 'px-2.5')}>
-        {!isMovingOnly && navTop.filter(({ perm }) => !perm || hasPermission(perm)).map(({ to, label, icon: Icon }) => (
+        {section === 'storage' && navTop.filter(({ perm }) => !perm || hasPermission(perm)).map(({ to, label, icon: Icon }) => (
           <NavLink key={to} to={to} end={to === '/'}
             className={({ isActive }) => isCollapsed ? cn('flex items-center justify-center rounded-lg p-2 transition-all duration-150', isActive ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8') : navLinkCls(isActive)}
             title={isCollapsed ? label : undefined}>
@@ -211,7 +257,7 @@ export default function Layout() {
           </NavLink>
         ))}
 
-        {!isMovingOnly && navGroups.map((group) => {
+        {section === 'storage' && navGroups.map((group) => {
           const visibleItems = group.items.filter(({ perm }) => !perm || hasPermission(perm))
           if (visibleItems.length === 0) return null
           return (
@@ -233,7 +279,7 @@ export default function Layout() {
           )
         })}
 
-        {!isMovingOnly && isAdmin && hasPermission('quotes') && (
+        {section === 'storage' && isAdmin && hasPermission('quotes') && (
           <NavLink to="/approvals"
             className={({ isActive }) => isCollapsed ? cn('flex items-center justify-center rounded-lg p-2 transition-all duration-150', isActive ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8') : navLinkCls(isActive)}
             title={isCollapsed ? 'Approvals' : undefined}>
@@ -242,7 +288,7 @@ export default function Layout() {
         )}
 
         {/* Reports */}
-        {!isMovingOnly && (() => {
+        {section === 'storage' && (() => {
           const visibleReports = reportItems.filter(({ perm }) => hasPermission(perm))
           if (visibleReports.length === 0) return null
           if (isCollapsed) {
@@ -284,7 +330,7 @@ export default function Layout() {
           )
         })()}
 
-        {!isMovingOnly && navBottom.filter(({ perm }) => !perm || hasPermission(perm)).map(({ to, label, icon: Icon }) => (
+        {section === 'storage' && navBottom.filter(({ perm }) => !perm || hasPermission(perm)).map(({ to, label, icon: Icon }) => (
           <NavLink key={to} to={to}
             className={({ isActive }) => isCollapsed ? cn('flex items-center justify-center rounded-lg p-2 transition-all duration-150', isActive ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8') : navLinkCls(isActive)}
             title={isCollapsed ? label : undefined}>
@@ -294,12 +340,11 @@ export default function Layout() {
 
 
         {/* Moving Business */}
-        {(() => {
+        {section === 'moving' && (() => {
           const visibleMoving = movingNavItems.filter(({ perm }) => hasPermission(perm))
           if (visibleMoving.length === 0) return null
           return (
-            <div className="pt-3">
-              {isCollapsed ? <div className="border-t border-white/10 my-1" /> : <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-sidebar-muted/60">Moving</div>}
+            <div>
               <div className="space-y-0.5">
                 {visibleMoving.map(({ to, label, icon: Icon }) => (
                   <NavLink key={to} to={to} end={to === '/moving'}
