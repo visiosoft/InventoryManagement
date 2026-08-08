@@ -18,8 +18,56 @@ type ContractDetailData = {
 type FollowUp = { note: string; date: string; time: string; done?: boolean }
 
 // The floor plan saved from /floor-map — same document the builder writes
-type PlanShape = { id: string; type: string; x: number; y: number; w: number; h: number; num?: string; text?: string; rate?: number }
-type PlanFloor = { id: string; name: string; prefix: string; rate: number; width: number; depth: number; shapes: PlanShape[] }
+type PlanShape = { id: string; type: string; x: number; y: number; w: number; h: number; num?: string; text?: string; rate?: number; status?: string }
+type PlanFloor = { id: string; name: string; prefix: string; rate: number; width: number; depth: number; bgImage?: string | null; bgOpacity?: number; shapes: PlanShape[] }
+
+const NONUNIT_LABEL: Record<string, string> = {
+  staircase: 'Stairs', lift: 'Lift', entrance: 'Entrance', office: 'Office', toilet: 'WC', loading: 'Loading',
+}
+
+/** Same shape styling as the /floor-map builder, so the popup looks identical. */
+function planShapeStyle(sh: PlanShape, z: number, dimmed: boolean): React.CSSProperties {
+  const base: React.CSSProperties = {
+    position: 'absolute', left: sh.x * z, top: sh.y * z, width: sh.w * z, height: sh.h * z,
+    boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    flexDirection: 'column', overflow: 'hidden', userSelect: 'none',
+    opacity: dimmed ? 0.22 : 1, transition: 'opacity .15s',
+  }
+  switch (sh.type) {
+    case 'unit': {
+      const st = sh.status ?? 'available'
+      const bg = st === 'occupied' ? '#EDE3CF' : st === 'hold' ? '#EDE5FF' : '#FFFFFF'
+      const border = st === 'hold' ? '1px dashed #7C4DFF' : st === 'occupied' ? '1px solid rgba(20,8,31,.20)' : '1px solid #C9B6FF'
+      return { ...base, background: bg, border, borderRadius: 4, zIndex: 10, cursor: 'pointer' }
+    }
+    case 'walkway':
+      return {
+        ...base, background: '#F4F1F8', border: '1px solid rgba(20,8,31,.06)', zIndex: 1,
+        backgroundImage: 'repeating-linear-gradient(90deg, rgba(91,43,201,.20) 0 6px, transparent 6px 14px)',
+        backgroundSize: '100% 2px', backgroundRepeat: 'no-repeat', backgroundPosition: 'center',
+      }
+    case 'staircase':
+      return { ...base, background: 'repeating-linear-gradient(0deg, #E4DEF2 0 6px, #D3CAE8 6px 8px)', border: '1px solid rgba(20,8,31,.18)', borderRadius: 3, zIndex: 5 }
+    case 'lift':
+      return { ...base, background: '#E8DEFF', border: '1.5px solid #A78BFA', borderRadius: 4, zIndex: 5 }
+    case 'entrance':
+      return { ...base, background: '#CDEBD8', border: '1px solid #6FBF8E', borderRadius: 3, zIndex: 5 }
+    case 'office':
+      return { ...base, background: '#F6EDDA', border: '1px solid rgba(20,8,31,.16)', borderRadius: 4, zIndex: 5 }
+    case 'toilet':
+      return { ...base, background: '#DCEFF7', border: '1px solid #86BEDB', borderRadius: 4, zIndex: 5 }
+    case 'loading':
+      return { ...base, background: '#FFE8D2', border: '1px dashed #DE9A5A', borderRadius: 4, zIndex: 5 }
+    case 'wall':
+      return { ...base, background: '#14081F', borderRadius: 2, zIndex: 20 }
+    case 'column':
+      return { ...base, background: '#4A4357', borderRadius: '50%', zIndex: 20 }
+    case 'label':
+      return { ...base, background: 'transparent', zIndex: 25, justifyContent: 'flex-start', alignItems: 'flex-start' }
+    default:
+      return { ...base, background: 'rgba(20,8,31,.05)', border: '1px solid rgba(20,8,31,.08)', borderRadius: 2 }
+  }
+}
 
 /** A unit picked for booking: dates and price editable per row. */
 type BookingRow = { unitId: string; unitNumber: string; sizeSqf: number | null; checkIn: string; weeks: number; price: number }
@@ -86,6 +134,10 @@ export default function ContractDetail() {
   const [bookingSearch, setBookingSearch] = useState('')
   const [bookingRows, setBookingRows] = useState<BookingRow[]>([])
   const [showFacilityMap, setShowFacilityMap] = useState(false)
+  const [mapFloorId, setMapFloorId] = useState<string | null>(null)
+  const [mapQuery, setMapQuery] = useState('')
+  const [mapFilter, setMapFilter] = useState<'all' | 'available' | 'hold' | 'occupied'>('all')
+  const [mapSizeF, setMapSizeF] = useState<number | null>(null)
   const [showCreateContract, setShowCreateContract] = useState(false)
   const [showReviewQuote, setShowReviewQuote] = useState(false)
   const [showReviewContract, setShowReviewContract] = useState(false)
@@ -1090,84 +1142,148 @@ export default function ContractDetail() {
         </div>
       )}
 
-      {/* Facility Map — renders the actual plan saved from /floor-map */}
-      {showFacilityMap && (
-        <div onClick={() => setShowFacilityMap(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(20,8,31,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 24 }}>
-          <div onClick={stopProp} style={{ background: '#fff', borderRadius: 16, padding: '22px 24px', width: 720, maxWidth: '94vw', maxHeight: '85vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-              <div style={{ fontWeight: 700, fontSize: 16 }}>Facility map</div>
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                {bookingRows.length > 0 && (
+      {/* Facility Map — same rendering as the /floor-map builder, view mode */}
+      {showFacilityMap && (() => {
+        const floors = planDoc?.floors ?? []
+        const floor = floors.find(f => f.id === mapFloorId) ?? floors[0]
+        const areaSqftOf = (sh: PlanShape) => sh.w * sh.h * 10.7639
+        const matchesSize = (sh: PlanShape) => {
+          if (!mapSizeF) return true
+          const sys = sh.num ? unitByNum.get(sh.num) : undefined
+          if (sys?.sizeSqf != null) return sys.sizeSqf === mapSizeF
+          return Math.abs(areaSqftOf(sh) - mapSizeF) / mapSizeF <= 0.15
+        }
+        const effStatus = (sh: PlanShape): 'available' | 'hold' | 'occupied' => {
+          if (sh.num && occupancy[sh.num]) return 'occupied'
+          const sys = sh.num ? unitByNum.get(sh.num) : undefined
+          if (sys?.status === 'occupied') return 'occupied'
+          if (sys?.status === 'reserved' || sh.status === 'hold') return 'hold'
+          return sh.status === 'occupied' ? 'occupied' : 'available'
+        }
+        const isDimmed = (sh: PlanShape) => {
+          if (sh.type !== 'unit') return false
+          if (mapQuery && !(sh.num ?? '').toLowerCase().includes(mapQuery.toLowerCase())) return true
+          if (mapFilter !== 'all' && effStatus(sh) !== mapFilter) return true
+          if (!matchesSize(sh)) return true
+          return false
+        }
+        const units = floor?.shapes.filter(sh => sh.type === 'unit') ?? []
+        const sizeUnits = units.filter(matchesSize)
+        const counts = {
+          all: sizeUnits.length,
+          available: sizeUnits.filter(u => effStatus(u) === 'available').length,
+          hold: sizeUnits.filter(u => effStatus(u) === 'hold').length,
+          occupied: sizeUnits.filter(u => effStatus(u) === 'occupied').length,
+        }
+        const zoom = floor ? Math.min(1180, window.innerWidth * 0.86 - 60) / Math.max(1, floor.width) : 16
+        const filterPill = (active: boolean): React.CSSProperties => ({
+          height: 32, padding: '0 13px', borderRadius: 999, cursor: 'pointer', fontSize: 12.5, fontWeight: 600,
+          border: active ? '1px solid #5B2BC9' : '1px solid rgba(20,8,31,.16)',
+          background: active ? '#F7F3FF' : '#fff', color: active ? '#4A1FA0' : '#4A4357',
+          display: 'inline-flex', alignItems: 'center',
+        })
+        return (
+          <div onClick={() => setShowFacilityMap(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(20,8,31,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 18 }}>
+            <div onClick={stopProp} style={{ background: '#fff', borderRadius: 16, padding: '20px 24px', width: '92vw', maxWidth: 1280, height: '90vh', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 10 }}>
+                <div style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontWeight: 700, fontSize: 18 }}>Facility map</div>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                   <div onClick={() => { setShowFacilityMap(false); setShowAddBooking(true) }}
-                    style={{ height: 32, padding: '0 14px', borderRadius: 8, background: '#5B2BC9', color: '#fff', display: 'flex', alignItems: 'center', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
-                    Select {bookingRows.length} unit{bookingRows.length === 1 ? '' : 's'}
+                    style={{ height: 34, padding: '0 16px', borderRadius: 8, background: bookingRows.length ? '#5B2BC9' : '#B9AECB', color: '#fff', display: 'flex', alignItems: 'center', fontSize: 13, fontWeight: 700, cursor: bookingRows.length ? 'pointer' : 'default' }}>
+                    Select{bookingRows.length ? ` ${bookingRows.length} unit${bookingRows.length === 1 ? '' : 's'}` : ''}
                   </div>
+                  <span onClick={() => setShowFacilityMap(false)} style={{ cursor: 'pointer', color: '#756E80', fontSize: 13 }}>Close</span>
+                </div>
+              </div>
+
+              {/* Filters — same as the floor map page */}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+                {floors.length > 1 && (
+                  <select value={floor?.id ?? ''} onChange={e => setMapFloorId(e.target.value)} style={{ ...filterPill(true), paddingRight: 8 }}>
+                    {floors.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                  </select>
                 )}
-                <span onClick={() => setShowFacilityMap(false)} style={{ cursor: 'pointer', color: '#756E80', fontSize: 13 }}>Close</span>
+                <input value={mapQuery} onChange={e => setMapQuery(e.target.value)} placeholder="Search unit no…"
+                  style={{ height: 32, width: 150, borderRadius: 999, border: '1px solid rgba(20,8,31,.16)', padding: '0 13px', fontSize: 12.5 }} />
+                <button type="button" onClick={() => setMapFilter('all')} style={filterPill(mapFilter === 'all')}>All <span style={{ opacity: .6, marginLeft: 5 }}>{counts.all}</span></button>
+                <button type="button" onClick={() => setMapFilter('available')} style={filterPill(mapFilter === 'available')}>Available <span style={{ opacity: .6, marginLeft: 5 }}>{counts.available}</span></button>
+                <button type="button" onClick={() => setMapFilter('hold')} style={filterPill(mapFilter === 'hold')}>On hold <span style={{ opacity: .6, marginLeft: 5 }}>{counts.hold}</span></button>
+                <button type="button" onClick={() => setMapFilter('occupied')} style={filterPill(mapFilter === 'occupied')}>Occupied <span style={{ opacity: .6, marginLeft: 5 }}>{counts.occupied}</span></button>
+                <select value={mapSizeF ?? ''} onChange={e => setMapSizeF(e.target.value ? parseInt(e.target.value) : null)} style={{ ...filterPill(mapSizeF != null), paddingRight: 8 }}>
+                  <option value="">Any size</option>
+                  {[25, 35, 50, 75, 100, 150, 200].map(sz => <option key={sz} value={sz}>{sz} sqft</option>)}
+                </select>
+                <span style={{ fontSize: 11.5, color: '#756E80', marginLeft: 'auto' }}>Click a unit to add it to the booking — click again to remove.</span>
               </div>
-            </div>
-            <div style={{ fontSize: 12, color: '#756E80', marginBottom: 6 }}>Click available units to add them to the booking — click again to remove. Occupied units are locked.</div>
-            <div style={{ display: 'flex', gap: 14, fontSize: 11, color: '#756E80', marginBottom: 14 }}>
-              <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: '#F0FDF4', border: '1px solid #86EFAC', marginRight: 4 }} />Available</span>
-              <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: '#FEE2E2', border: '1px solid #FCA5A5', marginRight: 4 }} />Occupied</span>
-              <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: '#EDE5FF', border: '2px solid #5B2BC9', marginRight: 4 }} />Selected / on this contract</span>
-            </div>
 
-            {!planDoc?.floors?.length && (
-              <div style={{ fontSize: 13, color: '#756E80', padding: '20px 0' }}>
-                No floor plan saved yet — build one on the <a href="/floor-map" style={{ color: '#5B2BC9', fontWeight: 700 }}>Floor Map</a> page first.
-              </div>
-            )}
+              {!floor && (
+                <div style={{ fontSize: 13, color: '#756E80', padding: '20px 0' }}>
+                  No floor plan saved yet — build one on the <a href="/floor-map" style={{ color: '#5B2BC9', fontWeight: 700 }}>Floor Map</a> page first.
+                </div>
+              )}
 
-            {(planDoc?.floors ?? []).map(floor => {
-              const scale = 640 / Math.max(1, floor.width)
-              return (
-                <div key={floor.id} style={{ marginBottom: 20 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: '#4A1FA0', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 6 }}>{floor.name}</div>
-                  <div style={{ position: 'relative', width: 640, maxWidth: '100%', height: Math.max(60, floor.depth * scale), background: '#FAF8F4', border: '1px solid rgba(20,8,31,.12)', borderRadius: 10, overflow: 'hidden' }}>
-                    {floor.shapes.map(shape => {
-                      const box = {
-                        position: 'absolute' as const,
-                        left: shape.x * scale, top: shape.y * scale,
-                        width: Math.max(2, shape.w * scale), height: Math.max(2, shape.h * scale),
-                      }
-                      if (shape.type !== 'unit') {
+              {floor && (
+                <div style={{ flex: 1, overflow: 'auto', borderRadius: 12, border: '1px solid rgba(20,8,31,.10)', background: '#F6F3EE' }}>
+                  <div style={{ padding: 20, display: 'inline-block' }}>
+                    <div style={{
+                      position: 'relative',
+                      width: floor.width * zoom,
+                      height: floor.depth * zoom,
+                      background: '#FBF9FE',
+                      border: '2px solid rgba(20,8,31,.35)',
+                      backgroundImage: 'linear-gradient(rgba(91,43,201,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(91,43,201,.06) 1px, transparent 1px)',
+                      backgroundSize: `${zoom}px ${zoom}px`,
+                    }}>
+                      {floor.bgImage && (
+                        <img src={floor.bgImage} alt="" draggable={false}
+                          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'fill', opacity: (floor.bgOpacity ?? 40) / 100, pointerEvents: 'none' }} />
+                      )}
+                      {floor.shapes.map(sh => {
+                        const style = planShapeStyle(sh, zoom, isDimmed(sh))
+                        if (sh.type !== 'unit') {
+                          return (
+                            <div key={sh.id} style={style}>
+                              {sh.type === 'label' && <span style={{ fontSize: 12, fontWeight: 600, color: '#4A4357', padding: 2, whiteSpace: 'nowrap' }}>{sh.text}</span>}
+                              {NONUNIT_LABEL[sh.type] && sh.w * zoom > 28 && sh.h * zoom > 16 && (
+                                <span style={{ fontSize: 9.5, fontWeight: 600, color: '#4A4357', letterSpacing: '0.04em' }}>{NONUNIT_LABEL[sh.type]}</span>
+                              )}
+                            </div>
+                          )
+                        }
+                        const sys = sh.num ? unitByNum.get(sh.num) : undefined
+                        const occ = sh.num ? occupancy[sh.num] : undefined
+                        const st = effStatus(sh)
+                        const onContract = allUnits.some(u => u.unitNumber === sh.num)
+                        const selected = !!sys && bookingRows.some(r => r.unitId === sys._id)
+                        const locked = (st === 'occupied' && !onContract && !sys?.shared) || !sys
+                        const price = resolvePlanPrice(sh, floor)
+                        const showNum = sh.w * zoom > 30
+                        const showSize = sh.w * zoom > 46 && sh.h * zoom > 40
+                        const ring = selected || onContract
+                          ? { outline: '2px solid #5B2BC9', outlineOffset: 1, zIndex: 30, boxShadow: '0 4px 14px rgba(91,43,201,.25)' }
+                          : {}
+                        const title = !sys
+                          ? `${sh.num || 'Unit'} — not in the system yet`
+                          : st === 'occupied'
+                            ? `${sh.num} — occupied${occ ? ` by ${occ.customerName} (${occ.contractNo})` : ''}`
+                            : `${sh.num} · AED ${formatMoney(price)} / 4 weeks${sys.sizeSqf ? ` · ${sys.sizeSqf} sqft` : ''}`
                         return (
-                          <div key={shape.id} style={{ ...box, background: 'rgba(20,8,31,.05)', border: '1px solid rgba(20,8,31,.08)', borderRadius: 2, display: 'grid', placeItems: 'center', overflow: 'hidden' }}>
-                            {(shape.type === 'label' || shape.text) && <span style={{ fontSize: 8, color: '#756E80' }}>{shape.text || ''}</span>}
+                          <div key={sh.id} title={title}
+                            onClick={() => { if (!locked && sys) toggleBookingUnit(sys, price) }}
+                            style={{ ...style, ...ring, cursor: locked ? 'not-allowed' : 'pointer' }}>
+                            {showNum && <span style={{ fontSize: Math.min(12, sh.w * zoom / 5), fontWeight: 700, color: '#14081F', lineHeight: 1 }}>{sh.num}</span>}
+                            {showSize && <span style={{ fontSize: 9, color: '#756E80', marginTop: 2 }}>{Math.round(areaSqftOf(sh))} sqft</span>}
                           </div>
                         )
-                      }
-                      const sys = shape.num ? unitByNum.get(shape.num) : undefined
-                      const occ = shape.num ? occupancy[shape.num] : undefined
-                      const onContract = allUnits.some(u => u.unitNumber === shape.num)
-                      const selected = !!sys && bookingRows.some(r => r.unitId === sys._id)
-                      const occupied = (!!occ || sys?.status === 'occupied') && !onContract && !sys?.shared
-                      const clickable = !!sys && !occupied
-                      const price = resolvePlanPrice(shape, floor)
-                      const bg = selected || onContract ? '#EDE5FF' : occupied ? '#FEE2E2' : '#F0FDF4'
-                      const border = selected || onContract ? '2px solid #5B2BC9' : occupied ? '1px solid #FCA5A5' : '1px solid #86EFAC'
-                      const title = !sys
-                        ? `${shape.num || 'Unit'} — not in the system yet`
-                        : occupied
-                          ? `${shape.num} — occupied${occ ? ` by ${occ.customerName} (${occ.contractNo})` : ''}`
-                          : `${shape.num} · AED ${formatMoney(price)} / 4 weeks${sys.sizeSqf ? ` · ${sys.sizeSqf} sqft` : ''}`
-                      return (
-                        <div key={shape.id} title={title}
-                          onClick={() => { if (clickable && sys) toggleBookingUnit(sys, price) }}
-                          style={{ ...box, background: bg, border, borderRadius: 3, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', cursor: clickable ? 'pointer' : 'not-allowed' }}>
-                          <span style={{ fontSize: Math.min(10, Math.max(7, shape.w * scale / 5)), fontWeight: 700, color: selected || onContract ? '#5B2BC9' : occupied ? '#DC2626' : '#15803D', lineHeight: 1.1 }}>{shape.num}</span>
-                          {shape.h * scale > 26 && <span style={{ fontSize: 7, color: '#756E80', lineHeight: 1.1 }}>{price ? formatMoney(price) : ''}</span>}
-                        </div>
-                      )
-                    })}
+                      })}
+                    </div>
                   </div>
                 </div>
-              )
-            })}
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* Notice Editor */}
       {showNoticeEditor && (
