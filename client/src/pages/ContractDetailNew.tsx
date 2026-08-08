@@ -170,6 +170,8 @@ export default function ContractDetail() {
   const [mapSizeF, setMapSizeF] = useState<number | null>(null)
   const [showCreateContract, setShowCreateContract] = useState(false)
   const [creatingQuote, setCreatingQuote] = useState(false)
+  const [itemFormQuote, setItemFormQuote] = useState<string | null>(null)
+  const [quoteItemForm, setQuoteItemForm] = useState({ label: '', rate: '', qty: '1' })
   const [showReviewContract, setShowReviewContract] = useState(false)
   const [showContractPreview, setShowContractPreview] = useState(false)
   const [showNoticeEditor, setShowNoticeEditor] = useState(false)
@@ -337,9 +339,36 @@ export default function ContractDetail() {
     try { await api.put(`/contracts/${id}`, { unitTerms: [...map.values()] }); invalidate() } catch (e: any) { setError(apiError(e)) }
   }
 
-  /** Edits one unit line on a quote (rate or weeks) and saves it back — the
-   * server reprices the line and the totals. */
-  const saveQuoteUnitLine = async (q: Quote, idx: number, patch: { rate?: number; weeks?: number }) => {
+  /** Saves a quote back with changed units/items/deposit — the server reprices
+   * lines and totals. Deposit is always carried so edits never wipe it. */
+  const saveQuote = async (q: Quote, patch: { units?: Record<string, unknown>[]; items?: Record<string, unknown>[]; deposit?: number }) => {
+    const units = patch.units ?? (q.units ?? []).map(qu => ({
+      unit: typeof qu.unit === 'object' ? qu.unit._id : qu.unit,
+      unitNumber: qu.unitNumber,
+      sizeSqf: qu.sizeSqf,
+      floor: qu.floor,
+      startDate: qu.startDate?.slice(0, 10),
+      endDate: qu.endDate?.slice(0, 10),
+      rate: qu.rate,
+      discountPct: qu.discountPct || 0,
+    }))
+    try {
+      await quoteApi.update(q._id, {
+        customer: q.customer._id,
+        quoteDate: q.quoteDate,
+        expiryDate: q.expiryDate?.slice(0, 10),
+        subject: q.subject,
+        notes: q.notes,
+        status: q.status,
+        deposit: patch.deposit ?? q.deposit ?? 0,
+        items: patch.items ?? q.items ?? [],
+        units,
+      })
+      qc.invalidateQueries({ queryKey: ['quotes'] })
+    } catch (e: any) { setError(apiError(e)) }
+  }
+
+  const saveQuoteUnitLine = (q: Quote, idx: number, patch: { rate?: number; weeks?: number }) => {
     const units = (q.units ?? []).map((qu, i) => {
       const base = {
         unit: typeof qu.unit === 'object' ? qu.unit._id : qu.unit,
@@ -356,20 +385,18 @@ export default function ContractDetail() {
       if (patch.weeks !== undefined && base.startDate) base.endDate = addWeeks(base.startDate, patch.weeks)
       return base
     })
-    try {
-      await quoteApi.update(q._id, {
-        customer: q.customer._id,
-        quoteDate: q.quoteDate,
-        expiryDate: q.expiryDate?.slice(0, 10),
-        subject: q.subject,
-        notes: q.notes,
-        status: q.status,
-        items: q.items ?? [],
-        units,
-      })
-      qc.invalidateQueries({ queryKey: ['quotes'] })
-    } catch (e: any) { setError(apiError(e)) }
+    return saveQuote(q, { units })
   }
+
+  // Refundable security deposit: one month (4 weeks) of rent, adjusted against
+  // the last 4 weeks of the stay. Shorter bookings deposit the booked amount.
+  const depositFor = (units: { rate: number; startDate?: string | null; endDate?: string | null }[]) =>
+    Math.round(units.reduce((sum, u) => {
+      const w = u.startDate && u.endDate
+        ? Math.max(1, Math.ceil(Math.round((new Date(u.endDate).getTime() - new Date(u.startDate).getTime()) / 86400000) / 7))
+        : 4
+      return sum + (u.rate / 4) * Math.min(4, w)
+    }, 0) * 100) / 100
 
   /** Creates a real quotation from the checked units (all units when none are
    * checked), one line per unit with its own dates and lease price, then jumps
@@ -400,6 +427,7 @@ export default function ContractDetail() {
         subject: `Storage Quotation — ${units.map(u => u.unitNumber).join(', ')}`,
         units,
         items: [],
+        deposit: depositFor(units),
       })
       qc.invalidateQueries({ queryKey: ['quotes'] })
       setSelectedUnits([])
@@ -902,7 +930,7 @@ export default function ContractDetail() {
                         </div>
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: 11, color: '#756E80', textTransform: 'uppercase', letterSpacing: '.06em' }}>Amount</div>
-                          <div style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontWeight: 800, fontSize: 22, color: '#5B2BC9' }}>AED {formatMoney(q.total)}</div>
+                          <div style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontWeight: 800, fontSize: 22, color: '#5B2BC9' }}>AED {formatMoney(q.total + Number(q.deposit || 0))}</div>
                         </div>
                       </div>
 
@@ -940,15 +968,67 @@ export default function ContractDetail() {
                           <span>{it.itemDetails}</span>
                           <span style={{ textAlign: 'right', color: '#4A4357' }}>{formatMoney(it.rate)}</span>
                           <span style={{ textAlign: 'right', color: '#4A4357' }}>{it.quantity}</span>
-                          <span style={{ textAlign: 'right', fontWeight: 600 }}>{formatMoney(it.amount)}</span>
+                          <span style={{ textAlign: 'right', fontWeight: 600, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                            {formatMoney(it.amount)}
+                            <span onClick={() => saveQuote(q, { items: (q.items ?? []).filter((_, j) => j !== i).map(x => ({ ...x })) })}
+                              style={{ cursor: 'pointer', color: '#DC2626' }}>×</span>
+                          </span>
                         </div>
                       ))}
 
+                      {/* Add item — locks, boxes and other extras */}
+                      {itemFormQuote === q._id ? (
+                        <div style={{ margin: '8px 0', padding: 10, background: '#F7F3FF', border: '1px solid #DDD0FF', borderRadius: 10, display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                          <div>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: '#756E80', textTransform: 'uppercase', marginBottom: 4 }}>Item</div>
+                            <input autoFocus value={quoteItemForm.label} onChange={e => setQuoteItemForm(f => ({ ...f, label: e.target.value }))} placeholder="e.g. Padlock"
+                              style={{ height: 30, width: 150, borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', padding: '0 8px', fontSize: 13 }} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: '#756E80', textTransform: 'uppercase', marginBottom: 4 }}>Price</div>
+                            <input type="number" min="0" step="0.01" value={quoteItemForm.rate} onChange={e => setQuoteItemForm(f => ({ ...f, rate: e.target.value }))}
+                              style={{ height: 30, width: 90, borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', padding: '0 8px', fontSize: 13, textAlign: 'right' }} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: '#756E80', textTransform: 'uppercase', marginBottom: 4 }}>Qty</div>
+                            <input type="number" min="1" step="1" value={quoteItemForm.qty} onChange={e => setQuoteItemForm(f => ({ ...f, qty: e.target.value }))}
+                              style={{ height: 30, width: 60, borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', padding: '0 8px', fontSize: 13, textAlign: 'right' }} />
+                          </div>
+                          <div onClick={() => {
+                            const rate = Number(quoteItemForm.rate) || 0
+                            const qty = Math.max(1, Number(quoteItemForm.qty) || 1)
+                            if (!quoteItemForm.label.trim() || rate <= 0) return
+                            const items = [...(q.items ?? []).map(x => ({ ...x })), {
+                              itemDetails: quoteItemForm.label.trim(), quantity: qty, rate, discountPct: 0, amount: Math.round(rate * qty * 100) / 100,
+                            }]
+                            saveQuote(q, { items })
+                            setItemFormQuote(null)
+                            setQuoteItemForm({ label: '', rate: '', qty: '1' })
+                          }} style={{ height: 30, padding: '0 12px', borderRadius: 8, background: '#5B2BC9', color: '#fff', display: 'flex', alignItems: 'center', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Add</div>
+                          <div onClick={() => setItemFormQuote(null)} style={{ height: 30, padding: '0 12px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', display: 'flex', alignItems: 'center', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Cancel</div>
+                        </div>
+                      ) : (
+                        <div onClick={() => { setItemFormQuote(q._id); setQuoteItemForm({ label: '', rate: '', qty: '1' }) }}
+                          style={{ fontSize: 12, fontWeight: 700, color: '#5B2BC9', cursor: 'pointer', padding: '8px 4px 0' }}>+ Add item (locks, boxes, etc.)</div>
+                      )}
+
                       {/* Total */}
                       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
-                        <div style={{ width: 220, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <div style={{ width: 320, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#4A4357' }}>
+                            <span>Subtotal</span><span>AED {formatMoney(q.subTotal ?? q.total)}</span>
+                          </div>
+                          {Number(q.deposit || 0) > 0 ? (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#4A4357', gap: 10 }}>
+                              <span>Refundable security deposit <span style={{ fontSize: 11, color: '#756E80' }}>· adjusted against the last 4 weeks</span></span>
+                              <span style={{ whiteSpace: 'nowrap' }}>AED {formatMoney(Number(q.deposit))}</span>
+                            </div>
+                          ) : (
+                            <div onClick={() => saveQuote(q, { deposit: depositFor(q.units ?? []) })}
+                              style={{ fontSize: 12, fontWeight: 700, color: '#5B2BC9', cursor: 'pointer', textAlign: 'right' }}>+ Add security deposit</div>
+                          )}
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, fontWeight: 800, color: '#5B2BC9', borderTop: '2px solid rgba(20,8,31,.12)', paddingTop: 8 }}>
-                            <span>Total</span><span>AED {formatMoney(q.total)}</span>
+                            <span>Total</span><span>AED {formatMoney(q.total + Number(q.deposit || 0))}</span>
                           </div>
                         </div>
                       </div>
