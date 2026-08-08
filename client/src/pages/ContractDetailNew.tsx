@@ -908,6 +908,10 @@ PurpleBox`,
                   <span /><span /><span>Check In</span><span>Check Out</span><span style={{ textAlign: 'right' }}>Asking</span><span style={{ textAlign: 'right' }}>Lease</span><span style={{ textAlign: 'right' }}>Weeks</span><span style={{ textAlign: 'right' }}>Total</span><span style={{ textAlign: 'right' }}>Received</span><span style={{ textAlign: 'right' }}>Pending</span><span>Next Booking</span>
                 </div>
                 {allUnits.map(u => {
+                  // Once a unit is on a quotation its row locks; ticking the
+                  // checkbox unlocks it for deliberate edits.
+                  const onQuote = quotes.some(q => (q.units ?? []).some(qu => qu.unitNumber === u.unitNumber))
+                  const locked = onQuote && !selectedUnits.includes(u._id)
                   const term = termFor(u._id)
                   const rStart = term?.startDate ?? c.startDate
                   const rEnd = term?.endDate ?? c.endDate
@@ -927,32 +931,52 @@ PurpleBox`,
                           {c.status === 'draft' && <span style={{ background: '#FEF3C7', color: '#92400E', fontSize: 10, padding: '1px 6px', borderRadius: 6, fontWeight: 600 }}>Draft</span>}
                         </span>
                         {/* Check In — native date picker, saves on pick */}
-                        <input type="date" key={`ci-${u._id}-${rStart}`} defaultValue={rStart?.slice(0, 10) || ''}
-                          onChange={e => { if (e.target.value) saveUnitTerm(u._id, { startDate: e.target.value }) }}
-                          style={cellInput(112)} />
+                        {locked ? (
+                          <span title="On a quotation — tick the checkbox to edit" style={{ color: '#4A4357' }}>{rStart ? fmtShort(rStart) : '—'}</span>
+                        ) : (
+                          <input type="date" key={`ci-${u._id}-${rStart}`} defaultValue={rStart?.slice(0, 10) || ''}
+                            onChange={e => { if (e.target.value) saveUnitTerm(u._id, { startDate: e.target.value }) }}
+                            style={cellInput(112)} />
+                        )}
 
                         {/* Check Out */}
-                        <input type="date" key={`co-${u._id}-${rEnd}`} defaultValue={rEnd?.slice(0, 10) || ''}
-                          onChange={e => { if (e.target.value) saveUnitTerm(u._id, { endDate: e.target.value }) }}
-                          style={cellInput(112)} />
+                        {locked ? (
+                          <span title="On a quotation — tick the checkbox to edit" style={{ color: '#4A4357' }}>{rEnd ? fmtShort(rEnd) : '—'}</span>
+                        ) : (
+                          <input type="date" key={`co-${u._id}-${rEnd}`} defaultValue={rEnd?.slice(0, 10) || ''}
+                            onChange={e => { if (e.target.value) saveUnitTerm(u._id, { endDate: e.target.value }) }}
+                            style={cellInput(112)} />
+                        )}
 
                         {/* Asking — set on the unit / floor map, not editable here */}
                         <span style={{ textAlign: 'right', color: '#14081F' }}>{formatMoney(askingPrice)}</span>
 
                         {/* Lease — agreed price per 4 weeks */}
-                        <MoneyCell value={rLease} onSave={v => saveUnitTerm(u._id, { leasedPrice: Number(v) || 0 })} />
+                        {locked ? (
+                          <span title="On a quotation — tick the checkbox to edit" style={{ textAlign: 'right', color: '#4A4357', justifySelf: 'end' }}>{formatMoney(rLease)}</span>
+                        ) : (
+                          <MoneyCell value={rLease} onSave={v => saveUnitTerm(u._id, { leasedPrice: Number(v) || 0 })} />
+                        )}
 
                         {/* Weeks — picking a value moves this unit's Check Out */}
-                        <select key={`wk-${u._id}-${rWeeks}`} defaultValue={String(rWeeks ?? 4)}
-                          onChange={e => saveUnitTerm(u._id, { weeks: Number(e.target.value) })}
-                          style={{ ...cellInput(64), justifySelf: 'end', cursor: 'pointer' }}>
-                          {weeksOpts.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
+                        {locked ? (
+                          <span title="On a quotation — tick the checkbox to edit" style={{ textAlign: 'right', color: '#4A4357', justifySelf: 'end' }}>{rWeeks ?? '—'}</span>
+                        ) : (
+                          <select key={`wk-${u._id}-${rWeeks}`} defaultValue={String(rWeeks ?? 4)}
+                            onChange={e => saveUnitTerm(u._id, { weeks: Number(e.target.value) })}
+                            style={{ ...cellInput(64), justifySelf: 'end', cursor: 'pointer' }}>
+                            {weeksOpts.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                          </select>
+                        )}
 
                         <span style={{ textAlign: 'right', fontWeight: 700 }}>{formatMoney(unitTotal)}</span>
 
                         {/* Received — manual figure for imported contracts */}
-                        <MoneyCell value={unitReceived} color="#16A34A" onSave={v => saveUnitTerm(u._id, { manualReceived: Number(v) || 0 })} />
+                        {locked ? (
+                          <span title="On a quotation — tick the checkbox to edit" style={{ textAlign: 'right', color: '#16A34A', justifySelf: 'end' }}>{formatMoney(unitReceived)}</span>
+                        ) : (
+                          <MoneyCell value={unitReceived} color="#16A34A" onSave={v => saveUnitTerm(u._id, { manualReceived: Number(v) || 0 })} />
+                        )}
 
                         <span style={{ textAlign: 'right', color: '#DC2626' }}>{formatMoney(unitPending)}</span>
 
