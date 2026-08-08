@@ -75,6 +75,36 @@ type BookingRow = { unitId: string; unitNumber: string; sizeSqf: number | null; 
 type Tab = 'activity' | 'units' | 'quotations' | 'contracts' | 'documents' | 'moving' | 'notices'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
+/** Compact borderless-until-hover input used inside the units ledger. */
+const cellInput = (width: number): React.CSSProperties => ({
+  width, height: 28, border: '1px solid rgba(20,8,31,.14)', borderRadius: 6,
+  padding: '0 6px', fontSize: 12.5, background: '#fff', color: '#14081F',
+  fontFamily: 'inherit', boxSizing: 'border-box',
+})
+
+/** AED cell: shows the formatted amount, becomes a number input on click, saves on blur/Enter. */
+function MoneyCell({ value, onSave, color }: { value: number; onSave: (v: string) => void; color?: string }) {
+  const [editing, setEditing] = useState(false)
+  if (!editing) {
+    return (
+      <span onClick={() => setEditing(true)} title="Click to edit"
+        style={{ textAlign: 'right', cursor: 'pointer', borderBottom: '1px dashed rgba(20,8,31,.3)', color: color || '#14081F', justifySelf: 'end' }}>
+        {value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+      </span>
+    )
+  }
+  return (
+    <input
+      type="number" min="0" step="0.01" autoFocus defaultValue={value || ''}
+      onBlur={e => { setEditing(false); if (e.target.value !== '' && Number(e.target.value) !== value) onSave(e.target.value) }}
+      onKeyDown={e => {
+        if (e.key === 'Enter') e.currentTarget.blur()
+        if (e.key === 'Escape') setEditing(false)
+      }}
+      style={{ ...cellInput(85), textAlign: 'right', justifySelf: 'end', borderColor: '#5B2BC9' }}
+    />
+  )
+}
 const fmtShort = (d: string | Date | null | undefined) => {
   if (!d) return '—'
   return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -147,8 +177,6 @@ export default function ContractDetail() {
   const [showAddNotice, setShowAddNotice] = useState(false)
   const [showAddMovingRequest, setShowAddMovingRequest] = useState(false)
   const [selectedUnits, setSelectedUnits] = useState<string[]>([])
-  const [editingField, setEditingField] = useState<string | null>(null)
-  const [editingValue, setEditingValue] = useState('')
   const [error, setError] = useState('')
 
   // Service form
@@ -294,7 +322,6 @@ export default function ContractDetail() {
       }
     } else body[field] = Number(val) || 0
     try { await api.put(`/contracts/${id}`, body); invalidate() } catch (e: any) { setError(apiError(e)) }
-    setEditingField(null)
   }
 
   const weeks = c.startDate && c.endDate
@@ -675,16 +702,16 @@ export default function ContractDetail() {
 
               {/* Ledger table */}
               <div style={{ overflowX: 'auto' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '22px 95px 72px 88px 88px 65px 85px 85px 95px 90px 90px 160px', gap: 14, padding: '0 6px 8px', borderBottom: '1px solid rgba(20,8,31,.16)', fontSize: 13, fontWeight: 700, minWidth: 1140 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '22px 95px 72px 118px 118px 90px 90px 70px 95px 95px 90px 120px', gap: 12, padding: '0 6px 8px', borderBottom: '1px solid rgba(20,8,31,.16)', fontSize: 13, fontWeight: 700, minWidth: 1180 }}>
                   <span /><span /><span>Type</span><span>Check In</span><span>Check Out</span><span style={{ textAlign: 'right' }}>Asking</span><span style={{ textAlign: 'right' }}>Lease</span><span style={{ textAlign: 'right' }}>Weeks</span><span style={{ textAlign: 'right' }}>Total</span><span style={{ textAlign: 'right' }}>Received</span><span style={{ textAlign: 'right' }}>Pending</span><span>Next Booking</span>
                 </div>
                 {allUnits.map(u => {
                   const unitTotal = c.totalQuotation || totalOwed
-                  const unitReceived = paidTotal
-                  const unitPending = remaining
+                  const unitReceived = Number((c as any).manualReceived || 0) || paidTotal
+                  const unitPending = Math.max(0, unitTotal - unitReceived)
                   return (
                     <div key={u._id} style={{ marginTop: 10 }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '22px 95px 72px 88px 88px 65px 85px 85px 95px 90px 90px 160px', gap: 14, alignItems: 'center', padding: '7px 6px', fontSize: 13, minWidth: 1140 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '22px 95px 72px 118px 118px 90px 90px 70px 95px 95px 90px 120px', gap: 12, alignItems: 'center', padding: '7px 6px', fontSize: 13, minWidth: 1180 }}>
                         <input type="checkbox" checked={selectedUnits.includes(u._id)} onChange={() => setSelectedUnits(prev => prev.includes(u._id) ? prev.filter(x => x !== u._id) : [...prev, u._id])} style={{ width: 14, height: 14, cursor: 'pointer' }} />
                         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <span style={{ fontWeight: 700 }}>{u.unitNumber}</span>
@@ -694,47 +721,34 @@ export default function ContractDetail() {
                           {u.shared ? 'Shared' : 'Private'}
                         </span>
 
-                        {/* Check In */}
-                        {editingField === `checkIn-${u._id}` ? (
-                          <input value={editingValue} onChange={e => setEditingValue(e.target.value)}
-                            onBlur={() => { saveInlineField('startDate', editingValue); setEditingField(null) }}
-                            autoFocus
-                            style={{ width: 80, height: 24, border: '1px solid #5B2BC9', borderRadius: 6, padding: '0 6px', fontSize: 13 }} />
-                        ) : (
-                          <span onClick={() => { setEditingField(`checkIn-${u._id}`); setEditingValue(c.startDate?.slice(0, 10) || '') }} style={{ cursor: 'pointer', borderBottom: '1px dashed rgba(20,8,31,.3)', color: '#14081F' }}>
-                            {c.startDate ? fmtShort(c.startDate) : '—'}
-                          </span>
-                        )}
+                        {/* Check In — native date picker, saves on pick */}
+                        <input type="date" key={`ci-${c.startDate}`} defaultValue={c.startDate?.slice(0, 10) || ''}
+                          onChange={e => { if (e.target.value) saveInlineField('startDate', e.target.value) }}
+                          style={cellInput(112)} />
 
                         {/* Check Out */}
-                        {editingField === `checkOut-${u._id}` ? (
-                          <input value={editingValue} onChange={e => setEditingValue(e.target.value)}
-                            onBlur={() => { saveInlineField('endDate', editingValue); setEditingField(null) }}
-                            autoFocus
-                            style={{ width: 80, height: 24, border: '1px solid #5B2BC9', borderRadius: 6, padding: '0 6px', fontSize: 13 }} />
-                        ) : (
-                          <span onClick={() => { setEditingField(`checkOut-${u._id}`); setEditingValue(c.endDate?.slice(0, 10) || '') }} style={{ cursor: 'pointer', borderBottom: '1px dashed rgba(20,8,31,.3)', color: '#14081F' }}>
-                            {c.endDate ? fmtShort(c.endDate) : '—'}
-                          </span>
-                        )}
+                        <input type="date" key={`co-${c.endDate}`} defaultValue={c.endDate?.slice(0, 10) || ''}
+                          onChange={e => { if (e.target.value) saveInlineField('endDate', e.target.value) }}
+                          style={cellInput(112)} />
 
-                        <span style={{ textAlign: 'right', color: '#14081F' }}>{formatMoney(askingPrice)}</span>
+                        {/* Asking — AED per 4 weeks */}
+                        <MoneyCell value={askingPrice} onSave={v => saveInlineField('rate', v)} />
 
-                        {/* Lease rate */}
-                        {editingField === `lease-${u._id}` ? (
-                          <input value={editingValue} onChange={e => setEditingValue(e.target.value)}
-                            onBlur={() => { saveInlineField('leasedPrice', editingValue); setEditingField(null) }}
-                            autoFocus
-                            style={{ width: 65, height: 24, textAlign: 'right', border: '1px solid #5B2BC9', borderRadius: 6, padding: '0 6px', fontSize: 13, justifySelf: 'end' }} />
-                        ) : (
-                          <span onClick={() => { setEditingField(`lease-${u._id}`); setEditingValue(String(leasedPrice)) }} style={{ textAlign: 'right', cursor: 'pointer', borderBottom: '1px dashed rgba(20,8,31,.3)', color: '#4A4357' }}>
-                            {formatMoney(leasedPrice)}
-                          </span>
-                        )}
+                        {/* Lease — agreed price per 4 weeks */}
+                        <MoneyCell value={leasedPrice} onSave={v => saveInlineField('leasedPrice', v)} />
 
-                        <span style={{ textAlign: 'right', fontSize: 12.5, color: '#4A4357' }}>{weeks ?? '—'}</span>
+                        {/* Weeks — picking a value moves Check Out */}
+                        <select key={`wk-${weeks}`} defaultValue={String(weeks ?? 4)}
+                          onChange={e => saveInlineField('weeks', e.target.value)}
+                          style={{ ...cellInput(64), justifySelf: 'end', cursor: 'pointer' }}>
+                          {weeksOpts.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+
                         <span style={{ textAlign: 'right', fontWeight: 700 }}>{formatMoney(unitTotal)}</span>
-                        <span style={{ textAlign: 'right', color: '#16A34A' }}>{formatMoney(unitReceived)}</span>
+
+                        {/* Received — manual figure for imported contracts */}
+                        <MoneyCell value={unitReceived} color="#16A34A" onSave={v => saveInlineField('manualReceived', v)} />
+
                         <span style={{ textAlign: 'right', color: '#DC2626' }}>{formatMoney(unitPending)}</span>
 
                         <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
