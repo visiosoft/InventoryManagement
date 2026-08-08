@@ -114,10 +114,43 @@ const weeksOpts = Array.from({ length: 52 }, (_, i) => ({ value: String(i + 1), 
 
 const stopProp = (e: React.MouseEvent) => e.stopPropagation()
 
+/** Small preview for a stored document: Drive files get Drive's thumbnail
+ * (works for images and PDFs alike); local image files render directly. */
+const docThumbUrl = (d: { driveFileId?: string; url: string; name: string }): string | null => {
+  if (d.driveFileId) return `https://drive.google.com/thumbnail?id=${d.driveFileId}&sz=w160`
+  if (/\.(jpe?g|png|webp|gif|bmp)(\?|$)/i.test(d.url) || /\.(jpe?g|png|webp|gif|bmp)$/i.test(d.name)) return d.url
+  return null
+}
+
+function DocThumb({ doc, size = 44 }: { doc: { driveFileId?: string; url: string; name: string }; size?: number }) {
+  const src = docThumbUrl(doc)
+  if (!src) {
+    return (
+      <div style={{ width: size, height: size, borderRadius: 8, background: '#F4F1F8', border: '1px solid rgba(20,8,31,.10)', display: 'grid', placeItems: 'center', fontSize: size / 2.6, flexShrink: 0 }}>📄</div>
+    )
+  }
+  return (
+    <img src={src} alt="" loading="lazy"
+      onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+      style={{ width: size, height: size, borderRadius: 8, objectFit: 'cover', border: '1px solid rgba(20,8,31,.10)', flexShrink: 0, background: '#F4F1F8' }} />
+  )
+}
+
+function UploadSpinner() {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 700, color: '#5B2BC9' }}>
+      <span style={{ width: 13, height: 13, borderRadius: 999, border: '2px solid #DDD0FF', borderTopColor: '#5B2BC9', animation: 'spin .7s linear infinite', display: 'inline-block' }} />
+      Uploading…
+      <style>{'@keyframes spin { to { transform: rotate(360deg) } }'}</style>
+    </span>
+  )
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 export default function ContractDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const initialTab = (new URLSearchParams(window.location.search).get('tab') as Tab) || 'activity'
   const { user } = useAuth()
   const qc = useQueryClient()
 
@@ -155,7 +188,7 @@ export default function ContractDetail() {
   })
 
   // ── State ──
-  const [activeTab, setActiveTab] = useState<Tab>('activity')
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab)
   const [noteText, setNoteText] = useState('')
   const [followUps, setFollowUps] = useState<FollowUp[]>([])
   const [showScheduleFollowUp, setShowScheduleFollowUp] = useState(false)
@@ -180,6 +213,8 @@ export default function ContractDetail() {
   const [showAddMovingRequest, setShowAddMovingRequest] = useState(false)
   const [selectedUnits, setSelectedUnits] = useState<string[]>([])
   const [error, setError] = useState('')
+  const [sendingQuote, setSendingQuote] = useState<string | null>(null)
+  const [uploadingDoc, setUploadingDoc] = useState<string | null>(null)
 
   // Service form
   const [serviceForm, setServiceForm] = useState({ label: '', amount: '' })
@@ -337,6 +372,63 @@ export default function ContractDetail() {
       map.set(uid, cur)
     }
     try { await api.put(`/contracts/${id}`, { unitTerms: [...map.values()] }); invalidate() } catch (e: any) { setError(apiError(e)) }
+  }
+
+  /** Accepting a quote immediately converts it to a contract and lands on
+   * that contract's Contracts tab, ready to send for signature. */
+  const acceptQuote = async (q: Quote) => {
+    if (sendingQuote) return
+    setSendingQuote(`accept-${q._id}`)
+    try {
+      await quoteApi.updateStatus(q._id, 'accepted')
+      const { contractId } = await quoteApi.convertToContract(q._id)
+      qc.invalidateQueries()
+      if (String(contractId) === String(id)) setActiveTab('contracts')
+      else navigate(`/contracts/${contractId}?tab=contracts`)
+      setError('')
+    } catch (e: any) {
+      // Already converted → the server tells us which contract
+      const existing = (e?.response?.data as { contractId?: string })?.contractId
+      if (existing) navigate(`/contracts/${existing}?tab=contracts`)
+      else setError(apiError(e))
+      qc.invalidateQueries({ queryKey: ['quotes'] })
+    } finally { setSendingQuote(null) }
+  }
+
+  /** Emails the quote with its PDF attached (server-side SMTP). */
+  const sendQuoteEmail = async (q: Quote) => {
+    if (sendingQuote) return
+    setSendingQuote(`email-${q._id}`)
+    try {
+      await api.post(`/quotes/${q._id}/send-email`, {})
+      qc.invalidateQueries({ queryKey: ['quotes'] })
+      setError('')
+    } catch (e: any) { setError(apiError(e)) } finally { setSendingQuote(null) }
+  }
+
+  /** Opens WhatsApp with a message linking the quote's PDF (share token). */
+  const sendQuoteWhatsApp = async (q: Quote) => {
+    if (sendingQuote) return
+    setSendingQuote(`wa-${q._id}`)
+    try {
+      const { url } = await quoteApi.share(q._id, 'whatsapp')
+      const phone = (q.customer?.phone || customer?.phone || '').replace(/\D/g, '')
+      const total = q.total + Number(q.deposit || 0)
+      const text = encodeURIComponent(
+        `Hello ${q.customer?.fullName || ''},
+
+Please find your storage quotation ${q.quoteNo} — AED ${total.toFixed(2)}.
+
+View / download the PDF here:
+${url}
+
+Thank you,
+PurpleBox`,
+      )
+      window.open(phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`, '_blank')
+      qc.invalidateQueries({ queryKey: ['quotes'] })
+      setError('')
+    } catch (e: any) { setError(apiError(e)) } finally { setSendingQuote(null) }
   }
 
   /** Saves a quote back with changed units/items/deposit — the server reprices
@@ -1039,10 +1131,21 @@ export default function ContractDetail() {
                           <span style={{ background: q.status === 'accepted' ? '#DCFCE7' : '#EDE5FF', color: q.status === 'accepted' ? '#15803D' : '#4A1FA0', fontSize: 11, padding: '3px 8px', borderRadius: 6, fontWeight: 600, textTransform: 'capitalize' }}>{q.status}</span>
                         </div>
                         <div style={{ display: 'flex', gap: 8 }}>
+                          <div onClick={() => sendQuoteEmail(q)} style={{ height: 34, padding: '0 14px', borderRadius: 8, background: '#5B2BC9', color: '#fff', display: 'flex', alignItems: 'center', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', opacity: sendingQuote === `email-${q._id}` ? 0.6 : 1 }}>
+                            {sendingQuote === `email-${q._id}` ? 'Sending…' : 'Send via Email'}
+                          </div>
+                          <div onClick={() => sendQuoteWhatsApp(q)} style={{ height: 34, padding: '0 14px', borderRadius: 8, background: '#16A34A', color: '#fff', display: 'flex', alignItems: 'center', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', opacity: sendingQuote === `wa-${q._id}` ? 0.6 : 1 }}>
+                            {sendingQuote === `wa-${q._id}` ? 'Opening…' : 'Send via WhatsApp'}
+                          </div>
+                          <div onClick={async () => {
+                            try { const { url } = await quoteApi.share(q._id); window.open(url, '_blank') } catch (e: any) { setError(apiError(e)) }
+                          }} style={{ height: 34, padding: '0 14px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', display: 'flex', alignItems: 'center', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>PDF</div>
                           <div onClick={() => navigate(`/quotes/${q._id}`)} style={{ height: 34, padding: '0 14px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', display: 'flex', alignItems: 'center', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>View</div>
                           {q.status !== 'accepted' && (
-                            <div onClick={async () => { try { await quoteApi.updateStatus(q._id, 'accepted'); qc.invalidateQueries({ queryKey: ['quotes'] }) } catch {} }}
-                              style={{ height: 34, padding: '0 16px', borderRadius: 8, background: '#16A34A', color: '#fff', display: 'flex', alignItems: 'center', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>Accept</div>
+                            <div onClick={() => acceptQuote(q)}
+                              style={{ height: 34, padding: '0 16px', borderRadius: 8, background: '#16A34A', color: '#fff', display: 'flex', alignItems: 'center', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', opacity: sendingQuote === `accept-${q._id}` ? 0.6 : 1 }}>
+                              {sendingQuote === `accept-${q._id}` ? 'Creating contract…' : 'Accept'}
+                            </div>
                           )}
                         </div>
                       </div>
@@ -1078,7 +1181,30 @@ export default function ContractDetail() {
                 </span>
                 <span style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
                   {c.status === 'draft' && (
-                    <span onClick={() => actionMutation.mutate('activate')} style={{ fontSize: 12, fontWeight: 700, color: '#16A34A', cursor: 'pointer' }}>Activate</span>
+                    <>
+                      <span onClick={async () => {
+                        try {
+                          const r = await api.post(`/contracts/${id}/create-signing-link`)
+                          invalidate()
+                          const url = r.data?.signingUrl
+                          if (url) {
+                            try { await navigator.clipboard.writeText(url) } catch { /* clipboard blocked */ }
+                            const phone = (customer?.phone || '').replace(/\D/g, '')
+                            const text = encodeURIComponent(`Hello ${customer?.fullName || ''},
+
+Please review and sign your storage contract ${c.contractNo}:
+${url}
+
+The link is valid for 7 days.
+
+Thank you,
+PurpleBox`)
+                            window.open(phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`, '_blank')
+                          }
+                        } catch (e: any) { setError(apiError(e)) }
+                      }} style={{ fontSize: 12, fontWeight: 700, color: '#5B2BC9', cursor: 'pointer' }}>Send to sign</span>
+                      <span onClick={() => actionMutation.mutate('activate')} style={{ fontSize: 12, fontWeight: 700, color: '#16A34A', cursor: 'pointer' }}>Activate</span>
+                    </>
                   )}
                   {c.status === 'pending_signature' && (
                     <span onClick={() => actionMutation.mutate('mark-signed')} style={{ fontSize: 12, fontWeight: 700, color: '#16A34A', cursor: 'pointer' }}>Mark as signed</span>
@@ -1102,21 +1228,27 @@ export default function ContractDetail() {
               <div style={{ fontSize: 11, fontWeight: 700, color: '#5B2BC9', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 10 }}>Identity documents</div>
               <div style={{ display: 'flex', gap: 12, marginBottom: 22 }}>
                 {[
-                  { label: 'Emirates ID', hasDoc: documents.some(d => d.type === 'id_proof' && d.name.toLowerCase().includes('emirates')) },
-                  { label: 'Passport', hasDoc: documents.some(d => d.type === 'id_proof' && d.name.toLowerCase().includes('passport')) },
-                ].map((item, i) => (
-                  <div key={i} style={{ flex: 1, border: '1px solid rgba(20,8,31,.14)', borderRadius: 12, padding: 14 }}>
+                  { label: 'Emirates ID', key: 'emirates', doc: documents.find(d => d.type === 'id_proof' && d.name.toLowerCase().includes('emirates')) },
+                  { label: 'Passport', key: 'passport', doc: documents.find(d => d.type === 'id_proof' && d.name.toLowerCase().includes('passport')) },
+                ].map(item => (
+                  <div key={item.key} style={{ flex: 1, border: '1px solid rgba(20,8,31,.14)', borderRadius: 12, padding: 14 }}>
                     <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>{item.label}</div>
-                    {item.hasDoc ? (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5, color: '#15803D', background: '#DCFCE7', borderRadius: 8, padding: '8px 10px' }}>
-                        <span>Uploaded</span>
-                      </div>
-                    ) : (
-                      <label style={{ display: 'inline-flex', alignItems: 'center', height: 32, padding: '0 12px', borderRadius: 8, border: '1px solid #5B2BC9', color: '#5B2BC9', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', marginTop: 6, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                        Upload {item.label}
-                        <input type="file" onChange={async (e) => {
+                    {uploadingDoc === item.key ? (
+                      <UploadSpinner />
+                    ) : item.doc ? (
+                      <a href={item.doc.url} target="_blank" rel="noreferrer"
+                        style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5, color: '#15803D', background: '#DCFCE7', borderRadius: 8, padding: '8px 10px', textDecoration: 'none' }}>
+                        <DocThumb doc={item.doc} size={40} />
+                        <span style={{ fontWeight: 600 }}>Uploaded — view</span>
+                      </a>
+                    ) : null}
+                    {uploadingDoc !== item.key && (
+                      <label style={{ display: 'inline-flex', alignItems: 'center', height: 32, padding: '0 12px', borderRadius: 8, border: '1px solid #5B2BC9', color: '#5B2BC9', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', marginTop: 8, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        {item.doc ? `Replace ${item.label}` : `Upload ${item.label}`}
+                        <input type="file" accept="image/*,.pdf" onChange={async (e) => {
                           const file = e.target.files?.[0]
                           if (!file) return
+                          setUploadingDoc(item.key)
                           const form = new FormData()
                           form.append('file', file)
                           form.append('type', 'id_proof')
@@ -1124,6 +1256,7 @@ export default function ContractDetail() {
                           if (c._id) form.append('contract', c._id)
                           if (customer?._id) form.append('customer', customer._id)
                           try { await api.post('/documents', form, { headers: { 'Content-Type': 'multipart/form-data' } }); invalidate() } catch (e: any) { setError(apiError(e)) }
+                          finally { setUploadingDoc(null) }
                         }} style={{ display: 'none' }} />
                       </label>
                     )}
@@ -1145,28 +1278,38 @@ export default function ContractDetail() {
               {/* Other documents */}
               <div style={{ fontSize: 11, fontWeight: 700, color: '#5B2BC9', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 10 }}>Other documents</div>
               <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 14, flexWrap: 'wrap' }}>
-                <label style={{ display: 'inline-flex', alignItems: 'center', height: 34, padding: '0 14px', borderRadius: 8, background: '#5B2BC9', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
-                  Upload document
-                  <input type="file" onChange={async (e) => {
-                    const file = e.target.files?.[0]
-                    if (!file) return
-                    const form = new FormData()
-                    form.append('file', file)
-                    form.append('type', 'other')
-                    form.append('name', file.name)
-                    if (c._id) form.append('contract', c._id)
-                    if (customer?._id) form.append('customer', customer._id)
-                    try { await api.post('/documents', form, { headers: { 'Content-Type': 'multipart/form-data' } }); invalidate() } catch (e: any) { setError(apiError(e)) }
-                  }} style={{ display: 'none' }} />
-                </label>
+                {uploadingDoc === 'other' ? (
+                  <UploadSpinner />
+                ) : (
+                  <label style={{ display: 'inline-flex', alignItems: 'center', height: 34, padding: '0 14px', borderRadius: 8, background: '#5B2BC9', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                    Upload document
+                    <input type="file" multiple onChange={async (e) => {
+                      const files = Array.from(e.target.files ?? [])
+                      if (!files.length) return
+                      setUploadingDoc('other')
+                      for (const file of files) {
+                        const form = new FormData()
+                        form.append('file', file)
+                        form.append('type', 'other')
+                        form.append('name', file.name)
+                        if (c._id) form.append('contract', c._id)
+                        if (customer?._id) form.append('customer', customer._id)
+                        try { await api.post('/documents', form, { headers: { 'Content-Type': 'multipart/form-data' } }) } catch (e: any) { setError(apiError(e)) }
+                      }
+                      invalidate()
+                      setUploadingDoc(null)
+                    }} style={{ display: 'none' }} />
+                  </label>
+                )}
               </div>
               {documents.length > 0 && (
                 <>
-                  <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 24px', padding: '0 4px 6px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#756E80', borderBottom: '1px solid rgba(20,8,31,.14)' }}>
-                    <span>Title</span><span>File</span><span />
+                  <div style={{ display: 'grid', gridTemplateColumns: '52px 140px 1fr 24px', padding: '0 4px 6px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#756E80', borderBottom: '1px solid rgba(20,8,31,.14)', gap: 8 }}>
+                    <span /><span>Title</span><span>File</span><span />
                   </div>
                   {documents.map(d => (
-                    <div key={d._id} style={{ display: 'grid', gridTemplateColumns: '140px 1fr 24px', alignItems: 'center', padding: '8px 4px', fontSize: 13, borderBottom: '1px solid rgba(20,8,31,.06)' }}>
+                    <div key={d._id} style={{ display: 'grid', gridTemplateColumns: '52px 140px 1fr 24px', alignItems: 'center', padding: '8px 4px', fontSize: 13, borderBottom: '1px solid rgba(20,8,31,.06)', gap: 8 }}>
+                      <a href={d.url} target="_blank" rel="noreferrer"><DocThumb doc={d} /></a>
                       <span style={{ fontWeight: 600 }}>{d.type === 'id_proof' ? 'ID Proof' : d.type === 'contract' ? 'Contract' : 'Other'}</span>
                       <a href={d.url} target="_blank" rel="noreferrer" style={{ color: '#4A4357', textDecoration: 'underline' }}>{d.name}</a>
                       <span />
