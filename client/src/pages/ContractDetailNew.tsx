@@ -1145,7 +1145,7 @@ export default function ContractDetail() {
       {/* Facility Map — same rendering as the /floor-map builder, view mode */}
       {showFacilityMap && (() => {
         const floors = planDoc?.floors ?? []
-        const floor = floors.find(f => f.id === mapFloorId) ?? floors[0]
+        const floorsToShow = mapFloorId ? floors.filter(f => f.id === mapFloorId) : floors
         const areaSqftOf = (sh: PlanShape) => sh.w * sh.h * 10.7639
         const matchesSize = (sh: PlanShape) => {
           if (!mapSizeF) return true
@@ -1160,14 +1160,15 @@ export default function ContractDetail() {
           if (sys?.status === 'reserved' || sh.status === 'hold') return 'hold'
           return sh.status === 'occupied' ? 'occupied' : 'available'
         }
+        const norm = (v: string) => v.toLowerCase().replace(/[\s-]+/g, '')
         const isDimmed = (sh: PlanShape) => {
           if (sh.type !== 'unit') return false
-          if (mapQuery && !(sh.num ?? '').toLowerCase().includes(mapQuery.toLowerCase())) return true
+          if (mapQuery && !norm(sh.num ?? '').includes(norm(mapQuery))) return true
           if (mapFilter !== 'all' && effStatus(sh) !== mapFilter) return true
           if (!matchesSize(sh)) return true
           return false
         }
-        const units = floor?.shapes.filter(sh => sh.type === 'unit') ?? []
+        const units = floorsToShow.flatMap(f => f.shapes.filter(sh => sh.type === 'unit'))
         const sizeUnits = units.filter(matchesSize)
         const counts = {
           all: sizeUnits.length,
@@ -1175,7 +1176,7 @@ export default function ContractDetail() {
           hold: sizeUnits.filter(u => effStatus(u) === 'hold').length,
           occupied: sizeUnits.filter(u => effStatus(u) === 'occupied').length,
         }
-        const zoom = floor ? Math.min(1180, window.innerWidth * 0.86 - 60) / Math.max(1, floor.width) : 16
+        const fitWidth = Math.min(1180, window.innerWidth * 0.86 - 60)
         const filterPill = (active: boolean): React.CSSProperties => ({
           height: 32, padding: '0 13px', borderRadius: 999, cursor: 'pointer', fontSize: 12.5, fontWeight: 600,
           border: active ? '1px solid #5B2BC9' : '1px solid rgba(20,8,31,.16)',
@@ -1199,9 +1200,12 @@ export default function ContractDetail() {
               {/* Filters — same as the floor map page */}
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
                 {floors.length > 1 && (
-                  <select value={floor?.id ?? ''} onChange={e => setMapFloorId(e.target.value)} style={{ ...filterPill(true), paddingRight: 8 }}>
-                    {floors.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-                  </select>
+                  <>
+                    <button type="button" onClick={() => setMapFloorId(null)} style={filterPill(mapFloorId === null)}>All floors</button>
+                    {floors.map(f => (
+                      <button key={f.id} type="button" onClick={() => setMapFloorId(f.id)} style={filterPill(mapFloorId === f.id)}>{f.name}</button>
+                    ))}
+                  </>
                 )}
                 <input value={mapQuery} onChange={e => setMapQuery(e.target.value)} placeholder="Search unit no…"
                   style={{ height: 32, width: 150, borderRadius: 999, border: '1px solid rgba(20,8,31,.16)', padding: '0 13px', fontSize: 12.5 }} />
@@ -1216,15 +1220,17 @@ export default function ContractDetail() {
                 <span style={{ fontSize: 11.5, color: '#756E80', marginLeft: 'auto' }}>Click a unit to add it to the booking — click again to remove.</span>
               </div>
 
-              {!floor && (
+              {floorsToShow.length === 0 && (
                 <div style={{ fontSize: 13, color: '#756E80', padding: '20px 0' }}>
                   No floor plan saved yet — build one on the <a href="/floor-map" style={{ color: '#5B2BC9', fontWeight: 700 }}>Floor Map</a> page first.
                 </div>
               )}
 
-              {floor && (
+              {floorsToShow.length > 0 && (
                 <div style={{ flex: 1, overflow: 'auto', borderRadius: 12, border: '1px solid rgba(20,8,31,.10)', background: '#F6F3EE' }}>
-                  <div style={{ padding: 20, display: 'inline-block' }}>
+                  {floorsToShow.map(floor => { const zoom = fitWidth / Math.max(1, floor.width); return (
+                  <div key={floor.id} style={{ padding: 20 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#4A1FA0', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 6 }}>{floor.name}</div>
                     <div style={{
                       position: 'relative',
                       width: floor.width * zoom,
@@ -1278,6 +1284,7 @@ export default function ContractDetail() {
                       })}
                     </div>
                   </div>
+                  ) })}
                 </div>
               )}
             </div>
