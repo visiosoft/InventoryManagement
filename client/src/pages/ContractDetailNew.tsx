@@ -872,14 +872,33 @@ export default function ContractDetail() {
                         </div>
                       </div>
 
-                      {/* Line items */}
+                      {/* Line items — one row per unit, then any extra items */}
                       <div style={{ marginTop: 18, borderTop: '2px solid #DDD0FF', borderBottom: '1px solid #DDD0FF', background: '#F7F3FF' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 70px 100px', padding: '8px 4px', fontSize: 11, fontWeight: 700, color: '#5B2BC9', textTransform: 'uppercase', letterSpacing: '.04em' }}>
-                          <span>Product / Service</span><span style={{ textAlign: 'right' }}>Unit Cost</span><span style={{ textAlign: 'right' }}>Qty</span><span style={{ textAlign: 'right' }}>Price</span>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px 70px 110px', padding: '8px 4px', fontSize: 11, fontWeight: 700, color: '#5B2BC9', textTransform: 'uppercase', letterSpacing: '.04em' }}>
+                          <span>Product / Service</span><span style={{ textAlign: 'right' }}>Rate / 4w</span><span style={{ textAlign: 'right' }}>Weeks</span><span style={{ textAlign: 'right' }}>Price</span>
                         </div>
                       </div>
+                      {(q.units || []).map((qu, i) => {
+                        const uWeeks = qu.startDate && qu.endDate
+                          ? Math.max(1, Math.ceil(Math.round((new Date(qu.endDate).getTime() - new Date(qu.startDate).getTime()) / 86400000) / 7))
+                          : null
+                        return (
+                          <div key={`u-${i}`} style={{ display: 'grid', gridTemplateColumns: '1fr 110px 70px 110px', padding: '10px 4px', fontSize: 13, borderBottom: '1px solid rgba(20,8,31,.06)' }}>
+                            <span>
+                              <span style={{ fontWeight: 600 }}>Storage Unit {qu.unitNumber}</span>
+                              {qu.sizeSqf ? <span style={{ color: '#756E80' }}> · {qu.sizeSqf} sqft</span> : null}
+                              {qu.startDate && qu.endDate && (
+                                <div style={{ fontSize: 11.5, color: '#756E80', marginTop: 2 }}>{fmtShort(qu.startDate)} – {fmtShort(qu.endDate)}</div>
+                              )}
+                            </span>
+                            <span style={{ textAlign: 'right', color: '#4A4357' }}>{formatMoney(qu.rate)}</span>
+                            <span style={{ textAlign: 'right', color: '#4A4357' }}>{uWeeks ?? '—'}</span>
+                            <span style={{ textAlign: 'right', fontWeight: 600 }}>{formatMoney(qu.amount)}</span>
+                          </div>
+                        )
+                      })}
                       {(q.items || []).map((it, i) => (
-                        <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 100px 70px 100px', padding: '10px 4px', fontSize: 13, borderBottom: '1px solid rgba(20,8,31,.06)' }}>
+                        <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 110px 70px 110px', padding: '10px 4px', fontSize: 13, borderBottom: '1px solid rgba(20,8,31,.06)' }}>
                           <span>{it.itemDetails}</span>
                           <span style={{ textAlign: 'right', color: '#4A4357' }}>{formatMoney(it.rate)}</span>
                           <span style={{ textAlign: 'right', color: '#4A4357' }}>{it.quantity}</span>
