@@ -189,10 +189,22 @@ export default function ContractDetail() {
     staleTime: 30_000,
   })
 
-  const { data: quotes = [] } = useQuery<Quote[]>({
+  const { data: allCustomerQuotes = [] } = useQuery<Quote[]>({
     queryKey: ['quotes', 'for-customer', data?.contract?.customer?._id],
     queryFn: () => quoteApi.list({ customer: data?.contract?.customer?._id }),
     enabled: !!data?.contract?.customer?._id,
+  })
+
+  // Each contract keeps its own quotations: those raised from this contract,
+  // plus older unlinked quotes that share a unit with it.
+  const contractUnitNos = new Set(
+    (data?.contract?.units?.length ? data.contract.units : data?.contract?.unit ? [data.contract.unit] : [])
+      .map(u => u.unitNumber),
+  )
+  const quotes = allCustomerQuotes.filter(q => {
+    const qc2 = typeof q.contract === 'object' ? q.contract?._id : q.contract
+    if (qc2) return String(qc2) === String(id)
+    return (q.units ?? []).some(qu => contractUnitNos.has(qu.unitNumber))
   })
 
   // ── State ──
@@ -531,6 +543,7 @@ PurpleBox`,
       if (!units.length) { setError('Set check-in and check-out dates first'); setCreatingQuote(false); return }
       await quoteApi.create({
         customer: customer._id,
+        contract: id,
         expiryDate: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
         subject: `Storage Quotation — ${units.map(u => u.unitNumber).join(', ')}`,
         units,

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import crypto from 'crypto';
+import { isValidObjectId } from 'mongoose';
 import { Contract, Customer, Invoice, Lead, Payment, Quote, Unit, nextQuoteNo, contractNoForUnit, nextInvoiceNo } from '../models/index.js';
 import { renderQuotePdf } from '../services/quotePdf.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
@@ -317,6 +318,11 @@ router.post('/', async (req, res) => {
     }
 
     const userName = req.user.name || req.user.email || 'user';
+    // A quote raised from a contract page carries that contract's id so each
+    // contract keeps its own quotations
+    if (req.body.contract && isValidObjectId(String(req.body.contract))) {
+        body.contract = String(req.body.contract);
+    }
     const quote = await Quote.create({
         ...body,
         quoteNo: await nextQuoteNo(),
