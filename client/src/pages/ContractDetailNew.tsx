@@ -258,6 +258,12 @@ export default function ContractDetail() {
     onError: (e) => setError(apiError(e)),
   })
 
+  const deleteDocument = useMutation({
+    mutationFn: (docId: string) => api.delete(`/documents/${docId}`),
+    onSuccess: () => invalidate(),
+    onError: (e) => setError(apiError(e)),
+  })
+
   const deleteContract = useMutation({
     mutationFn: () => api.delete(`/contracts/${id}`),
     onSuccess: () => navigate('/contracts'),
@@ -1249,11 +1255,14 @@ PurpleBox`)
                     {uploadingDoc === item.key ? (
                       <UploadSpinner />
                     ) : item.doc ? (
-                      <a href={item.doc.url} target="_blank" rel="noreferrer"
-                        style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5, color: '#15803D', background: '#DCFCE7', borderRadius: 8, padding: '8px 10px', textDecoration: 'none' }}>
-                        <DocThumb doc={item.doc} size={40} />
-                        <span style={{ fontWeight: 600 }}>Uploaded — view</span>
-                      </a>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5, color: '#15803D', background: '#DCFCE7', borderRadius: 8, padding: '8px 10px' }}>
+                        <a href={item.doc.url} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#15803D', textDecoration: 'none', flex: 1 }}>
+                          <DocThumb doc={item.doc} size={40} />
+                          <span style={{ fontWeight: 600 }}>Uploaded — view</span>
+                        </a>
+                        <span onClick={() => { const d = item.doc; if (d && confirm(`Delete ${item.label}?`)) deleteDocument.mutate(d._id) }}
+                          title="Delete" style={{ cursor: 'pointer', color: '#DC2626', fontWeight: 700, fontSize: 14 }}>×</span>
+                      </div>
                     ) : null}
                     {uploadingDoc !== item.key && (
                       <label style={{ display: 'inline-flex', alignItems: 'center', height: 32, padding: '0 12px', borderRadius: 8, border: '1px solid #5B2BC9', color: '#5B2BC9', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', marginTop: 8, whiteSpace: 'nowrap', flexShrink: 0 }}>
@@ -1325,7 +1334,8 @@ PurpleBox`)
                       <a href={d.url} target="_blank" rel="noreferrer"><DocThumb doc={d} /></a>
                       <span style={{ fontWeight: 600 }}>{d.type === 'id_proof' ? 'ID Proof' : d.type === 'contract' ? 'Contract' : 'Other'}</span>
                       <a href={d.url} target="_blank" rel="noreferrer" style={{ color: '#4A4357', textDecoration: 'underline' }}>{d.name}</a>
-                      <span />
+                      <span onClick={() => { if (confirm(`Delete "${d.name}"?`)) deleteDocument.mutate(d._id) }}
+                        title="Delete document" style={{ cursor: 'pointer', color: '#DC2626', fontWeight: 700, textAlign: 'center' }}>×</span>
                     </div>
                   ))}
                 </>
