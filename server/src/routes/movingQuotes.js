@@ -168,8 +168,9 @@ router.post('/:id/send-whatsapp', async (req, res) => {
       await quote.save();
     }
 
-    const baseUrl = process.env.APP_URL || req.headers.origin || '';
-    const pdfUrl = `${baseUrl}/api/moving-quotes/${quote._id}/pdf?token=${quote.shareToken}`;
+    // PDF lives on the API host, not the frontend — API_PUBLIC_URL wins
+    const apiBase = process.env.API_PUBLIC_URL || process.env.APP_URL || req.headers.origin || '';
+    const pdfUrl = `${apiBase.replace(/\/$/, '')}/api/moving-quotes/${quote._id}/pdf?token=${quote.shareToken}`;
 
     const { sendWhatsAppText, whatsappSendConfigured } = await import('../services/whatsapp.js');
     if (!whatsappSendConfigured()) {

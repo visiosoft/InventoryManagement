@@ -257,8 +257,9 @@ router.post('/:id/share-token', async (req, res) => {
     const customer = await Customer.findById(invoice.customer).select('fullName phone');
     const job = invoice.job ? await MovingJob.findById(invoice.job).select('jobNo') : null;
     if (customer && job) {
-      const baseUrl = process.env.APP_URL || req.headers.origin || '';
-      const invoiceUrl = `${baseUrl}/moving/invoices/${invoice._id}/pdf?token=${token}`;
+      // PDF lives on the API host, not the frontend — API_PUBLIC_URL wins
+      const apiBase = process.env.API_PUBLIC_URL || process.env.APP_URL || req.headers.origin || '';
+      const invoiceUrl = `${apiBase.replace(/\/$/, '')}/api/moving-invoices/${invoice._id}/pdf?token=${token}`;
       notifyInvoiceReady(job, customer, invoiceUrl);
     }
 
