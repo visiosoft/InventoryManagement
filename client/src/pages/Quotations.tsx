@@ -192,13 +192,30 @@ function QuoteWizard({
   }
 
   const unitsTotal = unitRows.reduce((s, u) => {
-    const gross = u.rate
-    return s + gross - (gross * u.discountPct) / 100
+    if (!u.startDate || !u.endDate || !u.rate) return s
+    const days = Math.round((new Date(u.endDate).getTime() - new Date(u.startDate).getTime()) / 86400000)
+    if (days <= 0) return s
+    const totalWeeks = Math.ceil(days / 7)
+    const weeklyFull = u.rate / 4
+    const weeklyDisc = weeklyFull - (weeklyFull * u.discountPct) / 100
+    const discWeeks = Math.min(4, totalWeeks)
+    const fullWeeks = Math.max(0, totalWeeks - 4)
+    return s + Math.round((discWeeks * weeklyDisc + fullWeeks * weeklyFull) * 100) / 100
+  }, 0)
+
+  const advanceExtra = unitRows.reduce((s, u) => {
+    if (!u.startDate || !u.endDate || !u.rate) return s
+    const days = Math.round((new Date(u.endDate).getTime() - new Date(u.startDate).getTime()) / 86400000)
+    if (days <= 0) return s
+    const weeks = Math.ceil(days / 7)
+    if (weeks > 4) return s
+    const advWeeks = weeks % 4 === 0 ? 4 : weeks % 4
+    return s + Math.round((u.rate / 4) * advWeeks * 100) / 100
   }, 0)
 
   const addOnsTotal = addOnRows.reduce((s, a) => s + a.quantity * a.rate, 0)
   const subTotal = unitsTotal + addOnsTotal
-  const total = subTotal + adjustment
+  const total = subTotal + adjustment + advanceExtra + deposit
 
   function handleSubmit() {
     onSubmit({
@@ -210,6 +227,7 @@ function QuoteWizard({
       notes,
       deposit,
       adjustment,
+      total,
       units: unitRows.map((u) => ({
         unit: u.unitId,
         unitNumber: u.unitNumber,
