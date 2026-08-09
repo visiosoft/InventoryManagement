@@ -1243,7 +1243,9 @@ export default function NewQuote() {
   const advanceExtra = unitRows.reduce((s, u) => s + (isShortTerm(u.startDate, u.endDate) ? calcUnitAdvance(u.rate, u.startDate, u.endDate) : 0), 0)
   const addOnsTotal = addOnRows.reduce((s, a) => s + a.quantity * a.rate, 0)
   const subTotal = unitsTotal + addOnsTotal
-  const total = subTotal + adjustment + advanceExtra
+  // Grand total = rent + add-ons + held advance (short terms) + security
+  // deposit — identical to what the server stores for the quote.
+  const total = subTotal + adjustment + advanceExtra + (Number(deposit) || 0)
 
   useEffect(() => { setErr(''); setSentMsg('') }, [step])
 
@@ -1257,7 +1259,7 @@ export default function NewQuote() {
       notes,
       deposit: Number(deposit) || 0,
       adjustment,
-      total: total + (Number(deposit) || 0),
+      // No total sent — the server computes it from units/add-ons/deposit
       units: unitRows.map((u) => ({
         unit: u.unitId, unitNumber: u.unitNumber, sizeSqf: u.sizeSqf, floor: u.floor,
         startDate: u.startDate, endDate: u.endDate, rate: u.rate, discountPct: u.discountPct,

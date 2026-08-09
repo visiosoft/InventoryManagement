@@ -1300,7 +1300,7 @@ export default function ContractDetail() {
                         : '—')}
                     {EditableRow('Asking Price', 'rate', `AED ${formatMoney(askingPrice)}`, String(askingPrice), 'number', '1')}
                     {EditableRow('Leased Price', 'leasedPrice', `AED ${formatMoney(leasedPrice)}`, String(leasedPrice), 'number', '1')}
-                    {EditableRow('Total Quotation', 'totalQuotation', `AED ${formatMoney(c.totalQuotation || 0)}`, String(c.totalQuotation || 0), 'number', '1')}
+                    {EditableRow('Total Quotation', 'totalQuotation', `AED ${formatMoney(totalOwed)}`, String(c.totalQuotation || totalOwed || 0), 'number', '1')}
                     {EditableRow('Received', 'manualReceived', `AED ${formatMoney(collected)}`, String((c as any).manualReceived || 0), 'number', '1')}
                     {Row('Remaining', <span className={remaining > 0 ? 'text-destructive' : 'text-emerald-600'}>AED {formatMoney(remaining)}</span>)}
                   </div>

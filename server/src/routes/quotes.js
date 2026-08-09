@@ -120,8 +120,19 @@ function normalizeBody(body) {
     const subTotal = Number((unitsTotal + addOnsTotal + itemsTotal).toFixed(2));
     const adjustment = toNumber(body.adjustment, 0);
     const deposit = toNumber(body.deposit, 0);
-    // Trust the total sent by the client; fall back to subTotal + adjustment
-    const total = body.total != null ? toNumber(body.total) : Number((subTotal + adjustment).toFixed(2));
+
+    // The server owns the total — client-sent totals are ignored so every edit
+    // path yields the same figure. Rule: rent + add-ons/items + the refundable
+    // advance for short terms + security deposit. For terms over 4 weeks the
+    // advance prepays the final period already counted inside unitsTotal, so it
+    // adds nothing; for terms of 4 weeks or less it is held on top of the rent.
+    const advanceExtra = units.reduce((sum, u) => {
+        const days = Math.round((u.endDate - u.startDate) / 86400000);
+        const tw = Math.max(1, Math.ceil(days / 7));
+        if (tw > 4) return sum;
+        return sum + (u.rate / 4) * tw;
+    }, 0);
+    const total = Number((subTotal + adjustment + advanceExtra + deposit).toFixed(2));
 
     return {
         quoteDate: body.quoteDate ? new Date(body.quoteDate) : new Date(),
@@ -574,6 +585,8 @@ async function syncContractFromQuote(quote, userName) {
     contract.rate = Number(quote.units.reduce((s, u) => s + toNumber(u.rate), 0).toFixed(2));
     contract.deposit = toNumber(quote.deposit);
     contract.firstMonthDiscountPct = discounts.length === 1 ? discounts[0] : 0;
+    // Mirror the quote total so the contract's Total Quotation can't go stale
+    contract.totalQuotation = Number(quote.total || 0);
     contract.timeline.push({ at: new Date(), text: `Contract updated from quote ${quote.quoteNo} by ${userName}`, author: userName });
     await contract.save();
 
