@@ -180,6 +180,11 @@ function isTransientMongoNetworkError(error) {
 }
 
 async function start() {
+  // Indexes already exist in Atlas; recreating them on every boot costs a
+  // round-trip per model before its first query answers. Run
+  // `node scripts/sync-indexes.mjs` after adding an index to a schema.
+  mongoose.set('autoIndex', process.env.AUTO_INDEX === 'true');
+
   await connectDb();
   mongoose.connection.on('error', (err) => {
     console.error('[MongoDB] connection error:', err.message);
@@ -195,9 +200,11 @@ async function start() {
     });
   }
 
-  await seedUnitTypes();
   console.log(`Connected to MongoDB (db: ${process.env.DB_NAME})`);
   app.listen(PORT, () => console.log(`PurpleBox API listening on http://localhost:${PORT}`));
+
+  // Seeding only matters on a brand-new database — don't hold the port for it
+  seedUnitTypes().catch((e) => console.error('[Seed]', e.message));
 
   // Reconcile WhatsApp label-driven lead state every 15 minutes.
   const WHATSAPP_RECONCILE_INTERVAL = 15 * 60 * 1000;
