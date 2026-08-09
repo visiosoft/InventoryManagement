@@ -167,9 +167,11 @@ router.get('/', async (req, res) => {
       : pay.paid >= pay.total ? 'paid'
         : pay.paid > 0 ? 'partial'
           : 'unpaid';
-    // Full contract value: totalQuotation (from quote), or payments total, or rate × term
+    // Full contract value: the larger of the saved quotation and what's
+    // actually billed on the payment records (rent + deposit) — a stale
+    // totalQuotation must not understate a contract that's already invoiced.
     let contractAmount = Number(c.totalQuotation || 0);
-    if (!contractAmount && pay) contractAmount = Math.round(pay.total * 100) / 100;
+    if (pay) contractAmount = Math.max(contractAmount, Math.round(pay.total * 100) / 100);
     if (!contractAmount && c.startDate && c.endDate) {
       const days = Math.max(0, (new Date(c.endDate) - new Date(c.startDate)) / 86400000);
       const weeks = Math.ceil(days / 7);
