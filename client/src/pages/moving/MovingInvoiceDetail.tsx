@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft, Download, Share2, Edit, Plus, Trash2, RefreshCw, AlertCircle, CheckCircle, Pencil } from 'lucide-react'
-import { api, apiError } from '../../lib/api'
+import { api, apiError, apiUrl } from '../../lib/api'
 import type { MovingInvoice, MovingInvoiceStatus } from '../../lib/types'
 import { Badge, Button, Field, Input, Modal, Select, Spinner, Textarea } from '../../components/ui'
 
@@ -223,9 +223,9 @@ export default function MovingInvoiceDetail() {
             if (!shareToken) {
               const res = await api.post(`/moving-invoices/${id}/share-token`, {})
               setShareToken(res.data.token)
-              window.open(`/api/moving-invoices/${id}/pdf?token=${res.data.token}`, '_blank')
+              window.open(apiUrl(`/moving-invoices/${id}/pdf?token=${res.data.token}`), '_blank')
             } else {
-              window.open(`/api/moving-invoices/${id}/pdf?token=${shareToken}`, '_blank')
+              window.open(apiUrl(`/moving-invoices/${id}/pdf?token=${shareToken}`), '_blank')
             }
           }}
         >
@@ -238,11 +238,11 @@ export default function MovingInvoiceDetail() {
             if (!shareToken) {
               const res = await api.post(`/moving-invoices/${id}/share-token`, {})
               setShareToken(res.data.token)
-              const pdfUrl = `${window.location.origin}/api/moving-invoices/${id}/pdf?token=${res.data.token}`
+              const pdfUrl = apiUrl(`/moving-invoices/${id}/pdf?token=${res.data.token}`)
               const msg = `Hi ${invoice.customer?.fullName}, here's your invoice ${invoice.invoiceNo} for AED ${invoice.total}. Please review and let me know if you have any questions. ${pdfUrl}`
               window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
             } else {
-              const pdfUrl = `${window.location.origin}/api/moving-invoices/${id}/pdf?token=${shareToken}`
+              const pdfUrl = apiUrl(`/moving-invoices/${id}/pdf?token=${shareToken}`)
               const msg = `Hi ${invoice.customer?.fullName}, here's your invoice ${invoice.invoiceNo} for AED ${invoice.total}. Please review and let me know if you have any questions. ${pdfUrl}`
               window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
             }

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft, Download, Plus, Trash2, Edit, Receipt } from 'lucide-react'
-import { api, apiError } from '../../lib/api'
+import { api, apiError, apiUrl } from '../../lib/api'
 import type { MovingQuote, MovingQuoteStatus } from '../../lib/types'
 import { Badge, Button, Field, Input, Modal, Spinner, Textarea } from '../../components/ui'
 import { useState } from 'react'
@@ -151,9 +151,9 @@ export default function MovingQuoteDetail() {
             if (!shareToken) {
               const res = await api.post(`/moving-quotes/${id}/share-token`, {})
               setShareToken(res.data.token)
-              window.open(`/api/moving-quotes/${id}/pdf?token=${res.data.token}`, '_blank')
+              window.open(apiUrl(`/moving-quotes/${id}/pdf?token=${res.data.token}`), '_blank')
             } else {
-              window.open(`/api/moving-quotes/${id}/pdf?token=${shareToken}`, '_blank')
+              window.open(apiUrl(`/moving-quotes/${id}/pdf?token=${shareToken}`), '_blank')
             }
           }}
         >

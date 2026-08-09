@@ -5,6 +5,10 @@ const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.tr
 
 export const api = axios.create({ baseURL: apiBaseUrl })
 
+/** Absolute URL for a raw API path (PDF links, downloads) — always on the API
+ * host, never the frontend origin, so proxies can't misroute it. */
+export const apiUrl = (path: string) => `${apiBaseUrl.replace(/\/$/, '')}${path.startsWith('/') ? path : `/${path}`}`
+
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('pb_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
