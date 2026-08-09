@@ -43,23 +43,39 @@ function mapItem(item, idx) {
     };
 }
 
+function calcUnitPeriodTotal(rate, discountPct, startDate, endDate) {
+    if (!startDate || !endDate) return 0;
+    const days = Math.round((endDate - startDate) / 86400000);
+    if (days <= 0) return 0;
+    const totalWeeks = Math.ceil(days / 7);
+    const weeklyFull = rate / 4;
+    const weeklyDisc = weeklyFull - (weeklyFull * discountPct) / 100;
+    const discWeeks = Math.min(4, totalWeeks);
+    const fullWeeks = Math.max(0, totalWeeks - 4);
+    return Math.round((discWeeks * weeklyDisc + fullWeeks * weeklyFull) * 100) / 100;
+}
+
+function calcUnitAdvance(rate, startDate, endDate) {
+    if (!startDate || !endDate) return 0;
+    const days = Math.round((endDate - startDate) / 86400000);
+    if (days <= 0) return 0;
+    const weeks = Math.ceil(days / 7);
+    const advWeeks = weeks % 4 === 0 ? 4 : weeks % 4;
+    return Math.round((rate / 4) * advWeeks * 100) / 100;
+}
+
+function isShortTerm(startDate, endDate) {
+    if (!startDate || !endDate) return false;
+    const days = Math.round((endDate - startDate) / 86400000);
+    return days > 0 && Math.ceil(days / 7) <= 4;
+}
+
 function mapUnit(u) {
     const rate = toNumber(u.rate);
     const discountPct = toNumber(u.discountPct);
     const startDate = u.startDate ? new Date(u.startDate) : null;
     const endDate = u.endDate ? new Date(u.endDate) : null;
-    const discounted = rate - (rate * discountPct) / 100;
-    let amount = Number(discounted.toFixed(2));
-    if (startDate && endDate) {
-        const days = Math.round((endDate - startDate) / 86400000);
-        if (days > 0) {
-            const weekly = discounted / 4;
-            const fullMonths = Math.floor(days / 28);
-            const rem = days % 28;
-            const extraWeeks = rem > 0 ? Math.ceil(rem / 7) : 0;
-            amount = Number((weekly * (fullMonths * 4 + extraWeeks)).toFixed(2));
-        }
-    }
+    const amount = calcUnitPeriodTotal(rate, discountPct, startDate, endDate);
     return {
         unit: String(u.unit || ''),
         unitNumber: String(u.unitNumber || ''),
@@ -104,7 +120,8 @@ function normalizeBody(body) {
     const subTotal = Number((unitsTotal + addOnsTotal + itemsTotal).toFixed(2));
     const adjustment = toNumber(body.adjustment, 0);
     const deposit = toNumber(body.deposit, 0);
-    const total = Number((subTotal + adjustment).toFixed(2));
+    // Trust the total sent by the client; fall back to subTotal + adjustment
+    const total = body.total != null ? toNumber(body.total) : Number((subTotal + adjustment).toFixed(2));
 
     return {
         quoteDate: body.quoteDate ? new Date(body.quoteDate) : new Date(),

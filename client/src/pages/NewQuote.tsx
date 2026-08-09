@@ -980,8 +980,7 @@ export default function NewQuote() {
   const paidTotal = (flowData?.invoices || []).reduce((s, i) => s + Number(i.paymentMade ?? 0), 0)
   const approvalStatus = contract?.approvalStatus ?? 'not_required'
   const isBooked = contract?.status === 'active'
-  // Everything stays editable until the contract is fully booked (active)
-  const quoteLocked = isBooked
+  const quoteLocked = false
 
   // Hydrate the wizard from the latest quote for this lead (resume support)
   useEffect(() => {
@@ -1258,6 +1257,7 @@ export default function NewQuote() {
       notes,
       deposit: Number(deposit) || 0,
       adjustment,
+      total: total + (Number(deposit) || 0),
       units: unitRows.map((u) => ({
         unit: u.unitId, unitNumber: u.unitNumber, sizeSqf: u.sizeSqf, floor: u.floor,
         startDate: u.startDate, endDate: u.endDate, rate: u.rate, discountPct: u.discountPct,
