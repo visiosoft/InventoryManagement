@@ -823,13 +823,21 @@ export default function ContractDetail() {
   const [editingNote, setEditingNote] = useState<{ idx: number; text: string } | null>(null)
   const [showAllActivity, setShowAllActivity] = useState(false)
   const [searchParams, setSearchParams] = useSearchParams()
-  const activeTab = (searchParams.get('tab') as 'overview' | 'payments' | 'documents' | 'notices') || 'overview'
-  const setActiveTab = (tab: 'overview' | 'payments' | 'documents' | 'notices') => setSearchParams({ tab }, { replace: true })
+  const activeTab = (searchParams.get('tab') as 'overview' | 'payments' | 'documents' | 'notices' | 'reminders') || 'overview'
+  const setActiveTab = (tab: 'overview' | 'payments' | 'documents' | 'notices' | 'reminders') => setSearchParams({ tab }, { replace: true })
 
   const { data: noticeTemplates = [] } = useQuery<{ _id: string; name: string; isDefault: boolean; updatedAt?: string }[]>({
     queryKey: ['agreement-templates'],
     queryFn: () => api.get('/agreement-template').then((r) => r.data?.templates ?? []),
     enabled: activeTab === 'notices',
+    staleTime: 60_000,
+  })
+
+  type AutomationRuleRow = { _id: string; name: string; enabled: boolean; triggerLabel?: string; relativeLabel?: string; whatsappEnabled?: boolean; emailEnabled?: boolean; steps?: { value: number; direction: string; immediate?: boolean }[] }
+  const { data: automationRules = [] } = useQuery<AutomationRuleRow[]>({
+    queryKey: ['automation-rules'],
+    queryFn: () => api.get('/automation-rules').then((r) => (Array.isArray(r.data) ? r.data : r.data?.rules ?? [])),
+    enabled: activeTab === 'reminders',
     staleTime: 60_000,
   })
 
@@ -1398,6 +1406,7 @@ export default function ContractDetail() {
               ['payments', 'Payments', unpaidGroups.length],
               ['documents', 'Documents', 0],
               ['notices', 'Notices', 0],
+              ['reminders', 'Reminders', 0],
             ] as [typeof activeTab, string, number][]).map(([key, label, count]) => (
               <button key={key} onClick={() => setActiveTab(key)}
                 className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px flex items-center gap-1.5 ${activeTab === key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
@@ -1608,6 +1617,87 @@ export default function ContractDetail() {
           )}
 
           {/* DOCUMENTS */}
+          {/* REMINDERS — per-contract overrides on top of Settings → Automation */}
+          {activeTab === 'reminders' && (
+            <Card>
+              <CardHeader title="Reminders" subtitle="Defaults come from Settings → Automation — override them for this tenant here" />
+              <CardBody className="pt-0 space-y-4">
+                {/* Master switch */}
+                <div className="rounded-xl border p-4 flex items-center justify-between gap-4">
+                  <div>
+                    <div className="font-semibold text-sm">All reminders for this contract</div>
+                    <div className="text-[11.5px] text-muted-foreground mt-0.5">
+                      {(c as any).remindersMuted
+                        ? 'Muted — this tenant receives no automatic reminders.'
+                        : 'Active — payment reminders and automations run as configured.'}
+                    </div>
+                  </div>
+                  <button type="button"
+                    onClick={() => updateContract.mutate({ remindersMuted: !(c as any).remindersMuted })}
+                    className={`h-8 px-4 rounded-full text-xs font-bold cursor-pointer transition-colors ${(c as any).remindersMuted ? 'bg-destructive/10 text-destructive' : 'bg-emerald-100 text-emerald-700'}`}>
+                    {(c as any).remindersMuted ? 'Muted — click to enable' : 'Active — click to mute'}
+                  </button>
+                </div>
+
+                {/* Per-rule overrides */}
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                    Rules · defaults from <a href="/settings/automation" className="text-primary hover:underline">Settings → Automation</a>
+                  </div>
+                  {automationRules.length === 0 ? (
+                    <p className="text-sm text-muted-foreground py-4">No automation rules configured yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {automationRules.map((rule) => {
+                        const override = ((c as any).reminderOverrides as { rule: string; enabled: boolean }[] | undefined)
+                          ?.find((o) => String(o.rule) === rule._id)
+                        const mode = override ? (override.enabled ? 'on' : 'off') : 'default'
+                        const setMode = (next: 'default' | 'on' | 'off') => {
+                          const others = (((c as any).reminderOverrides as { rule: string; enabled: boolean }[] | undefined) ?? [])
+                            .filter((o) => String(o.rule) !== rule._id)
+                            .map((o) => ({ rule: String(o.rule), enabled: o.enabled }))
+                          const nextOverrides = next === 'default' ? others : [...others, { rule: rule._id, enabled: next === 'on' }]
+                          updateContract.mutate({ reminderOverrides: nextOverrides })
+                        }
+                        const stepsLabel = (rule.steps ?? [])
+                          .map((st) => st.immediate ? 'immediately' : `${st.value}d ${st.direction} ${rule.relativeLabel || 'due date'}`)
+                          .join(', ')
+                        return (
+                          <div key={rule._id} className="rounded-xl border p-3.5 flex items-center justify-between gap-3 flex-wrap">
+                            <div className="min-w-0">
+                              <div className="font-semibold text-sm flex items-center gap-2">
+                                {rule.name}
+                                <span className={`text-[9.5px] font-bold uppercase rounded px-1.5 py-0.5 ${rule.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-muted text-muted-foreground'}`}>
+                                  default {rule.enabled ? 'on' : 'off'}
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-muted-foreground mt-0.5">
+                                {rule.triggerLabel || ''}{stepsLabel ? ` · ${stepsLabel}` : ''}
+                              </div>
+                            </div>
+                            <div className="flex rounded-lg border overflow-hidden shrink-0">
+                              {([['default', 'Default'], ['on', 'On'], ['off', 'Off']] as const).map(([key, label]) => (
+                                <button key={key} type="button" onClick={() => setMode(key)}
+                                  className={`px-3 py-1.5 text-xs font-semibold cursor-pointer transition-colors ${mode === key
+                                    ? key === 'off' ? 'bg-destructive text-white' : key === 'on' ? 'bg-emerald-600 text-white' : 'bg-primary text-primary-foreground'
+                                    : 'bg-white text-muted-foreground hover:bg-muted/50'}`}>
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                  <p className="text-[11px] text-muted-foreground mt-3">
+                    Default follows the global rule setting. On / Off pins the rule for this contract only.
+                  </p>
+                </div>
+              </CardBody>
+            </Card>
+          )}
+
           {/* NOTICES — every saved template, prefilled for this tenant on click */}
           {activeTab === 'notices' && (
             <Card>

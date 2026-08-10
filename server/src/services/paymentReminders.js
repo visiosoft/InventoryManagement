@@ -130,6 +130,8 @@ export async function runPaymentReminders() {
     if (!payment.contract) continue;
 
     const contract = payment.contract;
+    // Reminders muted for this contract from its Reminders tab
+    if (contract.remindersMuted) { skipped++; continue; }
     const customer = contract.customer;
     if (!customer) continue;
 

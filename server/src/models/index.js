@@ -261,6 +261,16 @@ const contractSchema = new Schema(
     totalQuotation: { type: Number, default: 0 },
     // null = derive Received from payment records; any number (incl. 0) is a manual override
     manualReceived: { type: Number, default: null },
+    // Per-contract reminder settings. Defaults come from Settings → Automation;
+    // an override entry pins one rule on/off for this contract only.
+    remindersMuted: { type: Boolean, default: false },
+    reminderOverrides: [
+      {
+        rule: { type: Schema.Types.ObjectId, ref: 'AutomationRule' },
+        enabled: { type: Boolean, default: true },
+        _id: false,
+      },
+    ],
     archived: { type: Boolean, default: false },
     timeline: [
       {

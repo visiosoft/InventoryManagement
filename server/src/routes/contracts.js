@@ -948,6 +948,14 @@ router.put('/:id', async (req, res) => {
       }
     }
 
+    // Per-contract reminder settings (Reminders tab)
+    if (req.body.remindersMuted !== undefined) $set.remindersMuted = !!req.body.remindersMuted;
+    if (Array.isArray(req.body.reminderOverrides)) {
+      $set.reminderOverrides = req.body.reminderOverrides
+        .filter((o) => o && isValidObjectId(String(o.rule)))
+        .map((o) => ({ rule: String(o.rule), enabled: !!o.enabled }));
+    }
+
     if (Array.isArray(req.body.authorizedPersons)) {
       $set.authorizedPersons = req.body.authorizedPersons
         .map((p) => ({
@@ -961,8 +969,8 @@ router.put('/:id', async (req, res) => {
     }
 
     // Log what was changed to the contract timeline with values
-    const fieldLabels = { rate: 'Asking Price', deposit: 'Deposit', totalQuotation: 'Total Quotation', leasedPrice: 'Leased Price', manualReceived: 'Received', startDate: 'Check In', endDate: 'Check Out', billingPeriod: 'Billing Period', paymentMethod: 'Payment Method', firstPaymentDate: 'First Payment Date', firstMonthDiscountPct: 'First Month Discount' };
-    const changedKeys = Object.keys($set).filter(k => k !== 'authorizedPersons');
+    const fieldLabels = { rate: 'Asking Price', deposit: 'Deposit', totalQuotation: 'Total Quotation', leasedPrice: 'Leased Price', manualReceived: 'Received', startDate: 'Check In', endDate: 'Check Out', billingPeriod: 'Billing Period', paymentMethod: 'Payment Method', firstPaymentDate: 'First Payment Date', firstMonthDiscountPct: 'First Month Discount', remindersMuted: 'Reminders muted' };
+    const changedKeys = Object.keys($set).filter(k => !['authorizedPersons', 'reminderOverrides', 'agreementText'].includes(k));
     if (changedKeys.length) {
       const who = req.user?.name || req.user?.email || 'System';
       const details = changedKeys.map(k => `${fieldLabels[k] || k}: ${$set[k] instanceof Date ? $set[k].toISOString().slice(0, 10) : $set[k]}`).join(', ');
