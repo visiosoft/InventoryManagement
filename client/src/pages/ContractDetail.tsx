@@ -1152,7 +1152,7 @@ export default function ContractDetail() {
       {error && <p className="mb-3 text-xs text-destructive">{error}</p>}
 
       {/* ── Main layout ── */}
-      <div className="flex flex-col lg:flex-row gap-5 items-start">
+      <div className="flex flex-col lg:flex-row gap-5 lg:items-start">
         {/* Left sidebar */}
         <div className="w-full lg:w-80 lg:shrink-0 space-y-4">
           <Card>

@@ -120,7 +120,7 @@ export default function AgreementTemplate() {
         }
       />
 
-      <div className="flex flex-col lg:flex-row gap-4 items-start">
+      <div className="flex flex-col lg:flex-row gap-4 lg:items-start">
         {/* Template list */}
         <Card className="w-full lg:w-72 lg:shrink-0">
           <CardBody className="pt-4 space-y-1.5">

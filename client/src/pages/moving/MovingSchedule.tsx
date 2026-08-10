@@ -156,7 +156,9 @@ export default function MovingSchedule() {
       {isLoading ? (
         <div className="flex justify-center py-16"><Spinner /></div>
       ) : (
-        <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 20 }}>
+        <>
+        {/* Month grid — desktop and tablets. Seven columns cannot fit a phone. */}
+        <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 20 }} className="hidden sm:block">
           {/* Weekday headers */}
           <div className="grid grid-cols-7 gap-1.5 mb-2">
             {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
@@ -220,6 +222,53 @@ export default function MovingSchedule() {
             })}
           </div>
         </div>
+
+        {/* Agenda list — phones. One card per job, grouped by day. */}
+        <div className="sm:hidden space-y-3">
+          {days.filter((d): d is Date => !!d && (byDate[isoDate(d)] ?? []).length > 0).map((day) => {
+            const dayKey = isoDate(day)
+            const dayJobs = byDate[dayKey] ?? []
+            const isToday = dayKey === today
+            return (
+              <div key={dayKey} style={{ background: 'white', border: isToday ? `1px solid ${PURPLE}40` : '1px solid rgba(20,8,31,0.08)', borderRadius: 14 }}>
+                <div className="flex items-center justify-between px-3.5 pt-3 pb-1.5">
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: isToday ? PURPLE : INK }}>
+                    {day.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                    {isToday && <span style={{ background: '#F7F3FF', color: PURPLE, borderRadius: 6, fontSize: 10, padding: '2px 6px', marginLeft: 8 }}>Today</span>}
+                  </span>
+                  <span style={{ fontSize: 11, color: MUTED }}>{dayJobs.length} job{dayJobs.length === 1 ? '' : 's'}</span>
+                </div>
+                <div className="px-2 pb-2 space-y-1.5">
+                  {dayJobs.map(job => {
+                    const st = eventStyle[job.status] ?? eventStyle.draft
+                    return (
+                      <Link key={job._id} to={`/moving/jobs/${job._id}`}
+                        className="flex items-center justify-between gap-2 rounded-xl px-2.5 py-2.5 hover:brightness-[0.98]"
+                        style={{ background: '#FBFAF7', border: '1px solid rgba(20,8,31,0.05)' }}>
+                        <span className="min-w-0">
+                          <span style={{ fontSize: 13, fontWeight: 700, color: INK }} className="block truncate">
+                            {job.customer?.fullName || job.jobNo}
+                          </span>
+                          <span style={{ fontSize: 11, color: MUTED }}>{job.jobNo}</span>
+                        </span>
+                        <span style={{ background: st.bg, color: st.color, borderRadius: 6, fontSize: 10.5, fontWeight: 600 }}
+                          className="px-2 py-1 capitalize shrink-0 whitespace-nowrap">
+                          {movingJobStatusLabel(job.status)}
+                        </span>
+                      </Link>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+          {visibleJobs.length === 0 && (
+            <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 14, color: MUTED }} className="text-center text-sm py-8">
+              No jobs scheduled in {monthLabel}.
+            </div>
+          )}
+        </div>
+        </>
       )}
 
       {/* Legend */}
