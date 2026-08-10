@@ -1,0 +1,38 @@
+name: Deploy API
+
+# The client deploys itself via Netlify; this ships the Express API to the
+# Linux server whenever server code lands on main. Manual runs are allowed
+# from the Actions tab (workflow_dispatch).
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/**'
+      - '.github/workflows/deploy-api.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-api
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_SSH_HOST }}
+          username: ${{ secrets.DEPLOY_SSH_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_SSH_PORT || 22 }}
+          command_timeout: 15m
+          script: |
+            set -e
+            cd /var/www/InventoryManagement
+            # Run the deploy script from the freshly fetched code so deploy
+            # logic itself updates with the repo
+            git fetch origin main
+            git show origin/main:server/deploy.sh > /tmp/purplebox-deploy.sh
+            chmod +x /tmp/purplebox-deploy.sh
+            APP_DIR=/var/www/InventoryManagement bash /tmp/purplebox-deploy.sh
