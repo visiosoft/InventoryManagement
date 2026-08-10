@@ -122,14 +122,14 @@ export default function AgreementTemplate() {
 
       <div className="flex flex-col lg:flex-row gap-4 items-start">
         {/* Template list */}
-        <Card className="w-full lg:w-64 lg:shrink-0">
+        <Card className="w-full lg:w-72 lg:shrink-0">
           <CardBody className="pt-4 space-y-1.5">
             {templates.map((t) => (
               <div key={t._id}
                 onClick={() => setSelectedId(t._id)}
                 className={`rounded-lg border px-3 py-2 cursor-pointer text-sm flex items-center justify-between gap-2 ${selectedId === t._id ? 'border-primary bg-primary/5' : 'hover:bg-muted/40'}`}>
                 <span className="min-w-0">
-                  <span className="font-semibold block truncate">{t.name}</span>
+                  <span className="font-semibold block break-words">{t.name}</span>
                   {t.updatedAt && <span className="text-[10.5px] text-muted-foreground">{formatDate(t.updatedAt)}</span>}
                 </span>
                 <span className="flex items-center gap-1 shrink-0">
