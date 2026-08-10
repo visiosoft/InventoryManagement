@@ -111,8 +111,8 @@ router.get('/:id/preview-pdf', aw(async (req, res) => {
   const merged = mergeAgreementText(tpl.body, sample);
   const title = tpl.isDefault ? 'STORAGE AGREEMENT' : tpl.name.toUpperCase();
   const pdf = looksLikeHtml(merged)
-    ? await renderAgreementHtmlPdf({ html: merged, contract: sample, title })
-    : await renderAgreementTextPdf({ text: merged, contract: sample });
+    ? await renderAgreementHtmlPdf({ html: merged, contract: sample, title, header: tpl.isDefault, signature: tpl.isDefault })
+    : await renderAgreementTextPdf({ text: merged, contract: sample, header: tpl.isDefault, signature: tpl.isDefault });
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="${tpl.name}.pdf"`);
   res.send(pdf);

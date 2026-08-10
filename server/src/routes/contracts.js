@@ -1319,8 +1319,8 @@ router.post('/:id/notice-pdf', async (req, res) => {
     if (!html.trim()) return res.status(400).json({ error: 'Notice content is empty' });
     const title = String(req.body?.title || 'Notice').toUpperCase();
     const pdf = looksLikeHtml(html)
-      ? await renderAgreementHtmlPdf({ html, contract, title })
-      : await renderAgreementTextPdf({ text: html, contract });
+      ? await renderAgreementHtmlPdf({ html, contract, title, header: false, signature: false })
+      : await renderAgreementTextPdf({ text: html, contract, header: false, signature: false });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${title}.pdf"`);
     res.send(pdf);
@@ -1342,8 +1342,8 @@ router.post('/:id/notice-email', async (req, res) => {
     if (!html.trim()) return res.status(400).json({ error: 'Notice content is empty' });
     const title = String(req.body?.title || 'Notice');
     const pdf = looksLikeHtml(html)
-      ? await renderAgreementHtmlPdf({ html, contract, title: title.toUpperCase() })
-      : await renderAgreementTextPdf({ text: html, contract });
+      ? await renderAgreementHtmlPdf({ html, contract, title: title.toUpperCase(), header: false, signature: false })
+      : await renderAgreementTextPdf({ text: html, contract, header: false, signature: false });
 
     await sendMail({
       to,

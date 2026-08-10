@@ -58,7 +58,7 @@ export function mergeAgreementText(template, contract) {
  *   blank line               → paragraph break
  * Ends with the signature block used by the signing flow.
  */
-export function renderAgreementTextPdf({ text, contract, signedDate }) {
+export function renderAgreementTextPdf({ text, contract, signedDate, header = true, signature = true, title = 'STORAGE AGREEMENT' }) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 56 });
     const chunks = [];
@@ -90,16 +90,18 @@ export function renderAgreementTextPdf({ text, contract, signedDate }) {
     }
 
     // Signature block — same shape the signing flow stamps into
-    doc.moveDown(2);
-    const y = doc.y > 700 ? (doc.addPage(), doc.y) : doc.y;
-    const fmt = (d) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-    doc.fontSize(10).font('Helvetica-Bold').text('Tenant signature:', 56, y);
-    doc.font('Helvetica').text('_________________________', 56, y + 28);
-    doc.font('Helvetica-Bold').text('For PurpleBox Storage:', 320, y);
-    doc.font('Helvetica').text('_________________________', 320, y + 28);
-    doc.moveDown(2);
-    doc.font('Helvetica').fontSize(9.5).fillColor('#555')
-      .text(signedDate ? `Signed on ${fmt(signedDate)}` : `Generated on ${fmt(new Date())}`, 56);
+    if (signature) {
+      doc.moveDown(2);
+      const y = doc.y > 700 ? (doc.addPage(), doc.y) : doc.y;
+      const fmt = (d) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+      doc.fontSize(10).font('Helvetica-Bold').text('Tenant signature:', 56, y);
+      doc.font('Helvetica').text('_________________________', 56, y + 28);
+      doc.font('Helvetica-Bold').text('For PurpleBox Storage:', 320, y);
+      doc.font('Helvetica').text('_________________________', 320, y + 28);
+      doc.moveDown(2);
+      doc.font('Helvetica').fontSize(9.5).fillColor('#555')
+        .text(signedDate ? `Signed on ${fmt(signedDate)}` : `Generated on ${fmt(new Date())}`, 56);
+    }
 
     doc.end();
   });
@@ -246,7 +248,7 @@ function renderHtmlBody(doc, root) {
 }
 
 /** Renders rich (HTML) agreement/notice content to PDF, keeping the design. */
-export function renderAgreementHtmlPdf({ html, contract, signedDate, title = 'STORAGE AGREEMENT' }) {
+export function renderAgreementHtmlPdf({ html, contract, signedDate, title = 'STORAGE AGREEMENT', header = true, signature = true }) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 56 });
     const chunks = [];
@@ -254,27 +256,31 @@ export function renderAgreementHtmlPdf({ html, contract, signedDate, title = 'ST
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    drawCompanyLogo(doc, 56, 44, 48);
-    doc.fontSize(18).font('Helvetica-Bold').text(title, { align: 'center' });
-    if (contract?.contractNo) {
-      doc.moveDown(0.3);
-      doc.fontSize(10.5).font('Helvetica').fillColor('#555').text(`Contract No: ${contract.contractNo}`, { align: 'center' });
+    if (header) {
+      drawCompanyLogo(doc, 56, 44, 48);
+      doc.fontSize(18).font('Helvetica-Bold').text(title, { align: 'center' });
+      if (contract?.contractNo) {
+        doc.moveDown(0.3);
+        doc.fontSize(10.5).font('Helvetica').fillColor('#555').text(`Contract No: ${contract.contractNo}`, { align: 'center' });
+      }
+      doc.moveDown(1.2).fillColor('#000');
     }
-    doc.moveDown(1.2).fillColor('#000');
 
     const root = parseHtml(String(html || ''));
     renderHtmlBody(doc, root);
 
-    doc.moveDown(2);
-    const y = doc.y > 700 ? (doc.addPage(), doc.y) : doc.y;
-    const fmt = (d) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-    doc.fontSize(10).font('Helvetica-Bold').text('Tenant signature:', 56, y);
-    doc.font('Helvetica').text('_________________________', 56, y + 28);
-    doc.font('Helvetica-Bold').text('For PurpleBox Storage:', 320, y);
-    doc.font('Helvetica').text('_________________________', 320, y + 28);
-    doc.moveDown(2);
-    doc.font('Helvetica').fontSize(9.5).fillColor('#555')
-      .text(signedDate ? `Signed on ${fmt(signedDate)}` : `Generated on ${fmt(new Date())}`, 56);
+    if (signature) {
+      doc.moveDown(2);
+      const y = doc.y > 700 ? (doc.addPage(), doc.y) : doc.y;
+      const fmt = (d) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+      doc.fontSize(10).font('Helvetica-Bold').text('Tenant signature:', 56, y);
+      doc.font('Helvetica').text('_________________________', 56, y + 28);
+      doc.font('Helvetica-Bold').text('For PurpleBox Storage:', 320, y);
+      doc.font('Helvetica').text('_________________________', 320, y + 28);
+      doc.moveDown(2);
+      doc.font('Helvetica').fontSize(9.5).fillColor('#555')
+        .text(signedDate ? `Signed on ${fmt(signedDate)}` : `Generated on ${fmt(new Date())}`, 56);
+    }
 
     doc.end();
   });
