@@ -82,7 +82,8 @@ router.get('/', async (req, res) => {
     const [jobs, total] = await Promise.all([
       MovingJob.find(filter)
         .populate('customer', 'fullName phone')
-        .sort({ createdAt: -1 })
+        // Job date drives the order; undated jobs sink to the bottom
+        .sort({ scheduledDate: -1, createdAt: -1 })
         .skip(Number(skip))
         .limit(Number(limit)),
       MovingJob.countDocuments(filter),
