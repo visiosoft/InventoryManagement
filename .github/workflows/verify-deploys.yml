@@ -39,11 +39,18 @@ jobs:
               STATE=$(echo "$DEPLOY" | jq -r .state)
               ID=$(echo "$DEPLOY" | jq -r .id)
               echo "deploy $ID state: $STATE"
+              MSG=$(echo "$DEPLOY" | jq -r '.error_message // empty')
               case "$STATE" in
                 ready) echo "Netlify deploy is live."; exit 0 ;;
                 error|failed)
+                  # A commit that changes nothing the site builds from gets
+                  # "Canceled build due to no content change" — the site is
+                  # already live with this content, so that's a pass.
+                  case "$MSG" in
+                    *"no content change"*) echo "Netlify skipped the build (no client content change) — site already current."; exit 0 ;;
+                  esac
                   echo "::error::Netlify build failed — https://app.netlify.com/projects/purpleboxadmin/deploys/$ID"
-                  echo "$DEPLOY" | jq -r '.error_message // empty'
+                  echo "$MSG"
                   exit 1 ;;
               esac
             else
