@@ -9,10 +9,11 @@ import {
 const router = Router();
 
 const PLACEHOLDERS = [
-  'customerName', 'customerEmail', 'customerPhone', 'customerAddress',
+  'customerName', 'companyName', 'customerEmail', 'customerPhone', 'whatsapp',
+  'emergencyContact', 'emergencyNumber', 'customerAddress',
   'emiratesId', 'passportNumber',
   'contractNo', 'startDate', 'endDate', 'todayDate', 'weeks',
-  'unitNumbers', 'unitSizes',
+  'unitNumbers', 'unitSizes', 'accessType',
   'rate', 'leasedPrice', 'deposit', 'totalQuotation',
 ];
 

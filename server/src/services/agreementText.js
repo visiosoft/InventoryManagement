@@ -16,11 +16,19 @@ export function agreementPlaceholders(contract) {
 
   return {
     customerName: customer.fullName || '',
+    companyName: customer.company || customer.fullName || '',
     customerEmail: customer.email || '',
     customerPhone: (customer.phones && customer.phones[0]) || customer.phone || '',
+    whatsapp: (customer.phones && customer.phones[1]) || (customer.phones && customer.phones[0]) || customer.phone || '',
+    emergencyContact: (customer.accessPersons && customer.accessPersons[0]?.name)
+      || (contract.authorizedPersons && contract.authorizedPersons[0]?.name) || '',
+    emergencyNumber: customer.emergencyNumber
+      || (customer.accessPersons && customer.accessPersons[0]?.phone)
+      || (contract.authorizedPersons && contract.authorizedPersons[0]?.phone) || '',
     customerAddress: customer.address || '',
     emiratesId: customer.emiratesId || '',
     passportNumber: customer.passportNumber || '',
+    accessType: allUnits.some((u) => u.shared) ? 'Shared' : 'Private',
     contractNo: contract.contractNo || '',
     startDate: fmt(contract.startDate),
     endDate: fmt(contract.endDate),
@@ -113,7 +121,9 @@ export function samplePlaceholderContract() {
     endDate: new Date(Date.now() + 28 * 86400000),
     rate: 800, leasedPrice: 750, deposit: 750, totalQuotation: 1580,
     customer: {
-      fullName: 'Sample Tenant', email: 'tenant@example.com', phone: '+971 50 000 0000',
+      fullName: 'Sample Tenant', company: 'Sample Trading LLC', email: 'tenant@example.com', phone: '+971 50 000 0000',
+      phones: ['+971 50 000 0000', '+971 55 000 0000'], emergencyNumber: '+971 52 000 0000',
+      accessPersons: [{ name: 'Sample Contact', phone: '+971 52 000 0000' }],
       address: 'Dubai, UAE', emiratesId: '784-0000-0000000-0', passportNumber: 'A0000000',
     },
     unit: { unitNumber: 'F2-09', sizeSqf: 25 },

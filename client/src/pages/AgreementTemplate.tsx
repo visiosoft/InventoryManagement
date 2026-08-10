@@ -20,6 +20,8 @@ export default function AgreementTemplate() {
   const [name, setName] = useState('')
   const [dirty, setDirty] = useState(false)
   const [error, setError] = useState('')
+  const [newTplOpen, setNewTplOpen] = useState(false)
+  const [newTplName, setNewTplName] = useState('')
   const editorRef = useRef<HTMLDivElement>(null)
 
   const { data, isLoading } = useQuery<{ templates: TemplateRow[]; placeholders: string[] }>({
@@ -57,7 +59,7 @@ export default function AgreementTemplate() {
 
   const createTpl = useMutation({
     mutationFn: (tplName: string) => api.post('/agreement-template', { name: tplName, body: '' }).then((r) => r.data),
-    onSuccess: (tpl) => { invalidate(); setSelectedId(tpl._id); setError('') },
+    onSuccess: (tpl) => { invalidate(); setSelectedId(tpl._id); setError(''); setNewTplOpen(false); setNewTplName('') },
     onError: (e) => setError(apiError(e)),
   })
 
@@ -144,11 +146,27 @@ export default function AgreementTemplate() {
                 </span>
               </div>
             ))}
-            <button type="button"
-              onClick={() => { const n = prompt('Template name (e.g. Agreement, Expiry Notice):'); if (n?.trim()) createTpl.mutate(n.trim()) }}
-              className="w-full rounded-lg border border-dashed px-3 py-2 text-sm text-primary font-semibold hover:bg-primary/5 cursor-pointer flex items-center justify-center gap-1.5">
-              <Plus size={14} /> New template
-            </button>
+            {newTplOpen ? (
+              <form
+                onSubmit={(e) => { e.preventDefault(); if (newTplName.trim()) createTpl.mutate(newTplName.trim()) }}
+                className="rounded-lg border border-primary/40 bg-primary/5 p-2.5 space-y-2">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">New template</div>
+                <Input autoFocus value={newTplName} onChange={(e) => setNewTplName(e.target.value)}
+                  placeholder="e.g. Agreement, Expiry Notice" />
+                <div className="flex gap-1.5">
+                  <Button type="submit" size="sm" disabled={!newTplName.trim() || createTpl.isPending}>
+                    {createTpl.isPending ? 'Creating…' : 'Create'}
+                  </Button>
+                  <Button type="button" size="sm" variant="outline" onClick={() => { setNewTplOpen(false); setNewTplName('') }}>Cancel</Button>
+                </div>
+              </form>
+            ) : (
+              <button type="button"
+                onClick={() => setNewTplOpen(true)}
+                className="w-full rounded-lg border border-dashed px-3 py-2 text-sm text-primary font-semibold hover:bg-primary/5 cursor-pointer flex items-center justify-center gap-1.5">
+                <Plus size={14} /> New template
+              </button>
+            )}
             <p className="text-[10.5px] text-muted-foreground pt-1">
               The <Star size={10} className="inline text-amber-500" fill="currentColor" /> template is used for contract agreement PDFs.
             </p>
