@@ -79,7 +79,6 @@ app.use(
 );
 app.use('/uploads', express.static(UPLOADS_DIR));
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, db: mongoose.connection.readyState === 1 }));
 
 // Public signing routes — no JWT required
 app.use('/api/sign', signingRoutes);
@@ -87,7 +86,12 @@ app.use('/api/sign', signingRoutes);
 // Public liveness probe — also proves which build is running after a deploy
 const STARTED_AT = new Date().toISOString();
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, startedAt: STARTED_AT, uptimeSec: Math.round(process.uptime()) });
+  res.json({
+    ok: true,
+    db: mongoose.connection.readyState === 1,
+    startedAt: STARTED_AT,
+    uptimeSec: Math.round(process.uptime()),
+  });
 });
 
 app.use('/api/auth', authRoutes);

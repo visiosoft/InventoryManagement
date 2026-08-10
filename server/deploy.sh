@@ -35,9 +35,13 @@ fi
 pm2 save
 
 echo "── Health check ──"
+# The server's port comes from its .env (production runs on a non-default port)
+API_PORT=$(grep -E '^PORT=' .env 2>/dev/null | tail -1 | cut -d= -f2 | tr -d '[:space:]')
+API_PORT="${API_PORT:-${PORT:-5010}}"
+echo "probing http://localhost:${API_PORT}/api/health"
 sleep 4
 for i in 1 2 3 4 5; do
-  BODY=$(curl -s -m 5 "http://localhost:${PORT:-5010}/api/health" || true)
+  BODY=$(curl -s -m 5 "http://localhost:${API_PORT}/api/health" || true)
   case "$BODY" in
     *'"ok":true'*) echo "API healthy: $BODY"; exit 0;;
   esac
