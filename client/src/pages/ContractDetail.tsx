@@ -796,6 +796,10 @@ export default function ContractDetail() {
   // Custom invoices open with no prefilled lines; period invoices keep theirs
   const [invoiceBlank, setInvoiceBlank] = useState(false)
   const [editModal, setEditModal] = useState(false)
+  const [agreementModal, setAgreementModal] = useState(false)
+  const [agreementText, setAgreementText] = useState('')
+  const [agreementSource, setAgreementSource] = useState('')
+  const [agreementBusy, setAgreementBusy] = useState(false)
   const [inlineField, setInlineField] = useState<string | null>(null)
   const [inlineValue, setInlineValue] = useState('')
 
@@ -1309,11 +1313,39 @@ export default function ContractDetail() {
                 )
               })()}
 
-              {c.signedDocUrl && (
-                <a href={c.signedDocUrl} target="_blank" rel="noreferrer" className="text-primary text-xs hover:underline flex items-center gap-1">
-                  <FileText size={12} /> View signed contract
-                </a>
-              )}
+              <div className="flex items-center gap-3 flex-wrap">
+                <button type="button"
+                  onClick={async () => {
+                    setError('')
+                    try {
+                      const r = await api.get(`/contracts/${id}/agreement`)
+                      setAgreementText(r.data?.text || '')
+                      setAgreementSource(r.data?.source || 'none')
+                      setAgreementModal(true)
+                    } catch (e) { setError(apiError(e)) }
+                  }}
+                  className="text-primary text-xs hover:underline flex items-center gap-1 cursor-pointer">
+                  <PenLine size={12} /> Edit Agreement
+                </button>
+                <button type="button"
+                  onClick={async () => {
+                    setError('')
+                    try {
+                      const r = await api.get(`/contracts/${id}/pdf`, { responseType: 'blob' })
+                      const url = URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }))
+                      window.open(url, '_blank')
+                      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+                    } catch (e) { setError(apiError(e)) }
+                  }}
+                  className="text-primary text-xs hover:underline flex items-center gap-1 cursor-pointer">
+                  <Download size={12} /> Agreement PDF
+                </button>
+                {c.signedDocUrl && (
+                  <a href={c.signedDocUrl} target="_blank" rel="noreferrer" className="text-primary text-xs hover:underline flex items-center gap-1">
+                    <FileText size={12} /> View signed contract
+                  </a>
+                )}
+              </div>
             </CardBody>
           </Card>
 
@@ -1800,6 +1832,59 @@ export default function ContractDetail() {
                 onSubmit={(body) => updateContract.mutate(body)}
                 onCancel={() => setEditModal(false)}
               />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit Agreement slide-over ── */}
+      {agreementModal && (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/20" onClick={() => setAgreementModal(false)} />
+          <div className="absolute right-0 top-0 h-full w-full max-w-2xl bg-white dark:bg-gray-900 shadow-xl overflow-y-auto animate-in slide-in-from-right flex flex-col">
+            <div className="sticky top-0 bg-white dark:bg-gray-900 border-b px-5 py-4 flex items-center justify-between z-10">
+              <div>
+                <h2 className="text-lg font-bold" style={{ fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em', color: '#14081F' }}>
+                  Agreement — {c.contractNo}
+                </h2>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  {agreementSource === 'contract'
+                    ? 'This contract has its own edited wording.'
+                    : agreementSource === 'template'
+                      ? 'Prefilled from the saved template with this contract’s details — edit freely, saving keeps a copy on this contract.'
+                      : 'No template saved yet — write the agreement here, or design a template under Admin → Agreement Template.'}
+                </p>
+              </div>
+              <button onClick={() => setAgreementModal(false)} className="p-1 hover:bg-muted rounded cursor-pointer"><X size={18} /></button>
+            </div>
+            <div className="p-5 flex-1 flex flex-col gap-3">
+              <textarea
+                value={agreementText}
+                onChange={(e) => setAgreementText(e.target.value)}
+                spellCheck={false}
+                className="w-full flex-1 rounded-lg border p-4 font-mono text-[12.5px] leading-relaxed outline-none focus:border-primary"
+                style={{ minHeight: 480, resize: 'vertical' }}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                "# " starts a section heading, "## " a sub-heading; blank lines separate paragraphs.
+                The PDF prints exactly this text.
+              </p>
+              {error && <p className="text-xs text-destructive">{error}</p>}
+              <div className="flex justify-end gap-2 pt-2 border-t">
+                <Button type="button" variant="outline" onClick={() => setAgreementModal(false)}>Cancel</Button>
+                <Button type="button" disabled={agreementBusy} onClick={async () => {
+                  setAgreementBusy(true)
+                  setError('')
+                  try {
+                    await api.put(`/contracts/${id}`, { agreementText })
+                    setAgreementSource('contract')
+                    invalidate()
+                    setAgreementModal(false)
+                  } catch (e) { setError(apiError(e)) } finally { setAgreementBusy(false) }
+                }}>
+                  {agreementBusy ? 'Saving…' : 'Save Agreement'}
+                </Button>
+              </div>
             </div>
           </div>
         </div>

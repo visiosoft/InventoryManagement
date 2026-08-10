@@ -231,6 +231,10 @@ const contractSchema = new Schema(
     },
     zohoRequestId: { type: String, default: '' },
     signedDocUrl: { type: String, default: '' },
+    // The agreement wording for this contract, editable per contract. Empty
+    // means "use the saved agreement template". Stored with placeholders
+    // already resolved so what you read is exactly what the PDF prints.
+    agreementText: { type: String, default: '' },
     paymentMethod: { type: String, default: '' },
     firstPaymentDate: { type: Date },
     nextPaymentDate: { type: Date },
@@ -1304,6 +1308,15 @@ const messageTemplateSchema = new Schema({
   variables: [String],
 }, { timestamps: true });
 export const MessageTemplate = model('MessageTemplate', messageTemplateSchema);
+
+// The storage agreement wording, designed in the app. One document per key
+// ('default'). Placeholders like {{customerName}} resolve at PDF time.
+const agreementTemplateSchema = new Schema({
+  key: { type: String, required: true, unique: true },
+  body: { type: String, default: '' },
+  updatedBy: { type: String, default: '' },
+}, { timestamps: true });
+export const AgreementTemplate = model('AgreementTemplate', agreementTemplateSchema);
 
 export async function nextContractNo() {
   const year = new Date().getFullYear();

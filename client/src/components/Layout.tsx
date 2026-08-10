@@ -34,6 +34,7 @@ const profileMenuItems = [
   { to: '/customers', label: 'Tenants', icon: Users, perm: 'customers' },
   { to: '/sites', label: 'Sites', icon: Building2, perm: 'units' },
   { to: '/settings/templates', label: 'Message Templates', icon: Mail, perm: 'settings' },
+  { to: '/settings/agreement', label: 'Agreement Template', icon: FileText, perm: 'settings' },
   { to: '/settings/automation', label: 'Automation Rules', icon: RefreshCw, perm: 'settings' },
   { to: '/settings', label: 'Settings', icon: Settings, perm: 'settings' },
 ]
@@ -95,6 +96,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/invoices': 'Invoices',
   '/documents': 'Documents',
   '/settings': 'Settings',
+  '/settings/agreement': 'Agreement Template',
   '/approvals': 'Approvals',
   '/users': 'User Management',
   '/backup': 'Backup',

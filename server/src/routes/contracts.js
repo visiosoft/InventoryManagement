@@ -2,23 +2,30 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { isValidObjectId, Types } from 'mongoose';
 import { stampSignature } from '../services/stampSignature.js';
-import { Contract, Customer, Unit, Payment, Document, Invoice, Quote, nextContractNo, nextInvoiceNo } from '../models/index.js';
+import { Contract, Customer, Unit, Payment, Document, Invoice, Quote, AgreementTemplate, nextContractNo, nextInvoiceNo } from '../models/index.js';
 import { sendForSignature, downloadSignedPdf, zohoConfigured } from '../services/zoho.js';
 import { uploadFile } from '../services/drive.js';
 import { renderContractPdf } from '../services/contractPdf.js';
 import { fillAgreementPdf, agreementTemplateExists } from '../services/agreementPdf.js';
+import { mergeAgreementText, renderAgreementTextPdf } from '../services/agreementText.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { siteScope } from '../utils/siteScope.js';
 import { phoneClauses } from '../utils/phoneSearch.js';
 
-// Renders the contract document: the official Customer Agreement template
-// filled with contract data when available, otherwise the generated fallback.
-function buildContractPdf(contract, signedDate) {
-  const parts = {
-    contract,
-    customer: contract.customer,
-    unit: contract.unit,
-  };
+// Renders the contract document. Priority:
+//   1. wording saved on this contract (agreementText, already merged)
+//   2. the agreement template designed in the app, placeholders resolved
+//   3. the official PDF template file, then the generated fallback
+async function buildContractPdf(contract, signedDate) {
+  const perContract = String(contract.agreementText || '').trim();
+  if (perContract) return renderAgreementTextPdf({ text: perContract, contract, signedDate });
+
+  const tpl = await AgreementTemplate.findOne({ key: 'default' }).lean();
+  if (tpl?.body?.trim()) {
+    return renderAgreementTextPdf({ text: mergeAgreementText(tpl.body, contract), contract, signedDate });
+  }
+
+  const parts = { contract, customer: contract.customer, unit: contract.unit };
   return agreementTemplateExists()
     ? fillAgreementPdf({ ...parts, signedDate })
     : renderContractPdf(parts);
@@ -848,7 +855,7 @@ router.put('/:id', async (req, res) => {
     // Use $set to avoid VersionError from concurrent background writes on this document
     const $set = {};
     const numericFields = ['rate', 'deposit', 'totalQuotation', 'firstMonthDiscountPct', 'leasedPrice', 'manualReceived'];
-    const allowed = ['rate', 'deposit', 'startDate', 'endDate', 'billingPeriod', 'paymentMethod', 'firstPaymentDate', 'notes', 'totalQuotation', 'firstMonthDiscountPct', 'leasedPrice', 'manualReceived'];
+    const allowed = ['rate', 'deposit', 'startDate', 'endDate', 'billingPeriod', 'paymentMethod', 'firstPaymentDate', 'notes', 'totalQuotation', 'firstMonthDiscountPct', 'leasedPrice', 'manualReceived', 'agreementText'];
     for (const key of allowed) {
       if (req.body[key] === undefined) continue;
       if (key.endsWith('Date')) {
@@ -1272,6 +1279,20 @@ router.delete('/:id/notes/:idx', async (req, res) => {
 });
 
 // Download the (unsigned) contract PDF.
+// The agreement wording for this contract, ready to edit: the saved
+// per-contract text, else the app template with placeholders resolved.
+router.get('/:id/agreement', async (req, res) => {
+  const contract = await populateAll(Contract.findById(req.params.id));
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  const own = String(contract.agreementText || '').trim();
+  if (own) return res.json({ text: own, source: 'contract' });
+  const tpl = await AgreementTemplate.findOne({ key: 'default' }).lean();
+  if (tpl?.body?.trim()) {
+    return res.json({ text: mergeAgreementText(tpl.body, contract), source: 'template' });
+  }
+  res.json({ text: '', source: 'none' });
+});
+
 router.get('/:id/pdf', async (req, res) => {
   const contract = await populateAll(Contract.findById(req.params.id));
   if (!contract) return res.status(404).json({ error: 'Contract not found' });

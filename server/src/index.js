@@ -42,6 +42,7 @@ import productRoutes from './routes/products.js';
 import backupRoutes from './routes/backup.js';
 import reminderConfigRoutes from './routes/reminderConfig.js';
 import messageTemplateRoutes from './routes/messageTemplates.js';
+import agreementTemplateRoutes from './routes/agreementTemplate.js';
 import automationRuleRoutes from './routes/automationRules.js';
 import customerAuthRoutes from './routes/customerAuth.js';
 import customerPortalRoutes from './routes/customerPortal.js';
@@ -159,6 +160,7 @@ app.use('/api/backup', requireAuth, backupRoutes);
 app.use('/api/whatsapp', requireAuth, whatsappRoutes);
 app.use('/api/reminder-config', requireAuth, reminderConfigRoutes);
 app.use('/api/message-templates', requireAuth, messageTemplateRoutes);
+app.use('/api/agreement-template', requireAuth, agreementTemplateRoutes);
 app.use('/api/automation-rules', requireAuth, automationRuleRoutes);
 
 // Central error handler
