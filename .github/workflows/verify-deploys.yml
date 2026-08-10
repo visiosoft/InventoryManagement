@@ -1,0 +1,101 @@
+name: Deploy Status
+
+# One green check per push that means BOTH halves made it live:
+#   - Netlify finished building the client (site purpleboxadmin → office.purplebox.ae)
+#   - the API pipeline succeeded (when server code changed)
+# A red run means something failed — GitHub emails you about failed runs on
+# your own commits automatically.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: verify-${{ github.sha }}
+  cancel-in-progress: false
+
+env:
+  NETLIFY_SITE_ID: 6defe63b-b666-4f0d-b6b7-8be13c4449b1
+
+jobs:
+  netlify:
+    name: Client (Netlify)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for the Netlify deploy of this commit
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        run: |
+          if [ -z "$NETLIFY_AUTH_TOKEN" ]; then
+            echo "::error::NETLIFY_AUTH_TOKEN secret is not set — add it in repo Settings → Secrets"
+            exit 1
+          fi
+          echo "Waiting for Netlify deploy of ${GITHUB_SHA}…"
+          for i in $(seq 1 60); do   # up to 15 minutes
+            DEPLOY=$(curl -s -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" \
+              "https://api.netlify.com/api/v1/sites/${NETLIFY_SITE_ID}/deploys?branch=main&per_page=20" \
+              | jq -c --arg sha "$GITHUB_SHA" '[.[] | select(.commit_ref == $sha)] | first // empty')
+            if [ -n "$DEPLOY" ]; then
+              STATE=$(echo "$DEPLOY" | jq -r .state)
+              ID=$(echo "$DEPLOY" | jq -r .id)
+              echo "deploy $ID state: $STATE"
+              case "$STATE" in
+                ready) echo "Netlify deploy is live."; exit 0 ;;
+                error|failed)
+                  echo "::error::Netlify build failed — https://app.netlify.com/projects/purpleboxadmin/deploys/$ID"
+                  echo "$DEPLOY" | jq -r '.error_message // empty'
+                  exit 1 ;;
+              esac
+            else
+              echo "attempt $i: no deploy for this commit yet"
+            fi
+            sleep 15
+          done
+          echo "::error::Timed out waiting for the Netlify deploy"
+          exit 1
+
+  api:
+    name: API (Linux server)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for the Deploy API workflow of this commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Looking for a Deploy API run for ${GITHUB_SHA}…"
+          FOUND=""
+          for i in $(seq 1 60); do   # up to 15 minutes
+            RUN=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-api.yml/runs?head_sha=${GITHUB_SHA}&per_page=1" \
+              | jq -c '.workflow_runs | first // empty')
+            if [ -z "$RUN" ]; then
+              # No API deploy was triggered (client-only change) — nothing to verify
+              if [ "$i" -ge 4 ]; then echo "No API deploy for this commit (client-only change) — OK"; exit 0; fi
+              echo "attempt $i: no run yet"
+            else
+              FOUND=1
+              STATUS=$(echo "$RUN" | jq -r .status)
+              CONCLUSION=$(echo "$RUN" | jq -r .conclusion)
+              URL=$(echo "$RUN" | jq -r .html_url)
+              echo "run status: $STATUS conclusion: $CONCLUSION"
+              if [ "$STATUS" = "completed" ]; then
+                if [ "$CONCLUSION" = "success" ]; then
+                  echo "API deploy succeeded."
+                  echo "Live health: $(curl -s -m 8 https://api.purplebox.ae/api/health || true)"
+                  exit 0
+                fi
+                echo "::error::API deploy failed — $URL"
+                exit 1
+              fi
+            fi
+            sleep 15
+          done
+          echo "::error::Timed out waiting for the API deploy"
+          exit 1
+
+  all-green:
+    name: Both live
+    runs-on: ubuntu-latest
+    needs: [netlify, api]
+    steps:
+      - run: echo "Client and API are both deployed for ${GITHUB_SHA}."
