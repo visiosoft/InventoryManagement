@@ -254,11 +254,13 @@ const contractSchema = new Schema(
     raw: { type: Schema.Types.Mixed },
     notes: { type: String, default: '' },
     firstMonthDiscountPct: { type: Number, default: 0 },
-    leasedPrice: { type: Number, default: 0 },
+    // null = derive from rate/discount; 0 is a deliberate value
+    leasedPrice: { type: Number, default: null },
     authorizedPersons: [accessPersonSchema],
     signingToken: { type: String, default: null },
     signingTokenExpiry: { type: Date, default: null },
-    totalQuotation: { type: Number, default: 0 },
+    // null = never set (filled from the linked quote); 0 is a deliberate value
+    totalQuotation: { type: Number, default: null },
     // null = derive Received from payment records; any number (incl. 0) is a manual override
     manualReceived: { type: Number, default: null },
     // Per-contract reminder settings. Defaults come from Settings → Automation;

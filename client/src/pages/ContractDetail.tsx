@@ -1187,7 +1187,8 @@ export default function ContractDetail() {
               {(() => {
                 const askingPrice = Number(c.rate || 0)
                 const discountPct = Number((c as { firstMonthDiscountPct?: number }).firstMonthDiscountPct || 0)
-                const leasedPrice = Number(c.leasedPrice) || Math.round(askingPrice * (1 - discountPct / 100) * 100) / 100
+                // null = derive from the asking rate; an explicit 0 shows as 0
+                const leasedPrice = c.leasedPrice != null ? Number(c.leasedPrice) : Math.round(askingPrice * (1 - discountPct / 100) * 100) / 100
                 const weeks = c.startDate && c.endDate
                   ? Math.ceil(Math.round((new Date(c.endDate).getTime() - new Date(c.startDate).getTime()) / 86400000) / 7)
                   : null
@@ -1198,8 +1199,9 @@ export default function ContractDetail() {
                 const collected = manualRcv != null ? Number(manualRcv) : paidFromRecords
                 // The saved quotation is authoritative once set — a manual edit
                 // must stick. Payments only stand in when no quotation exists.
-                // Stored quotation is authoritative — 0 is a valid saved value
-                const quotationShown = Number(c.totalQuotation ?? 0)
+                // Stored quotation is authoritative — 0 is a valid saved value;
+                // only null (never set) falls back to the payments total
+                const quotationShown = c.totalQuotation != null ? Number(c.totalQuotation) : paidFromRecords
                 const remaining = Math.max(0, quotationShown - collected)
 
                 const saveField = async (field: string, val: string) => {

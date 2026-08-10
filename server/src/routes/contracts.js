@@ -282,7 +282,8 @@ router.get('/:id', async (req, res) => {
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
 
   const [linkedQuote, paidInvoiceIds, documents, invoices, payments] = await Promise.all([
-    contract.quote && !contract.totalQuotation
+    // null = never set → fill from the quote; an explicit 0 must stick
+    contract.quote && contract.totalQuotation == null
       ? Quote.findById(contract.quote).select('total').lean()
       : null,
     Invoice.find({ orderNumber: contract.contractNo, status: 'paid' }).distinct('_id'),
@@ -297,7 +298,7 @@ router.get('/:id', async (req, res) => {
       .lean(),
   ]);
 
-  // Sync totalQuotation from the linked quote only if not yet set
+  // Sync totalQuotation from the linked quote only when never set (null)
   if (linkedQuote && Number(linkedQuote.total || 0) > 0) {
     contract.totalQuotation = Number(linkedQuote.total);
     Contract.updateOne({ _id: contract._id }, { totalQuotation: linkedQuote.total }).exec();
