@@ -50,6 +50,7 @@ import IncomeAnalysis from './pages/reports/IncomeAnalysis'
 import Settings from './pages/Settings'
 import MessageTemplates from './pages/MessageTemplates'
 import AgreementTemplate from './pages/AgreementTemplate'
+import ZohoComparison from './pages/ZohoComparison'
 import Backup from './pages/Backup'
 import Leads from './pages/Leads'
 import Quotations from './pages/Quotations'
@@ -174,6 +175,7 @@ export default function App() {
         <Route path="/settings" element={<Settings />} />
         <Route path="/settings/templates" element={<AdminGuard><MessageTemplates /></AdminGuard>} />
         <Route path="/settings/agreement" element={<AdminGuard><AgreementTemplate /></AdminGuard>} />
+        <Route path="/zoho-comparison" element={<AdminGuard><ZohoComparison /></AdminGuard>} />
         <Route path="/settings/reminders" element={<AdminGuard><ReminderSettings /></AdminGuard>} />
         <Route path="/settings/automation" element={<AdminGuard><AutomationRules /></AdminGuard>} />
         <Route path="/whatsapp" element={<WhatsApp />} />

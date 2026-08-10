@@ -349,3 +349,41 @@ export async function fetchZohoExpenses(limit = 50, { fromDate, toDate } = {}) {
 
     return { configured: true, expenses: data.expenses || [] };
 }
+
+
+// All customers in Zoho Books, paginated through. Cached briefly — the list
+// is only needed for the comparison screen.
+let contactsCache = { at: 0, contacts: [] };
+export async function listAllZohoContacts({ force = false } = {}) {
+    if (!zohoBooksConfigured()) return { configured: false, contacts: [] };
+    if (!force && contactsCache.contacts.length && Date.now() - contactsCache.at < 5 * 60_000) {
+        return { configured: true, contacts: contactsCache.contacts };
+    }
+    const token = await getAccessToken();
+    const headers = { Authorization: `Zoho-oauthtoken ${token}` };
+    const contacts = [];
+    let page = 1;
+    for (;;) {
+        const { data } = await axios.get(`${API_BASE}/contacts`, {
+            headers,
+            params: { ...orgParam(), contact_type: 'customer', per_page: 200, page },
+        });
+        for (const c of data.contacts || []) {
+            contacts.push({
+                id: c.contact_id,
+                name: c.contact_name || c.company_name || '',
+                company: c.company_name || '',
+                email: c.email || '',
+                phone: c.phone || '',
+                mobile: c.mobile || '',
+                status: c.status || '',
+                outstanding: Number(c.outstanding_receivable_amount || 0),
+            });
+        }
+        if (!data.page_context?.has_more_page) break;
+        page += 1;
+        if (page > 50) break; // safety valve
+    }
+    contactsCache = { at: Date.now(), contacts };
+    return { configured: true, contacts };
+}

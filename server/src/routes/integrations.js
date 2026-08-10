@@ -4,6 +4,8 @@ import { requireAdmin } from '../middleware/auth.js';
 import { driveConfigured } from '../services/drive.js';
 import { gmailConfigured } from '../services/gmail.js';
 import { zohoConfigured } from '../services/zoho.js';
+import { zohoBooksConfigured, listAllZohoContacts } from '../services/zohoBooks.js';
+import { Customer, Contract } from '../models/index.js';
 import { whatsappConfigured, whatsappMissing, verifyWebhookChallenge, verifyWhatsAppSignature } from '../services/whatsapp.js';
 import { getWhatsAppLabelSyncStatus, processWhatsAppWebhookPayload, runWhatsAppLabelReconciliation } from '../services/whatsappLeadSync.js';
 import { updateEnvFile } from '../utils/env.js';
@@ -161,6 +163,80 @@ router.post('/whatsapp/webhook', async (req, res) => {
         return res.json({ ok: true, received: true, result });
     } catch (err) {
         return res.status(500).json({ error: err?.message || 'Failed to process webhook payload' });
+    }
+});
+
+
+
+
+// ── Zoho Books ↔ ERP customer comparison ─────────────────────────────────────
+// Matches on normalised name OR phone digits (either matching counts).
+const zcDigits = (v) => String(v || '').replace(/\D/g, '').replace(/^00971/, '').replace(/^971/, '').replace(/^0/, '');
+const zcName = (v) => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+router.get('/zoho-books/customer-comparison', async (req, res) => {
+    try {
+        if (!zohoBooksConfigured()) return res.status(501).json({ error: 'Zoho Books is not configured' });
+        const [{ contacts }, customers, contractAgg] = await Promise.all([
+            listAllZohoContacts({ force: req.query.refresh === 'true' }),
+            Customer.find({}).select('fullName company email phone phones clientId').lean(),
+            Contract.aggregate([{ $group: { _id: '$customer', n: { $sum: 1 } } }]),
+        ]);
+        const contractCount = new Map(contractAgg.map((a) => [String(a._id), a.n]));
+
+        // Index ERP customers by every name and phone key they have
+        const byKey = new Map();
+        const addKey = (k, c) => { if (!k) return; if (!byKey.has(k)) byKey.set(k, []); byKey.get(k).push(c); };
+        for (const c of customers) {
+            addKey(`n:${zcName(c.fullName)}`, c);
+            if (c.company) addKey(`n:${zcName(c.company)}`, c);
+            const phones = [...(c.phones || []), c.phone].filter(Boolean);
+            for (const ph of phones) { const d = zcDigits(ph); if (d.length >= 7) addKey(`p:${d}`, c); }
+        }
+
+        const matchedErpIds = new Set();
+        const matched = [];
+        const zohoOnly = [];
+        for (const z of contacts) {
+            const keys = [];
+            if (z.name) keys.push({ k: `n:${zcName(z.name)}`, by: 'name' });
+            if (z.company && z.company !== z.name) keys.push({ k: `n:${zcName(z.company)}`, by: 'name' });
+            for (const ph of [z.phone, z.mobile]) { const d = zcDigits(ph); if (d.length >= 7) keys.push({ k: `p:${d}`, by: 'phone' }); }
+            let hit = null;
+            for (const { k, by } of keys) {
+                const found = byKey.get(k);
+                if (found?.length) { hit = { erp: found[0], by }; break; }
+            }
+            if (hit) {
+                matchedErpIds.add(String(hit.erp._id));
+                matched.push({
+                    zoho: z,
+                    erp: {
+                        _id: hit.erp._id, fullName: hit.erp.fullName, email: hit.erp.email,
+                        phone: (hit.erp.phones && hit.erp.phones[0]) || hit.erp.phone || '',
+                        contracts: contractCount.get(String(hit.erp._id)) || 0,
+                    },
+                    matchedBy: hit.by,
+                });
+            } else {
+                zohoOnly.push(z);
+            }
+        }
+        const erpOnly = customers
+            .filter((c) => !matchedErpIds.has(String(c._id)))
+            .map((c) => ({
+                _id: c._id, fullName: c.fullName, email: c.email,
+                phone: (c.phones && c.phones[0]) || c.phone || '',
+                contracts: contractCount.get(String(c._id)) || 0,
+            }));
+
+        res.json({
+            zohoTotal: contacts.length,
+            erpTotal: customers.length,
+            matched, zohoOnly, erpOnly,
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     }
 });
 
