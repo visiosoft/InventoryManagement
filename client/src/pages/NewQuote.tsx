@@ -133,10 +133,10 @@ function ItemEditor({ items, onChange }: { items: EditItem[]; onChange: (items: 
               <Input value={it.itemDetails} onChange={(e) => update(idx, 'itemDetails', e.target.value)} className="h-8 text-xs" />
             </Field>
             <Field label="Wks">
-              <Input type="number" min={0} value={it.quantity} onChange={(e) => update(idx, 'quantity', Number(e.target.value))} className="h-8 text-xs" />
+              <Input type="number" min={0} value={it.quantity || ''} placeholder="0" onChange={(e) => update(idx, 'quantity', Number(e.target.value) || 0)} className="h-8 text-xs" />
             </Field>
             <Field label="Rate">
-              <Input type="number" value={it.rate} onChange={(e) => update(idx, 'rate', Number(e.target.value))} className="h-8 text-xs" />
+              <Input type="number" value={it.rate || ''} placeholder="0" onChange={(e) => update(idx, 'rate', Number(e.target.value) || 0)} className="h-8 text-xs" />
             </Field>
             <Field label="Disc 4 weeks %">
               <Input type="number" min={0} max={100} value={it.discountPct || ''} onChange={(e) => update(idx, 'discountPct', Number(e.target.value))} className="h-8 text-xs" placeholder="0" />
@@ -1868,7 +1868,7 @@ export default function NewQuote() {
                                   <Input type="date" value={u.endDate} onChange={(e) => updateUnit(idx, 'endDate', e.target.value)} className="h-8 text-xs" />
                                 </Field>
                                 <Field label="Rate/4wk">
-                                  <Input type="number" min={0} value={u.rate} onChange={(e) => updateUnit(idx, 'rate', Number(e.target.value))} className="h-8 text-xs" />
+                                  <Input type="number" min={0} value={u.rate || ''} placeholder="0" onChange={(e) => updateUnit(idx, 'rate', Number(e.target.value) || 0)} className="h-8 text-xs" />
                                 </Field>
                                 <Field label="Disc 4 weeks %">
                                   <Input type="number" min={0} max={100} value={u.discountPct || ''} onChange={(e) => updateUnit(idx, 'discountPct', Number(e.target.value))} className="h-8 text-xs" placeholder="0" />
@@ -2069,10 +2069,10 @@ export default function NewQuote() {
                               <Input value={a.description} onChange={(e) => updateAddOn(idx, 'description', e.target.value)} className="h-8 text-xs" />
                             </Field>
                             <Field label="Qty">
-                              <Input type="number" min={1} value={a.quantity} onChange={(e) => updateAddOn(idx, 'quantity', Number(e.target.value))} className="h-8 text-xs" />
+                              <Input type="number" min={1} value={a.quantity || ''} placeholder="1" onChange={(e) => updateAddOn(idx, 'quantity', Number(e.target.value) || 0)} className="h-8 text-xs" />
                             </Field>
                             <Field label="Rate">
-                              <Input type="number" min={0} value={a.rate} onChange={(e) => updateAddOn(idx, 'rate', Number(e.target.value))} className="h-8 text-xs" />
+                              <Input type="number" min={0} value={a.rate || ''} placeholder="0" onChange={(e) => updateAddOn(idx, 'rate', Number(e.target.value) || 0)} className="h-8 text-xs" />
                             </Field>
                             <div className="flex items-center justify-between pb-1.5">
                               <span className="text-xs font-bold" style={{ color: INK }}>{formatMoney(a.quantity * a.rate)} AED</span>
