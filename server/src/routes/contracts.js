@@ -253,7 +253,11 @@ router.get('/search', async (req, res) => {
   if (units.length) or.push({ unit: { $in: units.map((u) => u._id) } });
   if (customers.length) or.push({ customer: { $in: customers.map((c) => c._id) } });
 
-  const contracts = await Contract.find({ $or: or, archived: { $ne: true } })
+  const contracts = await Contract.find({
+    $or: or,
+    archived: { $ne: true },
+    status: { $nin: ['ended', 'cancelled'] },
+  })
     .select('contractNo status startDate endDate')
     .populate('customer', 'fullName')
     .populate('unit', 'unitNumber')
@@ -736,6 +740,9 @@ async function closeContract(req, res, status) {
   const effectiveEnd = endDate ? new Date(endDate) : new Date();
 
   contract.status = status;
+  // Closed contracts move to the archive: hidden from search and the default
+  // list, still reachable under "Show archived"
+  contract.archived = true;
   // If an early end date was provided, update the stored end date
   if (endDate && new Date(endDate) < new Date(contract.endDate)) {
     contract.endDate = effectiveEnd;
@@ -781,6 +788,7 @@ router.post('/:id/reactivate', async (req, res) => {
     }
 
     contract.status = 'active';
+    contract.archived = false;
     // If the end date is in the past, optionally extend it (caller can edit after)
     if (!contract.timeline) contract.timeline = [];
     const actor = req.user?.name || req.user?.email || '';

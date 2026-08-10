@@ -282,7 +282,7 @@ export default function Contracts() {
 
         <label className="flex items-center gap-1.5" style={{ fontSize: 12, color: MUTED_COLOR, paddingBottom: 8, cursor: 'pointer' }}>
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
-          Show archived
+          Archived &amp; ended
         </label>
 
         {hasFilters && (
