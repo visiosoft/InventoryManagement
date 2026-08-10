@@ -446,7 +446,7 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
           const act = 'flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold hover:bg-gray-50 cursor-pointer border'
           return (
             <div key={p.idx} className="border-t" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
-              <div className="flex items-center justify-between gap-3 px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 px-4 py-3">
                 <div className="flex items-center gap-3 min-w-0">
                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
                     style={{ background: isPaid ? '#D1FAE5' : `${PURPLE}12`, color: isPaid ? GREEN : PURPLE }}>
@@ -520,7 +520,7 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
               {/* Inline record-payment form */}
               {inv && payingThis && (
                 <div className="px-4 pb-3 space-y-2 rounded-b-xl" style={{ background: `${PURPLE}05` }}>
-                  <div className="grid grid-cols-3 gap-2 pt-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2">
                     <Field label="Amount (AED)">
                       <Input type="number" min={0.01} step="0.01" value={payAmt} onChange={(e) => setPayAmt(e.target.value)} className="h-8 text-xs" />
                     </Field>
@@ -1478,14 +1478,14 @@ export default function NewQuote() {
 
   if (resumeLoading) {
     return (
-      <div style={{ background: CREAM, minHeight: '100vh', margin: '-1.5rem', padding: '1.5rem' }}>
+      <div className="-m-3 p-3 sm:-m-4 sm:p-4" style={{ background: CREAM, minHeight: '100vh' }}>
         <div className="flex items-center justify-center py-24"><Spinner /></div>
       </div>
     )
   }
 
   return (
-    <div style={{ background: CREAM, minHeight: '100vh', margin: '-1.5rem', padding: '1.5rem' }}>
+    <div className="-m-3 p-3 sm:-m-4 sm:p-4" style={{ background: CREAM, minHeight: '100vh' }}>
       <div style={{ borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
         {/* The unit picker needs the full width to show a useful number of
             units; the other steps are forms and stay narrow to read well. */}
@@ -2766,7 +2766,7 @@ export default function NewQuote() {
             }}
             className="space-y-4"
           >
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Full Name"><Input name="fullName" defaultValue={lead?.fullName || ''} required /></Field>
               <Field label="Type">
                 <Select name="tenantType" defaultValue="individual">
