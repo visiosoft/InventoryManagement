@@ -1294,6 +1294,79 @@ router.delete('/:id/notes/:idx', async (req, res) => {
 });
 
 // Download the (unsigned) contract PDF.
+// A notice template merged with this contract's details, ready to edit/send
+router.get('/:id/notice/:templateId', async (req, res) => {
+  try {
+    if (!isValidObjectId(req.params.templateId)) return res.status(400).json({ error: 'Invalid template id' });
+    const [contract, tpl] = await Promise.all([
+      populateAll(Contract.findById(req.params.id)),
+      AgreementTemplate.findById(req.params.templateId).lean(),
+    ]);
+    if (!contract) return res.status(404).json({ error: 'Contract not found' });
+    if (!tpl) return res.status(404).json({ error: 'Template not found' });
+    res.json({ name: tpl.name, text: mergeAgreementText(tpl.body, contract) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PDF of (possibly edited) notice content for this contract
+router.post('/:id/notice-pdf', async (req, res) => {
+  try {
+    const contract = await populateAll(Contract.findById(req.params.id));
+    if (!contract) return res.status(404).json({ error: 'Contract not found' });
+    const html = String(req.body?.html || '');
+    if (!html.trim()) return res.status(400).json({ error: 'Notice content is empty' });
+    const title = String(req.body?.title || 'Notice').toUpperCase();
+    const pdf = looksLikeHtml(html)
+      ? await renderAgreementHtmlPdf({ html, contract, title })
+      : await renderAgreementTextPdf({ text: html, contract });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${title}.pdf"`);
+    res.send(pdf);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Email the notice (PDF attached) to the tenant and log it on the timeline
+router.post('/:id/notice-email', async (req, res) => {
+  try {
+    if (!mailConfigured()) return res.status(501).json({ error: 'SMTP is not configured' });
+    const contract = await populateAll(Contract.findById(req.params.id));
+    if (!contract) return res.status(404).json({ error: 'Contract not found' });
+    const to = String(req.body?.to || contract.customer?.email || '').trim();
+    if (!to) return res.status(400).json({ error: 'Tenant has no email address' });
+
+    const html = String(req.body?.html || '');
+    if (!html.trim()) return res.status(400).json({ error: 'Notice content is empty' });
+    const title = String(req.body?.title || 'Notice');
+    const pdf = looksLikeHtml(html)
+      ? await renderAgreementHtmlPdf({ html, contract, title: title.toUpperCase() })
+      : await renderAgreementTextPdf({ text: html, contract });
+
+    await sendMail({
+      to,
+      subject: `${title} — ${contract.contractNo} · PurpleBox Storage`,
+      text: `Dear ${contract.customer?.fullName || ''},
+
+Please find the attached ${title.toLowerCase()} regarding your storage contract ${contract.contractNo}.
+
+PurpleBox Storage`,
+      html: `Dear ${contract.customer?.fullName || ''},<br/><br/>Please find the attached ${title.toLowerCase()} regarding your storage contract ${contract.contractNo}.<br/><br/>PurpleBox Storage`,
+      attachments: [{ filename: `${title}-${contract.contractNo}.pdf`, content: pdf, contentType: 'application/pdf' }],
+    });
+
+    const actor = req.user?.name || req.user?.email || '';
+    await Contract.findByIdAndUpdate(contract._id, {
+      $push: { timeline: { at: new Date(), text: `Notice "${title}" emailed to ${to}`, author: actor } },
+    });
+    res.json({ sent: true, to });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // The agreement wording for this contract, ready to edit: the saved
 // per-contract text, else the app template with placeholders resolved.
 router.get('/:id/agreement', async (req, res) => {

@@ -801,6 +801,10 @@ export default function ContractDetail() {
   const [agreementBusy, setAgreementBusy] = useState(false)
   const agreementRef = useRef<HTMLDivElement>(null)
   const agreementInitial = useRef('')
+  const [noticeOpen, setNoticeOpen] = useState<{ id: string; name: string } | null>(null)
+  const [noticeBusy, setNoticeBusy] = useState('')
+  const [noticeSent, setNoticeSent] = useState('')
+  const noticeRef = useRef<HTMLDivElement>(null)
   const [inlineField, setInlineField] = useState<string | null>(null)
   const [inlineValue, setInlineValue] = useState('')
 
@@ -819,8 +823,16 @@ export default function ContractDetail() {
   const [editingNote, setEditingNote] = useState<{ idx: number; text: string } | null>(null)
   const [showAllActivity, setShowAllActivity] = useState(false)
   const [searchParams, setSearchParams] = useSearchParams()
-  const activeTab = (searchParams.get('tab') as 'overview' | 'payments' | 'documents') || 'overview'
-  const setActiveTab = (tab: 'overview' | 'payments' | 'documents') => setSearchParams({ tab }, { replace: true })
+  const activeTab = (searchParams.get('tab') as 'overview' | 'payments' | 'documents' | 'notices') || 'overview'
+  const setActiveTab = (tab: 'overview' | 'payments' | 'documents' | 'notices') => setSearchParams({ tab }, { replace: true })
+
+  const { data: noticeTemplates = [] } = useQuery<{ _id: string; name: string; isDefault: boolean; updatedAt?: string }[]>({
+    queryKey: ['agreement-templates'],
+    queryFn: () => api.get('/agreement-template').then((r) => r.data?.templates ?? []),
+    enabled: activeTab === 'notices',
+    staleTime: 60_000,
+  })
+
 
   const { data, isLoading } = useQuery<ContractDetailData>({
     queryKey: ['contract', id],
@@ -1385,6 +1397,7 @@ export default function ContractDetail() {
               ['overview', 'Overview', 0],
               ['payments', 'Payments', unpaidGroups.length],
               ['documents', 'Documents', 0],
+              ['notices', 'Notices', 0],
             ] as [typeof activeTab, string, number][]).map(([key, label, count]) => (
               <button key={key} onClick={() => setActiveTab(key)}
                 className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px flex items-center gap-1.5 ${activeTab === key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
@@ -1595,6 +1608,54 @@ export default function ContractDetail() {
           )}
 
           {/* DOCUMENTS */}
+          {/* NOTICES — every saved template, prefilled for this tenant on click */}
+          {activeTab === 'notices' && (
+            <Card>
+              <CardHeader title="Notices" subtitle="Click a template — it opens prefilled with this contract's details, ready to edit and send" />
+              <CardBody className="pt-0">
+                {noticeTemplates.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-6 text-center">
+                    No templates yet — design them under Admin → Agreement Template.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {noticeTemplates.map((t) => (
+                      <button key={t._id} type="button"
+                        disabled={noticeBusy === `open-${t._id}`}
+                        onClick={async () => {
+                          setNoticeBusy(`open-${t._id}`)
+                          setError('')
+                          try {
+                            const r = await api.get(`/contracts/${id}/notice/${t._id}`)
+                            const text = r.data?.text || ''
+                            setNoticeOpen({ id: t._id, name: r.data?.name || t.name })
+                            setNoticeSent('')
+                            requestAnimationFrame(() => {
+                              if (noticeRef.current) {
+                                noticeRef.current.innerHTML = /<\w+[^>]*>/.test(text)
+                                  ? text
+                                  : text.split('\n').map((l: string) => `<p>${l || '<br>'}</p>`).join('')
+                              }
+                            })
+                          } catch (e) { setError(apiError(e)) } finally { setNoticeBusy('') }
+                        }}
+                        className="rounded-xl border p-4 text-left hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer disabled:opacity-60">
+                        <div className="font-semibold text-sm flex items-center gap-2">
+                          <FileText size={14} className="text-primary shrink-0" />
+                          <span className="break-words">{t.name}</span>
+                          {t.isDefault && <span className="text-[9.5px] font-bold uppercase bg-primary/10 text-primary rounded px-1.5 py-0.5 shrink-0">Agreement</span>}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground mt-1.5">
+                          {noticeBusy === `open-${t._id}` ? 'Preparing…' : `Generate for ${c.customer?.fullName || 'tenant'}`}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </CardBody>
+            </Card>
+          )}
+
           {activeTab === 'documents' && (
             <Card>
               <CardHeader title="Documents" action={<Button size="sm" variant="outline" onClick={() => setUploading(true)}><Upload size={13} /> Upload</Button>} />
@@ -1838,6 +1899,71 @@ export default function ContractDetail() {
                 onSubmit={(body) => updateContract.mutate(body)}
                 onCancel={() => setEditModal(false)}
               />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Notice slide-over: edit, then send ── */}
+      {noticeOpen && (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/20" onClick={() => setNoticeOpen(null)} />
+          <div className="absolute right-0 top-0 h-full w-full max-w-2xl bg-white dark:bg-gray-900 shadow-xl overflow-y-auto animate-in slide-in-from-right flex flex-col">
+            <div className="sticky top-0 bg-white dark:bg-gray-900 border-b px-5 py-4 flex items-center justify-between z-10">
+              <div>
+                <h2 className="text-lg font-bold" style={{ fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em', color: '#14081F' }}>
+                  {noticeOpen.name} — {c.contractNo}
+                </h2>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Prefilled for {c.customer?.fullName || 'the tenant'} — edit freely, then send.
+                </p>
+              </div>
+              <button onClick={() => setNoticeOpen(null)} className="p-1 hover:bg-muted rounded cursor-pointer"><X size={18} /></button>
+            </div>
+            <div className="p-5 flex-1 flex flex-col gap-3">
+              <div
+                ref={noticeRef}
+                contentEditable
+                suppressContentEditableWarning
+                spellCheck={false}
+                className="agreement-editor w-full flex-1 rounded-lg border bg-white p-6 text-[13px] leading-relaxed outline-none focus:border-primary"
+                style={{ minHeight: 440, overflowY: 'auto' }}
+              />
+              {noticeSent && <p className="text-xs text-emerald-600 font-medium">{noticeSent}</p>}
+              {error && <p className="text-xs text-destructive">{error}</p>}
+              <div className="flex justify-end gap-2 pt-2 border-t flex-wrap">
+                <Button type="button" variant="outline" onClick={async () => {
+                  setNoticeBusy('pdf'); setError('')
+                  try {
+                    const r = await api.post(`/contracts/${id}/notice-pdf`,
+                      { html: noticeRef.current?.innerHTML ?? '', title: noticeOpen.name }, { responseType: 'blob' })
+                    const url = URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }))
+                    window.open(url, '_blank')
+                    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+                  } catch (e) { setError(apiError(e)) } finally { setNoticeBusy('') }
+                }} disabled={noticeBusy === 'pdf'}>
+                  <Download size={14} /> {noticeBusy === 'pdf' ? 'Preparing…' : 'PDF'}
+                </Button>
+                <Button type="button" variant="outline" className="text-emerald-700 border-emerald-300" onClick={() => {
+                  const plain = (noticeRef.current?.innerText || '').trim()
+                  const phone = (c.customer?.phones?.[0] || c.customer?.phone || '').replace(/\D/g, '')
+                  const text = encodeURIComponent(`*${noticeOpen.name} — ${c.contractNo}*\n\n${plain}\n\nPurpleBox Storage`)
+                  window.open(phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`, '_blank')
+                }}>
+                  <MessageSquare size={14} /> WhatsApp
+                </Button>
+                <Button type="button" disabled={noticeBusy === 'email'} onClick={async () => {
+                  setNoticeBusy('email'); setError(''); setNoticeSent('')
+                  try {
+                    const r = await api.post(`/contracts/${id}/notice-email`,
+                      { html: noticeRef.current?.innerHTML ?? '', title: noticeOpen.name })
+                    setNoticeSent(`Emailed to ${r.data?.to} with the PDF attached.`)
+                    invalidate()
+                  } catch (e) { setError(apiError(e)) } finally { setNoticeBusy('') }
+                }}>
+                  {noticeBusy === 'email' ? 'Sending…' : 'Send via Email'}
+                </Button>
+              </div>
             </div>
           </div>
         </div>
