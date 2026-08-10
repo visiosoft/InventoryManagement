@@ -353,6 +353,8 @@ const quoteSchema = new Schema(
     units: { type: [quoteUnitSchema], default: [] },
     addOns: { type: [quoteAddOnSchema], default: [] },
     deposit: { type: Number, default: 0 },
+    // Whether the refundable advance is collected upfront on this quote
+    holdAdvance: { type: Boolean, default: true },
     subTotal: { type: Number, default: 0, min: 0 },
     adjustment: { type: Number, default: 0 },
     total: { type: Number, default: 0 },

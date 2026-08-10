@@ -101,7 +101,7 @@ function mapAddOn(a) {
     };
 }
 
-function normalizeBody(body) {
+function normalizeBody(body, { holdAdvance = true } = {}) {
     const items = (Array.isArray(body.items) ? body.items : [])
         .map((it, idx) => mapItem(it, idx))
         .filter((it) => it.itemDetails && it.quantity >= 0 && it.rate >= 0);
@@ -126,7 +126,7 @@ function normalizeBody(body) {
     // advance for short terms + security deposit. For terms over 4 weeks the
     // advance prepays the final period already counted inside unitsTotal, so it
     // adds nothing; for terms of 4 weeks or less it is held on top of the rent.
-    const advanceExtra = units.reduce((sum, u) => {
+    const advanceExtra = !holdAdvance ? 0 : units.reduce((sum, u) => {
         const days = Math.round((u.endDate - u.startDate) / 86400000);
         const tw = Math.max(1, Math.ceil(days / 7));
         if (tw > 4) return sum;
@@ -150,6 +150,7 @@ function normalizeBody(body) {
         units,
         addOns,
         deposit,
+        holdAdvance,
         subTotal,
         adjustment,
         total,
@@ -331,7 +332,7 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-    const body = normalizeBody(req.body || {});
+    const body = normalizeBody(req.body || {}, { holdAdvance: req.body?.holdAdvance !== false });
     if (!body.customer) return res.status(400).json({ error: 'Customer is required' });
     if (!body.expiryDate) return res.status(400).json({ error: 'Expiry date is required' });
     if (!body.units.length && !body.items.length) return res.status(400).json({ error: 'At least one unit or item is required' });
@@ -358,7 +359,10 @@ router.put('/:id', async (req, res) => {
     const quote = await Quote.findById(req.params.id);
     if (!quote) return res.status(404).json({ error: 'Quote not found' });
 
-    const body = normalizeBody(req.body || {});
+    const holdAdvance = req.body?.holdAdvance !== undefined
+        ? req.body.holdAdvance !== false
+        : quote.holdAdvance !== false;
+    const body = normalizeBody(req.body || {}, { holdAdvance });
     if (!body.customer) return res.status(400).json({ error: 'Customer is required' });
     if (!body.expiryDate) return res.status(400).json({ error: 'Expiry date is required' });
     if (!body.units.length && !body.items.length) return res.status(400).json({ error: 'At least one unit or item is required' });
@@ -457,6 +461,9 @@ async function createFirstInvoiceFromQuote(quote, contract, userName) {
             discountPct,
             amount: rentAmount,
         });
+
+        // Skipped entirely when the quote opts out of holding the advance
+        if (quote.holdAdvance === false) continue;
 
         // Advance covers the FINAL rental period, so its length is whatever the
         // term leaves over after the whole 4-week periods (a 6-week term runs

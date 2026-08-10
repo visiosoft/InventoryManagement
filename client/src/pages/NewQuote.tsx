@@ -87,7 +87,7 @@ function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) 
   )
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between text-sm py-1">
       <span style={{ color: MUTED }}>{label}</span>
@@ -901,6 +901,7 @@ export default function NewQuote() {
   const fmtLongDate = (iso: string) =>
     new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }).replace(/ /g, '-')
   const [deposit, setDeposit] = useState('')
+  const [holdAdvance, setHoldAdvance] = useState(true)
   const [notes, setNotes] = useState('')
   const [unitRows, setUnitRows] = useState<UnitRow[]>([])
   const [addOnRows, setAddOnRows] = useState<AddOnRow[]>([])
@@ -1245,7 +1246,7 @@ export default function NewQuote() {
   const subTotal = unitsTotal + addOnsTotal
   // Grand total = rent + add-ons + held advance (short terms) + security
   // deposit — identical to what the server stores for the quote.
-  const total = subTotal + adjustment + advanceExtra + (Number(deposit) || 0)
+  const total = subTotal + adjustment + (holdAdvance ? advanceExtra : 0) + (Number(deposit) || 0)
 
   useEffect(() => { setErr(''); setSentMsg('') }, [step])
 
@@ -1258,6 +1259,7 @@ export default function NewQuote() {
       expiryDate,
       notes,
       deposit: Number(deposit) || 0,
+      holdAdvance,
       adjustment,
       // No total sent — the server computes it from units/add-ons/deposit
       units: unitRows.map((u) => ({
@@ -2091,10 +2093,25 @@ export default function NewQuote() {
                     <div className="p-4 rounded-xl border" style={{ borderColor: `${PURPLE}30`, background: `${PURPLE}05` }}>
                       <InfoRow label={`Units (${unitRows.length})`} value={`${formatMoney(unitsTotal)} AED`} />
                       <InfoRow label={`Add-ons (${addOnRows.length})`} value={`${formatMoney(addOnsTotal)} AED`} />
-                      <InfoRow
-                        label={advanceExtra > 0 ? 'Refundable advance (held)' : 'Advance rent — adjusted against the final period'}
-                        value={advanceExtra > 0 ? `${formatMoney(advanceExtra)} AED` : `${formatMoney(advanceTotal)} AED · included`}
-                      />
+                      {holdAdvance ? (
+                        <InfoRow
+                          label={advanceExtra > 0 ? 'Refundable advance (held)' : 'Advance rent — adjusted against the final period'}
+                          value={
+                            <span className="inline-flex items-center gap-2">
+                              {advanceExtra > 0 ? `${formatMoney(advanceExtra)} AED` : `${formatMoney(advanceTotal)} AED · included`}
+                              <button type="button" title="Remove the held advance from this quote"
+                                onClick={() => setHoldAdvance(false)}
+                                className="text-destructive font-bold cursor-pointer leading-none">×</button>
+                            </span>
+                          }
+                        />
+                      ) : (
+                        <div className="flex items-center justify-between text-[12px] py-1" style={{ color: MUTED }}>
+                          <span>Refundable advance removed for this quote</span>
+                          <button type="button" onClick={() => setHoldAdvance(true)}
+                            className="font-bold cursor-pointer" style={{ color: PURPLE }}>+ Add back</button>
+                        </div>
+                      )}
                       {Number(deposit) > 0 && <InfoRow label="Security deposit" value={`${formatMoney(Number(deposit))} AED`} />}
                       <div style={{ borderTop: `1px solid ${PURPLE}20` }} className="mt-1 pt-1">
                         <div className="flex items-center justify-between text-base py-1">
