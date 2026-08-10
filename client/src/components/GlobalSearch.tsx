@@ -144,7 +144,7 @@ export default function GlobalSearch() {
   const showPanel = open && debounced.length >= 2
 
   return (
-    <div ref={boxRef} className="relative" style={{ width: 320 }}>
+    <div ref={boxRef} className="relative w-full md:w-80">
       <div className="flex items-center gap-2 h-9 px-3 rounded-full border bg-white"
         style={{ borderColor: 'rgba(20,8,31,.16)' }}>
         <Search size={14} style={{ color: MUTED }} />

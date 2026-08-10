@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ShieldCheck, ScrollText, CalendarCheck, RefreshCw, Map as MapIcon, Mail } from 'lucide-react'
+import { LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ShieldCheck, ScrollText, CalendarCheck, RefreshCw, Map as MapIcon, Mail } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import GlobalSearch from './GlobalSearch'
@@ -151,6 +151,7 @@ export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('pb_sidebar_collapsed') === 'true')
   const [profileOpen, setProfileOpen] = useState(false)
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
   const isAdmin = user?.role === 'admin'
   const isMovingOnly = hasPermission('moving_dashboard') && !hasPermission('units') && !hasPermission('dashboard')
@@ -159,7 +160,7 @@ export default function Layout() {
   useEffect(() => { localStorage.removeItem('pb_site_id') }, [])
 
   // Close sidebar on route change (mobile)
-  useEffect(() => { setSidebarOpen(false); setProfileOpen(false) }, [location.pathname])
+  useEffect(() => { setSidebarOpen(false); setProfileOpen(false); setMobileSearchOpen(false) }, [location.pathname])
 
   // Listen for sidebar collapse events from other components
   useEffect(() => {
@@ -406,6 +407,15 @@ export default function Layout() {
           </div>
           <span className="font-bold text-sm text-sidebar-foreground">PurpleBox</span>
         </div>
+        {!isMovingOnly && (
+          <button
+            onClick={() => setMobileSearchOpen((o) => !o)}
+            className={cn('cursor-pointer p-1 rounded-lg hover:bg-white/10 transition-colors', mobileSearchOpen ? 'text-[#FFF799]' : 'text-sidebar-muted hover:text-sidebar-foreground')}
+            title="Search"
+          >
+            <Search size={19} />
+          </button>
+        )}
         <button
           onClick={() => setDark(!dark)}
           className="text-sidebar-muted hover:text-sidebar-foreground cursor-pointer p-1 rounded-lg hover:bg-white/10 transition-colors"
@@ -413,6 +423,13 @@ export default function Layout() {
           {dark ? <Sun size={18} /> : <Moon size={18} />}
         </button>
       </header>
+
+      {/* Mobile search bar — slides under the header */}
+      {mobileSearchOpen && !isMovingOnly && (
+        <div className="md:hidden fixed top-14 inset-x-0 z-30 bg-sidebar px-3 pt-1 pb-3 shadow-lg">
+          <GlobalSearch />
+        </div>
+      )}
 
       {/* ── Main content ────────────────────────────────────────── */}
       <main className={cn("flex-1 pt-14 md:pt-0 min-w-0 transition-all duration-200", collapsed ? 'md:ml-[60px]' : 'md:ml-56')} style={{ background: '#FBF8F2' }}>
