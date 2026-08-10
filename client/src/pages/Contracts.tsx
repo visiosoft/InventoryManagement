@@ -369,8 +369,10 @@ export default function Contracts() {
                         <Td>
                           {allUnits.length === 1 ? (
                             <span>
-                              {c.unit?.unitNumber}{' '}
-                              <span className="text-muted-foreground text-xs">({c.unit?.sizeSqf ?? '—'} sqf)</span>
+                              {c.unit?.unitNumber}
+                              {c.unit?.sizeSqf != null && (
+                                <span className="text-muted-foreground text-xs"> ({c.unit.sizeSqf} sqf)</span>
+                              )}
                             </span>
                           ) : (
                             <span className="flex flex-wrap gap-1">
