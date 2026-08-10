@@ -1,48 +1,102 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Plus, Trash2, Eye, Star } from 'lucide-react'
 import { api, apiError } from '../lib/api'
-import { Button, Card, CardBody, PageHeader, Spinner } from '../components/ui'
+import { Button, Card, CardBody, Input, PageHeader, Spinner } from '../components/ui'
 import { formatDate } from '../lib/utils'
 
-type TemplateData = { body: string; updatedAt: string | null; updatedBy: string; placeholders: string[] }
+type TemplateRow = { _id: string; name: string; isDefault: boolean; updatedAt?: string; updatedBy?: string }
+type TemplateFull = TemplateRow & { body: string }
 
 /**
- * Design the storage agreement in the app instead of maintaining a PDF file.
- * Placeholders fill from each contract when its PDF is generated; "# " starts
- * a section heading, "## " a sub-heading, blank lines separate paragraphs.
+ * Design agreements and notices in the app. The editor is rich text: pasting
+ * from Word keeps tables, bold, headings — and the PDF renders them. One
+ * template is marked as the contract agreement default; the rest (expiry
+ * notice, payment reminder, …) are reusable documents.
  */
 export default function AgreementTemplate() {
   const qc = useQueryClient()
-  const [body, setBody] = useState('')
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [name, setName] = useState('')
   const [dirty, setDirty] = useState(false)
   const [error, setError] = useState('')
-  const areaRef = useRef<HTMLTextAreaElement>(null)
+  const editorRef = useRef<HTMLDivElement>(null)
 
-  const { data, isLoading } = useQuery<TemplateData>({
-    queryKey: ['agreement-template'],
+  const { data, isLoading } = useQuery<{ templates: TemplateRow[]; placeholders: string[] }>({
+    queryKey: ['agreement-templates'],
     queryFn: () => api.get('/agreement-template').then((r) => r.data),
   })
+  const templates = data?.templates ?? []
 
+  // Auto-select the default (or first) template
   useEffect(() => {
-    if (data && !dirty) setBody(data.body)
-  }, [data, dirty])
+    if (!selectedId && templates.length) {
+      setSelectedId((templates.find((t) => t.isDefault) ?? templates[0])._id)
+    }
+  }, [templates, selectedId])
 
-  const save = useMutation({
-    mutationFn: () => api.put('/agreement-template', { body }),
-    onSuccess: () => { setDirty(false); setError(''); qc.invalidateQueries({ queryKey: ['agreement-template'] }) },
+  const { data: current } = useQuery<TemplateFull>({
+    queryKey: ['agreement-template', selectedId],
+    queryFn: () => api.get(`/agreement-template/${selectedId}`).then((r) => r.data),
+    enabled: !!selectedId,
+  })
+
+  // Load the body into the editor when switching templates
+  useEffect(() => {
+    if (current && editorRef.current) {
+      editorRef.current.innerHTML = current.body || ''
+      setName(current.name)
+      setDirty(false)
+    }
+  }, [current])
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['agreement-templates'] })
+    qc.invalidateQueries({ queryKey: ['agreement-template', selectedId] })
+  }
+
+  const createTpl = useMutation({
+    mutationFn: (tplName: string) => api.post('/agreement-template', { name: tplName, body: '' }).then((r) => r.data),
+    onSuccess: (tpl) => { invalidate(); setSelectedId(tpl._id); setError('') },
     onError: (e) => setError(apiError(e)),
   })
 
-  const insertPlaceholder = (name: string) => {
-    const token = `{{${name}}}`
-    const el = areaRef.current
-    if (!el) { setBody((b) => b + token); setDirty(true); return }
-    const start = el.selectionStart ?? body.length
-    const end = el.selectionEnd ?? body.length
-    const next = body.slice(0, start) + token + body.slice(end)
-    setBody(next)
+  const saveTpl = useMutation({
+    mutationFn: () => api.put(`/agreement-template/${selectedId}`, {
+      name: name.trim() || current?.name || 'Untitled',
+      body: editorRef.current?.innerHTML ?? '',
+    }),
+    onSuccess: () => { setDirty(false); setError(''); invalidate() },
+    onError: (e) => setError(apiError(e)),
+  })
+
+  const makeDefault = useMutation({
+    mutationFn: (id: string) => api.put(`/agreement-template/${id}`, { isDefault: true }),
+    onSuccess: invalidate,
+    onError: (e) => setError(apiError(e)),
+  })
+
+  const deleteTpl = useMutation({
+    mutationFn: (id: string) => api.delete(`/agreement-template/${id}`),
+    onSuccess: () => { setSelectedId(null); invalidate() },
+    onError: (e) => setError(apiError(e)),
+  })
+
+  const insertPlaceholder = (p: string) => {
+    editorRef.current?.focus()
+    document.execCommand('insertText', false, `{{${p}}}`)
     setDirty(true)
-    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(start + token.length, start + token.length) })
+  }
+
+  const previewPdf = async () => {
+    if (!selectedId) return
+    if (dirty) await saveTpl.mutateAsync()
+    try {
+      const r = await api.get(`/agreement-template/${selectedId}/preview-pdf`, { responseType: 'blob' })
+      const url = URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }))
+      window.open(url, '_blank')
+      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch (e) { setError(apiError(e)) }
   }
 
   if (isLoading) return <Spinner />
@@ -50,52 +104,112 @@ export default function AgreementTemplate() {
   return (
     <div>
       <PageHeader
-        title="Agreement Template"
-        subtitle={data?.updatedAt ? `Last saved ${formatDate(data.updatedAt)}${data.updatedBy ? ` by ${data.updatedBy}` : ''}` : 'Not saved yet — contracts fall back to the built-in document'}
+        title="Document Templates"
+        subtitle="Agreements and notices, designed here — paste from Word and the tables, bold and headings carry into the PDF"
         action={
-          <Button onClick={() => save.mutate()} disabled={save.isPending || !dirty}>
-            {save.isPending ? 'Saving…' : dirty ? 'Save template' : 'Saved'}
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={previewPdf} disabled={!selectedId}>
+              <Eye size={14} /> Preview PDF
+            </Button>
+            <Button onClick={() => saveTpl.mutate()} disabled={!selectedId || saveTpl.isPending || !dirty}>
+              {saveTpl.isPending ? 'Saving…' : dirty ? 'Save template' : 'Saved'}
+            </Button>
+          </div>
         }
       />
 
-      <Card>
-        <CardBody className="space-y-3">
-          <div className="text-xs text-muted-foreground leading-relaxed">
-            Every contract PDF is generated from this wording, with the placeholders filled from that
-            contract. Start a line with <code className="px-1 rounded bg-muted"># </code> for a section
-            heading, <code className="px-1 rounded bg-muted">## </code> for a sub-heading; blank lines
-            separate paragraphs. A contract can also carry its own edited copy (Edit Agreement on the
-            contract page), which then wins over this template.
-          </div>
+      <div className="flex flex-col lg:flex-row gap-4 items-start">
+        {/* Template list */}
+        <Card className="w-full lg:w-64 lg:shrink-0">
+          <CardBody className="space-y-1.5">
+            {templates.map((t) => (
+              <div key={t._id}
+                onClick={() => setSelectedId(t._id)}
+                className={`rounded-lg border px-3 py-2 cursor-pointer text-sm flex items-center justify-between gap-2 ${selectedId === t._id ? 'border-primary bg-primary/5' : 'hover:bg-muted/40'}`}>
+                <span className="min-w-0">
+                  <span className="font-semibold block truncate">{t.name}</span>
+                  {t.updatedAt && <span className="text-[10.5px] text-muted-foreground">{formatDate(t.updatedAt)}</span>}
+                </span>
+                <span className="flex items-center gap-1 shrink-0">
+                  <button type="button" title={t.isDefault ? 'Used for contract agreements' : 'Use for contract agreements'}
+                    onClick={(e) => { e.stopPropagation(); if (!t.isDefault) makeDefault.mutate(t._id) }}
+                    className={`p-1 rounded cursor-pointer ${t.isDefault ? 'text-amber-500' : 'text-muted-foreground/40 hover:text-amber-500'}`}>
+                    <Star size={14} fill={t.isDefault ? 'currentColor' : 'none'} />
+                  </button>
+                  <button type="button" title="Delete template"
+                    onClick={(e) => { e.stopPropagation(); if (confirm(`Delete template "${t.name}"?`)) deleteTpl.mutate(t._id) }}
+                    className="p-1 rounded cursor-pointer text-muted-foreground/40 hover:text-destructive">
+                    <Trash2 size={13} />
+                  </button>
+                </span>
+              </div>
+            ))}
+            <button type="button"
+              onClick={() => { const n = prompt('Template name (e.g. Agreement, Expiry Notice):'); if (n?.trim()) createTpl.mutate(n.trim()) }}
+              className="w-full rounded-lg border border-dashed px-3 py-2 text-sm text-primary font-semibold hover:bg-primary/5 cursor-pointer flex items-center justify-center gap-1.5">
+              <Plus size={14} /> New template
+            </button>
+            <p className="text-[10.5px] text-muted-foreground pt-1">
+              The <Star size={10} className="inline text-amber-500" fill="currentColor" /> template is used for contract agreement PDFs.
+            </p>
+          </CardBody>
+        </Card>
 
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
-              Click to insert a placeholder
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {(data?.placeholders ?? []).map((p) => (
-                <button key={p} type="button" onClick={() => insertPlaceholder(p)}
-                  className="px-2 py-1 rounded-md border text-[11.5px] font-mono text-primary hover:bg-primary/5 cursor-pointer">
-                  {`{{${p}}}`}
-                </button>
-              ))}
-            </div>
-          </div>
+        {/* Editor */}
+        <Card className="flex-1 min-w-0 w-full">
+          <CardBody className="space-y-3">
+            {!selectedId ? (
+              <p className="text-sm text-muted-foreground py-8 text-center">Create a template to start.</p>
+            ) : (
+              <>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <Input value={name} onChange={(e) => { setName(e.target.value); setDirty(true) }}
+                    className="max-w-xs font-semibold" placeholder="Template name" />
+                  <span className="text-[11px] text-muted-foreground">
+                    Paste from Word — tables and formatting are kept and printed in the PDF.
+                  </span>
+                </div>
 
-          <textarea
-            ref={areaRef}
-            value={body}
-            onChange={(e) => { setBody(e.target.value); setDirty(true) }}
-            spellCheck={false}
-            placeholder={'# Storage License Agreement\n\nThis agreement is made on {{todayDate}} between PurpleBox Storage and {{customerName}} ({{customerPhone}}).\n\n## Unit\nUnit(s) {{unitNumbers}} ({{unitSizes}}) from {{startDate}} to {{endDate}}.\n\n## Charges\nRent AED {{leasedPrice}} per 4 weeks. Total AED {{totalQuotation}}.\n\n# Terms & Conditions\n1. ...'}
-            className="w-full rounded-lg border p-4 font-mono text-[13px] leading-relaxed outline-none focus:border-primary"
-            style={{ minHeight: 520, resize: 'vertical' }}
-          />
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+                    Click to insert a placeholder at the cursor
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(data?.placeholders ?? []).map((p) => (
+                      <button key={p} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => insertPlaceholder(p)}
+                        className="px-2 py-1 rounded-md border text-[11px] font-mono text-primary hover:bg-primary/5 cursor-pointer">
+                        {`{{${p}}}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-          {error && <p className="text-xs text-destructive">{error}</p>}
-        </CardBody>
-      </Card>
+                {/* Rich editor — contentEditable keeps Word's structure on paste */}
+                <div
+                  ref={editorRef}
+                  contentEditable
+                  suppressContentEditableWarning
+                  spellCheck={false}
+                  onInput={() => setDirty(true)}
+                  className="agreement-editor w-full rounded-lg border bg-white p-6 text-[13.5px] leading-relaxed outline-none focus:border-primary"
+                  style={{ minHeight: 560, maxWidth: 820 }}
+                />
+                <style>{`
+                  .agreement-editor table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+                  .agreement-editor td, .agreement-editor th { border: 1px solid #bbb; padding: 5px 8px; font-size: 13px; }
+                  .agreement-editor h1 { font-size: 20px; font-weight: 700; margin: 12px 0 6px; }
+                  .agreement-editor h2 { font-size: 16px; font-weight: 700; margin: 10px 0 5px; }
+                  .agreement-editor h3 { font-size: 14px; font-weight: 700; margin: 8px 0 4px; }
+                  .agreement-editor p { margin: 6px 0; }
+                  .agreement-editor ul, .agreement-editor ol { padding-left: 22px; margin: 6px 0; }
+                `}</style>
+
+                {error && <p className="text-xs text-destructive">{error}</p>}
+              </>
+            )}
+          </CardBody>
+        </Card>
+      </div>
     </div>
   )
 }

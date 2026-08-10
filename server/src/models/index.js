@@ -259,7 +259,8 @@ const contractSchema = new Schema(
     signingToken: { type: String, default: null },
     signingTokenExpiry: { type: Date, default: null },
     totalQuotation: { type: Number, default: 0 },
-    manualReceived: { type: Number, default: 0 },
+    // null = derive Received from payment records; any number (incl. 0) is a manual override
+    manualReceived: { type: Number, default: null },
     archived: { type: Boolean, default: false },
     timeline: [
       {
@@ -1309,12 +1310,16 @@ const messageTemplateSchema = new Schema({
 }, { timestamps: true });
 export const MessageTemplate = model('MessageTemplate', messageTemplateSchema);
 
-// The storage agreement wording, designed in the app. One document per key
-// ('default'). Placeholders like {{customerName}} resolve at PDF time.
+// Document templates designed in the app — the storage agreement, notices
+// (expiry, payment reminder, …). Rich HTML bodies; placeholders like
+// {{customerName}} resolve at render time. isDefault marks the template used
+// for contract agreement PDFs.
 const agreementTemplateSchema = new Schema({
-  key: { type: String, required: true, unique: true },
+  name: { type: String, required: true },
   body: { type: String, default: '' },
+  isDefault: { type: Boolean, default: false },
   updatedBy: { type: String, default: '' },
+  key: { type: String }, // legacy singleton key, kept for old documents
 }, { timestamps: true });
 export const AgreementTemplate = model('AgreementTemplate', agreementTemplateSchema);
 

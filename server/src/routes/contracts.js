@@ -7,7 +7,7 @@ import { sendForSignature, downloadSignedPdf, zohoConfigured } from '../services
 import { uploadFile } from '../services/drive.js';
 import { renderContractPdf } from '../services/contractPdf.js';
 import { fillAgreementPdf, agreementTemplateExists } from '../services/agreementPdf.js';
-import { mergeAgreementText, renderAgreementTextPdf } from '../services/agreementText.js';
+import { mergeAgreementText, renderAgreementTextPdf, renderAgreementHtmlPdf, looksLikeHtml } from '../services/agreementText.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { siteScope } from '../utils/siteScope.js';
 import { phoneClauses } from '../utils/phoneSearch.js';
@@ -17,12 +17,17 @@ import { phoneClauses } from '../utils/phoneSearch.js';
 //   2. the agreement template designed in the app, placeholders resolved
 //   3. the official PDF template file, then the generated fallback
 async function buildContractPdf(contract, signedDate) {
-  const perContract = String(contract.agreementText || '').trim();
-  if (perContract) return renderAgreementTextPdf({ text: perContract, contract, signedDate });
+  const renderRich = (content) => looksLikeHtml(content)
+    ? renderAgreementHtmlPdf({ html: content, contract, signedDate })
+    : renderAgreementTextPdf({ text: content, contract, signedDate });
 
-  const tpl = await AgreementTemplate.findOne({ key: 'default' }).lean();
+  const perContract = String(contract.agreementText || '').trim();
+  if (perContract) return renderRich(perContract);
+
+  const tpl = await AgreementTemplate.findOne({ $or: [{ isDefault: true }, { key: 'default' }] })
+    .sort({ isDefault: -1 }).lean();
   if (tpl?.body?.trim()) {
-    return renderAgreementTextPdf({ text: mergeAgreementText(tpl.body, contract), contract, signedDate });
+    return renderRich(mergeAgreementText(tpl.body, contract));
   }
 
   const parts = { contract, customer: contract.customer, unit: contract.unit };
@@ -864,6 +869,8 @@ router.put('/:id', async (req, res) => {
         if (Number.isNaN(d.getTime())) return res.status(400).json({ error: `${key} is not a valid date` });
         $set[key] = d;
       } else if (numericFields.includes(key)) {
+        // null clears the manual Received override back to payments-derived
+        if (key === 'manualReceived' && req.body[key] === null) { $set[key] = null; continue; }
         const n = Number(req.body[key]);
         if (!Number.isFinite(n) || n < 0) return res.status(400).json({ error: `${key} must be a number of 0 or more` });
         $set[key] = key === 'firstMonthDiscountPct' ? Math.min(100, n) : n;
@@ -1286,7 +1293,8 @@ router.get('/:id/agreement', async (req, res) => {
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
   const own = String(contract.agreementText || '').trim();
   if (own) return res.json({ text: own, source: 'contract' });
-  const tpl = await AgreementTemplate.findOne({ key: 'default' }).lean();
+  const tpl = await AgreementTemplate.findOne({ $or: [{ isDefault: true }, { key: 'default' }] })
+    .sort({ isDefault: -1 }).lean();
   if (tpl?.body?.trim()) {
     return res.json({ text: mergeAgreementText(tpl.body, contract), source: 'template' });
   }

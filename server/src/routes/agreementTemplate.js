@@ -1,5 +1,10 @@
 import { Router } from 'express';
+import { isValidObjectId } from 'mongoose';
 import { AgreementTemplate } from '../models/index.js';
+import {
+  mergeAgreementText, looksLikeHtml, samplePlaceholderContract,
+  renderAgreementHtmlPdf, renderAgreementTextPdf,
+} from '../services/agreementText.js';
 
 const router = Router();
 
@@ -11,29 +16,97 @@ const PLACEHOLDERS = [
   'rate', 'leasedPrice', 'deposit', 'totalQuotation',
 ];
 
-// The saved agreement wording (anyone signed in may read it)
+const requireAdmin = (req, res) => {
+  if (req.user?.role !== 'admin') {
+    res.status(403).json({ error: 'Only admins can manage templates' });
+    return false;
+  }
+  return true;
+};
+
+// Older builds stored one template under key 'default'; give it a name once
+async function migrateLegacy() {
+  await AgreementTemplate.updateMany(
+    { key: 'default', $or: [{ name: { $exists: false } }, { name: '' }, { name: null }] },
+    { $set: { name: 'Agreement', isDefault: true } },
+  );
+}
+
+// List all templates (names + which one is the contract default)
 router.get('/', async (_req, res) => {
-  const tpl = await AgreementTemplate.findOne({ key: 'default' }).lean();
-  res.json({
-    body: tpl?.body || '',
-    updatedAt: tpl?.updatedAt || null,
-    updatedBy: tpl?.updatedBy || '',
-    placeholders: PLACEHOLDERS,
-  });
+  await migrateLegacy();
+  const templates = await AgreementTemplate.find({})
+    .select('name isDefault updatedAt updatedBy')
+    .sort({ isDefault: -1, name: 1 })
+    .lean();
+  res.json({ templates, placeholders: PLACEHOLDERS });
 });
 
-// Save the wording — admins only
-router.put('/', async (req, res) => {
-  if (req.user?.role !== 'admin') {
-    return res.status(403).json({ error: 'Only admins can edit the agreement template' });
+router.post('/', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const name = String(req.body?.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Template name is required' });
+  const count = await AgreementTemplate.countDocuments();
+  const tpl = await AgreementTemplate.create({
+    name,
+    body: String(req.body?.body || ''),
+    isDefault: count === 0, // first template becomes the agreement default
+    updatedBy: req.user?.name || req.user?.email || '',
+  });
+  res.status(201).json(tpl);
+});
+
+router.get('/:id', async (req, res) => {
+  if (!isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid template id' });
+  const tpl = await AgreementTemplate.findById(req.params.id).lean();
+  if (!tpl) return res.status(404).json({ error: 'Template not found' });
+  res.json(tpl);
+});
+
+router.put('/:id', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  if (!isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid template id' });
+  const tpl = await AgreementTemplate.findById(req.params.id);
+  if (!tpl) return res.status(404).json({ error: 'Template not found' });
+
+  if (req.body.name !== undefined) {
+    const name = String(req.body.name).trim();
+    if (!name) return res.status(400).json({ error: 'Template name is required' });
+    tpl.name = name;
   }
-  const body = String(req.body?.body ?? '');
-  const tpl = await AgreementTemplate.findOneAndUpdate(
-    { key: 'default' },
-    { body, updatedBy: req.user?.name || req.user?.email || '' },
-    { new: true, upsert: true },
-  );
-  res.json({ ok: true, updatedAt: tpl.updatedAt, updatedBy: tpl.updatedBy });
+  if (req.body.body !== undefined) tpl.body = String(req.body.body);
+  if (req.body.isDefault === true) {
+    await AgreementTemplate.updateMany({ _id: { $ne: tpl._id } }, { $set: { isDefault: false } });
+    tpl.isDefault = true;
+  }
+  tpl.updatedBy = req.user?.name || req.user?.email || '';
+  await tpl.save();
+  res.json(tpl);
+});
+
+router.delete('/:id', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  if (!isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid template id' });
+  const tpl = await AgreementTemplate.findByIdAndDelete(req.params.id);
+  if (!tpl) return res.status(404).json({ error: 'Template not found' });
+  res.json({ ok: true });
+});
+
+// PDF preview with sample values — see exactly what the document will print
+router.get('/:id/preview-pdf', async (req, res) => {
+  if (!isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid template id' });
+  const tpl = await AgreementTemplate.findById(req.params.id).lean();
+  if (!tpl) return res.status(404).json({ error: 'Template not found' });
+
+  const sample = samplePlaceholderContract();
+  const merged = mergeAgreementText(tpl.body, sample);
+  const title = tpl.isDefault ? 'STORAGE AGREEMENT' : tpl.name.toUpperCase();
+  const pdf = looksLikeHtml(merged)
+    ? await renderAgreementHtmlPdf({ html: merged, contract: sample, title })
+    : await renderAgreementTextPdf({ text: merged, contract: sample });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="${tpl.name}.pdf"`);
+  res.send(pdf);
 });
 
 export default router;

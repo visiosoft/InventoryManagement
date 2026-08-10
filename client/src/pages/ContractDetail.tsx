@@ -797,9 +797,10 @@ export default function ContractDetail() {
   const [invoiceBlank, setInvoiceBlank] = useState(false)
   const [editModal, setEditModal] = useState(false)
   const [agreementModal, setAgreementModal] = useState(false)
-  const [agreementText, setAgreementText] = useState('')
   const [agreementSource, setAgreementSource] = useState('')
   const [agreementBusy, setAgreementBusy] = useState(false)
+  const agreementRef = useRef<HTMLDivElement>(null)
+  const agreementInitial = useRef('')
   const [inlineField, setInlineField] = useState<string | null>(null)
   const [inlineValue, setInlineValue] = useState('')
 
@@ -939,9 +940,6 @@ export default function ContractDetail() {
   const pending = payments.filter((p) => p.status === 'pending').sort(byDue)
   const paid = payments.filter((p) => p.status === 'paid')
     .sort((a, b) => new Date(b.paidDate ?? b.dueDate).getTime() - new Date(a.paidDate ?? a.dueDate).getTime())
-
-
-  const paymentsTotal = payments.reduce((s, p) => s + p.amount, 0)
   // Exclude security deposit records from rent totals — deposit is a separate liability
   const isDepositPayment = (p: Payment) => /^security deposit/i.test(p.notes || '')
   // Group payments by invoice → one display row per invoice
@@ -1174,11 +1172,14 @@ export default function ContractDetail() {
                   ? Math.ceil(Math.round((new Date(c.endDate).getTime() - new Date(c.startDate).getTime()) / 86400000) / 7)
                   : null
                 const paidFromRecords = payments.filter((p) => p.status === 'paid').reduce((s, p) => s + p.amount, 0)
-                const manualRcv = Number((c as any).manualReceived || 0)
-                const collected = manualRcv > 0 ? manualRcv : paidFromRecords
+                // null = no override (derive from payments); any number, 0
+                // included, is a deliberate manual figure and must display as-is
+                const manualRcv = (c as any).manualReceived as number | null | undefined
+                const collected = manualRcv != null ? Number(manualRcv) : paidFromRecords
                 // The saved quotation is authoritative once set — a manual edit
                 // must stick. Payments only stand in when no quotation exists.
-                const quotationShown = Number(c.totalQuotation || 0) > 0 ? Number(c.totalQuotation) : paymentsTotal
+                // Stored quotation is authoritative — 0 is a valid saved value
+                const quotationShown = Number(c.totalQuotation ?? 0)
                 const remaining = Math.max(0, quotationShown - collected)
 
                 const saveField = async (field: string, val: string) => {
@@ -1306,8 +1307,8 @@ export default function ContractDetail() {
                         : '—')}
                     {EditableRow('Asking Price', 'rate', `AED ${formatMoney(askingPrice)}`, String(askingPrice), 'number', '1')}
                     {EditableRow('Leased Price', 'leasedPrice', `AED ${formatMoney(leasedPrice)}`, String(leasedPrice), 'number', '1')}
-                    {EditableRow('Total Quotation', 'totalQuotation', `AED ${formatMoney(quotationShown)}`, String(c.totalQuotation || quotationShown || 0), 'number', '1')}
-                    {EditableRow('Received', 'manualReceived', `AED ${formatMoney(collected)}`, String((c as any).manualReceived || 0), 'number', '1')}
+                    {EditableRow('Total Quotation', 'totalQuotation', `AED ${formatMoney(quotationShown)}`, String(quotationShown), 'number', '1')}
+                    {EditableRow('Received', 'manualReceived', `AED ${formatMoney(collected)}`, String(manualRcv ?? collected), 'number', '1')}
                     {Row('Remaining', <span className={remaining > 0 ? 'text-destructive' : 'text-emerald-600'}>AED {formatMoney(remaining)}</span>)}
                   </div>
                 )
@@ -1319,9 +1320,14 @@ export default function ContractDetail() {
                     setError('')
                     try {
                       const r = await api.get(`/contracts/${id}/agreement`)
-                      setAgreementText(r.data?.text || '')
+                      const text = r.data?.text || ''
+                      // Plain text becomes paragraphs; HTML loads as-is
+                      agreementInitial.current = /<\w+[^>]*>/.test(text)
+                        ? text
+                        : text.split('\n').map((l: string) => `<p>${l.replace(/&/g, '&amp;').replace(/</g, '&lt;') || '<br>'}</p>`).join('')
                       setAgreementSource(r.data?.source || 'none')
                       setAgreementModal(true)
+                      requestAnimationFrame(() => { if (agreementRef.current) agreementRef.current.innerHTML = agreementInitial.current })
                     } catch (e) { setError(apiError(e)) }
                   }}
                   className="text-primary text-xs hover:underline flex items-center gap-1 cursor-pointer">
@@ -1858,16 +1864,25 @@ export default function ContractDetail() {
               <button onClick={() => setAgreementModal(false)} className="p-1 hover:bg-muted rounded cursor-pointer"><X size={18} /></button>
             </div>
             <div className="p-5 flex-1 flex flex-col gap-3">
-              <textarea
-                value={agreementText}
-                onChange={(e) => setAgreementText(e.target.value)}
+              <div
+                ref={agreementRef}
+                contentEditable
+                suppressContentEditableWarning
                 spellCheck={false}
-                className="w-full flex-1 rounded-lg border p-4 font-mono text-[12.5px] leading-relaxed outline-none focus:border-primary"
-                style={{ minHeight: 480, resize: 'vertical' }}
+                className="agreement-editor w-full flex-1 rounded-lg border bg-white p-6 text-[13px] leading-relaxed outline-none focus:border-primary"
+                style={{ minHeight: 480, overflowY: 'auto' }}
               />
+              <style>{`
+                .agreement-editor table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+                .agreement-editor td, .agreement-editor th { border: 1px solid #bbb; padding: 5px 8px; font-size: 12.5px; }
+                .agreement-editor h1 { font-size: 19px; font-weight: 700; margin: 12px 0 6px; }
+                .agreement-editor h2 { font-size: 15px; font-weight: 700; margin: 10px 0 5px; }
+                .agreement-editor h3 { font-size: 13.5px; font-weight: 700; margin: 8px 0 4px; }
+                .agreement-editor p { margin: 6px 0; }
+                .agreement-editor ul, .agreement-editor ol { padding-left: 22px; margin: 6px 0; }
+              `}</style>
               <p className="text-[11px] text-muted-foreground">
-                "# " starts a section heading, "## " a sub-heading; blank lines separate paragraphs.
-                The PDF prints exactly this text.
+                Rich text — pasting from Word keeps tables, bold and headings, and the PDF prints them.
               </p>
               {error && <p className="text-xs text-destructive">{error}</p>}
               <div className="flex justify-end gap-2 pt-2 border-t">
@@ -1876,7 +1891,7 @@ export default function ContractDetail() {
                   setAgreementBusy(true)
                   setError('')
                   try {
-                    await api.put(`/contracts/${id}`, { agreementText })
+                    await api.put(`/contracts/${id}`, { agreementText: agreementRef.current?.innerHTML ?? '' })
                     setAgreementSource('contract')
                     invalidate()
                     setAgreementModal(false)
