@@ -37,10 +37,11 @@ pm2 save
 echo "── Health check ──"
 sleep 4
 for i in 1 2 3 4 5; do
-  CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${PORT:-5010}/api/agreement-template" || true)
-  # 401 = up and auth-gated; 404 would mean the old code is still running
-  if [ "$CODE" = "401" ]; then echo "API healthy (401 auth-gated as expected)"; exit 0; fi
-  echo "attempt $i: got $CODE, retrying…"
+  BODY=$(curl -s -m 5 "http://localhost:${PORT:-5010}/api/health" || true)
+  case "$BODY" in
+    *'"ok":true'*) echo "API healthy: $BODY"; exit 0;;
+  esac
+  echo "attempt $i: $BODY"
   sleep 3
 done
 echo "API did not come up healthy" >&2

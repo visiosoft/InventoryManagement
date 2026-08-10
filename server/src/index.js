@@ -84,6 +84,12 @@ app.get('/api/health', (_req, res) => res.json({ ok: true, db: mongoose.connecti
 // Public signing routes — no JWT required
 app.use('/api/sign', signingRoutes);
 
+// Public liveness probe — also proves which build is running after a deploy
+const STARTED_AT = new Date().toISOString();
+app.get('/api/health', (_req, res) => {
+  res.json({ ok: true, startedAt: STARTED_AT, uptimeSec: Math.round(process.uptime()) });
+});
+
 app.use('/api/auth', authRoutes);
 app.use('/api/customer-auth', customerAuthRoutes);
 app.use('/api/customer-portal', customerPortalRoutes);
