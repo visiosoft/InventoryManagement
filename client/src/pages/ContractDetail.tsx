@@ -1403,10 +1403,10 @@ export default function ContractDetail() {
           <div className="flex gap-1 border-b mb-4 overflow-x-auto scrollbar-none">
             {([
               ['overview', 'Overview', 0],
-              ['payments', 'Payments', unpaidGroups.length],
               ['documents', 'Documents', 0],
               ['notices', 'Notices', 0],
               ['reminders', 'Reminders', 0],
+              ['payments', 'Payments', unpaidGroups.length],
             ] as [typeof activeTab, string, number][]).map(([key, label, count]) => (
               <button key={key} onClick={() => setActiveTab(key)}
                 className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px flex items-center gap-1.5 ${activeTab === key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
