@@ -72,6 +72,7 @@ function WidgetShell({
       onDragStart={() => onDragStart(id)}
       onDragOver={onDragOver}
       onDrop={() => onDrop(id)}
+      className="min-w-0"
     >
       <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, overflow: 'hidden' }}>
         <div style={{ padding: '16px 20px 0' }}>
@@ -303,13 +304,19 @@ export default function Dashboard() {
                   const endFmt = new Date(c.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
                   const urgency = daysLeft <= 3 ? 'text-destructive' : daysLeft <= 7 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'
                   return (
-                    <li key={c._id} className="flex items-center justify-between gap-3 py-3 hover:bg-muted/40">
-                      <div className="min-w-0">
-                        <span className="font-medium text-sm">{c.customer?.fullName}</span>
-                        <span className="text-muted-foreground text-sm"> — {c.unit?.unitNumber} — </span>
-                        <span className={`text-sm ${urgency}`}>expires in {daysLeft} day{daysLeft !== 1 ? 's' : ''} ({endFmt})</span>
-                      </div>
-                      <Link to={`/contracts/${c._id}`} className="shrink-0 text-xs font-medium text-primary hover:underline whitespace-nowrap">View Contract</Link>
+                    <li key={c._id} className="hover:bg-muted/40">
+                      {/* Whole row is the link — two lines so it fits any width */}
+                      <Link to={`/contracts/${c._id}`} className="flex items-center justify-between gap-3 py-3">
+                        <div className="min-w-0">
+                          <div className="text-sm truncate">
+                            <span className="font-medium">{c.customer?.fullName}</span>
+                            {c.unit?.unitNumber && <span className="text-muted-foreground"> · {c.unit.unitNumber}</span>}
+                          </div>
+                          <div className={`text-xs mt-0.5 ${urgency}`}>expires in {daysLeft} day{daysLeft !== 1 ? 's' : ''} ({endFmt})</div>
+                        </div>
+                        <span className="shrink-0 text-xs font-medium text-primary hover:underline whitespace-nowrap hidden sm:inline">View Contract</span>
+                        <span className="shrink-0 text-muted-foreground sm:hidden">›</span>
+                      </Link>
                     </li>
                   )
                 })}
@@ -469,7 +476,7 @@ export default function Dashboard() {
             const first = peerIds.find((x) => layout.includes(x))
             if (id !== first) return null
             return (
-              <div key="middle-grid" className="grid gap-4 lg:grid-cols-2">
+              <div key="middle-grid" className="grid gap-4 lg:grid-cols-2 [&>*]:min-w-0">
                 {peerIds.filter((x) => layout.includes(x)).map((x) => (
                   <div key={x}>{widgets[x]}</div>
                 ))}
