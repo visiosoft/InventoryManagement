@@ -36,6 +36,7 @@ export function agreementPlaceholders(contract) {
     weeks: String(weeks),
     unitNumbers: allUnits.map((u) => u.unitNumber).filter(Boolean).join(', '),
     unitSizes: allUnits.map((u) => (u.sizeSqf != null ? `${u.sizeSqf} sqft` : '')).filter(Boolean).join(', '),
+    purpleboxRepresentative: (contract.timeline && contract.timeline.find((t) => t.author)?.author) || 'PurpleBox Storage',
     rate: money(contract.rate),
     leasedPrice: money(contract.leasedPrice || contract.rate),
     deposit: money(contract.deposit),
@@ -58,6 +59,16 @@ export function mergeAgreementText(template, contract) {
 // templates. Templates may also place {{customerSignature}} to position it.
 
 export const SIGNATURE_TOKEN = /\{\{\s*customerSignature\s*\}\}/;
+const SIGNATURE_DATE_TOKEN = /\{\{\s*signatureDate\s*\}\}/g;
+
+// {{signatureDate}} only becomes real when the document is actually signed —
+// until then it prints a line to fill in.
+function applySignatureDate(content, signedDate, sign) {
+  const value = (sign || signedDate)
+    ? new Date(signedDate || Date.now()).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+    : '______________';
+  return String(content || '').replace(SIGNATURE_DATE_TOKEN, value);
+}
 
 function dataUrlToPng(dataUrl) {
   if (typeof dataUrl === 'string' && dataUrl.startsWith('data:image/png;base64,')) {
@@ -363,6 +374,7 @@ function renderHtmlBody(doc, root) {
 export function renderAgreementHtmlPdf({ html, contract, signedDate, title = 'STORAGE AGREEMENT', header = true, signature = true, sign = null }) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 56, bufferPages: true });
+    html = applySignatureDate(html, signedDate, sign);
     const hasToken = SIGNATURE_TOKEN.test(String(html || ''));
     const chunks = [];
     doc.on('data', (c) => chunks.push(c));

@@ -22,7 +22,7 @@ const PLACEHOLDERS = [
   'contractNo', 'startDate', 'endDate', 'todayDate', 'weeks',
   'unitNumbers', 'unitSizes', 'accessType',
   'rate', 'leasedPrice', 'deposit', 'totalQuotation',
-  'customerSignature',
+  'customerSignature', 'signatureDate', 'purpleboxRepresentative',
 ];
 
 const requireAdmin = (req, res) => {
