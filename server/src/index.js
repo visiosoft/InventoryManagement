@@ -50,7 +50,7 @@ import crewAuthRoutes from './routes/crewAuth.js';
 import crewPortalRoutes from './routes/crewPortal.js';
 import { startBackupScheduler } from './services/backup.js';
 import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
-import { runPaymentReminders } from './services/paymentReminders.js';
+import { runAutomationRules, getAutoSend } from './services/automationEngine.js';
 
 const app = express();
 // In production this server sits behind an nginx layer that already injects
@@ -224,13 +224,19 @@ async function start() {
   // Automatic backups: frequency and hour come from the Backup page settings
   startBackupScheduler();
 
-  // Payment reminders — run every 6 hours
+  // Automation rules (payment due / overdue / contract expiry) — every 6 hours.
+  // Rules and templates come from Settings → Automation Rules; per-contract
+  // muting and overrides from each contract's Reminders tab.
   const REMINDER_INTERVAL = 6 * 60 * 60 * 1000;
+  const automationTick = async () => {
+    try {
+      if (!(await getAutoSend())) return; // turned on from the Automation Rules page
+      await runAutomationRules();
+    } catch (e) { console.error('[Automation]', e.message); }
+  };
   setTimeout(async () => {
-    try { await runPaymentReminders(); } catch (e) { console.error('[Reminders]', e.message); }
-    setInterval(async () => {
-      try { await runPaymentReminders(); } catch (e) { console.error('[Reminders]', e.message); }
-    }, REMINDER_INTERVAL);
+    await automationTick();
+    setInterval(automationTick, REMINDER_INTERVAL);
   }, 15_000);
 }
 

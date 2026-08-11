@@ -89,6 +89,29 @@ export default function AutomationRules() {
         queryFn: () => api.get('/automation-rules/logs').then(r => r.data),
     })
 
+    const { data: channels } = useQuery<{ whatsapp: boolean; email: boolean; autoSend: boolean }>({
+        queryKey: ['automation-channels'],
+        queryFn: () => api.get('/automation-rules/channels').then(r => r.data),
+    })
+
+    const toggleAutoSend = useMutation({
+        mutationFn: (enabled: boolean) => api.put('/automation-rules/auto-send', { enabled }),
+        onSuccess: () => qc.invalidateQueries({ queryKey: ['automation-channels'] }),
+        onError: (e) => setError(apiError(e)),
+    })
+
+    const [runResult, setRunResult] = useState('')
+    const runNow = useMutation({
+        mutationFn: (dry: boolean) => api.post(`/automation-rules/run${dry ? '?dry=1' : ''}`).then(r => r.data),
+        onSuccess: (d) => {
+            setRunResult(d.dryRun
+                ? `Preview: ${d.planned?.length ?? 0} message(s) would be sent now (${d.skipped} skipped as already sent or unreachable).`
+                : `Done — sent ${d.sent}, skipped ${d.skipped}${d.errors ? `, ${d.errors} failed` : ''}.`)
+            qc.invalidateQueries({ queryKey: ['automation-logs'] })
+        },
+        onError: (e) => setError(apiError(e)),
+    })
+
     const updateRule = useMutation({
         mutationFn: ({ id, body }: { id: string; body: Partial<AutomationRule> }) =>
             api.put(`/automation-rules/${id}`, body),
@@ -161,10 +184,49 @@ export default function AutomationRules() {
 
     return (
         <div className="px-2 py-4">
-            <h1 className="text-2xl font-bold tracking-tight">Automation Rules</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-                Configure when automatic reminders are sent to clients, and how often.
-            </p>
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                    <h1 className="text-2xl font-bold tracking-tight">Automation Rules</h1>
+                    <p className="text-sm text-muted-foreground mt-1">
+                        Configure when automatic reminders are sent to clients, and how often. The engine runs every 6 hours.
+                    </p>
+                </div>
+                <div className="flex items-center gap-2">
+                    <button type="button" disabled={runNow.isPending}
+                        onClick={() => runNow.mutate(true)}
+                        className="h-9 px-4 rounded-lg border text-xs font-semibold hover:bg-muted cursor-pointer disabled:opacity-60">
+                        Preview run
+                    </button>
+                    <button type="button" disabled={runNow.isPending}
+                        onClick={() => { if (confirm('Send all due reminders now?')) runNow.mutate(false) }}
+                        className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 cursor-pointer disabled:opacity-60">
+                        {runNow.isPending ? 'Running…' : 'Run now'}
+                    </button>
+                </div>
+            </div>
+
+            {channels && (
+                <div className="flex items-center gap-4 mt-3 text-xs flex-wrap">
+                    <button type="button"
+                        onClick={() => {
+                            if (!channels.autoSend && !confirm('Turn on automatic sending? Due reminders will go out every 6 hours without further confirmation. Use "Preview run" first to see what would be sent.')) return
+                            toggleAutoSend.mutate(!channels.autoSend)
+                        }}
+                        className={`h-7 px-3 rounded-full font-bold cursor-pointer transition-colors ${channels.autoSend ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                        Automatic sending: {channels.autoSend ? 'ON' : 'OFF — click to enable'}
+                    </button>
+                    <span className={channels.whatsapp ? 'text-emerald-600 font-medium' : 'text-amber-600 font-medium'}>
+                        WhatsApp: {channels.whatsapp ? 'ready' : 'not configured'}
+                    </span>
+                    <span className={channels.email ? 'text-emerald-600 font-medium' : 'text-amber-600 font-medium'}>
+                        Email: {channels.email ? 'ready' : 'not connected'}
+                    </span>
+                    {!channels.email && (
+                        <Link to="/settings" className="text-primary hover:underline">Connect Gmail in Settings →</Link>
+                    )}
+                </div>
+            )}
+            {runResult && <p className="text-xs text-emerald-700 mt-2 font-medium">{runResult}</p>}
 
             {error && <p className="text-xs text-destructive mt-3">{error}</p>}
 

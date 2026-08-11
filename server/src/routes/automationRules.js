@@ -1,5 +1,8 @@
 import { Router } from 'express';
 import { AutomationRule, AutomationLog } from '../models/index.js';
+import { runAutomationRules, getAutoSend, setAutoSend } from '../services/automationEngine.js';
+import { whatsappSendConfigured } from '../services/whatsapp.js';
+import { mailConfigured } from '../services/mail.js';
 
 const router = Router();
 
@@ -136,6 +139,36 @@ router.get('/logs', async (req, res) => {
             : logs;
 
         res.json({ logs: filtered, total: filtered.length });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// GET /api/automation-rules/channels — delivery channels + auto-send state
+router.get('/channels', async (_req, res) => {
+    try {
+        res.json({ whatsapp: whatsappSendConfigured(), email: mailConfigured(), autoSend: await getAutoSend() });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// PUT /api/automation-rules/auto-send — master switch for the 6-hour scheduler
+router.put('/auto-send', async (req, res) => {
+    try {
+        const value = await setAutoSend(!!req.body?.enabled);
+        res.json({ ok: true, autoSend: value });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// POST /api/automation-rules/run — run the engine now; ?dry=1 previews without sending
+router.post('/run', async (req, res) => {
+    try {
+        const dryRun = req.query.dry === '1' || req.body?.dry === true;
+        const result = await runAutomationRules({ dryRun });
+        res.json({ ok: true, dryRun, ...result });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
