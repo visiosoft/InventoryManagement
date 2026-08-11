@@ -267,7 +267,9 @@ const contractSchema = new Schema(
     // an override entry pins one rule on/off for this contract only.
     // '' = derive from the units (any shared unit → Shared)
     accessType: { type: String, enum: ['', 'private', 'shared'], default: '' },
-    remindersMuted: { type: Boolean, default: false },
+    // Reminders are opt-in: new contracts start muted, enable per contract
+    // from its Reminders tab
+    remindersMuted: { type: Boolean, default: true },
     reminderOverrides: [
       {
         rule: { type: Schema.Types.ObjectId, ref: 'AutomationRule' },
