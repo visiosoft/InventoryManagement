@@ -2769,8 +2769,6 @@ export default function NewQuote() {
           </div>
         )}
 
-        {/* Sign in person */}
-        <Modal open={signingOpen} onClose={() => setSigningOpen(false)} title="Sign contract in person" wide>
           {/* Agreement view/edit — same document the tenant signs */}
       {agreementOpen && contract && (
         <div className="fixed inset-0 z-50">
@@ -2851,6 +2849,8 @@ export default function NewQuote() {
         </div>
       )}
 
+        {/* Sign in person */}
+        <Modal open={signingOpen} onClose={() => setSigningOpen(false)} title="Sign contract in person" wide>
       {contract && (
             <SignInPersonModal
               contractNo={contract.contractNo}
