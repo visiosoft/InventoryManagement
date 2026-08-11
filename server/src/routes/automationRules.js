@@ -13,7 +13,7 @@ const DEFAULT_RULES = [
         triggerEvent: 'payment_due',
         triggerLabel: 'Triggered before / after a payment due date',
         relativeLabel: 'due date',
-        enabled: true,
+        enabled: false,
         emailEnabled: false,
         whatsappEnabled: true,
         steps: [
@@ -30,7 +30,7 @@ const DEFAULT_RULES = [
         triggerEvent: 'contract_expiry',
         triggerLabel: 'Triggered before a contract end date',
         relativeLabel: 'expiry date',
-        enabled: true,
+        enabled: false,
         emailEnabled: false,
         whatsappEnabled: true,
         steps: [
@@ -47,7 +47,7 @@ const DEFAULT_RULES = [
         triggerEvent: 'payment_overdue',
         triggerLabel: 'Triggered after a payment becomes overdue',
         relativeLabel: 'due date',
-        enabled: true,
+        enabled: false,
         emailEnabled: false,
         whatsappEnabled: true,
         steps: [
