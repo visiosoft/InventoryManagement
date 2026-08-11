@@ -5,36 +5,11 @@ import { stampSignature } from '../services/stampSignature.js';
 import { Contract, Customer, Unit, Payment, Document, Invoice, Quote, AgreementTemplate, nextContractNo, nextInvoiceNo } from '../models/index.js';
 import { sendForSignature, downloadSignedPdf, zohoConfigured } from '../services/zoho.js';
 import { uploadFile } from '../services/drive.js';
-import { renderContractPdf } from '../services/contractPdf.js';
-import { fillAgreementPdf, agreementTemplateExists } from '../services/agreementPdf.js';
 import { mergeAgreementText, renderAgreementTextPdf, renderAgreementHtmlPdf, looksLikeHtml } from '../services/agreementText.js';
+import { buildContractPdf } from '../services/contractDocument.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { siteScope } from '../utils/siteScope.js';
 import { phoneClauses } from '../utils/phoneSearch.js';
-
-// Renders the contract document. Priority:
-//   1. wording saved on this contract (agreementText, already merged)
-//   2. the agreement template designed in the app, placeholders resolved
-//   3. the official PDF template file, then the generated fallback
-async function buildContractPdf(contract, signedDate) {
-  const renderRich = (content) => looksLikeHtml(content)
-    ? renderAgreementHtmlPdf({ html: content, contract, signedDate })
-    : renderAgreementTextPdf({ text: content, contract, signedDate });
-
-  const perContract = String(contract.agreementText || '').trim();
-  if (perContract) return renderRich(perContract);
-
-  const tpl = await AgreementTemplate.findOne({ $or: [{ isDefault: true }, { key: 'default' }] })
-    .sort({ isDefault: -1 }).lean();
-  if (tpl?.body?.trim()) {
-    return renderRich(mergeAgreementText(tpl.body, contract));
-  }
-
-  const parts = { contract, customer: contract.customer, unit: contract.unit };
-  return agreementTemplateExists()
-    ? fillAgreementPdf({ ...parts, signedDate })
-    : renderContractPdf(parts);
-}
 
 const router = Router();
 

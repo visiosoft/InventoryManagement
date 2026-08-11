@@ -1,18 +1,10 @@
 import { Router } from 'express';
 import { Contract, Unit, Document, Payment } from '../models/index.js';
 import { uploadFile } from '../services/drive.js';
-import { fillAgreementPdf, agreementTemplateExists } from '../services/agreementPdf.js';
-import { renderContractPdf } from '../services/contractPdf.js';
 import { stampSignature } from '../services/stampSignature.js';
+import { buildContractPdf } from '../services/contractDocument.js';
 
 const router = Router();
-
-function buildContractPdf(contract, signedDate) {
-  const parts = { contract, customer: contract.customer, unit: contract.unit };
-  return agreementTemplateExists()
-    ? fillAgreementPdf({ ...parts, signedDate })
-    : renderContractPdf(parts);
-}
 
 async function findByToken(token) {
   const contract = await Contract.findOne({ signingToken: token })
