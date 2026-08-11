@@ -912,6 +912,9 @@ export default function NewQuote() {
   const [authorizedPersons, setAuthorizedPersons] = useState<AccessPerson[]>([])
   const [paymentMethod, setPaymentMethod] = useState('')
   const [accessType, setAccessType] = useState('')
+  const [agreementOpen, setAgreementOpen] = useState(false)
+  const [agreementBusy, setAgreementBusy] = useState('')
+  const agreementEditRef = useRef<HTMLDivElement>(null)
   const [customerDocs, setCustomerDocs] = useState<{ _id: string; name: string; type: string; url: string }[]>([])
   const [uploadingDoc, setUploadingDoc] = useState(false)
   const [docType, setDocType] = useState('emirates_id')
@@ -2481,6 +2484,28 @@ export default function NewQuote() {
                         <div className="flex items-center gap-px" style={{ background: '#fff' }}>
                           <button
                             type="button"
+                            onClick={async () => {
+                              setAgreementOpen(true)
+                              setAgreementBusy('load')
+                              try {
+                                const r = await api.get(`/contracts/${contractId}/agreement`)
+                                const text = r.data?.text || ''
+                                requestAnimationFrame(() => {
+                                  if (agreementEditRef.current) {
+                                    agreementEditRef.current.innerHTML = /<\w+[^>]*>/.test(text)
+                                      ? text
+                                      : text.split('\n').map((l: string) => `<p>${l || '<br>'}</p>`).join('')
+                                  }
+                                })
+                              } catch (e) { setErr(apiError(e)) } finally { setAgreementBusy('') }
+                            }}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors"
+                            style={{ color: PURPLE }}
+                          >
+                            <FileText size={13} /> Agreement
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => setSigningOpen(true)}
                             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors"
                             style={{ color: INK }}
@@ -2746,7 +2771,87 @@ export default function NewQuote() {
 
         {/* Sign in person */}
         <Modal open={signingOpen} onClose={() => setSigningOpen(false)} title="Sign contract in person" wide>
-          {contract && (
+          {/* Agreement view/edit — same document the tenant signs */}
+      {agreementOpen && contract && (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/25" onClick={() => setAgreementOpen(false)} />
+          <div className="absolute right-0 top-0 h-full w-full max-w-2xl bg-white shadow-xl overflow-y-auto flex flex-col">
+            <div className="sticky top-0 bg-white border-b px-5 py-4 flex items-center justify-between z-10">
+              <div>
+                <h2 className="text-base font-bold" style={{ color: INK }}>Agreement — {contract.contractNo}</h2>
+                <p className="text-[11px]" style={{ color: MUTED }}>Prefilled from the template — edit freely; the tenant signs exactly this.</p>
+              </div>
+              <button onClick={() => setAgreementOpen(false)} className="p-1 rounded hover:bg-gray-100 cursor-pointer"><X size={18} /></button>
+            </div>
+            <div className="p-5 flex-1 flex flex-col gap-3">
+              {agreementBusy === 'load' && <p className="text-xs" style={{ color: MUTED }}>Loading…</p>}
+              <div
+                ref={agreementEditRef}
+                contentEditable
+                suppressContentEditableWarning
+                spellCheck={false}
+                className="agreement-editor w-full flex-1 rounded-lg border bg-white p-6 text-[13px] leading-relaxed outline-none"
+                style={{ minHeight: 460, overflowY: 'auto', borderColor: 'rgba(20,8,31,0.12)' }}
+              />
+              <style>{`
+                .agreement-editor table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+                .agreement-editor td, .agreement-editor th { border: 1px solid #bbb; padding: 5px 8px; font-size: 12.5px; }
+                .agreement-editor h1 { font-size: 19px; font-weight: 700; margin: 12px 0 6px; }
+                .agreement-editor h2 { font-size: 15px; font-weight: 700; margin: 10px 0 5px; }
+                .agreement-editor h3 { font-size: 13.5px; font-weight: 700; margin: 8px 0 4px; }
+                .agreement-editor p { margin: 6px 0; }
+                .agreement-editor ul, .agreement-editor ol { padding-left: 22px; margin: 6px 0; }
+              `}</style>
+              <div className="flex justify-end gap-2 pt-2 border-t flex-wrap">
+                <button type="button" disabled={agreementBusy === 'pdf'}
+                  onClick={async () => {
+                    setAgreementBusy('pdf')
+                    try {
+                      await api.put(`/contracts/${contractId}`, { agreementText: agreementEditRef.current?.innerHTML ?? '' })
+                      const r = await api.get(`/contracts/${contractId}/pdf`, { responseType: 'blob' })
+                      const url = URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }))
+                      window.open(url, '_blank')
+                      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+                    } catch (e) { setErr(apiError(e)) } finally { setAgreementBusy('') }
+                  }}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold border hover:bg-gray-50 disabled:opacity-60"
+                  style={{ color: INK, borderColor: 'rgba(20,8,31,0.15)' }}>
+                  {agreementBusy === 'pdf' ? 'Preparing…' : 'Save & preview PDF'}
+                </button>
+                <button type="button" disabled={agreementBusy === 'save'}
+                  onClick={async () => {
+                    setAgreementBusy('save')
+                    try {
+                      await api.put(`/contracts/${contractId}`, { agreementText: agreementEditRef.current?.innerHTML ?? '' })
+                      qc.invalidateQueries({ queryKey: ['flow-contract'] })
+                      setAgreementOpen(false)
+                    } catch (e) { setErr(apiError(e)) } finally { setAgreementBusy('') }
+                  }}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold border hover:bg-gray-50 disabled:opacity-60"
+                  style={{ color: INK, borderColor: 'rgba(20,8,31,0.15)' }}>
+                  {agreementBusy === 'save' ? 'Saving…' : 'Save'}
+                </button>
+                <button type="button" disabled={agreementBusy === 'sign'}
+                  onClick={async () => {
+                    setAgreementBusy('sign')
+                    try {
+                      await api.put(`/contracts/${contractId}`, { agreementText: agreementEditRef.current?.innerHTML ?? '' })
+                      await createSigningLink.mutateAsync()
+                      qc.invalidateQueries({ queryKey: ['flow-contract'] })
+                      setAgreementOpen(false)
+                    } catch (e) { setErr(apiError(e)) } finally { setAgreementBusy('') }
+                  }}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-white disabled:opacity-60"
+                  style={{ background: PURPLE }}>
+                  {agreementBusy === 'sign' ? 'Preparing…' : 'Save & send for signing'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {contract && (
             <SignInPersonModal
               contractNo={contract.contractNo}
               customerName={customerName}
