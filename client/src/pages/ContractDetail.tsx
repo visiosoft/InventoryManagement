@@ -796,16 +796,13 @@ export default function ContractDetail() {
   // Custom invoices open with no prefilled lines; period invoices keep theirs
   const [invoiceBlank, setInvoiceBlank] = useState(false)
   const [editModal, setEditModal] = useState(false)
-  const [agreementModal, setAgreementModal] = useState(false)
-  const [agreementSource, setAgreementSource] = useState('')
-  const [agreementBusy, setAgreementBusy] = useState(false)
-  const agreementRef = useRef<HTMLDivElement>(null)
-  const agreementInitial = useRef('')
   const [noticeOpen, setNoticeOpen] = useState<{ id: string; name: string } | null>(null)
   const [noticeBusy, setNoticeBusy] = useState('')
   const [noticeSent, setNoticeSent] = useState('')
   const [noticeSignUrl, setNoticeSignUrl] = useState('')
   const noticeRef = useRef<HTMLDivElement>(null)
+  // Editor content is injected on mount via a ref callback — rAF timing is unreliable
+  const noticeInitial = useRef('')
   const [inlineField, setInlineField] = useState<string | null>(null)
   const [inlineValue, setInlineValue] = useState('')
 
@@ -1341,33 +1338,25 @@ export default function ContractDetail() {
                 <button type="button"
                   onClick={async () => {
                     setError('')
+                    setActiveTab('notices')
                     try {
+                      // Open the same agreement panel the Notices tab uses
+                      const list = await api.get('/agreement-template')
+                      const tpl = (list.data?.templates ?? []).find((t: { isDefault: boolean }) => t.isDefault)
                       const r = await api.get(`/contracts/${id}/agreement`)
                       const text = r.data?.text || ''
-                      // Plain text becomes paragraphs; HTML loads as-is
-                      agreementInitial.current = /<\w+[^>]*>/.test(text)
+                      setNoticeOpen({ id: tpl?._id || 'agreement', name: tpl?.name || 'Agreement' })
+                      setNoticeSent('')
+                      setNoticeSignUrl('')
+                      const html = /<\w+[^>]*>/.test(text)
                         ? text
                         : text.split('\n').map((l: string) => `<p>${l.replace(/&/g, '&amp;').replace(/</g, '&lt;') || '<br>'}</p>`).join('')
-                      setAgreementSource(r.data?.source || 'none')
-                      setAgreementModal(true)
-                      requestAnimationFrame(() => { if (agreementRef.current) agreementRef.current.innerHTML = agreementInitial.current })
+                      if (noticeRef.current) noticeRef.current.innerHTML = html
+                      else noticeInitial.current = html
                     } catch (e) { setError(apiError(e)) }
                   }}
                   className="text-primary text-xs hover:underline flex items-center gap-1 cursor-pointer">
                   <PenLine size={12} /> Edit Agreement
-                </button>
-                <button type="button"
-                  onClick={async () => {
-                    setError('')
-                    try {
-                      const r = await api.get(`/contracts/${id}/pdf`, { responseType: 'blob' })
-                      const url = URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }))
-                      window.open(url, '_blank')
-                      setTimeout(() => URL.revokeObjectURL(url), 60_000)
-                    } catch (e) { setError(apiError(e)) }
-                  }}
-                  className="text-primary text-xs hover:underline flex items-center gap-1 cursor-pointer">
-                  <Download size={12} /> Agreement PDF
                 </button>
                 {c.signedDocUrl && (
                   <a href={c.signedDocUrl} target="_blank" rel="noreferrer" className="text-primary text-xs hover:underline flex items-center gap-1">
@@ -1724,13 +1713,11 @@ export default function ContractDetail() {
                             setNoticeOpen({ id: t._id, name: r.data?.name || t.name })
                             setNoticeSent('')
                             setNoticeSignUrl('')
-                            requestAnimationFrame(() => {
-                              if (noticeRef.current) {
-                                noticeRef.current.innerHTML = /<\w+[^>]*>/.test(text)
-                                  ? text
-                                  : text.split('\n').map((l: string) => `<p>${l || '<br>'}</p>`).join('')
-                              }
-                            })
+                            const html = /<\w+[^>]*>/.test(text)
+                              ? text
+                              : text.split('\n').map((l: string) => `<p>${l || '<br>'}</p>`).join('')
+                            if (noticeRef.current) noticeRef.current.innerHTML = html
+                            else noticeInitial.current = html
                           } catch (e) { setError(apiError(e)) } finally { setNoticeBusy('') }
                         }}
                         className="rounded-xl border p-4 text-left hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer disabled:opacity-60">
@@ -2016,7 +2003,10 @@ export default function ContractDetail() {
             </div>
             <div className="p-5 flex-1 flex flex-col gap-3">
               <div
-                ref={noticeRef}
+                ref={(el) => {
+                  noticeRef.current = el
+                  if (el && noticeInitial.current) { el.innerHTML = noticeInitial.current; noticeInitial.current = '' }
+                }}
                 contentEditable
                 suppressContentEditableWarning
                 spellCheck={false}
@@ -2085,67 +2075,6 @@ export default function ContractDetail() {
         </div>
       )}
 
-      {/* ── Edit Agreement slide-over ── */}
-      {agreementModal && (
-        <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/20" onClick={() => setAgreementModal(false)} />
-          <div className="absolute right-0 top-0 h-full w-full max-w-2xl bg-white dark:bg-gray-900 shadow-xl overflow-y-auto animate-in slide-in-from-right flex flex-col">
-            <div className="sticky top-0 bg-white dark:bg-gray-900 border-b px-5 py-4 flex items-center justify-between z-10">
-              <div>
-                <h2 className="text-lg font-bold" style={{ fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em', color: '#14081F' }}>
-                  Agreement — {c.contractNo}
-                </h2>
-                <p className="text-[11px] text-muted-foreground mt-0.5">
-                  {agreementSource === 'contract'
-                    ? 'This contract has its own edited wording.'
-                    : agreementSource === 'template'
-                      ? 'Prefilled from the saved template with this contract’s details — edit freely, saving keeps a copy on this contract.'
-                      : 'No template saved yet — write the agreement here, or design a template under Admin → Agreement Template.'}
-                </p>
-              </div>
-              <button onClick={() => setAgreementModal(false)} className="p-1 hover:bg-muted rounded cursor-pointer"><X size={18} /></button>
-            </div>
-            <div className="p-5 flex-1 flex flex-col gap-3">
-              <div
-                ref={agreementRef}
-                contentEditable
-                suppressContentEditableWarning
-                spellCheck={false}
-                className="agreement-editor w-full flex-1 rounded-lg border bg-white p-6 text-[13px] leading-relaxed outline-none focus:border-primary"
-                style={{ minHeight: 480, overflowY: 'auto' }}
-              />
-              <style>{`
-                .agreement-editor table { border-collapse: collapse; width: 100%; margin: 8px 0; }
-                .agreement-editor td, .agreement-editor th { border: 1px solid #bbb; padding: 5px 8px; font-size: 12.5px; }
-                .agreement-editor h1 { font-size: 19px; font-weight: 700; margin: 12px 0 6px; }
-                .agreement-editor h2 { font-size: 15px; font-weight: 700; margin: 10px 0 5px; }
-                .agreement-editor h3 { font-size: 13.5px; font-weight: 700; margin: 8px 0 4px; }
-                .agreement-editor p { margin: 6px 0; }
-                .agreement-editor ul, .agreement-editor ol { padding-left: 22px; margin: 6px 0; }
-              `}</style>
-              <p className="text-[11px] text-muted-foreground">
-                Rich text — pasting from Word keeps tables, bold and headings, and the PDF prints them.
-              </p>
-              {error && <p className="text-xs text-destructive">{error}</p>}
-              <div className="flex justify-end gap-2 pt-2 border-t">
-                <Button type="button" variant="outline" onClick={() => setAgreementModal(false)}>Cancel</Button>
-                <Button type="button" disabled={agreementBusy} onClick={async () => {
-                  setAgreementBusy(true)
-                  setError('')
-                  try {
-                    await api.put(`/contracts/${id}`, { agreementText: agreementRef.current?.innerHTML ?? '' })
-                    setAgreementSource('contract')
-                    invalidate()
-                    setAgreementModal(false)
-                  } catch (e) { setError(apiError(e)) } finally { setAgreementBusy(false) }
-                }}>
-                  {agreementBusy ? 'Saving…' : 'Save Agreement'}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
