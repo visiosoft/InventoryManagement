@@ -265,11 +265,20 @@ function drawTable(doc, tableNode) {
 
   for (const row of rows) {
     const isHeader = row.some((c) => (c.tagName || '').toLowerCase() === 'th');
-    // Measure the tallest cell first so the row has one height
-    const cellTexts = row.map((cell) => cell.text.replace(/\s+/g, ' ').trim());
-    const heights = cellTexts.map((t) =>
-      doc.font(isHeader ? 'Helvetica-Bold' : 'Helvetica').fontSize(9.5)
-        .heightOfString(t || ' ', { width: colW - padding * 2 }));
+    // Measure the tallest cell first so the row has one height. A cell holding
+    // {{customerSignature}} draws the captured signature inside itself.
+    const cells = row.map((cell) => {
+      const raw = cell.text.replace(/\s+/g, ' ').trim();
+      const hasSig = SIGNATURE_TOKEN.test(raw);
+      return { text: raw.replace(SIGNATURE_TOKEN, '').trim(), hasSig };
+    });
+    const sign = doc._pbSign || null;
+    const heights = cells.map((c) => {
+      let h = doc.font(isHeader ? 'Helvetica-Bold' : 'Helvetica').fontSize(9.5)
+        .heightOfString(c.text || ' ', { width: colW - padding * 2 });
+      if (c.hasSig) h += 52; // room for the signature (or a wet-sign gap)
+      return h;
+    });
     const rowH = Math.max(...heights, 12) + padding * 2;
 
     if (doc.y + rowH > doc.page.height - doc.page.margins.bottom - 60) doc.addPage();
@@ -278,7 +287,24 @@ function drawTable(doc, tableNode) {
       const x = left + i * colW;
       doc.rect(x, y, colW, rowH).strokeColor('#999').lineWidth(0.6).stroke();
       doc.font(isHeader ? 'Helvetica-Bold' : 'Helvetica').fontSize(9.5).fillColor('#000')
-        .text(cellTexts[i] || '', x + padding, y + padding, { width: colW - padding * 2 });
+        .text(cells[i].text || '', x + padding, y + padding, { width: colW - padding * 2 });
+      if (cells[i].hasSig) {
+        const textH = doc.heightOfString(cells[i].text || ' ', { width: colW - padding * 2 });
+        const sigY = y + padding + (cells[i].text ? textH + 3 : 0);
+        const sigPng = sign ? dataUrlToPng(sign.signatureDataUrl) : null;
+        if (sigPng) {
+          try { doc.image(sigPng, x + padding, sigY, { fit: [Math.min(150, colW - padding * 2), 36] }); } catch { /* skip */ }
+        } else if (sign?.signerName) {
+          doc.font('Helvetica-Oblique').fontSize(16).fillColor('#1a1a5c')
+            .text(sign.signerName, x + padding, sigY + 8, { width: colW - padding * 2 });
+        }
+        if (sign?.signerName) {
+          const dateStr = new Date(doc._pbSignedDate || Date.now()).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+          doc.font('Helvetica').fontSize(7.5).fillColor('#333')
+            .text(`${sign.signerName} · signed ${dateStr}`, x + padding, y + rowH - 12, { width: colW - padding * 2, lineBreak: false });
+        }
+        doc.fillColor('#000');
+      }
     });
     doc.x = left;
     doc.y = y + rowH;
