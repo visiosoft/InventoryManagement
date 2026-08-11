@@ -1615,8 +1615,8 @@ export default function ContractDetail() {
               <CardHeader title="Reminders" subtitle="Defaults come from Settings → Automation — override them for this tenant here" />
               <CardBody className="pt-0 space-y-4">
                 {/* Master switch */}
-                <div className="rounded-xl border p-4 flex items-center justify-between gap-4">
-                  <div>
+                <div className="rounded-xl border p-4 flex items-center justify-between gap-3 flex-wrap">
+                  <div className="min-w-0">
                     <div className="font-semibold text-sm">All reminders for this contract</div>
                     <div className="text-[11.5px] text-muted-foreground mt-0.5">
                       {(c as any).remindersMuted

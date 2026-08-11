@@ -388,7 +388,7 @@ export default function Settings() {
       <Card>
         <CardHeader title="Integrations" />
         <CardBody className="space-y-3 text-sm">
-          <div className="flex items-center justify-between rounded-lg border px-4 py-3">
+          <div className="flex items-center justify-between rounded-lg border px-4 py-3 flex-wrap gap-3">
             <div>
               <div className="font-medium">Zoho Sign</div>
               <div className="text-xs text-muted-foreground">E-signature for rental contracts</div>
@@ -481,7 +481,7 @@ export default function Settings() {
               </p>
             )}
           </div>
-          <div className="flex items-center justify-between rounded-lg border px-4 py-3">
+          <div className="flex items-center justify-between rounded-lg border px-4 py-3 flex-wrap gap-3">
             <div>
               <div className="font-medium">WhatsApp (Meta Cloud API)</div>
               <div className="text-xs text-muted-foreground">Webhook verification and setup readiness</div>
