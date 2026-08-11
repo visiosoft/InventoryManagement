@@ -924,6 +924,12 @@ router.put('/:id', async (req, res) => {
       }
     }
 
+    if (req.body.accessType !== undefined) {
+      const v = String(req.body.accessType || '').toLowerCase();
+      if (!['', 'private', 'shared'].includes(v)) return res.status(400).json({ error: 'accessType must be private or shared' });
+      $set.accessType = v;
+    }
+
     // Per-contract reminder settings (Reminders tab)
     if (req.body.remindersMuted !== undefined) $set.remindersMuted = !!req.body.remindersMuted;
     if (Array.isArray(req.body.reminderOverrides)) {

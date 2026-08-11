@@ -911,6 +911,7 @@ export default function NewQuote() {
   // Contract options
   const [authorizedPersons, setAuthorizedPersons] = useState<AccessPerson[]>([])
   const [paymentMethod, setPaymentMethod] = useState('')
+  const [accessType, setAccessType] = useState('')
   const [customerDocs, setCustomerDocs] = useState<{ _id: string; name: string; type: string; url: string }[]>([])
   const [uploadingDoc, setUploadingDoc] = useState(false)
   const [docType, setDocType] = useState('emirates_id')
@@ -1049,6 +1050,8 @@ export default function NewQuote() {
     setAuthorizedPersons(contract.authorizedPersons || [])
     setPaymentMethod(contract.paymentMethod || '')
   }, [contract])
+
+  useEffect(() => { if (contract) setAccessType((contract as any).accessType || '') }, [contract?._id, (contract as any)?.accessType])
 
   // Persist flow step to server whenever step changes
   const prevStepRef = useRef(-1)
@@ -1382,6 +1385,7 @@ export default function NewQuote() {
   const contractOptionsBody = () => ({
     authorizedPersons: authorizedPersons.filter((p) => p.name?.trim()),
     paymentMethod,
+    accessType,
   })
 
   const createContract = useMutation({
@@ -2447,6 +2451,16 @@ export default function NewQuote() {
                             </div>
                           </div>
                         ))}
+
+                        <div className="max-w-xs">
+                          <Field label="Access Type">
+                            <Select value={accessType} onChange={(e) => setAccessType(e.target.value)} className="h-8 text-xs">
+                              <option value="">Auto (from units)</option>
+                              <option value="private">Private</option>
+                              <option value="shared">Shared</option>
+                            </Select>
+                          </Field>
+                        </div>
 
                         <button
                           type="button"

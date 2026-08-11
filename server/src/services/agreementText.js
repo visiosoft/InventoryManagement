@@ -28,7 +28,7 @@ export function agreementPlaceholders(contract) {
     customerAddress: customer.address || '',
     emiratesId: customer.emiratesId || '',
     passportNumber: customer.passportNumber || '',
-    accessType: allUnits.some((u) => u.shared) ? 'Shared' : 'Private',
+    accessType: contract.accessType ? contract.accessType[0].toUpperCase() + contract.accessType.slice(1) : (allUnits.some((u) => u.shared) ? 'Shared' : 'Private'),
     contractNo: contract.contractNo || '',
     startDate: fmt(contract.startDate),
     endDate: fmt(contract.endDate),

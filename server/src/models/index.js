@@ -265,6 +265,8 @@ const contractSchema = new Schema(
     manualReceived: { type: Number, default: null },
     // Per-contract reminder settings. Defaults come from Settings → Automation;
     // an override entry pins one rule on/off for this contract only.
+    // '' = derive from the units (any shared unit → Shared)
+    accessType: { type: String, enum: ['', 'private', 'shared'], default: '' },
     remindersMuted: { type: Boolean, default: false },
     reminderOverrides: [
       {
