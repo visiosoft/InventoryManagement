@@ -980,7 +980,6 @@ export default function NewQuote() {
   const invoice = flowData?.invoices?.[0]
   const paidTotal = (flowData?.invoices || []).reduce((s, i) => s + Number(i.paymentMade ?? 0), 0)
   const approvalStatus = contract?.approvalStatus ?? 'not_required'
-  const isBooked = contract?.status === 'active'
   const quoteLocked = false
 
   // Hydrate the wizard from the latest quote for this lead (resume support)
@@ -2345,7 +2344,13 @@ export default function NewQuote() {
                             color: contract.status === 'active' ? GREEN : contract.status === 'cancelled' ? '#B91C1C' : '#1D4ED8',
                           }}>{contract.status.replace(/_/g, ' ')}</span>
                         </div>
-                        <span className="text-sm font-bold" style={{ color: PURPLE }}>{formatMoney(total)} AED / {dateRangeFrom && dateRangeTo ? Math.ceil(Math.round((new Date(dateRangeTo).getTime() - new Date(dateRangeFrom).getTime()) / 86400000) / 7) : 0} weeks</span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-bold" style={{ color: PURPLE }}>{formatMoney(total)} AED / {dateRangeFrom && dateRangeTo ? Math.ceil(Math.round((new Date(dateRangeTo).getTime() - new Date(dateRangeFrom).getTime()) / 86400000) / 7) : 0} weeks</span>
+                          <button type="button" onClick={() => navigate(`/contracts/${contract._id}`)}
+                            className="text-xs font-semibold hover:underline cursor-pointer" style={{ color: PURPLE }}>
+                            Open contract →
+                          </button>
+                        </div>
                       </div>
                       {/* Body */}
                       <div className="px-4 py-3 space-y-1">
@@ -2390,8 +2395,9 @@ export default function NewQuote() {
                       </div>
                     )}
 
-                    {/* Contract options — editable until booked */}
-                    {!isBooked && (
+                    {/* Contract options — authorized persons stay editable after booking
+                        (the server allows only admins to change an active contract) */}
+                    {(
                       <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
                         <div className="flex items-center justify-between">
                           <p className="text-xs font-semibold" style={{ color: INK }}>
@@ -2455,8 +2461,8 @@ export default function NewQuote() {
                       </div>
                     )}
 
-                    {/* Action bar — after saving options */}
-                    {['draft', 'pending_signature'].includes(contract.status) && (
+                    {/* Action bar — signing works for active contracts too (re-sign, admin) */}
+                    {['draft', 'pending_signature', 'active'].includes(contract.status) && (
                       <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
                         <div className="flex items-center gap-px" style={{ background: '#fff' }}>
                           <button
@@ -2474,7 +2480,7 @@ export default function NewQuote() {
                             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors disabled:opacity-60"
                             style={{ color: '#3B82F6' }}
                           >
-                            {createSigningLink.isPending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} Send link
+                            {createSigningLink.isPending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} {contract.status === 'active' ? 'Re-send for signing' : 'Send link'}
                           </button>
                           <button
                             type="button"
