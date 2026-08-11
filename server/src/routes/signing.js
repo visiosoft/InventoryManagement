@@ -1,8 +1,7 @@
 import { Router } from 'express';
 import { Contract, Unit, Document, Payment } from '../models/index.js';
 import { uploadFile } from '../services/drive.js';
-import { stampSignature } from '../services/stampSignature.js';
-import { buildContractPdf } from '../services/contractDocument.js';
+import { buildContractPdf, buildSignedContractPdf } from '../services/contractDocument.js';
 
 const router = Router();
 
@@ -94,11 +93,9 @@ router.post('/:token', async (req, res) => {
     if (!signerName?.trim()) return res.status(400).json({ error: 'Signer name is required' });
 
     const now = new Date();
-    let pdfBuffer = await buildContractPdf(contract, now);
-    pdfBuffer = await stampSignature(pdfBuffer, {
+    const pdfBuffer = await buildSignedContractPdf(contract, now, {
       signerName, signatureDataUrl, signMode,
       initialsText, initialsDataUrl, initialsMode,
-      signedAt: now,
     });
 
     const stored = await uploadFile({
