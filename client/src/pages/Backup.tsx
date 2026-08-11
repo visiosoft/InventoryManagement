@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, CloudUpload, ExternalLink, HardDrive, RefreshCw, XCircle } from 'lucide-react'
+import { CheckCircle2, CloudUpload, Download, ExternalLink, HardDrive, History, RefreshCw, Upload, X, XCircle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
-import { Badge, Button, Card, CardBody, CardHeader, EmptyState, Spinner, Table, Td, Th } from '../components/ui'
+import { Badge, Button, Card, CardBody, CardHeader, EmptyState, Field, Select, Spinner, Table, Td, Th } from '../components/ui'
+import { useAuth } from '../lib/auth'
 import { formatDate } from '../lib/utils'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -12,10 +13,17 @@ type BackupResult = {
   filename: string; backedUpAt: string; storage: 'drive' | 'local'
   driveUrl?: string; sizeKb: number; collections: number; documents: number; durationMs: number
 }
+type RestoreStatus = {
+  running: boolean; startedAt: string | null; filename: string
+  logs: LogEntry[]; lastResult: { collections: number; documents: number; restoredAt: string; backupDate?: string } | null
+  lastError: string
+}
 type StatusResponse = {
   running: boolean; startedAt: string | null; triggeredBy: string
   logs: LogEntry[]; lastResult: BackupResult | null; lastError: string
+  restore?: RestoreStatus
 }
+type BackupConfig = { enabled: boolean; frequency: '6h' | '12h' | 'daily' | 'weekly'; hour: number; lastAutoAt?: string }
 type BackupEntry = {
   filename: string; sizeKb: number; createdAt: string
   storage: 'drive' | 'local'; driveUrl?: string
@@ -46,9 +54,20 @@ function logColor(level: string) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
+const FREQ_LABELS: Record<string, string> = {
+  '6h': 'Every 6 hours', '12h': 'Every 12 hours', daily: 'Daily', weekly: 'Weekly',
+}
+
 export default function Backup() {
   const qc = useQueryClient()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const [runError, setRunError] = useState('')
+  const [restoreTarget, setRestoreTarget] = useState<string | null>(null)
+  const [restoreConfirm, setRestoreConfirm] = useState('')
+  const [cfgDraft, setCfgDraft] = useState<BackupConfig | null>(null)
+  const [cfgSaved, setCfgSaved] = useState(false)
+  const uploadRef = useRef<HTMLInputElement>(null)
   const [, setTick] = useState(0)   // drives elapsed timer re-render
   const logRef = useRef<HTMLDivElement>(null)
 
@@ -58,6 +77,12 @@ export default function Backup() {
     queryFn: () => api.get('/backup/status').then(r => r.data),
     refetchInterval: (query) => (query.state.data?.running ? 1500 : 15_000),
   })
+
+  const { data: config } = useQuery<BackupConfig>({
+    queryKey: ['backup-config'],
+    queryFn: () => api.get('/backup/config').then(r => r.data),
+  })
+  useEffect(() => { if (config && !cfgDraft) setCfgDraft(config) }, [config, cfgDraft])
 
   // Backup history list
   const { data: listData, isLoading: listLoading } = useQuery<{ backups: BackupEntry[] }>({
@@ -97,6 +122,51 @@ export default function Backup() {
     }
   }
 
+  async function saveConfig() {
+    if (!cfgDraft) return
+    setRunError('')
+    try {
+      await api.put('/backup/config', { enabled: cfgDraft.enabled, frequency: cfgDraft.frequency, hour: cfgDraft.hour })
+      setCfgSaved(true)
+      setTimeout(() => setCfgSaved(false), 2500)
+      qc.invalidateQueries({ queryKey: ['backup-config'] })
+    } catch (e) { setRunError(apiError(e)) }
+  }
+
+  async function downloadBackup(filename: string) {
+    setRunError('')
+    try {
+      const r = await api.get(`/backup/download/${encodeURIComponent(filename)}`, { responseType: 'blob' })
+      const url = URL.createObjectURL(new Blob([r.data], { type: 'application/gzip' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch (e) { setRunError(apiError(e)) }
+  }
+
+  async function startRestore(filename: string) {
+    setRunError('')
+    try {
+      await api.post('/backup/restore', { filename })
+      setRestoreTarget(null)
+      setRestoreConfirm('')
+      refetchStatus()
+    } catch (e) { setRunError(apiError(e)) }
+  }
+
+  async function restoreFromUpload(file: File) {
+    setRunError('')
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      await api.post('/backup/restore-upload', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+      refetchStatus()
+    } catch (e) { setRunError(apiError(e)) }
+  }
+
+  const restore = status?.restore
   const backups = listData?.backups ?? []
   const running = status?.running ?? false
   const lastResult = status?.lastResult
@@ -110,7 +180,9 @@ export default function Backup() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Database Backup</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Automatic daily backup to Google Drive at 02:00 server time. All collections exported and compressed.
+            {config?.enabled
+              ? `Automatic ${FREQ_LABELS[config.frequency]?.toLowerCase() ?? 'daily'} backup to Google Drive${['daily', 'weekly'].includes(config.frequency) ? ` at ${String(config.hour).padStart(2, '0')}:00` : ''}. All collections exported and compressed.`
+              : 'Automatic backups are OFF — only manual backups run.'}
           </p>
         </div>
         <Button onClick={startBackup} disabled={running}>
@@ -190,6 +262,89 @@ export default function Backup() {
         </Card>
       )}
 
+      {/* Schedule settings */}
+      <Card>
+        <CardHeader title="Automatic backup schedule" subtitle="Changes apply immediately — the server checks every minute" />
+        <CardBody className="pt-0">
+          {!cfgDraft ? <Spinner /> : (
+            <div className="flex flex-wrap items-end gap-3">
+              <Field label="Automatic backups">
+                <Select value={cfgDraft.enabled ? 'on' : 'off'} disabled={!isAdmin}
+                  onChange={(e) => setCfgDraft({ ...cfgDraft, enabled: e.target.value === 'on' })}>
+                  <option value="on">Enabled</option>
+                  <option value="off">Disabled</option>
+                </Select>
+              </Field>
+              <Field label="Frequency">
+                <Select value={cfgDraft.frequency} disabled={!isAdmin || !cfgDraft.enabled}
+                  onChange={(e) => setCfgDraft({ ...cfgDraft, frequency: e.target.value as BackupConfig['frequency'] })}>
+                  <option value="6h">Every 6 hours</option>
+                  <option value="12h">Every 12 hours</option>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                </Select>
+              </Field>
+              {['daily', 'weekly'].includes(cfgDraft.frequency) && (
+                <Field label="At hour">
+                  <Select value={String(cfgDraft.hour)} disabled={!isAdmin || !cfgDraft.enabled}
+                    onChange={(e) => setCfgDraft({ ...cfgDraft, hour: Number(e.target.value) })}>
+                    {Array.from({ length: 24 }, (_, h) => (
+                      <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>
+                    ))}
+                  </Select>
+                </Field>
+              )}
+              {isAdmin && (
+                <Button onClick={saveConfig}>{cfgSaved ? 'Saved ✓' : 'Save schedule'}</Button>
+              )}
+              {config?.lastAutoAt && (
+                <span className="text-xs text-muted-foreground pb-2.5">
+                  Last automatic run: {formatDate(config.lastAutoAt)}
+                </span>
+              )}
+            </div>
+          )}
+        </CardBody>
+      </Card>
+
+      {/* Restore progress / result */}
+      {restore && (restore.running || restore.logs.length > 0) && (
+        <Card>
+          <CardBody className="p-0">
+            <div className="flex items-center gap-2 px-4 py-2.5 border-b">
+              {restore.running ? (
+                <>
+                  <span className="inline-block h-2 w-2 rounded-full bg-red-400 animate-pulse" />
+                  <span className="text-sm font-medium">Restore in progress — do not close the server</span>
+                </>
+              ) : restore.lastError ? (
+                <><XCircle size={14} className="text-destructive" /><span className="text-sm font-medium text-destructive">Restore failed</span></>
+              ) : (
+                <>
+                  <History size={14} className="text-emerald-500" />
+                  <span className="text-sm font-medium">Restore complete</span>
+                  {restore.lastResult && (
+                    <span className="text-xs text-muted-foreground">
+                      — {restore.lastResult.collections} collections · {restore.lastResult.documents.toLocaleString()} docs restored
+                    </span>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="bg-slate-950 rounded-b-lg font-mono text-xs p-4 space-y-0.5 max-h-72 overflow-y-auto">
+              {restore.logs.map((entry, i) => (
+                <div key={i} className="flex gap-3">
+                  <span className="text-slate-500 shrink-0 select-none">
+                    {new Date(entry.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  </span>
+                  <span className={logColor(entry.level)}>{entry.msg}</span>
+                </div>
+              ))}
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Card>
@@ -258,12 +413,26 @@ export default function Backup() {
                       <Td className="text-xs">{formatBytes(b.sizeKb)}</Td>
                       <Td><StorageBadge storage={b.storage} /></Td>
                       <Td>
-                        {b.driveUrl && (
-                          <a href={b.driveUrl} target="_blank" rel="noreferrer"
-                            className="text-primary text-xs hover:underline flex items-center gap-1">
-                            <ExternalLink size={11} /> Open in Drive
-                          </a>
-                        )}
+                        <div className="flex items-center gap-3">
+                          <button type="button" onClick={() => downloadBackup(b.filename)}
+                            className="text-primary text-xs hover:underline flex items-center gap-1 cursor-pointer">
+                            <Download size={11} /> Download
+                          </button>
+                          {b.driveUrl && (
+                            <a href={b.driveUrl} target="_blank" rel="noreferrer"
+                              className="text-primary text-xs hover:underline flex items-center gap-1">
+                              <ExternalLink size={11} /> Drive
+                            </a>
+                          )}
+                          {isAdmin && (
+                            <button type="button"
+                              onClick={() => { setRestoreTarget(b.filename); setRestoreConfirm('') }}
+                              disabled={running || restore?.running}
+                              className="text-destructive text-xs hover:underline flex items-center gap-1 cursor-pointer disabled:opacity-40">
+                              <History size={11} /> Restore
+                            </button>
+                          )}
+                        </div>
                       </Td>
                     </tr>
                   ))}
@@ -271,6 +440,61 @@ export default function Backup() {
               </Table>
             )}
       </Card>
+
+      {/* Restore from a downloaded backup file */}
+      {isAdmin && (
+        <Card>
+          <CardBody className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <div className="text-sm font-semibold">Restore from a file</div>
+              <div className="text-xs text-muted-foreground mt-0.5">
+                Upload a previously downloaded .json.gz backup and restore the database from it.
+              </div>
+            </div>
+            <input ref={uploadRef} type="file" accept=".gz,application/gzip" className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f && confirm(`Restore the database from "${f.name}"? Current data is safety-backed-up first, then REPLACED.`)) restoreFromUpload(f); e.target.value = '' }} />
+            <Button variant="outline" disabled={running || restore?.running}
+              onClick={() => uploadRef.current?.click()}>
+              <Upload size={14} /> Upload &amp; restore
+            </Button>
+          </CardBody>
+        </Card>
+      )}
+
+      {/* Restore confirmation */}
+      {restoreTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setRestoreTarget(null)} />
+          <div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-xl max-w-md w-full p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-destructive">Restore database</h2>
+              <button onClick={() => setRestoreTarget(null)} className="p-1 hover:bg-muted rounded cursor-pointer"><X size={16} /></button>
+            </div>
+            <p className="text-sm">
+              This replaces the <strong>entire database</strong> with the contents of
+              <span className="font-mono text-xs block mt-1">{restoreTarget}</span>
+            </p>
+            <p className="text-xs text-muted-foreground">
+              A safety backup of the current data is taken automatically first, so this can be undone by
+              restoring that safety backup.
+            </p>
+            <Field label='Type RESTORE to confirm'>
+              <input value={restoreConfirm} onChange={(e) => setRestoreConfirm(e.target.value)}
+                className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-destructive"
+                placeholder="RESTORE" autoFocus />
+            </Field>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="outline" onClick={() => setRestoreTarget(null)}>Cancel</Button>
+              <Button
+                className="bg-destructive hover:bg-destructive/90"
+                disabled={restoreConfirm !== 'RESTORE'}
+                onClick={() => startRestore(restoreTarget)}>
+                Restore now
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

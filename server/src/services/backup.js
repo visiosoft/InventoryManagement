@@ -259,3 +259,197 @@ export async function listDriveBackups() {
     return [];
   }
 }
+
+// ── Backup configuration (frequency set from the frontend) ────────────────────
+
+const gunzip = promisify(zlib.gunzip);
+
+const CONFIG_DEFAULTS = { enabled: true, frequency: 'daily', hour: 2 };
+const FREQUENCY_HOURS = { '6h': 6, '12h': 12, daily: 24, weekly: 168 };
+
+function configCollection() {
+  return mongoose.connection.db.collection('backupconfig');
+}
+
+export async function getBackupConfig() {
+  const doc = await configCollection().findOne({ key: 'default' });
+  return { ...CONFIG_DEFAULTS, ...(doc || {}) };
+}
+
+export async function saveBackupConfig(patch, by = '') {
+  const clean = {};
+  if (patch.enabled !== undefined) clean.enabled = !!patch.enabled;
+  if (patch.frequency !== undefined) {
+    if (!FREQUENCY_HOURS[patch.frequency]) throw new Error('Invalid frequency');
+    clean.frequency = patch.frequency;
+  }
+  if (patch.hour !== undefined) {
+    const h = Number(patch.hour);
+    if (!Number.isInteger(h) || h < 0 || h > 23) throw new Error('Hour must be 0–23');
+    clean.hour = h;
+  }
+  clean.updatedBy = by;
+  clean.updatedAt = new Date();
+  await configCollection().updateOne({ key: 'default' }, { $set: clean }, { upsert: true });
+  return getBackupConfig();
+}
+
+async function markAutoRun() {
+  await configCollection().updateOne({ key: 'default' }, { $set: { lastAutoAt: new Date() } }, { upsert: true });
+}
+
+// Checks once a minute whether an automatic backup is due, per the saved
+// config. Survives restarts because lastAutoAt lives in the database.
+export function startBackupScheduler() {
+  setInterval(async () => {
+    try {
+      if (backupState.running || restoreState.running) return;
+      const cfg = await getBackupConfig();
+      if (!cfg.enabled) return;
+      const periodH = FREQUENCY_HOURS[cfg.frequency] ?? 24;
+      const now = new Date();
+      const last = cfg.lastAutoAt ? new Date(cfg.lastAutoAt) : null;
+      let due = false;
+      if (periodH < 24) {
+        due = !last || now - last >= periodH * 3600_000 - 30_000;
+      } else {
+        // Daily/weekly runs anchor on the configured hour (first 5 minutes)
+        const gapOk = !last || now - last >= (periodH - 1) * 3600_000;
+        due = now.getHours() === Number(cfg.hour) && now.getMinutes() < 5 && gapOk;
+      }
+      if (!due) return;
+      await markAutoRun();
+      await runBackup('scheduler');
+    } catch (e) {
+      console.error('[Backup] scheduler:', e.message);
+    }
+  }, 60_000);
+  console.log('[Backup] Scheduler active — frequency comes from the Backup page settings');
+}
+
+// ── Download ──────────────────────────────────────────────────────────────────
+
+/** The raw .json.gz for a listed backup — local copy first, Drive otherwise. */
+export async function getBackupFile(filename) {
+  if (!/^purplebox-backup-[\w.-]+\.json\.gz$/.test(filename)) {
+    throw new Error('Invalid backup filename');
+  }
+  const localPath = path.join(LOCAL_BACKUP_DIR, filename);
+  if (fs.existsSync(localPath)) return fs.readFileSync(localPath);
+
+  const drive = driveClient();
+  if (!drive) throw new Error('Backup not found locally and Google Drive is not configured');
+  const folderId = await getBackupFolder(drive);
+  const list = await drive.files.list({
+    q: `'${folderId}' in parents and name='${filename.replace(/'/g, "\\'")}' and trashed=false`,
+    fields: 'files(id)', spaces: 'drive',
+  });
+  const file = list.data.files?.[0];
+  if (!file) throw new Error('Backup not found');
+  const res = await drive.files.get({ fileId: file.id, alt: 'media' }, { responseType: 'arraybuffer' });
+  return Buffer.from(res.data);
+}
+
+// ── Restore ───────────────────────────────────────────────────────────────────
+
+export const restoreState = {
+  running: false,
+  startedAt: null,
+  triggeredBy: '',
+  filename: '',
+  logs: [],
+  lastResult: null,
+  lastError: '',
+};
+
+function rlog(msg, level = 'info') {
+  restoreState.logs.push({ at: new Date().toISOString(), msg, level });
+  console.log(`[Restore${level === 'error' ? ' ERROR' : ''}] ${msg}`);
+}
+
+// The export is plain JSON, so ObjectIds and Dates arrive as strings — revive
+// them or every reference between collections breaks.
+const HEX24 = /^[0-9a-f]{24}$/;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
+function revive(value, key) {
+  if (typeof value === 'string') {
+    // Any 24-hex string in a dump of our own data is an ObjectId
+    if (HEX24.test(value)) {
+      try { return new mongoose.Types.ObjectId(value); } catch { return value; }
+    }
+    if (ISO_DATE.test(value)) return new Date(value);
+    return value;
+  }
+  if (Array.isArray(value)) return value.map((v) => revive(v, key));
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) out[k] = revive(v, k);
+    return out;
+  }
+  return value;
+}
+
+export async function runRestore({ buffer, filename = '', actor = '' }) {
+  if (backupState.running) throw new Error('A backup is running — wait for it to finish');
+  if (restoreState.running) throw new Error('A restore is already in progress');
+
+  restoreState.running = true;
+  restoreState.startedAt = new Date().toISOString();
+  restoreState.triggeredBy = actor;
+  restoreState.filename = filename;
+  restoreState.logs = [];
+  restoreState.lastError = '';
+
+  try {
+    rlog(`Restore requested by ${actor}${filename ? ` from ${filename}` : ' from uploaded file'}`);
+
+    rlog('Reading backup archive…');
+    const json = await gunzip(buffer);
+    const payload = JSON.parse(json.toString());
+    if (!payload?.collections || typeof payload.collections !== 'object') {
+      throw new Error('Not a PurpleBox backup file (no collections found)');
+    }
+    const names = Object.keys(payload.collections);
+    rlog(`Archive from ${payload.backedUpAt || 'unknown date'} — ${names.length} collections`);
+
+    // Safety net: snapshot the current data before touching anything
+    rlog('Taking a safety backup of the CURRENT data first…');
+    restoreState.running = false; // let runBackup take its lock
+    try {
+      const safety = await runBackup(`pre-restore safety (${actor})`);
+      rlog(`Safety backup saved: ${safety.filename}`, 'ok');
+    } finally {
+      restoreState.running = true;
+    }
+
+    const db = mongoose.connection.db;
+    let restoredDocs = 0;
+    for (const name of names) {
+      const docs = (payload.collections[name] || []).map((d) => revive(d, ''));
+      rlog(`  ${name}: replacing with ${docs.length} docs`);
+      await db.collection(name).deleteMany({});
+      for (let i = 0; i < docs.length; i += 500) {
+        const chunk = docs.slice(i, i + 500);
+        if (chunk.length) await db.collection(name).insertMany(chunk, { ordered: false });
+      }
+      restoredDocs += docs.length;
+    }
+
+    const result = {
+      filename,
+      restoredAt: new Date().toISOString(),
+      collections: names.length,
+      documents: restoredDocs,
+      backupDate: payload.backedUpAt || null,
+    };
+    restoreState.lastResult = result;
+    rlog(`Restore complete — ${names.length} collections, ${restoredDocs} documents`, 'ok');
+    return result;
+  } catch (err) {
+    restoreState.lastError = err.message;
+    rlog(`Restore failed: ${err.message}`, 'error');
+    throw err;
+  } finally {
+    restoreState.running = false;
+  }
+}

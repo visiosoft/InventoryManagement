@@ -48,7 +48,7 @@ import customerAuthRoutes from './routes/customerAuth.js';
 import customerPortalRoutes from './routes/customerPortal.js';
 import crewAuthRoutes from './routes/crewAuth.js';
 import crewPortalRoutes from './routes/crewPortal.js';
-import { runBackup } from './services/backup.js';
+import { startBackupScheduler } from './services/backup.js';
 import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
 import { runPaymentReminders } from './services/paymentReminders.js';
 
@@ -221,23 +221,8 @@ async function start() {
   }
 
   // Daily database backup — runs every day at 02:00 server time.
-  // BACKUP_HOUR env var overrides the hour (0-23, default 2).
-  function scheduleDailyBackup() {
-    const hour = Number(process.env.BACKUP_HOUR ?? 2);
-    const now = new Date();
-    const next = new Date(now);
-    next.setHours(hour, 0, 0, 0);
-    if (next <= now) next.setDate(next.getDate() + 1); // already past today's slot → tomorrow
-    const msUntil = next.getTime() - now.getTime();
-    console.log(`[Backup] Next scheduled backup at ${next.toLocaleString()} (in ${Math.round(msUntil / 60000)} min)`);
-    setTimeout(async () => {
-      try { await runBackup('scheduler'); } catch (e) { console.error('[Backup] Scheduled backup failed:', e.message); }
-      setInterval(async () => {
-        try { await runBackup('scheduler'); } catch (e) { console.error('[Backup] Scheduled backup failed:', e.message); }
-      }, 24 * 60 * 60 * 1000);
-    }, msUntil);
-  }
-  scheduleDailyBackup();
+  // Automatic backups: frequency and hour come from the Backup page settings
+  startBackupScheduler();
 
   // Payment reminders — run every 6 hours
   const REMINDER_INTERVAL = 6 * 60 * 60 * 1000;
