@@ -804,6 +804,7 @@ export default function ContractDetail() {
   const [noticeOpen, setNoticeOpen] = useState<{ id: string; name: string } | null>(null)
   const [noticeBusy, setNoticeBusy] = useState('')
   const [noticeSent, setNoticeSent] = useState('')
+  const [noticeSignUrl, setNoticeSignUrl] = useState('')
   const noticeRef = useRef<HTMLDivElement>(null)
   const [inlineField, setInlineField] = useState<string | null>(null)
   const [inlineValue, setInlineValue] = useState('')
@@ -1722,6 +1723,7 @@ export default function ContractDetail() {
                             const text = r.data?.text || ''
                             setNoticeOpen({ id: t._id, name: r.data?.name || t.name })
                             setNoticeSent('')
+                            setNoticeSignUrl('')
                             requestAnimationFrame(() => {
                               if (noticeRef.current) {
                                 noticeRef.current.innerHTML = /<\w+[^>]*>/.test(text)
@@ -2022,6 +2024,7 @@ export default function ContractDetail() {
                 style={{ minHeight: 440, overflowY: 'auto' }}
               />
               {noticeSent && <p className="text-xs text-emerald-600 font-medium">{noticeSent}</p>}
+              {noticeSignUrl && <p className="text-[11px] break-all text-muted-foreground">Signing link: {noticeSignUrl}</p>}
               {error && <p className="text-xs text-destructive">{error}</p>}
               <div className="flex justify-end gap-2 pt-2 border-t flex-wrap">
                 <Button type="button" variant="outline" onClick={async () => {
@@ -2044,6 +2047,27 @@ export default function ContractDetail() {
                 }}>
                   <MessageSquare size={14} /> WhatsApp
                 </Button>
+                {noticeTemplates.find((t) => t._id === noticeOpen.id)?.isDefault && (
+                  <Button type="button" disabled={noticeBusy === 'sign'} className="bg-emerald-600 hover:bg-emerald-700" onClick={async () => {
+                    setNoticeBusy('sign'); setError(''); setNoticeSent('')
+                    try {
+                      // The tenant signs exactly what's on screen — keep this
+                      // wording on the contract, then mint the signing link
+                      await api.put(`/contracts/${id}`, { agreementText: noticeRef.current?.innerHTML ?? '' })
+                      const r = await api.post(`/contracts/${id}/create-signing-link`)
+                      const url = r.data?.signingUrl || ''
+                      setNoticeSignUrl(url)
+                      try { await navigator.clipboard.writeText(url) } catch { /* clipboard blocked */ }
+                      const phone = (c.customer?.phones?.[0] || c.customer?.phone || '').replace(/\D/g, '')
+                      const text = encodeURIComponent(`Hello ${c.customer?.fullName || ''},\n\nPlease review and sign your storage agreement ${c.contractNo}:\n${url}\n\nThe link is valid for 7 days.\n\nThank you,\nPurpleBox Storage`)
+                      window.open(phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`, '_blank')
+                      setNoticeSent('Signing link created (copied to clipboard). Once signed, the copy files under Documents automatically.')
+                      invalidate()
+                    } catch (e) { setError(apiError(e)) } finally { setNoticeBusy('') }
+                  }}>
+                    {noticeBusy === 'sign' ? 'Preparing…' : 'Send for signing'}
+                  </Button>
+                )}
                 <Button type="button" disabled={noticeBusy === 'email'} onClick={async () => {
                   setNoticeBusy('email'); setError(''); setNoticeSent('')
                   try {
