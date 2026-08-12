@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { MovingJob, MovingInvoice } from '../models/index.js';
+import { MovingJob, MovingInvoice, MovingLead, MovingQuote, MovingClaim } from '../models/index.js';
 
 const router = Router();
 
@@ -165,7 +165,7 @@ router.get('/fleet', async (req, res) => {
   }
 });
 
-// Job profitability — revenue vs cost per job
+// Job profitability — revenue vs cost per job, plus a monthly rollup for the trend chart
 router.get('/profitability', async (req, res) => {
   try {
     const filter = { status: { $in: ['completed', 'invoiced'] } };
@@ -177,7 +177,7 @@ router.get('/profitability', async (req, res) => {
       .populate('invoice', 'invoiceNo total status')
       .select('jobNo customer scheduledDate costs invoice status')
       .sort({ scheduledDate: -1 })
-      .limit(200);
+      .limit(500);
 
     const rows = jobs.map(j => {
       const revenue = j.invoice?.total ?? 0;
@@ -198,7 +198,200 @@ router.get('/profitability', async (req, res) => {
     const totalProfit = totalRevenue - totalCost;
     const avgMargin = totalRevenue > 0 ? Math.round(((totalProfit / totalRevenue) * 100) * 10) / 10 : 0;
 
-    res.json({ rows, summary: { totalRevenue, totalCost, totalProfit, avgMargin, jobCount: rows.length } });
+    const byMonth = new Map();
+    for (const r of rows) {
+      if (!r.scheduledDate) continue;
+      const d = new Date(r.scheduledDate);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const m = byMonth.get(key) || { month: key, revenue: 0, cost: 0, jobCount: 0 };
+      m.revenue += r.revenue; m.cost += r.cost; m.jobCount += 1;
+      byMonth.set(key, m);
+    }
+    const monthly = [...byMonth.values()]
+      .sort((a, b) => a.month.localeCompare(b.month))
+      .map(m => ({ ...m, profit: m.revenue - m.cost, margin: m.revenue > 0 ? Math.round(((m.revenue - m.cost) / m.revenue) * 1000) / 10 : 0 }));
+
+    res.json({ rows, monthly, summary: { totalRevenue, totalCost, totalProfit, avgMargin, jobCount: rows.length } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Accounts Receivable — outstanding invoices bucketed by days past due
+router.get('/ar', async (req, res) => {
+  try {
+    const now = new Date();
+    const invoices = await MovingInvoice.find({ status: { $in: ['sent', 'partial'] }, balanceDue: { $gt: 0 } })
+      .populate('customer', 'fullName phone email')
+      .populate('job', 'jobNo')
+      .select('invoiceNo customer job total balanceDue dueDate invoiceDate status')
+      .sort({ dueDate: 1 })
+      .lean();
+
+    const bucketOf = (dueDate) => {
+      const days = Math.floor((now - new Date(dueDate)) / 86400000);
+      if (days <= 0) return 'current';
+      if (days <= 30) return 'd30';
+      if (days <= 60) return 'd60';
+      if (days <= 90) return 'd90';
+      return 'd90plus';
+    };
+
+    const buckets = { current: 0, d30: 0, d60: 0, d90: 0, d90plus: 0 };
+    const byCustomer = new Map();
+
+    for (const inv of invoices) {
+      const bucket = bucketOf(inv.dueDate);
+      buckets[bucket] += inv.balanceDue;
+
+      const custId = String(inv.customer?._id || 'unknown');
+      if (!byCustomer.has(custId)) {
+        byCustomer.set(custId, {
+          customerId: custId,
+          customer: inv.customer?.fullName || 'Unknown',
+          phone: inv.customer?.phone || '',
+          email: inv.customer?.email || '',
+          totalOutstanding: 0,
+          worstBucket: 'current',
+          invoices: [],
+        });
+      }
+      const row = byCustomer.get(custId);
+      row.totalOutstanding += inv.balanceDue;
+      const order = ['current', 'd30', 'd60', 'd90', 'd90plus'];
+      if (order.indexOf(bucket) > order.indexOf(row.worstBucket)) row.worstBucket = bucket;
+      row.invoices.push({
+        invoiceId: inv._id, invoiceNo: inv.invoiceNo, jobNo: inv.job?.jobNo,
+        total: inv.total, balanceDue: inv.balanceDue, dueDate: inv.dueDate, invoiceDate: inv.invoiceDate, bucket,
+      });
+    }
+
+    const rows = [...byCustomer.values()].sort((a, b) => b.totalOutstanding - a.totalOutstanding);
+    const totalOutstanding = Object.values(buckets).reduce((s, v) => s + v, 0);
+
+    res.json({ rows, buckets, totalOutstanding });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Monthly cost breakdown — labor / truck / materials / packing / extras / external hires
+router.get('/costs', async (req, res) => {
+  try {
+    const months = Number(req.query.months) || 12;
+    const from = new Date();
+    from.setMonth(from.getMonth() - months + 1);
+    from.setDate(1);
+    from.setHours(0, 0, 0, 0);
+
+    const jobs = await MovingJob.find({
+      status: { $in: ['completed', 'invoiced'] },
+      scheduledDate: { $gte: from },
+    }).select('scheduledDate costs').lean();
+
+    const byMonth = new Map();
+    const categories = ['labor', 'truck', 'materials', 'packing', 'extras', 'externalHires'];
+    for (const j of jobs) {
+      if (!j.scheduledDate) continue;
+      const d = new Date(j.scheduledDate);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      if (!byMonth.has(key)) {
+        byMonth.set(key, { month: key, labor: 0, truck: 0, materials: 0, packing: 0, extras: 0, externalHires: 0, total: 0 });
+      }
+      const m = byMonth.get(key);
+      for (const c of categories) m[c] += j.costs?.[c] ?? 0;
+      m.total += j.costs?.total ?? 0;
+    }
+
+    const rows = [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month));
+    const totals = rows.reduce((t, r) => {
+      for (const c of categories) t[c] += r[c];
+      t.total += r.total;
+      return t;
+    }, { labor: 0, truck: 0, materials: 0, packing: 0, extras: 0, externalHires: 0, total: 0 });
+
+    res.json({ rows, totals });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Sales pipeline — lead funnel, win rate, quote-to-job conversion
+router.get('/pipeline', async (req, res) => {
+  try {
+    const months = Number(req.query.months) || 6;
+    const from = new Date();
+    from.setMonth(from.getMonth() - months + 1);
+    from.setDate(1);
+    from.setHours(0, 0, 0, 0);
+
+    const [leadsByStatus, quotesByStatus] = await Promise.all([
+      MovingLead.aggregate([
+        { $match: { createdAt: { $gte: from } } },
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ]),
+      MovingQuote.aggregate([
+        { $match: { createdAt: { $gte: from } } },
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ]),
+    ]);
+
+    const leadCounts = Object.fromEntries(leadsByStatus.map(r => [r._id, r.count]));
+    const quoteCounts = Object.fromEntries(quotesByStatus.map(r => [r._id, r.count]));
+
+    const won = leadCounts.won ?? 0;
+    const lost = leadCounts.lost ?? 0;
+    const winRate = (won + lost) > 0 ? Math.round((won / (won + lost)) * 1000) / 10 : 0;
+
+    const acceptedQuotes = quoteCounts.accepted ?? 0;
+    const totalQuotes = Object.values(quoteCounts).reduce((s, v) => s + v, 0);
+    const quoteConversionRate = totalQuotes > 0 ? Math.round((acceptedQuotes / totalQuotes) * 1000) / 10 : 0;
+
+    const funnel = ['new', 'contacted', 'quoted', 'client_approved', 'won']
+      .map(stage => ({ stage, count: leadCounts[stage] ?? 0 }));
+
+    res.json({
+      funnel,
+      leadCounts,
+      quoteCounts,
+      winRate,
+      quoteConversionRate,
+      totalLeads: Object.values(leadCounts).reduce((s, v) => s + v, 0),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Damage claims — claimed vs approved vs settled, by month
+router.get('/claims', async (req, res) => {
+  try {
+    const months = Number(req.query.months) || 12;
+    const from = new Date();
+    from.setMonth(from.getMonth() - months + 1);
+    from.setDate(1);
+    from.setHours(0, 0, 0, 0);
+
+    const rows = await MovingClaim.aggregate([
+      { $match: { createdAt: { $gte: from } } },
+      {
+        $group: {
+          _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
+          claimed: { $sum: '$claimedAmount' },
+          approved: { $sum: '$approvedAmount' },
+          settled: { $sum: '$settledAmount' },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { '_id.year': 1, '_id.month': 1 } },
+    ]);
+
+    const byStatus = await MovingClaim.aggregate([
+      { $match: { createdAt: { $gte: from } } },
+      { $group: { _id: '$status', count: { $sum: 1 }, claimedAmount: { $sum: '$claimedAmount' } } },
+    ]);
+
+    res.json({ rows, byStatus });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

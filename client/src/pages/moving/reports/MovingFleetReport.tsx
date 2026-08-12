@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../../../lib/api'
-import { Card, CardBody, CardHeader, EmptyState, PageHeader, Spinner, Table, Td, Th } from '../../../components/ui'
+import { Button, Card, CardBody, CardHeader, EmptyState, PageHeader, Spinner, Table, Td, Th } from '../../../components/ui'
+import { downloadCsv } from './shared'
 
 interface FleetRow {
   truckId: string
@@ -23,7 +24,13 @@ export default function MovingFleetReport() {
       <PageHeader title="Fleet Report" subtitle="Truck utilisation" />
 
       <Card>
-        <CardHeader title={`${rows.length} trucks`} subtitle={`${totalJobs} total jobs`} />
+        <CardHeader title={`${rows.length} trucks`} subtitle={`${totalJobs} total jobs`}
+          action={rows.length > 0 && (
+            <Button variant="outline" size="sm" onClick={() => downloadCsv('moving-fleet.csv', [
+              ['Truck', 'Plate', 'Type', 'Jobs'],
+              ...rows.map(r => [r.name ?? '', r.plateNumber ?? '', r.type ?? '', r.jobCount]),
+            ])}>Export CSV</Button>
+          )} />
         <CardBody>
           {isLoading ? <Spinner /> : rows.length === 0 ? <EmptyState message="No fleet data yet" /> : (
             <Table>

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../../../lib/api'
 import { Badge, Button, Card, CardBody, CardHeader, EmptyState, Field, Input, PageHeader, Spinner, Table, Td, Th } from '../../../components/ui'
+import { downloadCsv } from './shared'
 
 interface PayrollRow {
   workerId: string; name: string; role: string; phone?: string
@@ -46,7 +47,13 @@ export default function MovingPayrollReport() {
       )}
 
       <Card>
-        <CardHeader title="Payroll Details" subtitle={`${rows.length} workers`} />
+        <CardHeader title="Payroll Details" subtitle={`${rows.length} workers`}
+          action={rows.length > 0 && (
+            <Button variant="outline" size="sm" onClick={() => downloadCsv('moving-payroll.csv', [
+              ['Worker', 'Role', 'Jobs', 'Base Pay', 'Extra Hours', 'Extra Pay', 'Supervisor Days', 'Total'],
+              ...rows.map(r => [r.name ?? '', r.role ?? '', r.jobCount, r.basePay, r.extraHours, r.extraPay, r.supervisorDays, r.totalPay]),
+            ])}>Export CSV</Button>
+          )} />
         <CardBody>
           {isLoading ? <Spinner /> : rows.length === 0 ? <EmptyState message="No payroll data for this period" /> : (
             <Table>

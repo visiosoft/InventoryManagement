@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../../../lib/api'
-import { Card, CardBody, CardHeader, EmptyState, PageHeader, Spinner, Table, Td, Th } from '../../../components/ui'
+import { Button, Card, CardBody, CardHeader, EmptyState, PageHeader, Spinner, Table, Td, Th } from '../../../components/ui'
+import { downloadCsv } from './shared'
 
 interface CrewRow {
   workerId: string
@@ -23,7 +24,13 @@ export default function MovingCrewReport() {
       <PageHeader title="Crew Report" subtitle="Worker utilisation and earnings" />
 
       <Card>
-        <CardHeader title={`${rows.length} workers`} subtitle={`AED ${totalEarnings.toLocaleString()} total paid`} />
+        <CardHeader title={`${rows.length} workers`} subtitle={`AED ${totalEarnings.toLocaleString()} total paid`}
+          action={rows.length > 0 && (
+            <Button variant="outline" size="sm" onClick={() => downloadCsv('moving-crew.csv', [
+              ['Worker', 'Role', 'Jobs', 'Total Earnings'],
+              ...rows.map(r => [r.name ?? '', r.role ?? '', r.jobCount, r.totalEarnings]),
+            ])}>Export CSV</Button>
+          )} />
         <CardBody>
           {isLoading ? <Spinner /> : rows.length === 0 ? <EmptyState message="No crew data yet" /> : (
             <Table>

@@ -67,6 +67,7 @@ const movingNavItems = [
   { to: '/moving/invoices', label: 'Invoices', icon: ReceiptText, perm: 'moving_invoices' },
   { to: '/moving/dispatch', label: 'Dispatch', icon: Package, perm: 'moving_dispatch' },
   { to: '/moving/claims', label: 'Claims', icon: AlertTriangle, perm: 'moving_dashboard' },
+  { to: '/moving/reports', label: 'Reports', icon: BarChart3, perm: 'moving_dashboard' },
 ]
 
 

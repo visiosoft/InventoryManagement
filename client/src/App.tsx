@@ -82,6 +82,16 @@ import MovingInvoiceDetail from './pages/moving/MovingInvoiceDetail'
 import MovingQuotes from './pages/moving/MovingQuotes'
 import MovingQuoteDetail from './pages/moving/MovingQuoteDetail'
 import MovingClaims from './pages/moving/MovingClaims'
+import MovingReportsHub from './pages/moving/MovingReportsHub'
+import MovingRevenueReport from './pages/moving/reports/MovingRevenueReport'
+import MovingArReport from './pages/moving/reports/MovingArReport'
+import MovingCostsReport from './pages/moving/reports/MovingCostsReport'
+import MovingProfitabilityReport from './pages/moving/reports/MovingProfitabilityReport'
+import MovingPipelineReport from './pages/moving/reports/MovingPipelineReport'
+import MovingCrewReport from './pages/moving/reports/MovingCrewReport'
+import MovingFleetReport from './pages/moving/reports/MovingFleetReport'
+import MovingPayrollReport from './pages/moving/reports/MovingPayrollReport'
+import MovingClaimsReport from './pages/moving/reports/MovingClaimsReport'
 import SiteVisits from './pages/moving/SiteVisits'
 import MovingSurveyDetail from './pages/moving/MovingSurveyDetail'
 import ClientUpload from './pages/moving/ClientUpload'
@@ -199,6 +209,16 @@ export default function App() {
         <Route path="/moving/invoices/:id" element={<PermGuard module="moving_invoices"><MovingInvoiceDetail /></PermGuard>} />
         <Route path="/moving/visits" element={<PermGuard module="moving_jobs"><SiteVisits /></PermGuard>} />
         <Route path="/moving/claims" element={<PermGuard module="moving_dashboard"><MovingClaims /></PermGuard>} />
+        <Route path="/moving/reports" element={<PermGuard module="moving_dashboard"><MovingReportsHub /></PermGuard>} />
+        <Route path="/moving/reports/ar" element={<PermGuard module="reports_moving_ar"><MovingArReport /></PermGuard>} />
+        <Route path="/moving/reports/revenue" element={<PermGuard module="reports_moving_revenue"><MovingRevenueReport /></PermGuard>} />
+        <Route path="/moving/reports/costs" element={<PermGuard module="reports_moving_costs"><MovingCostsReport /></PermGuard>} />
+        <Route path="/moving/reports/profitability" element={<PermGuard module="reports_moving_profitability"><MovingProfitabilityReport /></PermGuard>} />
+        <Route path="/moving/reports/pipeline" element={<PermGuard module="reports_moving_pipeline"><MovingPipelineReport /></PermGuard>} />
+        <Route path="/moving/reports/crew" element={<PermGuard module="reports_moving_crew"><MovingCrewReport /></PermGuard>} />
+        <Route path="/moving/reports/fleet" element={<PermGuard module="reports_moving_fleet"><MovingFleetReport /></PermGuard>} />
+        <Route path="/moving/reports/payroll" element={<PermGuard module="reports_moving_payroll"><MovingPayrollReport /></PermGuard>} />
+        <Route path="/moving/reports/claims" element={<PermGuard module="moving_dashboard"><MovingClaimsReport /></PermGuard>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

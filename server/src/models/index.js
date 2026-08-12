@@ -15,6 +15,7 @@ const ALL_MODULES = [
   'moving_quotes', 'moving_invoices',
   'reports_moving_revenue', 'reports_moving_jobs', 'reports_moving_crew', 'reports_moving_fleet',
   'reports_moving_profitability', 'reports_moving_payroll',
+  'reports_moving_ar', 'reports_moving_costs', 'reports_moving_pipeline',
   'moving_claims',
 ];
 
