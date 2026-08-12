@@ -1,6 +1,7 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../../../lib/api'
-import { Button, Card, CardBody, CardHeader, EmptyState, PageHeader, Spinner, Table, Td, Th } from '../../../components/ui'
+import { Button, Card, CardBody, CardHeader, EmptyState, Field, Input, PageHeader, Spinner, Table, Td, Th } from '../../../components/ui'
 import { downloadCsv } from './shared'
 
 interface CrewRow {
@@ -12,16 +13,25 @@ interface CrewRow {
 }
 
 export default function MovingCrewReport() {
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+
   const { data: rows = [], isLoading } = useQuery<CrewRow[]>({
-    queryKey: ['moving-report-crew'],
-    queryFn: () => api.get('/moving-reports/crew').then(r => r.data),
+    queryKey: ['moving-report-crew', from, to],
+    queryFn: () => api.get('/moving-reports/crew', { params: { from: from || undefined, to: to || undefined } }).then(r => r.data),
   })
 
   const totalEarnings = rows.reduce((s, r) => s + r.totalEarnings, 0)
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader title="Crew Report" subtitle="Worker utilisation and earnings" />
+
+      <div className="flex flex-wrap items-end gap-3">
+        <Field label="From"><Input type="date" value={from} onChange={e => setFrom(e.target.value)} /></Field>
+        <Field label="To"><Input type="date" value={to} onChange={e => setTo(e.target.value)} /></Field>
+        {(from || to) && <Button variant="outline" size="sm" onClick={() => { setFrom(''); setTo('') }}>Clear</Button>}
+      </div>
 
       <Card>
         <CardHeader title={`${rows.length} workers`} subtitle={`AED ${totalEarnings.toLocaleString()} total paid`}
@@ -32,7 +42,7 @@ export default function MovingCrewReport() {
             ])}>Export CSV</Button>
           )} />
         <CardBody>
-          {isLoading ? <Spinner /> : rows.length === 0 ? <EmptyState message="No crew data yet" /> : (
+          {isLoading ? <Spinner /> : rows.length === 0 ? <EmptyState message="No crew data for this range" /> : (
             <Table>
               <thead>
                 <tr>

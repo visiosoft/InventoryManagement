@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ShieldCheck, ScrollText, CalendarCheck, RefreshCw, Map as MapIcon, Mail } from 'lucide-react'
+import { LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ShieldCheck, ScrollText, CalendarCheck, RefreshCw, Map as MapIcon, Mail, Filter, PieChart, ShieldAlert } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import GlobalSearch from './GlobalSearch'
@@ -67,7 +67,18 @@ const movingNavItems = [
   { to: '/moving/invoices', label: 'Invoices', icon: ReceiptText, perm: 'moving_invoices' },
   { to: '/moving/dispatch', label: 'Dispatch', icon: Package, perm: 'moving_dispatch' },
   { to: '/moving/claims', label: 'Claims', icon: AlertTriangle, perm: 'moving_dashboard' },
-  { to: '/moving/reports', label: 'Reports', icon: BarChart3, perm: 'moving_dashboard' },
+]
+
+const movingReportItems = [
+  { to: '/moving/reports/ar', label: 'Accounts Receivable', icon: Wallet, perm: 'reports_moving_ar' },
+  { to: '/moving/reports/revenue', label: 'Revenue', icon: TrendingUp, perm: 'reports_moving_revenue' },
+  { to: '/moving/reports/profitability', label: 'Profitability', icon: PieChart, perm: 'reports_moving_profitability' },
+  { to: '/moving/reports/costs', label: 'Cost Breakdown', icon: Filter, perm: 'reports_moving_costs' },
+  { to: '/moving/reports/pipeline', label: 'Sales Pipeline', icon: TrendingUp, perm: 'reports_moving_pipeline' },
+  { to: '/moving/reports/crew', label: 'Crew', icon: Users2, perm: 'reports_moving_crew' },
+  { to: '/moving/reports/fleet', label: 'Fleet', icon: Truck, perm: 'reports_moving_fleet' },
+  { to: '/moving/reports/payroll', label: 'Payroll', icon: ReceiptText, perm: 'reports_moving_payroll' },
+  { to: '/moving/reports/claims', label: 'Damage Claims', icon: ShieldAlert, perm: 'moving_dashboard' },
 ]
 
 
@@ -148,6 +159,8 @@ export default function Layout() {
   const location = useLocation()
   const onReportsRoute = location.pathname.startsWith('/reports')
   const [reportsOpen, setReportsOpen] = useState(onReportsRoute)
+  const onMovingReportsRoute = location.pathname.startsWith('/moving/reports')
+  const [movingReportsOpen, setMovingReportsOpen] = useState(onMovingReportsRoute)
   const [dark, setDark] = useState(() => localStorage.getItem('pb_theme') === 'dark')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('pb_sidebar_collapsed') === 'true')
@@ -315,6 +328,49 @@ export default function Layout() {
                   </NavLink>
                 ))}
               </div>
+            </div>
+          )
+        })()}
+
+        {/* Moving Reports */}
+        {(() => {
+          const visibleMovingReports = movingReportItems.filter(({ perm }) => hasPermission(perm))
+          if (visibleMovingReports.length === 0) return null
+          if (isCollapsed) {
+            return (
+              <div className="pt-3">
+                <div className="border-t border-white/10 my-1" />
+                <NavLink to="/moving/reports/ar"
+                  className={() => cn('flex items-center justify-center rounded-lg p-2 transition-all duration-150', onMovingReportsRoute ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8')}
+                  title="Moving Reports">
+                  <BarChart3 size={18} />
+                </NavLink>
+              </div>
+            )
+          }
+          return (
+            <div className="pt-3">
+              <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-sidebar-muted/60">Moving Reports</div>
+              <button
+                onClick={() => setMovingReportsOpen(o => !o)}
+                className={cn(
+                  'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-all cursor-pointer',
+                  onMovingReportsRoute ? 'text-sidebar-foreground' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8'
+                )}
+              >
+                <BarChart3 size={15} />
+                <span className="flex-1 text-left">Reports</span>
+                <ChevronDown size={13} className={cn('transition-transform duration-200', movingReportsOpen ? 'rotate-180' : '')} />
+              </button>
+              {movingReportsOpen && (
+                <div className="ml-2.5 mt-0.5 border-l-2 border-[#467235]/40 pl-2 space-y-0.5">
+                  {visibleMovingReports.map(({ to, label, icon: Icon }) => (
+                    <NavLink key={to} to={to} className={({ isActive }) => subLinkCls(isActive)}>
+                      <Icon size={13} />{label}
+                    </NavLink>
+                  ))}
+                </div>
+              )}
             </div>
           )
         })()}

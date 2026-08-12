@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { api } from '../../../lib/api'
-import { Badge, Button, Card, CardBody, CardHeader, EmptyState, PageHeader, Spinner, Table, Td, Th } from '../../../components/ui'
+import { Badge, Button, Card, CardBody, CardHeader, EmptyState, Field, PageHeader, Select, Spinner, Table, Td, Th } from '../../../components/ui'
 import { StatCard, downloadCsv } from './shared'
 
 interface ArInvoice {
@@ -22,18 +22,22 @@ interface ArData {
 
 const BUCKET_LABEL: Record<string, string> = { current: 'Not yet due', d30: '1–30 days', d60: '31–60 days', d90: '61–90 days', d90plus: '90+ days' }
 const BUCKET_TONE: Record<string, 'green' | 'amber' | 'red'> = { current: 'green', d30: 'amber', d60: 'amber', d90: 'red', d90plus: 'red' }
+const BUCKET_ORDER = ['current', 'd30', 'd60', 'd90', 'd90plus']
 
 const money = (n: number) => `AED ${n.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
 
 export default function MovingArReport() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [minBucket, setMinBucket] = useState('current')
 
   const { data, isLoading } = useQuery<ArData>({
     queryKey: ['moving-report-ar'],
     queryFn: () => api.get('/moving-reports/ar').then(r => r.data),
   })
 
-  const rows = data?.rows ?? []
+  const allRows = data?.rows ?? []
+  const minIdx = BUCKET_ORDER.indexOf(minBucket)
+  const rows = allRows.filter(r => BUCKET_ORDER.indexOf(r.worstBucket) >= minIdx)
   const buckets = data?.buckets
 
   function toggle(id: string) {
@@ -47,6 +51,16 @@ export default function MovingArReport() {
   return (
     <div className="space-y-6">
       <PageHeader title="Accounts Receivable" subtitle="Outstanding moving invoices, by how overdue they are" />
+
+      <Field label="Show" className="max-w-xs">
+        <Select value={minBucket} onChange={e => setMinBucket(e.target.value)}>
+          <option value="current">All outstanding</option>
+          <option value="d30">1+ days overdue</option>
+          <option value="d60">31+ days overdue</option>
+          <option value="d90">61+ days overdue</option>
+          <option value="d90plus">90+ days overdue</option>
+        </Select>
+      </Field>
 
       {buckets && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">

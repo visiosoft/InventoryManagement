@@ -91,8 +91,14 @@ router.get('/jobs', async (req, res) => {
 // Crew utilisation — jobs per worker in date range
 router.get('/crew', async (req, res) => {
   try {
+    const match = { status: { $nin: ['cancelled', 'draft'] } };
+    if (req.query.from || req.query.to) {
+      match.scheduledDate = {};
+      if (req.query.from) match.scheduledDate.$gte = new Date(req.query.from);
+      if (req.query.to) match.scheduledDate.$lte = new Date(req.query.to);
+    }
     const rows = await MovingJob.aggregate([
-      { $match: { status: { $nin: ['cancelled', 'draft'] } } },
+      { $match: match },
       { $unwind: '$crew' },
       {
         $group: {
@@ -130,8 +136,14 @@ router.get('/crew', async (req, res) => {
 // Fleet utilisation — jobs per truck
 router.get('/fleet', async (req, res) => {
   try {
+    const match = { status: { $nin: ['cancelled', 'draft'] } };
+    if (req.query.from || req.query.to) {
+      match.scheduledDate = {};
+      if (req.query.from) match.scheduledDate.$gte = new Date(req.query.from);
+      if (req.query.to) match.scheduledDate.$lte = new Date(req.query.to);
+    }
     const rows = await MovingJob.aggregate([
-      { $match: { status: { $nin: ['cancelled', 'draft'] } } },
+      { $match: match },
       { $unwind: '$trucks' },
       {
         $group: {
@@ -147,7 +159,7 @@ router.get('/fleet', async (req, res) => {
           as: '_truck',
         },
       },
-      { $unwind: { path: '$_truck', preserveNullAndEmpty: true } },
+      { $unwind: { path: '$_truck', preserveNullAndEmptyArrays: true } },
       {
         $project: {
           truckId: '$_id',
