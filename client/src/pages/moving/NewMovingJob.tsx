@@ -77,6 +77,7 @@ export default function NewMovingJob() {
   const [customerPhone, setCustomerPhone] = useState('')
 
   // Step 2 – Job Details
+  const [jobTitle, setJobTitle] = useState('')
   const [jobType, setJobType] = useState<MovingJobType>('local')
   const [scheduledDate, setScheduledDate] = useState(dateParam || '')
   const [scheduledTimeSlot, setScheduledTimeSlot] = useState('')
@@ -166,6 +167,7 @@ export default function NewMovingJob() {
     const body: Record<string, unknown> = {
       customer: customerId,
       lead: leadId || undefined,
+      title: jobTitle,
       jobType,
       pickupAddress,
       pickupFloor,
@@ -427,6 +429,9 @@ export default function NewMovingJob() {
                 <p style={{ color: MUTED, fontSize: '0.8rem', marginTop: '0.125rem' }}>Configure the job type and schedule</p>
               </div>
               <div className="grid grid-cols-2 gap-4">
+                <Field label="Job Name" className="col-span-2">
+                  <Input value={jobTitle} onChange={e => setJobTitle(e.target.value)} placeholder="e.g. Villa move — Marina to JVC" />
+                </Field>
                 <Field label="Job Type" className="col-span-2">
                   <Select value={jobType} onChange={e => setJobType(e.target.value as MovingJobType)}>
                     {JOB_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}

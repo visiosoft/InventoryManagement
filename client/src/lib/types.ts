@@ -638,6 +638,7 @@ export interface MovingJobImage {
 export interface MovingJob {
   _id: string
   jobNo: string
+  title?: string
   customer: { _id: string; fullName: string; phone?: string; email?: string }
   lead?: { _id: string }
   status: MovingJobStatus

@@ -607,7 +607,9 @@ export default function MovingJobDetail() {
           </button>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3 mb-1 flex-wrap">
-              <div style={{ ...HEADING, fontSize: 22, fontWeight: 700, color: INK }}>{job.jobNo}</div>
+              <div style={{ ...HEADING, fontSize: 22, fontWeight: 700, color: INK }}>
+                {job.jobNo}{job.title ? <span style={{ fontWeight: 600 }}> — {job.title}</span> : null}
+              </div>
               <Badge tone={statusTone[job.status]} className="text-xs px-2.5 py-1">
                 {movingJobStatusLabel(job.status)}
               </Badge>
@@ -1681,6 +1683,7 @@ export default function MovingJobDetail() {
           e.preventDefault()
           const f = new FormData(e.currentTarget)
           updateMut.mutate({
+            title: f.get('title'),
             jobType: f.get('jobType'),
             scheduledDate: f.get('scheduledDate') || undefined,
             scheduledTimeSlot: f.get('scheduledTimeSlot'),
@@ -1695,6 +1698,9 @@ export default function MovingJobDetail() {
             notes: f.get('notes'),
           })
         }} className="space-y-5">
+          <Field label="Job Name">
+            <Input name="title" defaultValue={job.title || ''} placeholder="e.g. Villa move — Marina to JVC" />
+          </Field>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Job Type">
               <Select name="jobType" defaultValue={job.jobType || 'local'}>

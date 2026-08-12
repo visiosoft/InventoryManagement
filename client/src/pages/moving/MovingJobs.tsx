@@ -98,6 +98,7 @@ export default function MovingJobs() {
   const filtered = jobs.filter(j =>
     !search ||
     j.jobNo.toLowerCase().includes(search.toLowerCase()) ||
+    (j.title ?? '').toLowerCase().includes(search.toLowerCase()) ||
     j.customer?.fullName?.toLowerCase().includes(search.toLowerCase()) ||
     (j.pickupAddress ?? '').toLowerCase().includes(search.toLowerCase())
   )
@@ -198,7 +199,8 @@ export default function MovingJobs() {
                       <span style={{ fontSize: 13, fontWeight: 700, color: PURPLE, fontFamily: 'monospace' }}>{j.jobNo}</span>
                       <Badge tone={statusTone[j.status]} className="text-xs py-0 h-4">{movingJobStatusLabel(j.status)}</Badge>
                     </div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: INK, marginBottom: 4 }}>{j.customer?.fullName}</div>
+                    {j.title && <div style={{ fontSize: 14, fontWeight: 700, color: INK, marginBottom: 2 }}>{j.title}</div>}
+                    <div style={{ fontSize: 14, fontWeight: 600, color: j.title ? MUTED : INK, marginBottom: 4 }}>{j.customer?.fullName}</div>
                     {j.scheduledDate && (
                       <div className="text-xs" style={{ color: MUTED, marginBottom: 4 }}>{fmtDate(j.scheduledDate)}</div>
                     )}
@@ -245,8 +247,9 @@ export default function MovingJobs() {
                   {filtered.map(j => (
                     <tr key={j._id} style={{ borderBottom: '1px solid rgba(20,8,31,0.04)' }} className="hover:bg-[#FAF8F5] transition-colors">
                       <td style={{ padding: '14px 16px' }}>
-                        <Link to={`/moving/jobs/${j._id}`} style={{ fontSize: 13, fontWeight: 700, color: PURPLE, fontFamily: 'monospace' }} className="hover:opacity-80 transition-opacity">
-                          {j.jobNo}
+                        <Link to={`/moving/jobs/${j._id}`} className="hover:opacity-80 transition-opacity">
+                          <span style={{ fontSize: 13, fontWeight: 700, color: PURPLE, fontFamily: 'monospace' }}>{j.jobNo}</span>
+                          {j.title && <div style={{ fontSize: 13, fontWeight: 600, color: INK, marginTop: 2, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.title}</div>}
                         </Link>
                       </td>
                       <td style={{ padding: '14px 16px', fontSize: 14, fontWeight: 500, color: INK }}>{j.customer?.fullName}</td>

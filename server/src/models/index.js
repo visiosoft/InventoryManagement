@@ -850,6 +850,8 @@ const movingMaterialUsageSchema = new Schema(
 const movingJobSchema = new Schema(
   {
     jobNo: { type: String, required: true, unique: true },
+    // Free-text job name shown alongside the job number
+    title: { type: String, default: '' },
     customer: { type: Schema.Types.ObjectId, ref: 'Customer', required: true },
     lead: { type: Schema.Types.ObjectId, ref: 'MovingLead' },
     status: {
