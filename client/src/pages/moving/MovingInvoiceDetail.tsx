@@ -50,6 +50,8 @@ export default function MovingInvoiceDetail() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [err, setErr] = useState('')
+  const [payLinkResult, setPayLinkResult] = useState<{ payUrl: string; balanceDue: number } | null>(null)
+  const [payLinkBusy, setPayLinkBusy] = useState(false)
   const [payModal, setPayModal] = useState(false)
   const [itemsModal, setItemsModal] = useState(false)
   const [reviseModal, setReviseModal] = useState(false)
@@ -254,15 +256,18 @@ export default function MovingInvoiceDetail() {
         {invoice.balanceDue > 0 && (
           <Button
             size="sm"
+            disabled={payLinkBusy}
             onClick={async () => {
+              setPayLinkBusy(true)
               try {
                 const res = await api.post(`/moving-invoices/${id}/payment-link`, {})
                 setErr('')
-                alert(`Payment link sent via WhatsApp!\n\nLink: ${res.data.payUrl}\nBalance: AED ${res.data.balanceDue}`)
-              } catch (e) { setErr(apiError(e)) }
+                setPayLinkResult({ payUrl: res.data.payUrl, balanceDue: res.data.balanceDue })
+              } catch (e) { setErr(apiError(e)) } finally { setPayLinkBusy(false) }
             }}
           >
-            <span className="hidden sm:inline">Send Payment Link</span><span className="sm:hidden">Pay Link</span>
+            <span className="hidden sm:inline">{payLinkBusy ? 'Creating link…' : 'Send Payment Link'}</span>
+            <span className="sm:hidden">{payLinkBusy ? '…' : 'Pay Link'}</span>
           </Button>
         )}
         <Button
@@ -805,6 +810,27 @@ export default function MovingInvoiceDetail() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      {/* Stripe Payment Link result */}
+      <Modal open={!!payLinkResult} title="Payment link ready" onClose={() => setPayLinkResult(null)}>
+        {payLinkResult && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Sent via WhatsApp if the customer has a phone on file. Balance: <strong>AED {payLinkResult.balanceDue.toLocaleString()}</strong>
+            </p>
+            <div className="flex items-center gap-2">
+              <Input readOnly value={payLinkResult.payUrl} onFocus={(e) => e.currentTarget.select()} />
+              <Button variant="outline" onClick={() => navigator.clipboard.writeText(payLinkResult.payUrl)}>Copy</Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              The customer pays by card on Stripe's checkout page — the invoice marks itself as paid automatically once it goes through.
+            </p>
+            <div className="flex justify-end">
+              <Button onClick={() => setPayLinkResult(null)}>Done</Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   )

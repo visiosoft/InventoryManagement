@@ -96,6 +96,7 @@ import MovingClaimsReport from './pages/moving/reports/MovingClaimsReport'
 import SiteVisits from './pages/moving/SiteVisits'
 import MovingSurveyDetail from './pages/moving/MovingSurveyDetail'
 import ClientUpload from './pages/moving/ClientUpload'
+import PaySuccess from './pages/PaySuccess'
 import SharedJobView from './pages/moving/SharedJobView'
 import FieldLogin from './pages/field/FieldLogin'
 import FieldApp from './pages/field/FieldApp'
@@ -131,6 +132,7 @@ export default function App() {
         <Route path="/sign/:token" element={<SignContract />} />
         <Route path="/upload/moving/:token" element={<ClientUpload />} />
         <Route path="/share/job/:token" element={<SharedJobView />} />
+        <Route path="/pay/success" element={<PaySuccess />} />
         <Route path="/field/login" element={<FieldLogin />} />
         <Route path="/field/*" element={<FieldApp />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
@@ -144,6 +146,7 @@ export default function App() {
       <Route path="/sign/:token" element={<SignContract />} />
       <Route path="/upload/moving/:token" element={<ClientUpload />} />
       <Route path="/share/job/:token" element={<SharedJobView />} />
+      <Route path="/pay/success" element={<PaySuccess />} />
       <Route path="/field/login" element={<Navigate to="/field" replace />} />
       <Route path="/field/*" element={<FieldApp />} />
       <Route element={<Layout />}>

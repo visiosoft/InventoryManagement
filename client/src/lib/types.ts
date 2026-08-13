@@ -105,6 +105,7 @@ export interface IntegrationStatus {
   gmail: { configured: boolean }
   whatsapp: { configured: boolean; missing?: string[] }
   googleContacts: { configured: boolean; missing?: string[] }
+  stripe: { configured: boolean; webhookConfigured: boolean }
 }
 
 export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired'

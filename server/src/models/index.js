@@ -1021,6 +1021,8 @@ const movingInvoiceSchema = new Schema(
     zohoBooksSyncId: { type: String, default: null },
     zohoBooksSyncedAt: { type: Date, default: null },
     zohoBooksSyncError: { type: String, default: null },
+    stripeCheckoutSessionId: { type: String, default: null },
+    stripePaymentLinkUrl: { type: String, default: null },
   },
   { timestamps: true }
 );

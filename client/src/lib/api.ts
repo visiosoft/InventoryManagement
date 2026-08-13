@@ -78,6 +78,10 @@ export const integrationApi = {
     api.get<{ url: string }>('/integrations/drive/connect').then((r) => r.data),
   connectGmail: () =>
     api.get<{ url: string }>('/integrations/gmail/connect').then((r) => r.data),
+  connectStripe: (body: { secretKey?: string; webhookSecret?: string }) =>
+    api.post<{ ok: true; configured: boolean; webhookConfigured: boolean }>('/integrations/stripe/connect', body).then((r) => r.data),
+  disconnectStripe: () =>
+    api.post<{ ok: true }>('/integrations/stripe/disconnect').then((r) => r.data),
 }
 
 export type QuoteQuery = { search?: string; status?: string; customer?: string; lead?: string }

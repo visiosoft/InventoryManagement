@@ -8,6 +8,7 @@ import { zohoBooksConfigured, listAllZohoContacts } from '../services/zohoBooks.
 import { Customer, Contract } from '../models/index.js';
 import { whatsappConfigured, whatsappMissing, verifyWebhookChallenge, verifyWhatsAppSignature } from '../services/whatsapp.js';
 import { getWhatsAppLabelSyncStatus, processWhatsAppWebhookPayload, runWhatsAppLabelReconciliation } from '../services/whatsappLeadSync.js';
+import { stripeConfigured, stripeWebhookConfigured, verifyStripeKey } from '../services/stripe.js';
 import { updateEnvFile } from '../utils/env.js';
 
 const router = Router();
@@ -25,7 +26,42 @@ router.get('/status', (_req, res) => {
         gmail: { configured: gmailConfigured() },
         whatsapp: { configured: whatsappConfigured(), missing: whatsappMissing() },
         whatsappLabelSync: getWhatsAppLabelSyncStatus(),
+        stripe: { configured: stripeConfigured(), webhookConfigured: stripeWebhookConfigured() },
     });
+});
+
+// Save (and validate) Stripe credentials. Admin only — these are payment keys.
+// secretKey is optional on repeat calls — e.g. adding just the webhook secret
+// after the fact doesn't need to re-send (and re-validate) the secret key.
+router.post('/stripe/connect', requireAdmin, async (req, res) => {
+    const { secretKey, webhookSecret } = req.body || {};
+    if (!secretKey && !webhookSecret) {
+        return res.status(400).json({ error: 'Nothing to save' });
+    }
+    const updates = {};
+    if (secretKey) {
+        if (!/^sk_(test|live)_/.test(secretKey)) {
+            return res.status(400).json({ error: 'That doesn\'t look like a Stripe secret key (should start with sk_test_ or sk_live_)' });
+        }
+        try {
+            await verifyStripeKey(secretKey);
+        } catch (e) {
+            return res.status(400).json({ error: `Stripe rejected this key: ${e.message}` });
+        }
+        updates.STRIPE_SECRET_KEY = secretKey;
+    }
+    if (webhookSecret) updates.STRIPE_WEBHOOK_SECRET = webhookSecret;
+    updateEnvFile(updates);
+    Object.assign(process.env, updates);
+    res.json({ ok: true, configured: stripeConfigured(), webhookConfigured: stripeWebhookConfigured() });
+});
+
+// Clears the stored Stripe keys.
+router.post('/stripe/disconnect', requireAdmin, async (_req, res) => {
+    updateEnvFile({ STRIPE_SECRET_KEY: '', STRIPE_WEBHOOK_SECRET: '' });
+    process.env.STRIPE_SECRET_KEY = '';
+    process.env.STRIPE_WEBHOOK_SECRET = '';
+    res.json({ ok: true });
 });
 
 router.post('/whatsapp/reconcile', requireAdmin, async (_req, res) => {

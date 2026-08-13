@@ -5,6 +5,8 @@ import { requireAdmin } from '../middleware/auth.js';
 import { generateMovingInvoicePdf } from '../services/movingInvoicePdf.js';
 import { notifyInvoiceReady, notifyPaymentReceived } from '../services/movingNotifications.js';
 import { zohoBooksConfigured, createZohoInvoice } from '../services/zohoBooks.js';
+import { stripeConfigured, createInvoiceCheckoutSession } from '../services/stripe.js';
+import { applyMovingInvoicePayment } from '../services/movingInvoicePayments.js';
 
 const router = Router();
 
@@ -166,10 +168,7 @@ router.post('/:id/record-payment', async (req, res) => {
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
 
     const receivedBy = req.user.name || req.user.email || '';
-    invoice.paymentHistory.push({ amount: Number(amount), method, date: date ? new Date(date) : new Date(), notes, receivedBy });
-    const totalPaid = invoice.depositPaid + invoice.paymentHistory.reduce((s, p) => s + p.amount, 0);
-    invoice.balanceDue = Math.max(0, invoice.total - totalPaid);
-    invoice.status = invoice.balanceDue <= 0 ? 'paid' : 'partial';
+    applyMovingInvoicePayment(invoice, { amount, method, date, notes, receivedBy });
     await invoice.save();
 
     const customer = await Customer.findById(invoice.customer).select('fullName phone');
@@ -269,21 +268,29 @@ router.post('/:id/share-token', async (req, res) => {
   }
 });
 
-// Generate payment link — sends WhatsApp with pay URL
+// Generate a real Stripe Checkout payment link and (optionally) send it via WhatsApp
 router.post('/:id/payment-link', async (req, res) => {
   try {
+    if (!stripeConfigured()) {
+      return res.status(400).json({ error: 'Stripe is not connected — add a secret key in Settings → Payments' });
+    }
     const invoice = await MovingInvoice.findById(req.params.id).populate('customer', 'fullName phone email').populate('job', 'jobNo');
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
     if (invoice.balanceDue <= 0) return res.status(400).json({ error: 'Invoice already fully paid' });
 
-    if (!invoice.shareToken) {
-      invoice.shareToken = crypto.randomUUID();
-      await invoice.save();
-    }
+    const clientOrigin = process.env.CLIENT_ORIGIN || 'https://office.purplebox.ae';
+    const session = await createInvoiceCheckoutSession({
+      invoice,
+      customerEmail: invoice.customer?.email,
+      successUrl: `${clientOrigin}/pay/success?invoice=${invoice.invoiceNo}`,
+      cancelUrl: `${clientOrigin}/moving/invoices/${invoice._id}`,
+    });
 
-    const baseUrl = process.env.APP_URL || req.headers.origin || '';
-    const payUrl = `${baseUrl}/pay/moving/${invoice.shareToken}`;
+    invoice.stripeCheckoutSessionId = session.id;
+    invoice.stripePaymentLinkUrl = session.url;
+    await invoice.save();
 
+    const payUrl = session.url;
     const customer = invoice.customer;
     if (customer?.phone) {
       const { sendWhatsAppText, whatsappSendConfigured } = await import('../services/whatsapp.js');
@@ -296,15 +303,13 @@ router.post('/:id/payment-link', async (req, res) => {
           ``,
           `💳 Pay online: ${payUrl}`,
           ``,
-          `You can also pay via bank transfer. Contact us for bank details.`,
-          ``,
           `Thank you! — PurpleBox Moving`,
         ].filter(Boolean).join('\n');
         try { await sendWhatsAppText({ to: customer.phone, body: msg }); } catch {}
       }
     }
 
-    res.json({ payUrl, token: invoice.shareToken, balanceDue: invoice.balanceDue });
+    res.json({ payUrl, balanceDue: invoice.balanceDue });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

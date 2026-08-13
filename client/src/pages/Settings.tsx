@@ -353,6 +353,10 @@ export default function Settings() {
   const location = useLocation()
   const [driveMsg, setDriveMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [gmailMsg, setGmailMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [stripeMsg, setStripeMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [stripeSecretKey, setStripeSecretKey] = useState('')
+  const [stripeWebhookSecret, setStripeWebhookSecret] = useState('')
+  const [stripeBusy, setStripeBusy] = useState(false)
   useEffect(() => {
     const params = new URLSearchParams(location.search)
     if (params.get('driveConnected')) {
@@ -478,6 +482,113 @@ export default function Settings() {
             {!integrations?.gmail?.configured && (
               <p className="text-xs text-muted-foreground">
                 Add <code className="bg-muted px-1 rounded">{window.location.origin.replace(/:\d+$/, ':5010')}/api/integrations/gmail/callback</code> to your OAuth client's authorized redirect URIs in Google Cloud Console.
+              </p>
+            )}
+          </div>
+          <div className="rounded-lg border px-4 py-3 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="font-medium">Stripe (Payment Links)</div>
+                <div className="text-xs text-muted-foreground">
+                  Lets "Send Payment Link" create a real card-payment link — invoices mark themselves paid automatically once it's paid
+                </div>
+              </div>
+              <span className={integrations?.stripe?.configured ? 'text-xs text-emerald-600 font-medium' : 'text-xs text-amber-600 font-medium'}>
+                {integrations?.stripe?.configured
+                  ? (integrations.stripe.webhookConfigured ? 'Connected' : 'Connected — webhook secret missing')
+                  : 'Not connected'}
+              </span>
+            </div>
+
+            {!integrations?.stripe?.configured ? (
+              <>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <Field label="Secret key">
+                    <Input type="password" placeholder="sk_live_… or sk_test_…" value={stripeSecretKey}
+                      onChange={(e) => setStripeSecretKey(e.target.value)} />
+                  </Field>
+                  <Field label="Webhook signing secret (optional now, required to auto-mark paid)">
+                    <Input type="password" placeholder="whsec_…" value={stripeWebhookSecret}
+                      onChange={(e) => setStripeWebhookSecret(e.target.value)} />
+                  </Field>
+                </div>
+                <Button
+                  size="sm"
+                  disabled={stripeBusy || !stripeSecretKey}
+                  onClick={async () => {
+                    setStripeBusy(true)
+                    setStripeMsg(null)
+                    try {
+                      await integrationApi.connectStripe({ secretKey: stripeSecretKey, webhookSecret: stripeWebhookSecret || undefined })
+                      setStripeMsg({ ok: true, text: 'Stripe connected.' })
+                      setStripeSecretKey('')
+                      setStripeWebhookSecret('')
+                      qc.invalidateQueries({ queryKey: ['integrations-status'] })
+                    } catch (e) {
+                      setStripeMsg({ ok: false, text: apiError(e) })
+                    } finally {
+                      setStripeBusy(false)
+                    }
+                  }}
+                >
+                  {stripeBusy ? 'Connecting…' : 'Connect Stripe'}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  From your Stripe Dashboard → Developers → API keys, copy the <strong>Secret key</strong>. For the webhook
+                  secret: Developers → Webhooks → Add endpoint → URL{' '}
+                  <code className="bg-muted px-1 rounded">https://api.purplebox.ae/api/stripe/webhook</code> → events{' '}
+                  <code className="bg-muted px-1 rounded">checkout.session.completed</code> → copy the "Signing secret" shown after creating it.
+                </p>
+              </>
+            ) : (
+              <div className="flex items-center gap-3">
+                {!integrations.stripe.webhookConfigured && (
+                  <Field label="Webhook signing secret" className="flex-1 max-w-sm">
+                    <Input type="password" placeholder="whsec_…" value={stripeWebhookSecret}
+                      onChange={(e) => setStripeWebhookSecret(e.target.value)} />
+                  </Field>
+                )}
+                {!integrations.stripe.webhookConfigured && (
+                  <Button
+                    size="sm"
+                    disabled={stripeBusy || !stripeWebhookSecret}
+                    onClick={async () => {
+                      setStripeBusy(true)
+                      setStripeMsg(null)
+                      try {
+                        await integrationApi.connectStripe({ webhookSecret: stripeWebhookSecret })
+                        setStripeMsg({ ok: true, text: 'Webhook secret saved.' })
+                        setStripeWebhookSecret('')
+                        qc.invalidateQueries({ queryKey: ['integrations-status'] })
+                      } catch (e) {
+                        setStripeMsg({ ok: false, text: apiError(e) })
+                      } finally {
+                        setStripeBusy(false)
+                      }
+                    }}
+                  >
+                    {stripeBusy ? 'Saving…' : 'Save webhook secret'}
+                  </Button>
+                )}
+                <Button
+                  size="sm" variant="outline"
+                  onClick={async () => {
+                    if (!confirm('Disconnect Stripe? Existing payment links will stop being trackable.')) return
+                    try {
+                      await integrationApi.disconnectStripe()
+                      qc.invalidateQueries({ queryKey: ['integrations-status'] })
+                    } catch (e) {
+                      setStripeMsg({ ok: false, text: apiError(e) })
+                    }
+                  }}
+                >
+                  Disconnect
+                </Button>
+              </div>
+            )}
+            {stripeMsg && (
+              <p className={`text-xs ${stripeMsg.ok ? 'text-emerald-700 dark:text-emerald-400' : 'text-destructive'}`}>
+                {stripeMsg.text}
               </p>
             )}
           </div>

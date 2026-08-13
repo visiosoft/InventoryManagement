@@ -26,6 +26,7 @@ import expenseRoutes from './routes/expenses.js';
 import movingInventoryRoutes from './routes/movingInventory.js';
 import unitTypeRoutes, { seedUnitTypes } from './routes/unitTypes.js';
 import signingRoutes from './routes/signing.js';
+import stripeWebhookRoutes from './routes/stripeWebhook.js';
 import userRoutes from './routes/users.js';
 import whatsappRoutes from './routes/whatsapp.js';
 import workerRoutes from './routes/workers.js';
@@ -71,7 +72,7 @@ app.use(
   express.json({
     limit: '2mb',
     verify: (req, _res, buf) => {
-      if (req.originalUrl?.includes('/api/integrations/whatsapp/webhook')) {
+      if (req.originalUrl?.includes('/api/integrations/whatsapp/webhook') || req.originalUrl?.includes('/api/stripe/webhook')) {
         req.rawBody = Buffer.from(buf);
       }
     },
@@ -82,6 +83,8 @@ app.use('/uploads', express.static(UPLOADS_DIR));
 
 // Public signing routes — no JWT required
 app.use('/api/sign', signingRoutes);
+// Stripe webhook — no JWT, verified via Stripe-Signature instead
+app.use('/api/stripe/webhook', stripeWebhookRoutes);
 
 // Public liveness probe — also proves which build is running after a deploy
 const STARTED_AT = new Date().toISOString();
