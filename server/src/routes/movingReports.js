@@ -299,7 +299,19 @@ router.get('/costs', async (req, res) => {
     const jobs = await MovingJob.find({
       status: { $in: ['completed', 'invoiced'] },
       scheduledDate: { $gte: from },
-    }).select('scheduledDate costs').lean();
+    }).select('scheduledDate costs clientPackage invoice').populate('invoice', 'total').lean();
+
+    // What the client was actually billed. Most moving jobs go through the
+    // agreed package price (set at booking) rather than a formal invoice —
+    // only fall back to the linked invoice total when no package was agreed.
+    const clientTotalOf = (j) => {
+      const pkg = j.clientPackage;
+      if (pkg && (pkg.agreedPrice > 0 || pkg.additionalCharges?.length)) {
+        const addons = (pkg.additionalCharges || []).reduce((s, a) => s + (a.amount || 0), 0);
+        return (pkg.agreedPrice || 0) + addons;
+      }
+      return j.invoice?.total ?? 0;
+    };
 
     const byMonth = new Map();
     const categories = ['labor', 'truck', 'materials', 'packing', 'extras', 'externalHires'];
@@ -308,19 +320,26 @@ router.get('/costs', async (req, res) => {
       const d = new Date(j.scheduledDate);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       if (!byMonth.has(key)) {
-        byMonth.set(key, { month: key, labor: 0, truck: 0, materials: 0, packing: 0, extras: 0, externalHires: 0, total: 0 });
+        byMonth.set(key, { month: key, labor: 0, truck: 0, materials: 0, packing: 0, extras: 0, externalHires: 0, total: 0, clientTotal: 0, jobCount: 0 });
       }
       const m = byMonth.get(key);
       for (const c of categories) m[c] += j.costs?.[c] ?? 0;
       m.total += j.costs?.total ?? 0;
+      m.clientTotal += clientTotalOf(j);
+      m.jobCount += 1;
     }
 
-    const rows = [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month));
+    const rows = [...byMonth.values()]
+      .sort((a, b) => a.month.localeCompare(b.month))
+      .map((r) => ({ ...r, margin: r.clientTotal - r.total }));
     const totals = rows.reduce((t, r) => {
       for (const c of categories) t[c] += r[c];
       t.total += r.total;
+      t.clientTotal += r.clientTotal;
+      t.jobCount += r.jobCount;
       return t;
-    }, { labor: 0, truck: 0, materials: 0, packing: 0, extras: 0, externalHires: 0, total: 0 });
+    }, { labor: 0, truck: 0, materials: 0, packing: 0, extras: 0, externalHires: 0, total: 0, clientTotal: 0, jobCount: 0 });
+    totals.margin = totals.clientTotal - totals.total;
 
     res.json({ rows, totals });
   } catch (err) {
