@@ -901,6 +901,8 @@ export default function NewQuote() {
   const fmtLongDate = (iso: string) =>
     new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }).replace(/ /g, '-')
   const [deposit, setDeposit] = useState('')
+  // Remembers the amount when the deposit is removed, so "+ Add back" can restore it
+  const removedDepositRef = useRef('')
   const [holdAdvance, setHoldAdvance] = useState(true)
   const [notes, setNotes] = useState('')
   const [unitRows, setUnitRows] = useState<UnitRow[]>([])
@@ -2107,7 +2109,25 @@ export default function NewQuote() {
                             className="font-bold cursor-pointer" style={{ color: PURPLE }}>+ Add back</button>
                         </div>
                       )}
-                      {Number(deposit) > 0 && <InfoRow label="Security deposit" value={`${formatMoney(Number(deposit))} AED`} />}
+                      {Number(deposit) > 0 ? (
+                        <InfoRow
+                          label="Security deposit"
+                          value={
+                            <span className="inline-flex items-center gap-2">
+                              {formatMoney(Number(deposit))} AED
+                              <button type="button" title="Remove the security deposit from this quote"
+                                onClick={() => { removedDepositRef.current = deposit; setDeposit('') }}
+                                className="text-destructive font-bold cursor-pointer leading-none">×</button>
+                            </span>
+                          }
+                        />
+                      ) : removedDepositRef.current && (
+                        <div className="flex items-center justify-between text-[12px] py-1" style={{ color: MUTED }}>
+                          <span>Security deposit removed for this quote</span>
+                          <button type="button" onClick={() => { setDeposit(removedDepositRef.current); removedDepositRef.current = '' }}
+                            className="font-bold cursor-pointer" style={{ color: PURPLE }}>+ Add back</button>
+                        </div>
+                      )}
                       <div style={{ borderTop: `1px solid ${PURPLE}20` }} className="mt-1 pt-1">
                         <div className="flex items-center justify-between text-base py-1">
                           <span className="font-bold" style={{ color: INK }}>Total</span>
