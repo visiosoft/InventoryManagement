@@ -39,6 +39,21 @@ router.get('/pay/:token', async (req, res) => {
   }
 });
 
+// Short redirect to the current Stripe payment link — the raw Stripe
+// checkout URL is 150+ characters (session id + signed fragment), which
+// wraps into an ugly wall of text in WhatsApp. This gives a short,
+// PurpleBox-branded link that 302s to whatever is currently stored, so it
+// keeps working even if the session is regenerated later.
+router.get('/pay/link/:id', async (req, res) => {
+  try {
+    const invoice = await MovingInvoice.findById(req.params.id).select('stripePaymentLinkUrl');
+    if (!invoice?.stripePaymentLinkUrl) return res.status(404).send('Payment link not found or expired');
+    res.redirect(302, invoice.stripePaymentLinkUrl);
+  } catch {
+    res.status(404).send('Payment link not found');
+  }
+});
+
 // List invoices
 router.get('/', async (req, res) => {
   try {
@@ -306,7 +321,10 @@ router.post('/:id/payment-link', async (req, res) => {
     invoice.stripePaymentLinkUrl = session.url;
     await invoice.save();
 
-    const payUrl = session.url;
+    // The raw Stripe checkout URL is 150+ characters and wraps badly in
+    // WhatsApp/plain text — send our own short redirect instead everywhere.
+    const apiBase = (process.env.API_PUBLIC_URL || process.env.APP_URL || req.headers.origin || 'https://api.purplebox.ae').replace(/\/$/, '');
+    const payUrl = `${apiBase}/api/moving-invoices/pay/link/${invoice._id}`;
     const totalCharged = invoice.balanceDue + session.feeAmount;
     const feeLine = feePct > 0 ? `Card processing fee (${feePct}%): AED ${session.feeAmount.toLocaleString()}\nTotal to pay: AED ${totalCharged.toLocaleString()}` : '';
 
