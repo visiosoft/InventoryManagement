@@ -728,17 +728,25 @@ router.post('/:id/convert-to-contract', async (req, res) => {
         timeline: [{ at: new Date(), text: `Created from quote ${quote.quoteNo} by ${userName}`, author: userName }],
     });
 
-    quote.contract = contract._id;
-    quote.timeline.push({ type: 'converted', text: `Converted to contract ${contract.contractNo} by ${userName}`, user: req.user.id });
+    // If anything below fails, undo the contract we just created rather than
+    // leaving an orphan draft with no invoice — that orphan previously caused
+    // retries to pile up duplicate contracts on every failed attempt.
+    try {
+        quote.contract = contract._id;
+        quote.timeline.push({ type: 'converted', text: `Converted to contract ${contract.contractNo} by ${userName}`, user: req.user.id });
 
-    const invoice = await createFirstInvoiceFromQuote(quote, contract, userName);
-    contract.timeline.push({ at: new Date(), text: `Draft invoice ${invoice.invoiceNo} generated from quote (prices locked)`, author: userName });
-    await contract.save();
-    await quote.save();
+        const invoice = await createFirstInvoiceFromQuote(quote, contract, userName);
+        contract.timeline.push({ at: new Date(), text: `Draft invoice ${invoice.invoiceNo} generated from quote (prices locked)`, author: userName });
+        await contract.save();
+        await quote.save();
 
-    await Promise.all(unitIds.map((uid) => syncUnitStatus(uid)));
+        await Promise.all(unitIds.map((uid) => syncUnitStatus(uid)));
 
-    res.status(201).json({ contractId: contract._id, contractNo: contract.contractNo, invoiceId: invoice._id, invoiceNo: invoice.invoiceNo });
+        res.status(201).json({ contractId: contract._id, contractNo: contract.contractNo, invoiceId: invoice._id, invoiceNo: invoice.invoiceNo });
+    } catch (err) {
+        await Contract.deleteOne({ _id: contract._id });
+        res.status(500).json({ error: `Could not finish converting the quote: ${err.message}` });
+    }
 });
 
 router.get('/:id/pdf', async (req, res) => {

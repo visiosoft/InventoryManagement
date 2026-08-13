@@ -1366,11 +1366,16 @@ export async function nextQuoteNo() {
 
 export async function nextInvoiceNo(unitNumber, contractId) {
   if (unitNumber && contractId) {
-    // New format: PB-YEAR-UNITNUMBER-INSTALLMENT
+    // Format: PB-YEAR-UNITNUMBER-INSTALLMENT
+    // The counter is keyed by unit+year (NOT contract) so the sequence keeps
+    // climbing across every contract that unit ever has — a per-contract key
+    // resets to 1 each time, producing the same number once a unit is
+    // re-leased and colliding with the unique index on invoiceNo (the bug
+    // that made convert-to-contract hang/fail for previously-leased units).
     const year = new Date().getFullYear();
     const unitKey = unitNumber.replace(/\s+/g, '');
     const counter = await Counter.findOneAndUpdate(
-      { key: `inv-${contractId}` },
+      { key: `inv-unit-${unitKey}-${year}` },
       { $inc: { seq: 1 } },
       { new: true, upsert: true }
     );
