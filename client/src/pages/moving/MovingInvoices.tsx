@@ -278,7 +278,7 @@ export default function MovingInvoices() {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(20,8,31,0.06)' }}>
-                    {['Invoice No', 'Customer', 'Job', 'Date', 'Total', 'Balance Due', 'Status', 'Zoho', ''].map((h, i) => (
+                    {['Invoice No', 'Customer', 'Job', 'Date', 'Total', 'Balance Due', 'Status', 'Via Stripe', ''].map((h, i) => (
                       <th key={h || i} style={{ padding: '12px 16px', fontSize: 12, fontWeight: 600, color: MUTED, textAlign: ['Total', 'Balance Due'].includes(h) ? 'right' : 'left', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
                     ))}
                   </tr>
@@ -304,12 +304,10 @@ export default function MovingInvoices() {
                         <Badge tone={statusTone[inv.status]} className="text-xs">{inv.status}</Badge>
                       </td>
                       <td style={{ padding: '14px 16px' }}>
-                        {inv.zohoBooksSyncId ? (
-                          <Badge tone="green" className="text-xs">Synced</Badge>
-                        ) : inv.zohoBooksSyncError ? (
-                          <Badge tone="red" className="text-xs">Error</Badge>
+                        {inv.paymentHistory?.some(p => p.notes?.includes('Stripe Checkout')) ? (
+                          <Badge tone="green" className="text-xs">Yes</Badge>
                         ) : (
-                          <span style={{ fontSize: 12, color: MUTED }}>—</span>
+                          <span style={{ fontSize: 12, color: MUTED }}>No</span>
                         )}
                       </td>
                       <td style={{ padding: '14px 16px', textAlign: 'right' }}>
