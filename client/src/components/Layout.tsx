@@ -376,6 +376,32 @@ export default function Layout() {
             </div>
           )
         })()}
+
+        {/* Settings & admin — mobile only; desktop reaches these via the profile dropdown */}
+        {(() => {
+          const visibleProfile = profileMenuItems.filter(({ perm }) => hasPermission(perm))
+          if (visibleProfile.length === 0 && !isAdmin) return null
+          return (
+            <div className="pt-3 md:hidden">
+              <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-sidebar-muted/60">Settings</div>
+              {visibleProfile.map(({ to, label, icon: Icon }) => (
+                <NavLink key={to} to={to} className={({ isActive }) => navLinkCls(isActive)}>
+                  <Icon size={15} />{label}
+                </NavLink>
+              ))}
+              {isAdmin && (
+                <>
+                  <NavLink to="/users" className={({ isActive }) => navLinkCls(isActive)}>
+                    <UserCog size={15} />Users
+                  </NavLink>
+                  <NavLink to="/backup" className={({ isActive }) => navLinkCls(isActive)}>
+                    <DatabaseBackup size={15} />Backup
+                  </NavLink>
+                </>
+              )}
+            </div>
+          )
+        })()}
       </nav>
 
       {/* Footer */}
