@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft, Download, Share2, Edit, Plus, Trash2, RefreshCw, CheckCircle, Pencil, CreditCard, Mail, Link as LinkIcon } from 'lucide-react'
 import { api, apiError, apiUrl } from '../../lib/api'
+import { EditCustomerModalLoader } from '../../components/AddCustomerModal'
 import type { MovingInvoice, MovingInvoiceStatus } from '../../lib/types'
 import { Badge, Button, Field, Input, Modal, Select, Spinner, Textarea } from '../../components/ui'
 
@@ -53,6 +54,7 @@ export default function MovingInvoiceDetail() {
   const [payLinkResult, setPayLinkResult] = useState<{ payUrl: string; balanceDue: number; channel: string; feePct: number; feeAmount: number; totalCharged: number } | null>(null)
   const [payLinkBusy, setPayLinkBusy] = useState<'' | 'whatsapp' | 'email' | 'link'>('')
   const [payLinkModal, setPayLinkModal] = useState(false)
+  const [editCustomerModal, setEditCustomerModal] = useState(false)
   const [addStripeFee, setAddStripeFee] = useState(false)
   const [stripeFeePct, setStripeFeePct] = useState('3')
 
@@ -195,7 +197,15 @@ export default function MovingInvoiceDetail() {
         </button>
         <div className="flex-1 min-w-0">
           <div style={{ ...HEADING, fontSize: 22, fontWeight: 700, color: INK }} className="font-mono">{invoice.invoiceNo}</div>
-          <div style={{ fontSize: 14, color: MUTED, marginTop: 2 }} className="truncate">{invoice.customer?.fullName}</div>
+          <div style={{ fontSize: 14, color: MUTED, marginTop: 2 }} className="truncate flex items-center gap-1.5">
+            {invoice.customer?.fullName}
+            {invoice.customer && (
+              <button type="button" onClick={() => setEditCustomerModal(true)} title="Edit customer details"
+                className="p-0.5 rounded hover:bg-muted text-muted-foreground/50 hover:text-primary transition-colors cursor-pointer">
+                <Pencil size={12} />
+              </button>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-1.5">
           <span style={{ width: 7, height: 7, borderRadius: 4, background: statusDot[invoice.status] }} />
@@ -792,6 +802,14 @@ export default function MovingInvoiceDetail() {
           </div>
         </div>
       </Modal>
+
+      {invoice.customer && editCustomerModal && (
+        <EditCustomerModalLoader
+          customerId={invoice.customer._id}
+          onClose={() => setEditCustomerModal(false)}
+          onSaved={invalidate}
+        />
+      )}
 
       {/* Send Stripe Payment Link — channel + optional card-fee surcharge */}
       <Modal open={payLinkModal} title="Send Stripe Payment Link" onClose={() => setPayLinkModal(false)}>

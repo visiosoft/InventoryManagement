@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import {
   Wallet, TrendingUp, PieChart as PieChartIcon, Filter,
-  Users2, Truck, ReceiptText, ShieldAlert,
+  Users2, Truck, ReceiptText, ShieldAlert, CreditCard,
 } from 'lucide-react'
 import { useAuth } from '../../lib/auth'
 import { PageHeader } from '../../components/ui'
@@ -20,6 +20,7 @@ const REPORTS = [
   { to: '/moving/reports/fleet', label: 'Fleet', desc: 'Truck utilisation', icon: Truck, perm: 'reports_moving_fleet', color: '#F97316' },
   { to: '/moving/reports/payroll', label: 'Payroll', desc: 'Crew pay for a date range', icon: ReceiptText, perm: 'reports_moving_payroll', color: '#6366F1' },
   { to: '/moving/reports/claims', label: 'Damage Claims', desc: 'Claimed vs approved vs settled', icon: ShieldAlert, perm: 'moving_dashboard', color: '#EC4899' },
+  { to: '/moving/reports/stripe-payments', label: 'Stripe Payments', desc: 'Payments received online, by month', icon: CreditCard, perm: 'reports_moving_stripe', color: '#635BFF' },
 ]
 
 export default function MovingReportsHub() {

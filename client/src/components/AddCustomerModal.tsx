@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import type { AccessPerson, Customer } from '../lib/types'
@@ -200,4 +200,87 @@ export function AddCustomerModal({
       />
     </Modal>
   )
+}
+
+/**
+ * Reusable "Edit Customer" modal — same form as AddCustomerModal, but PUTs to
+ * an existing customer. Used from job/lead/invoice/quote detail pages on
+ * both the storage and moving side so contact details can be fixed from
+ * wherever they're wrong, not just from a contract page.
+ */
+export function EditCustomerModal({
+  open,
+  onClose,
+  onSaved,
+  customerId,
+  initial,
+}: {
+  open: boolean
+  onClose: () => void
+  onSaved: (customer: Customer) => void
+  customerId: string
+  initial?: Partial<Customer>
+}) {
+  const qc = useQueryClient()
+  const [error, setError] = useState('')
+
+  const update = useMutation({
+    mutationFn: (body: Partial<Customer>) => api.put<Customer>(`/customers/${customerId}`, body).then((r) => r.data),
+    onSuccess: (customer) => {
+      qc.invalidateQueries({ queryKey: ['customers'] })
+      setError('')
+      onSaved(customer)
+      onClose()
+    },
+    onError: (e) => setError(apiError(e)),
+  })
+
+  function handleClose() {
+    setError('')
+    onClose()
+  }
+
+  return (
+    <Modal open={open} onClose={handleClose} title="Edit customer" wide>
+      <CustomerForm
+        initial={initial}
+        onSubmit={(b) => update.mutate(b)}
+        busy={update.isPending}
+        error={error}
+        submitLabel="Save changes"
+      />
+    </Modal>
+  )
+}
+
+/**
+ * Fetches the full customer record (job/lead/invoice/quote pages only carry
+ * a narrow projection — name/phone/email) before opening EditCustomerModal,
+ * so saving doesn't blank out fields like address or Emirates ID that
+ * weren't in the narrow view. Always render this while its modal should be
+ * open; unmount it to close.
+ */
+export function EditCustomerModalLoader({
+  customerId,
+  onClose,
+  onSaved,
+}: {
+  customerId: string
+  onClose: () => void
+  onSaved: (customer: Customer) => void
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['customer-full', customerId],
+    queryFn: () => api.get(`/customers/${customerId}`).then((r) => r.data.customer as Customer),
+  })
+
+  if (isLoading || !data) {
+    return (
+      <Modal open onClose={onClose} title="Edit customer">
+        <p className="text-sm text-muted-foreground py-6 text-center">Loading…</p>
+      </Modal>
+    )
+  }
+
+  return <EditCustomerModal open onClose={onClose} customerId={customerId} initial={data} onSaved={onSaved} />
 }

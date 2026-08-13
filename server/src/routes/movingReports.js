@@ -428,6 +428,63 @@ router.get('/claims', async (req, res) => {
   }
 });
 
+// Stripe payments received — accepts either ?months=N or explicit ?from&to
+router.get('/stripe-payments', async (req, res) => {
+  try {
+    let from, to;
+    if (req.query.from || req.query.to) {
+      from = req.query.from ? new Date(req.query.from) : new Date(0);
+      to = req.query.to ? new Date(req.query.to) : new Date();
+    } else {
+      const months = Number(req.query.months) || 12;
+      from = new Date();
+      from.setMonth(from.getMonth() - months + 1);
+      from.setDate(1);
+      from.setHours(0, 0, 0, 0);
+      to = new Date();
+    }
+
+    const invoices = await MovingInvoice.find({ 'paymentHistory.notes': /Stripe Checkout/ })
+      .populate('customer', 'fullName')
+      .select('invoiceNo customer paymentHistory')
+      .lean();
+
+    const rows = [];
+    for (const inv of invoices) {
+      for (const p of inv.paymentHistory || []) {
+        if (!p.notes?.includes('Stripe Checkout')) continue;
+        const d = new Date(p.date);
+        if (d < from || d > to) continue;
+        rows.push({
+          invoiceId: inv._id,
+          invoiceNo: inv.invoiceNo,
+          customer: inv.customer?.fullName || '',
+          amount: p.amount,
+          date: p.date,
+          notes: p.notes,
+        });
+      }
+    }
+    rows.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    const byMonth = new Map();
+    for (const r of rows) {
+      const d = new Date(r.date);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      if (!byMonth.has(key)) byMonth.set(key, { month: key, count: 0, total: 0 });
+      const m = byMonth.get(key);
+      m.count += 1;
+      m.total += r.amount;
+    }
+    const monthly = [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month));
+
+    const totalAmount = Number(rows.reduce((s, r) => s + r.amount, 0).toFixed(2));
+    res.json({ rows, monthly, summary: { count: rows.length, totalAmount } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Crew payroll — earnings per worker for a date range
 router.get('/payroll', async (req, res) => {
   try {

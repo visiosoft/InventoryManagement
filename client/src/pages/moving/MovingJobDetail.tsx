@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Plus, Trash2, FileText, MapPin, Users, Truck as TruckIcon, AlertCircle, Package, Star, Wrench, Camera, X, Tag, CheckCircle2, Pencil, Image as ImageIcon, Check, Share2, Copy, ExternalLink } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
+import { EditCustomerModalLoader } from '../../components/AddCustomerModal'
 import type { MovingJob, MovingJobStatus, Worker, Truck, MovingJobImage } from '../../lib/types'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
@@ -254,6 +255,7 @@ export default function MovingJobDetail() {
   const [uploadingImages, setUploadingImages] = useState(false)
   const [uploadingCategory, setUploadingCategory] = useState<string | null>(null)
   const [editDetailsModal, setEditDetailsModal] = useState(false)
+  const [editCustomerModal, setEditCustomerModal] = useState(false)
   const [editMaterialModal, setEditMaterialModal] = useState<{ idx: number; item: string; qty: number; notes: string } | null>(null)
   const [editCrewModal, setEditCrewModal] = useState<{ idx: number; name: string; role: string; dailyRate: number; days: number; extraHours: number; extraHourRate: number } | null>(null)
   const [editTruckModal, setEditTruckModal] = useState<{ idx: number; name: string; dailyRate: number; days: number; notes: string } | null>(null)
@@ -614,8 +616,14 @@ export default function MovingJobDetail() {
                 {movingJobStatusLabel(job.status)}
               </Badge>
             </div>
-            <p className="text-sm text-muted-foreground truncate">
+            <p className="text-sm text-muted-foreground truncate flex items-center gap-1.5">
               {job.customer?.fullName} • Job ID: {job._id?.slice(-8)}
+              {job.customer && (
+                <button type="button" onClick={() => setEditCustomerModal(true)} title="Edit customer details"
+                  className="p-0.5 rounded hover:bg-muted text-muted-foreground/50 hover:text-primary transition-colors cursor-pointer">
+                  <Pencil size={12} />
+                </button>
+              )}
             </p>
           </div>
         </div>
@@ -1676,6 +1684,14 @@ export default function MovingJobDetail() {
         onSave={(pkg) => savePackageMut.mutate(pkg)}
         onClose={() => { setPackageModal(false); setErr('') }}
       />
+
+      {job.customer && editCustomerModal && (
+        <EditCustomerModalLoader
+          customerId={job.customer._id}
+          onClose={() => setEditCustomerModal(false)}
+          onSaved={invalidate}
+        />
+      )}
 
       {/* Edit Job Details Modal */}
       <Modal open={editDetailsModal} title="Edit Job Details" onClose={() => setEditDetailsModal(false)} className="max-w-2xl w-[90vw]">

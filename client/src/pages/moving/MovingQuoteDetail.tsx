@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Download, Plus, Trash2, Edit, Receipt } from 'lucide-react'
+import { ArrowLeft, Download, Plus, Trash2, Edit, Receipt, Pencil } from 'lucide-react'
 import { api, apiError, apiUrl } from '../../lib/api'
+import { EditCustomerModalLoader } from '../../components/AddCustomerModal'
 import type { MovingQuote, MovingQuoteStatus } from '../../lib/types'
 import { Badge, Button, Field, Input, Modal, Spinner, Textarea } from '../../components/ui'
 import { useState } from 'react'
@@ -49,6 +50,7 @@ export default function MovingQuoteDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const [editCustomerModal, setEditCustomerModal] = useState(false)
   const [err, setErr] = useState('')
   const [itemsModal, setItemsModal] = useState(false)
   const [items, setItems] = useState<Array<{ description: string; subDescription?: string; qty: number; rate: number; amount: number }>>([])
@@ -190,12 +192,28 @@ export default function MovingQuoteDetail() {
         </div>
 
         <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: '20px 24px' }}>
-          <div style={{ ...HEADING, fontSize: 15, fontWeight: 700, color: INK, marginBottom: 12 }}>Customer</div>
+          <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
+            <div style={{ ...HEADING, fontSize: 15, fontWeight: 700, color: INK }}>Customer</div>
+            {quote.customer && (
+              <button type="button" onClick={() => setEditCustomerModal(true)} title="Edit customer details"
+                className="p-1 rounded hover:bg-muted text-muted-foreground/50 hover:text-primary transition-colors cursor-pointer">
+                <Pencil size={13} />
+              </button>
+            )}
+          </div>
           <InfoRow label="Name">{quote.customer?.fullName}</InfoRow>
           {quote.customer?.phone && <InfoRow label="Phone">{quote.customer.phone}</InfoRow>}
           {quote.customer?.email && <InfoRow label="Email">{quote.customer.email}</InfoRow>}
         </div>
       </div>
+
+      {quote.customer && editCustomerModal && (
+        <EditCustomerModalLoader
+          customerId={quote.customer._id}
+          onClose={() => setEditCustomerModal(false)}
+          onSaved={invalidate}
+        />
+      )}
 
       {/* Move addresses */}
       {(quote.job?.pickupAddress || quote.job?.deliveryAddress) && (

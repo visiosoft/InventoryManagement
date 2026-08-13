@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft, Trash2, Plus, X, Pencil, Phone, Mail, MapPin, Package, Truck, Image, FileText, User, Hash } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
+import { EditCustomerModalLoader } from '../../components/AddCustomerModal'
 import type { MovingLead, MovingLeadStatus, MovingLeadSource } from '../../lib/types'
 import { Badge, Breadcrumb, Button, Card, CardBody, CardHeader, Field, InfoGrid, InfoItem, Input, Modal, Select, Spinner, Textarea } from '../../components/ui'
 import { useAuth } from '../../lib/auth'
@@ -36,6 +37,7 @@ export default function MovingLeadDetail() {
   const [noteText, setNoteText] = useState('')
   const [err, setErr] = useState('')
   const [editModal, setEditModal] = useState(false)
+  const [editCustomerModal, setEditCustomerModal] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
 
   const { data: lead, isLoading } = useQuery<MovingLead>({
@@ -261,24 +263,37 @@ export default function MovingLeadDetail() {
           {/* Quick Info Card */}
           {lead.customer && (
             <Card>
-              <CardHeader title="Customer" />
+              <CardHeader title="Customer"
+                action={
+                  <button type="button" onClick={() => setEditCustomerModal(true)} title="Edit customer details"
+                    className="p-1 rounded hover:bg-muted text-muted-foreground/60 hover:text-primary transition-colors cursor-pointer">
+                    <Pencil size={13} />
+                  </button>
+                } />
               <CardBody>
                 <div className="space-y-3">
-                  <Link to={`/customers/${lead.customer._id}`} className="flex items-center gap-3 group">
+                  <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                       <User size={18} className="text-primary" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-sm font-medium group-hover:text-primary transition-colors truncate">{lead.customer.fullName}</p>
+                      <p className="text-sm font-medium truncate">{lead.customer.fullName}</p>
                       <p className="text-xs text-muted-foreground">{lead.customer.phone}</p>
                     </div>
-                  </Link>
+                  </div>
                   {lead.customer.email && (
                     <p className="text-xs text-muted-foreground pl-[52px]">{lead.customer.email}</p>
                   )}
                 </div>
               </CardBody>
             </Card>
+          )}
+          {lead.customer && editCustomerModal && (
+            <EditCustomerModalLoader
+              customerId={lead.customer._id}
+              onClose={() => setEditCustomerModal(false)}
+              onSaved={invalidate}
+            />
           )}
 
           {/* Linked Job */}

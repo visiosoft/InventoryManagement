@@ -93,6 +93,7 @@ import MovingCrewReport from './pages/moving/reports/MovingCrewReport'
 import MovingFleetReport from './pages/moving/reports/MovingFleetReport'
 import MovingPayrollReport from './pages/moving/reports/MovingPayrollReport'
 import MovingClaimsReport from './pages/moving/reports/MovingClaimsReport'
+import MovingStripePaymentsReport from './pages/moving/reports/MovingStripePaymentsReport'
 import SiteVisits from './pages/moving/SiteVisits'
 import MovingSurveyDetail from './pages/moving/MovingSurveyDetail'
 import ClientUpload from './pages/moving/ClientUpload'
@@ -224,6 +225,7 @@ export default function App() {
         <Route path="/moving/reports/fleet" element={<PermGuard module="reports_moving_fleet"><MovingFleetReport /></PermGuard>} />
         <Route path="/moving/reports/payroll" element={<PermGuard module="reports_moving_payroll"><MovingPayrollReport /></PermGuard>} />
         <Route path="/moving/reports/claims" element={<PermGuard module="moving_dashboard"><MovingClaimsReport /></PermGuard>} />
+        <Route path="/moving/reports/stripe-payments" element={<PermGuard module="reports_moving_stripe"><MovingStripePaymentsReport /></PermGuard>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
