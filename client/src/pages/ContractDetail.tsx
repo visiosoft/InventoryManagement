@@ -1183,7 +1183,14 @@ export default function ContractDetail() {
 
               {/* Contract detail rows — click a value to edit inline */}
               {(() => {
-                const askingPrice = Number(c.rate || 0)
+                // Asking Price now reflects the unit's actual (locked) price from
+                // Settings → Unit Pricing, not a per-contract negotiated figure —
+                // falls back to the stored contract rate for units priced before
+                // that page existed.
+                const unitsWithPrice = allUnits.filter((u) => u?.price != null)
+                const askingPrice = unitsWithPrice.length
+                  ? unitsWithPrice.reduce((s, u) => s + Number(u!.price ?? 0), 0)
+                  : Number(c.rate || 0)
                 const discountPct = Number((c as { firstMonthDiscountPct?: number }).firstMonthDiscountPct || 0)
                 // null = derive from the asking rate; an explicit 0 shows as 0
                 const leasedPrice = c.leasedPrice != null ? Number(c.leasedPrice) : Math.round(askingPrice * (1 - discountPct / 100) * 100) / 100
@@ -1325,7 +1332,7 @@ export default function ContractDetail() {
                       allUnits.some((u) => u?.sizeSqf != null)
                         ? `${allUnits.map((u) => (u?.sizeSqf != null ? u.sizeSqf : '—')).join(', ')} sq ft`
                         : '—')}
-                    {EditableRow('Asking Price', 'rate', `AED ${formatMoney(askingPrice)}`, String(askingPrice), 'number', '1')}
+                    {Row('Asking Price', `AED ${formatMoney(askingPrice)}`)}
                     {EditableRow('Leased Price', 'leasedPrice', `AED ${formatMoney(leasedPrice)}`, String(leasedPrice), 'number', '1')}
                     {EditableRow('Total Quotation', 'totalQuotation', `AED ${formatMoney(quotationShown)}`, String(quotationShown), 'number', '1')}
                     {EditableRow('Received', 'manualReceived', `AED ${formatMoney(collected)}`, String(manualRcv ?? collected), 'number', '1')}
