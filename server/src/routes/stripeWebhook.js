@@ -38,11 +38,16 @@ router.post('/', aw(async (req, res) => {
       // Idempotent: Stripe may deliver the same event more than once
       const already = invoice?.paymentHistory?.some((p) => p.notes?.includes(session.id));
       if (invoice && invoice.balanceDue > 0 && !already) {
-        const amount = (session.amount_total ?? 0) / 100;
+        // Credit only the invoice-owed portion — a card-fee line item (when
+        // present) was collected from the customer to cover Stripe's cut,
+        // not extra rent, and must not count toward the balance.
+        const invoiceAmountFils = Number(session.metadata?.invoiceAmountFils);
+        const amount = Number.isFinite(invoiceAmountFils) ? invoiceAmountFils / 100 : (session.amount_total ?? 0) / 100;
+        const feePct = Number(session.metadata?.feePct) || 0;
         applyMovingInvoicePayment(invoice, {
           amount,
           method: 'online',
-          notes: `Paid via Stripe Checkout (${session.id})`,
+          notes: `Paid via Stripe Checkout (${session.id})${feePct > 0 ? ` incl. ${feePct}% card fee paid separately` : ''}`,
           receivedBy: 'Stripe',
         });
         await invoice.save();

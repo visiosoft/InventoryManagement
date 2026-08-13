@@ -34,32 +34,58 @@ export async function verifyStripeKey(secretKey) {
 // Creates a hosted Stripe Checkout session for the invoice's current balance
 // due. Returns { id, url }. The session itself is the "payment link" — no
 // separate public page of ours is needed, Stripe hosts the checkout UI.
-export async function createInvoiceCheckoutSession({ invoice, customerEmail, successUrl, cancelUrl }) {
+//
+// feePct (optional): when set, adds a separate "card processing fee" line so
+// the customer — not PurpleBox — covers Stripe's cut. The invoice-owed
+// portion is recorded in metadata.invoiceAmountFils so the webhook credits
+// only that amount against the invoice, never the fee on top of it.
+export async function createInvoiceCheckoutSession({ invoice, customerEmail, successUrl, cancelUrl, feePct = 0 }) {
   const client = getClient();
   const amountFils = Math.round(Number(invoice.balanceDue) * 100);
   if (!Number.isFinite(amountFils) || amountFils <= 0) {
     throw new Error('Invoice has no outstanding balance to charge');
   }
+  const pct = Number(feePct) || 0;
+  const feeFils = pct > 0 ? Math.round(amountFils * (pct / 100)) : 0;
+
+  const lineItems = [{
+    price_data: {
+      currency: 'aed',
+      unit_amount: amountFils,
+      product_data: {
+        name: `Invoice ${invoice.invoiceNo}`,
+        description: `Moving invoice balance due — PurpleBox`,
+      },
+    },
+    quantity: 1,
+  }];
+  if (feeFils > 0) {
+    lineItems.push({
+      price_data: {
+        currency: 'aed',
+        unit_amount: feeFils,
+        product_data: { name: `Card processing fee (${pct}%)` },
+      },
+      quantity: 1,
+    });
+  }
+
   const session = await client.checkout.sessions.create({
     mode: 'payment',
     payment_method_types: ['card'],
     customer_email: customerEmail || undefined,
-    line_items: [{
-      price_data: {
-        currency: 'aed',
-        unit_amount: amountFils,
-        product_data: {
-          name: `Invoice ${invoice.invoiceNo}`,
-          description: `Moving invoice balance due — PurpleBox`,
-        },
-      },
-      quantity: 1,
-    }],
-    metadata: { movingInvoiceId: String(invoice._id), invoiceNo: invoice.invoiceNo },
+    line_items: lineItems,
+    metadata: {
+      movingInvoiceId: String(invoice._id),
+      invoiceNo: invoice.invoiceNo,
+      invoiceAmountFils: String(amountFils),
+      feeFils: String(feeFils),
+      feePct: String(pct),
+    },
     success_url: successUrl,
     cancel_url: cancelUrl,
   });
-  return { id: session.id, url: session.url };
+  return { id: session.id, url: session.url, feeAmount: feeFils / 100 };
 }
 
 export function constructWebhookEvent(rawBody, signature) {

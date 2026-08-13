@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Download, Share2, Edit, Plus, Trash2, RefreshCw, CheckCircle, Pencil, CreditCard } from 'lucide-react'
+import { ArrowLeft, Download, Share2, Edit, Plus, Trash2, RefreshCw, CheckCircle, Pencil, CreditCard, Mail } from 'lucide-react'
 import { api, apiError, apiUrl } from '../../lib/api'
 import type { MovingInvoice, MovingInvoiceStatus } from '../../lib/types'
 import { Badge, Button, Field, Input, Modal, Select, Spinner, Textarea } from '../../components/ui'
@@ -50,8 +50,25 @@ export default function MovingInvoiceDetail() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [err, setErr] = useState('')
-  const [payLinkResult, setPayLinkResult] = useState<{ payUrl: string; balanceDue: number } | null>(null)
-  const [payLinkBusy, setPayLinkBusy] = useState(false)
+  const [payLinkResult, setPayLinkResult] = useState<{ payUrl: string; balanceDue: number; channel: string; feePct: number; feeAmount: number; totalCharged: number } | null>(null)
+  const [payLinkBusy, setPayLinkBusy] = useState<'' | 'whatsapp' | 'email'>('')
+  const [payLinkModal, setPayLinkModal] = useState(false)
+  const [addStripeFee, setAddStripeFee] = useState(false)
+  const [stripeFeePct, setStripeFeePct] = useState('3')
+
+  async function sendStripePaymentLink(channel: 'whatsapp' | 'email') {
+    setPayLinkBusy(channel)
+    try {
+      const feePct = addStripeFee ? Number(stripeFeePct) || 0 : 0
+      const res = await api.post(`/moving-invoices/${id}/payment-link`, { channel, feePct })
+      setErr('')
+      setPayLinkModal(false)
+      setPayLinkResult({
+        payUrl: res.data.payUrl, balanceDue: res.data.balanceDue, channel: res.data.channel,
+        feePct: res.data.feePct, feeAmount: res.data.feeAmount, totalCharged: res.data.totalCharged,
+      })
+    } catch (e) { setErr(apiError(e)) } finally { setPayLinkBusy('') }
+  }
   const [payModal, setPayModal] = useState(false)
   const [itemsModal, setItemsModal] = useState(false)
   const [reviseModal, setReviseModal] = useState(false)
@@ -258,20 +275,10 @@ export default function MovingInvoiceDetail() {
           <span className="hidden sm:inline">WhatsApp</span><span className="sm:hidden">WA</span>
         </Button>
         {invoice.balanceDue > 0 && (
-          <Button
-            size="sm"
-            disabled={payLinkBusy}
-            onClick={async () => {
-              setPayLinkBusy(true)
-              try {
-                const res = await api.post(`/moving-invoices/${id}/payment-link`, {})
-                setErr('')
-                setPayLinkResult({ payUrl: res.data.payUrl, balanceDue: res.data.balanceDue })
-              } catch (e) { setErr(apiError(e)) } finally { setPayLinkBusy(false) }
-            }}
-          >
-            <span className="hidden sm:inline">{payLinkBusy ? 'Creating link…' : 'Send Payment Link'}</span>
-            <span className="sm:hidden">{payLinkBusy ? '…' : 'Pay Link'}</span>
+          <Button size="sm" onClick={() => setPayLinkModal(true)}>
+            <CreditCard size={13} className="mr-1" />
+            <span className="hidden sm:inline">Send Stripe Payment Link</span>
+            <span className="sm:hidden">Stripe Link</span>
           </Button>
         )}
         <Button size="sm" variant="outline" className="text-red-600 border-red-300 hover:bg-red-50" onClick={() => setDeleteConfirm(true)}>
@@ -785,12 +792,50 @@ export default function MovingInvoiceDetail() {
         </div>
       </Modal>
 
+      {/* Send Stripe Payment Link — channel + optional card-fee surcharge */}
+      <Modal open={payLinkModal} title="Send Stripe Payment Link" onClose={() => setPayLinkModal(false)}>
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Balance due: <strong>AED {invoice.balanceDue.toLocaleString()}</strong>
+          </p>
+          <label className="flex items-center gap-2.5 cursor-pointer">
+            <input type="checkbox" checked={addStripeFee} onChange={(e) => setAddStripeFee(e.target.checked)} className="h-4 w-4 rounded" />
+            <span className="text-sm">Add card processing fee — customer pays it, not you</span>
+          </label>
+          {addStripeFee && (
+            <div className="flex items-center gap-3 pl-6">
+              <Field label="Fee %">
+                <Input type="number" min={0} max={15} step="0.1" value={stripeFeePct} onChange={(e) => setStripeFeePct(e.target.value)} className="w-24" />
+              </Field>
+              {Number(stripeFeePct) > 0 && (
+                <p className="text-xs text-muted-foreground pt-5">
+                  +AED {(invoice.balanceDue * (Number(stripeFeePct) / 100)).toFixed(2)} fee ·{' '}
+                  customer pays <strong>AED {(invoice.balanceDue * (1 + Number(stripeFeePct) / 100)).toFixed(2)}</strong> total
+                </p>
+              )}
+            </div>
+          )}
+          {err && <p className="text-sm text-red-600">{err}</p>}
+          <div className="flex justify-end gap-2 pt-2 border-t">
+            <Button variant="outline" disabled={!!payLinkBusy} onClick={() => sendStripePaymentLink('whatsapp')}>
+              <Share2 size={14} className="mr-1.5" />{payLinkBusy === 'whatsapp' ? 'Sending…' : 'Send via WhatsApp'}
+            </Button>
+            <Button disabled={!!payLinkBusy} onClick={() => sendStripePaymentLink('email')}>
+              <Mail size={14} className="mr-1.5" />{payLinkBusy === 'email' ? 'Sending…' : 'Send via Email'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       {/* Stripe Payment Link result */}
-      <Modal open={!!payLinkResult} title="Payment link ready" onClose={() => setPayLinkResult(null)}>
+      <Modal open={!!payLinkResult} title="Payment link sent" onClose={() => setPayLinkResult(null)}>
         {payLinkResult && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Sent via WhatsApp if the customer has a phone on file. Balance: <strong>AED {payLinkResult.balanceDue.toLocaleString()}</strong>
+              Sent via {payLinkResult.channel === 'whatsapp' ? 'WhatsApp' : 'email'}. Balance: <strong>AED {payLinkResult.balanceDue.toLocaleString()}</strong>
+              {payLinkResult.feePct > 0 && (
+                <> · card fee <strong>AED {payLinkResult.feeAmount.toLocaleString()}</strong> ({payLinkResult.feePct}%) · customer pays <strong>AED {payLinkResult.totalCharged.toLocaleString()}</strong> total</>
+              )}
             </p>
             <div className="flex items-center gap-2">
               <Input readOnly value={payLinkResult.payUrl} onFocus={(e) => e.currentTarget.select()} />
