@@ -5,7 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
 import { google } from 'googleapis';
-import { MovingJob, MovingItem, MovingStockTxn, Customer, nextMovingJobNo } from '../models/index.js';
+import { MovingJob, MovingItem, MovingStockTxn, Customer, MovingInvoice, nextMovingJobNo } from '../models/index.js';
 import { notifyJobConfirmed, notifyCrewOnTheWay, notifyJobCompleted } from '../services/movingNotifications.js';
 import { uploadPublicImage, driveConfigured } from '../services/drive.js';
 
@@ -99,6 +99,12 @@ router.post('/', async (req, res) => {
   try {
     const jobNo = await nextMovingJobNo();
     const job = await MovingJob.create({ ...req.body, jobNo });
+    // Keep the invoice's own `job` pointer in sync — without this the
+    // invoice never learns a job was created for it (the "Create Job"
+    // button on the invoice page never disappears, inviting duplicates).
+    if (job.invoice) {
+      await MovingInvoice.findByIdAndUpdate(job.invoice, { job: job._id });
+    }
     res.status(201).json(job);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -214,6 +220,9 @@ router.patch('/:id/link-invoice', async (req, res) => {
   try {
     const job = await MovingJob.findByIdAndUpdate(req.params.id, { invoice: req.body.invoiceId }, { new: true });
     if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (req.body.invoiceId) {
+      await MovingInvoice.findByIdAndUpdate(req.body.invoiceId, { job: job._id });
+    }
     res.json(job);
   } catch (err) {
     res.status(400).json({ error: err.message });

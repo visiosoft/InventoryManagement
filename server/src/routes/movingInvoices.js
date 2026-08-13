@@ -281,7 +281,7 @@ router.post('/:id/payment-link', async (req, res) => {
       return res.status(400).json({ error: 'Pick a channel: whatsapp, email or link' });
     }
     const feePct = Math.min(15, Math.max(0, Number(req.body?.feePct) || 0));
-    const invoice = await MovingInvoice.findById(req.params.id).populate('customer', 'fullName phone email').populate('job', 'jobNo');
+    const invoice = await MovingInvoice.findById(req.params.id).populate(POPULATE_INV);
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
     if (invoice.balanceDue <= 0) return res.status(400).json({ error: 'Invoice already fully paid' });
 
@@ -340,11 +340,22 @@ router.post('/:id/payment-link', async (req, res) => {
         ``,
         `Thank you! — PurpleBox Moving`,
       ].filter(Boolean).join('\n');
+      const html = [
+        `<p>Hi ${customer.fullName},</p>`,
+        `<p>Your invoice <strong>${invoice.invoiceNo}</strong> is ready.<br/>`,
+        `Balance due: <strong>AED ${invoice.balanceDue.toLocaleString()}</strong>`,
+        feePct > 0 ? `<br/>Card processing fee (${feePct}%): <strong>AED ${session.feeAmount.toLocaleString()}</strong><br/>Total to pay: <strong>AED ${totalCharged.toLocaleString()}</strong>` : '',
+        `</p>`,
+        `<p><a href="${payUrl}" style="display:inline-block;background:#5B2BC9;color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;font-weight:bold;">Pay Online →</a></p>`,
+        `<p>Thank you!<br/>PurpleBox Moving</p>`,
+      ].filter(Boolean).join('\n');
+      const invoicePdf = await generateMovingInvoicePdf(invoice);
       await sendMail({
         to: customer.email,
         subject: `Payment due — Invoice ${invoice.invoiceNo} — PurpleBox Moving`,
         text,
-        html: text.replace(/\n/g, '<br/>').replace(payUrl, `<a href="${payUrl}">${payUrl}</a>`),
+        html,
+        attachments: [{ filename: `${invoice.invoiceNo}.pdf`, content: invoicePdf, contentType: 'application/pdf' }],
       });
     }
     // channel === 'link': nothing to send, just hand the URL back to copy

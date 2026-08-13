@@ -3,6 +3,7 @@ import { MovingInvoice, Customer } from '../models/index.js';
 import { constructWebhookEvent, stripeWebhookConfigured } from '../services/stripe.js';
 import { applyMovingInvoicePayment } from '../services/movingInvoicePayments.js';
 import { notifyPaymentReceived } from '../services/movingNotifications.js';
+import { sendMail, mailConfigured } from '../services/mail.js';
 
 const router = Router();
 
@@ -51,8 +52,21 @@ router.post('/', aw(async (req, res) => {
           receivedBy: 'Stripe',
         });
         await invoice.save();
-        const customer = await Customer.findById(invoice.customer).select('fullName phone');
-        if (customer) notifyPaymentReceived(customer, invoice.invoiceNo, amount);
+        const customer = await Customer.findById(invoice.customer).select('fullName phone email');
+        if (customer) {
+          notifyPaymentReceived(customer, invoice.invoiceNo, amount);
+          if (customer.email && mailConfigured()) {
+            const html = [
+              `<p>Hi ${customer.fullName},</p>`,
+              `<p>We've received your payment of <strong>AED ${amount.toLocaleString()}</strong> for invoice <strong>${invoice.invoiceNo}</strong>. ✅</p>`,
+              `<p>Thank you for choosing PurpleBox Moving!</p>`,
+            ].join('\n');
+            const text = `Hi ${customer.fullName},\n\nWe've received your payment of AED ${amount.toLocaleString()} for invoice ${invoice.invoiceNo}. Thank you!\n\n— PurpleBox Moving`;
+            try {
+              await sendMail({ to: customer.email, subject: `Payment received — Invoice ${invoice.invoiceNo} — PurpleBox Moving`, text, html });
+            } catch (e) { console.error('[StripeWebhook] thank-you email failed:', e.message); }
+          }
+        }
       }
     }
   }
