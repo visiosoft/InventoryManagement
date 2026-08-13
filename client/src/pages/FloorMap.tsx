@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { useSite, unitInSite, type Site } from '../lib/site'
@@ -673,6 +673,10 @@ export default function FloorMap() {
     return Math.round(areaSqft(s) * (floor?.rate ?? 0))
   }
 
+  // A rate is locked once the system unit record has a price — changes then
+  // go through Settings → Unit Pricing (admin unlock), same rule as Units.tsx
+  const isRateLocked = (s: Shape) => (unitInfoMap.get(s.num ?? '')?.price ?? null) != null
+
   // Save a unit's rate: to the system unit record when it exists, else on the map shape
   const commitRate = (s: Shape, val: string) => {
     const price = parseFloat(val)
@@ -1144,10 +1148,20 @@ export default function FloorMap() {
 
               <label className="grid gap-1">
                 <span style={{ fontSize: 12, color: MUTED }}>Rate (AED / 4 weeks) — saves to the unit record</span>
-                <input key={`vrate-${single.id}`} type="number" step="1" min="0" defaultValue={unitPrice(single) || ''}
-                  onBlur={e => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== unitPrice(single)) commitRate(single, e.target.value) }}
-                  onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-                  className={fieldCls} style={fieldStyle} />
+                {isRateLocked(single) ? (
+                  <>
+                    <input key={`vrate-${single.id}`} type="number" defaultValue={unitPrice(single) || ''} disabled
+                      className={fieldCls} style={{ ...fieldStyle, opacity: 0.6, cursor: 'not-allowed' }} />
+                    <span style={{ fontSize: 11, color: MUTED }}>
+                      Locked — change from <Link to="/settings/unit-pricing" style={{ color: PURPLE, fontWeight: 600 }}>Settings → Unit Pricing</Link>
+                    </span>
+                  </>
+                ) : (
+                  <input key={`vrate-${single.id}`} type="number" step="1" min="0" defaultValue={unitPrice(single) || ''}
+                    onBlur={e => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== unitPrice(single)) commitRate(single, e.target.value) }}
+                    onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                    className={fieldCls} style={fieldStyle} />
+                )}
               </label>
 
               <label className="grid gap-1">
@@ -1259,10 +1273,20 @@ export default function FloorMap() {
                       </div>
                       <label className="grid gap-1">
                         <span style={{ fontSize: 12, color: MUTED }}>Rate (AED / 4 weeks) — saves to the unit record</span>
-                        <input key={`rate-${single.id}`} type="number" step="1" min="0" defaultValue={unitPrice(single) || ''}
-                          onBlur={e => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== unitPrice(single)) commitRate(single, e.target.value) }}
-                          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-                          className={fieldCls} style={fieldStyle} />
+                        {isRateLocked(single) ? (
+                          <>
+                            <input key={`rate-${single.id}`} type="number" defaultValue={unitPrice(single) || ''} disabled
+                              className={fieldCls} style={{ ...fieldStyle, opacity: 0.6, cursor: 'not-allowed' }} />
+                            <span style={{ fontSize: 11, color: MUTED }}>
+                              Locked — change from <Link to="/settings/unit-pricing" style={{ color: PURPLE, fontWeight: 600 }}>Settings → Unit Pricing</Link>
+                            </span>
+                          </>
+                        ) : (
+                          <input key={`rate-${single.id}`} type="number" step="1" min="0" defaultValue={unitPrice(single) || ''}
+                            onBlur={e => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== unitPrice(single)) commitRate(single, e.target.value) }}
+                            onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                            className={fieldCls} style={fieldStyle} />
+                        )}
                       </label>
                     </>
                   )}
