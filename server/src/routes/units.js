@@ -15,6 +15,53 @@ router.get('/', async (req, res) => {
   res.json(units);
 });
 
+// Pricing matrix — every unit with its active contract's money fields.
+// Backs Settings → Unit Pricing: actual (list) price vs leased amount.
+router.get('/pricing-matrix', async (req, res) => {
+  try {
+    const [units, contracts] = await Promise.all([
+      Unit.find().sort({ floor: 1, unitNumber: 1 }).lean(),
+      Contract.find({ status: { $in: ['active', 'pending_signature'] } })
+        .populate('customer', 'fullName')
+        .select('contractNo customer unit units rate leasedPrice firstMonthDiscountPct status')
+        .lean(),
+    ]);
+
+    const byUnit = new Map();
+    for (const c of contracts) {
+      const ids = [c.unit, ...(c.units || [])].filter(Boolean).map(String);
+      for (const id of ids) {
+        // active beats pending_signature if a unit somehow has both
+        if (!byUnit.has(id) || c.status === 'active') {
+          byUnit.set(id, {
+            _id: c._id,
+            contractNo: c.contractNo,
+            customerName: c.customer?.fullName || '',
+            rate: c.rate ?? null,
+            leasedPrice: c.leasedPrice ?? null,
+            firstMonthDiscountPct: c.firstMonthDiscountPct ?? 0,
+            status: c.status,
+          });
+        }
+      }
+    }
+
+    res.json({
+      units: units.map((u) => ({
+        _id: u._id,
+        unitNumber: u.unitNumber,
+        floor: u.floor || '',
+        sizeSqf: u.sizeSqf ?? null,
+        status: u.status,
+        price: u.price ?? null,
+        contract: byUnit.get(String(u._id)) || null,
+      })),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.get('/:id', async (req, res) => {
   const unit = await Unit.findById(req.params.id);
   if (!unit) return res.status(404).json({ error: 'Unit not found' });
@@ -34,8 +81,26 @@ router.post('/', async (req, res) => {
 });
 
 router.put('/:id', async (req, res) => {
-  const unit = await Unit.findByIdAndUpdate(req.params.id, req.body, { new: true });
+  const unit = await Unit.findById(req.params.id);
   if (!unit) return res.status(404).json({ error: 'Unit not found' });
+
+  const allowed = ['unitNumber', 'floor', 'sizeSqf', 'price', 'lengthFt', 'widthFt', 'status', 'discountPct', 'shared', 'notes', 'site'];
+  const update = {};
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) update[key] = req.body[key];
+  }
+
+  // The list price is set once. Changing an existing price is a deliberate
+  // admin-only correction (priceOverride from the Unit Pricing page).
+  if (update.price !== undefined && unit.price != null && Number(update.price) !== Number(unit.price)) {
+    const isOverride = req.user?.role === 'admin' && req.body.priceOverride === true;
+    if (!isOverride) {
+      return res.status(403).json({ error: 'The unit price is locked once set — an admin can unlock it from Settings → Unit Pricing' });
+    }
+  }
+
+  Object.assign(unit, update);
+  await unit.save();
   res.json(unit);
 });
 
