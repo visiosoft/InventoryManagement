@@ -65,7 +65,21 @@ function UnitFormFields({ initial }: { initial?: Partial<Unit> }) {
           </Select>
         </Field>
         <Field label="Size (sq ft)"><Input name="sizeSqf" type="number" step="1" defaultValue={initial?.sizeSqf ?? ''} /></Field>
-        <Field label="4 Weeks price (AED)"><Input name="price" type="number" step="0.01" defaultValue={initial?.price ?? ''} /></Field>
+        <Field label="4 Weeks price (AED)">
+          {initial?.price != null ? (
+            <>
+              {/* Disabled inputs don't submit — a hidden field keeps the unchanged
+                  value in the form so saving other fields doesn't trip the price lock. */}
+              <input type="hidden" name="price" value={initial.price} />
+              <Input type="number" step="0.01" defaultValue={initial.price} disabled className="opacity-60 cursor-not-allowed" />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Locked — set from <Link to="/settings/unit-pricing" className="text-primary hover:underline">Settings → Unit Pricing</Link>
+              </p>
+            </>
+          ) : (
+            <Input name="price" type="number" step="0.01" defaultValue={initial?.price ?? ''} />
+          )}
+        </Field>
         <Field label="Length (ft)"><Input name="lengthFt" type="number" step="0.1" defaultValue={initial?.lengthFt ?? ''} /></Field>
         <Field label="Width (ft)"><Input name="widthFt" type="number" step="0.1" defaultValue={initial?.widthFt ?? ''} /></Field>
         <Field label="First month discount (%) — 28 days">
