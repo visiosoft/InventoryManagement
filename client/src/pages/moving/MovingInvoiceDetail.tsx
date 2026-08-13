@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Download, Share2, Edit, Plus, Trash2, RefreshCw, AlertCircle, CheckCircle, Pencil } from 'lucide-react'
+import { ArrowLeft, Download, Share2, Edit, Plus, Trash2, RefreshCw, CheckCircle, Pencil, CreditCard } from 'lucide-react'
 import { api, apiError, apiUrl } from '../../lib/api'
 import type { MovingInvoice, MovingInvoiceStatus } from '../../lib/types'
 import { Badge, Button, Field, Input, Modal, Select, Spinner, Textarea } from '../../components/ui'
@@ -124,15 +124,6 @@ export default function MovingInvoiceDetail() {
     onError: (e) => setErr(apiError(e)),
   })
 
-  const syncZoho = useMutation({
-    mutationFn: () => api.post(`/moving-invoices/${id}/sync-zoho-books`).then(r => r.data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['moving-invoice', id] })
-      qc.invalidateQueries({ queryKey: ['moving-invoices'] })
-    },
-    onError: () => {},
-  })
-
   const [editingPayment, setEditingPayment] = useState<{ idx: number; amount: string; method: string; date: string; notes: string } | null>(null)
   const [deletingPaymentIdx, setDeletingPaymentIdx] = useState<number | null>(null)
 
@@ -175,6 +166,8 @@ export default function MovingInvoiceDetail() {
     })
   }
 
+  const stripePayment = invoice.paymentHistory?.find(p => p.notes?.includes('Stripe Checkout'))
+
   return (
     <div style={{ background: '#FDFCFA', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
       {/* Header */}
@@ -191,6 +184,17 @@ export default function MovingInvoiceDetail() {
           <Badge tone={statusTone[invoice.status]}>{invoice.status}</Badge>
         </div>
       </div>
+
+      {stripePayment && (
+        <div className="flex items-center gap-2 mb-5" style={{ background: '#ECFDF5', border: '1px solid rgba(16,185,129,0.25)', borderRadius: 12, padding: '10px 14px' }}>
+          <CreditCard size={15} style={{ color: '#059669' }} className="shrink-0" />
+          <div style={{ fontSize: 12.5, color: '#065F46' }}>
+            <span className="font-semibold">Paid online via Stripe</span>
+            {' — AED '}{stripePayment.amount.toLocaleString()}{' on '}
+            {new Date(stripePayment.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+          </div>
+        </div>
+      )}
 
       {/* Action buttons */}
       <div className="flex flex-wrap gap-2 mb-7">
@@ -270,43 +274,12 @@ export default function MovingInvoiceDetail() {
             <span className="sm:hidden">{payLinkBusy ? '…' : 'Pay Link'}</span>
           </Button>
         )}
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => syncZoho.mutate()}
-          disabled={syncZoho.isPending}
-          className={invoice.zohoBooksSyncId ? 'text-emerald-600 border-emerald-300' : invoice.zohoBooksSyncError ? 'text-red-600 border-red-300' : ''}
-          title={invoice.zohoBooksSyncId ? `Synced to Zoho Books on ${new Date(invoice.zohoBooksSyncedAt!).toLocaleDateString()}` : invoice.zohoBooksSyncError ? `Sync failed: ${invoice.zohoBooksSyncError}` : 'Sync to Zoho Books'}
-        >
-          <RefreshCw size={13} className={syncZoho.isPending ? 'animate-spin' : ''} />
-          {syncZoho.isPending ? 'Syncing…' : invoice.zohoBooksSyncId ? 'Synced' : <><span className="hidden sm:inline">Sync to Zoho</span><span className="sm:hidden">Zoho</span></>}
-        </Button>
-        {invoice.zohoBooksSyncId && (
-          <a
-            href={`https://books.zoho.com/app/908459713#/invoices/${invoice.zohoBooksSyncId}`}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 rounded-md border border-emerald-300 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
-          >
-            <span className="hidden sm:inline">Open in Zoho ↗</span><span className="sm:hidden">Zoho ↗</span>
-          </a>
-        )}
         <Button size="sm" variant="outline" className="text-red-600 border-red-300 hover:bg-red-50" onClick={() => setDeleteConfirm(true)}>
           <Trash2 size={13} className="mr-1" /><span className="hidden sm:inline">Delete</span>
         </Button>
       </div>
 
       {err && <p className="text-sm text-red-600 mb-4">{err}</p>}
-
-      {(syncZoho.error || (invoice.zohoBooksSyncError && !invoice.zohoBooksSyncId)) && (
-        <div className="flex items-start gap-2 mb-4" style={{ background: '#FEF2F2', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 12, padding: '12px 16px' }}>
-          <AlertCircle className="text-red-600 shrink-0 mt-0.5" size={15} />
-          <div style={{ fontSize: 12, color: '#B91C1C' }}>
-            <span className="font-semibold">Zoho Books sync failed: </span>
-            {syncZoho.error ? apiError(syncZoho.error) : invoice.zohoBooksSyncError}
-          </div>
-        </div>
-      )}
 
       {/* Info cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
