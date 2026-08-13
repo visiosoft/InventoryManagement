@@ -1005,6 +1005,8 @@ export default function NewQuote() {
       setCustomerEmail(q.customer.email || '')
     }
     setDeposit(q.deposit ? String(q.deposit) : '')
+    // Server default is true; only an explicit false (removed) should turn it off
+    setHoldAdvance((q as { holdAdvance?: boolean }).holdAdvance !== false)
     setNotes(q.notes || '')
     setAdjustment(q.adjustment || 0)
     const units = (q.units || []).map((u) => ({
