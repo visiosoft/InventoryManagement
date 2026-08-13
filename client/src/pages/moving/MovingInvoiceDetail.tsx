@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Download, Share2, Edit, Plus, Trash2, RefreshCw, CheckCircle, Pencil, CreditCard, Mail } from 'lucide-react'
+import { ArrowLeft, Download, Share2, Edit, Plus, Trash2, RefreshCw, CheckCircle, Pencil, CreditCard, Mail, Link as LinkIcon } from 'lucide-react'
 import { api, apiError, apiUrl } from '../../lib/api'
 import type { MovingInvoice, MovingInvoiceStatus } from '../../lib/types'
 import { Badge, Button, Field, Input, Modal, Select, Spinner, Textarea } from '../../components/ui'
@@ -51,18 +51,19 @@ export default function MovingInvoiceDetail() {
   const qc = useQueryClient()
   const [err, setErr] = useState('')
   const [payLinkResult, setPayLinkResult] = useState<{ payUrl: string; balanceDue: number; channel: string; feePct: number; feeAmount: number; totalCharged: number } | null>(null)
-  const [payLinkBusy, setPayLinkBusy] = useState<'' | 'whatsapp' | 'email'>('')
+  const [payLinkBusy, setPayLinkBusy] = useState<'' | 'whatsapp' | 'email' | 'link'>('')
   const [payLinkModal, setPayLinkModal] = useState(false)
   const [addStripeFee, setAddStripeFee] = useState(false)
   const [stripeFeePct, setStripeFeePct] = useState('3')
 
-  async function sendStripePaymentLink(channel: 'whatsapp' | 'email') {
+  async function sendStripePaymentLink(channel: 'whatsapp' | 'email' | 'link') {
     setPayLinkBusy(channel)
     try {
       const feePct = addStripeFee ? Number(stripeFeePct) || 0 : 0
       const res = await api.post(`/moving-invoices/${id}/payment-link`, { channel, feePct })
       setErr('')
       setPayLinkModal(false)
+      if (channel === 'link') { try { await navigator.clipboard.writeText(res.data.payUrl) } catch { /* clipboard may be blocked */ } }
       setPayLinkResult({
         payUrl: res.data.payUrl, balanceDue: res.data.balanceDue, channel: res.data.channel,
         feePct: res.data.feePct, feeAmount: res.data.feeAmount, totalCharged: res.data.totalCharged,
@@ -816,7 +817,10 @@ export default function MovingInvoiceDetail() {
             </div>
           )}
           {err && <p className="text-sm text-red-600">{err}</p>}
-          <div className="flex justify-end gap-2 pt-2 border-t">
+          <div className="flex flex-wrap justify-end gap-2 pt-2 border-t">
+            <Button variant="outline" disabled={!!payLinkBusy} onClick={() => sendStripePaymentLink('link')}>
+              <LinkIcon size={14} className="mr-1.5" />{payLinkBusy === 'link' ? 'Creating…' : 'Copy Link'}
+            </Button>
             <Button variant="outline" disabled={!!payLinkBusy} onClick={() => sendStripePaymentLink('whatsapp')}>
               <Share2 size={14} className="mr-1.5" />{payLinkBusy === 'whatsapp' ? 'Sending…' : 'Send via WhatsApp'}
             </Button>
@@ -828,11 +832,11 @@ export default function MovingInvoiceDetail() {
       </Modal>
 
       {/* Stripe Payment Link result */}
-      <Modal open={!!payLinkResult} title="Payment link sent" onClose={() => setPayLinkResult(null)}>
+      <Modal open={!!payLinkResult} title={payLinkResult?.channel === 'link' ? 'Link copied' : 'Payment link sent'} onClose={() => setPayLinkResult(null)}>
         {payLinkResult && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Sent via {payLinkResult.channel === 'whatsapp' ? 'WhatsApp' : 'email'}. Balance: <strong>AED {payLinkResult.balanceDue.toLocaleString()}</strong>
+              {payLinkResult.channel === 'link' ? 'Copied to clipboard.' : `Sent via ${payLinkResult.channel === 'whatsapp' ? 'WhatsApp' : 'email'}.`} Balance: <strong>AED {payLinkResult.balanceDue.toLocaleString()}</strong>
               {payLinkResult.feePct > 0 && (
                 <> · card fee <strong>AED {payLinkResult.feeAmount.toLocaleString()}</strong> ({payLinkResult.feePct}%) · customer pays <strong>AED {payLinkResult.totalCharged.toLocaleString()}</strong> total</>
               )}

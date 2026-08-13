@@ -268,16 +268,17 @@ router.post('/:id/share-token', async (req, res) => {
   }
 });
 
-// Generate a real Stripe Checkout payment link and send it via WhatsApp or email.
-// Body: { channel: 'whatsapp' | 'email' } — required, picked from the button clicked.
+// Generate a real Stripe Checkout payment link, and either send it via
+// WhatsApp/email or just hand it back to copy. Body: { channel: 'whatsapp' |
+// 'email' | 'link' } — required, picked from the button clicked.
 router.post('/:id/payment-link', async (req, res) => {
   try {
     if (!stripeConfigured()) {
       return res.status(400).json({ error: 'Stripe is not connected — add a secret key in Settings → Payments' });
     }
     const channel = req.body?.channel;
-    if (!['whatsapp', 'email'].includes(channel)) {
-      return res.status(400).json({ error: 'Pick a channel: whatsapp or email' });
+    if (!['whatsapp', 'email', 'link'].includes(channel)) {
+      return res.status(400).json({ error: 'Pick a channel: whatsapp, email or link' });
     }
     const feePct = Math.min(15, Math.max(0, Number(req.body?.feePct) || 0));
     const invoice = await MovingInvoice.findById(req.params.id).populate('customer', 'fullName phone email').populate('job', 'jobNo');
@@ -325,7 +326,7 @@ router.post('/:id/payment-link', async (req, res) => {
         `Thank you! — PurpleBox Moving`,
       ].filter(Boolean).join('\n');
       await sendWhatsAppText({ to: customer.phone, body: msg });
-    } else {
+    } else if (channel === 'email') {
       const { sendMail, mailConfigured } = await import('../services/mail.js');
       if (!mailConfigured()) return res.status(400).json({ error: 'Email is not connected — connect Gmail in Settings' });
       const text = [
@@ -346,6 +347,7 @@ router.post('/:id/payment-link', async (req, res) => {
         html: text.replace(/\n/g, '<br/>').replace(payUrl, `<a href="${payUrl}">${payUrl}</a>`),
       });
     }
+    // channel === 'link': nothing to send, just hand the URL back to copy
 
     res.json({ payUrl, balanceDue: invoice.balanceDue, channel, feePct, feeAmount: session.feeAmount, totalCharged });
   } catch (err) {
