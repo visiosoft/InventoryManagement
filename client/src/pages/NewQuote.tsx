@@ -1311,6 +1311,27 @@ export default function NewQuote() {
     onError: (e) => setErr(apiError(e)),
   })
 
+  // Persists a toggle (remove/add-back advance or deposit) the moment it's
+  // clicked, instead of only updating local state — otherwise the change is
+  // lost on reload/navigation until "Save Quote & Send" happens to be clicked.
+  // `overrides` wins over buildQuoteBody()'s own reading of the (not-yet-
+  // updated) React state for the field just toggled.
+  const patchQuote = useMutation({
+    mutationFn: (overrides: Record<string, unknown>) => {
+      const body = { ...buildQuoteBody(), ...overrides }
+      return quoteId ? quoteApi.update(quoteId, body) : quoteApi.create(body)
+    },
+    onSuccess: (q) => {
+      setQuoteId(q._id)
+      setQuoteNo(q.quoteNo || '')
+      qc.invalidateQueries({ queryKey: ['quotes'] })
+      qc.invalidateQueries({ queryKey: ['flow-resume'] })
+      qc.invalidateQueries({ queryKey: ['flow-contract'] })
+      setErr('')
+    },
+    onError: (e) => setErr(apiError(e)),
+  })
+
   const [sentMsg, setSentMsg] = useState('')
 
   const sendQuote = useMutation({
@@ -2096,17 +2117,18 @@ export default function NewQuote() {
                           value={
                             <span className="inline-flex items-center gap-2">
                               {advanceExtra > 0 ? `${formatMoney(advanceExtra)} AED` : `${formatMoney(advanceTotal)} AED · included`}
-                              <button type="button" title="Remove the held advance from this quote"
-                                onClick={() => setHoldAdvance(false)}
-                                className="text-destructive font-bold cursor-pointer leading-none">×</button>
+                              <button type="button" title="Remove the held advance from this quote" disabled={patchQuote.isPending}
+                                onClick={() => { setHoldAdvance(false); if (quoteId) patchQuote.mutate({ holdAdvance: false }) }}
+                                className="text-destructive font-bold cursor-pointer leading-none disabled:opacity-50">×</button>
                             </span>
                           }
                         />
                       ) : (
                         <div className="flex items-center justify-between text-[12px] py-1" style={{ color: MUTED }}>
                           <span>Refundable advance removed for this quote</span>
-                          <button type="button" onClick={() => setHoldAdvance(true)}
-                            className="font-bold cursor-pointer" style={{ color: PURPLE }}>+ Add back</button>
+                          <button type="button" disabled={patchQuote.isPending}
+                            onClick={() => { setHoldAdvance(true); if (quoteId) patchQuote.mutate({ holdAdvance: true }) }}
+                            className="font-bold cursor-pointer disabled:opacity-50" style={{ color: PURPLE }}>+ Add back</button>
                         </div>
                       )}
                       {Number(deposit) > 0 ? (
@@ -2115,17 +2137,22 @@ export default function NewQuote() {
                           value={
                             <span className="inline-flex items-center gap-2">
                               {formatMoney(Number(deposit))} AED
-                              <button type="button" title="Remove the security deposit from this quote"
-                                onClick={() => { removedDepositRef.current = deposit; setDeposit('') }}
-                                className="text-destructive font-bold cursor-pointer leading-none">×</button>
+                              <button type="button" title="Remove the security deposit from this quote" disabled={patchQuote.isPending}
+                                onClick={() => { removedDepositRef.current = deposit; setDeposit(''); if (quoteId) patchQuote.mutate({ deposit: 0 }) }}
+                                className="text-destructive font-bold cursor-pointer leading-none disabled:opacity-50">×</button>
                             </span>
                           }
                         />
                       ) : removedDepositRef.current && (
                         <div className="flex items-center justify-between text-[12px] py-1" style={{ color: MUTED }}>
                           <span>Security deposit removed for this quote</span>
-                          <button type="button" onClick={() => { setDeposit(removedDepositRef.current); removedDepositRef.current = '' }}
-                            className="font-bold cursor-pointer" style={{ color: PURPLE }}>+ Add back</button>
+                          <button type="button" disabled={patchQuote.isPending}
+                            onClick={() => {
+                              const restored = removedDepositRef.current
+                              setDeposit(restored); removedDepositRef.current = ''
+                              if (quoteId) patchQuote.mutate({ deposit: Number(restored) || 0 })
+                            }}
+                            className="font-bold cursor-pointer disabled:opacity-50" style={{ color: PURPLE }}>+ Add back</button>
                         </div>
                       )}
                       <div style={{ borderTop: `1px solid ${PURPLE}20` }} className="mt-1 pt-1">
