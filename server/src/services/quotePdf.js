@@ -182,18 +182,23 @@ export function renderQuotePdf({ quote }) {
       // invoice. For terms over 4 weeks it prepays the final period and is
       // already inside the rent above, so it is NOT charged again here — only
       // short terms (<= 4 weeks) hold it as a refundable amount on top.
-      for (const u of quote.units || []) {
-         const uDays = u.startDate && u.endDate ? Math.round((new Date(u.endDate) - new Date(u.startDate)) / 86400000) : 0;
-         const uTotalWeeks = uDays > 0 ? Math.ceil(uDays / 7) : 1;
-         if (uTotalWeeks > 4) continue;
-         const wkFull = Number((u.rate / 4).toFixed(2));
-         rows.push({
-            title: `Refundable Advance · Unit ${u.unitNumber}`,
-            sub: 'Held and refunded or adjusted at the end of the rental',
-            qty: uTotalWeeks,
-            rate: wkFull,
-            amount: Number((wkFull * uTotalWeeks).toFixed(2)),
-         });
+      // Skipped entirely when the quote removed the held advance (holdAdvance
+      // === false) — mirrors normalizeBody()'s total math in quotes.js, which
+      // this row list must stay in sync with or the printed total won't match.
+      if (quote.holdAdvance !== false) {
+         for (const u of quote.units || []) {
+            const uDays = u.startDate && u.endDate ? Math.round((new Date(u.endDate) - new Date(u.startDate)) / 86400000) : 0;
+            const uTotalWeeks = uDays > 0 ? Math.ceil(uDays / 7) : 1;
+            if (uTotalWeeks > 4) continue;
+            const wkFull = Number((u.rate / 4).toFixed(2));
+            rows.push({
+               title: `Refundable Advance · Unit ${u.unitNumber}`,
+               sub: 'Held and refunded or adjusted at the end of the rental',
+               qty: uTotalWeeks,
+               rate: wkFull,
+               amount: Number((wkFull * uTotalWeeks).toFixed(2)),
+            });
+         }
       }
       for (const a of quote.addOns || []) {
          rows.push({
