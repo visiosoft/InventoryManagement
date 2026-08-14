@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { CalendarDays, CheckCircle2, Download, FileText, FilePlus, MessageSquare, PenLine, Plus, ShieldCheck, Trash2, Upload, X, XCircle } from 'lucide-react'
+import { CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Download, FileText, FilePlus, MessageSquare, PenLine, Plus, ShieldCheck, Trash2, Upload, X, XCircle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { AppDocument, Contract, Invoice, Payment, Unit } from '../lib/types'
@@ -805,6 +805,7 @@ export default function ContractDetail() {
   const noticeInitial = useRef('')
   const [inlineField, setInlineField] = useState<string | null>(null)
   const [inlineValue, setInlineValue] = useState('')
+  const [renewalHistoryOpen, setRenewalHistoryOpen] = useState(false)
 
   // Units to choose from in the edit panel or inline unit picker
   const { data: unitOptions = [] } = useQuery<Unit[]>({
@@ -1289,16 +1290,16 @@ export default function ContractDetail() {
                           : 'border-border bg-muted/30'
                       return (
                         <div className={`my-2.5 rounded-xl border-2 px-3 py-2.5 ${cardCls}`}>
-                          <div className="flex items-center justify-between gap-2">
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                             <span className="shrink-0 text-sm font-bold">Renewal Status</span>
-                            <div className="flex gap-1 rounded-full bg-black/5 dark:bg-white/5 p-1">
+                            <div className="flex flex-wrap gap-1 rounded-full bg-black/5 dark:bg-white/5 p-1 self-start sm:self-auto">
                               {options.map((o) => (
                                 <button
                                   key={o.value}
                                   type="button"
                                   disabled={updateContract.isPending}
                                   onClick={() => updateContract.mutate({ renewalIntent: o.value })}
-                                  className={`h-7 px-2.5 rounded-full text-xs font-semibold cursor-pointer transition-colors disabled:opacity-50 ${renewalIntent === o.value ? o.activeClass : 'bg-transparent text-muted-foreground hover:bg-muted'}`}
+                                  className={`h-7 px-2 sm:px-2.5 rounded-full text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors disabled:opacity-50 ${renewalIntent === o.value ? o.activeClass : 'bg-transparent text-muted-foreground hover:bg-muted'}`}
                                 >
                                   {o.label}
                                 </button>
@@ -1306,9 +1307,9 @@ export default function ContractDetail() {
                             </div>
                           </div>
                           {renewalIntent === 'renewing' && (
-                            <div className="mt-2 flex items-center justify-between rounded-lg bg-emerald-100/70 dark:bg-emerald-900/40 px-2.5 py-1.5 gap-2">
+                            <div className="mt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg bg-emerald-100/70 dark:bg-emerald-900/40 px-2.5 py-1.5">
                               <span className="text-xs font-medium text-emerald-800 dark:text-emerald-300">Tenant is renewing — update the new Check Out date</span>
-                              <div className="flex items-center gap-2 shrink-0">
+                              <div className="flex items-center gap-3 shrink-0">
                                 <button
                                   type="button"
                                   onClick={() => createSigningLink.mutate()}
@@ -1328,14 +1329,25 @@ export default function ContractDetail() {
                             </div>
                           )}
                           {renewalHistory.length > 0 && (
-                            <div className="mt-2 rounded-lg bg-white/60 dark:bg-black/20 px-2.5 py-1.5 space-y-1">
-                              <div className="text-xs font-semibold text-muted-foreground">Renewal History</div>
-                              {[...renewalHistory].reverse().map((h, i) => (
-                                <div key={i} className="text-xs text-muted-foreground flex justify-between gap-2">
-                                  <span>{formatDate(h.previousEndDate)} → {formatDate(h.newEndDate)}</span>
-                                  <span className="shrink-0">{h.author}{h.at ? ` · ${formatDate(h.at)}` : ''}</span>
+                            <div className="mt-2">
+                              <button
+                                type="button"
+                                onClick={() => setRenewalHistoryOpen((v) => !v)}
+                                className="flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground cursor-pointer"
+                              >
+                                {renewalHistoryOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                                History ({renewalHistory.length})
+                              </button>
+                              {renewalHistoryOpen && (
+                                <div className="mt-1.5 rounded-lg bg-white/60 dark:bg-black/20 px-2.5 py-1.5 space-y-1">
+                                  {[...renewalHistory].reverse().map((h, i) => (
+                                    <div key={i} className="text-xs text-muted-foreground flex justify-between gap-2">
+                                      <span>{formatDate(h.previousEndDate)} → {formatDate(h.newEndDate)}</span>
+                                      <span className="shrink-0">{h.author}{h.at ? ` · ${formatDate(h.at)}` : ''}</span>
+                                    </div>
+                                  ))}
                                 </div>
-                              ))}
+                              )}
                             </div>
                           )}
                         </div>
