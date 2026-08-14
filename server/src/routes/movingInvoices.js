@@ -178,11 +178,11 @@ router.patch('/:id/status', async (req, res) => {
 // Record payment
 router.post('/:id/record-payment', async (req, res) => {
   try {
-    const { amount, method, date, notes } = req.body;
+    const { amount, method, date, notes, receivedBy: receivedByInput } = req.body;
     const invoice = await MovingInvoice.findById(req.params.id);
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
 
-    const receivedBy = req.user.name || req.user.email || '';
+    const receivedBy = receivedByInput?.trim() || req.user.name || req.user.email || '';
     applyMovingInvoicePayment(invoice, { amount, method, date, notes, receivedBy });
     await invoice.save();
 

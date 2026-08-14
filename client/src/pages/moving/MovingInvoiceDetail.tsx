@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft, Download, Share2, Edit, Plus, Trash2, RefreshCw, CheckCircle, Pencil, CreditCard, Mail, Link as LinkIcon } from 'lucide-react'
 import { api, apiError, apiUrl } from '../../lib/api'
+import { useAuth } from '../../lib/auth'
 import { EditCustomerModalLoader } from '../../components/AddCustomerModal'
 import type { MovingInvoice, MovingInvoiceStatus } from '../../lib/types'
 import { Badge, Button, Field, Input, Modal, Select, Spinner, Textarea } from '../../components/ui'
@@ -50,6 +51,7 @@ export default function MovingInvoiceDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const { user } = useAuth()
   const [err, setErr] = useState('')
   const [payLinkResult, setPayLinkResult] = useState<{ payUrl: string; balanceDue: number; channel: string; feePct: number; feeAmount: number; totalCharged: number } | null>(null)
   const [linkCopied, setLinkCopied] = useState(false)
@@ -173,12 +175,12 @@ export default function MovingInvoiceDetail() {
     onError: (e) => setErr(apiError(e)),
   })
 
-  const [editingPayment, setEditingPayment] = useState<{ idx: number; amount: string; method: string; date: string; notes: string } | null>(null)
+  const [editingPayment, setEditingPayment] = useState<{ idx: number; amount: string; method: string; date: string; notes: string; receivedBy: string } | null>(null)
   const [deletingPaymentIdx, setDeletingPaymentIdx] = useState<number | null>(null)
 
   const updatePaymentMut = useMutation({
-    mutationFn: (data: { idx: number; amount: string; method: string; date: string; notes: string }) =>
-      api.put(`/moving-invoices/${id}/payments/${data.idx}`, { amount: Number(data.amount), method: data.method, date: data.date, notes: data.notes }),
+    mutationFn: (data: { idx: number; amount: string; method: string; date: string; notes: string; receivedBy: string }) =>
+      api.put(`/moving-invoices/${id}/payments/${data.idx}`, { amount: Number(data.amount), method: data.method, date: data.date, notes: data.notes, receivedBy: data.receivedBy }),
     onSuccess: () => { invalidate(); setEditingPayment(null) },
     onError: (e) => setErr(apiError(e)),
   })
@@ -212,6 +214,7 @@ export default function MovingInvoiceDetail() {
       method: f.get('method'),
       date: f.get('date') || undefined,
       notes: f.get('notes'),
+      receivedBy: f.get('receivedBy') || undefined,
     })
   }
 
@@ -457,7 +460,7 @@ export default function MovingInvoiceDetail() {
                     <td style={{ padding: '12px 16px', fontSize: 13, color: MUTED }}>{p.receivedBy || '—'}</td>
                     <td style={{ padding: '12px 16px', textAlign: 'right' }}>
                       <div className="flex items-center justify-end gap-1">
-                        <button type="button" onClick={() => setEditingPayment({ idx: i, amount: String(p.amount), method: p.method, date: p.date ? new Date(p.date).toISOString().slice(0, 10) : '', notes: p.notes || '' })}
+                        <button type="button" onClick={() => setEditingPayment({ idx: i, amount: String(p.amount), method: p.method, date: p.date ? new Date(p.date).toISOString().slice(0, 10) : '', notes: p.notes || '', receivedBy: p.receivedBy || '' })}
                           className="p-1.5 rounded-md hover:bg-muted transition-colors" title="Edit payment">
                           <Pencil size={13} style={{ color: MUTED }} />
                         </button>
@@ -483,7 +486,7 @@ export default function MovingInvoiceDetail() {
                   </div>
                   <div className="flex items-center gap-2">
                     <span style={{ fontSize: 13, fontWeight: 600, color: '#059669', whiteSpace: 'nowrap' }}>AED {fmt(p.amount)}</span>
-                    <button type="button" onClick={() => setEditingPayment({ idx: i, amount: String(p.amount), method: p.method, date: p.date ? new Date(p.date).toISOString().slice(0, 10) : '', notes: p.notes || '' })}
+                    <button type="button" onClick={() => setEditingPayment({ idx: i, amount: String(p.amount), method: p.method, date: p.date ? new Date(p.date).toISOString().slice(0, 10) : '', notes: p.notes || '', receivedBy: p.receivedBy || '' })}
                       className="p-1 rounded-md hover:bg-muted transition-colors">
                       <Pencil size={12} style={{ color: MUTED }} />
                     </button>
@@ -514,7 +517,8 @@ export default function MovingInvoiceDetail() {
               </Select>
             </Field>
             <Field label="Date"><Input name="date" type="date" defaultValue={new Date().toISOString().slice(0, 10)} /></Field>
-            <Field label="Notes"><Input name="notes" placeholder="Reference" /></Field>
+            <Field label="Received by"><Input name="receivedBy" defaultValue={user?.name || ''} placeholder="Name of person who received it" /></Field>
+            <Field label="Notes" className="sm:col-span-2"><Input name="notes" placeholder="Reference" /></Field>
           </div>
           {err && <p className="text-sm text-red-600">{err}</p>}
           <div className="flex justify-end gap-2 sticky bottom-0 bg-card pb-1 -mb-1">
@@ -804,6 +808,9 @@ export default function MovingInvoiceDetail() {
                     <option key={m} value={m}>{m.replace('_', ' ')}</option>
                   ))}
                 </Select>
+              </Field>
+              <Field label="Received by">
+                <Input value={editingPayment.receivedBy} onChange={(e) => setEditingPayment({ ...editingPayment, receivedBy: e.target.value })} placeholder="Name of person who received it" />
               </Field>
               <Field label="Notes">
                 <Input value={editingPayment.notes} onChange={(e) => setEditingPayment({ ...editingPayment, notes: e.target.value })} placeholder="Reference" />
