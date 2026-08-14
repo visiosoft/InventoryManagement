@@ -8,6 +8,7 @@ import { Button, Card, CardBody, CardHeader, Field, Input, Modal, PageHeader, Ta
 import { formatMoney } from '../lib/utils'
 import { useAuth } from '../lib/auth'
 import UnitPricing from './UnitPricing'
+import BulkUnitPricing from './BulkUnitPricing'
 
 
 // ---- Products / Services Card ----
@@ -151,7 +152,8 @@ export default function Settings() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const [searchParams, setSearchParams] = useSearchParams()
-  const activeTab = searchParams.get('tab') === 'pricing' && isAdmin ? 'pricing' : 'general'
+  const requestedTab = searchParams.get('tab')
+  const activeTab = isAdmin && (requestedTab === 'pricing' || requestedTab === 'bulk-pricing') ? requestedTab : 'general'
   const [driveMsg, setDriveMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [gmailMsg, setGmailMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [stripeMsg, setStripeMsg] = useState<{ ok: boolean; text: string } | null>(null)
@@ -184,7 +186,7 @@ export default function Settings() {
   })
 
   return (
-    <div className={activeTab === 'pricing' ? 'max-w-6xl space-y-4' : 'max-w-3xl space-y-4'}>
+    <div className={activeTab !== 'general' ? 'max-w-6xl space-y-4' : 'max-w-3xl space-y-4'}>
       <PageHeader title="Settings" subtitle="Products, pricing and integrations" />
 
       {isAdmin && (
@@ -203,11 +205,20 @@ export default function Settings() {
           >
             Unit Pricing
           </button>
+          <button
+            type="button"
+            onClick={() => setSearchParams((p) => { p.set('tab', 'bulk-pricing'); return p })}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium cursor-pointer transition-colors ${activeTab === 'bulk-pricing' ? 'bg-white dark:bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            Bulk Pricing
+          </button>
         </div>
       )}
 
       {activeTab === 'pricing' ? (
         <UnitPricing embedded />
+      ) : activeTab === 'bulk-pricing' ? (
+        <BulkUnitPricing embedded />
       ) : (
     <>
       <ProductsCard />

@@ -1,13 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Lock, Unlock, Check, Layers, ChevronDown, ChevronRight } from 'lucide-react'
+import { Lock, Unlock, Check } from 'lucide-react'
 import { api, apiError } from '../lib/api'
-import { useAuth } from '../lib/auth'
 import { PageHeader, Spinner } from '../components/ui'
 import { StatCard } from './reports/shared'
 
-interface MatrixContract {
+export interface MatrixContract {
   _id: string
   contractNo: string
   customerName: string
@@ -16,7 +15,7 @@ interface MatrixContract {
   firstMonthDiscountPct: number
   status: string
 }
-interface MatrixUnit {
+export interface MatrixUnit {
   _id: string
   unitNumber: string
   floor: string
@@ -33,7 +32,7 @@ const statusDot: Record<string, string> = {
   maintenance: '#94A3B8',
 }
 
-const money = (n: number) => `AED ${n.toLocaleString(undefined, { minimumFractionDigits: 0 })}`
+export const money = (n: number) => `AED ${n.toLocaleString(undefined, { minimumFractionDigits: 0 })}`
 
 // Same derivation the contract sidebar uses when leasedPrice is unset
 function derivedLeased(c: MatrixContract): number | null {
@@ -150,58 +149,8 @@ function LeasedCell({ unit, onSaved }: { unit: MatrixUnit; onSaved: () => void }
   )
 }
 
-function BulkSizeControl({ floor, sizeSqf, count, currentPrice, isAdmin, onSaved }: { floor: string; sizeSqf: number; count: number; currentPrice: number | null; isAdmin: boolean; onSaved: () => void }) {
-  const [value, setValue] = useState(currentPrice != null ? String(currentPrice) : '')
-  const [override, setOverride] = useState(false)
-  const [result, setResult] = useState<{ updated: number; skipped: number } | null>(null)
-  const [err, setErr] = useState('')
-
-  const apply = useMutation({
-    mutationFn: (body: Record<string, unknown>) => api.put('/units/bulk-price', body).then((r) => r.data),
-    onSuccess: (data) => { setResult({ updated: data.updated, skipped: data.skipped }); setValue(''); setErr(''); onSaved() },
-    onError: (e) => { setErr(apiError(e)); setResult(null) },
-  })
-
-  return (
-    <div className="flex flex-wrap items-center gap-1.5 rounded-lg border bg-card px-2.5 py-1.5 w-full sm:w-auto">
-      <span className="text-xs font-semibold shrink-0">{sizeSqf} sqf <span className="text-muted-foreground font-normal">({count})</span></span>
-      <input
-        type="number"
-        min="0"
-        value={value}
-        onChange={(e) => { setValue(e.target.value); setResult(null) }}
-        placeholder={currentPrice == null ? 'Price' : undefined}
-        className="w-20 min-w-0 rounded border px-1.5 py-0.5 text-[12px] bg-white"
-      />
-      <button
-        type="button"
-        disabled={apply.isPending || value === ''}
-        onClick={() => apply.mutate({ floor, sizeSqf, price: Number(value), override })}
-        className="shrink-0 px-2 py-0.5 rounded bg-primary text-primary-foreground text-[11px] font-semibold disabled:opacity-40 cursor-pointer"
-      >
-        {apply.isPending ? 'Applying…' : 'Apply to all'}
-      </button>
-      {isAdmin && (
-        <label className="flex items-center gap-1 text-[10px] text-muted-foreground shrink-0 cursor-pointer" title="Overwrite units that already have a price set">
-          <input type="checkbox" checked={override} onChange={(e) => setOverride(e.target.checked)} />
-          override
-        </label>
-      )}
-      {result && (
-        <span className="text-[10px] text-muted-foreground shrink-0">
-          {result.updated} set{result.skipped > 0 ? `, ${result.skipped} already priced (skipped)` : ''}
-        </span>
-      )}
-      {err && <span className="text-[10px] text-destructive shrink-0">{err}</span>}
-    </div>
-  )
-}
-
 export default function UnitPricing({ embedded = false }: { embedded?: boolean }) {
   const qc = useQueryClient()
-  const [sizePanelOpen, setSizePanelOpen] = useState<Record<string, boolean>>({})
-  const { user } = useAuth()
-  const isAdmin = user?.role === 'admin'
 
   const { data, isLoading } = useQuery<{ units: MatrixUnit[] }>({
     queryKey: ['unit-pricing-matrix'],
@@ -238,20 +187,6 @@ export default function UnitPricing({ embedded = false }: { embedded?: boolean }
     return { occ: occ.length, actual, leasedSum, diff: leasedSum - actual }
   }
 
-  const sizesInFloor = (list: MatrixUnit[]) => {
-    const byUnit = new Map<number, MatrixUnit[]>()
-    for (const u of list) {
-      if (u.sizeSqf == null) continue
-      if (!byUnit.has(u.sizeSqf)) byUnit.set(u.sizeSqf, [])
-      byUnit.get(u.sizeSqf)!.push(u)
-    }
-    return [...byUnit.entries()].sort((a, b) => a[0] - b[0]).map(([size, us]) => {
-      const prices = us.map((u) => u.price).filter((p): p is number => p != null)
-      const uniform = prices.length > 0 && prices.every((p) => p === prices[0]) ? prices[0] : null
-      return { size, count: us.length, currentPrice: uniform }
-    })
-  }
-
   if (isLoading) return <Spinner />
 
   return (
@@ -283,23 +218,6 @@ export default function UnitPricing({ embedded = false }: { embedded?: boolean }
                     {t.diff >= 0 ? '+' : ''}{money(t.diff)}
                   </span>
                 </p>
-              )}
-            </div>
-            <div className="mb-2.5">
-              <button
-                type="button"
-                onClick={() => setSizePanelOpen((p) => ({ ...p, [floor]: !p[floor] }))}
-                className="flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground cursor-pointer"
-              >
-                {sizePanelOpen[floor] ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                <Layers size={12} /> Set price by size ({sizesInFloor(list).length})
-              </button>
-              {sizePanelOpen[floor] && (
-                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                  {sizesInFloor(list).map(({ size, count, currentPrice }) => (
-                    <BulkSizeControl key={size} floor={floor === '—' ? '' : floor} sizeSqf={size} count={count} currentPrice={currentPrice} isAdmin={isAdmin} onSaved={invalidate} />
-                  ))}
-                </div>
               )}
             </div>
             <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(168px, 1fr))' }}>
