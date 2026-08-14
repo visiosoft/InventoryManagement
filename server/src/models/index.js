@@ -278,6 +278,9 @@ const contractSchema = new Schema(
         _id: false,
       },
     ],
+    // Whether the tenant intends to renew when this term ends — set from
+    // the contract sidebar, drives whether staff chase renewal vs. move-out.
+    renewalIntent: { type: String, enum: ['undecided', 'renewing', 'not_renewing'], default: 'undecided' },
     archived: { type: Boolean, default: false },
     timeline: [
       {

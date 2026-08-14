@@ -1273,6 +1273,46 @@ export default function ContractDetail() {
                     {EditableRow('Check Out', 'endDate', c.endDate ? formatDate(c.endDate) : '—', (c.endDate || '').slice(0, 10), 'date')}
                     {EditableRow('Number of Weeks', 'weeks', String(weeks ?? '—'), String(weeks || ''), 'number', '1')}
                     {Row('Expiring In', daysLeft === null ? '—' : daysLeft < 0 ? `Expired ${Math.abs(daysLeft)}d ago` : `${daysLeft}d left`)}
+                    {(() => {
+                      const renewalIntent = ((c as { renewalIntent?: string }).renewalIntent) || 'undecided'
+                      const options: { value: string; label: string; activeClass: string }[] = [
+                        { value: 'undecided', label: 'Undecided', activeClass: 'bg-muted text-foreground' },
+                        { value: 'renewing', label: 'Renewing', activeClass: 'bg-emerald-100 text-emerald-700' },
+                        { value: 'not_renewing', label: 'Not renewing', activeClass: 'bg-destructive/10 text-destructive' },
+                      ]
+                      return (
+                        <div className="py-2.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-muted-foreground shrink-0 text-sm">Renewal</span>
+                            <div className="flex gap-1">
+                              {options.map((o) => (
+                                <button
+                                  key={o.value}
+                                  type="button"
+                                  disabled={updateContract.isPending}
+                                  onClick={() => updateContract.mutate({ renewalIntent: o.value })}
+                                  className={`h-7 px-2.5 rounded-full text-xs font-semibold cursor-pointer transition-colors disabled:opacity-50 ${renewalIntent === o.value ? o.activeClass : 'bg-transparent text-muted-foreground hover:bg-muted'}`}
+                                >
+                                  {o.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          {renewalIntent === 'renewing' && (
+                            <div className="mt-1.5 flex items-center justify-between rounded-lg bg-emerald-50 dark:bg-emerald-950/30 px-2.5 py-1.5">
+                              <span className="text-xs text-emerald-700 dark:text-emerald-400">Tenant is renewing — update the new Check Out date</span>
+                              <button
+                                type="button"
+                                onClick={() => startEdit('endDate', (c.endDate || '').slice(0, 10))}
+                                className="text-xs font-bold text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer shrink-0 ml-2"
+                              >
+                                Extend →
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
                     {/* Unit Number — custom dropdown picker */}
                     <div className="flex justify-between items-center py-2.5 gap-2 group">
                       <span className="text-muted-foreground shrink-0 text-sm">Unit Number</span>

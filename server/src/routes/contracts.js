@@ -844,7 +844,7 @@ router.put('/:id', async (req, res) => {
     // Use $set to avoid VersionError from concurrent background writes on this document
     const $set = {};
     const numericFields = ['rate', 'deposit', 'totalQuotation', 'firstMonthDiscountPct', 'leasedPrice', 'manualReceived'];
-    const allowed = ['rate', 'deposit', 'startDate', 'endDate', 'billingPeriod', 'paymentMethod', 'firstPaymentDate', 'notes', 'totalQuotation', 'firstMonthDiscountPct', 'leasedPrice', 'manualReceived', 'agreementText'];
+    const allowed = ['rate', 'deposit', 'startDate', 'endDate', 'billingPeriod', 'paymentMethod', 'firstPaymentDate', 'notes', 'totalQuotation', 'firstMonthDiscountPct', 'leasedPrice', 'manualReceived', 'agreementText', 'renewalIntent'];
     for (const key of allowed) {
       if (req.body[key] === undefined) continue;
       if (key.endsWith('Date')) {
@@ -930,6 +930,14 @@ router.put('/:id', async (req, res) => {
       $set.accessType = v;
     }
 
+    if (req.body.renewalIntent !== undefined) {
+      const v = String(req.body.renewalIntent || 'undecided');
+      if (!['undecided', 'renewing', 'not_renewing'].includes(v)) {
+        return res.status(400).json({ error: 'renewalIntent must be undecided, renewing, or not_renewing' });
+      }
+      $set.renewalIntent = v;
+    }
+
     // Per-contract reminder settings (Reminders tab)
     if (req.body.remindersMuted !== undefined) $set.remindersMuted = !!req.body.remindersMuted;
     if (Array.isArray(req.body.reminderOverrides)) {
@@ -951,11 +959,12 @@ router.put('/:id', async (req, res) => {
     }
 
     // Log what was changed to the contract timeline with values
-    const fieldLabels = { rate: 'Asking Price', deposit: 'Deposit', totalQuotation: 'Total Quotation', leasedPrice: 'Leased Price', manualReceived: 'Received', startDate: 'Check In', endDate: 'Check Out', billingPeriod: 'Billing Period', paymentMethod: 'Payment Method', firstPaymentDate: 'First Payment Date', firstMonthDiscountPct: 'First Month Discount', remindersMuted: 'Reminders muted' };
+    const fieldLabels = { rate: 'Asking Price', deposit: 'Deposit', totalQuotation: 'Total Quotation', leasedPrice: 'Leased Price', manualReceived: 'Received', startDate: 'Check In', endDate: 'Check Out', billingPeriod: 'Billing Period', paymentMethod: 'Payment Method', firstPaymentDate: 'First Payment Date', firstMonthDiscountPct: 'First Month Discount', remindersMuted: 'Reminders muted', renewalIntent: 'Renewal intent' };
+    const renewalIntentLabels = { undecided: 'Undecided', renewing: 'Renewing', not_renewing: 'Not renewing' };
     const changedKeys = Object.keys($set).filter(k => !['authorizedPersons', 'reminderOverrides', 'agreementText'].includes(k));
     if (changedKeys.length) {
       const who = req.user?.name || req.user?.email || 'System';
-      const details = changedKeys.map(k => `${fieldLabels[k] || k}: ${$set[k] instanceof Date ? $set[k].toISOString().slice(0, 10) : $set[k]}`).join(', ');
+      const details = changedKeys.map(k => `${fieldLabels[k] || k}: ${k === 'renewalIntent' ? (renewalIntentLabels[$set[k]] || $set[k]) : $set[k] instanceof Date ? $set[k].toISOString().slice(0, 10) : $set[k]}`).join(', ');
       await Contract.findByIdAndUpdate(contract._id, {
         $set,
         $push: { timeline: { text: `Updated ${details}`, author: who, at: new Date() } },
