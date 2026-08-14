@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Lock, Unlock, Check } from 'lucide-react'
+import { Lock, Unlock, Check, Layers } from 'lucide-react'
 import { api, apiError } from '../lib/api'
+import { useAuth } from '../lib/auth'
 import { PageHeader, Spinner } from '../components/ui'
 import { StatCard } from './reports/shared'
 
@@ -149,8 +150,57 @@ function LeasedCell({ unit, onSaved }: { unit: MatrixUnit; onSaved: () => void }
   )
 }
 
+function BulkSizeControl({ floor, sizeSqf, count, isAdmin, onSaved }: { floor: string; sizeSqf: number; count: number; isAdmin: boolean; onSaved: () => void }) {
+  const [value, setValue] = useState('')
+  const [override, setOverride] = useState(false)
+  const [result, setResult] = useState<{ updated: number; skipped: number } | null>(null)
+  const [err, setErr] = useState('')
+
+  const apply = useMutation({
+    mutationFn: (body: Record<string, unknown>) => api.put('/units/bulk-price', body).then((r) => r.data),
+    onSuccess: (data) => { setResult({ updated: data.updated, skipped: data.skipped }); setValue(''); setErr(''); onSaved() },
+    onError: (e) => { setErr(apiError(e)); setResult(null) },
+  })
+
+  return (
+    <div className="flex items-center gap-1.5 rounded-lg border bg-card px-2.5 py-1.5">
+      <span className="text-xs font-semibold shrink-0">{sizeSqf} sqf <span className="text-muted-foreground font-normal">({count})</span></span>
+      <input
+        type="number"
+        min="0"
+        value={value}
+        onChange={(e) => { setValue(e.target.value); setResult(null) }}
+        placeholder="Price"
+        className="w-20 min-w-0 rounded border px-1.5 py-0.5 text-[12px] bg-white"
+      />
+      <button
+        type="button"
+        disabled={apply.isPending || value === ''}
+        onClick={() => apply.mutate({ floor, sizeSqf, price: Number(value), override })}
+        className="shrink-0 px-2 py-0.5 rounded bg-primary text-primary-foreground text-[11px] font-semibold disabled:opacity-40 cursor-pointer"
+      >
+        {apply.isPending ? 'Applying…' : 'Apply to all'}
+      </button>
+      {isAdmin && (
+        <label className="flex items-center gap-1 text-[10px] text-muted-foreground shrink-0 cursor-pointer" title="Overwrite units that already have a price set">
+          <input type="checkbox" checked={override} onChange={(e) => setOverride(e.target.checked)} />
+          override
+        </label>
+      )}
+      {result && (
+        <span className="text-[10px] text-muted-foreground shrink-0">
+          {result.updated} set{result.skipped > 0 ? `, ${result.skipped} already priced (skipped)` : ''}
+        </span>
+      )}
+      {err && <span className="text-[10px] text-destructive shrink-0">{err}</span>}
+    </div>
+  )
+}
+
 export default function UnitPricing({ embedded = false }: { embedded?: boolean }) {
   const qc = useQueryClient()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
 
   const { data, isLoading } = useQuery<{ units: MatrixUnit[] }>({
     queryKey: ['unit-pricing-matrix'],
@@ -187,6 +237,15 @@ export default function UnitPricing({ embedded = false }: { embedded?: boolean }
     return { occ: occ.length, actual, leasedSum, diff: leasedSum - actual }
   }
 
+  const sizesInFloor = (list: MatrixUnit[]) => {
+    const counts = new Map<number, number>()
+    for (const u of list) {
+      if (u.sizeSqf == null) continue
+      counts.set(u.sizeSqf, (counts.get(u.sizeSqf) || 0) + 1)
+    }
+    return [...counts.entries()].sort((a, b) => a[0] - b[0])
+  }
+
   if (isLoading) return <Spinner />
 
   return (
@@ -219,6 +278,14 @@ export default function UnitPricing({ embedded = false }: { embedded?: boolean }
                   </span>
                 </p>
               )}
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 mb-2.5">
+              <span className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground shrink-0">
+                <Layers size={11} /> Set by size
+              </span>
+              {sizesInFloor(list).map(([size, count]) => (
+                <BulkSizeControl key={size} floor={floor === '—' ? '' : floor} sizeSqf={size} count={count} isAdmin={isAdmin} onSaved={invalidate} />
+              ))}
             </div>
             <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(168px, 1fr))' }}>
               {list.map((u) => {

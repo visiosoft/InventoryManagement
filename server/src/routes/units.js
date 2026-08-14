@@ -80,6 +80,41 @@ router.post('/', async (req, res) => {
   res.status(201).json(unit);
 });
 
+// Bulk-set the price for every unit of a given floor + size at once.
+// Mirrors the single-unit lock rule below: units without a price are
+// always filled in; units that already have a (different) price are only
+// touched when an admin explicitly opts in via `override`. Must be
+// registered before PUT /:id, or Express would match "bulk-price" as an id.
+router.put('/bulk-price', async (req, res) => {
+  const { floor, sizeSqf, price, override } = req.body;
+  if (floor == null || sizeSqf == null || price == null) {
+    return res.status(400).json({ error: 'floor, sizeSqf and price are required' });
+  }
+
+  const isOverride = req.user?.role === 'admin' && override === true;
+  const units = await Unit.find({ floor, sizeSqf: Number(sizeSqf) });
+
+  let updated = 0;
+  let skipped = 0;
+  for (const unit of units) {
+    if (unit.price == null) {
+      unit.price = price;
+      await unit.save();
+      updated++;
+    } else if (Number(unit.price) !== Number(price)) {
+      if (isOverride) {
+        unit.price = price;
+        await unit.save();
+        updated++;
+      } else {
+        skipped++;
+      }
+    }
+  }
+
+  res.json({ matched: units.length, updated, skipped });
+});
+
 router.put('/:id', async (req, res) => {
   const unit = await Unit.findById(req.params.id);
   if (!unit) return res.status(404).json({ error: 'Unit not found' });
