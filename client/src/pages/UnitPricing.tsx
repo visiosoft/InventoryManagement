@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Lock, Unlock, Check, Layers } from 'lucide-react'
+import { Lock, Unlock, Check, Layers, ChevronDown, ChevronRight } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { PageHeader, Spinner } from '../components/ui'
@@ -150,8 +150,8 @@ function LeasedCell({ unit, onSaved }: { unit: MatrixUnit; onSaved: () => void }
   )
 }
 
-function BulkSizeControl({ floor, sizeSqf, count, isAdmin, onSaved }: { floor: string; sizeSqf: number; count: number; isAdmin: boolean; onSaved: () => void }) {
-  const [value, setValue] = useState('')
+function BulkSizeControl({ floor, sizeSqf, count, currentPrice, isAdmin, onSaved }: { floor: string; sizeSqf: number; count: number; currentPrice: number | null; isAdmin: boolean; onSaved: () => void }) {
+  const [value, setValue] = useState(currentPrice != null ? String(currentPrice) : '')
   const [override, setOverride] = useState(false)
   const [result, setResult] = useState<{ updated: number; skipped: number } | null>(null)
   const [err, setErr] = useState('')
@@ -163,14 +163,14 @@ function BulkSizeControl({ floor, sizeSqf, count, isAdmin, onSaved }: { floor: s
   })
 
   return (
-    <div className="flex items-center gap-1.5 rounded-lg border bg-card px-2.5 py-1.5">
+    <div className="flex flex-wrap items-center gap-1.5 rounded-lg border bg-card px-2.5 py-1.5 w-full sm:w-auto">
       <span className="text-xs font-semibold shrink-0">{sizeSqf} sqf <span className="text-muted-foreground font-normal">({count})</span></span>
       <input
         type="number"
         min="0"
         value={value}
         onChange={(e) => { setValue(e.target.value); setResult(null) }}
-        placeholder="Price"
+        placeholder={currentPrice == null ? 'Price' : undefined}
         className="w-20 min-w-0 rounded border px-1.5 py-0.5 text-[12px] bg-white"
       />
       <button
@@ -199,6 +199,7 @@ function BulkSizeControl({ floor, sizeSqf, count, isAdmin, onSaved }: { floor: s
 
 export default function UnitPricing({ embedded = false }: { embedded?: boolean }) {
   const qc = useQueryClient()
+  const [sizePanelOpen, setSizePanelOpen] = useState<Record<string, boolean>>({})
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
 
@@ -238,12 +239,17 @@ export default function UnitPricing({ embedded = false }: { embedded?: boolean }
   }
 
   const sizesInFloor = (list: MatrixUnit[]) => {
-    const counts = new Map<number, number>()
+    const byUnit = new Map<number, MatrixUnit[]>()
     for (const u of list) {
       if (u.sizeSqf == null) continue
-      counts.set(u.sizeSqf, (counts.get(u.sizeSqf) || 0) + 1)
+      if (!byUnit.has(u.sizeSqf)) byUnit.set(u.sizeSqf, [])
+      byUnit.get(u.sizeSqf)!.push(u)
     }
-    return [...counts.entries()].sort((a, b) => a[0] - b[0])
+    return [...byUnit.entries()].sort((a, b) => a[0] - b[0]).map(([size, us]) => {
+      const prices = us.map((u) => u.price).filter((p): p is number => p != null)
+      const uniform = prices.length > 0 && prices.every((p) => p === prices[0]) ? prices[0] : null
+      return { size, count: us.length, currentPrice: uniform }
+    })
   }
 
   if (isLoading) return <Spinner />
@@ -279,13 +285,22 @@ export default function UnitPricing({ embedded = false }: { embedded?: boolean }
                 </p>
               )}
             </div>
-            <div className="flex flex-wrap items-center gap-1.5 mb-2.5">
-              <span className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground shrink-0">
-                <Layers size={11} /> Set by size
-              </span>
-              {sizesInFloor(list).map(([size, count]) => (
-                <BulkSizeControl key={size} floor={floor === '—' ? '' : floor} sizeSqf={size} count={count} isAdmin={isAdmin} onSaved={invalidate} />
-              ))}
+            <div className="mb-2.5">
+              <button
+                type="button"
+                onClick={() => setSizePanelOpen((p) => ({ ...p, [floor]: !p[floor] }))}
+                className="flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                {sizePanelOpen[floor] ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                <Layers size={12} /> Set price by size ({sizesInFloor(list).length})
+              </button>
+              {sizePanelOpen[floor] && (
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  {sizesInFloor(list).map(({ size, count, currentPrice }) => (
+                    <BulkSizeControl key={size} floor={floor === '—' ? '' : floor} sizeSqf={size} count={count} currentPrice={currentPrice} isAdmin={isAdmin} onSaved={invalidate} />
+                  ))}
+                </div>
+              )}
             </div>
             <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(168px, 1fr))' }}>
               {list.map((u) => {
