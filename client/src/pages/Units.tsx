@@ -73,7 +73,7 @@ function UnitFormFields({ initial }: { initial?: Partial<Unit> }) {
               <input type="hidden" name="price" value={initial.price} />
               <Input type="number" step="0.01" defaultValue={initial.price} disabled className="opacity-60 cursor-not-allowed" />
               <p className="text-[11px] text-muted-foreground mt-1">
-                Locked — set from <Link to="/settings/unit-pricing" className="text-primary hover:underline">Settings → Unit Pricing</Link>
+                Locked — set from <Link to="/settings?tab=pricing" className="text-primary hover:underline">Settings → Unit Pricing</Link>
               </p>
             </>
           ) : (

@@ -149,7 +149,7 @@ function LeasedCell({ unit, onSaved }: { unit: MatrixUnit; onSaved: () => void }
   )
 }
 
-export default function UnitPricing() {
+export default function UnitPricing({ embedded = false }: { embedded?: boolean }) {
   const qc = useQueryClient()
 
   const { data, isLoading } = useQuery<{ units: MatrixUnit[] }>({
@@ -191,9 +191,11 @@ export default function UnitPricing() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Unit Pricing"
-        subtitle="The actual price of every unit — set once, locked after. Leased shows what each tenant actually pays." />
+      {!embedded && (
+        <PageHeader
+          title="Unit Pricing"
+          subtitle="The actual price of every unit — set once, locked after. Leased shows what each tenant actually pays." />
+      )}
 
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-5">
         <StatCard label="Units" value={String(units.length)} sub={unpriced > 0 ? `${unpriced} without a price` : 'all priced'} tone={unpriced > 0 ? 'amber' : 'default'} />

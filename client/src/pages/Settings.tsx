@@ -1,11 +1,13 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import { apiError, integrationApi, productApi } from '../lib/api'
 import type { IntegrationStatus, Product } from '../lib/types'
 import { Button, Card, CardBody, CardHeader, Field, Input, Modal, PageHeader, Table, Td, Th } from '../components/ui'
 import { formatMoney } from '../lib/utils'
+import { useAuth } from '../lib/auth'
+import UnitPricing from './UnitPricing'
 
 
 // ---- Products / Services Card ----
@@ -146,6 +148,10 @@ function ProductsCard() {
 export default function Settings() {
   const qc = useQueryClient()
   const location = useLocation()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab = searchParams.get('tab') === 'pricing' && isAdmin ? 'pricing' : 'general'
   const [driveMsg, setDriveMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [gmailMsg, setGmailMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [stripeMsg, setStripeMsg] = useState<{ ok: boolean; text: string } | null>(null)
@@ -178,9 +184,32 @@ export default function Settings() {
   })
 
   return (
-    <div className="max-w-3xl space-y-4">
-      <PageHeader title="Settings" subtitle="Products and integrations" />
+    <div className={activeTab === 'pricing' ? 'max-w-6xl space-y-4' : 'max-w-3xl space-y-4'}>
+      <PageHeader title="Settings" subtitle="Products, pricing and integrations" />
 
+      {isAdmin && (
+        <div className="flex gap-1 rounded-lg bg-muted p-1 w-fit">
+          <button
+            type="button"
+            onClick={() => setSearchParams((p) => { p.delete('tab'); return p })}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium cursor-pointer transition-colors ${activeTab === 'general' ? 'bg-white dark:bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            General
+          </button>
+          <button
+            type="button"
+            onClick={() => setSearchParams((p) => { p.set('tab', 'pricing'); return p })}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium cursor-pointer transition-colors ${activeTab === 'pricing' ? 'bg-white dark:bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            Unit Pricing
+          </button>
+        </div>
+      )}
+
+      {activeTab === 'pricing' ? (
+        <UnitPricing embedded />
+      ) : (
+    <>
       <ProductsCard />
 
       <Card>
@@ -413,7 +442,8 @@ export default function Settings() {
           </p>
         </CardBody>
       </Card>
-
+    </>
+      )}
     </div>
   )
 }

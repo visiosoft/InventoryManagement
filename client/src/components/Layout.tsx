@@ -37,7 +37,6 @@ const profileMenuItems = [
   { to: '/settings/agreement', label: 'Agreement Template', icon: FileText, perm: 'settings' },
   { to: '/zoho-comparison', label: 'Zoho Comparison', icon: RefreshCw, perm: 'settings' },
   { to: '/settings/automation', label: 'Automation Rules', icon: RefreshCw, perm: 'settings' },
-  { to: '/settings/unit-pricing', label: 'Unit Pricing', icon: Wallet, perm: 'settings' },
   { to: '/settings', label: 'Settings', icon: Settings, perm: 'settings' },
 ]
 
@@ -111,7 +110,6 @@ const PAGE_TITLES: Record<string, string> = {
   '/invoices': 'Invoices',
   '/documents': 'Documents',
   '/settings': 'Settings',
-  '/settings/unit-pricing': 'Unit Pricing',
   '/settings/agreement': 'Agreement Template',
   '/zoho-comparison': 'Zoho Comparison',
   '/approvals': 'Approvals',

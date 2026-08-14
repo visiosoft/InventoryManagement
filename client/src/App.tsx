@@ -83,7 +83,6 @@ import MovingQuotes from './pages/moving/MovingQuotes'
 import MovingQuoteDetail from './pages/moving/MovingQuoteDetail'
 import MovingClaims from './pages/moving/MovingClaims'
 import MovingReportsHub from './pages/moving/MovingReportsHub'
-import UnitPricing from './pages/UnitPricing'
 import MovingRevenueReport from './pages/moving/reports/MovingRevenueReport'
 import MovingArReport from './pages/moving/reports/MovingArReport'
 import MovingCostsReport from './pages/moving/reports/MovingCostsReport'
@@ -193,7 +192,6 @@ export default function App() {
         <Route path="/zoho-comparison" element={<AdminGuard><ZohoComparison /></AdminGuard>} />
         <Route path="/settings/reminders" element={<AdminGuard><ReminderSettings /></AdminGuard>} />
         <Route path="/settings/automation" element={<AdminGuard><AutomationRules /></AdminGuard>} />
-        <Route path="/settings/unit-pricing" element={<AdminGuard><UnitPricing /></AdminGuard>} />
         <Route path="/whatsapp" element={<WhatsApp />} />
         <Route path="/whatsapp/setup" element={<AdminGuard><WhatsAppSetup /></AdminGuard>} />
 
