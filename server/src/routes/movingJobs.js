@@ -73,10 +73,17 @@ router.get('/', async (req, res) => {
     if (status) filter.status = status;
     if (customer) filter.customer = customer;
     if (q) {
+      // Customer name isn't on the job document itself — resolve matching
+      // customers first so a search like "Wael" finds their jobs too, not
+      // just jobs whose number/address happens to contain the text.
+      const matchingCustomers = await Customer.find({
+        $or: [{ fullName: { $regex: q, $options: 'i' } }, { phone: { $regex: q, $options: 'i' } }],
+      }).select('_id').limit(50).lean();
       filter.$or = [
         { jobNo: { $regex: q, $options: 'i' } },
         { pickupAddress: { $regex: q, $options: 'i' } },
         { deliveryAddress: { $regex: q, $options: 'i' } },
+        ...(matchingCustomers.length ? [{ customer: { $in: matchingCustomers.map((c) => c._id) } }] : []),
       ];
     }
     const [jobs, total] = await Promise.all([
