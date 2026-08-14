@@ -61,6 +61,15 @@ export default function MovingClaims() {
   const [addOpen, setAddOpen] = useState(false)
   const [detailClaim, setDetailClaim] = useState<Claim | null>(null)
   const [error, setError] = useState('')
+  const [jobQuery, setJobQuery] = useState('')
+  const [jobPicked, setJobPicked] = useState<{ _id: string; jobNo: string; customerName?: string } | null>(null)
+  const [jobMenuOpen, setJobMenuOpen] = useState(false)
+
+  const { data: jobResults = [] } = useQuery<{ _id: string; jobNo: string; customer?: { fullName: string } }[]>({
+    queryKey: ['moving-claims-job-search', jobQuery],
+    queryFn: () => api.get('/moving-jobs', { params: { q: jobQuery, limit: 8 } }).then(r => r.data.jobs ?? r.data),
+    enabled: jobQuery.trim().length > 1,
+  })
 
   const { data: claims = [], isLoading } = useQuery<Claim[]>({
     queryKey: ['moving-claims', statusFilter, search],
@@ -71,7 +80,7 @@ export default function MovingClaims() {
 
   const createClaim = useMutation({
     mutationFn: (body: object) => api.post('/moving-claims', body),
-    onSuccess: () => { invalidate(); setAddOpen(false); setError('') },
+    onSuccess: () => { invalidate(); setAddOpen(false); setError(''); setJobPicked(null); setJobQuery('') },
     onError: (e) => setError(apiError(e)),
   })
 
@@ -100,7 +109,7 @@ export default function MovingClaims() {
           <div style={{ fontSize: 14, color: MUTED, marginTop: 4 }}>Track and resolve customer damage reports</div>
         </div>
         <button
-          onClick={() => { setError(''); setAddOpen(true) }}
+          onClick={() => { setError(''); setJobQuery(''); setJobPicked(null); setAddOpen(true) }}
           style={{ height: 40, borderRadius: 10, background: PURPLE, color: 'white', fontSize: 14, fontWeight: 600, padding: '0 20px' }}
           className="flex items-center gap-2 hover:opacity-90 transition-opacity"
         >
@@ -223,17 +232,54 @@ export default function MovingClaims() {
       )}
 
       {/* New Claim Modal */}
-      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Report Damage Claim">
+      <Modal open={addOpen} onClose={() => { setAddOpen(false); setJobPicked(null); setJobQuery('') }} title="Report Damage Claim">
         <form onSubmit={(e: FormEvent<HTMLFormElement>) => {
           e.preventDefault()
+          if (!jobPicked) { setError('Please search for and select the job'); return }
           const f = new FormData(e.currentTarget)
           createClaim.mutate({
-            job: f.get('job'), itemDescription: f.get('itemDescription'),
+            job: jobPicked._id, itemDescription: f.get('itemDescription'),
             damageDescription: f.get('damageDescription'), claimedAmount: Number(f.get('claimedAmount') || 0),
             reportedBy: f.get('reportedBy'), insuranceRef: f.get('insuranceRef'), notes: f.get('notes'),
           })
         }} className="space-y-3">
-          <Field label="Job ID *"><Input name="job" required placeholder="Paste Job ID from job detail page" /></Field>
+          <Field label="Job *">
+            {jobPicked ? (
+              <div className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
+                <span><span className="font-mono font-semibold text-primary">{jobPicked.jobNo}</span>{jobPicked.customerName ? ` — ${jobPicked.customerName}` : ''}</span>
+                <button type="button" onClick={() => { setJobPicked(null); setJobQuery('') }} className="text-xs text-muted-foreground hover:text-destructive cursor-pointer">Change</button>
+              </div>
+            ) : (
+              <div className="relative">
+                <Input
+                  value={jobQuery}
+                  onChange={(e) => { setJobQuery(e.target.value); setJobMenuOpen(true) }}
+                  onFocus={() => setJobMenuOpen(true)}
+                  onBlur={() => setTimeout(() => setJobMenuOpen(false), 150)}
+                  placeholder="Search by job number, customer, or address…"
+                  required
+                />
+                {jobMenuOpen && jobQuery.trim().length > 1 && (
+                  <div className="absolute z-10 mt-1 w-full max-h-56 overflow-y-auto rounded-lg border bg-white dark:bg-gray-900 shadow-lg">
+                    {jobResults.length === 0 ? (
+                      <p className="px-3 py-2 text-xs text-muted-foreground">No matching jobs</p>
+                    ) : jobResults.map((j) => (
+                      <button
+                        key={j._id}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => { setJobPicked({ _id: j._id, jobNo: j.jobNo, customerName: j.customer?.fullName }); setJobMenuOpen(false) }}
+                        className="flex w-full items-center justify-between px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
+                      >
+                        <span className="font-mono font-semibold text-primary">{j.jobNo}</span>
+                        <span className="text-muted-foreground truncate ml-2">{j.customer?.fullName || '—'}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </Field>
           <Field label="Damaged Item *"><Input name="itemDescription" required placeholder="e.g. Glass dining table, Samsung 55″ TV" /></Field>
           <Field label="Damage Description"><Textarea name="damageDescription" placeholder="Describe what happened and the extent of damage" /></Field>
           <div className="grid grid-cols-2 gap-3">

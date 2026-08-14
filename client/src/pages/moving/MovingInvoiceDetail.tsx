@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft, Download, Share2, Edit, Plus, Trash2, RefreshCw, CheckCircle, Pencil, CreditCard, Mail, Link as LinkIcon } from 'lucide-react'
@@ -52,6 +52,30 @@ export default function MovingInvoiceDetail() {
   const qc = useQueryClient()
   const [err, setErr] = useState('')
   const [payLinkResult, setPayLinkResult] = useState<{ payUrl: string; balanceDue: number; channel: string; feePct: number; feeAmount: number; totalCharged: number } | null>(null)
+  const [linkCopied, setLinkCopied] = useState(false)
+  const payLinkInputRef = useRef<HTMLInputElement | null>(null)
+
+  // navigator.clipboard can silently fail (older Safari, non-secure embed,
+  // permission denied) — fall back to the classic select+execCommand trick,
+  // and always give visible feedback so a real failure isn't mistaken for
+  // "the button does nothing".
+  async function copyText(text: string, inputEl?: HTMLInputElement | null) {
+    try {
+      await navigator.clipboard.writeText(text)
+      setLinkCopied(true)
+      setTimeout(() => setLinkCopied(false), 2000)
+      return
+    } catch { /* fall through to legacy path */ }
+    try {
+      if (inputEl) {
+        inputEl.focus()
+        inputEl.select()
+        const ok = document.execCommand('copy')
+        if (ok) { setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000); return }
+      }
+    } catch { /* fall through to error */ }
+    setErr('Could not copy automatically — select the link text and copy it manually')
+  }
   const [payLinkBusy, setPayLinkBusy] = useState<'' | 'whatsapp' | 'email' | 'link'>('')
   const [payLinkModal, setPayLinkModal] = useState(false)
   const [editCustomerModal, setEditCustomerModal] = useState(false)
@@ -65,7 +89,12 @@ export default function MovingInvoiceDetail() {
       const res = await api.post(`/moving-invoices/${id}/payment-link`, { channel, feePct })
       setErr('')
       setPayLinkModal(false)
-      if (channel === 'link') { try { await navigator.clipboard.writeText(res.data.payUrl) } catch { /* clipboard may be blocked */ } }
+      // Auto-copy is best-effort here (no input element exists yet to fall
+      // back on) — the modal's own Copy button is the reliable path if this
+      // silently fails, so don't claim success either way.
+      if (channel === 'link') {
+        try { await navigator.clipboard.writeText(res.data.payUrl); setLinkCopied(true) } catch { setLinkCopied(false) }
+      }
       setPayLinkResult({
         payUrl: res.data.payUrl, balanceDue: res.data.balanceDue, channel: res.data.channel,
         feePct: res.data.feePct, feeAmount: res.data.feeAmount, totalCharged: res.data.totalCharged,
@@ -850,24 +879,27 @@ export default function MovingInvoiceDetail() {
       </Modal>
 
       {/* Stripe Payment Link result */}
-      <Modal open={!!payLinkResult} title={payLinkResult?.channel === 'link' ? 'Link copied' : 'Payment link sent'} onClose={() => setPayLinkResult(null)}>
+      <Modal open={!!payLinkResult} title={payLinkResult?.channel === 'link' ? 'Link copied' : 'Payment link sent'} onClose={() => { setPayLinkResult(null); setLinkCopied(false) }}>
         {payLinkResult && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              {payLinkResult.channel === 'link' ? 'Copied to clipboard.' : `Sent via ${payLinkResult.channel === 'whatsapp' ? 'WhatsApp' : 'email'}.`} Balance: <strong>AED {payLinkResult.balanceDue.toLocaleString()}</strong>
+              {payLinkResult.channel === 'link' ? (linkCopied ? 'Copied to clipboard.' : 'Tap Copy below to copy it.') : `Sent via ${payLinkResult.channel === 'whatsapp' ? 'WhatsApp' : 'email'}.`} Balance: <strong>AED {payLinkResult.balanceDue.toLocaleString()}</strong>
               {payLinkResult.feePct > 0 && (
                 <> · card fee <strong>AED {payLinkResult.feeAmount.toLocaleString()}</strong> ({payLinkResult.feePct}%) · customer pays <strong>AED {payLinkResult.totalCharged.toLocaleString()}</strong> total</>
               )}
             </p>
             <div className="flex items-center gap-2">
-              <Input readOnly value={payLinkResult.payUrl} onFocus={(e) => e.currentTarget.select()} />
-              <Button variant="outline" onClick={() => navigator.clipboard.writeText(payLinkResult.payUrl)}>Copy</Button>
+              <Input readOnly value={payLinkResult.payUrl} onFocus={(e) => e.currentTarget.select()}
+                ref={(el) => { payLinkInputRef.current = el }} />
+              <Button variant="outline" onClick={() => copyText(payLinkResult.payUrl, payLinkInputRef.current)}>
+                {linkCopied ? 'Copied ✓' : 'Copy'}
+              </Button>
             </div>
             <p className="text-xs text-muted-foreground">
               The customer pays by card on Stripe's checkout page — the invoice marks itself as paid automatically once it goes through.
             </p>
             <div className="flex justify-end">
-              <Button onClick={() => setPayLinkResult(null)}>Done</Button>
+              <Button onClick={() => { setPayLinkResult(null); setLinkCopied(false) }}>Done</Button>
             </div>
           </div>
         )}
