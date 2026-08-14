@@ -303,14 +303,21 @@ export default function Dashboard() {
                   const daysLeft = Math.ceil((new Date(c.endDate).getTime() - Date.now()) / 86400000)
                   const endFmt = new Date(c.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
                   const urgency = daysLeft <= 3 ? 'text-destructive' : daysLeft <= 7 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'
+                  const renewalIntent = c.renewalIntent || 'undecided'
+                  const renewalBadge = {
+                    undecided: { label: 'Undecided', cls: 'bg-muted text-muted-foreground' },
+                    renewing: { label: 'Renewing', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400' },
+                    not_renewing: { label: 'Not renewing', cls: 'bg-destructive/10 text-destructive' },
+                  }[renewalIntent] || { label: 'Undecided', cls: 'bg-muted text-muted-foreground' }
                   return (
                     <li key={c._id} className="hover:bg-muted/40">
                       {/* Whole row is the link — two lines so it fits any width */}
                       <Link to={`/contracts/${c._id}`} className="flex items-center justify-between gap-3 py-3">
                         <div className="min-w-0">
-                          <div className="text-sm truncate">
+                          <div className="text-sm truncate flex items-center gap-2">
                             <span className="font-medium">{c.customer?.fullName}</span>
                             {c.unit?.unitNumber && <span className="text-muted-foreground"> · {c.unit.unitNumber}</span>}
+                            <span className={`shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${renewalBadge.cls}`}>{renewalBadge.label}</span>
                           </div>
                           <div className={`text-xs mt-0.5 ${urgency}`}>expires in {daysLeft} day{daysLeft !== 1 ? 's' : ''} ({endFmt})</div>
                         </div>

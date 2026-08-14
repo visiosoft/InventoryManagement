@@ -965,10 +965,13 @@ router.put('/:id', async (req, res) => {
     if (changedKeys.length) {
       const who = req.user?.name || req.user?.email || 'System';
       const details = changedKeys.map(k => `${fieldLabels[k] || k}: ${k === 'renewalIntent' ? (renewalIntentLabels[$set[k]] || $set[k]) : $set[k] instanceof Date ? $set[k].toISOString().slice(0, 10) : $set[k]}`).join(', ');
-      await Contract.findByIdAndUpdate(contract._id, {
-        $set,
-        $push: { timeline: { text: `Updated ${details}`, author: who, at: new Date() } },
-      });
+      const $push = { timeline: { text: `Updated ${details}`, author: who, at: new Date() } };
+      // Every Check Out change on an existing contract is a renewal/extension
+      // worth its own trackable record, separate from the general timeline.
+      if ($set.endDate && contract.endDate && $set.endDate.getTime() !== new Date(contract.endDate).getTime()) {
+        $push.renewalHistory = { at: new Date(), previousEndDate: contract.endDate, newEndDate: $set.endDate, author: who };
+      }
+      await Contract.findByIdAndUpdate(contract._id, { $set, $push });
     } else {
       await Contract.findByIdAndUpdate(contract._id, { $set });
     }

@@ -460,6 +460,8 @@ export interface Contract {
   firstMonthDiscountPct?: number
   leasedPrice?: number
   createdAt?: string
+  renewalIntent?: 'undecided' | 'renewing' | 'not_renewing'
+  renewalHistory?: { at: string; previousEndDate: string; newEndDate: string; author: string }[]
 }
 
 export type PaymentStatus = 'pending' | 'paid' | 'overdue'

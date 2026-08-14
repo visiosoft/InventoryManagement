@@ -331,6 +331,7 @@ export default function Contracts() {
                 <Th>Start</Th>
                 <Th>End</Th>
                 <Th>Status</Th>
+                <Th>Renewal</Th>
                 <Th>Invoice</Th>
                 <Th>Docs</Th>
                 <Th />
@@ -341,7 +342,7 @@ export default function Contracts() {
                 <Fragment key={g.label || 'all'}>
                   {g.label && (
                     <tr>
-                      <td colSpan={11} style={{ background: '#F7F3FF', padding: '6px 14px', fontSize: 12, fontWeight: 700, color: '#4A1FA0' }}>
+                      <td colSpan={12} style={{ background: '#F7F3FF', padding: '6px 14px', fontSize: 12, fontWeight: 700, color: '#4A1FA0' }}>
                         {g.label} <span style={{ opacity: .6, fontWeight: 600 }}>· {g.items.length}</span>
                       </td>
                     </tr>
@@ -396,6 +397,23 @@ export default function Contracts() {
                             <Badge tone={contractStatusTone[c.status]}>{statusLabel(c.status)}</Badge>
                             {c.archived && <Badge tone="gray">Archived</Badge>}
                           </div>
+                        </Td>
+                        <Td>
+                          {c.status === 'active' ? (
+                            <span
+                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap ${
+                                c.renewalIntent === 'renewing'
+                                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400'
+                                  : c.renewalIntent === 'not_renewing'
+                                  ? 'bg-destructive/10 text-destructive'
+                                  : 'bg-muted text-muted-foreground'
+                              }`}
+                            >
+                              {c.renewalIntent === 'renewing' ? 'Renewing' : c.renewalIntent === 'not_renewing' ? 'Not renewing' : 'Undecided'}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">—</span>
+                          )}
                         </Td>
                         <Td>
                           {c.paymentStatus === 'paid' && (

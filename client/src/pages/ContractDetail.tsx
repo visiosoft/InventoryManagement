@@ -1274,17 +1274,24 @@ export default function ContractDetail() {
                     {EditableRow('Number of Weeks', 'weeks', String(weeks ?? '—'), String(weeks || ''), 'number', '1')}
                     {Row('Expiring In', daysLeft === null ? '—' : daysLeft < 0 ? `Expired ${Math.abs(daysLeft)}d ago` : `${daysLeft}d left`)}
                     {(() => {
-                      const renewalIntent = ((c as { renewalIntent?: string }).renewalIntent) || 'undecided'
+                      const renewalIntent = c.renewalIntent || 'undecided'
+                      const renewalHistory = c.renewalHistory || []
                       const options: { value: string; label: string; activeClass: string }[] = [
-                        { value: 'undecided', label: 'Undecided', activeClass: 'bg-muted text-foreground' },
-                        { value: 'renewing', label: 'Renewing', activeClass: 'bg-emerald-100 text-emerald-700' },
-                        { value: 'not_renewing', label: 'Not renewing', activeClass: 'bg-destructive/10 text-destructive' },
+                        { value: 'undecided', label: 'Undecided', activeClass: 'bg-white text-foreground shadow-sm dark:bg-white/10' },
+                        { value: 'renewing', label: 'Renewing', activeClass: 'bg-emerald-500 text-white shadow-sm' },
+                        { value: 'not_renewing', label: 'Not renewing', activeClass: 'bg-destructive text-white shadow-sm' },
                       ]
+                      const cardCls =
+                        renewalIntent === 'renewing'
+                          ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30'
+                          : renewalIntent === 'not_renewing'
+                          ? 'border-destructive/30 bg-destructive/5'
+                          : 'border-border bg-muted/30'
                       return (
-                        <div className="py-2.5">
+                        <div className={`my-2.5 rounded-xl border-2 px-3 py-2.5 ${cardCls}`}>
                           <div className="flex items-center justify-between gap-2">
-                            <span className="text-muted-foreground shrink-0 text-sm">Renewal</span>
-                            <div className="flex gap-1">
+                            <span className="shrink-0 text-sm font-bold">Renewal Status</span>
+                            <div className="flex gap-1 rounded-full bg-black/5 dark:bg-white/5 p-1">
                               {options.map((o) => (
                                 <button
                                   key={o.value}
@@ -1299,15 +1306,36 @@ export default function ContractDetail() {
                             </div>
                           </div>
                           {renewalIntent === 'renewing' && (
-                            <div className="mt-1.5 flex items-center justify-between rounded-lg bg-emerald-50 dark:bg-emerald-950/30 px-2.5 py-1.5">
-                              <span className="text-xs text-emerald-700 dark:text-emerald-400">Tenant is renewing — update the new Check Out date</span>
-                              <button
-                                type="button"
-                                onClick={() => startEdit('endDate', (c.endDate || '').slice(0, 10))}
-                                className="text-xs font-bold text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer shrink-0 ml-2"
-                              >
-                                Extend →
-                              </button>
+                            <div className="mt-2 flex items-center justify-between rounded-lg bg-emerald-100/70 dark:bg-emerald-900/40 px-2.5 py-1.5 gap-2">
+                              <span className="text-xs font-medium text-emerald-800 dark:text-emerald-300">Tenant is renewing — update the new Check Out date</span>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => createSigningLink.mutate()}
+                                  disabled={createSigningLink.isPending}
+                                  className="text-xs font-bold text-emerald-800 dark:text-emerald-300 hover:underline cursor-pointer disabled:opacity-50"
+                                >
+                                  {createSigningLink.isPending ? 'Generating…' : 'Send agreement →'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => startEdit('endDate', (c.endDate || '').slice(0, 10))}
+                                  className="text-xs font-bold text-emerald-800 dark:text-emerald-300 hover:underline cursor-pointer"
+                                >
+                                  Extend →
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                          {renewalHistory.length > 0 && (
+                            <div className="mt-2 rounded-lg bg-white/60 dark:bg-black/20 px-2.5 py-1.5 space-y-1">
+                              <div className="text-xs font-semibold text-muted-foreground">Renewal History</div>
+                              {[...renewalHistory].reverse().map((h, i) => (
+                                <div key={i} className="text-xs text-muted-foreground flex justify-between gap-2">
+                                  <span>{formatDate(h.previousEndDate)} → {formatDate(h.newEndDate)}</span>
+                                  <span className="shrink-0">{h.author}{h.at ? ` · ${formatDate(h.at)}` : ''}</span>
+                                </div>
+                              ))}
                             </div>
                           )}
                         </div>
