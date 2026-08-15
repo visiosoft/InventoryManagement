@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { CalendarPlus, CheckSquare, FileText, Mail, MessageCircle, MoreHorizontal, Plus, RefreshCw, Search, Send, Upload, X } from 'lucide-react'
+import { CalendarPlus, CheckSquare, FileText, Mail, MessageCircle, MoreHorizontal, Phone, Plus, RefreshCw, Search, Send, Upload, X } from 'lucide-react'
 import { api, apiError, leadApi, type LeadPage } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { Lead, LeadComment, LeadSource, LeadStatus } from '../lib/types'
@@ -15,6 +15,18 @@ const PURPLE = '#5B2BC9'
 
 const LEAD_STATUSES: LeadStatus[] = ['new', 'contacted', 'qualified', 'proposal_sent', 'won', 'lost']
 const LEAD_SOURCES: LeadSource[] = ['manual', 'whatsapp', 'referral', 'walk_in', 'other']
+
+// Quick one-click forward moves through the pipeline, plus a Lost/Reopen
+// escape hatch — mirrors the transition-button pattern already used for
+// moving leads instead of burying status changes in the Edit form.
+const STATUS_TRANSITIONS: Record<LeadStatus, { label: string; value: LeadStatus }[]> = {
+    new: [{ label: 'Mark Contacted', value: 'contacted' }, { label: 'Mark Lost', value: 'lost' }],
+    contacted: [{ label: 'Mark Qualified', value: 'qualified' }, { label: 'Mark Lost', value: 'lost' }],
+    qualified: [{ label: 'Send Proposal', value: 'proposal_sent' }, { label: 'Mark Lost', value: 'lost' }],
+    proposal_sent: [{ label: 'Mark Won', value: 'won' }, { label: 'Mark Lost', value: 'lost' }],
+    won: [],
+    lost: [{ label: 'Reopen', value: 'new' }],
+}
 
 function toDatetimeLocal(input?: string) {
     if (!input) return ''
@@ -175,26 +187,44 @@ function LeadForm({
     )
 }
 
-function LeadDetailPanel({ lead }: { lead: Lead }) {
+export function LeadDetailPanel({ lead }: { lead: Lead }) {
     const qc = useQueryClient()
     const [commentText, setCommentText] = useState('')
+    const [emailOpen, setEmailOpen] = useState(false)
+    const [emailSubject, setEmailSubject] = useState('')
+    const [emailBody, setEmailBody] = useState('')
+    const [emailErr, setEmailErr] = useState('')
 
     const { data: detail } = useQuery<Lead>({
         queryKey: ['lead-detail', lead._id],
         queryFn: () => api.get(`/leads/${lead._id}`).then(r => r.data),
     })
 
+    const invalidate = () => {
+        qc.invalidateQueries({ queryKey: ['lead-detail', lead._id] })
+        qc.invalidateQueries({ queryKey: ['leads'] })
+    }
+
     const addComment = useMutation({
         mutationFn: (text: string) => api.post(`/leads/${lead._id}/comments`, { text }).then(r => r.data),
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['lead-detail', lead._id] })
-            qc.invalidateQueries({ queryKey: ['leads'] })
-            setCommentText('')
-        },
+        onSuccess: () => { invalidate(); setCommentText('') },
+    })
+
+    const updateStatus = useMutation({
+        mutationFn: (status: LeadStatus) => leadApi.updateStatus(lead._id, status),
+        onSuccess: invalidate,
+    })
+
+    const sendEmail = useMutation({
+        mutationFn: () => api.post(`/leads/${lead._id}/send-email`, { subject: emailSubject, body: emailBody }),
+        onSuccess: () => { invalidate(); setEmailOpen(false); setEmailSubject(''); setEmailBody(''); setEmailErr('') },
+        onError: (e) => setEmailErr(apiError(e)),
     })
 
     const comments = detail?.comments || []
     const timeline = detail?.timeline || []
+    const currentStatus = detail?.status || lead.status
+    const digits = (lead.whatsappNo || lead.phone || '').replace(/[^0-9]/g, '')
 
     return (
         <div className="space-y-5">
@@ -208,7 +238,7 @@ function LeadDetailPanel({ lead }: { lead: Lead }) {
                         {lead.email && <span>{lead.email}</span>}
                     </div>
                     <div className="flex gap-2 mt-2">
-                        <Badge tone={leadStatusTone[lead.status]}>{statusLabel(lead.status)}</Badge>
+                        <Badge tone={leadStatusTone[currentStatus]}>{statusLabel(currentStatus)}</Badge>
                         <Badge tone="gray">{statusLabel(lead.source)}</Badge>
                         {lead.preferredContact && (
                             <Badge tone={lead.preferredContact === 'whatsapp' ? 'green' : 'blue'}>
@@ -217,7 +247,57 @@ function LeadDetailPanel({ lead }: { lead: Lead }) {
                         )}
                     </div>
                 </div>
+                {/* Contact quick-actions */}
+                <div className="flex items-center gap-1 shrink-0">
+                    {lead.phone && (
+                        <a href={`tel:${lead.phone}`} title="Call" className="p-1.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors">
+                            <Phone size={15} className="text-blue-600" />
+                        </a>
+                    )}
+                    {digits && (
+                        <a href={`https://wa.me/${digits}`} target="_blank" rel="noreferrer" title="WhatsApp" className="p-1.5 rounded-lg hover:bg-green-50 dark:hover:bg-green-950/30 transition-colors">
+                            <MessageCircle size={15} className="text-green-600" />
+                        </a>
+                    )}
+                    {lead.email && (
+                        <button type="button" title="Send email" onClick={() => setEmailOpen((v) => !v)} className="p-1.5 rounded-lg hover:bg-muted transition-colors cursor-pointer">
+                            <Mail size={15} className="text-muted-foreground" />
+                        </button>
+                    )}
+                </div>
             </div>
+
+            {/* Quick status transitions */}
+            {STATUS_TRANSITIONS[currentStatus]?.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                    {STATUS_TRANSITIONS[currentStatus].map((t) => (
+                        <button
+                            key={t.value}
+                            type="button"
+                            disabled={updateStatus.isPending}
+                            onClick={() => updateStatus.mutate(t.value)}
+                            className={`h-8 px-3 rounded-full text-xs font-semibold cursor-pointer transition-colors disabled:opacity-50 ${t.value === 'lost' ? 'bg-destructive/10 text-destructive hover:bg-destructive/20' : 'bg-primary/10 text-primary hover:bg-primary/20'}`}
+                        >
+                            {updateStatus.isPending ? 'Saving…' : t.label}
+                        </button>
+                    ))}
+                </div>
+            )}
+
+            {/* Send email compose */}
+            {emailOpen && (
+                <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+                    <Input placeholder="Subject" value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} />
+                    <Textarea placeholder={`Write your message to ${lead.email}...`} rows={4} value={emailBody} onChange={(e) => setEmailBody(e.target.value)} />
+                    {emailErr && <p className="text-xs text-destructive">{emailErr}</p>}
+                    <div className="flex justify-end gap-2">
+                        <Button variant="outline" size="sm" onClick={() => setEmailOpen(false)}>Cancel</Button>
+                        <Button size="sm" disabled={!emailBody.trim() || sendEmail.isPending} onClick={() => sendEmail.mutate()}>
+                            {sendEmail.isPending ? 'Sending…' : 'Send'}
+                        </Button>
+                    </div>
+                </div>
+            )}
 
             {/* Quick info */}
             <div className="grid grid-cols-4 gap-3">

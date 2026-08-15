@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { Customer, Lead, User, WhatsAppMessage } from '../models/index.js';
+import { mailConfigured, sendMail } from '../services/mail.js';
 
 const router = Router();
 
@@ -273,6 +274,31 @@ router.post('/:id/convert', async (req, res) => {
         created: true,
         customer,
     });
+});
+
+router.post('/:id/send-email', async (req, res) => {
+    const lead = await Lead.findById(req.params.id);
+    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+    if (!mailConfigured()) return res.status(400).json({ error: 'SMTP not configured — set SMTP_PASS in server/.env' });
+
+    const to = String(req.body?.to || lead.email || '').trim();
+    if (!to) return res.status(400).json({ error: 'Lead has no email address' });
+    const subject = String(req.body?.subject || '').trim() || `Following up — PurpleBox`;
+    const bodyText = String(req.body?.body || '').trim();
+    if (!bodyText) return res.status(400).json({ error: 'Email body is required' });
+
+    try {
+        await sendMail({ to, subject, text: bodyText, html: bodyText.replace(/\n/g, '<br/>') });
+    } catch (err) {
+        return res.status(500).json({ error: err.message || 'Failed to send email' });
+    }
+
+    const userName = req.user.name || req.user.email || 'user';
+    lead.timeline.push({ type: 'email', text: `Emailed: "${subject}" by ${userName}`, user: req.user.id });
+    await lead.save();
+
+    res.json({ ok: true });
 });
 
 router.post('/:id/comments', async (req, res) => {

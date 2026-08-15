@@ -1,11 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, Edit2, KeyRound, Plus, ShieldCheck, ShieldOff, Trash2, User, UserCog } from 'lucide-react'
+import { Check, Edit2, KeyRound, ListTodo, Plus, ShieldCheck, ShieldOff, Target, Trash2, User, UserCog } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import {
   Badge, Button, Card, CardHeader, EmptyState, Field, Input,
-  Modal, PageHeader, Select, Spinner, Table, Td, Th,
+  Modal, PageHeader, Select, Spinner, Table, Td, Textarea, Th,
 } from '../components/ui'
 import { formatDate } from '../lib/utils'
 
@@ -354,6 +354,131 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
   )
 }
 
+// ── Sales rep: Targets modal (admin sets weekly/monthly goals) ───────────────
+
+function TargetsModal({ user, onClose }: { user: AppUser; onClose: () => void }) {
+  const [weekUnits, setWeekUnits]     = useState('0')
+  const [weekMoving, setWeekMoving]   = useState('0')
+  const [monthUnits, setMonthUnits]   = useState('0')
+  const [monthMoving, setMonthMoving] = useState('0')
+  const [err, setErr]                 = useState('')
+  const [busy, setBusy]               = useState(false)
+
+  const { data, isLoading } = useQuery<{ targets: { weekly: { units: number; moving: number }; monthly: { units: number; moving: number } } }>({
+    queryKey: ['sales-goals', user._id],
+    queryFn: () => api.get(`/sales-goals/${user._id}`).then(r => r.data),
+  })
+
+  useEffect(() => {
+    if (!data) return
+    setWeekUnits(String(data.targets.weekly.units))
+    setWeekMoving(String(data.targets.weekly.moving))
+    setMonthUnits(String(data.targets.monthly.units))
+    setMonthMoving(String(data.targets.monthly.moving))
+  }, [data])
+
+  async function submit() {
+    setBusy(true); setErr('')
+    try {
+      await api.put(`/sales-goals/${user._id}`, {
+        weekly: { units: Number(weekUnits) || 0, moving: Number(weekMoving) || 0 },
+        monthly: { units: Number(monthUnits) || 0, moving: Number(monthMoving) || 0 },
+      })
+      onClose()
+    } catch (e) { setErr(apiError(e)) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <Modal open title={`Targets — ${user.name}`} onClose={onClose}>
+      {isLoading ? <Spinner /> : (
+        <div className="space-y-4">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">This week</div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Units leased"><Input type="number" min={0} value={weekUnits} onChange={e => setWeekUnits(e.target.value)} /></Field>
+              <Field label="Moving jobs booked"><Input type="number" min={0} value={weekMoving} onChange={e => setWeekMoving(e.target.value)} /></Field>
+            </div>
+          </div>
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">This month</div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Units leased"><Input type="number" min={0} value={monthUnits} onChange={e => setMonthUnits(e.target.value)} /></Field>
+              <Field label="Moving jobs booked"><Input type="number" min={0} value={monthMoving} onChange={e => setMonthMoving(e.target.value)} /></Field>
+            </div>
+          </div>
+          <div className="flex items-center justify-between pt-4 border-t gap-3">
+            {err && <p className="text-xs text-destructive">{err}</p>}
+            <div className="flex gap-2 ml-auto">
+              <Button variant="outline" onClick={onClose}>Cancel</Button>
+              <Button onClick={submit} disabled={busy}>{busy ? 'Saving…' : 'Save targets'}</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+// ── Sales rep: New Task modal (admin assigns a task to the rep) ──────────────
+
+function NewTaskModal({ user, onClose }: { user: AppUser; onClose: () => void }) {
+  const [title, setTitle]           = useState('')
+  const [description, setDesc]      = useState('')
+  const [dueDate, setDueDate]       = useState('')
+  const [priority, setPriority]     = useState('medium')
+  const [err, setErr]               = useState('')
+  const [busy, setBusy]             = useState(false)
+
+  async function submit() {
+    if (!title.trim()) return
+    setBusy(true); setErr('')
+    try {
+      await api.post('/tasks', {
+        title: title.trim(),
+        description: description.trim(),
+        assignedTo: user._id,
+        dueDate: dueDate || undefined,
+        priority,
+      })
+      onClose()
+    } catch (e) { setErr(apiError(e)) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <Modal open title={`New task for ${user.name}`} onClose={onClose}>
+      <div className="space-y-4">
+        <Field label="Title">
+          <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Follow up with Ahmed Nasser" />
+        </Field>
+        <Field label="Description">
+          <Textarea value={description} onChange={e => setDesc(e.target.value)} rows={3} placeholder="Optional details" />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Due date">
+            <Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+          </Field>
+          <Field label="Priority">
+            <Select value={priority} onChange={e => setPriority(e.target.value)}>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </Select>
+          </Field>
+        </div>
+        <div className="flex items-center justify-between pt-4 border-t gap-3">
+          {err && <p className="text-xs text-destructive">{err}</p>}
+          <div className="flex gap-2 ml-auto">
+            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button onClick={submit} disabled={busy || !title.trim()}>{busy ? 'Creating…' : 'Create task'}</Button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function UserManagement() {
@@ -363,6 +488,8 @@ export default function UserManagement() {
   const [modalUser, setModalUser]       = useState<AppUser | null | 'new'>()
   const [showChangePw, setShowChangePw] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<AppUser | null>(null)
+  const [targetsUser, setTargetsUser]   = useState<AppUser | null>(null)
+  const [taskUser, setTaskUser]         = useState<AppUser | null>(null)
 
   const { data: users, isLoading } = useQuery<AppUser[]>({
     queryKey: ['users'],
@@ -496,6 +623,16 @@ export default function UserManagement() {
                     <Td className="text-xs text-muted-foreground">{formatDate(u.createdAt)}</Td>
                     <Td>
                       <div className="flex items-center gap-1 justify-end">
+                        {u.role === 'sales_rep' && (
+                          <>
+                            <Button size="sm" variant="ghost" title="Set targets" onClick={() => setTargetsUser(u)}>
+                              <Target size={13} />
+                            </Button>
+                            <Button size="sm" variant="ghost" title="Assign a task" onClick={() => setTaskUser(u)}>
+                              <ListTodo size={13} />
+                            </Button>
+                          </>
+                        )}
                         <Button size="sm" variant="ghost" onClick={() => setModalUser(u)}>
                           <Edit2 size={13} />
                         </Button>
@@ -527,6 +664,10 @@ export default function UserManagement() {
 
       {/* Change password modal */}
       {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
+
+      {/* Sales rep: targets + new task */}
+      {targetsUser && <TargetsModal user={targetsUser} onClose={() => setTargetsUser(null)} />}
+      {taskUser && <NewTaskModal user={taskUser} onClose={() => setTaskUser(null)} />}
 
       {/* Delete confirm */}
       {deleteTarget && (

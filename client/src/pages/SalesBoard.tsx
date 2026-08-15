@@ -1,17 +1,286 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { UserPlus } from 'lucide-react'
-import { api, leadApi } from '../lib/api'
+import { ChevronDown, ChevronRight, Plus, UserPlus } from 'lucide-react'
+import { api, apiError, leadApi } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { Lead, MovingLead, MovingLeadStatus } from '../lib/types'
-import { Spinner } from '../components/ui'
+import { Modal, Spinner } from '../components/ui'
 import { formatDate } from '../lib/utils'
+import { LeadDetailPanel } from './Leads'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
 const INK = '#14081F'
 const MUTED = '#756E80'
 const PURPLE = '#5B2BC9'
+
+const SIZE_OPTIONS = [10, 25, 35, 50, 75, 100, 150, 200]
+const LEAD_SOURCE_OPTIONS = ['manual', 'whatsapp', 'referral', 'walk_in', 'other']
+const labelize = (s: string) => s.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
+
+type TaskItem = {
+  _id: string
+  title: string
+  description?: string
+  leadName?: string
+  dueDate?: string
+  priority: 'low' | 'medium' | 'high'
+  status: 'todo' | 'in_progress' | 'done'
+}
+
+const PRIORITY_COLOR: Record<string, string> = { low: '#756E80', medium: '#B45309', high: '#991B1B' }
+
+function TasksCard() {
+  const qc = useQueryClient()
+  const [showAdd, setShowAdd] = useState(false)
+  const [title, setTitle] = useState('')
+  const [dueDate, setDueDate] = useState('')
+  const [priority, setPriority] = useState('medium')
+
+  const { data: tasks = [], isLoading } = useQuery<TaskItem[]>({
+    queryKey: ['my-tasks'],
+    queryFn: () => api.get('/tasks', { params: { status: 'todo,in_progress' } }).then((r) => r.data),
+  })
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['my-tasks'] })
+
+  const createTask = useMutation({
+    mutationFn: () => api.post('/tasks', { title, dueDate: dueDate || undefined, priority }),
+    onSuccess: () => { invalidate(); setTitle(''); setDueDate(''); setPriority('medium'); setShowAdd(false) },
+  })
+  const updateTask = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) => api.patch(`/tasks/${id}`, body),
+    onSuccess: invalidate,
+  })
+
+  return (
+    <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 20 }} className="mb-5">
+      <div className="flex items-center justify-between mb-3">
+        <div style={{ fontWeight: 700, fontSize: 15, color: INK }}>Follow-ups & Tasks</div>
+        <button
+          onClick={() => setShowAdd((v) => !v)}
+          style={{ height: 32, padding: '0 12px', borderRadius: 8, background: PURPLE, color: 'white', fontSize: 12.5, fontWeight: 600, border: 'none' }}
+          className="flex items-center gap-1.5 hover:opacity-90 transition-opacity cursor-pointer"
+        >
+          <Plus size={13} /> Add task
+        </button>
+      </div>
+
+      {showAdd && (
+        <div className="flex flex-col sm:flex-row gap-2 mb-4">
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Task description"
+            style={{ flex: 1, height: 38, padding: '0 12px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 13 }}
+          />
+          <input
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+            style={{ height: 38, padding: '0 12px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 13 }}
+          />
+          <select
+            value={priority}
+            onChange={(e) => setPriority(e.target.value)}
+            style={{ height: 38, padding: '0 10px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 13 }}
+          >
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+          <button
+            type="button"
+            disabled={!title.trim() || createTask.isPending}
+            onClick={() => createTask.mutate()}
+            style={{ height: 38, padding: '0 16px', borderRadius: 8, background: PURPLE, color: 'white', fontSize: 12.5, fontWeight: 600, border: 'none' }}
+            className="disabled:opacity-50 cursor-pointer"
+          >
+            {createTask.isPending ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      )}
+
+      {isLoading ? (
+        <Spinner />
+      ) : tasks.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-4 text-center">No open tasks. Nice and clear.</p>
+      ) : (
+        <div className="space-y-2">
+          {tasks.map((t) => (
+            <div key={t._id} className="flex items-center justify-between gap-3" style={{ borderBottom: '1px solid rgba(20,8,31,.06)', paddingBottom: 10 }}>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  {t.leadName && <span style={{ fontSize: 12, color: MUTED, fontWeight: 600 }}>{t.leadName}</span>}
+                  <span style={{ fontSize: 13, color: INK }}>{t.title}</span>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: PRIORITY_COLOR[t.priority], textTransform: 'uppercase' }}>{t.priority}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {t.dueDate && <span style={{ fontSize: 12, color: MUTED }}>Due {formatDate(t.dueDate)}</span>}
+                <select
+                  value={t.status}
+                  onChange={(e) => updateTask.mutate({ id: t._id, body: { status: e.target.value } })}
+                  style={{ height: 30, padding: '0 8px', borderRadius: 8, border: '1px solid rgba(20,8,31,.14)', fontSize: 12 }}
+                >
+                  <option value="todo">To do</option>
+                  <option value="in_progress">In progress</option>
+                  <option value="done">Done</option>
+                </select>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+type GoalsData = {
+  targets: { weekly: { units: number; moving: number }; monthly: { units: number; moving: number } }
+  actual: { weekly: { units: number; moving: number }; monthly: { units: number; moving: number } }
+}
+
+function ProgressBar({ actual, target }: { actual: number; target: number }) {
+  const pct = target > 0 ? Math.min(100, Math.round((actual / target) * 100)) : 0
+  return (
+    <div className="mb-3">
+      <div className="flex justify-between text-xs mb-1" style={{ color: MUTED }}>
+        <span>{actual} / {target || '—'}</span>
+      </div>
+      <div style={{ height: 8, borderRadius: 999, background: '#F6F0E4' }}>
+        <div style={{ height: 8, borderRadius: 999, width: `${pct}%`, background: PURPLE, transition: 'width .3s' }} />
+      </div>
+    </div>
+  )
+}
+
+function GoalsSection() {
+  const { data, isLoading } = useQuery<GoalsData>({
+    queryKey: ['my-sales-goals'],
+    queryFn: () => api.get('/sales-goals/me').then((r) => r.data),
+  })
+
+  if (isLoading || !data) return null
+  const hasAnyTarget = data.targets.weekly.units || data.targets.weekly.moving || data.targets.monthly.units || data.targets.monthly.moving
+  if (!hasAnyTarget) return null
+
+  return (
+    <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 20 }} className="mb-5">
+      <div style={{ fontWeight: 700, fontSize: 15, color: INK, marginBottom: 16 }}>Goals</div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        <div>
+          <div style={{ fontSize: 12, color: MUTED, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 10 }}>This Week</div>
+          <div style={{ fontSize: 13, color: INK, marginBottom: 4 }}>Units leased</div>
+          <ProgressBar actual={data.actual.weekly.units} target={data.targets.weekly.units} />
+          <div style={{ fontSize: 13, color: INK, marginBottom: 4 }}>Moving booked</div>
+          <ProgressBar actual={data.actual.weekly.moving} target={data.targets.weekly.moving} />
+        </div>
+        <div>
+          <div style={{ fontSize: 12, color: MUTED, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 10 }}>This Month</div>
+          <div style={{ fontSize: 13, color: INK, marginBottom: 4 }}>Units leased</div>
+          <ProgressBar actual={data.actual.monthly.units} target={data.targets.monthly.units} />
+          <div style={{ fontSize: 13, color: INK, marginBottom: 4 }}>Moving booked</div>
+          <ProgressBar actual={data.actual.monthly.moving} target={data.targets.monthly.moving} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+type SizeBucket = { sizeSqf: number | string; total: number; available: number }
+
+function UnitAvailabilityStrip() {
+  const { data } = useQuery<{ bySize: SizeBucket[] }>({
+    queryKey: ['reports-summary-availability'],
+    queryFn: () => api.get('/reports/summary').then((r) => r.data),
+  })
+  const bySize = data?.bySize || []
+  if (bySize.length === 0) return null
+
+  return (
+    <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 14, padding: '14px 18px' }} className="mb-5">
+      <div className="flex items-center gap-3 flex-wrap">
+        <span style={{ fontSize: 12, color: MUTED, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em' }}>Unit Availability</span>
+        {bySize.map((b) => (
+          <span key={String(b.sizeSqf)} style={{ background: '#F7F3FF', color: '#4A1FA0', fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 999 }}>
+            {b.sizeSqf}: {b.available}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function QuickAddLead() {
+  const qc = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [size, setSize] = useState(String(SIZE_OPTIONS[0]))
+  const [source, setSource] = useState('manual')
+  const [err, setErr] = useState('')
+
+  const create = useMutation({
+    mutationFn: () => leadApi.create({
+      firstName: name.trim(),
+      fullName: name.trim(),
+      phone: phone.trim(),
+      source: source as Lead['source'],
+      storageSizeValue: Number(size),
+      storageSizeUnit: 'sqft',
+      durationValue: 1,
+      durationUnit: 'month',
+      unitsNeeded: 1,
+      preferredContact: 'whatsapp',
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['my-leads-storage'] })
+      setName(''); setPhone(''); setErr(''); setOpen(false)
+    },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  return (
+    <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 14, padding: '14px 18px' }} className="mb-5">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 cursor-pointer"
+        style={{ fontSize: 13, fontWeight: 700, color: INK, background: 'none', border: 'none', padding: 0 }}
+      >
+        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <Plus size={14} /> Add lead
+      </button>
+      {open && (
+        <div className="flex flex-col sm:flex-row gap-2 mt-3 flex-wrap">
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name"
+            style={{ flex: 1, minWidth: 160, height: 38, padding: '0 12px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 13 }} />
+          <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone"
+            style={{ flex: 1, minWidth: 160, height: 38, padding: '0 12px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 13 }} />
+          <select value={size} onChange={(e) => setSize(e.target.value)}
+            style={{ height: 38, padding: '0 10px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 13 }}>
+            {SIZE_OPTIONS.map((s) => <option key={s} value={s}>{s} sqft</option>)}
+          </select>
+          <select value={source} onChange={(e) => setSource(e.target.value)}
+            style={{ height: 38, padding: '0 10px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 13 }}>
+            {LEAD_SOURCE_OPTIONS.map((s) => <option key={s} value={s}>{labelize(s)}</option>)}
+          </select>
+          <button
+            type="button"
+            disabled={!name.trim() || !phone.trim() || create.isPending}
+            onClick={() => create.mutate()}
+            style={{ height: 38, padding: '0 16px', borderRadius: 8, background: PURPLE, color: 'white', fontSize: 12.5, fontWeight: 600, border: 'none' }}
+            className="disabled:opacity-50 cursor-pointer"
+          >
+            {create.isPending ? 'Saving…' : 'Save lead'}
+          </button>
+        </div>
+      )}
+      {err && <p className="text-xs text-destructive mt-2">{err}</p>}
+    </div>
+  )
+}
 
 type Row = {
   key: string
@@ -22,7 +291,8 @@ type Row = {
   status: string
   statusColor: { bg: string; fg: string }
   addedAt?: string
-  href: string
+  href?: string
+  onOpen?: () => void
   canConvert: boolean
   convertLabel: string
   convert: () => void
@@ -45,12 +315,12 @@ const MOVING_STATUS_COLORS: Record<MovingLeadStatus, { bg: string; fg: string }>
   won: { bg: '#D1FAE5', fg: '#065F46' },
   lost: { bg: '#FEE2E2', fg: '#991B1B' },
 }
-const labelize = (s: string) => s.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
 
 export default function SalesBoard() {
   const { user } = useAuth()
   const qc = useQueryClient()
   const [statusFilter, setStatusFilter] = useState('')
+  const [viewingLead, setViewingLead] = useState<Lead | null>(null)
 
   const { data: storagePage, isLoading: storageLoading } = useQuery({
     queryKey: ['my-leads-storage'],
@@ -83,7 +353,7 @@ export default function SalesBoard() {
       status: labelize(l.status),
       statusColor: STORAGE_STATUS_COLORS[l.status] || STORAGE_STATUS_COLORS.new,
       addedAt: l.leadDateTime,
-      href: `/leads`,
+      onOpen: () => setViewingLead(l),
       canConvert: l.status !== 'won' && l.status !== 'lost',
       convertLabel: 'Convert to Customer',
       convert: () => convertStorage.mutate(l._id),
@@ -120,6 +390,11 @@ export default function SalesBoard() {
           <div style={{ fontSize: 14, color: MUTED, marginTop: 4 }}>{rows.length} lead{rows.length !== 1 ? 's' : ''} assigned to you</div>
         </div>
       </div>
+
+      <UnitAvailabilityStrip />
+      <GoalsSection />
+      <TasksCard />
+      <QuickAddLead />
 
       {/* Status filter pills */}
       <div className="flex gap-2 flex-wrap mb-5">
@@ -170,7 +445,11 @@ export default function SalesBoard() {
                 {filtered.map((r) => (
                   <tr key={r.key} style={{ borderBottom: '1px solid rgba(20,8,31,0.04)' }} className="hover:bg-[#FAF8F5] transition-colors">
                     <td style={{ padding: '14px 16px' }}>
-                      <Link to={r.href} style={{ fontSize: 14, fontWeight: 600, color: PURPLE }} className="hover:opacity-80 transition-opacity">{r.name}</Link>
+                      {r.onOpen ? (
+                        <button type="button" onClick={r.onOpen} style={{ fontSize: 14, fontWeight: 600, color: PURPLE, background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }} className="hover:opacity-80 transition-opacity">{r.name}</button>
+                      ) : (
+                        <Link to={r.href!} style={{ fontSize: 14, fontWeight: 600, color: PURPLE }} className="hover:opacity-80 transition-opacity">{r.name}</Link>
+                      )}
                     </td>
                     <td style={{ padding: '14px 16px', fontSize: 13, color: MUTED, fontVariantNumeric: 'tabular-nums' }}>{r.phone}</td>
                     <td style={{ padding: '14px 16px', fontSize: 13, color: MUTED }}>{r.interested}</td>
@@ -201,6 +480,14 @@ export default function SalesBoard() {
           </div>
         )}
       </div>
+
+      <Modal
+        open={!!viewingLead}
+        title="Lead details"
+        onClose={() => { setViewingLead(null); qc.invalidateQueries({ queryKey: ['my-leads-storage'] }) }}
+      >
+        {viewingLead && <LeadDetailPanel lead={viewingLead} />}
+      </Modal>
     </div>
   )
 }

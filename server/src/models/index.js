@@ -1365,6 +1365,48 @@ const agreementTemplateSchema = new Schema({
 }, { timestamps: true });
 export const AgreementTemplate = model('AgreementTemplate', agreementTemplateSchema);
 
+// Asana-style task, assignable by admins to sales reps or created by a rep
+// for themselves. Optionally linked to a lead (storage or moving) — the
+// leadName is denormalized since Lead and MovingLead are separate
+// collections and the task list shouldn't need to join across both.
+const taskSchema = new Schema(
+  {
+    title: { type: String, required: true },
+    description: { type: String, default: '' },
+    assignedTo: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    createdByName: { type: String, default: '' },
+    leadId: { type: Schema.Types.ObjectId, default: null },
+    leadType: { type: String, enum: ['storage', 'moving', null], default: null },
+    leadName: { type: String, default: '' },
+    dueDate: { type: Date, default: null },
+    priority: { type: String, enum: ['low', 'medium', 'high'], default: 'medium' },
+    status: { type: String, enum: ['todo', 'in_progress', 'done'], default: 'todo' },
+    doneAt: { type: Date, default: null },
+  },
+  { timestamps: true }
+);
+taskSchema.index({ assignedTo: 1, status: 1, dueDate: 1 });
+export const Task = model('Task', taskSchema);
+
+// Admin-set weekly/monthly targets for a sales rep — "actual" progress is
+// computed on read from Lead/MovingLead status, not stored here.
+const salesGoalSchema = new Schema(
+  {
+    owner: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+    weekly: {
+      units: { type: Number, default: 0 },
+      moving: { type: Number, default: 0 },
+    },
+    monthly: {
+      units: { type: Number, default: 0 },
+      moving: { type: Number, default: 0 },
+    },
+  },
+  { timestamps: true }
+);
+export const SalesGoal = model('SalesGoal', salesGoalSchema);
+
 export async function nextContractNo() {
   const year = new Date().getFullYear();
   const counter = await Counter.findOneAndUpdate(

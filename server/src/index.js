@@ -45,6 +45,8 @@ import reminderConfigRoutes from './routes/reminderConfig.js';
 import messageTemplateRoutes from './routes/messageTemplates.js';
 import agreementTemplateRoutes from './routes/agreementTemplate.js';
 import automationRuleRoutes from './routes/automationRules.js';
+import taskRoutes from './routes/tasks.js';
+import salesGoalRoutes from './routes/salesGoals.js';
 import customerAuthRoutes from './routes/customerAuth.js';
 import customerPortalRoutes from './routes/customerPortal.js';
 import crewAuthRoutes from './routes/crewAuth.js';
@@ -175,6 +177,8 @@ app.use('/api/reminder-config', requireAuth, reminderConfigRoutes);
 app.use('/api/message-templates', requireAuth, messageTemplateRoutes);
 app.use('/api/agreement-template', requireAuth, agreementTemplateRoutes);
 app.use('/api/automation-rules', requireAuth, automationRuleRoutes);
+app.use('/api/tasks', requireAuth, taskRoutes);
+app.use('/api/sales-goals', requireAuth, salesGoalRoutes);
 
 // Central error handler
 app.use((err, _req, res, _next) => {
