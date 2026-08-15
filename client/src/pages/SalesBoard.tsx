@@ -1,29 +1,51 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
+import { UserPlus } from 'lucide-react'
 import { api, leadApi } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { Lead, MovingLead, MovingLeadStatus } from '../lib/types'
-import { Badge, Card, EmptyState, PageHeader, Spinner, Table, Td, Th, leadStatusTone, statusLabel } from '../components/ui'
+import { Spinner } from '../components/ui'
 import { formatDate } from '../lib/utils'
+
+const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
+const INK = '#14081F'
+const MUTED = '#756E80'
+const PURPLE = '#5B2BC9'
 
 type Row = {
   key: string
-  type: 'Storage' | 'Moving'
+  type: 'Storage Only' | 'Moving'
   name: string
   phone: string
+  interested: string
   status: string
-  statusTone: string
+  statusColor: { bg: string; fg: string }
   addedAt?: string
   href: string
   canConvert: boolean
+  convertLabel: string
   convert: () => void
   converting: boolean
 }
 
-const MOVING_STATUS_TONE: Record<MovingLeadStatus, string> = {
-  new: 'blue', contacted: 'amber', quoted: 'purple', client_approved: 'green', won: 'green', lost: 'red',
+const STORAGE_STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
+  new: { bg: '#E8F9EE', fg: '#0F7A3D' },
+  contacted: { bg: '#E0F2FE', fg: '#0369A1' },
+  qualified: { bg: '#F3E8FF', fg: '#7C3AED' },
+  proposal_sent: { bg: '#FEF3C7', fg: '#B45309' },
+  won: { bg: '#D1FAE5', fg: '#065F46' },
+  lost: { bg: '#FEE2E2', fg: '#991B1B' },
 }
+const MOVING_STATUS_COLORS: Record<MovingLeadStatus, { bg: string; fg: string }> = {
+  new: { bg: '#E8F9EE', fg: '#0F7A3D' },
+  contacted: { bg: '#E0F2FE', fg: '#0369A1' },
+  quoted: { bg: '#F3E8FF', fg: '#7C3AED' },
+  client_approved: { bg: '#FEF3C7', fg: '#B45309' },
+  won: { bg: '#D1FAE5', fg: '#065F46' },
+  lost: { bg: '#FEE2E2', fg: '#991B1B' },
+}
+const labelize = (s: string) => s.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
 
 export default function SalesBoard() {
   const { user } = useAuth()
@@ -54,14 +76,16 @@ export default function SalesBoard() {
   const rows: Row[] = useMemo(() => {
     const storageRows: Row[] = (storagePage?.data || []).map((l: Lead) => ({
       key: `s-${l._id}`,
-      type: 'Storage',
+      type: 'Storage Only',
       name: l.fullName,
       phone: l.phone,
-      status: statusLabel(l.status),
-      statusTone: leadStatusTone[l.status] || 'gray',
+      interested: l.storageSizeValue ? `${l.storageSizeValue} ${l.storageSizeUnit}` : '—',
+      status: labelize(l.status),
+      statusColor: STORAGE_STATUS_COLORS[l.status] || STORAGE_STATUS_COLORS.new,
       addedAt: l.leadDateTime,
       href: `/leads`,
       canConvert: l.status !== 'won' && l.status !== 'lost',
+      convertLabel: 'Convert to Customer',
       convert: () => convertStorage.mutate(l._id),
       converting: convertStorage.isPending,
     }))
@@ -70,11 +94,13 @@ export default function SalesBoard() {
       type: 'Moving',
       name: l.prospectName || l.customer?.fullName || '—',
       phone: l.prospectPhone || l.customer?.phone || '—',
-      status: statusLabel(l.status),
-      statusTone: MOVING_STATUS_TONE[l.status] || 'gray',
+      interested: l.estimatedVolumeCbm ? `${l.estimatedVolumeCbm} cbm` : '—',
+      status: labelize(l.status),
+      statusColor: MOVING_STATUS_COLORS[l.status] || MOVING_STATUS_COLORS.new,
       addedAt: l.createdAt,
       href: `/moving/leads/${l._id}`,
       canConvert: l.status !== 'won' && l.status !== 'lost',
+      convertLabel: 'Convert to Job',
       convert: () => convertMoving.mutate(l._id),
       converting: convertMoving.isPending,
     }))
@@ -83,78 +109,98 @@ export default function SalesBoard() {
 
   const statuses = useMemo(() => [...new Set(rows.map((r) => r.status))].sort(), [rows])
   const filtered = statusFilter ? rows.filter((r) => r.status === statusFilter) : rows
-
   const isLoading = storageLoading || movingLoading
 
   return (
-    <div className="space-y-4">
-      <PageHeader title="My Leads" subtitle="Storage and moving leads assigned to you" />
+    <div style={{ background: '#FDFCFA', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+      {/* Top bar */}
+      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-7">
+        <div>
+          <div style={{ ...HEADING, fontSize: 26, fontWeight: 700, color: INK }}>My Leads</div>
+          <div style={{ fontSize: 14, color: MUTED, marginTop: 4 }}>{rows.length} lead{rows.length !== 1 ? 's' : ''} assigned to you</div>
+        </div>
+      </div>
 
-      <div className="flex flex-wrap gap-1.5">
+      {/* Status filter pills */}
+      <div className="flex gap-2 flex-wrap mb-5">
         <button
-          type="button"
           onClick={() => setStatusFilter('')}
-          className={`h-8 px-3 rounded-full text-xs font-semibold cursor-pointer transition-colors ${statusFilter === '' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}
+          style={{ height: 36, borderRadius: 10, background: statusFilter === '' ? PURPLE : '#F3F0EA', color: statusFilter === '' ? 'white' : MUTED, fontSize: 13, fontWeight: 600, padding: '0 14px', border: 'none' }}
+          className="hover:opacity-90 transition-opacity whitespace-nowrap"
         >
           All ({rows.length})
         </button>
-        {statuses.map((s) => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => setStatusFilter(s)}
-            className={`h-8 px-3 rounded-full text-xs font-semibold cursor-pointer transition-colors ${statusFilter === s ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}
-          >
-            {s} ({rows.filter((r) => r.status === s).length})
-          </button>
-        ))}
+        {statuses.map((s) => {
+          const active = statusFilter === s
+          return (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              style={{ height: 36, borderRadius: 10, background: active ? PURPLE : '#F3F0EA', color: active ? 'white' : MUTED, fontSize: 13, fontWeight: 600, padding: '0 14px', border: 'none' }}
+              className="hover:opacity-90 transition-opacity whitespace-nowrap"
+            >
+              {s} ({rows.filter((r) => r.status === s).length})
+            </button>
+          )
+        })}
       </div>
 
-      <Card>
+      {/* Recent leads table */}
+      <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, overflow: 'hidden' }}>
+        <div style={{ padding: '18px 22px', borderBottom: '1px solid rgba(20,8,31,.08)', fontWeight: 700, fontSize: 15, color: INK }}>Recent leads</div>
         {isLoading ? (
-          <div className="p-8"><Spinner /></div>
+          <div className="flex justify-center py-16"><Spinner /></div>
         ) : filtered.length === 0 ? (
-          <EmptyState message="No leads assigned to you yet." />
+          <div style={{ padding: '60px 20px', textAlign: 'center' }}>
+            <UserPlus size={32} style={{ margin: '0 auto 12px', color: MUTED, opacity: 0.3 }} />
+            <div style={{ fontSize: 14, fontWeight: 600, color: INK, marginBottom: 4 }}>No leads assigned to you yet</div>
+            <div style={{ fontSize: 13, color: MUTED }}>New assignments will show up here.</div>
+          </div>
         ) : (
-          <Table>
-            <thead>
-              <tr>
-                <Th>Type</Th>
-                <Th>Name</Th>
-                <Th>Phone</Th>
-                <Th>Status</Th>
-                <Th>Added</Th>
-                <Th />
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((r) => (
-                <tr key={r.key} className="hover:bg-muted/50">
-                  <Td><span className="text-xs font-semibold text-muted-foreground">{r.type}</span></Td>
-                  <Td>
-                    <Link to={r.href} className="font-medium text-primary hover:underline">{r.name}</Link>
-                  </Td>
-                  <Td className="text-sm text-muted-foreground">{r.phone}</Td>
-                  <Td><Badge tone={r.statusTone}>{r.status}</Badge></Td>
-                  <Td className="text-xs text-muted-foreground">{r.addedAt ? formatDate(r.addedAt) : '—'}</Td>
-                  <Td className="text-right">
-                    {r.canConvert && (
-                      <button
-                        type="button"
-                        disabled={r.converting}
-                        onClick={r.convert}
-                        className="text-xs font-semibold text-primary hover:underline cursor-pointer disabled:opacity-50"
-                      >
-                        {r.converting ? 'Converting…' : r.type === 'Storage' ? 'Convert to Customer' : 'Convert to Job'}
-                      </button>
-                    )}
-                  </Td>
+          <div className="overflow-x-auto">
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(20,8,31,0.06)' }}>
+                  {['Name', 'Phone', 'Interested Unit', 'Type', 'Date', 'Status', ''].map((h) => (
+                    <th key={h} style={{ padding: '12px 16px', fontSize: 12, fontWeight: 600, color: MUTED, textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </Table>
+              </thead>
+              <tbody>
+                {filtered.map((r) => (
+                  <tr key={r.key} style={{ borderBottom: '1px solid rgba(20,8,31,0.04)' }} className="hover:bg-[#FAF8F5] transition-colors">
+                    <td style={{ padding: '14px 16px' }}>
+                      <Link to={r.href} style={{ fontSize: 14, fontWeight: 600, color: PURPLE }} className="hover:opacity-80 transition-opacity">{r.name}</Link>
+                    </td>
+                    <td style={{ padding: '14px 16px', fontSize: 13, color: MUTED, fontVariantNumeric: 'tabular-nums' }}>{r.phone}</td>
+                    <td style={{ padding: '14px 16px', fontSize: 13, color: MUTED }}>{r.interested}</td>
+                    <td style={{ padding: '14px 16px', fontSize: 13, color: MUTED }}>{r.type}</td>
+                    <td style={{ padding: '14px 16px', fontSize: 13, color: MUTED }}>{r.addedAt ? formatDate(r.addedAt) : '—'}</td>
+                    <td style={{ padding: '14px 16px' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 999, fontSize: 12, fontWeight: 700, background: r.statusColor.bg, color: r.statusColor.fg }}>
+                        {r.status}
+                      </span>
+                    </td>
+                    <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                      {r.canConvert && (
+                        <button
+                          type="button"
+                          disabled={r.converting}
+                          onClick={r.convert}
+                          style={{ height: 28, padding: '0 10px', borderRadius: 8, background: 'transparent', color: PURPLE, border: '1px solid #DDD0FF', fontWeight: 600, fontSize: 11.5, whiteSpace: 'nowrap' }}
+                          className="hover:bg-[#F7F3FF] transition-colors disabled:opacity-50 cursor-pointer"
+                        >
+                          {r.converting ? 'Converting…' : r.convertLabel}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-      </Card>
+      </div>
     </div>
   )
 }
