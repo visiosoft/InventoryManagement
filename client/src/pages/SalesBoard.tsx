@@ -30,6 +30,33 @@ type TaskItem = {
 
 const PRIORITY_COLOR: Record<string, string> = { low: '#756E80', medium: '#B45309', high: '#991B1B' }
 
+// Buckets a task list into Overdue / Today / This Week / Later, each sorted
+// by due date ascending — a flat list buries what actually needs attention
+// today under whatever was added most recently.
+function groupTasksByDue(tasks: TaskItem[]) {
+  const now = new Date()
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const todayEnd = new Date(todayStart.getTime() + 86400000)
+  const weekEnd = new Date(todayStart.getTime() + 7 * 86400000)
+
+  const groups: { label: string; tone: 'overdue' | 'today' | 'normal'; items: TaskItem[] }[] = [
+    { label: 'Overdue', tone: 'overdue', items: [] },
+    { label: 'Due Today', tone: 'today', items: [] },
+    { label: 'This Week', tone: 'normal', items: [] },
+    { label: 'Later / No due date', tone: 'normal', items: [] },
+  ]
+  for (const t of tasks) {
+    if (!t.dueDate) { groups[3].items.push(t); continue }
+    const due = new Date(t.dueDate)
+    if (due < todayStart) groups[0].items.push(t)
+    else if (due < todayEnd) groups[1].items.push(t)
+    else if (due < weekEnd) groups[2].items.push(t)
+    else groups[3].items.push(t)
+  }
+  for (const g of groups) g.items.sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''))
+  return groups.filter((g) => g.items.length > 0)
+}
+
 function TasksCard() {
   const qc = useQueryClient()
   const [showAdd, setShowAdd] = useState(false)
@@ -41,6 +68,7 @@ function TasksCard() {
     queryKey: ['my-tasks'],
     queryFn: () => api.get('/tasks', { params: { status: 'todo,in_progress' } }).then((r) => r.data),
   })
+  const groups = useMemo(() => groupTasksByDue(tasks), [tasks])
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['my-tasks'] })
 
@@ -106,27 +134,51 @@ function TasksCard() {
       ) : tasks.length === 0 ? (
         <p className="text-sm text-muted-foreground py-4 text-center">No open tasks. Nice and clear.</p>
       ) : (
-        <div className="space-y-2">
-          {tasks.map((t) => (
-            <div key={t._id} className="flex items-center justify-between gap-3" style={{ borderBottom: '1px solid rgba(20,8,31,.06)', paddingBottom: 10 }}>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  {t.leadName && <span style={{ fontSize: 12, color: MUTED, fontWeight: 600 }}>{t.leadName}</span>}
-                  <span style={{ fontSize: 13, color: INK }}>{t.title}</span>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: PRIORITY_COLOR[t.priority], textTransform: 'uppercase' }}>{t.priority}</span>
-                </div>
+        <div className="space-y-4">
+          {groups.map((g) => (
+            <div key={g.label}>
+              <div style={{
+                fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6,
+                color: g.tone === 'overdue' ? '#991B1B' : g.tone === 'today' ? '#B45309' : MUTED,
+              }}>
+                {g.label} ({g.items.length})
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {t.dueDate && <span style={{ fontSize: 12, color: MUTED }}>Due {formatDate(t.dueDate)}</span>}
-                <select
-                  value={t.status}
-                  onChange={(e) => updateTask.mutate({ id: t._id, body: { status: e.target.value } })}
-                  style={{ height: 30, padding: '0 8px', borderRadius: 8, border: '1px solid rgba(20,8,31,.14)', fontSize: 12 }}
-                >
-                  <option value="todo">To do</option>
-                  <option value="in_progress">In progress</option>
-                  <option value="done">Done</option>
-                </select>
+              <div className="space-y-2">
+                {g.items.map((t) => (
+                  <div
+                    key={t._id}
+                    className="flex items-center justify-between gap-3"
+                    style={{
+                      borderBottom: '1px solid rgba(20,8,31,.06)',
+                      borderLeft: g.tone === 'overdue' ? '3px solid #991B1B' : g.tone === 'today' ? '3px solid #B45309' : '3px solid transparent',
+                      paddingBottom: 10, paddingLeft: 8,
+                    }}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        {t.leadName && <span style={{ fontSize: 12, color: MUTED, fontWeight: 600 }}>{t.leadName}</span>}
+                        <span style={{ fontSize: 13, color: INK, fontWeight: g.tone !== 'normal' ? 700 : 400 }}>{t.title}</span>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: PRIORITY_COLOR[t.priority], textTransform: 'uppercase' }}>{t.priority}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {t.dueDate && (
+                        <span style={{ fontSize: 12, fontWeight: g.tone !== 'normal' ? 700 : 400, color: g.tone === 'overdue' ? '#991B1B' : g.tone === 'today' ? '#B45309' : MUTED }}>
+                          Due {formatDate(t.dueDate)}
+                        </span>
+                      )}
+                      <select
+                        value={t.status}
+                        onChange={(e) => updateTask.mutate({ id: t._id, body: { status: e.target.value } })}
+                        style={{ height: 30, padding: '0 8px', borderRadius: 8, border: '1px solid rgba(20,8,31,.14)', fontSize: 12 }}
+                      >
+                        <option value="todo">To do</option>
+                        <option value="in_progress">In progress</option>
+                        <option value="done">Done</option>
+                      </select>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           ))}

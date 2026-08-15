@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { CalendarPlus, CheckSquare, FileText, Mail, MessageCircle, MoreHorizontal, Phone, Plus, RefreshCw, Search, Send, Upload, X } from 'lucide-react'
+import { AlertTriangle, CalendarPlus, CheckSquare, FileText, Mail, MessageCircle, MoreHorizontal, Phone, Plus, RefreshCw, Search, Send, Upload, X } from 'lucide-react'
 import { api, apiError, leadApi, type LeadPage } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { Lead, LeadComment, LeadSource, LeadStatus } from '../lib/types'
@@ -190,10 +190,19 @@ function LeadForm({
 export function LeadDetailPanel({ lead }: { lead: Lead }) {
     const qc = useQueryClient()
     const [commentText, setCommentText] = useState('')
+    const [commentSaved, setCommentSaved] = useState(false)
     const [emailOpen, setEmailOpen] = useState(false)
     const [emailSubject, setEmailSubject] = useState('')
     const [emailBody, setEmailBody] = useState('')
     const [emailErr, setEmailErr] = useState('')
+
+    // Brief "Saved" confirmation after logging a note — closing the form
+    // silently made it feel like the note might not have gone through.
+    useEffect(() => {
+        if (!commentSaved) return
+        const timer = setTimeout(() => setCommentSaved(false), 2500)
+        return () => clearTimeout(timer)
+    }, [commentSaved])
 
     const { data: detail } = useQuery<Lead>({
         queryKey: ['lead-detail', lead._id],
@@ -207,7 +216,7 @@ export function LeadDetailPanel({ lead }: { lead: Lead }) {
 
     const addComment = useMutation({
         mutationFn: (text: string) => api.post(`/leads/${lead._id}/comments`, { text }).then(r => r.data),
-        onSuccess: () => { invalidate(); setCommentText('') },
+        onSuccess: () => { invalidate(); setCommentText(''); setCommentSaved(true) },
     })
 
     const updateStatus = useMutation({
@@ -289,7 +298,12 @@ export function LeadDetailPanel({ lead }: { lead: Lead }) {
                 <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
                     <Input placeholder="Subject" value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} />
                     <Textarea placeholder={`Write your message to ${lead.email}...`} rows={4} value={emailBody} onChange={(e) => setEmailBody(e.target.value)} />
-                    {emailErr && <p className="text-xs text-destructive">{emailErr}</p>}
+                    {emailErr && (
+                        <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 flex items-start gap-2">
+                            <AlertTriangle size={14} className="text-destructive shrink-0 mt-0.5" />
+                            <p className="text-xs font-medium text-destructive">Email not sent — {emailErr}</p>
+                        </div>
+                    )}
                     <div className="flex justify-end gap-2">
                         <Button variant="outline" size="sm" onClick={() => setEmailOpen(false)}>Cancel</Button>
                         <Button size="sm" disabled={!emailBody.trim() || sendEmail.isPending} onClick={() => sendEmail.mutate()}>
@@ -298,6 +312,34 @@ export function LeadDetailPanel({ lead }: { lead: Lead }) {
                     </div>
                 </div>
             )}
+
+            {/* Log a note — the main thing a rep does after every contact attempt */}
+            <div className="rounded-lg border-2 border-primary/20 bg-primary/5 p-3">
+                <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-semibold">Log a note</h4>
+                    {commentSaved && (
+                        <span className="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                            <CheckSquare size={12} /> Saved
+                        </span>
+                    )}
+                </div>
+                <div className="flex gap-2">
+                    <Textarea
+                        value={commentText}
+                        onChange={(e) => setCommentText(e.target.value)}
+                        placeholder="What happened on this call? Any next steps?"
+                        rows={2}
+                        className="flex-1 bg-background"
+                    />
+                    <Button
+                        onClick={() => { if (commentText.trim()) addComment.mutate(commentText.trim()) }}
+                        disabled={!commentText.trim() || addComment.isPending}
+                        className="self-end"
+                    >
+                        <Send size={14} />
+                    </Button>
+                </div>
+            </div>
 
             {/* Quick info */}
             <div className="grid grid-cols-4 gap-3">
@@ -330,24 +372,6 @@ export function LeadDetailPanel({ lead }: { lead: Lead }) {
             {/* Comments section */}
             <div>
                 <h4 className="text-sm font-semibold mb-3">Comments & Activity</h4>
-
-                {/* Add comment */}
-                <div className="flex gap-2 mb-4">
-                    <Textarea
-                        value={commentText}
-                        onChange={(e) => setCommentText(e.target.value)}
-                        placeholder="Write a comment..."
-                        rows={2}
-                        className="flex-1"
-                    />
-                    <Button
-                        onClick={() => { if (commentText.trim()) addComment.mutate(commentText.trim()) }}
-                        disabled={!commentText.trim() || addComment.isPending}
-                        className="self-end"
-                    >
-                        <Send size={14} />
-                    </Button>
-                </div>
 
                 {/* Comments list */}
                 <div className="space-y-3 max-h-80 overflow-auto">
