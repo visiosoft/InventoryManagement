@@ -53,6 +53,7 @@ import AgreementTemplate from './pages/AgreementTemplate'
 import ZohoComparison from './pages/ZohoComparison'
 import Backup from './pages/Backup'
 import Leads from './pages/Leads'
+import SalesBoard from './pages/SalesBoard'
 import Quotations from './pages/Quotations'
 import Quotes from './pages/Quotes'
 import NewQuote from './pages/NewQuote'
@@ -157,6 +158,7 @@ export default function App() {
         <Route path="/customers" element={<Customers />} />
         <Route path="/customers/:id" element={<CustomerContractRedirect />} />
         <Route path="/leads" element={<Leads />} />
+        <Route path="/my-leads" element={<PermGuard module="sales_board"><SalesBoard /></PermGuard>} />
         <Route path="/quotes" element={<PermGuard module="quotes"><Quotations /></PermGuard>} />
         <Route path="/quotes/new" element={<PermGuard module="quotes"><NewQuote /></PermGuard>} />
         <Route path="/quotations" element={<PermGuard module="quotes"><Quotes /></PermGuard>} />

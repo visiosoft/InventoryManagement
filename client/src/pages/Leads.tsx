@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { CalendarPlus, CheckSquare, FileText, Mail, MessageCircle, MoreHorizontal, Plus, RefreshCw, Search, Send, Upload, X } from 'lucide-react'
 import { api, apiError, leadApi, type LeadPage } from '../lib/api'
+import { useAuth } from '../lib/auth'
 import type { Lead, LeadComment, LeadSource, LeadStatus } from '../lib/types'
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Textarea, leadStatusTone, statusLabel } from '../components/ui'
 import { formatDate, formatDateTime } from '../lib/utils'
@@ -724,6 +725,9 @@ export default function Leads() {
         [filteredWhatsAppContacts, selectedWhatsAppLeadId]
     )
 
+    const { user: me } = useAuth()
+    const isAdmin = me?.role === 'admin'
+
     const { data: users } = useQuery<{ _id: string; name: string; email: string }[]>({
         queryKey: ['lead-owners'],
         queryFn: () => api.get('/auth/me').then((r) => {
@@ -731,6 +735,13 @@ export default function Leads() {
             if (!u?.id) return []
             return [{ _id: u.id, name: u.name, email: u.email }]
         }),
+    })
+
+    // Full team list — only admins can reassign leads to anyone, so only fetch for them.
+    const { data: assignableUsers } = useQuery<{ _id: string; name: string; email: string }[]>({
+        queryKey: ['assignable-users'],
+        queryFn: () => api.get('/users').then((r) => r.data.filter((u: { isActive: boolean }) => u.isActive)),
+        enabled: isAdmin,
     })
 
     const [page, setPage] = useState(1)
@@ -1140,7 +1151,20 @@ export default function Leads() {
                                                 </span>
                                                 <span style={{ minWidth: 0 }}>
                                                     <span style={{ display: 'block', fontSize: 15, fontWeight: 600, letterSpacing: '-.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lead.fullName}</span>
-                                                    {lead.owner?.name && <span style={{ display: 'block', fontSize: 12.5, color: MUTED_COLOR, marginTop: 2 }}>{lead.owner.name}</span>}
+                                                    {isAdmin ? (
+                                                        <select
+                                                            value={lead.owner?._id || ''}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            onChange={(e) => { e.stopPropagation(); updateLead.mutate({ id: lead._id, body: { owner: e.target.value } }) }}
+                                                            style={{ marginTop: 2, fontSize: 12, color: MUTED_COLOR, border: '1px solid rgba(20,8,31,.12)', borderRadius: 6, padding: '1px 4px', background: '#fff', maxWidth: 140 }}
+                                                        >
+                                                            {(assignableUsers || []).map((u) => (
+                                                                <option key={u._id} value={u._id}>{u.name}</option>
+                                                            ))}
+                                                        </select>
+                                                    ) : (
+                                                        lead.owner?.name && <span style={{ display: 'block', fontSize: 12.5, color: MUTED_COLOR, marginTop: 2 }}>{lead.owner.name}</span>
+                                                    )}
                                                 </span>
                                             </div>
 

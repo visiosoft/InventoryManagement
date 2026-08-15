@@ -17,6 +17,8 @@ const ALL_MODULES = [
   'reports_moving_profitability', 'reports_moving_payroll',
   'reports_moving_ar', 'reports_moving_costs', 'reports_moving_pipeline', 'reports_moving_stripe',
   'moving_claims',
+  // Sales reps' personal "My Leads" board — leads/moving_leads scoped to the logged-in rep.
+  'sales_board',
 ];
 
 const userSchema = new Schema(
@@ -24,7 +26,7 @@ const userSchema = new Schema(
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true, lowercase: true },
     passwordHash: { type: String, required: true },
-    role: { type: String, enum: ['admin', 'staff'], default: 'staff' },
+    role: { type: String, enum: ['admin', 'staff', 'sales_rep'], default: 'staff' },
     // Modules this user can access. Admins bypass this check entirely.
     permissions: { type: [String], default: [] },
     isActive: { type: Boolean, default: true },
@@ -802,11 +804,13 @@ const movingLeadSchema = new Schema(
       quotedBy: { type: String, default: '' },
     },
     timeline: [movingTimelineEntrySchema],
+    owner: { type: Schema.Types.ObjectId, ref: 'User', default: null },
   },
   { timestamps: true }
 );
 movingLeadSchema.index({ status: 1, createdAt: -1 });
 movingLeadSchema.index({ customer: 1 });
+movingLeadSchema.index({ status: 1, owner: 1 });
 
 const movingJobCrewSchema = new Schema(
   {

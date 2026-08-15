@@ -3,6 +3,14 @@ import { MovingLead, MovingJob, Customer, nextMovingJobNo } from '../models/inde
 
 const router = Router();
 
+// Sales reps only ever see/touch leads assigned to them — enforced server-side.
+function isSalesRep(req) {
+  return req.user?.role === 'sales_rep';
+}
+function ownsLead(req, lead) {
+  return String(lead.owner?._id || lead.owner || '') === String(req.user.id);
+}
+
 // ── Public endpoint for WordPress landing pages (no auth) ────────────────────
 export const publicLeadRouter = Router();
 
@@ -49,9 +57,11 @@ publicLeadRouter.post('/', async (req, res) => {
 // List leads
 router.get('/', async (req, res) => {
   try {
-    const { status, q } = req.query;
+    const { status, q, owner } = req.query;
     const filter = {};
     if (status) filter.status = status;
+    if (owner) filter.owner = owner;
+    if (isSalesRep(req)) filter.owner = req.user.id;
     if (q) {
       filter.$or = [
         { prospectName: { $regex: q, $options: 'i' } },
@@ -60,6 +70,7 @@ router.get('/', async (req, res) => {
     }
     const leads = await MovingLead.find(filter)
       .populate('customer', 'fullName phone email')
+      .populate('owner', 'name email')
       .sort({ createdAt: -1 });
     res.json(leads);
   } catch (err) {
@@ -70,7 +81,8 @@ router.get('/', async (req, res) => {
 // Create lead
 router.post('/', async (req, res) => {
   try {
-    const lead = await MovingLead.create(req.body);
+    const body = isSalesRep(req) ? { ...req.body, owner: req.user.id } : req.body;
+    const lead = await MovingLead.create(body);
     res.status(201).json(lead);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -80,8 +92,9 @@ router.post('/', async (req, res) => {
 // Get lead
 router.get('/:id', async (req, res) => {
   try {
-    const lead = await MovingLead.findById(req.params.id).populate('customer', 'fullName phone email address');
+    const lead = await MovingLead.findById(req.params.id).populate('customer', 'fullName phone email address').populate('owner', 'name email');
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
     const obj = lead.toObject();
     const job = await MovingJob.findOne({ lead: lead._id }).select('images _id jobNo').lean();
     if (job?.images?.length && !obj.images?.length) {
@@ -102,8 +115,15 @@ router.get('/:id', async (req, res) => {
 // Update lead
 router.put('/:id', async (req, res) => {
   try {
-    const lead = await MovingLead.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true })
-      .populate('customer', 'fullName phone email');
+    if (isSalesRep(req)) {
+      const existing = await MovingLead.findById(req.params.id).select('owner');
+      if (!existing) return res.status(404).json({ error: 'Lead not found' });
+      if (!ownsLead(req, existing)) return res.status(403).json({ error: 'Not your lead' });
+    }
+    const body = isSalesRep(req) ? { ...req.body, owner: req.user.id } : req.body;
+    const lead = await MovingLead.findByIdAndUpdate(req.params.id, body, { new: true, runValidators: true })
+      .populate('customer', 'fullName phone email')
+      .populate('owner', 'name email');
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
     res.json(lead);
   } catch (err) {
@@ -114,6 +134,11 @@ router.put('/:id', async (req, res) => {
 // Patch status
 router.patch('/:id/status', async (req, res) => {
   try {
+    if (isSalesRep(req)) {
+      const existing = await MovingLead.findById(req.params.id).select('owner');
+      if (!existing) return res.status(404).json({ error: 'Lead not found' });
+      if (!ownsLead(req, existing)) return res.status(403).json({ error: 'Not your lead' });
+    }
     const { status } = req.body;
     const lead = await MovingLead.findByIdAndUpdate(req.params.id, { status }, { new: true });
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
@@ -126,6 +151,11 @@ router.patch('/:id/status', async (req, res) => {
 // Add timeline note
 router.post('/:id/notes', async (req, res) => {
   try {
+    if (isSalesRep(req)) {
+      const existing = await MovingLead.findById(req.params.id).select('owner');
+      if (!existing) return res.status(404).json({ error: 'Lead not found' });
+      if (!ownsLead(req, existing)) return res.status(403).json({ error: 'Not your lead' });
+    }
     const { text, author } = req.body;
     const lead = await MovingLead.findByIdAndUpdate(
       req.params.id,
@@ -144,6 +174,7 @@ router.delete('/:id/notes/:idx', async (req, res) => {
   try {
     const lead = await MovingLead.findById(req.params.id);
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
     const idx = Number(req.params.idx);
     if (idx < 0 || idx >= lead.timeline.length) return res.status(400).json({ error: 'Invalid index' });
     lead.timeline.splice(idx, 1);
@@ -157,6 +188,11 @@ router.delete('/:id/notes/:idx', async (req, res) => {
 // Send quote to lead
 router.patch('/:id/quote', async (req, res) => {
   try {
+    if (isSalesRep(req)) {
+      const existing = await MovingLead.findById(req.params.id).select('owner');
+      if (!existing) return res.status(404).json({ error: 'Lead not found' });
+      if (!ownsLead(req, existing)) return res.status(403).json({ error: 'Not your lead' });
+    }
     const { items, discount, notes, quotedBy } = req.body;
     if (!items?.length) return res.status(400).json({ error: 'At least one quote item is required' });
     const subTotal = items.reduce((sum, it) => sum + (it.amount || it.qty * it.rate), 0);
@@ -191,6 +227,7 @@ router.post('/:id/convert', async (req, res) => {
   try {
     const lead = await MovingLead.findById(req.params.id);
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
 
     const jobNo = await nextMovingJobNo();
     const job = await MovingJob.create({
@@ -215,6 +252,7 @@ router.post('/:id/convert', async (req, res) => {
 // Delete lead
 router.delete('/:id', async (req, res) => {
   try {
+    if (isSalesRep(req)) return res.status(403).json({ error: 'Sales reps cannot delete leads' });
     await MovingLead.findByIdAndDelete(req.params.id);
     res.json({ ok: true });
   } catch (err) {

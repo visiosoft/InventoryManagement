@@ -185,7 +185,7 @@ function UserModal({ editing, onClose, onDone }: {
   const [password, setPassword]   = useState('')
   const [role, setRole]           = useState(editing?.role ?? 'staff')
   const [permissions, setPerms]   = useState<string[]>(
-    editing?.permissions?.length ? editing.permissions : (editing?.role === 'admin' ? ALL_MODULE_KEYS : [])
+    editing?.permissions?.length ? editing.permissions : (editing?.role === 'admin' ? ALL_MODULE_KEYS : editing?.role === 'sales_rep' ? ['sales_board'] : [])
   )
   const [isActive, setIsActive]   = useState(editing?.isActive ?? true)
   const [err, setErr]             = useState('')
@@ -193,6 +193,13 @@ function UserModal({ editing, onClose, onDone }: {
   const qc = useQueryClient()
 
   const isAdmin = role === 'admin'
+  const isSalesRep = role === 'sales_rep'
+
+  function changeRole(next: string) {
+    setRole(next)
+    if (next === 'sales_rep') setPerms(['sales_board'])
+    else if (permissions.length === 1 && permissions[0] === 'sales_board') setPerms([])
+  }
 
   async function submit() {
     setBusy(true); setErr('')
@@ -231,9 +238,10 @@ function UserModal({ editing, onClose, onDone }: {
               placeholder={isNew ? 'Min 8 characters' : 'Leave blank to keep current'} />
           </Field>
           <Field label="Role">
-            <Select value={role} onChange={e => setRole(e.target.value)}>
+            <Select value={role} onChange={e => changeRole(e.target.value)}>
               <option value="staff">Staff — limited to assigned modules</option>
               <option value="admin">Admin — full access to everything</option>
+              <option value="sales_rep">Sales Rep — only their assigned leads</option>
             </Select>
           </Field>
 
@@ -252,16 +260,24 @@ function UserModal({ editing, onClose, onDone }: {
               <span className="text-muted-foreground">Admin users can manage settings and users. Select which modules they can access below.</span>
             </div>
           )}
+          {isSalesRep && (
+            <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 flex items-start gap-2 text-sm">
+              <ShieldCheck size={15} className="text-primary shrink-0 mt-0.5" />
+              <span className="text-muted-foreground">Sales reps automatically get their own "My Leads" board — only leads assigned to them, across both storage and moving. No other module access.</span>
+            </div>
+          )}
         </div>
 
         {/* Right: permissions */}
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
-            Module access
+        {!isSalesRep && (
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
+              Module access
+            </div>
+            <PermissionGrid permissions={permissions}
+              onChange={setPerms} disabled={false} />
           </div>
-          <PermissionGrid permissions={permissions}
-            onChange={setPerms} disabled={false} />
-        </div>
+        )}
       </div>
 
       {/* Footer */}
@@ -387,11 +403,13 @@ export default function UserManagement() {
             <div className="text-sm text-muted-foreground">{me?.email}</div>
             <div className="mt-1 flex items-center gap-2">
               <span className={`rounded-full px-2 py-0.5 text-xs font-semibold
-                ${me?.role === 'admin' ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}`}>
-                {me?.role === 'admin' ? '👑 Admin' : '👤 Staff'}
+                ${me?.role === 'admin' ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' : me?.role === 'sales_rep' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}`}>
+                {me?.role === 'admin' ? '👑 Admin' : me?.role === 'sales_rep' ? '🎯 Sales Rep' : '👤 Staff'}
               </span>
               {me?.role === 'admin'
                 ? <span className="text-xs text-muted-foreground">Full access to all modules</span>
+                : me?.role === 'sales_rep'
+                ? <span className="text-xs text-muted-foreground">My Leads board only</span>
                 : <span className="text-xs text-muted-foreground">{me?.permissions?.length ?? 0} module{me?.permissions?.length !== 1 ? 's' : ''} assigned</span>
               }
             </div>
@@ -441,14 +459,16 @@ export default function UserManagement() {
                     </Td>
                     <Td>
                       <span className={`flex items-center gap-1 text-xs font-semibold rounded-full px-2 py-0.5 w-fit
-                        ${u.role === 'admin' ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}`}>
+                        ${u.role === 'admin' ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' : u.role === 'sales_rep' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}`}>
                         {u.role === 'admin' ? <ShieldCheck size={11} /> : <UserCog size={11} />}
-                        {u.role === 'admin' ? 'Admin' : 'Staff'}
+                        {u.role === 'admin' ? 'Admin' : u.role === 'sales_rep' ? 'Sales Rep' : 'Staff'}
                       </span>
                     </Td>
                     <Td>
                       {u.role === 'admin' && moduleCount === 0 ? (
                         <span className="text-xs text-muted-foreground italic">All modules</span>
+                      ) : u.role === 'sales_rep' ? (
+                        <span className="text-xs text-muted-foreground italic">My Leads board only</span>
                       ) : moduleCount === 0 ? (
                         <span className="flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
                           <ShieldOff size={12} /> No access

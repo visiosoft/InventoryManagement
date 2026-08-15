@@ -55,6 +55,15 @@ async function validateOwner(ownerId) {
     return Boolean(owner);
 }
 
+// Sales reps only ever see/touch leads assigned to them — enforced server-side
+// so a rep can't widen their view via query params or a crafted request body.
+function isSalesRep(req) {
+    return req.user?.role === 'sales_rep';
+}
+function ownsLead(req, lead) {
+    return String(lead.owner?._id || lead.owner) === String(req.user.id);
+}
+
 router.get('/', async (req, res) => {
     const filter = {};
     if (req.query.status && ALLOWED_STATUS.has(String(req.query.status))) {
@@ -64,6 +73,7 @@ router.get('/', async (req, res) => {
         filter.source = String(req.query.source);
     }
     if (req.query.owner) filter.owner = String(req.query.owner);
+    if (isSalesRep(req)) filter.owner = req.user.id;
 
     const from = parseDate(req.query.from);
     const to = parseDate(req.query.to);
@@ -102,6 +112,7 @@ router.get('/:id', async (req, res) => {
         .populate('owner', 'name email')
         .populate('comments.user', 'name email');
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
     res.json(lead);
 });
 
@@ -116,7 +127,7 @@ router.post('/', async (req, res) => {
     if (!Number.isFinite(body.durationValue) || body.durationValue < 1) return res.status(400).json({ error: 'Invalid duration value' });
     if (!Number.isFinite(body.unitsNeeded) || body.unitsNeeded < 1) return res.status(400).json({ error: 'Invalid units needed' });
 
-    const ownerId = body.owner || req.user.id;
+    const ownerId = isSalesRep(req) ? req.user.id : (body.owner || req.user.id);
     if (!(await validateOwner(ownerId))) return res.status(400).json({ error: 'Lead owner not found' });
 
     const phoneNormalized = normalizePhone(body.phone);
@@ -142,6 +153,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
     const lead = await Lead.findById(req.params.id);
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
 
     const body = cleanBody({ ...lead.toObject(), ...req.body });
     if (!body.firstName && !body.fullName) return res.status(400).json({ error: 'First name is required' });
@@ -153,7 +165,7 @@ router.put('/:id', async (req, res) => {
     if (!Number.isFinite(body.durationValue) || body.durationValue < 1) return res.status(400).json({ error: 'Invalid duration value' });
     if (!Number.isFinite(body.unitsNeeded) || body.unitsNeeded < 1) return res.status(400).json({ error: 'Invalid units needed' });
 
-    const ownerId = body.owner || req.user.id;
+    const ownerId = isSalesRep(req) ? req.user.id : (body.owner || req.user.id);
     if (!(await validateOwner(ownerId))) return res.status(400).json({ error: 'Lead owner not found' });
 
     const phoneNormalized = normalizePhone(body.phone);
@@ -193,6 +205,7 @@ router.patch('/:id/status', async (req, res) => {
 
     const lead = await Lead.findById(req.params.id);
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
 
     lead.status = status;
     lead.timeline.push({ type: 'status_changed', text: `Status changed to ${status}`, user: req.user.id });
@@ -208,6 +221,7 @@ router.patch('/:id/status', async (req, res) => {
 router.post('/:id/convert', async (req, res) => {
     const lead = await Lead.findById(req.params.id).populate('owner', 'name email');
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
 
     const normalizedLeadPhone = normalizePhone(lead.phone);
     const email = String(lead.email || '').trim().toLowerCase();
@@ -267,6 +281,7 @@ router.post('/:id/comments', async (req, res) => {
 
     const lead = await Lead.findById(req.params.id);
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
 
     const userName = req.user.name || req.user.email || 'user';
     lead.comments.push({ user: req.user.id, userName, text });
@@ -280,8 +295,9 @@ router.post('/:id/comments', async (req, res) => {
 });
 
 router.get('/:id/messages', async (req, res) => {
-    const lead = await Lead.findById(req.params.id).select('phoneNormalized');
+    const lead = await Lead.findById(req.params.id).select('phoneNormalized owner');
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
     const limit = Math.min(Number(req.query.limit) || 50, 200);
     const messages = await WhatsAppMessage.find({ phoneNormalized: lead.phoneNormalized })
         .sort({ occurredAt: 1 })
@@ -291,6 +307,7 @@ router.get('/:id/messages', async (req, res) => {
 });
 
 router.delete('/:id', async (req, res) => {
+    if (isSalesRep(req)) return res.status(403).json({ error: 'Sales reps cannot delete leads' });
     const lead = await Lead.findByIdAndDelete(req.params.id);
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
     res.json({ ok: true });

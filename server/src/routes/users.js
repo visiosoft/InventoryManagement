@@ -5,6 +5,9 @@ import { requireAdmin, signToken } from '../middleware/auth.js';
 
 const router = Router();
 
+const VALID_ROLES = ['admin', 'staff', 'sales_rep'];
+const normalizeRole = (role) => (VALID_ROLES.includes(role) ? role : 'staff');
+
 // ── List all users (admin only) ───────────────────────────────────────────────
 router.get('/', requireAdmin, async (_req, res) => {
   const users = await User.find().select('-passwordHash').sort({ createdAt: -1 });
@@ -26,12 +29,15 @@ router.post('/', requireAdmin, async (req, res) => {
   const exists = await User.findOne({ email: email.toLowerCase() });
   if (exists) return res.status(409).json({ error: 'Email already in use' });
   const passwordHash = await bcrypt.hash(password, 12);
+  const normalizedRole = normalizeRole(role);
+  const cleanPermissions = Array.isArray(permissions) ? permissions.filter(p => ALL_MODULES.includes(p)) : [];
   const user = await User.create({
     name: name.trim(),
     email: email.toLowerCase().trim(),
     passwordHash,
-    role: role === 'admin' ? 'admin' : 'staff',
-    permissions: Array.isArray(permissions) ? permissions.filter(p => ALL_MODULES.includes(p)) : [],
+    role: normalizedRole,
+    // Sales reps default to their own board when no explicit permissions are given.
+    permissions: cleanPermissions.length === 0 && normalizedRole === 'sales_rep' ? ['sales_board'] : cleanPermissions,
     isActive: true,
   });
   res.status(201).json({ id: user._id, name: user.name, email: user.email, role: user.role, permissions: user.permissions, isActive: user.isActive });
@@ -44,7 +50,7 @@ router.put('/:id', requireAdmin, async (req, res) => {
   if (!user) return res.status(404).json({ error: 'User not found' });
 
   // Prevent removing the last admin
-  if (user.role === 'admin' && role === 'staff') {
+  if (user.role === 'admin' && role !== undefined && role !== 'admin') {
     const adminCount = await User.countDocuments({ role: 'admin' });
     if (adminCount <= 1) return res.status(400).json({ error: 'Cannot demote the last admin' });
   }
@@ -59,8 +65,9 @@ router.put('/:id', requireAdmin, async (req, res) => {
     if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
     user.passwordHash = await bcrypt.hash(password, 12);
   }
-  if (role !== undefined) user.role = role === 'admin' ? 'admin' : 'staff';
+  if (role !== undefined) user.role = normalizeRole(role);
   if (Array.isArray(permissions)) user.permissions = permissions.filter(p => ALL_MODULES.includes(p));
+  else if (role === 'sales_rep' && user.permissions.length === 0) user.permissions = ['sales_board'];
   if (isActive !== undefined) user.isActive = Boolean(isActive);
 
   await user.save();

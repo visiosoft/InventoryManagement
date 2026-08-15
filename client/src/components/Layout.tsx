@@ -22,6 +22,7 @@ const navGroups = [
   {
     title: 'Sales',
     items: [
+      { to: '/my-leads', label: 'My Leads', icon: UserPlus, perm: 'sales_board' },
       { to: '/leads', label: 'Leads', icon: UserPlus, perm: 'leads' },
       { to: '/quotations', label: 'Quotations', icon: ScrollText, perm: 'quotes' },
     ],
@@ -105,6 +106,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/sites': 'Sites',
   '/customers': 'Tenants',
   '/leads': 'Leads',
+  '/my-leads': 'My Leads',
   '/quotations': 'Quotations',
   '/contracts': 'Tenants',
   '/invoices': 'Invoices',

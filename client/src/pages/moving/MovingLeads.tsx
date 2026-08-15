@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useLocation } from 'react-router-dom'
 import { Plus, Search, Trash2, Users, Phone, Calendar, MapPin, UserPlus, MessageCircle } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
+import { useAuth } from '../../lib/auth'
 import type { MovingLead, MovingLeadSource, MovingLeadStatus } from '../../lib/types'
 import { Badge, Button, Field, Input, Modal, Select, Spinner, Textarea } from '../../components/ui'
 import { formatDate } from '../../lib/utils'
@@ -101,6 +102,8 @@ function LeadForm({ initial, busy, error, onSubmit, onCancel }: {
 export default function MovingLeads() {
   const qc = useQueryClient()
   const location = useLocation()
+  const { user: me } = useAuth()
+  const isAdmin = me?.role === 'admin'
   const prefill = (location.state as any)?.prefill as Partial<MovingLead> | undefined
   const [modal, setModal] = useState<null | 'create'>(prefill ? 'create' : null)
   const [filterStatus, setFilterStatus] = useState<MovingLeadStatus | ''>('')
@@ -124,6 +127,18 @@ export default function MovingLeads() {
     mutationFn: (body: Record<string, unknown>) => api.post('/moving-leads', body).then(r => r.data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['moving-leads'] }); setModal(null); setErr('') },
     onError: (e) => setErr(apiError(e)),
+  })
+
+  const assignMut = useMutation({
+    mutationFn: ({ id, owner }: { id: string; owner: string }) => api.put(`/moving-leads/${id}`, { owner }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['moving-leads'] }),
+  })
+
+  // Full team list — only admins can reassign leads to anyone.
+  const { data: assignableUsers } = useQuery<{ _id: string; name: string; email: string }[]>({
+    queryKey: ['assignable-users'],
+    queryFn: () => api.get('/users').then((r) => r.data.filter((u: { isActive: boolean }) => u.isActive)),
+    enabled: isAdmin,
   })
 
   const deleteMut = useMutation({
@@ -275,7 +290,7 @@ export default function MovingLeads() {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(20,8,31,0.06)' }}>
-                    {['Name', 'Phone', 'Source', 'Move Date', 'Pickup', 'Status', ''].map(h => (
+                    {['Name', 'Phone', 'Source', 'Move Date', 'Pickup', 'Owner', 'Status', ''].map(h => (
                       <th key={h} style={{ padding: '12px 16px', fontSize: 12, fontWeight: 600, color: MUTED, textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
                     ))}
                   </tr>
@@ -292,6 +307,22 @@ export default function MovingLeads() {
                       <td style={{ padding: '14px 16px', fontSize: 13, color: MUTED, textTransform: 'capitalize' }}>{l.source.replace(/_/g, ' ')}</td>
                       <td style={{ padding: '14px 16px', fontSize: 13, color: MUTED }}>{l.moveDate ? formatDate(l.moveDate) : '—'}</td>
                       <td style={{ padding: '14px 16px', fontSize: 13, color: MUTED, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.pickupAddress || '—'}</td>
+                      <td style={{ padding: '14px 16px' }}>
+                        {isAdmin ? (
+                          <select
+                            value={l.owner?._id || ''}
+                            onChange={(e) => assignMut.mutate({ id: l._id, owner: e.target.value })}
+                            style={{ fontSize: 12, color: MUTED, border: '1px solid rgba(20,8,31,.12)', borderRadius: 6, padding: '3px 6px', background: '#fff', maxWidth: 140 }}
+                          >
+                            <option value="">Unassigned</option>
+                            {(assignableUsers || []).map((u) => (
+                              <option key={u._id} value={u._id}>{u.name}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span style={{ fontSize: 13, color: MUTED }}>{l.owner?.name || '—'}</span>
+                        )}
+                      </td>
                       <td style={{ padding: '14px 16px' }}>
                         <Badge tone={statusTone[l.status]} className="text-xs">{l.status.replace(/_/g, ' ')}</Badge>
                       </td>

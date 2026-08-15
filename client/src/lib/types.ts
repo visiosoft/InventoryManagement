@@ -575,6 +575,7 @@ export interface MovingLead {
   }
   timeline?: ContractNote[]
   createdAt?: string
+  owner?: { _id: string; name: string; email: string } | null
 }
 
 export type MovingJobStatus = 'draft' | 'confirmed' | 'in_progress' | 'completed' | 'invoiced' | 'cancelled'
