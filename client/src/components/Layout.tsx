@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ShieldCheck, ScrollText, CalendarCheck, RefreshCw, Map as MapIcon, Mail, Filter, PieChart, ShieldAlert, CreditCard } from 'lucide-react'
+import { LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ShieldCheck, ScrollText, CalendarCheck, RefreshCw, Map as MapIcon, Mail, Filter, PieChart, ShieldAlert, CreditCard, Target } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import GlobalSearch from './GlobalSearch'
@@ -116,6 +116,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/zoho-comparison': 'Zoho Comparison',
   '/approvals': 'Approvals',
   '/users': 'User Management',
+  '/sales-team': 'Sales Team',
   '/backup': 'Backup',
   '/moving': 'Moving Dashboard',
   '/moving/schedule': 'Schedule Jobs',
@@ -395,6 +396,9 @@ export default function Layout() {
                   <NavLink to="/users" className={({ isActive }) => navLinkCls(isActive)}>
                     <UserCog size={15} />Users
                   </NavLink>
+                  <NavLink to="/sales-team" className={({ isActive }) => navLinkCls(isActive)}>
+                    <Target size={15} />Sales Team
+                  </NavLink>
                   <NavLink to="/backup" className={({ isActive }) => navLinkCls(isActive)}>
                     <DatabaseBackup size={15} />Backup
                   </NavLink>
@@ -571,6 +575,15 @@ export default function Layout() {
                       )}
                     >
                       <UserCog size={15} className="text-muted-foreground" />Users
+                    </NavLink>
+                    <NavLink
+                      to="/sales-team"
+                      className={({ isActive }) => cn(
+                        'flex items-center gap-2.5 px-3 py-2 text-sm transition-colors',
+                        isActive ? 'bg-accent text-accent-foreground font-medium' : 'text-foreground hover:bg-muted/60'
+                      )}
+                    >
+                      <Target size={15} className="text-muted-foreground" />Sales Team
                     </NavLink>
                     <NavLink
                       to="/backup"

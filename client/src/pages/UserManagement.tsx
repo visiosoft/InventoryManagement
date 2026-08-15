@@ -88,7 +88,7 @@ const ALL_MODULE_KEYS = MODULE_GROUPS.flatMap(g => g.modules.map(m => m.key))
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface AppUser {
+export interface AppUser {
   _id: string; name: string; email: string; role: string
   permissions: string[]; isActive: boolean; createdAt: string
 }
@@ -356,7 +356,7 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
 
 // ── Sales rep: Targets modal (admin sets weekly/monthly goals) ───────────────
 
-function TargetsModal({ user, onClose }: { user: AppUser; onClose: () => void }) {
+export function TargetsModal({ user, onClose }: { user: AppUser; onClose: () => void }) {
   const [weekUnits, setWeekUnits]     = useState('0')
   const [weekMoving, setWeekMoving]   = useState('0')
   const [monthUnits, setMonthUnits]   = useState('0')

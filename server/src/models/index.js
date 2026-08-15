@@ -242,6 +242,10 @@ const contractSchema = new Schema(
     firstPaymentDate: { type: Date },
     nextPaymentDate: { type: Date },
     quote: { type: Schema.Types.ObjectId, ref: 'Quote' },
+    // Rep credited with this deal — derived from the source quote's
+    // assignedTo when converting a quote, or the creator otherwise. Lets
+    // revenue eventually be attributed per rep, not just lead counts.
+    salesRep: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     // Admin approval gate — quote-sourced contracts require admin approval before booking.
     approvalStatus: {
       type: String,

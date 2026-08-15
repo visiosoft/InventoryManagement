@@ -18,7 +18,7 @@ const SIZE_OPTIONS = [10, 25, 35, 50, 75, 100, 150, 200]
 const LEAD_SOURCE_OPTIONS = ['manual', 'whatsapp', 'referral', 'walk_in', 'other']
 const labelize = (s: string) => s.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
 
-type TaskItem = {
+export type TaskItem = {
   _id: string
   title: string
   description?: string
@@ -26,6 +26,7 @@ type TaskItem = {
   dueDate?: string
   priority: 'low' | 'medium' | 'high'
   status: 'todo' | 'in_progress' | 'done'
+  assignedTo?: { _id: string; name: string; email: string }
 }
 
 const PRIORITY_COLOR: Record<string, string> = { low: '#756E80', medium: '#B45309', high: '#991B1B' }
@@ -33,7 +34,7 @@ const PRIORITY_COLOR: Record<string, string> = { low: '#756E80', medium: '#B4530
 // Buckets a task list into Overdue / Today / This Week / Later, each sorted
 // by due date ascending — a flat list buries what actually needs attention
 // today under whatever was added most recently.
-function groupTasksByDue(tasks: TaskItem[]) {
+export function groupTasksByDue(tasks: TaskItem[]) {
   const now = new Date()
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const todayEnd = new Date(todayStart.getTime() + 86400000)
@@ -193,7 +194,7 @@ type GoalsData = {
   actual: { weekly: { units: number; moving: number }; monthly: { units: number; moving: number } }
 }
 
-function ProgressBar({ actual, target }: { actual: number; target: number }) {
+export function ProgressBar({ actual, target }: { actual: number; target: number }) {
   const pct = target > 0 ? Math.min(100, Math.round((actual / target) * 100)) : 0
   return (
     <div className="mb-3">

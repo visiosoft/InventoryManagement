@@ -434,6 +434,7 @@ router.post('/', async (req, res) => {
     billingPeriod, rate, deposit, startDate, endDate, notes,
     firstMonthDiscountPct: Number(req.body.firstMonthDiscountPct || 0),
     totalQuotation,
+    salesRep: req.body.salesRep || req.user.id,
     status: 'draft',
   });
 

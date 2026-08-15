@@ -722,6 +722,7 @@ router.post('/:id/convert-to-contract', async (req, res) => {
         authorizedPersons,
         totalQuotation: Number(quote.total || 0),
         quote: quote._id,
+        salesRep: quote.assignedTo || req.user.id,
         source: 'quote',
         approvalStatus: 'not_required',
         status: 'draft',
