@@ -19,7 +19,7 @@ const LEAD_TYPE_OPTIONS = [
   { value: 'contract', label: 'Contract renewals' },
 ]
 
-function CreateTaskModal({ onClose, assignableUsers }: { onClose: () => void; assignableUsers: AssignableUser[] }) {
+function CreateTaskModal({ onClose, assignableUsers, defaultStatus }: { onClose: () => void; assignableUsers: AssignableUser[]; defaultStatus?: TaskItem['status'] }) {
   const qc = useQueryClient()
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -32,6 +32,7 @@ function CreateTaskModal({ onClose, assignableUsers }: { onClose: () => void; as
     mutationFn: () => api.post('/tasks', {
       title, description, dueDate: dueDate || undefined, priority,
       assignedTo: assignedTo || undefined, leadName: leadName.trim() || undefined,
+      status: defaultStatus || undefined,
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['all-tasks'] }); onClose() },
   })
@@ -85,7 +86,7 @@ export default function Tasks() {
   const [view, setView] = useState<'kanban' | 'list'>('kanban')
   const [assigneeFilter, setAssigneeFilter] = useState('')
   const [leadTypeFilter, setLeadTypeFilter] = useState('')
-  const [createOpen, setCreateOpen] = useState(false)
+  const [createOpen, setCreateOpen] = useState<TaskItem['status'] | 'new' | null>(null)
   const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
 
@@ -139,7 +140,7 @@ export default function Tasks() {
                 <List size={15} />
               </button>
             </div>
-            <Button onClick={() => setCreateOpen(true)}><Plus size={14} /> New task</Button>
+            <Button onClick={() => setCreateOpen('new')}><Plus size={14} /> New task</Button>
           </div>
         }
       />
@@ -166,8 +167,11 @@ export default function Tasks() {
             {KANBAN_COLUMNS.map((col) => {
               const items = tasks.filter((t) => t.status === col.status)
               return (
-                <KanbanColumn key={col.status} col={col} count={items.length}>
-                  {items.map((t) => <KanbanCard key={t._id} task={t} onOpen={setSelectedTask} />)}
+                <KanbanColumn key={col.status} col={col} count={items.length} onAddTask={() => setCreateOpen(col.status)}>
+                  {items.map((t) => (
+                    <KanbanCard key={t._id} task={t} onOpen={setSelectedTask}
+                      onToggleDone={(task) => updateTask.mutate({ id: task._id, body: { status: task.status === 'done' ? 'todo' : 'done' } })} />
+                  ))}
                 </KanbanColumn>
               )
             })}
@@ -198,7 +202,10 @@ export default function Tasks() {
         </Card>
       )}
 
-      {createOpen && <CreateTaskModal onClose={() => setCreateOpen(false)} assignableUsers={assignableUsers} />}
+      {createOpen && (
+        <CreateTaskModal onClose={() => setCreateOpen(null)} assignableUsers={assignableUsers}
+          defaultStatus={createOpen === 'new' ? undefined : createOpen} />
+      )}
 
       {selectedTask && (
         <TaskDetailModal
@@ -206,6 +213,7 @@ export default function Tasks() {
           onClose={() => setSelectedTask(null)}
           onStatusChange={(status) => updateTask.mutate({ id: selectedTask._id, body: { status } })}
           assignableUsers={assignableUsers}
+          onDeleted={() => setSelectedTask(null)}
         />
       )}
     </div>

@@ -1400,7 +1400,7 @@ const taskAttachmentSchema = new Schema({
   name: { type: String, required: true },
   mimeType: { type: String, default: '' },
   size: { type: Number, default: 0 },
-  storage: { type: String, enum: ['drive', 'local'], default: 'local' },
+  storage: { type: String, enum: ['drive', 'local', 'link'], default: 'local' },
   driveFileId: { type: String, default: '' },
   url: { type: String, default: '' },
   uploadedBy: { type: String, default: '' },

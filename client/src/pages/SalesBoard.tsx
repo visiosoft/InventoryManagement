@@ -361,7 +361,8 @@ function TasksCard() {
               return (
                 <KanbanColumn key={col.status} col={col} count={items.length}>
                   {items.map((t) => (
-                    <KanbanCard key={t._id} task={t} onOpen={setSelectedTask} />
+                    <KanbanCard key={t._id} task={t} onOpen={setSelectedTask}
+                      onToggleDone={(task) => updateTask.mutate({ id: task._id, body: { status: task.status === 'done' ? 'todo' : 'done' } })} />
                   ))}
                 </KanbanColumn>
               )
@@ -376,6 +377,7 @@ function TasksCard() {
           onClose={() => setSelectedTask(null)}
           onStatusChange={(status) => updateTask.mutate({ id: selectedTask._id, body: { status } })}
           assignableUsers={assignableUsers}
+          onDeleted={() => setSelectedTask(null)}
         />
       )}
     </div>

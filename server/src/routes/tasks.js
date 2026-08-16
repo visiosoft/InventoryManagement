@@ -136,6 +136,32 @@ router.post('/:id/comments', async (req, res) => {
   res.status(201).json(await task.populate([{ path: 'assignedTo', select: 'name email' }, { path: 'comments.user', select: 'name' }]));
 });
 
+router.delete('/:id/comments/:commentId', async (req, res) => {
+  const task = await Task.findById(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  const comment = task.comments.id(req.params.commentId);
+  if (!comment) return res.status(404).json({ error: 'Comment not found' });
+  const isAuthor = String(comment.user) === String(req.user.id);
+  if (!isPrivileged(req) && !isAuthor) return res.status(403).json({ error: 'Not your comment' });
+  comment.deleteOne();
+  await task.save();
+  res.json(await task.populate([{ path: 'assignedTo', select: 'name email' }, { path: 'comments.user', select: 'name' }]));
+});
+
+// A link attachment (e.g. a Google Doc, a Drive folder) — no file upload,
+// just a label + URL, same list as uploaded files.
+router.post('/:id/links', async (req, res) => {
+  const name = String(req.body?.name || '').trim();
+  const url = String(req.body?.url || '').trim();
+  if (!name || !url) return res.status(400).json({ error: 'Name and URL are required' });
+  const task = await Task.findById(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  if (!canEdit(req, task)) return res.status(403).json({ error: 'Not your task' });
+  task.attachments.push({ name, url, storage: 'link', uploadedBy: req.user.name || req.user.email || 'user' });
+  await task.save();
+  res.status(201).json(await task.populate([{ path: 'assignedTo', select: 'name email' }, { path: 'comments.user', select: 'name' }]));
+});
+
 router.post('/:id/attachments', upload.array('files', 5), async (req, res) => {
   const task = await Task.findById(req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });

@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useDraggable, useDroppable } from '@dnd-kit/core'
-import { Paperclip, Send } from 'lucide-react'
+import { Calendar, CheckCircle2, Circle, MessageSquare, Paperclip, Plus, Send } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import { Modal, Spinner } from '../../components/ui'
 import { formatDate } from '../../lib/utils'
@@ -24,6 +24,8 @@ export type TaskItem = {
   createdByName?: string
   createdBy?: string
   createdAt?: string
+  comments?: unknown[]
+  attachments?: unknown[]
 }
 
 export type AssignableUser = { _id: string; name: string; email: string; role: string }
@@ -73,9 +75,51 @@ export function isDueSoon(t: TaskItem): 'overdue' | 'today' | 'normal' {
   return 'normal'
 }
 
-export function KanbanCard({ task, onOpen }: { task: TaskItem; onOpen: (task: TaskItem) => void }) {
+export const PRIORITY_PILL: Record<string, { bg: string; fg: string }> = {
+  low: { bg: '#EEF2F6', fg: '#475569' },
+  medium: { bg: '#DBEAFE', fg: '#1D4ED8' },
+  high: { bg: '#FEF3C7', fg: '#92400E' },
+}
+
+const AVATAR_COLORS = ['#5B2BC9', '#0891B2', '#B45309', '#166534', '#9D174D', '#1D4ED8']
+function avatarColor(name: string) {
+  let hash = 0
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash)
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length]
+}
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/)
+  return ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase() || '?'
+}
+
+export function Avatar({ name, size = 20 }: { name: string; size?: number }) {
+  return (
+    <div
+      title={name}
+      style={{
+        width: size, height: size, borderRadius: '50%', background: avatarColor(name),
+        color: 'white', fontSize: size * 0.42, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        flexShrink: 0,
+      }}
+    >
+      {initials(name)}
+    </div>
+  )
+}
+
+export function KanbanCard({
+  task, onOpen, onToggleDone,
+}: {
+  task: TaskItem
+  onOpen: (task: TaskItem) => void
+  onToggleDone?: (task: TaskItem) => void
+}) {
   const tone = isDueSoon(task)
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: task._id })
+  const pill = PRIORITY_PILL[task.priority] || PRIORITY_PILL.low
+  const commentCount = task.comments?.length ?? 0
+  const attachmentCount = task.attachments?.length ?? 0
+  const done = task.status === 'done'
   return (
     <div
       ref={setNodeRef}
@@ -92,67 +136,115 @@ export function KanbanCard({ task, onOpen }: { task: TaskItem; onOpen: (task: Ta
       className="cursor-pointer select-none"
     >
       {task.leadName && <div style={{ fontSize: 11, color: MUTED, fontWeight: 600, marginBottom: 2 }}>{task.leadName}</div>}
-      <div style={{ fontSize: 12.5, color: INK, fontWeight: tone !== 'normal' ? 700 : 500 }}>{task.title}</div>
-      <div style={{ fontSize: 10.5, color: MUTED, marginTop: 2 }}>
-        {task.assignedTo?.name && <>Assigned to <strong style={{ color: '#4A4357' }}>{task.assignedTo.name}</strong></>}
-        {task.assignedTo?.name && task.createdByName && ' · '}
-        {task.createdByName && <>by {task.createdByName}</>}
+      <div className="flex items-start gap-2">
+        {onToggleDone && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onToggleDone(task) }}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="shrink-0 mt-0.5 cursor-pointer"
+            style={{ color: done ? '#16A34A' : MUTED }}
+            title={done ? 'Mark as not done' : 'Mark as done'}
+          >
+            {done ? <CheckCircle2 size={15} /> : <Circle size={15} />}
+          </button>
+        )}
+        <div style={{ fontSize: 12.5, color: done ? MUTED : INK, fontWeight: tone !== 'normal' ? 700 : 500, textDecoration: done ? 'line-through' : undefined }}>
+          {task.title}
+        </div>
       </div>
-      <div className="flex items-center justify-between mt-1.5">
-        <span style={{ fontSize: 9.5, fontWeight: 700, color: PRIORITY_COLOR[task.priority], textTransform: 'uppercase' }}>{task.priority}</span>
+      <div className="flex items-center justify-between mt-2">
+        <span style={{ fontSize: 10, fontWeight: 700, color: pill.fg, background: pill.bg, borderRadius: 6, padding: '2px 7px', textTransform: 'capitalize' }}>{task.priority}</span>
         {task.dueDate && (
-          <span style={{ fontSize: 10.5, fontWeight: tone !== 'normal' ? 700 : 400, color: tone === 'overdue' ? '#991B1B' : tone === 'today' ? '#B45309' : MUTED }}>
+          <span className="flex items-center gap-1" style={{ fontSize: 10.5, fontWeight: tone !== 'normal' ? 700 : 400, color: tone === 'overdue' ? '#991B1B' : tone === 'today' ? '#B45309' : MUTED }}>
+            <Calendar size={11} />
             {formatDate(task.dueDate)}
           </span>
         )}
+      </div>
+      <div className="flex items-center justify-between mt-2">
+        <div className="flex items-center gap-2.5" style={{ color: MUTED }}>
+          {commentCount > 0 && (
+            <span className="flex items-center gap-1" style={{ fontSize: 10.5 }}>
+              <MessageSquare size={11} /> {commentCount}
+            </span>
+          )}
+          {attachmentCount > 0 && (
+            <span className="flex items-center gap-1" style={{ fontSize: 10.5 }}>
+              <Paperclip size={11} /> {attachmentCount}
+            </span>
+          )}
+        </div>
+        {task.assignedTo?.name && <Avatar name={task.assignedTo.name} />}
       </div>
     </div>
   )
 }
 
-export function KanbanColumn({ col, children, count }: { col: { status: TaskItem['status']; label: string }; children: React.ReactNode; count: number }) {
+export function KanbanColumn({
+  col, children, count, onAddTask,
+}: {
+  col: { status: TaskItem['status']; label: string }
+  children: React.ReactNode
+  count: number
+  onAddTask?: () => void
+}) {
   const { setNodeRef, isOver } = useDroppable({ id: col.status })
   return (
     <div
       ref={setNodeRef}
       style={{ background: isOver ? '#EFEAFA' : '#F7F5F0', borderRadius: 10, padding: 8, display: 'flex', flexDirection: 'column', minHeight: 0, transition: 'background .15s' }}
     >
-      <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 6, padding: '0 2px' }}>
-        {col.label} ({count})
+      <div className="flex items-center gap-1.5 mb-1.5" style={{ padding: '0 2px' }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: 'uppercase', letterSpacing: '.04em' }}>{col.label}</span>
+        <span style={{ fontSize: 10, fontWeight: 700, color: MUTED, background: 'rgba(20,8,31,.08)', borderRadius: 999, padding: '1px 6px' }}>{count}</span>
       </div>
       <div className="space-y-1.5 overflow-y-auto" style={{ maxHeight: 260, minHeight: 40 }}>
         {children}
       </div>
+      {onAddTask && (
+        <button type="button" onClick={onAddTask}
+          className="flex items-center gap-1 mt-1.5 px-1 py-1 rounded-lg text-left cursor-pointer hover:bg-black/5 transition-colors"
+          style={{ fontSize: 11.5, color: MUTED, fontWeight: 600 }}>
+          <Plus size={12} /> Add task
+        </button>
+      )}
     </div>
   )
 }
 
-type TaskComment = { _id: string; text: string; createdAt: string; user?: { name: string }; userName?: string }
-type TaskAttachment = { _id: string; name: string; url: string; mimeType?: string; uploadedBy?: string; uploadedAt: string }
+type TaskComment = { _id: string; text: string; createdAt: string; user?: { _id?: string; name: string }; userName?: string }
+type TaskAttachment = { _id: string; name: string; url: string; mimeType?: string; storage?: string; uploadedBy?: string; uploadedAt: string }
 type TaskAssignmentEntry = { _id: string; at: string; fromName?: string; toName: string; byName: string; reason?: string }
-type TaskDetail = TaskItem & {
+type TaskDetail = Omit<TaskItem, 'comments' | 'attachments'> & {
   comments: TaskComment[]
   attachments: TaskAttachment[]
   assignmentHistory: TaskAssignmentEntry[]
   description?: string
 }
 
+const fieldCls = 'w-full rounded-lg border text-[12.5px]'
+const fieldStyle: React.CSSProperties = { height: 34, padding: '0 10px', border: '1px solid rgba(20,8,31,.16)', borderRadius: 8 }
+
 // Click a Kanban card (or a list row) to open this — Asana-style detail:
-// status/priority, reassignment with a reason, a comment thread, file
-// attachments, and the full history of who assigned this to whom and why.
+// checkbox + inline-editable assignee/due-date/priority/status, a
+// description, link/file attachments, a comment thread (with delete), the
+// reassignment history, and a delete-task action.
 export function TaskDetailModal({
-  task, onClose, onStatusChange, assignableUsers = [],
+  task, onClose, onStatusChange, assignableUsers = [], onDeleted,
 }: {
   task: TaskItem
   onClose: () => void
   onStatusChange: (status: TaskItem['status']) => void
   assignableUsers?: AssignableUser[]
+  onDeleted?: () => void
 }) {
   const qc = useQueryClient()
   const [commentText, setCommentText] = useState('')
-  const [reassignOpen, setReassignOpen] = useState(false)
-  const [reassignTo, setReassignTo] = useState('')
-  const [reassignReason, setReassignReason] = useState('')
+  const [description, setDescription] = useState('')
+  const [descLoaded, setDescLoaded] = useState(false)
+  const [linkName, setLinkName] = useState('')
+  const [linkUrl, setLinkUrl] = useState('')
   const [error, setError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -160,6 +252,7 @@ export function TaskDetailModal({
     queryKey: ['task-detail', task._id],
     queryFn: () => api.get(`/tasks/${task._id}`).then((r) => r.data),
   })
+  if (detail && !descLoaded) { setDescription(detail.description || ''); setDescLoaded(true) }
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['task-detail', task._id] })
@@ -167,9 +260,18 @@ export function TaskDetailModal({
     qc.invalidateQueries({ queryKey: ['all-tasks'] })
   }
 
+  const patch = useMutation({
+    mutationFn: (body: Record<string, unknown>) => api.patch(`/tasks/${task._id}`, body),
+    onSuccess: () => { setError(''); invalidate() },
+    onError: (e) => setError(apiError(e)),
+  })
   const addComment = useMutation({
     mutationFn: () => api.post(`/tasks/${task._id}/comments`, { text: commentText }),
     onSuccess: () => { setCommentText(''); invalidate() },
+  })
+  const deleteComment = useMutation({
+    mutationFn: (commentId: string) => api.delete(`/tasks/${task._id}/comments/${commentId}`),
+    onSuccess: invalidate,
   })
   const uploadFiles = useMutation({
     mutationFn: (files: FileList) => {
@@ -179,60 +281,88 @@ export function TaskDetailModal({
     },
     onSuccess: invalidate,
   })
-  const reassign = useMutation({
-    mutationFn: () => api.patch(`/tasks/${task._id}`, { assignedTo: reassignTo, reassignReason }),
-    onSuccess: () => { setReassignOpen(false); setReassignTo(''); setReassignReason(''); setError(''); invalidate() },
+  const addLink = useMutation({
+    mutationFn: () => api.post(`/tasks/${task._id}/links`, { name: linkName, url: linkUrl }),
+    onSuccess: () => { setLinkName(''); setLinkUrl(''); invalidate() },
+    onError: (e) => setError(apiError(e)),
+  })
+  const deleteTask = useMutation({
+    mutationFn: () => api.delete(`/tasks/${task._id}`),
+    onSuccess: () => { invalidate(); onDeleted?.(); onClose() },
     onError: (e) => setError(apiError(e)),
   })
 
+  const modalTitle = detail ? (
+    <div className="flex items-center gap-2.5">
+      <button type="button" onClick={() => onStatusChange(detail.status === 'done' ? 'todo' : 'done')}
+        className="shrink-0 cursor-pointer" style={{ color: detail.status === 'done' ? '#16A34A' : MUTED }}>
+        {detail.status === 'done' ? <CheckCircle2 size={17} /> : <Circle size={17} />}
+      </button>
+      <span className="text-[15px] font-bold" style={{ color: INK, textDecoration: detail.status === 'done' ? 'line-through' : undefined }}>
+        {detail.title}
+      </span>
+    </div>
+  ) : task.title
+
   return (
-    <Modal open onClose={onClose} title={task.title} wide>
+    <Modal open onClose={onClose} title={modalTitle} wide>
       {isLoading || !detail ? <Spinner /> : (
         <div className="space-y-4">
-          <div className="flex items-center gap-2 flex-wrap">
-            {KANBAN_COLUMNS.map((c) => (
-              <button key={c.status} type="button" onClick={() => onStatusChange(c.status)}
-                className={`px-2.5 py-1 rounded-full text-[11px] font-semibold cursor-pointer transition-colors ${detail.status === c.status ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
-                {c.label}
-              </button>
-            ))}
-            <span className="ml-auto text-[10.5px] font-bold uppercase" style={{ color: PRIORITY_COLOR[detail.priority] }}>{detail.priority}</span>
-          </div>
-
-          <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1">
-            {detail.assignedTo?.name && <span>Assigned to <strong className="text-foreground">{detail.assignedTo.name}</strong></span>}
-            {detail.createdByName && <span>Created by {detail.createdByName}</span>}
-            {detail.dueDate && <span>Due {formatDate(detail.dueDate)}</span>}
-            {detail.leadName && <span>{detail.leadName}</span>}
-            {assignableUsers.length > 0 && (
-              <button type="button" onClick={() => setReassignOpen((v) => !v)}
-                className="text-primary font-semibold hover:underline cursor-pointer">
-                {reassignOpen ? 'Cancel' : 'Reassign'}
-              </button>
-            )}
-          </div>
-
-          {reassignOpen && (
-            <div className="flex flex-wrap gap-2 items-center rounded-lg bg-muted/30 p-2.5">
-              <select value={reassignTo} onChange={(e) => setReassignTo(e.target.value)}
-                style={{ height: 32, padding: '0 8px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 12.5 }}>
-                <option value="">Assign to…</option>
-                {assignableUsers.filter((u) => u._id !== detail.assignedTo?._id).map((u) => (
-                  <option key={u._id} value={u._id}>{u.name}</option>
-                ))}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <div className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Assignee</div>
+              <select className={fieldCls} style={fieldStyle} value={detail.assignedTo?._id || ''}
+                onChange={(e) => patch.mutate({ assignedTo: e.target.value })}>
+                {!assignableUsers.some((u) => u._id === detail.assignedTo?._id) && detail.assignedTo && (
+                  <option value={detail.assignedTo._id}>{detail.assignedTo.name}</option>
+                )}
+                {assignableUsers.map((u) => <option key={u._id} value={u._id}>{u.name}</option>)}
               </select>
-              <input value={reassignReason} onChange={(e) => setReassignReason(e.target.value)} placeholder="Reason (optional)"
-                style={{ flex: 1, minWidth: 140, height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 12.5 }} />
-              <button type="button" disabled={!reassignTo || reassign.isPending} onClick={() => reassign.mutate()}
-                style={{ height: 32, padding: '0 12px', borderRadius: 8, background: PURPLE, color: 'white', fontSize: 12, fontWeight: 600, border: 'none' }}
-                className="disabled:opacity-50 cursor-pointer">
-                {reassign.isPending ? 'Saving…' : 'Reassign'}
-              </button>
+            </div>
+            <div>
+              <div className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Due date</div>
+              <input type="date" className={fieldCls} style={fieldStyle}
+                value={detail.dueDate ? detail.dueDate.slice(0, 10) : ''}
+                onChange={(e) => patch.mutate({ dueDate: e.target.value || null })} />
+            </div>
+            <div>
+              <div className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Priority</div>
+              <select className={fieldCls} style={fieldStyle} value={detail.priority}
+                onChange={(e) => patch.mutate({ priority: e.target.value })}>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+            <div>
+              <div className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Status</div>
+              <select className={fieldCls} style={fieldStyle} value={detail.status}
+                onChange={(e) => onStatusChange(e.target.value as TaskItem['status'])}>
+                {KANBAN_COLUMNS.map((c) => <option key={c.status} value={c.status}>{c.label}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {(detail.leadName || detail.createdByName) && (
+            <div className="text-xs text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
+              {detail.createdByName && <span>Created by {detail.createdByName}</span>}
+              {detail.leadName && <span>{detail.leadName}</span>}
             </div>
           )}
           {error && <p className="text-xs text-destructive">{error}</p>}
 
-          {detail.description && <p className="text-sm text-foreground">{detail.description}</p>}
+          <div>
+            <div className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Description</div>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              onBlur={() => { if (description !== (detail.description || '')) patch.mutate({ description }) }}
+              rows={3}
+              placeholder="Add a description…"
+              className="w-full rounded-lg border text-[12.5px] resize-y"
+              style={{ padding: '8px 10px', border: '1px solid rgba(20,8,31,.16)', borderRadius: 8 }}
+            />
+          </div>
 
           {/* Attachments */}
           <div>
@@ -244,6 +374,17 @@ export function TaskDetailModal({
               </button>
               <input ref={fileInputRef} type="file" multiple className="hidden"
                 onChange={(e) => { if (e.target.files?.length) uploadFiles.mutate(e.target.files); e.target.value = '' }} />
+            </div>
+            <div className="flex gap-2 mb-2">
+              <input value={linkName} onChange={(e) => setLinkName(e.target.value)} placeholder="Label"
+                className={fieldCls} style={{ ...fieldStyle, flex: 1 }} />
+              <input value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} placeholder="https://…"
+                className={fieldCls} style={{ ...fieldStyle, flex: 2 }} />
+              <button type="button" disabled={!linkName.trim() || !linkUrl.trim() || addLink.isPending} onClick={() => addLink.mutate()}
+                style={{ height: 34, padding: '0 12px', borderRadius: 8, background: PURPLE, color: 'white', fontSize: 12, fontWeight: 600, border: 'none' }}
+                className="disabled:opacity-50 cursor-pointer shrink-0">
+                Add
+              </button>
             </div>
             {detail.attachments.length === 0 ? (
               <p className="text-xs text-muted-foreground">No files attached.</p>
@@ -267,10 +408,14 @@ export function TaskDetailModal({
             ) : (
               <div className="space-y-2.5 max-h-56 overflow-y-auto mb-2">
                 {detail.comments.map((c) => (
-                  <div key={c._id} className="text-sm">
+                  <div key={c._id} className="text-sm rounded-lg bg-muted/30 px-2.5 py-2">
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-xs">{c.user?.name || c.userName || 'User'}</span>
                       <span className="text-[10.5px] text-muted-foreground">{formatDate(c.createdAt)}</span>
+                      <button type="button" onClick={() => deleteComment.mutate(c._id)}
+                        className="ml-auto text-[10.5px] font-semibold text-destructive hover:underline cursor-pointer">
+                        Delete
+                      </button>
                     </div>
                     <p className="text-foreground">{c.text}</p>
                   </div>
@@ -310,6 +455,14 @@ export function TaskDetailModal({
               </div>
             </div>
           )}
+
+          <div className="pt-2 border-t">
+            <button type="button" onClick={() => { if (confirm('Delete this task?')) deleteTask.mutate() }}
+              disabled={deleteTask.isPending}
+              className="text-xs font-semibold text-destructive hover:underline cursor-pointer disabled:opacity-50">
+              {deleteTask.isPending ? 'Deleting…' : 'Delete task'}
+            </button>
+          </div>
         </div>
       )}
     </Modal>
