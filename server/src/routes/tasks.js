@@ -1,7 +1,10 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { Task, User } from '../models/index.js';
+import { uploadFile } from '../services/drive.js';
 
 const router = Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 
 const ALLOWED_PRIORITY = new Set(['low', 'medium', 'high']);
 const ALLOWED_STATUS = new Set(['todo', 'in_progress', 'done']);
@@ -84,6 +87,43 @@ router.patch('/:id', async (req, res) => {
 
   await task.save();
   res.json(await task.populate('assignedTo', 'name email'));
+});
+
+router.get('/:id', async (req, res) => {
+  const task = await Task.findById(req.params.id).populate('assignedTo', 'name email').populate('comments.user', 'name');
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  res.json(task);
+});
+
+router.post('/:id/comments', async (req, res) => {
+  const text = String(req.body?.text || '').trim();
+  if (!text) return res.status(400).json({ error: 'Comment text is required' });
+  const task = await Task.findById(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  if (!canEdit(req, task)) return res.status(403).json({ error: 'Not your task' });
+  task.comments.push({ user: req.user.id, userName: req.user.name || req.user.email || 'user', text });
+  await task.save();
+  res.status(201).json(await task.populate([{ path: 'assignedTo', select: 'name email' }, { path: 'comments.user', select: 'name' }]));
+});
+
+router.post('/:id/attachments', upload.array('files', 5), async (req, res) => {
+  const task = await Task.findById(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  if (!canEdit(req, task)) return res.status(403).json({ error: 'Not your task' });
+  if (!req.files?.length) return res.status(400).json({ error: 'No files provided' });
+
+  for (const file of req.files) {
+    const stored = await uploadFile({ buffer: file.buffer, filename: file.originalname, mimeType: file.mimetype });
+    task.attachments.push({
+      ...stored,
+      name: file.originalname,
+      mimeType: file.mimetype,
+      size: file.size,
+      uploadedBy: req.user.name || req.user.email || 'user',
+    });
+  }
+  await task.save();
+  res.status(201).json(await task.populate([{ path: 'assignedTo', select: 'name email' }, { path: 'comments.user', select: 'name' }]));
 });
 
 router.delete('/:id', async (req, res) => {

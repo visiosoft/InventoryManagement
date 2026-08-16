@@ -1374,6 +1374,24 @@ export const AgreementTemplate = model('AgreementTemplate', agreementTemplateSch
 // for themselves. Optionally linked to a lead (storage or moving) — the
 // leadName is denormalized since Lead and MovingLead are separate
 // collections and the task list shouldn't need to join across both.
+const taskCommentSchema = new Schema({
+  user: { type: Schema.Types.ObjectId, ref: 'User' },
+  userName: { type: String, default: '' },
+  text: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now },
+});
+
+const taskAttachmentSchema = new Schema({
+  name: { type: String, required: true },
+  mimeType: { type: String, default: '' },
+  size: { type: Number, default: 0 },
+  storage: { type: String, enum: ['drive', 'local'], default: 'local' },
+  driveFileId: { type: String, default: '' },
+  url: { type: String, default: '' },
+  uploadedBy: { type: String, default: '' },
+  uploadedAt: { type: Date, default: Date.now },
+});
+
 const taskSchema = new Schema(
   {
     title: { type: String, required: true },
@@ -1388,6 +1406,8 @@ const taskSchema = new Schema(
     priority: { type: String, enum: ['low', 'medium', 'high'], default: 'medium' },
     status: { type: String, enum: ['todo', 'in_progress', 'done'], default: 'todo' },
     doneAt: { type: Date, default: null },
+    comments: { type: [taskCommentSchema], default: [] },
+    attachments: { type: [taskAttachmentSchema], default: [] },
   },
   { timestamps: true }
 );
