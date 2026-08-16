@@ -49,6 +49,7 @@ import taskRoutes from './routes/tasks.js';
 import salesGoalRoutes from './routes/salesGoals.js';
 import salesTeamRoutes from './routes/salesTeam.js';
 import activityRoutes from './routes/activity.js';
+import signingMovingRoutes from './routes/signingMoving.js';
 import customerAuthRoutes from './routes/customerAuth.js';
 import customerPortalRoutes from './routes/customerPortal.js';
 import crewAuthRoutes from './routes/crewAuth.js';
@@ -87,6 +88,7 @@ app.use('/uploads', express.static(UPLOADS_DIR));
 
 // Public signing routes — no JWT required
 app.use('/api/sign', signingRoutes);
+app.use('/api/sign-moving', signingMovingRoutes);
 // Stripe webhook — no JWT, verified via Stripe-Signature instead
 app.use('/api/stripe/webhook', stripeWebhookRoutes);
 

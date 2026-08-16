@@ -225,15 +225,6 @@ export default function AgreementTemplate() {
                   className="agreement-editor w-full rounded-lg border bg-white p-6 text-[13.5px] leading-relaxed outline-none focus:border-primary"
                   style={{ minHeight: 560, maxWidth: 820 }}
                 />
-                <style>{`
-                  .agreement-editor table { border-collapse: collapse; width: 100%; margin: 8px 0; }
-                  .agreement-editor td, .agreement-editor th { border: 1px solid #bbb; padding: 5px 8px; font-size: 13px; }
-                  .agreement-editor h1 { font-size: 20px; font-weight: 700; margin: 12px 0 6px; }
-                  .agreement-editor h2 { font-size: 16px; font-weight: 700; margin: 10px 0 5px; }
-                  .agreement-editor h3 { font-size: 14px; font-weight: 700; margin: 8px 0 4px; }
-                  .agreement-editor p { margin: 6px 0; }
-                  .agreement-editor ul, .agreement-editor ol { padding-left: 22px; margin: 6px 0; }
-                `}</style>
 
                 {error && <p className="text-xs text-destructive">{error}</p>}
               </>

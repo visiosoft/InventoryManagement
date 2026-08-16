@@ -26,6 +26,7 @@ function SmartHome() {
 import Layout from './components/Layout'
 import Login from './pages/Login'
 import SignContract from './pages/SignContract'
+import SignMovingJob from './pages/SignMovingJob'
 import Dashboard from './pages/Dashboard'
 import Units from './pages/Units'
 import FloorMap from './pages/FloorMap'
@@ -137,6 +138,7 @@ export default function App() {
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/sign/:token" element={<SignContract />} />
+        <Route path="/sign-moving/:token" element={<SignMovingJob />} />
         <Route path="/upload/moving/:token" element={<ClientUpload />} />
         <Route path="/share/job/:token" element={<SharedJobView />} />
         <Route path="/pay/success" element={<PaySuccess />} />
@@ -151,6 +153,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Navigate to="/" replace />} />
       <Route path="/sign/:token" element={<SignContract />} />
+      <Route path="/sign-moving/:token" element={<SignMovingJob />} />
       <Route path="/upload/moving/:token" element={<ClientUpload />} />
       <Route path="/share/job/:token" element={<SharedJobView />} />
       <Route path="/pay/success" element={<PaySuccess />} />

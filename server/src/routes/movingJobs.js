@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import multer from 'multer';
 import { google } from 'googleapis';
 import { isValidObjectId } from 'mongoose';
-import { MovingJob, MovingItem, MovingStockTxn, Customer, MovingInvoice, AgreementTemplate, nextMovingJobNo } from '../models/index.js';
+import { MovingJob, MovingItem, MovingStockTxn, Customer, MovingInvoice, MovingDocument, AgreementTemplate, nextMovingJobNo } from '../models/index.js';
 import { notifyJobConfirmed, notifyCrewOnTheWay, notifyJobCompleted } from '../services/movingNotifications.js';
 import { uploadPublicImage, driveConfigured } from '../services/drive.js';
 import {
@@ -199,6 +199,22 @@ router.post('/:id/notice-email', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+router.get('/:id/documents', async (req, res) => {
+  const docs = await MovingDocument.find({ job: req.params.id }).sort({ createdAt: -1 }).lean();
+  res.json(docs);
+});
+
+router.post('/:id/create-signing-link', async (req, res) => {
+  const job = await MovingJob.findById(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  const token = crypto.randomBytes(32).toString('hex');
+  job.signingToken = token;
+  job.signingTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  await job.save();
+  const baseUrl = (process.env.CLIENT_ORIGIN || 'http://localhost:5173').replace(/\/$/, '');
+  res.json({ signingUrl: `${baseUrl}/sign-moving/${token}`, expiresAt: job.signingTokenExpiry, reSign: !!job.signedDocUrl });
 });
 
 // Update job

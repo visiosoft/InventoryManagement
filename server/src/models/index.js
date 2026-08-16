@@ -957,6 +957,10 @@ const movingJobSchema = new Schema(
     }],
     uploadToken: { type: String, default: null },
     shareToken: { type: String, default: null },
+    agreementText: { type: String, default: '' },
+    signingToken: { type: String, default: null },
+    signingTokenExpiry: { type: Date, default: null },
+    signedDocUrl: { type: String, default: '' },
   },
   { timestamps: true }
 );
