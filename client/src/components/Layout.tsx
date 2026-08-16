@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ShieldCheck, ScrollText, CalendarCheck, RefreshCw, Map as MapIcon, Mail, Filter, PieChart, ShieldAlert, CreditCard, Target } from 'lucide-react'
+import { LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ShieldCheck, ScrollText, CalendarCheck, RefreshCw, Map as MapIcon, Mail, Filter, PieChart, ShieldAlert, CreditCard, Target, Calculator } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import GlobalSearch from './GlobalSearch'
@@ -23,6 +23,7 @@ const navGroups = [
     title: 'Sales',
     items: [
       { to: '/my-leads', label: 'My Leads', icon: UserPlus, perm: 'sales_board' },
+      { to: '/moving-estimator', label: 'Moving Estimator', icon: Calculator, perm: 'sales_board' },
       { to: '/leads', label: 'Leads', icon: UserPlus, perm: 'leads' },
       { to: '/quotations', label: 'Quotations', icon: ScrollText, perm: 'quotes' },
     ],
@@ -107,6 +108,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/customers': 'Tenants',
   '/leads': 'Leads',
   '/my-leads': 'My Leads',
+  '/moving-estimator': 'Moving Estimator',
   '/quotations': 'Quotations',
   '/contracts': 'Tenants',
   '/invoices': 'Invoices',
@@ -235,7 +237,11 @@ export default function Layout() {
         ))}
 
         {!isMovingOnly && navGroups.map((group) => {
-          const visibleItems = group.items.filter(({ perm }) => !perm || hasPermission(perm))
+          // Reps get 'units' for the read-only Floor Map, not the editable
+          // unit list that permission also happens to gate.
+          const visibleItems = group.items
+            .filter(({ perm }) => !perm || hasPermission(perm))
+            .filter(({ to }) => !(to === '/units' && user?.role === 'sales_rep'))
           if (visibleItems.length === 0) return null
           return (
             <div key={group.title || visibleItems[0]?.to} className="pt-3">

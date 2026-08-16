@@ -263,7 +263,7 @@ function UserModal({ editing, onClose, onDone }: {
           {isSalesRep && (
             <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 flex items-start gap-2 text-sm">
               <ShieldCheck size={15} className="text-primary shrink-0 mt-0.5" />
-              <span className="text-muted-foreground">Sales reps automatically get their own "My Leads" board — only leads assigned to them, across both storage and moving. No other module access.</span>
+              <span className="text-muted-foreground">Sales reps automatically get their own "My Leads" board (only leads assigned to them), plus read access to the Unit Map, Customers, and Moving Schedule.</span>
             </div>
           )}
         </div>

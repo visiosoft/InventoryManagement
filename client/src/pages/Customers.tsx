@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { FileText, FileBadge, Receipt, Plus, Search, Trash2, UserCheck, Merge } from 'lucide-react'
 import { api, apiError, customerApi } from '../lib/api'
+import { useAuth } from '../lib/auth'
 import type { Customer } from '../lib/types'
 import { Button, Card, EmptyState, Input, Modal, Pagination, Spinner, Table, Td, Th } from '../components/ui'
 import { AddCustomerModal, CustomerForm } from '../components/AddCustomerModal'
@@ -20,6 +21,8 @@ const CHIP_BG = '#F3F0EA'
 
 export default function Customers() {
   const qc = useQueryClient()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const location = useLocation()
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
@@ -155,7 +158,7 @@ export default function Customers() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          {selected.size > 0 && (
+          {isAdmin && selected.size > 0 && (
             <button
               onClick={() => { if (confirm(`Delete ${selected.size} selected customer(s)? Customers with contracts will be skipped.`)) bulkDelete.mutate() }}
               disabled={bulkDelete.isPending}
@@ -242,23 +245,25 @@ export default function Customers() {
                   <Td>{c.nationality || '—'}</Td>
                   <Td>{formatDate(c.createdAt)}</Td>
                   <Td className="text-right">
-                    <div className="flex items-center justify-end gap-3">
-                      <button
-                        type="button"
-                        onClick={() => { setMergeSource(c); setMergeTarget(null); setMergeSearch(''); setTimeout(() => mergeSearchRef.current?.focus(), 50) }}
-                        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground hover:underline cursor-pointer"
-                      >
-                        <Merge size={12} /> Merge
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onDeleteCustomer(c)}
-                        disabled={deletingId === c._id}
-                        className="inline-flex items-center gap-1 text-xs text-destructive hover:underline disabled:opacity-50 cursor-pointer"
-                      >
-                        <Trash2 size={12} /> Delete
-                      </button>
-                    </div>
+                    {isAdmin && (
+                      <div className="flex items-center justify-end gap-3">
+                        <button
+                          type="button"
+                          onClick={() => { setMergeSource(c); setMergeTarget(null); setMergeSearch(''); setTimeout(() => mergeSearchRef.current?.focus(), 50) }}
+                          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground hover:underline cursor-pointer"
+                        >
+                          <Merge size={12} /> Merge
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onDeleteCustomer(c)}
+                          disabled={deletingId === c._id}
+                          className="inline-flex items-center gap-1 text-xs text-destructive hover:underline disabled:opacity-50 cursor-pointer"
+                        >
+                          <Trash2 size={12} /> Delete
+                        </button>
+                      </div>
+                    )}
                   </Td>
                 </tr>
               ))}

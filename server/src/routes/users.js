@@ -7,6 +7,9 @@ const router = Router();
 
 const VALID_ROLES = ['admin', 'staff', 'sales_rep'];
 const normalizeRole = (role) => (VALID_ROLES.includes(role) ? role : 'staff');
+// A rep's default toolkit: their own leads board, plus read access to the
+// unit map, tenant directory, and moving schedule for sales conversations.
+const SALES_REP_DEFAULT_PERMISSIONS = ['sales_board', 'units', 'customers', 'moving_schedule'];
 
 // ── List all users (admin only) ───────────────────────────────────────────────
 router.get('/', requireAdmin, async (_req, res) => {
@@ -37,7 +40,7 @@ router.post('/', requireAdmin, async (req, res) => {
     passwordHash,
     role: normalizedRole,
     // Sales reps default to their own board when no explicit permissions are given.
-    permissions: cleanPermissions.length === 0 && normalizedRole === 'sales_rep' ? ['sales_board'] : cleanPermissions,
+    permissions: cleanPermissions.length === 0 && normalizedRole === 'sales_rep' ? SALES_REP_DEFAULT_PERMISSIONS : cleanPermissions,
     isActive: true,
   });
   res.status(201).json({ id: user._id, name: user.name, email: user.email, role: user.role, permissions: user.permissions, isActive: user.isActive });
@@ -67,7 +70,7 @@ router.put('/:id', requireAdmin, async (req, res) => {
   }
   if (role !== undefined) user.role = normalizeRole(role);
   if (Array.isArray(permissions)) user.permissions = permissions.filter(p => ALL_MODULES.includes(p));
-  else if (role === 'sales_rep' && user.permissions.length === 0) user.permissions = ['sales_board'];
+  else if (role === 'sales_rep' && user.permissions.length === 0) user.permissions = SALES_REP_DEFAULT_PERMISSIONS;
   if (isActive !== undefined) user.isActive = Boolean(isActive);
 
   await user.save();
