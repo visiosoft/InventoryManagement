@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useDraggable, useDroppable } from '@dnd-kit/core'
 import { Calendar, CheckCircle2, Circle, MessageSquare, Paperclip, Plus, Send } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
-import { Modal, Spinner } from '../../components/ui'
+import { SlideOver, Spinner } from '../../components/ui'
 import { formatDate } from '../../lib/utils'
 
 export const INK = '#14081F'
@@ -322,20 +322,20 @@ export function TaskDetailModal({
     onError: (e) => setError(apiError(e)),
   })
 
-  const modalTitle = detail ? (
+  const panelTitle = detail ? (
     <div className="flex items-center gap-2.5">
       <button type="button" onClick={() => onStatusChange(detail.status === 'done' ? 'todo' : 'done')}
         className="shrink-0 cursor-pointer" style={{ color: detail.status === 'done' ? '#16A34A' : MUTED }}>
         {detail.status === 'done' ? <CheckCircle2 size={17} /> : <Circle size={17} />}
       </button>
-      <span className="text-[15px] font-bold" style={{ color: INK, textDecoration: detail.status === 'done' ? 'line-through' : undefined }}>
+      <span style={{ color: INK, textDecoration: detail.status === 'done' ? 'line-through' : undefined }}>
         {detail.title}
       </span>
     </div>
   ) : task.title
 
   return (
-    <Modal open onClose={onClose} title={modalTitle} wide>
+    <SlideOver open onClose={onClose} title={panelTitle} subtitle={detail?.leadName || undefined}>
       {isLoading || !detail ? <Spinner /> : (
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
@@ -495,6 +495,6 @@ export function TaskDetailModal({
           </div>
         </div>
       )}
-    </Modal>
+    </SlideOver>
   )
 }

@@ -196,6 +196,50 @@ export function Modal({
   )
 }
 
+/* ---------- SlideOver ---------- */
+// Right-hand panel used for record detail and create forms. Same role as
+// Modal, but keeps the list behind it visible so you don't lose your place.
+export function SlideOver({
+  open,
+  onClose,
+  title,
+  subtitle,
+  children,
+  width = 'max-w-2xl',
+}: {
+  open: boolean
+  onClose: () => void
+  title: ReactNode
+  subtitle?: ReactNode
+  children: ReactNode
+  width?: string
+}) {
+  if (!open) return null
+  return (
+    <div className="fixed inset-0 z-50">
+      <div className="absolute inset-0" style={{ background: 'rgba(20,8,31,.28)' }} onClick={onClose} />
+      <div className={cn(
+        'absolute right-0 top-0 h-full w-full bg-card shadow-xl overflow-y-auto flex flex-col',
+        'animate-in slide-in-from-right',
+        width
+      )}>
+        <div className="sticky top-0 bg-card border-b px-5 py-4 flex items-start justify-between gap-3 z-10">
+          <div className="min-w-0">
+            <div className="text-base font-bold" style={{ fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' }}>
+              {title}
+            </div>
+            {subtitle && <div className="text-[11px] text-muted-foreground mt-0.5">{subtitle}</div>}
+          </div>
+          <button onClick={onClose} className="shrink-0 text-muted-foreground hover:text-foreground cursor-pointer p-1 rounded-lg hover:bg-muted transition-colors">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="p-5 flex-1">{children}</div>
+      </div>
+    </div>
+  )
+}
+
 /* ---------- Table ---------- */
 export function Table({ children, className }: { children: ReactNode; className?: string }) {
   return (

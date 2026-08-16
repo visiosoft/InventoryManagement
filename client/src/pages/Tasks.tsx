@@ -4,7 +4,7 @@ import { DndContext, type DragEndEvent, PointerSensor, useSensor, useSensors } f
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { api } from '../lib/api'
 import { useAuth } from '../lib/auth'
-import { PageHeader, Card, CardBody, Button, Field, Input, Select, Textarea, Modal, Spinner } from '../components/ui'
+import { PageHeader, Card, CardBody, Button, Field, Input, Select, Textarea, SlideOver, Spinner } from '../components/ui'
 import { formatDate } from '../lib/utils'
 import {
   type TaskItem, type AssignableUser,
@@ -195,7 +195,7 @@ function CalendarView({ tasks, onOpenTask }: { tasks: TaskItem[]; onOpenTask: (t
   )
 }
 
-function CreateTaskModal({ onClose, assignableUsers, defaultStatus }: { onClose: () => void; assignableUsers: AssignableUser[]; defaultStatus?: TaskItem['status'] }) {
+function CreateTaskPanel({ onClose, assignableUsers, defaultStatus }: { onClose: () => void; assignableUsers: AssignableUser[]; defaultStatus?: TaskItem['status'] }) {
   const qc = useQueryClient()
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -213,8 +213,16 @@ function CreateTaskModal({ onClose, assignableUsers, defaultStatus }: { onClose:
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['all-tasks'] }); onClose() },
   })
 
+  const columnLabel = KANBAN_COLUMNS.find((c) => c.status === defaultStatus)?.label
+
   return (
-    <Modal open onClose={onClose} title="New task">
+    <SlideOver
+      open
+      onClose={onClose}
+      title="New task"
+      subtitle={columnLabel ? `Will be added to “${columnLabel}”` : undefined}
+      width="max-w-lg"
+    >
       <div className="space-y-3">
         <Field label="Title">
           <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What needs to happen?" autoFocus />
@@ -245,13 +253,14 @@ function CreateTaskModal({ onClose, assignableUsers, defaultStatus }: { onClose:
             <Input value={leadName} onChange={(e) => setLeadName(e.target.value)} placeholder="e.g. F2-09 · PB-2026-0031" />
           </Field>
         </div>
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2 pt-2 border-t">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={() => createTask.mutate()} disabled={!title.trim() || createTask.isPending}>
             {createTask.isPending ? 'Creating…' : 'Create task'}
           </Button>
         </div>
       </div>
-    </Modal>
+    </SlideOver>
   )
 }
 
@@ -419,7 +428,7 @@ export default function Tasks() {
       )}
 
       {createOpen && (
-        <CreateTaskModal onClose={() => setCreateOpen(null)} assignableUsers={assignableUsers}
+        <CreateTaskPanel onClose={() => setCreateOpen(null)} assignableUsers={assignableUsers}
           defaultStatus={createOpen === 'new' ? undefined : createOpen} />
       )}
 
