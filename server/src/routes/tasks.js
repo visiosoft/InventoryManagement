@@ -31,6 +31,8 @@ router.get('/', async (req, res) => {
     filter.$or = [{ assignedTo: req.user.id }, { createdBy: req.user.id }];
   }
   if (req.query.leadId) filter.leadId = String(req.query.leadId);
+  if (req.query.leadType) filter.leadType = String(req.query.leadType);
+  if (req.query.createdBy) filter.createdBy = String(req.query.createdBy);
   if (req.query.status) {
     const statuses = String(req.query.status).split(',').filter((s) => ALLOWED_STATUS.has(s));
     if (statuses.length) filter.status = { $in: statuses };
@@ -48,24 +50,31 @@ router.post('/', async (req, res) => {
   if (!title) return res.status(400).json({ error: 'Title is required' });
 
   const assignedTo = req.body?.assignedTo || req.user.id;
-  const assignee = await User.findById(assignedTo).select('_id');
+  const assignee = await User.findById(assignedTo).select('name email');
   if (!assignee) return res.status(400).json({ error: 'Assignee not found' });
 
   const priority = ALLOWED_PRIORITY.has(req.body?.priority) ? req.body.priority : 'medium';
   const status = ALLOWED_STATUS.has(req.body?.status) ? req.body.status : 'todo';
+  const byName = req.user.name || req.user.email || 'user';
 
   const task = await Task.create({
     title,
     description: String(req.body?.description || '').trim(),
     assignedTo,
     createdBy: req.user.id,
-    createdByName: req.user.name || req.user.email || 'user',
+    createdByName: byName,
     leadId: req.body?.leadId || null,
     leadType: req.body?.leadType || null,
     leadName: String(req.body?.leadName || '').trim(),
     dueDate: req.body?.dueDate ? new Date(req.body.dueDate) : null,
     priority,
     status,
+    assignmentHistory: [{
+      fromId: null, fromName: '',
+      toId: assignedTo, toName: assignee.name || assignee.email,
+      byId: req.user.id, byName,
+      reason: String(req.body?.assignReason || '').trim() || 'Created',
+    }],
   });
 
   res.status(201).json(await task.populate('assignedTo', 'name email'));
@@ -83,6 +92,21 @@ router.patch('/:id', async (req, res) => {
   if (req.body?.status !== undefined && ALLOWED_STATUS.has(req.body.status)) {
     task.status = req.body.status;
     task.doneAt = req.body.status === 'done' ? new Date() : null;
+  }
+  if (req.body?.assignedTo !== undefined && String(req.body.assignedTo) !== String(task.assignedTo)) {
+    const [prevUser, nextUser] = await Promise.all([
+      User.findById(task.assignedTo).select('name email'),
+      User.findById(req.body.assignedTo).select('name email'),
+    ]);
+    if (!nextUser) return res.status(400).json({ error: 'Assignee not found' });
+    const byName = req.user.name || req.user.email || 'user';
+    task.assignmentHistory.push({
+      fromId: task.assignedTo, fromName: prevUser?.name || prevUser?.email || '',
+      toId: req.body.assignedTo, toName: nextUser.name || nextUser.email,
+      byId: req.user.id, byName,
+      reason: String(req.body?.reassignReason || '').trim() || 'Reassigned',
+    });
+    task.assignedTo = req.body.assignedTo;
   }
 
   await task.save();

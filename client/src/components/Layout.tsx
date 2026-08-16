@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ShieldCheck, ScrollText, CalendarCheck, RefreshCw, Map as MapIcon, Mail, Filter, PieChart, ShieldAlert, CreditCard, Target, Calculator } from 'lucide-react'
+import { LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ShieldCheck, ScrollText, CalendarCheck, RefreshCw, Map as MapIcon, Mail, Filter, PieChart, ShieldAlert, CreditCard, Target, Calculator, ListTodo } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import GlobalSearch from './GlobalSearch'
@@ -67,6 +67,7 @@ const salesRepNavItems = [
   { key: 'customers', to: '/contracts', label: 'Customers', icon: Users, perm: 'contracts' },
   { key: 'moving-schedule', to: '/moving/schedule', label: 'Moving Schedule', icon: CalendarDays, perm: 'moving_schedule' },
   { key: 'moving-estimator', to: '/moving-estimator', label: 'Moving Estimator', icon: Calculator, perm: 'sales_board' },
+  { key: 'tasks', to: '/tasks', label: 'Tasks', icon: ListTodo, perm: 'sales_board' },
   { key: 'reports', to: '/my-performance', label: 'Reports', icon: BarChart3, perm: 'sales_board' },
   { key: 'settings', to: '/account', label: 'Settings', icon: Settings, perm: 'sales_board' },
 ]
@@ -136,6 +137,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/approvals': 'Approvals',
   '/users': 'User Management',
   '/sales-team': 'Sales Team',
+  '/tasks': 'Tasks',
   '/backup': 'Backup',
   '/moving': 'Moving Dashboard',
   '/moving/schedule': 'Schedule Jobs',
@@ -423,6 +425,9 @@ export default function Layout() {
                   <Icon size={15} />{label}
                 </NavLink>
               ))}
+              <NavLink to="/tasks" className={({ isActive }) => navLinkCls(isActive)}>
+                <ListTodo size={15} />Tasks
+              </NavLink>
               {isAdmin && (
                 <>
                   <NavLink to="/users" className={({ isActive }) => navLinkCls(isActive)}>
@@ -594,6 +599,15 @@ export default function Layout() {
                       <Icon size={15} className="text-muted-foreground" />{label}
                     </NavLink>
                   ))}
+                  <NavLink
+                    to="/tasks"
+                    className={({ isActive }) => cn(
+                      'flex items-center gap-2.5 px-3 py-2 text-sm transition-colors',
+                      isActive ? 'bg-accent text-accent-foreground font-medium' : 'text-foreground hover:bg-muted/60'
+                    )}
+                  >
+                    <ListTodo size={15} className="text-muted-foreground" />Tasks
+                  </NavLink>
                 </div>
 
                 {/* Admin items */}

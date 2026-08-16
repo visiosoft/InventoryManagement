@@ -1381,6 +1381,17 @@ const taskCommentSchema = new Schema({
   createdAt: { type: Date, default: Date.now },
 });
 
+const taskAssignmentHistorySchema = new Schema({
+  at: { type: Date, default: Date.now },
+  fromId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+  fromName: { type: String, default: '' },
+  toId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  toName: { type: String, default: '' },
+  byId: { type: Schema.Types.ObjectId, ref: 'User' },
+  byName: { type: String, default: '' },
+  reason: { type: String, default: '' },
+});
+
 const taskAttachmentSchema = new Schema({
   name: { type: String, required: true },
   mimeType: { type: String, default: '' },
@@ -1408,6 +1419,7 @@ const taskSchema = new Schema(
     doneAt: { type: Date, default: null },
     comments: { type: [taskCommentSchema], default: [] },
     attachments: { type: [taskAttachmentSchema], default: [] },
+    assignmentHistory: { type: [taskAssignmentHistorySchema], default: [] },
   },
   { timestamps: true }
 );

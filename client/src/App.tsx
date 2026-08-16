@@ -70,6 +70,7 @@ import Expenses from './pages/Expenses'
 import MovingInventory from './pages/MovingInventory'
 import UserManagement from './pages/UserManagement'
 import SalesTeam from './pages/SalesTeam'
+import Tasks from './pages/Tasks'
 import WhatsApp from './pages/WhatsApp'
 import WhatsAppSetup from './pages/WhatsAppSetup'
 import MovingDashboard from './pages/moving/MovingDashboard'
@@ -195,6 +196,7 @@ export default function App() {
         <Route path="/approvals" element={<AdminGuard><Approvals /></AdminGuard>} />
         <Route path="/users" element={<AdminGuard><UserManagement /></AdminGuard>} />
         <Route path="/sales-team" element={<AdminGuard><SalesTeam /></AdminGuard>} />
+        <Route path="/tasks" element={<Tasks />} />
         <Route path="/backup" element={<AdminGuard><Backup /></AdminGuard>} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/settings/templates" element={<AdminGuard><MessageTemplates /></AdminGuard>} />
