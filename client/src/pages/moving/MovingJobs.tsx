@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Plus, Search, ArrowRight, MapPin, Trash2, Pencil, Briefcase, CheckCircle, Clock, Truck, FileSignature, Send } from 'lucide-react'
+import { Plus, Search, ArrowRight, MapPin, Trash2, Pencil, Briefcase, CheckCircle, Clock, Truck, FileSignature, Send, FileText } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingJob, MovingJobStatus } from '../../lib/types'
 import { Badge, Button, Modal, Spinner, movingJobStatusLabel } from '../../components/ui'
@@ -241,6 +241,11 @@ export default function MovingJobs() {
                         <Pencil size={14} />
                       </Link>
                     )}
+                    <Link to={`/moving/jobs/${j._id}?agreement=1`} title="Open and edit agreement"
+                      onClick={(e) => e.stopPropagation()}
+                      className="p-1.5 rounded-lg hover:bg-purple-500/10 transition-colors" style={{ color: MUTED }}>
+                      <FileText size={14} />
+                    </Link>
                     {j.signedDocUrl ? (
                       <a href={j.signedDocUrl} target="_blank" rel="noreferrer" title="View signed agreement"
                         onClick={(e) => e.stopPropagation()}
@@ -306,6 +311,10 @@ export default function MovingJobs() {
                               <Pencil size={14} />
                             </Link>
                           )}
+                          <Link to={`/moving/jobs/${j._id}?agreement=1`} title="Open and edit agreement"
+                            className="p-1.5 rounded-lg hover:bg-purple-500/10 transition-colors" style={{ color: MUTED }}>
+                            <FileText size={14} />
+                          </Link>
                           {j.signedDocUrl ? (
                             <a href={j.signedDocUrl} target="_blank" rel="noreferrer" title="View signed agreement"
                               className="p-1.5 rounded-lg hover:bg-emerald-500/10 transition-colors" style={{ color: MUTED }}>

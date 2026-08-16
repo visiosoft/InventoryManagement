@@ -275,7 +275,6 @@ function MovingNoticesCard({ job }: { job: MovingJob }) {
       qc.invalidateQueries({ queryKey: ['moving-job', job._id] })
       if (open) openTemplate({ _id: open.id, name: open.name, isDefault: open.isDefault })
     },
-    onError: (e) => setError(apiError(e)),
   })
 
   const { data: templates = [] } = useQuery<NoticeTemplate[]>({
@@ -286,6 +285,18 @@ function MovingNoticesCard({ job }: { job: MovingJob }) {
     queryKey: ['moving-job-documents', job._id],
     queryFn: () => api.get(`/moving-jobs/${job._id}/documents`).then((r) => r.data),
   })
+
+  // Jumping here from the Jobs list ("open this agreement and edit") lands
+  // with ?agreement=1 — auto-open the default template once it's loaded.
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    if (searchParams.get('agreement') !== '1' || templates.length === 0) return
+    const def = templates.find((t) => t.isDefault) || templates[0]
+    openTemplate(def)
+    searchParams.delete('agreement')
+    setSearchParams(searchParams, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templates])
 
   async function openTemplate(t: NoticeTemplate) {
     setBusy(`open-${t._id}`); setError('')
@@ -368,6 +379,7 @@ function MovingNoticesCard({ job }: { job: MovingJob }) {
               {saveDetails.isPending ? 'Saving…' : 'Save details'}
             </Button>
             {detailsSaved && <span className="text-xs text-emerald-600 font-medium">Saved</span>}
+            {saveDetails.isError && <span className="text-xs text-destructive">{apiError(saveDetails.error)}</span>}
           </div>
         </div>
 
