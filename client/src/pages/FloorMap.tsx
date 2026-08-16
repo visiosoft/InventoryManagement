@@ -1153,7 +1153,9 @@ export default function FloorMap() {
                     <input key={`vrate-${single.id}`} type="number" defaultValue={unitPrice(single) || ''} disabled
                       className={fieldCls} style={{ ...fieldStyle, opacity: 0.6, cursor: 'not-allowed' }} />
                     <span style={{ fontSize: 11, color: MUTED }}>
-                      Locked — change from <Link to="/settings?tab=pricing" style={{ color: PURPLE, fontWeight: 600 }}>Settings → Unit Pricing</Link>
+                      {user?.role === 'sales_rep'
+                        ? 'Locked'
+                        : <>Locked — change from <Link to="/settings?tab=pricing" style={{ color: PURPLE, fontWeight: 600 }}>Settings → Unit Pricing</Link></>}
                     </span>
                   </>
                 ) : (
@@ -1278,7 +1280,9 @@ export default function FloorMap() {
                             <input key={`rate-${single.id}`} type="number" defaultValue={unitPrice(single) || ''} disabled
                               className={fieldCls} style={{ ...fieldStyle, opacity: 0.6, cursor: 'not-allowed' }} />
                             <span style={{ fontSize: 11, color: MUTED }}>
-                              Locked — change from <Link to="/settings?tab=pricing" style={{ color: PURPLE, fontWeight: 600 }}>Settings → Unit Pricing</Link>
+                              {user?.role === 'sales_rep'
+                                ? 'Locked'
+                                : <>Locked — change from <Link to="/settings?tab=pricing" style={{ color: PURPLE, fontWeight: 600 }}>Settings → Unit Pricing</Link></>}
                             </span>
                           </>
                         ) : (
