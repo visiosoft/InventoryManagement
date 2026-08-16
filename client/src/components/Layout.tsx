@@ -64,7 +64,7 @@ const salesRepNavItems = [
   { key: 'dashboard', to: '/my-leads', label: 'Dashboard', icon: LayoutDashboard, perm: 'sales_board' },
   { key: 'unit-map', to: '/floor-map', label: 'Unit Map', icon: MapIcon, perm: 'units' },
   { key: 'leads', to: '/my-leads', label: 'Leads', icon: UserPlus, perm: 'sales_board' },
-  { key: 'customers', to: '/customers', label: 'Customers', icon: Users, perm: 'customers' },
+  { key: 'customers', to: '/contracts', label: 'Customers', icon: Users, perm: 'contracts' },
   { key: 'moving-schedule', to: '/moving/schedule', label: 'Moving Schedule', icon: CalendarDays, perm: 'moving_schedule' },
   { key: 'moving-estimator', to: '/moving-estimator', label: 'Moving Estimator', icon: Calculator, perm: 'sales_board' },
   { key: 'reports', to: '/my-performance', label: 'Reports', icon: BarChart3, perm: 'sales_board' },

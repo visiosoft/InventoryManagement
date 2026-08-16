@@ -5,6 +5,7 @@ import { AgreementTemplate } from '../models/index.js';
 import {
   mergeAgreementText, looksLikeHtml, samplePlaceholderContract,
   renderAgreementHtmlPdf, renderAgreementTextPdf,
+  movingAgreementPlaceholders, sampleMovingJob,
 } from '../services/agreementText.js';
 
 const router = Router();
@@ -25,6 +26,15 @@ const PLACEHOLDERS = [
   'customerSignature', 'signatureDate', 'purpleboxRepresentative',
 ];
 
+const MOVING_PLACEHOLDERS = [
+  'customerName', 'companyName', 'customerEmail', 'customerPhone', 'whatsapp',
+  'jobNo', 'bookingNo', 'moveDate', 'todayDate',
+  'pickupAddress', 'deliveryAddress', 'serviceType', 'quotedPrice',
+  'customerSignature', 'signatureDate', 'purpleboxRepresentative',
+];
+
+const normalizeModule = (m) => (m === 'moving' ? 'moving' : 'storage');
+
 const requireAdmin = (req, res) => {
   if (req.user?.role !== 'admin') {
     res.status(403).json({ error: 'Only admins can manage templates' });
@@ -39,28 +49,36 @@ async function migrateLegacy() {
     { key: 'default', $or: [{ name: { $exists: false } }, { name: '' }, { name: null }] },
     { $set: { name: 'Agreement', isDefault: true } },
   );
+  // Templates created before the storage/moving split have no `module` field
+  // — a query for module:'storage' wouldn't match them, so backfill once.
+  await AgreementTemplate.updateMany({ module: { $exists: false } }, { $set: { module: 'storage' } });
 }
 
-// List all templates (names + which one is the contract default)
-router.get('/', aw(async (_req, res) => {
+// List all templates (names + which one is the contract default), optionally
+// scoped to a module (?module=storage|moving) — storage and moving each have
+// their own independent "default" template.
+router.get('/', aw(async (req, res) => {
   await migrateLegacy();
-  const templates = await AgreementTemplate.find({})
-    .select('name isDefault updatedAt updatedBy')
+  const module = normalizeModule(req.query.module);
+  const templates = await AgreementTemplate.find({ module })
+    .select('name isDefault module updatedAt updatedBy')
     .sort({ isDefault: -1, name: 1 })
     .lean();
-  res.json({ templates, placeholders: PLACEHOLDERS });
+  res.json({ templates, placeholders: module === 'moving' ? MOVING_PLACEHOLDERS : PLACEHOLDERS });
 }));
 
 router.post('/', aw(async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const name = String(req.body?.name || '').trim();
   if (!name) return res.status(400).json({ error: 'Template name is required' });
-  const count = await AgreementTemplate.countDocuments();
+  const module = normalizeModule(req.body?.module);
+  const count = await AgreementTemplate.countDocuments({ module });
   const tpl = await AgreementTemplate.create({
     name,
     key: `tpl-${crypto.randomUUID()}`, // legacy unique index on key tolerates this
     body: String(req.body?.body || ''),
-    isDefault: count === 0, // first template becomes the agreement default
+    module,
+    isDefault: count === 0, // first template in this module becomes its default
     updatedBy: req.user?.name || req.user?.email || '',
   });
   res.status(201).json(tpl);
@@ -86,7 +104,7 @@ router.put('/:id', aw(async (req, res) => {
   }
   if (req.body.body !== undefined) tpl.body = String(req.body.body);
   if (req.body.isDefault === true) {
-    await AgreementTemplate.updateMany({ _id: { $ne: tpl._id } }, { $set: { isDefault: false } });
+    await AgreementTemplate.updateMany({ _id: { $ne: tpl._id }, module: tpl.module }, { $set: { isDefault: false } });
     tpl.isDefault = true;
   }
   tpl.updatedBy = req.user?.name || req.user?.email || '';
@@ -108,9 +126,10 @@ router.get('/:id/preview-pdf', aw(async (req, res) => {
   const tpl = await AgreementTemplate.findById(req.params.id).lean();
   if (!tpl) return res.status(404).json({ error: 'Template not found' });
 
-  const sample = samplePlaceholderContract();
-  const merged = mergeAgreementText(tpl.body, sample);
-  const title = tpl.isDefault ? 'STORAGE AGREEMENT' : tpl.name.toUpperCase();
+  const isMoving = tpl.module === 'moving';
+  const sample = isMoving ? sampleMovingJob() : samplePlaceholderContract();
+  const merged = mergeAgreementText(tpl.body, sample, isMoving ? movingAgreementPlaceholders : undefined);
+  const title = tpl.isDefault ? (isMoving ? 'MOVING SERVICES AGREEMENT' : 'STORAGE AGREEMENT') : tpl.name.toUpperCase();
   const pdf = looksLikeHtml(merged)
     ? await renderAgreementHtmlPdf({ html: merged, contract: sample, title, header: tpl.isDefault, signature: tpl.isDefault })
     : await renderAgreementTextPdf({ text: merged, contract: sample, header: tpl.isDefault, signature: tpl.isDefault });

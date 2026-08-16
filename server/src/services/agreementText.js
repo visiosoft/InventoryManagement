@@ -45,11 +45,51 @@ export function agreementPlaceholders(contract) {
 }
 
 /** Replaces {{name}} tokens; unknown tokens are left visible so gaps show. */
-export function mergeAgreementText(template, contract) {
-  const values = agreementPlaceholders(contract);
+export function mergeAgreementText(template, contract, buildValues = agreementPlaceholders) {
+  const values = buildValues(contract);
   return String(template || '').replace(/\{\{\s*(\w+)\s*\}\}/g, (m, key) =>
     Object.prototype.hasOwnProperty.call(values, key) ? String(values[key]) : m,
   );
+}
+
+// ── Moving-job placeholders (separate shape: no customer/units — a job's
+// customer comes via a populated ref, and address/price live on the job). ──
+export function movingAgreementPlaceholders(job) {
+  const customer = job.customer || {};
+  const fmt = (d) => (d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—');
+  const money = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const serviceTypeLabel = { local: 'Home-to-Home', storage_to_home: 'Storage-to-Home', office: 'Office Move', inter_emirate: 'Inter-Emirate', international: 'International', other: 'Other' };
+
+  return {
+    customerName: customer.fullName || '',
+    companyName: customer.company || customer.fullName || '',
+    customerEmail: customer.email || '',
+    customerPhone: (customer.phones && customer.phones[0]) || customer.phone || '',
+    whatsapp: (customer.phones && customer.phones[1]) || (customer.phones && customer.phones[0]) || customer.phone || '',
+    jobNo: job.jobNo || '',
+    bookingNo: (job.quote && job.quote.quoteNo) || job.jobNo || '',
+    moveDate: fmt(job.scheduledDate),
+    todayDate: fmt(new Date()),
+    pickupAddress: job.pickupAddress || '',
+    deliveryAddress: job.deliveryAddress || '',
+    serviceType: serviceTypeLabel[job.jobType] || job.jobType || '',
+    quotedPrice: money((job.clientPackage && job.clientPackage.agreedPrice) || (job.costs && job.costs.total)),
+    purpleboxRepresentative: (job.timeline && job.timeline.find((t) => t.author)?.author) || 'PurpleBox Moving',
+  };
+}
+
+export function sampleMovingJob() {
+  return {
+    jobNo: 'PBM-2026-0000',
+    scheduledDate: new Date(),
+    jobType: 'local',
+    pickupAddress: 'Sample Villa, Al Barsha, Dubai',
+    deliveryAddress: 'Sample Apt 12B, JVC, Dubai',
+    clientPackage: { agreedPrice: 2500 },
+    customer: { fullName: 'Sample Customer', email: 'customer@example.com', phone: '+971 50 000 0000' },
+    quote: { quoteNo: 'PBMQ-0000' },
+    timeline: [],
+  };
 }
 
 

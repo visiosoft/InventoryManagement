@@ -5,9 +5,15 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
 import { google } from 'googleapis';
-import { MovingJob, MovingItem, MovingStockTxn, Customer, MovingInvoice, nextMovingJobNo } from '../models/index.js';
+import { isValidObjectId } from 'mongoose';
+import { MovingJob, MovingItem, MovingStockTxn, Customer, MovingInvoice, AgreementTemplate, nextMovingJobNo } from '../models/index.js';
 import { notifyJobConfirmed, notifyCrewOnTheWay, notifyJobCompleted } from '../services/movingNotifications.js';
 import { uploadPublicImage, driveConfigured } from '../services/drive.js';
+import {
+  mergeAgreementText, looksLikeHtml, movingAgreementPlaceholders,
+  renderAgreementHtmlPdf, renderAgreementTextPdf,
+} from '../services/agreementText.js';
+import { mailConfigured, sendMail } from '../services/mail.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const JOBS_UPLOADS = path.resolve(__dirname, '../../../uploads/moving-jobs');
@@ -124,6 +130,72 @@ router.get('/:id', async (req, res) => {
     const job = await MovingJob.findById(req.params.id).populate(POPULATE_JOB);
     if (!job) return res.status(404).json({ error: 'Job not found' });
     res.json(job);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Notices — merge a moving-module agreement template with this job's details
+router.get('/:id/notice/:templateId', async (req, res) => {
+  try {
+    if (!isValidObjectId(req.params.templateId)) return res.status(400).json({ error: 'Invalid template id' });
+    const [job, tpl] = await Promise.all([
+      MovingJob.findById(req.params.id).populate(POPULATE_JOB),
+      AgreementTemplate.findById(req.params.templateId).lean(),
+    ]);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (!tpl) return res.status(404).json({ error: 'Template not found' });
+    res.json({ name: tpl.name, text: mergeAgreementText(tpl.body, job, movingAgreementPlaceholders) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/notice-pdf', async (req, res) => {
+  try {
+    const job = await MovingJob.findById(req.params.id).populate(POPULATE_JOB);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    const html = String(req.body?.html || '');
+    if (!html.trim()) return res.status(400).json({ error: 'Notice content is empty' });
+    const title = String(req.body?.title || 'Notice');
+    const pdf = looksLikeHtml(html)
+      ? await renderAgreementHtmlPdf({ html, contract: job, title: title.toUpperCase(), header: false, signature: false })
+      : await renderAgreementTextPdf({ text: html, contract: job, header: false, signature: false });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${title}-${job.jobNo}.pdf"`);
+    res.send(pdf);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/notice-email', async (req, res) => {
+  try {
+    if (!mailConfigured()) return res.status(501).json({ error: 'SMTP is not configured' });
+    const job = await MovingJob.findById(req.params.id).populate(POPULATE_JOB);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    const to = String(req.body?.to || job.customer?.email || '').trim();
+    if (!to) return res.status(400).json({ error: 'Customer has no email address' });
+
+    const html = String(req.body?.html || '');
+    if (!html.trim()) return res.status(400).json({ error: 'Notice content is empty' });
+    const title = String(req.body?.title || 'Notice');
+    const pdf = looksLikeHtml(html)
+      ? await renderAgreementHtmlPdf({ html, contract: job, title: title.toUpperCase(), header: false, signature: false })
+      : await renderAgreementTextPdf({ text: html, contract: job, header: false, signature: false });
+
+    await sendMail({
+      to,
+      subject: `${title} — ${job.jobNo} · PurpleBox Moving`,
+      text: `Dear ${job.customer?.fullName || ''},\n\nPlease find the attached ${title.toLowerCase()} regarding your move ${job.jobNo}.\n\nPurpleBox Moving`,
+      html: `Dear ${job.customer?.fullName || ''},<br/><br/>Please find the attached ${title.toLowerCase()} regarding your move ${job.jobNo}.<br/><br/>PurpleBox Moving`,
+      attachments: [{ filename: `${title}-${job.jobNo}.pdf`, content: pdf, contentType: 'application/pdf' }],
+    });
+
+    const actor = req.user?.name || req.user?.email || '';
+    job.timeline.push({ at: new Date(), text: `Notice "${title}" emailed to ${to}`, author: actor });
+    await job.save();
+    res.json({ sent: true, to });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

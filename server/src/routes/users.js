@@ -9,11 +9,22 @@ const VALID_ROLES = ['admin', 'staff', 'sales_rep'];
 const normalizeRole = (role) => (VALID_ROLES.includes(role) ? role : 'staff');
 // A rep's default toolkit: their own leads board, plus read access to the
 // unit map, tenant directory, and moving schedule for sales conversations.
-const SALES_REP_DEFAULT_PERMISSIONS = ['sales_board', 'units', 'customers', 'moving_schedule'];
+const SALES_REP_DEFAULT_PERMISSIONS = ['sales_board', 'units', 'customers', 'contracts', 'moving_schedule'];
 
 // ── List all users (admin only) ───────────────────────────────────────────────
 router.get('/', requireAdmin, async (_req, res) => {
   const users = await User.find().select('-passwordHash').sort({ createdAt: -1 });
+  res.json(users);
+});
+
+// Minimal roster for task-assignment dropdowns — any authenticated user
+// (including reps) needs this to hand a task to a teammate or admin, but
+// only name/email/role, never the full admin-only user record.
+router.get('/assignable', async (_req, res) => {
+  const users = await User.find({ isActive: true, role: { $in: ['admin', 'staff', 'sales_rep'] } })
+    .select('name email role')
+    .sort({ name: 1 })
+    .lean();
   res.json(users);
 });
 

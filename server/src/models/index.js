@@ -1364,6 +1364,7 @@ const agreementTemplateSchema = new Schema({
   name: { type: String, required: true },
   body: { type: String, default: '' },
   isDefault: { type: Boolean, default: false },
+  module: { type: String, enum: ['storage', 'moving'], default: 'storage' },
   updatedBy: { type: String, default: '' },
   key: { type: String }, // legacy singleton key, kept for old documents
 }, { timestamps: true });

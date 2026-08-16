@@ -236,6 +236,106 @@ function dt(d?: string) {
   return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
+type NoticeTemplate = { _id: string; name: string; isDefault: boolean }
+
+// Same "click a template → prefilled, editable, ready to send" flow as the
+// storage side's Notices tab (ContractDetail.tsx), scoped to module=moving
+// templates and this job's placeholders (jobNo/moveDate/pickupAddress/…).
+function MovingNoticesCard({ job }: { job: MovingJob }) {
+  const [open, setOpen] = useState<{ id: string; name: string } | null>(null)
+  const [html, setHtml] = useState('')
+  const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
+  const [sent, setSent] = useState('')
+
+  const { data: templates = [] } = useQuery<NoticeTemplate[]>({
+    queryKey: ['moving-notice-templates'],
+    queryFn: () => api.get('/agreement-template', { params: { module: 'moving' } }).then((r) => r.data?.templates ?? []),
+  })
+
+  async function openTemplate(t: NoticeTemplate) {
+    setBusy(`open-${t._id}`); setError('')
+    try {
+      const r = await api.get(`/moving-jobs/${job._id}/notice/${t._id}`)
+      setOpen({ id: t._id, name: r.data?.name || t.name })
+      setSent('')
+      setHtml(r.data?.text || '')
+    } catch (e) { setError(apiError(e)) } finally { setBusy('') }
+  }
+
+  async function downloadPdf() {
+    setBusy('pdf'); setError('')
+    try {
+      const r = await api.post(`/moving-jobs/${job._id}/notice-pdf`, { html, title: open?.name }, { responseType: 'blob' })
+      const url = URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }))
+      window.open(url, '_blank')
+      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch (e) { setError(apiError(e)) } finally { setBusy('') }
+  }
+
+  function sendWhatsapp() {
+    const digits = (job.customer?.phone || '').replace(/[^0-9]/g, '')
+    if (!digits) { setError('Customer has no phone number'); return }
+    const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+    window.open(`https://wa.me/${digits}?text=${encodeURIComponent(text)}`, '_blank')
+  }
+
+  const sendEmail = useMutation({
+    mutationFn: () => api.post(`/moving-jobs/${job._id}/notice-email`, { html, title: open?.name }),
+    onSuccess: (r) => { setSent(r.data?.to || 'sent'); setError('') },
+    onError: (e) => setError(apiError(e)),
+  })
+
+  return (
+    <Card>
+      <CardHeader title="Notices" subtitle="Click a template — it opens prefilled with this job's details, ready to edit and send" />
+      <CardBody className="pt-0">
+        {templates.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-6 text-center">
+            No moving templates yet — design them under Admin → Agreement Template → Moving.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {templates.map((t) => (
+              <button key={t._id} type="button" disabled={busy === `open-${t._id}`} onClick={() => openTemplate(t)}
+                className="rounded-xl border p-4 text-left hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer disabled:opacity-60">
+                <div className="font-semibold text-sm flex items-center gap-2">
+                  <FileText size={14} className="text-primary shrink-0" />
+                  <span className="break-words">{t.name}</span>
+                  {t.isDefault && <span className="text-[9.5px] font-bold uppercase bg-primary/10 text-primary rounded px-1.5 py-0.5 shrink-0">Agreement</span>}
+                </div>
+                <div className="text-[11px] text-muted-foreground mt-1.5">
+                  {busy === `open-${t._id}` ? 'Preparing…' : `Generate for ${job.customer?.fullName || 'customer'}`}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </CardBody>
+
+      <Modal open={!!open} onClose={() => setOpen(null)} title={open?.name || 'Notice'} wide>
+        <div className="space-y-3">
+          <div
+            contentEditable
+            suppressContentEditableWarning
+            onInput={(e) => setHtml((e.target as HTMLDivElement).innerHTML)}
+            dangerouslySetInnerHTML={{ __html: html }}
+            className="rounded-lg border bg-white p-5 text-[13px] leading-relaxed outline-none focus:border-primary overflow-y-auto"
+            style={{ minHeight: 320, maxHeight: '55vh' }}
+          />
+          {error && <p className="text-xs text-destructive">{error}</p>}
+          {sent && <p className="text-xs text-emerald-600">Emailed to {sent}</p>}
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" onClick={sendWhatsapp}>WhatsApp</Button>
+            <Button variant="outline" onClick={downloadPdf} disabled={busy === 'pdf'}>{busy === 'pdf' ? 'Preparing…' : 'PDF'}</Button>
+            <Button onClick={() => sendEmail.mutate()} disabled={sendEmail.isPending}>{sendEmail.isPending ? 'Sending…' : 'Send via Email'}</Button>
+          </div>
+        </div>
+      </Modal>
+    </Card>
+  )
+}
+
 export default function MovingJobDetail() {
   const { id } = useParams<{ id: string }>()
   const qc = useQueryClient()
@@ -1298,6 +1398,8 @@ export default function MovingJobDetail() {
           )}
         </div>
       )}
+
+      <MovingNoticesCard job={job} />
 
       {/* Timeline & Notes */}
       <Card>

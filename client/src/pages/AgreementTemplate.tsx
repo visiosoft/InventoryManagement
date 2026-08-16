@@ -16,6 +16,7 @@ type TemplateFull = TemplateRow & { body: string }
  */
 export default function AgreementTemplate() {
   const qc = useQueryClient()
+  const [module, setModule] = useState<'storage' | 'moving'>('storage')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [dirty, setDirty] = useState(false)
@@ -25,10 +26,13 @@ export default function AgreementTemplate() {
   const editorRef = useRef<HTMLDivElement>(null)
 
   const { data, isLoading } = useQuery<{ templates: TemplateRow[]; placeholders: string[] }>({
-    queryKey: ['agreement-templates'],
-    queryFn: () => api.get('/agreement-template').then((r) => r.data),
+    queryKey: ['agreement-templates', module],
+    queryFn: () => api.get('/agreement-template', { params: { module } }).then((r) => r.data),
   })
   const templates = data?.templates ?? []
+
+  // Switching modules resets the selection so it re-picks that module's default
+  useEffect(() => { setSelectedId(null) }, [module])
 
   // Auto-select the default (or first) template
   useEffect(() => {
@@ -58,7 +62,7 @@ export default function AgreementTemplate() {
   }
 
   const createTpl = useMutation({
-    mutationFn: (tplName: string) => api.post('/agreement-template', { name: tplName, body: '' }).then((r) => r.data),
+    mutationFn: (tplName: string) => api.post('/agreement-template', { name: tplName, body: '', module }).then((r) => r.data),
     onSuccess: (tpl) => { invalidate(); setSelectedId(tpl._id); setError(''); setNewTplOpen(false); setNewTplName('') },
     onError: (e) => setError(apiError(e)),
   })
@@ -120,6 +124,15 @@ export default function AgreementTemplate() {
         }
       />
 
+      <div className="flex gap-1.5 mb-4 rounded-lg bg-muted/50 p-1 w-fit">
+        {(['storage', 'moving'] as const).map((m) => (
+          <button key={m} type="button" onClick={() => setModule(m)}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium cursor-pointer transition-colors ${module === m ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+            {m === 'storage' ? 'Storage' : 'Moving'}
+          </button>
+        ))}
+      </div>
+
       <div className="flex flex-col lg:flex-row gap-4 lg:items-start">
         {/* Template list */}
         <Card className="w-full lg:w-72 lg:shrink-0">
@@ -133,7 +146,7 @@ export default function AgreementTemplate() {
                   {t.updatedAt && <span className="text-[10.5px] text-muted-foreground">{formatDate(t.updatedAt)}</span>}
                 </span>
                 <span className="flex items-center gap-1 shrink-0">
-                  <button type="button" title={t.isDefault ? 'Used for contract agreements' : 'Use for contract agreements'}
+                  <button type="button" title={t.isDefault ? `Used as the default ${module} agreement` : `Use as the default ${module} agreement`}
                     onClick={(e) => { e.stopPropagation(); if (!t.isDefault) makeDefault.mutate(t._id) }}
                     className={`p-1 rounded cursor-pointer ${t.isDefault ? 'text-amber-500' : 'text-muted-foreground/40 hover:text-amber-500'}`}>
                     <Star size={14} fill={t.isDefault ? 'currentColor' : 'none'} />

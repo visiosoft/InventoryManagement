@@ -20,7 +20,13 @@ function canEdit(req, task) {
 router.get('/', async (req, res) => {
   const filter = {};
   if (req.query.assignedTo) filter.assignedTo = String(req.query.assignedTo);
-  if (isSalesRep(req)) filter.assignedTo = req.user.id;
+  // Reps see everything routed through them: tasks assigned to them, and
+  // tasks they handed off to someone else (so "assign to another rep" work
+  // doesn't just vanish from the assigner's own board).
+  if (isSalesRep(req)) {
+    delete filter.assignedTo;
+    filter.$or = [{ assignedTo: req.user.id }, { createdBy: req.user.id }];
+  }
   if (req.query.leadId) filter.leadId = String(req.query.leadId);
   if (req.query.status) {
     const statuses = String(req.query.status).split(',').filter((s) => ALLOWED_STATUS.has(s));
@@ -38,7 +44,7 @@ router.post('/', async (req, res) => {
   const title = String(req.body?.title || '').trim();
   if (!title) return res.status(400).json({ error: 'Title is required' });
 
-  const assignedTo = isSalesRep(req) ? req.user.id : (req.body?.assignedTo || req.user.id);
+  const assignedTo = req.body?.assignedTo || req.user.id;
   const assignee = await User.findById(assignedTo).select('_id');
   if (!assignee) return res.status(400).json({ error: 'Assignee not found' });
 

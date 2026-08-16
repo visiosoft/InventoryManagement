@@ -1,13 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { ChevronDown, ChevronRight, MessageCircle, Phone, Plus, UserPlus } from 'lucide-react'
+import { CalendarPlus, ChevronDown, ChevronRight, MessageCircle, Phone, Plus, StickyNote, UserPlus } from 'lucide-react'
 import { api, apiError, leadApi } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { Lead, MovingLead, MovingLeadStatus } from '../lib/types'
 import { Modal, Spinner } from '../components/ui'
 import { formatDate } from '../lib/utils'
 import { LeadDetailPanel } from './Leads'
+import { KpiStrip } from './Dashboard'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
 const INK = '#14081F'
@@ -44,6 +45,13 @@ function RenewalRow({ contract, onChanged }: { contract: ExpiringContract; onCha
   const [taskTitle, setTaskTitle] = useState('')
   const [taskDue, setTaskDue] = useState('')
   const [err, setErr] = useState('')
+  const noteInputRef = useRef<HTMLInputElement>(null)
+  const taskInputRef = useRef<HTMLInputElement>(null)
+
+  function openPanel(focus?: 'note' | 'task') {
+    setExpanded(true)
+    if (focus) requestAnimationFrame(() => (focus === 'note' ? noteInputRef : taskInputRef).current?.focus())
+  }
 
   const { data: detail } = useQuery<{ timeline?: ContractTimelineEntry[] }>({
     queryKey: ['contract-timeline', contract._id],
@@ -88,19 +96,26 @@ function RenewalRow({ contract, onChanged }: { contract: ExpiringContract; onCha
   const urgent = contract.daysLeft <= 2
   const timeline = [...(detail?.timeline || [])].reverse()
 
+  const followUpCount = linkedTasks.filter((t) => t.status !== 'done').length
+
   return (
     <div style={{ borderBottom: '1px solid rgba(20,8,31,.06)', paddingBottom: 10 }}>
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+      <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span style={{ fontSize: 13, fontWeight: 700, color: INK }}>{contract.customer?.fullName || '—'}</span>
             <span style={{ fontSize: 12, color: MUTED }}>{contract.unit?.unitNumber}</span>
+            {followUpCount > 0 && (
+              <span style={{ fontSize: 10, fontWeight: 700, color: PURPLE, background: '#F0E9FF', borderRadius: 999, padding: '1px 7px' }}>
+                {followUpCount} open follow-up{followUpCount > 1 ? 's' : ''}
+              </span>
+            )}
           </div>
           <div style={{ fontSize: 12, fontWeight: urgent ? 700 : 400, color: urgent ? '#991B1B' : contract.daysLeft <= 4 ? '#B45309' : MUTED }}>
             Expires {formatDate(contract.endDate)} · {contract.daysLeft}d left
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 shrink-0">
           {contract.customer?.phone && (
             <a href={`tel:${contract.customer.phone}`} title="Call" className="p-1.5 rounded-lg hover:bg-blue-50 transition-colors">
               <Phone size={15} className="text-blue-600" />
@@ -111,28 +126,35 @@ function RenewalRow({ contract, onChanged }: { contract: ExpiringContract; onCha
               <MessageCircle size={15} className="text-green-600" />
             </a>
           )}
-          <div className="flex gap-1 rounded-full bg-black/5 p-1">
-            {RENEWAL_OPTIONS.map((o) => (
-              <button
-                key={o.value}
-                type="button"
-                disabled={setIntent.isPending}
-                onClick={() => setIntent.mutate(o.value)}
-                className={`h-6 px-2 rounded-full text-[11px] font-semibold cursor-pointer transition-colors disabled:opacity-50 ${contract.renewalIntent === o.value ? o.activeClass : 'bg-transparent text-muted-foreground hover:bg-muted'}`}
-              >
-                {o.label}
-              </button>
-            ))}
-          </div>
+          <button type="button" title="Add note" onClick={() => openPanel('note')} className="p-1.5 rounded-lg hover:bg-[#F7F3FF] transition-colors cursor-pointer">
+            <StickyNote size={15} style={{ color: PURPLE }} />
+          </button>
+          <button type="button" title="Add task" onClick={() => openPanel('task')} className="p-1.5 rounded-lg hover:bg-[#F7F3FF] transition-colors cursor-pointer">
+            <CalendarPlus size={15} style={{ color: PURPLE }} />
+          </button>
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            style={{ height: 26, padding: '0 10px', borderRadius: 8, background: 'transparent', color: PURPLE, border: '1px solid #DDD0FF', fontWeight: 600, fontSize: 11 }}
-            className="cursor-pointer hover:bg-[#F7F3FF] transition-colors"
+            title={expanded ? 'Collapse' : 'View history'}
+            className="p-1.5 rounded-lg hover:bg-black/5 transition-colors cursor-pointer"
           >
-            {expanded ? 'Close' : 'Note / Task'}
+            <ChevronDown size={15} style={{ color: MUTED, transform: expanded ? 'rotate(180deg)' : undefined, transition: 'transform .15s' }} />
           </button>
         </div>
+      </div>
+
+      <div className="mt-1.5 flex gap-1 rounded-full bg-black/5 p-1 w-fit">
+        {RENEWAL_OPTIONS.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            disabled={setIntent.isPending}
+            onClick={() => setIntent.mutate(o.value)}
+            className={`h-6 px-2.5 rounded-full text-[11px] font-semibold cursor-pointer transition-colors disabled:opacity-50 ${contract.renewalIntent === o.value ? o.activeClass : 'bg-transparent text-muted-foreground hover:bg-muted'}`}
+          >
+            {o.label}
+          </button>
+        ))}
       </div>
 
       {expanded && (
@@ -142,6 +164,7 @@ function RenewalRow({ contract, onChanged }: { contract: ExpiringContract; onCha
           <div className="flex flex-col sm:flex-row gap-4 mb-3">
             <div className="flex-1 flex gap-2">
               <input
+                ref={noteInputRef}
                 value={noteText}
                 onChange={(e) => setNoteText(e.target.value)}
                 placeholder="Add a note (call outcome, etc.)"
@@ -159,6 +182,7 @@ function RenewalRow({ contract, onChanged }: { contract: ExpiringContract; onCha
             </div>
             <div className="flex-1 flex gap-2">
               <input
+                ref={taskInputRef}
                 value={taskTitle}
                 onChange={(e) => setTaskTitle(e.target.value)}
                 placeholder="Follow-up task title"
@@ -229,7 +253,10 @@ export type TaskItem = {
   priority: 'low' | 'medium' | 'high'
   status: 'todo' | 'in_progress' | 'done'
   assignedTo?: { _id: string; name: string; email: string }
+  createdByName?: string
 }
+
+type AssignableUser = { _id: string; name: string; email: string; role: string }
 
 const PRIORITY_COLOR: Record<string, string> = { low: '#756E80', medium: '#B45309', high: '#991B1B' }
 
@@ -288,6 +315,11 @@ function KanbanCard({ task, onMove }: { task: TaskItem; onMove: (status: TaskIte
     >
       {task.leadName && <div style={{ fontSize: 11, color: MUTED, fontWeight: 600, marginBottom: 2 }}>{task.leadName}</div>}
       <div style={{ fontSize: 12.5, color: INK, fontWeight: tone !== 'normal' ? 700 : 500 }}>{task.title}</div>
+      <div style={{ fontSize: 10.5, color: MUTED, marginTop: 2 }}>
+        {task.assignedTo?.name && <>Assigned to <strong style={{ color: '#4A4357' }}>{task.assignedTo.name}</strong></>}
+        {task.assignedTo?.name && task.createdByName && ' · '}
+        {task.createdByName && <>by {task.createdByName}</>}
+      </div>
       <div className="flex items-center justify-between mt-1.5">
         <span style={{ fontSize: 9.5, fontWeight: 700, color: PRIORITY_COLOR[task.priority], textTransform: 'uppercase' }}>{task.priority}</span>
         {task.dueDate && (
@@ -320,17 +352,23 @@ function TasksCard() {
   const [title, setTitle] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [priority, setPriority] = useState('medium')
+  const [assignedTo, setAssignedTo] = useState('')
 
   const { data: tasks = [], isLoading } = useQuery<TaskItem[]>({
     queryKey: ['my-tasks-all'],
     queryFn: () => api.get('/tasks', { params: { status: 'todo,in_progress,done' } }).then((r) => r.data),
   })
+  const { data: assignableUsers = [] } = useQuery<AssignableUser[]>({
+    queryKey: ['assignable-users'],
+    queryFn: () => api.get('/users/assignable').then((r) => r.data),
+    enabled: showAdd,
+  })
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['my-tasks-all'] })
 
   const createTask = useMutation({
-    mutationFn: () => api.post('/tasks', { title, dueDate: dueDate || undefined, priority }),
-    onSuccess: () => { invalidate(); setTitle(''); setDueDate(''); setPriority('medium'); setShowAdd(false) },
+    mutationFn: () => api.post('/tasks', { title, dueDate: dueDate || undefined, priority, assignedTo: assignedTo || undefined }),
+    onSuccess: () => { invalidate(); setTitle(''); setDueDate(''); setPriority('medium'); setAssignedTo(''); setShowAdd(false) },
   })
   const updateTask = useMutation({
     mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) => api.patch(`/tasks/${id}`, body),
@@ -358,12 +396,12 @@ function TasksCard() {
             placeholder="Task description"
             style={{ height: 34, padding: '0 10px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 12.5 }}
           />
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <input
               type="date"
               value={dueDate}
               onChange={(e) => setDueDate(e.target.value)}
-              style={{ flex: 1, height: 34, padding: '0 10px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 12.5 }}
+              style={{ flex: 1, minWidth: 120, height: 34, padding: '0 10px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 12.5 }}
             />
             <select
               value={priority}
@@ -373,6 +411,16 @@ function TasksCard() {
               <option value="low">Low</option>
               <option value="medium">Medium</option>
               <option value="high">High</option>
+            </select>
+            <select
+              value={assignedTo}
+              onChange={(e) => setAssignedTo(e.target.value)}
+              style={{ height: 34, padding: '0 8px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 12.5, minWidth: 110 }}
+            >
+              <option value="">Assign to me</option>
+              {assignableUsers.map((u) => (
+                <option key={u._id} value={u._id}>{u.name}</option>
+              ))}
             </select>
             <button
               type="button"
@@ -696,6 +744,7 @@ export default function SalesBoard() {
         </div>
       </div>
 
+      <KpiStrip />
       <UnitAvailabilityStrip />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5 items-stretch">
