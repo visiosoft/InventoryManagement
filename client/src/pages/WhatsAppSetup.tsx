@@ -136,8 +136,8 @@ export default function WhatsAppSetup() {
                     <ArrowLeft size={18} />
                 </button>
                 <div className="flex-1">
-                    <div style={{ ...HEADING, fontSize: 22, fontWeight: 700, color: INK }}>WhatsApp Lead Automation</div>
-                    <div style={{ fontSize: 14, color: MUTED, marginTop: 2 }}>Connect your WhatsApp account to automatically capture leads</div>
+                    <div style={{ ...HEADING, fontSize: 22, fontWeight: 700, color: INK }}>WhatsApp Lead Sync (legacy)</div>
+                    <div style={{ fontSize: 14, color: MUTED, marginTop: 2 }}>Separate WhatsApp Web service that auto-captures leads by label — independent of the WhatsApp Inbox</div>
                 </div>
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-full" style={{ background: `${cfg.color}15`, border: `1px solid ${cfg.color}30` }}>
                     <StatusIcon size={14} style={{ color: cfg.color }} className={state === 'loading' || state === 'unknown' ? 'animate-spin' : ''} />

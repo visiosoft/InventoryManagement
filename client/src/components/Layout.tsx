@@ -163,7 +163,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/reports/vacancies': 'Upcoming Vacancies',
   '/reports/overdue': 'Overdue Payments',
   '/reports/expiring': 'Expiring Contracts',
-  '/whatsapp': 'WhatsApp',
+  '/whatsapp': 'WhatsApp Inbox',
 }
 
 function getPageTitle(pathname: string): string {

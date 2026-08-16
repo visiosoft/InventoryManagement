@@ -6,7 +6,7 @@ import { gmailConfigured } from '../services/gmail.js';
 import { zohoConfigured } from '../services/zoho.js';
 import { zohoBooksConfigured, listAllZohoContacts } from '../services/zohoBooks.js';
 import { Customer, Contract } from '../models/index.js';
-import { whatsappConfigured, whatsappMissing, verifyWebhookChallenge, verifyWhatsAppSignature } from '../services/whatsapp.js';
+import { whatsappConfigured, whatsappMissing, verifyWebhookChallenge, verifyWhatsAppSignature, verifyWhatsAppCredentials } from '../services/whatsapp.js';
 import { getWhatsAppLabelSyncStatus, processWhatsAppWebhookPayload, runWhatsAppLabelReconciliation } from '../services/whatsappLeadSync.js';
 import { stripeConfigured, stripeWebhookConfigured, verifyStripeKey } from '../services/stripe.js';
 import { updateEnvFile } from '../utils/env.js';
@@ -61,6 +61,54 @@ router.post('/stripe/disconnect', requireAdmin, async (_req, res) => {
     updateEnvFile({ STRIPE_SECRET_KEY: '', STRIPE_WEBHOOK_SECRET: '' });
     process.env.STRIPE_SECRET_KEY = '';
     process.env.STRIPE_WEBHOOK_SECRET = '';
+    res.json({ ok: true });
+});
+
+// Save (and validate) WhatsApp Cloud API credentials, so the number can be
+// switched between the Meta test number and the real business number without
+// server access. Same shape as the Stripe flow above.
+router.post('/whatsapp/connect', requireAdmin, async (req, res) => {
+    const { phoneNumberId, accessToken, verifyToken, appSecret } = req.body || {};
+    const updates = {};
+    if (phoneNumberId) updates.WHATSAPP_PHONE_NUMBER_ID = String(phoneNumberId).trim();
+    if (accessToken) updates.WHATSAPP_ACCESS_TOKEN = String(accessToken).trim();
+    if (verifyToken) updates.WHATSAPP_VERIFY_TOKEN = String(verifyToken).trim();
+    if (appSecret) updates.WHATSAPP_APP_SECRET = String(appSecret).trim();
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'Nothing to save' });
+
+    // Validate against Meta whenever we have both halves of the send credential
+    // — either freshly supplied or already stored from a previous save.
+    const effectiveId = updates.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_NUMBER_ID;
+    const effectiveToken = updates.WHATSAPP_ACCESS_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN;
+    let profile = { displayPhoneNumber: '', verifiedName: '' };
+    if (effectiveId && effectiveToken) {
+        try {
+            profile = await verifyWhatsAppCredentials({ phoneNumberId: effectiveId, accessToken: effectiveToken });
+        } catch (e) {
+            return res.status(400).json({ error: `Meta rejected these credentials: ${e.message}` });
+        }
+    }
+
+    updateEnvFile(updates);
+    Object.assign(process.env, updates);
+    res.json({
+        ok: true,
+        configured: whatsappConfigured(),
+        missing: whatsappMissing(),
+        displayPhoneNumber: profile.displayPhoneNumber,
+        verifiedName: profile.verifiedName,
+    });
+});
+
+router.post('/whatsapp/disconnect', requireAdmin, async (_req, res) => {
+    const blanks = {
+        WHATSAPP_PHONE_NUMBER_ID: '',
+        WHATSAPP_ACCESS_TOKEN: '',
+        WHATSAPP_VERIFY_TOKEN: '',
+        WHATSAPP_APP_SECRET: '',
+    };
+    updateEnvFile(blanks);
+    Object.assign(process.env, blanks);
     res.json({ ok: true });
 });
 

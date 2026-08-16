@@ -229,12 +229,12 @@ async function getDefaultOwnerId() {
     return admin?._id || null;
 }
 
-async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, status = 'new', timelineText }) {
-    const ownerId = await getDefaultOwnerId();
+export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, status = 'new', timelineText, fullName, ownerId: ownerOverride }) {
+    const ownerId = ownerOverride || await getDefaultOwnerId();
     if (!ownerId) return null;
 
     const lead = await Lead.create({
-        fullName: `WhatsApp Contact ${phoneNormalized.slice(-4)}`,
+        fullName: String(fullName || '').trim() || `WhatsApp Contact ${phoneNormalized.slice(-4)}`,
         email: '',
         phone: phone || phoneNormalized,
         phoneNormalized,

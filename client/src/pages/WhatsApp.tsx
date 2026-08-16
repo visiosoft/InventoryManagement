@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Send, MessageSquare, RefreshCw } from 'lucide-react'
-import { whatsappApi, apiError, type WhatsAppConversation, type WhatsAppMsg } from '../lib/api'
+import { Link } from 'react-router-dom'
+import { Send, MessageSquare, RefreshCw, UserPlus, UserCheck } from 'lucide-react'
+import { whatsappApi, leadApi, apiError, type WhatsAppConversation, type WhatsAppMsg } from '../lib/api'
 import { Button, Card, CardBody, CardHeader, Field, Input, PageHeader } from '../components/ui'
 import { cn } from '../lib/utils'
 
@@ -80,6 +81,51 @@ function MessageBubble({ msg }: { msg: WhatsAppMsg }) {
   )
 }
 
+// One button that walks a chat through the pipeline: no lead yet → create one;
+// lead exists → convert it to a customer; already won → just link to the record.
+function LeadAction({ convo, onChanged }: { convo: WhatsAppConversation; onChanged: () => void }) {
+  const [err, setErr] = useState('')
+
+  const createLead = useMutation({
+    mutationFn: () => {
+      const name = window.prompt('Name for this lead', convo.phone || `+${convo.phoneNormalized}`)
+      if (name === null) return Promise.reject(new Error('cancelled'))
+      return whatsappApi.createLead(convo.phoneNormalized, name.trim() || undefined)
+    },
+    onSuccess: () => { setErr(''); onChanged() },
+    onError: (e) => { if ((e as Error).message !== 'cancelled') setErr(apiError(e)) },
+  })
+
+  const convert = useMutation({
+    mutationFn: () => leadApi.convertToCustomer(convo.lead!._id),
+    onSuccess: () => { setErr(''); onChanged() },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap justify-end">
+      {err && <span className="text-xs text-destructive">{err}</span>}
+      {!convo.lead ? (
+        <Button size="sm" variant="outline" disabled={createLead.isPending} onClick={() => createLead.mutate()}>
+          <UserPlus size={13} /> {createLead.isPending ? 'Creating…' : 'Create lead'}
+        </Button>
+      ) : convo.lead.status === 'won' ? (
+        <Link to={`/leads?q=${encodeURIComponent(convo.lead.fullName)}`}
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:underline">
+          <UserCheck size={13} /> Customer · {convo.lead.fullName}
+        </Link>
+      ) : (
+        <>
+          <span className="text-xs text-muted-foreground">Lead: {convo.lead.fullName}</span>
+          <Button size="sm" disabled={convert.isPending} onClick={() => convert.mutate()}>
+            <UserCheck size={13} /> {convert.isPending ? 'Saving…' : 'Save as customer'}
+          </Button>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function WhatsApp() {
   const qc = useQueryClient()
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null)
@@ -106,11 +152,13 @@ export default function WhatsApp() {
     (a, b) => new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime()
   )
 
+  const selectedConvo = (conversations ?? []).find((c) => c.phoneNormalized === selectedPhone) ?? null
+
   return (
     <div className="max-w-5xl space-y-4">
       <PageHeader
-        title="WhatsApp"
-        subtitle="Send messages and view conversation history"
+        title="WhatsApp Inbox"
+        subtitle="Reply to customers and turn chats into leads"
         action={
           <Button variant="outline" size="sm" onClick={() => { refetchConvos(); qc.invalidateQueries({ queryKey: ['wa-messages'] }) }}>
             <RefreshCw size={14} /> Refresh
@@ -148,8 +196,20 @@ export default function WhatsApp() {
                     c.phoneNormalized === selectedPhone ? 'bg-muted font-medium' : ''
                   )}
                 >
-                  <div className="font-medium truncate">{c.phone || `+${c.phoneNormalized}`}</div>
-                  <div className="text-xs text-muted-foreground">{c.count} msg · {formatTime(c.lastAt)}</div>
+                  <div className="font-medium truncate">{c.lead?.fullName || c.phone || `+${c.phoneNormalized}`}</div>
+                  <div className="text-xs text-muted-foreground flex items-center gap-1.5 flex-wrap">
+                    <span>{c.count} msg · {formatTime(c.lastAt)}</span>
+                    {c.lead && (
+                      <span className={cn(
+                        'rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
+                        c.lead.status === 'won'
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400'
+                          : 'bg-primary/10 text-primary'
+                      )}>
+                        {c.lead.status === 'won' ? 'Customer' : 'Lead'}
+                      </span>
+                    )}
+                  </div>
                 </button>
               ))}
             </div>
@@ -161,6 +221,7 @@ export default function WhatsApp() {
           <CardHeader
             title={selectedPhone ? `Chat — +${selectedPhone}` : 'All messages'}
             subtitle={selectedPhone ? undefined : 'Click a conversation to filter'}
+            action={selectedConvo ? <LeadAction convo={selectedConvo} onChanged={onSent} /> : undefined}
           />
           {loadingMsgs ? (
             <CardBody className="text-sm text-muted-foreground">Loading…</CardBody>
@@ -185,15 +246,15 @@ export default function WhatsApp() {
         <CardBody className="text-sm space-y-2">
           <div className="flex items-start gap-2">
             <span className="text-emerald-600 font-bold mt-0.5">1.</span>
-            <span>Start ngrok: <code className="bg-muted px-1 rounded text-xs">npx ngrok http 5010</code></span>
+            <span>Enter your phone number ID, access token, verify token and app secret under <strong>Settings → Integrations</strong>.</span>
           </div>
           <div className="flex items-start gap-2">
             <span className="text-emerald-600 font-bold mt-0.5">2.</span>
-            <span>In Meta Dashboard → WhatsApp → Configuration → Webhook, set Callback URL to <code className="bg-muted px-1 rounded text-xs">https://YOUR-NGROK-URL/api/integrations/whatsapp/webhook</code></span>
+            <span>In Meta Dashboard → WhatsApp → Configuration → Webhook, set Callback URL to <code className="bg-muted px-1 rounded text-xs">https://api.purplebox.ae/api/integrations/whatsapp/webhook</code></span>
           </div>
           <div className="flex items-start gap-2">
             <span className="text-emerald-600 font-bold mt-0.5">3.</span>
-            <span>Set Verify Token to match <code className="bg-muted px-1 rounded text-xs">WHATSAPP_VERIFY_TOKEN</code> in your <code className="bg-muted px-1 rounded text-xs">.env</code></span>
+            <span>Set the Verify Token there to the same string you entered in Settings.</span>
           </div>
           <div className="flex items-start gap-2">
             <span className="text-emerald-600 font-bold mt-0.5">4.</span>
@@ -201,7 +262,7 @@ export default function WhatsApp() {
           </div>
           <div className="flex items-start gap-2">
             <span className="text-amber-600 font-bold mt-0.5">!</span>
-            <span className="text-muted-foreground">Test account limits sending to max 5 registered recipient numbers only.</span>
+            <span className="text-muted-foreground">On a Meta test number you can only message 5 pre-registered recipients. A verified business number has no such limit.</span>
           </div>
         </CardBody>
       </Card>

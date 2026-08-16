@@ -263,11 +263,21 @@ export type WhatsAppMsg = {
   lead?: { _id: string; fullName: string; phone: string; status: string; source: string }
 }
 
+export type WhatsAppLeadRef = { _id: string; fullName: string; status: string }
+
 export type WhatsAppConversation = {
   phoneNormalized: string
   phone: string
   count: number
   lastAt: string
+  lead: WhatsAppLeadRef | null
+}
+
+export type WhatsAppCredentials = {
+  phoneNumberId?: string
+  accessToken?: string
+  verifyToken?: string
+  appSecret?: string
 }
 
 export const whatsappApi = {
@@ -275,6 +285,15 @@ export const whatsappApi = {
   messages: (phone?: string) =>
     api.get<WhatsAppMsg[]>('/whatsapp/messages', { params: phone ? { phone } : {} }).then((r) => r.data),
   send: (to: string, body: string) => api.post<{ ok: boolean }>('/whatsapp/send', { to, body }).then((r) => r.data),
+  createLead: (phoneNormalized: string, fullName?: string) =>
+    api.post<{ action: 'created' | 'exists'; lead: WhatsAppLeadRef }>(
+      `/whatsapp/conversations/${phoneNormalized}/lead`, { fullName }
+    ).then((r) => r.data),
+  connect: (body: WhatsAppCredentials) =>
+    api.post<{ ok: boolean; configured: boolean; missing: string[]; displayPhoneNumber: string; verifiedName: string }>(
+      '/integrations/whatsapp/connect', body
+    ).then((r) => r.data),
+  disconnect: () => api.post<{ ok: boolean }>('/integrations/whatsapp/disconnect').then((r) => r.data),
 }
 
 export const reminderConfigApi = {

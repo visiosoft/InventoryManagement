@@ -61,6 +61,26 @@ function normalizeRecipientPhone(input) {
     return String(input || '').replace(/\D/g, '');
 }
 
+// Confirms a phone number ID + access token pair actually works before we
+// save it, and returns the business name so the UI can show which number
+// is connected. Throws with Meta's own message so the user sees the real
+// reason (expired token, wrong ID, missing permission) rather than a generic
+// failure.
+export async function verifyWhatsAppCredentials({ phoneNumberId, accessToken }) {
+    const endpoint = `https://graph.facebook.com/v20.0/${encodeURIComponent(phoneNumberId)}?fields=display_phone_number,verified_name`;
+    const response = await fetch(endpoint, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(payload?.error?.message || payload?.message || `HTTP ${response.status}`);
+    }
+    return {
+        displayPhoneNumber: payload.display_phone_number || '',
+        verifiedName: payload.verified_name || '',
+    };
+}
+
 export async function sendWhatsAppText({ to, body }) {
     if (!whatsappSendConfigured()) {
         throw new Error('WhatsApp is not configured');

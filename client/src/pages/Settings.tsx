@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useLocation, useSearchParams } from 'react-router-dom'
-import { apiError, integrationApi, productApi } from '../lib/api'
+import { apiError, integrationApi, productApi, whatsappApi } from '../lib/api'
 import type { IntegrationStatus, Product } from '../lib/types'
 import { Button, Card, CardBody, CardHeader, Field, Input, Modal, PageHeader, Table, Td, Th } from '../components/ui'
 import { formatMoney } from '../lib/utils'
@@ -160,6 +160,13 @@ export default function Settings() {
   const [stripeSecretKey, setStripeSecretKey] = useState('')
   const [stripeWebhookSecret, setStripeWebhookSecret] = useState('')
   const [stripeBusy, setStripeBusy] = useState(false)
+  const [waMsg, setWaMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [waPhoneNumberId, setWaPhoneNumberId] = useState('')
+  const [waAccessToken, setWaAccessToken] = useState('')
+  const [waVerifyToken, setWaVerifyToken] = useState('')
+  const [waAppSecret, setWaAppSecret] = useState('')
+  const [waProfile, setWaProfile] = useState('')
+  const [waBusy, setWaBusy] = useState(false)
   useEffect(() => {
     const params = new URLSearchParams(location.search)
     if (params.get('driveConnected')) {
@@ -426,21 +433,101 @@ export default function Settings() {
               </p>
             )}
           </div>
-          <div className="flex items-center justify-between rounded-lg border px-4 py-3 flex-wrap gap-3">
-            <div>
-              <div className="font-medium">WhatsApp (Meta Cloud API)</div>
-              <div className="text-xs text-muted-foreground">Webhook verification and setup readiness</div>
+          <div className="rounded-lg border px-4 py-3 space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <div className="font-medium">WhatsApp Inbox (Meta Cloud API)</div>
+                <div className="text-xs text-muted-foreground">Receive and reply to messages inside the app</div>
+              </div>
+              <span className={integrations?.whatsapp?.configured ? 'text-xs text-emerald-600 font-medium' : 'text-xs text-amber-600 font-medium'}>
+                {integrations?.whatsapp?.configured
+                  ? `Connected${waProfile ? ` — ${waProfile}` : ''}`
+                  : `Missing: ${(integrations?.whatsapp?.missing || []).join(', ') || 'keys'}`}
+              </span>
             </div>
-            <span className={integrations?.whatsapp?.configured ? 'text-xs text-emerald-600 font-medium' : 'text-xs text-amber-600 font-medium'}>
-              {integrations?.whatsapp?.configured ? 'Connected' : `Missing: ${(integrations?.whatsapp?.missing || []).join(', ') || 'keys'}`}
-            </span>
+
+            <div className="grid sm:grid-cols-2 gap-3">
+              <Field label="Phone number ID">
+                <Input placeholder="e.g. 123456789012345" value={waPhoneNumberId}
+                  onChange={(e) => setWaPhoneNumberId(e.target.value)} />
+              </Field>
+              <Field label="Access token">
+                <Input type="password" placeholder="Permanent token from Meta" value={waAccessToken}
+                  onChange={(e) => setWaAccessToken(e.target.value)} />
+              </Field>
+              <Field label="Verify token (you choose this)">
+                <Input placeholder="Any secret string" value={waVerifyToken}
+                  onChange={(e) => setWaVerifyToken(e.target.value)} />
+              </Field>
+              <Field label="App secret">
+                <Input type="password" placeholder="From Meta App → Settings → Basic" value={waAppSecret}
+                  onChange={(e) => setWaAppSecret(e.target.value)} />
+              </Field>
+            </div>
+
+            <div className="flex items-center gap-3 flex-wrap">
+              <Button
+                size="sm"
+                disabled={waBusy || (!waPhoneNumberId && !waAccessToken && !waVerifyToken && !waAppSecret)}
+                onClick={async () => {
+                  setWaBusy(true); setWaMsg(null)
+                  try {
+                    const r = await whatsappApi.connect({
+                      phoneNumberId: waPhoneNumberId || undefined,
+                      accessToken: waAccessToken || undefined,
+                      verifyToken: waVerifyToken || undefined,
+                      appSecret: waAppSecret || undefined,
+                    })
+                    setWaProfile([r.verifiedName, r.displayPhoneNumber].filter(Boolean).join(' · '))
+                    setWaMsg({ ok: true, text: r.configured ? 'WhatsApp connected.' : `Saved. Still missing: ${r.missing.join(', ')}` })
+                    setWaPhoneNumberId(''); setWaAccessToken(''); setWaVerifyToken(''); setWaAppSecret('')
+                    qc.invalidateQueries({ queryKey: ['integrations-status'] })
+                  } catch (e) {
+                    setWaMsg({ ok: false, text: apiError(e) })
+                  } finally {
+                    setWaBusy(false)
+                  }
+                }}
+              >
+                {waBusy ? 'Saving…' : 'Save credentials'}
+              </Button>
+              {integrations?.whatsapp?.configured && (
+                <Button size="sm" variant="outline"
+                  onClick={async () => {
+                    if (!confirm('Disconnect WhatsApp? Incoming messages will stop arriving until you reconnect.')) return
+                    try {
+                      await whatsappApi.disconnect()
+                      setWaProfile(''); setWaMsg(null)
+                      qc.invalidateQueries({ queryKey: ['integrations-status'] })
+                    } catch (e) {
+                      setWaMsg({ ok: false, text: apiError(e) })
+                    }
+                  }}
+                >
+                  Disconnect
+                </Button>
+              )}
+            </div>
+
+            {waMsg && (
+              <p className={`text-xs ${waMsg.ok ? 'text-emerald-700 dark:text-emerald-400' : 'text-destructive'}`}>
+                {waMsg.text}
+              </p>
+            )}
+
+            <p className="text-xs text-muted-foreground">
+              In Meta → WhatsApp → Configuration, set the Callback URL to{' '}
+              <code className="bg-muted px-1 rounded">https://api.purplebox.ae/api/integrations/whatsapp/webhook</code>,
+              paste the same Verify token you entered above, and subscribe to the{' '}
+              <code className="bg-muted px-1 rounded">messages</code> field.
+            </p>
           </div>
           <div className="rounded-lg border px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="font-medium">WhatsApp Lead Automation</div>
+                <div className="font-medium">WhatsApp Lead Sync (legacy)</div>
                 <div className="text-xs text-muted-foreground">
-                  Connect WhatsApp Web to auto-capture leads by label
+                  Separate WhatsApp Web service that auto-captures leads by label — independent of the inbox above
                 </div>
               </div>
               <Button size="sm" onClick={() => window.open('https://whatsapp.purplebox.ae/whatsapp/setup', '_blank')}>
@@ -449,7 +536,7 @@ export default function Settings() {
             </div>
           </div>
           <p className="text-xs text-muted-foreground">
-            Setup instructions are in <code>README.md</code>. WhatsApp v1 currently validates webhook setup only.
+            Setup instructions are in <code>README.md</code>.
           </p>
         </CardBody>
       </Card>
