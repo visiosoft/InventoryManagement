@@ -55,6 +55,8 @@ import Backup from './pages/Backup'
 import Leads from './pages/Leads'
 import SalesBoard from './pages/SalesBoard'
 import MovingEstimator from './pages/MovingEstimator'
+import MyPerformance from './pages/MyPerformance'
+import MyAccount from './pages/MyAccount'
 import Quotations from './pages/Quotations'
 import Quotes from './pages/Quotes'
 import NewQuote from './pages/NewQuote'
@@ -162,6 +164,8 @@ export default function App() {
         <Route path="/leads" element={<Leads />} />
         <Route path="/my-leads" element={<PermGuard module="sales_board"><SalesBoard /></PermGuard>} />
         <Route path="/moving-estimator" element={<PermGuard module="sales_board"><MovingEstimator /></PermGuard>} />
+        <Route path="/my-performance" element={<PermGuard module="sales_board"><MyPerformance /></PermGuard>} />
+        <Route path="/account" element={<MyAccount />} />
         <Route path="/quotes" element={<PermGuard module="quotes"><Quotations /></PermGuard>} />
         <Route path="/quotes/new" element={<PermGuard module="quotes"><NewQuote /></PermGuard>} />
         <Route path="/quotations" element={<PermGuard module="quotes"><Quotes /></PermGuard>} />

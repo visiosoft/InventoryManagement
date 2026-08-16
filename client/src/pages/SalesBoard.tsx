@@ -35,19 +35,42 @@ const RENEWAL_OPTIONS: { value: ExpiringContract['renewalIntent']; label: string
   { value: 'not_renewing', label: 'Not renewing', activeClass: 'bg-destructive text-white shadow-sm' },
 ]
 
+interface ContractTimelineEntry { at: string; text: string; author?: string }
+
 function RenewalRow({ contract, onChanged }: { contract: ExpiringContract; onChanged: () => void }) {
+  const qc = useQueryClient()
   const [expanded, setExpanded] = useState(false)
   const [noteText, setNoteText] = useState('')
   const [taskTitle, setTaskTitle] = useState('')
   const [taskDue, setTaskDue] = useState('')
+  const [err, setErr] = useState('')
+
+  const { data: detail } = useQuery<{ timeline?: ContractTimelineEntry[] }>({
+    queryKey: ['contract-timeline', contract._id],
+    queryFn: () => api.get(`/contracts/${contract._id}`).then((r) => r.data),
+    enabled: expanded,
+  })
+  const { data: linkedTasks = [] } = useQuery<TaskItem[]>({
+    queryKey: ['contract-tasks', contract._id],
+    queryFn: () => api.get('/tasks', { params: { leadId: contract._id } }).then((r) => r.data),
+    enabled: expanded,
+  })
+
+  const invalidateDetail = () => {
+    qc.invalidateQueries({ queryKey: ['contract-timeline', contract._id] })
+    qc.invalidateQueries({ queryKey: ['contract-tasks', contract._id] })
+    onChanged()
+  }
 
   const setIntent = useMutation({
     mutationFn: (renewalIntent: string) => api.put(`/contracts/${contract._id}`, { renewalIntent }),
-    onSuccess: onChanged,
+    onSuccess: () => { setErr(''); onChanged() },
+    onError: (e) => setErr(apiError(e)),
   })
   const addNote = useMutation({
     mutationFn: () => api.post(`/contracts/${contract._id}/notes`, { text: noteText }),
-    onSuccess: () => { setNoteText(''); onChanged() },
+    onSuccess: () => { setNoteText(''); setErr(''); invalidateDetail() },
+    onError: (e) => setErr(apiError(e)),
   })
   const addTask = useMutation({
     mutationFn: () => api.post('/tasks', {
@@ -57,11 +80,13 @@ function RenewalRow({ contract, onChanged }: { contract: ExpiringContract; onCha
       leadType: 'contract',
       leadName: `${contract.customer?.fullName || 'Tenant'} · ${contract.unit?.unitNumber || ''}`,
     }),
-    onSuccess: () => { setTaskTitle(''); setTaskDue(''); onChanged() },
+    onSuccess: () => { setTaskTitle(''); setTaskDue(''); setErr(''); invalidateDetail() },
+    onError: (e) => setErr(apiError(e)),
   })
 
   const digits = (contract.customer?.phone || '').replace(/[^0-9]/g, '')
   const urgent = contract.daysLeft <= 2
+  const timeline = [...(detail?.timeline || [])].reverse()
 
   return (
     <div style={{ borderBottom: '1px solid rgba(20,8,31,.06)', paddingBottom: 10 }}>
@@ -111,46 +136,82 @@ function RenewalRow({ contract, onChanged }: { contract: ExpiringContract; onCha
       </div>
 
       {expanded && (
-        <div className="mt-2 flex flex-col sm:flex-row gap-4 rounded-lg bg-muted/20 p-2.5">
-          <div className="flex-1 flex gap-2">
-            <input
-              value={noteText}
-              onChange={(e) => setNoteText(e.target.value)}
-              placeholder="Add a note (call outcome, etc.)"
-              style={{ flex: 1, height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 12.5 }}
-            />
-            <button
-              type="button"
-              disabled={!noteText.trim() || addNote.isPending}
-              onClick={() => addNote.mutate()}
-              style={{ height: 32, padding: '0 12px', borderRadius: 8, background: PURPLE, color: 'white', fontSize: 12, fontWeight: 600, border: 'none' }}
-              className="disabled:opacity-50 cursor-pointer shrink-0"
-            >
-              {addNote.isPending ? 'Saving…' : 'Save note'}
-            </button>
+        <div className="mt-2 rounded-lg bg-muted/20 p-2.5">
+          {err && <p className="text-xs text-destructive mb-2">{err}</p>}
+
+          <div className="flex flex-col sm:flex-row gap-4 mb-3">
+            <div className="flex-1 flex gap-2">
+              <input
+                value={noteText}
+                onChange={(e) => setNoteText(e.target.value)}
+                placeholder="Add a note (call outcome, etc.)"
+                style={{ flex: 1, height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 12.5 }}
+              />
+              <button
+                type="button"
+                disabled={!noteText.trim() || addNote.isPending}
+                onClick={() => addNote.mutate()}
+                style={{ height: 32, padding: '0 12px', borderRadius: 8, background: PURPLE, color: 'white', fontSize: 12, fontWeight: 600, border: 'none' }}
+                className="disabled:opacity-50 cursor-pointer shrink-0"
+              >
+                {addNote.isPending ? 'Saving…' : 'Save note'}
+              </button>
+            </div>
+            <div className="flex-1 flex gap-2">
+              <input
+                value={taskTitle}
+                onChange={(e) => setTaskTitle(e.target.value)}
+                placeholder="Follow-up task title"
+                style={{ flex: 1, height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 12.5 }}
+              />
+              <input
+                type="date"
+                value={taskDue}
+                onChange={(e) => setTaskDue(e.target.value)}
+                style={{ height: 32, padding: '0 8px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 12.5 }}
+              />
+              <button
+                type="button"
+                disabled={!taskTitle.trim() || addTask.isPending}
+                onClick={() => addTask.mutate()}
+                style={{ height: 32, padding: '0 12px', borderRadius: 8, background: PURPLE, color: 'white', fontSize: 12, fontWeight: 600, border: 'none' }}
+                className="disabled:opacity-50 cursor-pointer shrink-0"
+              >
+                {addTask.isPending ? 'Saving…' : 'Add task'}
+              </button>
+            </div>
           </div>
-          <div className="flex-1 flex gap-2">
-            <input
-              value={taskTitle}
-              onChange={(e) => setTaskTitle(e.target.value)}
-              placeholder="Follow-up task title"
-              style={{ flex: 1, height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 12.5 }}
-            />
-            <input
-              type="date"
-              value={taskDue}
-              onChange={(e) => setTaskDue(e.target.value)}
-              style={{ height: 32, padding: '0 8px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 12.5 }}
-            />
-            <button
-              type="button"
-              disabled={!taskTitle.trim() || addTask.isPending}
-              onClick={() => addTask.mutate()}
-              style={{ height: 32, padding: '0 12px', borderRadius: 8, background: PURPLE, color: 'white', fontSize: 12, fontWeight: 600, border: 'none' }}
-              className="disabled:opacity-50 cursor-pointer shrink-0"
-            >
-              {addTask.isPending ? 'Saving…' : 'Add task'}
-            </button>
+
+          {/* Follow-up tasks tied to this contract */}
+          {linkedTasks.length > 0 && (
+            <div className="mb-3">
+              <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 }}>Follow-ups</div>
+              <div className="space-y-1">
+                {linkedTasks.map((t) => (
+                  <div key={t._id} className="flex items-center justify-between gap-2" style={{ fontSize: 12.5 }}>
+                    <span style={{ color: t.status === 'done' ? MUTED : INK, textDecoration: t.status === 'done' ? 'line-through' : 'none' }}>{t.title}</span>
+                    <span style={{ color: MUTED, fontSize: 11 }}>{t.dueDate ? formatDate(t.dueDate) : ''}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Notes / activity history */}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 }}>History</div>
+            {timeline.length === 0 ? (
+              <p style={{ fontSize: 12.5, color: MUTED }}>No notes or activity yet.</p>
+            ) : (
+              <div className="space-y-1.5 max-h-48 overflow-auto">
+                {timeline.map((t, i) => (
+                  <div key={i} className="flex items-start justify-between gap-2" style={{ fontSize: 12.5, color: '#4A4357' }}>
+                    <span>{t.text}</span>
+                    <span style={{ color: MUTED, fontSize: 11, whiteSpace: 'nowrap' }}>{formatDate(t.at)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -199,6 +260,60 @@ export function groupTasksByDue(tasks: TaskItem[]) {
   return groups.filter((g) => g.items.length > 0)
 }
 
+const KANBAN_COLUMNS: { status: TaskItem['status']; label: string }[] = [
+  { status: 'todo', label: 'To do' },
+  { status: 'in_progress', label: 'In progress' },
+  { status: 'done', label: 'Done' },
+]
+
+function isDueSoon(t: TaskItem): 'overdue' | 'today' | 'normal' {
+  if (!t.dueDate || t.status === 'done') return 'normal'
+  const now = new Date()
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const due = new Date(t.dueDate)
+  if (due < todayStart) return 'overdue'
+  if (due < new Date(todayStart.getTime() + 86400000)) return 'today'
+  return 'normal'
+}
+
+function KanbanCard({ task, onMove }: { task: TaskItem; onMove: (status: TaskItem['status']) => void }) {
+  const tone = isDueSoon(task)
+  const idx = KANBAN_COLUMNS.findIndex((c) => c.status === task.status)
+  return (
+    <div
+      style={{
+        background: 'white', border: '1px solid rgba(20,8,31,.08)', borderRadius: 10, padding: 10,
+        borderLeft: tone === 'overdue' ? '3px solid #991B1B' : tone === 'today' ? '3px solid #B45309' : '3px solid transparent',
+      }}
+    >
+      {task.leadName && <div style={{ fontSize: 11, color: MUTED, fontWeight: 600, marginBottom: 2 }}>{task.leadName}</div>}
+      <div style={{ fontSize: 12.5, color: INK, fontWeight: tone !== 'normal' ? 700 : 500 }}>{task.title}</div>
+      <div className="flex items-center justify-between mt-1.5">
+        <span style={{ fontSize: 9.5, fontWeight: 700, color: PRIORITY_COLOR[task.priority], textTransform: 'uppercase' }}>{task.priority}</span>
+        {task.dueDate && (
+          <span style={{ fontSize: 10.5, fontWeight: tone !== 'normal' ? 700 : 400, color: tone === 'overdue' ? '#991B1B' : tone === 'today' ? '#B45309' : MUTED }}>
+            {formatDate(task.dueDate)}
+          </span>
+        )}
+      </div>
+      <div className="flex items-center gap-1 mt-1.5">
+        {idx > 0 && (
+          <button type="button" onClick={() => onMove(KANBAN_COLUMNS[idx - 1].status)}
+            style={{ fontSize: 10.5, fontWeight: 600, color: PURPLE, background: 'none', border: 'none', padding: 0 }} className="cursor-pointer">
+            ← {KANBAN_COLUMNS[idx - 1].label}
+          </button>
+        )}
+        {idx < KANBAN_COLUMNS.length - 1 && (
+          <button type="button" onClick={() => onMove(KANBAN_COLUMNS[idx + 1].status)}
+            style={{ fontSize: 10.5, fontWeight: 600, color: PURPLE, background: 'none', border: 'none', padding: 0, marginLeft: 'auto' }} className="cursor-pointer">
+            {KANBAN_COLUMNS[idx + 1].label} →
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function TasksCard() {
   const qc = useQueryClient()
   const [showAdd, setShowAdd] = useState(false)
@@ -207,12 +322,11 @@ function TasksCard() {
   const [priority, setPriority] = useState('medium')
 
   const { data: tasks = [], isLoading } = useQuery<TaskItem[]>({
-    queryKey: ['my-tasks'],
-    queryFn: () => api.get('/tasks', { params: { status: 'todo,in_progress' } }).then((r) => r.data),
+    queryKey: ['my-tasks-all'],
+    queryFn: () => api.get('/tasks', { params: { status: 'todo,in_progress,done' } }).then((r) => r.data),
   })
-  const groups = useMemo(() => groupTasksByDue(tasks), [tasks])
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['my-tasks'] })
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['my-tasks-all'] })
 
   const createTask = useMutation({
     mutationFn: () => api.post('/tasks', { title, dueDate: dueDate || undefined, priority }),
@@ -224,106 +338,76 @@ function TasksCard() {
   })
 
   return (
-    <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 20 }} className="mb-5">
+    <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 16, display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div className="flex items-center justify-between mb-3">
         <div style={{ fontWeight: 700, fontSize: 15, color: INK }}>Follow-ups & Tasks</div>
         <button
           onClick={() => setShowAdd((v) => !v)}
-          style={{ height: 32, padding: '0 12px', borderRadius: 8, background: PURPLE, color: 'white', fontSize: 12.5, fontWeight: 600, border: 'none' }}
+          style={{ height: 30, padding: '0 10px', borderRadius: 8, background: PURPLE, color: 'white', fontSize: 12, fontWeight: 600, border: 'none' }}
           className="flex items-center gap-1.5 hover:opacity-90 transition-opacity cursor-pointer"
         >
-          <Plus size={13} /> Add task
+          <Plus size={12} /> Add
         </button>
       </div>
 
       {showAdd && (
-        <div className="flex flex-col sm:flex-row gap-2 mb-4">
+        <div className="flex flex-col gap-2 mb-3">
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Task description"
-            style={{ flex: 1, height: 38, padding: '0 12px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 13 }}
+            style={{ height: 34, padding: '0 10px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 12.5 }}
           />
-          <input
-            type="date"
-            value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
-            style={{ height: 38, padding: '0 12px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 13 }}
-          />
-          <select
-            value={priority}
-            onChange={(e) => setPriority(e.target.value)}
-            style={{ height: 38, padding: '0 10px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 13 }}
-          >
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-          </select>
-          <button
-            type="button"
-            disabled={!title.trim() || createTask.isPending}
-            onClick={() => createTask.mutate()}
-            style={{ height: 38, padding: '0 16px', borderRadius: 8, background: PURPLE, color: 'white', fontSize: 12.5, fontWeight: 600, border: 'none' }}
-            className="disabled:opacity-50 cursor-pointer"
-          >
-            {createTask.isPending ? 'Saving…' : 'Save'}
-          </button>
+          <div className="flex gap-2">
+            <input
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              style={{ flex: 1, height: 34, padding: '0 10px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 12.5 }}
+            />
+            <select
+              value={priority}
+              onChange={(e) => setPriority(e.target.value)}
+              style={{ height: 34, padding: '0 8px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 12.5 }}
+            >
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+            <button
+              type="button"
+              disabled={!title.trim() || createTask.isPending}
+              onClick={() => createTask.mutate()}
+              style={{ height: 34, padding: '0 14px', borderRadius: 8, background: PURPLE, color: 'white', fontSize: 12, fontWeight: 600, border: 'none' }}
+              className="disabled:opacity-50 cursor-pointer shrink-0"
+            >
+              {createTask.isPending ? '…' : 'Save'}
+            </button>
+          </div>
         </div>
       )}
 
       {isLoading ? (
         <Spinner />
       ) : tasks.length === 0 ? (
-        <p className="text-sm text-muted-foreground py-4 text-center">No open tasks. Nice and clear.</p>
+        <p className="text-sm text-muted-foreground py-4 text-center">No tasks yet.</p>
       ) : (
-        <div className="space-y-4">
-          {groups.map((g) => (
-            <div key={g.label}>
-              <div style={{
-                fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6,
-                color: g.tone === 'overdue' ? '#991B1B' : g.tone === 'today' ? '#B45309' : MUTED,
-              }}>
-                {g.label} ({g.items.length})
+        <div className="grid grid-cols-3 gap-2.5" style={{ flex: 1, minHeight: 0 }}>
+          {KANBAN_COLUMNS.map((col) => {
+            const items = tasks.filter((t) => t.status === col.status)
+            return (
+              <div key={col.status} style={{ background: '#F7F5F0', borderRadius: 10, padding: 8, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 6, padding: '0 2px' }}>
+                  {col.label} ({items.length})
+                </div>
+                <div className="space-y-1.5 overflow-y-auto" style={{ maxHeight: 260 }}>
+                  {items.map((t) => (
+                    <KanbanCard key={t._id} task={t} onMove={(status) => updateTask.mutate({ id: t._id, body: { status } })} />
+                  ))}
+                </div>
               </div>
-              <div className="space-y-2">
-                {g.items.map((t) => (
-                  <div
-                    key={t._id}
-                    className="flex items-center justify-between gap-3"
-                    style={{
-                      borderBottom: '1px solid rgba(20,8,31,.06)',
-                      borderLeft: g.tone === 'overdue' ? '3px solid #991B1B' : g.tone === 'today' ? '3px solid #B45309' : '3px solid transparent',
-                      paddingBottom: 10, paddingLeft: 8,
-                    }}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        {t.leadName && <span style={{ fontSize: 12, color: MUTED, fontWeight: 600 }}>{t.leadName}</span>}
-                        <span style={{ fontSize: 13, color: INK, fontWeight: g.tone !== 'normal' ? 700 : 400 }}>{t.title}</span>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: PRIORITY_COLOR[t.priority], textTransform: 'uppercase' }}>{t.priority}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {t.dueDate && (
-                        <span style={{ fontSize: 12, fontWeight: g.tone !== 'normal' ? 700 : 400, color: g.tone === 'overdue' ? '#991B1B' : g.tone === 'today' ? '#B45309' : MUTED }}>
-                          Due {formatDate(t.dueDate)}
-                        </span>
-                      )}
-                      <select
-                        value={t.status}
-                        onChange={(e) => updateTask.mutate({ id: t._id, body: { status: e.target.value } })}
-                        style={{ height: 30, padding: '0 8px', borderRadius: 8, border: '1px solid rgba(20,8,31,.14)', fontSize: 12 }}
-                      >
-                        <option value="todo">To do</option>
-                        <option value="in_progress">In progress</option>
-                        <option value="done">Done</option>
-                      </select>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
@@ -487,13 +571,13 @@ function RenewalsCard() {
   if (!isLoading && contracts.length === 0) return null
 
   return (
-    <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 20 }} className="mb-5">
-      <div style={{ fontWeight: 700, fontSize: 15, color: INK, marginBottom: 4 }}>Renewals — expiring in 7 days</div>
-      <div style={{ fontSize: 12, color: MUTED, marginBottom: 12 }}>Call to confirm, log notes, or set a follow-up task</div>
+    <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 16, display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ fontWeight: 700, fontSize: 15, color: INK, marginBottom: 2 }}>Renewals — expiring in 7 days</div>
+      <div style={{ fontSize: 11.5, color: MUTED, marginBottom: 10 }}>Call to confirm, log notes, or set a follow-up task</div>
       {isLoading ? (
         <Spinner />
       ) : (
-        <div className="space-y-2.5">
+        <div className="space-y-2.5 overflow-y-auto" style={{ maxHeight: 320 }}>
           {contracts.map((c) => (
             <RenewalRow key={c._id} contract={c} onChanged={invalidate} />
           ))}
@@ -613,9 +697,13 @@ export default function SalesBoard() {
       </div>
 
       <UnitAvailabilityStrip />
-      <RenewalsCard />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5 items-stretch">
+        <RenewalsCard />
+        <TasksCard />
+      </div>
+
       <GoalsSection />
-      <TasksCard />
       <QuickAddLead />
 
       {/* Status filter pills */}

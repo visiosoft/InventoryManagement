@@ -21,6 +21,7 @@ router.get('/', async (req, res) => {
   const filter = {};
   if (req.query.assignedTo) filter.assignedTo = String(req.query.assignedTo);
   if (isSalesRep(req)) filter.assignedTo = req.user.id;
+  if (req.query.leadId) filter.leadId = String(req.query.leadId);
   if (req.query.status) {
     const statuses = String(req.query.status).split(',').filter((s) => ALLOWED_STATUS.has(s));
     if (statuses.length) filter.status = { $in: statuses };

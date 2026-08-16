@@ -24,6 +24,8 @@ const navGroups = [
     items: [
       { to: '/my-leads', label: 'My Leads', icon: UserPlus, perm: 'sales_board' },
       { to: '/moving-estimator', label: 'Moving Estimator', icon: Calculator, perm: 'sales_board' },
+      { to: '/my-performance', label: 'Reports', icon: BarChart3, perm: 'sales_board' },
+      { to: '/account', label: 'Settings', icon: Settings, perm: 'sales_board' },
       { to: '/leads', label: 'Leads', icon: UserPlus, perm: 'leads' },
       { to: '/quotations', label: 'Quotations', icon: ScrollText, perm: 'quotes' },
     ],
@@ -109,6 +111,8 @@ const PAGE_TITLES: Record<string, string> = {
   '/leads': 'Leads',
   '/my-leads': 'My Leads',
   '/moving-estimator': 'Moving Estimator',
+  '/my-performance': 'My Performance',
+  '/account': 'Settings',
   '/quotations': 'Quotations',
   '/contracts': 'Tenants',
   '/invoices': 'Invoices',

@@ -862,8 +862,11 @@ router.put('/:id', async (req, res) => {
     const contract = await Contract.findById(req.params.id);
     if (!contract) return res.status(404).json({ error: 'Contract not found' });
 
-    // Once booked (active), only an admin may edit the contract terms.
-    if (contract.status === 'active' && req.user.role !== 'admin') {
+    // Once booked (active), only an admin may edit the contract terms — except
+    // renewalIntent alone, which sales reps update from the renewal-calling
+    // queue on contracts that are, by definition, always active.
+    const isRenewalIntentOnly = Object.keys(req.body).length > 0 && Object.keys(req.body).every((k) => k === 'renewalIntent');
+    if (contract.status === 'active' && req.user.role !== 'admin' && !isRenewalIntentOnly) {
       return res.status(403).json({ error: 'Only an admin can edit a booked contract' });
     }
 

@@ -49,6 +49,49 @@ router.get('/me', async (req, res) => {
   res.json({ targets: { weekly: goal.weekly, monthly: goal.monthly }, actual });
 });
 
+// Personal performance: totals + a 6-month new-leads trend, for the rep's
+// own "Reports" page. Declared before '/:userId' (no suffix) is irrelevant
+// since path shapes differ, but declared before '/:userId/performance'
+// below so '/me/performance' isn't swallowed by that wildcard.
+async function computePerformance(userId) {
+  const [totalLeads, wonLeads, totalMoving, wonMoving] = await Promise.all([
+    Lead.countDocuments({ owner: userId }),
+    Lead.countDocuments({ owner: userId, status: 'won' }),
+    MovingLead.countDocuments({ owner: userId }),
+    MovingLead.countDocuments({ owner: userId, status: 'won' }),
+  ]);
+  const newLeadsTotal = totalLeads + totalMoving;
+  const wonDealsTotal = wonLeads + wonMoving;
+  const conversionRatePct = newLeadsTotal > 0 ? Math.round((wonDealsTotal / newLeadsTotal) * 1000) / 10 : 0;
+
+  const monthsBack = 6;
+  const now = new Date();
+  const monthly = [];
+  for (let i = monthsBack - 1; i >= 0; i--) {
+    const start = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+    const [leadCount, movingCount] = await Promise.all([
+      Lead.countDocuments({ owner: userId, leadDateTime: { $gte: start, $lt: end } }),
+      MovingLead.countDocuments({ owner: userId, createdAt: { $gte: start, $lt: end } }),
+    ]);
+    monthly.push({ month: start.toLocaleString('en-US', { month: 'short' }), newLeads: leadCount + movingCount });
+  }
+
+  return { newLeadsTotal, wonDealsTotal, conversionRatePct, monthly };
+}
+
+router.get('/me/performance', async (req, res) => {
+  res.json(await computePerformance(req.user.id));
+});
+
+router.get('/:userId/performance', async (req, res) => {
+  const isSelf = String(req.user.id) === String(req.params.userId);
+  if (!isSelf && req.user.role !== 'admin' && req.user.role !== 'staff') {
+    return res.status(403).json({ error: 'Not allowed' });
+  }
+  res.json(await computePerformance(req.params.userId));
+});
+
 router.get('/:userId', async (req, res) => {
   const isSelf = String(req.user.id) === String(req.params.userId);
   if (!isSelf && req.user.role !== 'admin' && req.user.role !== 'staff') {
