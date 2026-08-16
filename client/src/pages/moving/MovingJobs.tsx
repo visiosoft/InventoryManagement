@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Plus, Search, ArrowRight, MapPin, Trash2, Pencil, Briefcase, CheckCircle, Clock, Truck } from 'lucide-react'
+import { Plus, Search, ArrowRight, MapPin, Trash2, Pencil, Briefcase, CheckCircle, Clock, Truck, FileSignature } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingJob, MovingJobStatus } from '../../lib/types'
 import { Badge, Button, Modal, Spinner, movingJobStatusLabel } from '../../components/ui'
@@ -217,6 +217,13 @@ export default function MovingJobs() {
                         <Pencil size={14} />
                       </Link>
                     )}
+                    {j.signedDocUrl && (
+                      <a href={j.signedDocUrl} target="_blank" rel="noreferrer" title="View signed agreement"
+                        onClick={(e) => e.stopPropagation()}
+                        className="p-1.5 rounded-lg hover:bg-emerald-500/10 transition-colors" style={{ color: MUTED }}>
+                        <FileSignature size={14} />
+                      </a>
+                    )}
                     {!['in_progress', 'invoiced'].includes(j.status) && (
                       <button onClick={() => { setDeleteTarget({ _id: j._id, jobNo: j.jobNo }); setDeleteErr('') }}
                         className="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors" style={{ color: MUTED }}>
@@ -265,6 +272,12 @@ export default function MovingJobs() {
                             <Link to={`/moving/jobs/${j._id}?edit=1`} className="p-1.5 rounded-lg hover:bg-purple-500/10 transition-colors" style={{ color: MUTED }}>
                               <Pencil size={14} />
                             </Link>
+                          )}
+                          {j.signedDocUrl && (
+                            <a href={j.signedDocUrl} target="_blank" rel="noreferrer" title="View signed agreement"
+                              className="p-1.5 rounded-lg hover:bg-emerald-500/10 transition-colors" style={{ color: MUTED }}>
+                              <FileSignature size={14} />
+                            </a>
                           )}
                           {!['in_progress', 'invoiced'].includes(j.status) && (
                             <button onClick={() => { setDeleteTarget({ _id: j._id, jobNo: j.jobNo }); setDeleteErr('') }}

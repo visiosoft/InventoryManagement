@@ -679,6 +679,8 @@ export interface MovingJob {
   notes?: string
   timeline?: ContractNote[]
   dispatchNotes?: string
+  agreementText?: string
+  signedDocUrl?: string
   createdAt?: string
 }
 
