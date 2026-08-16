@@ -48,6 +48,7 @@ import automationRuleRoutes from './routes/automationRules.js';
 import taskRoutes from './routes/tasks.js';
 import salesGoalRoutes from './routes/salesGoals.js';
 import salesTeamRoutes from './routes/salesTeam.js';
+import activityRoutes from './routes/activity.js';
 import customerAuthRoutes from './routes/customerAuth.js';
 import customerPortalRoutes from './routes/customerPortal.js';
 import crewAuthRoutes from './routes/crewAuth.js';
@@ -181,6 +182,7 @@ app.use('/api/automation-rules', requireAuth, automationRuleRoutes);
 app.use('/api/tasks', requireAuth, taskRoutes);
 app.use('/api/sales-goals', requireAuth, salesGoalRoutes);
 app.use('/api/sales-team', requireAuth, salesTeamRoutes);
+app.use('/api/activity', requireAuth, activityRoutes);
 
 // Central error handler
 app.use((err, _req, res, _next) => {
