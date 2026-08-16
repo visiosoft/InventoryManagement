@@ -538,21 +538,77 @@ function RenewalsCard() {
   })
   const invalidate = () => qc.invalidateQueries({ queryKey: ['expiring-contracts'] })
 
-  if (!isLoading && contracts.length === 0) return null
-
   return (
     <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 16, display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ fontWeight: 700, fontSize: 15, color: INK, marginBottom: 2 }}>Renewals — expiring in 7 days</div>
       <div style={{ fontSize: 11.5, color: MUTED, marginBottom: 10 }}>Call to confirm, log notes, or set a follow-up task</div>
       {isLoading ? (
         <Spinner />
+      ) : contracts.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-8 text-center">Nothing expiring in the next 7 days.</p>
       ) : (
-        <div className="space-y-2.5 overflow-y-auto" style={{ maxHeight: 320 }}>
+        <div className="space-y-2.5 overflow-y-auto" style={{ maxHeight: 420 }}>
           {contracts.map((c) => (
             <RenewalRow key={c._id} contract={c} onChanged={invalidate} />
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// Tasks and renewals used to sit side by side, which squeezed both. Tabbed
+// instead, tasks first since that's the daily driver — the counts stay
+// visible on the inactive tab so nothing gets forgotten.
+function WorkTabs() {
+  const [tab, setTab] = useState<'tasks' | 'renewals'>('tasks')
+
+  // Same query keys the cards below use, so react-query serves these from
+  // cache rather than issuing extra requests.
+  const { data: tasks = [] } = useQuery<TaskItem[]>({
+    queryKey: ['my-tasks-all'],
+    queryFn: () => api.get('/tasks', { params: { status: 'todo,in_progress,done' } }).then((r) => r.data),
+  })
+  const { data: contracts = [] } = useQuery<ExpiringContract[]>({
+    queryKey: ['expiring-contracts'],
+    queryFn: () => api.get('/contracts/expiring-soon', { params: { days: 7 } }).then((r) => r.data),
+  })
+
+  const TABS = [
+    { key: 'tasks' as const, label: 'Follow-ups & Tasks', count: tasks.filter((t) => t.status !== 'done').length },
+    { key: 'renewals' as const, label: 'Renewals — 7 days', count: contracts.length },
+  ]
+
+  return (
+    <div className="mb-5">
+      <div className="flex gap-1 rounded-full p-1 mb-3 w-fit" style={{ background: '#F6F0E4' }}>
+        {TABS.map((t) => {
+          const active = tab === t.key
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTab(t.key)}
+              className="flex items-center gap-2 px-4 py-1.5 rounded-full text-[13px] font-semibold cursor-pointer transition-colors"
+              style={active
+                ? { background: 'white', color: INK, boxShadow: '0 1px 2px rgba(20,8,31,.10)' }
+                : { background: 'transparent', color: MUTED }}
+            >
+              {t.label}
+              {t.count > 0 && (
+                <span style={{
+                  fontSize: 10.5, fontWeight: 700, borderRadius: 999, padding: '1px 7px',
+                  background: active ? PURPLE : 'rgba(20,8,31,.08)',
+                  color: active ? 'white' : MUTED,
+                }}>
+                  {t.count}
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+      {tab === 'tasks' ? <TasksCard /> : <RenewalsCard />}
     </div>
   )
 }
@@ -669,10 +725,7 @@ export default function SalesBoard() {
       <KpiStrip />
       <UnitAvailabilityStrip />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5 items-stretch">
-        <RenewalsCard />
-        <TasksCard />
-      </div>
+      <WorkTabs />
 
       <GoalsSection />
       <QuickAddLead />
