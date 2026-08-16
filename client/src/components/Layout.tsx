@@ -58,6 +58,19 @@ const reportItems = [
 
 const navBottom: { to: string; label: string; icon: any; perm: string }[] = []
 
+// Sales reps see one flat list matching the standalone mockup's nav order,
+// instead of the admin app's split Inventory/Sales/Moving groups.
+const salesRepNavItems = [
+  { key: 'dashboard', to: '/my-leads', label: 'Dashboard', icon: LayoutDashboard, perm: 'sales_board' },
+  { key: 'unit-map', to: '/floor-map', label: 'Unit Map', icon: MapIcon, perm: 'units' },
+  { key: 'leads', to: '/my-leads', label: 'Leads', icon: UserPlus, perm: 'sales_board' },
+  { key: 'customers', to: '/customers', label: 'Customers', icon: Users, perm: 'customers' },
+  { key: 'moving-schedule', to: '/moving/schedule', label: 'Moving Schedule', icon: CalendarDays, perm: 'moving_schedule' },
+  { key: 'moving-estimator', to: '/moving-estimator', label: 'Moving Estimator', icon: Calculator, perm: 'sales_board' },
+  { key: 'reports', to: '/my-performance', label: 'Reports', icon: BarChart3, perm: 'sales_board' },
+  { key: 'settings', to: '/account', label: 'Settings', icon: Settings, perm: 'sales_board' },
+]
+
 const movingNavItems = [
   { to: '/moving', label: 'Dashboard', icon: LayoutDashboard, perm: 'moving_dashboard' as string },
   { to: '/moving/schedule', label: 'Schedule Jobs', icon: CalendarDays, perm: 'moving_schedule' },
@@ -178,6 +191,7 @@ export default function Layout() {
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
   const isAdmin = user?.role === 'admin'
+  const isSalesRepUser = user?.role === 'sales_rep'
   const isMovingOnly = hasPermission('moving_dashboard') && !hasPermission('units') && !hasPermission('dashboard')
 
   // Site switcher disabled for now — clear any previously selected site
@@ -232,7 +246,15 @@ export default function Layout() {
 
       {/* Nav */}
       <nav className={cn("flex-1 overflow-y-auto py-3 space-y-0.5", isCollapsed ? 'px-1.5' : 'px-2.5')}>
-        {!isMovingOnly && navTop.filter(({ perm }) => !perm || hasPermission(perm)).map(({ to, label, icon: Icon }) => (
+        {isSalesRepUser && salesRepNavItems.filter(({ perm }) => !perm || hasPermission(perm)).map(({ key, to, label, icon: Icon }) => (
+          <NavLink key={key} to={to}
+            className={({ isActive }) => isCollapsed ? cn('flex items-center justify-center rounded-lg p-2 transition-all duration-150', isActive ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8') : navLinkCls(isActive)}
+            title={isCollapsed ? label : undefined}>
+            <Icon size={isCollapsed ? 18 : 15} />{!isCollapsed && label}
+          </NavLink>
+        ))}
+
+        {!isMovingOnly && !isSalesRepUser && navTop.filter(({ perm }) => !perm || hasPermission(perm)).map(({ to, label, icon: Icon }) => (
           <NavLink key={to} to={to} end={to === '/'}
             className={({ isActive }) => isCollapsed ? cn('flex items-center justify-center rounded-lg p-2 transition-all duration-150', isActive ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8') : navLinkCls(isActive)}
             title={isCollapsed ? label : undefined}>
@@ -240,7 +262,7 @@ export default function Layout() {
           </NavLink>
         ))}
 
-        {!isMovingOnly && navGroups.map((group) => {
+        {!isMovingOnly && !isSalesRepUser && navGroups.map((group) => {
           // Reps get 'units' for the read-only Floor Map, not the editable
           // unit list that permission also happens to gate.
           const visibleItems = group.items
@@ -327,7 +349,7 @@ export default function Layout() {
 
 
         {/* Moving Business */}
-        {(() => {
+        {!isSalesRepUser && (() => {
           const visibleMoving = movingNavItems.filter(({ perm }) => hasPermission(perm))
           if (visibleMoving.length === 0) return null
           return (
@@ -390,7 +412,7 @@ export default function Layout() {
         })()}
 
         {/* Settings & admin — mobile only; desktop reaches these via the profile dropdown */}
-        {(() => {
+        {!isSalesRepUser && (() => {
           const visibleProfile = profileMenuItems.filter(({ perm }) => hasPermission(perm))
           if (visibleProfile.length === 0 && !isAdmin) return null
           return (

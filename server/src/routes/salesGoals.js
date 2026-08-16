@@ -43,10 +43,51 @@ async function getOrCreate(userId) {
   return goal;
 }
 
+function targetsPayload(goal) {
+  return {
+    daily: goal.daily,
+    weekly: goal.weekly,
+    monthly: goal.monthly,
+    dailyFollowUps: goal.dailyFollowUps,
+    startTime: goal.startTime,
+    finishTime: goal.finishTime,
+  };
+}
+
+function applyTargetFields(goal, body) {
+  const { daily, weekly, monthly, dailyFollowUps, startTime, finishTime } = body || {};
+  if (daily) {
+    if (daily.units !== undefined) goal.daily.units = Math.max(0, Number(daily.units) || 0);
+    if (daily.moving !== undefined) goal.daily.moving = Math.max(0, Number(daily.moving) || 0);
+  }
+  if (weekly) {
+    if (weekly.units !== undefined) goal.weekly.units = Math.max(0, Number(weekly.units) || 0);
+    if (weekly.moving !== undefined) goal.weekly.moving = Math.max(0, Number(weekly.moving) || 0);
+  }
+  if (monthly) {
+    if (monthly.units !== undefined) goal.monthly.units = Math.max(0, Number(monthly.units) || 0);
+    if (monthly.moving !== undefined) goal.monthly.moving = Math.max(0, Number(monthly.moving) || 0);
+  }
+  if (dailyFollowUps !== undefined) goal.dailyFollowUps = Math.max(0, Number(dailyFollowUps) || 0);
+  if (startTime !== undefined) goal.startTime = String(startTime).slice(0, 5);
+  if (finishTime !== undefined) goal.finishTime = String(finishTime).slice(0, 5);
+}
+
 router.get('/me', async (req, res) => {
   const goal = await getOrCreate(req.user.id);
   const actual = await computeActual(req.user.id);
-  res.json({ targets: { weekly: goal.weekly, monthly: goal.monthly }, actual });
+  res.json({ targets: targetsPayload(goal), actual });
+});
+
+// Self-service: a rep sets their own daily habits/targets (distinct from
+// admin-owned weekly/monthly team targets edited via PUT /:userId below —
+// both write the same document, admin numbers just double as team goals
+// shown on the Sales Team dashboard).
+router.put('/me', async (req, res) => {
+  const goal = await getOrCreate(req.user.id);
+  applyTargetFields(goal, req.body);
+  await goal.save();
+  res.json({ targets: targetsPayload(goal) });
 });
 
 // Personal performance: totals + a 6-month new-leads trend, for the rep's
@@ -99,22 +140,14 @@ router.get('/:userId', async (req, res) => {
   }
   const goal = await getOrCreate(req.params.userId);
   const actual = await computeActual(req.params.userId);
-  res.json({ targets: { weekly: goal.weekly, monthly: goal.monthly }, actual });
+  res.json({ targets: targetsPayload(goal), actual });
 });
 
 router.put('/:userId', requireAdmin, async (req, res) => {
-  const { weekly, monthly } = req.body || {};
   const goal = await getOrCreate(req.params.userId);
-  if (weekly) {
-    if (weekly.units !== undefined) goal.weekly.units = Math.max(0, Number(weekly.units) || 0);
-    if (weekly.moving !== undefined) goal.weekly.moving = Math.max(0, Number(weekly.moving) || 0);
-  }
-  if (monthly) {
-    if (monthly.units !== undefined) goal.monthly.units = Math.max(0, Number(monthly.units) || 0);
-    if (monthly.moving !== undefined) goal.monthly.moving = Math.max(0, Number(monthly.moving) || 0);
-  }
+  applyTargetFields(goal, req.body);
   await goal.save();
-  res.json({ targets: { weekly: goal.weekly, monthly: goal.monthly } });
+  res.json({ targets: targetsPayload(goal) });
 });
 
 export default router;

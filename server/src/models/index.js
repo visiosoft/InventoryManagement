@@ -1398,6 +1398,10 @@ export const Task = model('Task', taskSchema);
 const salesGoalSchema = new Schema(
   {
     owner: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+    daily: {
+      units: { type: Number, default: 0 },
+      moving: { type: Number, default: 0 },
+    },
     weekly: {
       units: { type: Number, default: 0 },
       moving: { type: Number, default: 0 },
@@ -1406,6 +1410,9 @@ const salesGoalSchema = new Schema(
       units: { type: Number, default: 0 },
       moving: { type: Number, default: 0 },
     },
+    dailyFollowUps: { type: Number, default: 0 },
+    startTime: { type: String, default: '' },
+    finishTime: { type: String, default: '' },
   },
   { timestamps: true }
 );
