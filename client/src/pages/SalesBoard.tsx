@@ -1,7 +1,7 @@
-import { useMemo, useRef, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { CalendarPlus, ChevronDown, ChevronRight, MessageCircle, Phone, Plus, StickyNote, UserPlus } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, MessageCircle, Phone, Plus, UserPlus } from 'lucide-react'
 import { api, apiError, leadApi } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { Lead, MovingLead, MovingLeadStatus } from '../lib/types'
@@ -43,30 +43,87 @@ const RENEWAL_OPTIONS: { value: ExpiringContract['renewalIntent']; label: string
 
 interface ContractTimelineEntry { at: string; text: string; author?: string }
 
-function RenewalRow({ contract, onChanged }: { contract: ExpiringContract; onChanged: () => void }) {
+const RENEWAL_DOT: Record<ExpiringContract['renewalIntent'], string> = {
+  undecided: '#A99FB5',
+  renewing: '#10B981',
+  not_renewing: '#DC2626',
+}
+
+// Red once a contract is nearly out of runway, amber mid-week, muted otherwise.
+const urgencyColor = (daysLeft: number) => (daysLeft <= 2 ? '#991B1B' : daysLeft <= 4 ? '#B45309' : MUTED)
+
+const sectionLabel = { fontSize: 11, fontWeight: 700, color: MUTED, textTransform: 'uppercase', letterSpacing: '.04em' } as const
+const inputStyle = { height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 12.5, width: '100%' } as const
+const purpleBtn = { height: 32, padding: '0 12px', borderRadius: 8, background: PURPLE, color: 'white', fontSize: 12, fontWeight: 600, border: 'none' } as const
+
+/** One row in the left-hand master list. */
+function RenewalListItem({
+  contract, selected, onSelect, notePreview, openFollowUps,
+}: {
+  contract: ExpiringContract
+  selected: boolean
+  onSelect: () => void
+  notePreview?: string
+  openFollowUps?: number
+}) {
+  const option = RENEWAL_OPTIONS.find((o) => o.value === contract.renewalIntent)
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className="w-full text-left cursor-pointer transition-colors"
+      style={{
+        padding: '10px 12px',
+        borderRadius: 12,
+        border: `1px solid ${selected ? 'rgba(91,43,201,.35)' : 'transparent'}`,
+        background: selected ? '#F7F3FF' : 'transparent',
+      }}
+    >
+      <div className="flex items-baseline gap-2 min-w-0">
+        <span style={{ fontSize: 13, fontWeight: 700, color: INK }} className="truncate">
+          {contract.customer?.fullName || '—'}
+        </span>
+        <span style={{ fontSize: 11.5, color: MUTED }} className="shrink-0">{contract.unit?.unitNumber}</span>
+      </div>
+      <div style={{ fontSize: 11.5, fontWeight: contract.daysLeft <= 2 ? 700 : 400, color: urgencyColor(contract.daysLeft), marginTop: 1 }}>
+        Expires {formatDate(contract.endDate)} · {contract.daysLeft}d left
+      </div>
+      <div className="flex items-center gap-1.5 flex-wrap" style={{ marginTop: 6 }}>
+        <span
+          className="inline-flex items-center gap-1"
+          style={{ fontSize: 10, fontWeight: 700, color: '#4A1FA0', background: '#F7F3FF', border: '1px solid rgba(20,8,31,.06)', borderRadius: 999, padding: '2px 8px' }}
+        >
+          <span style={{ width: 6, height: 6, borderRadius: 999, background: RENEWAL_DOT[contract.renewalIntent], display: 'inline-block' }} />
+          {option?.label || 'Undecided'}
+        </span>
+        {!!openFollowUps && openFollowUps > 0 && (
+          <span style={{ fontSize: 10, fontWeight: 700, color: PURPLE, background: '#F0E9FF', borderRadius: 999, padding: '2px 8px' }}>
+            {openFollowUps} open follow-up{openFollowUps > 1 ? 's' : ''}
+          </span>
+        )}
+      </div>
+      {notePreview && (
+        <div style={{ fontSize: 11.5, color: MUTED, marginTop: 5 }} className="truncate">{notePreview}</div>
+      )}
+    </button>
+  )
+}
+
+/** Right-hand detail pane for the selected contract. */
+function RenewalDetail({ contract, onChanged, onBack }: { contract: ExpiringContract; onChanged: () => void; onBack: () => void }) {
   const qc = useQueryClient()
-  const [expanded, setExpanded] = useState(false)
   const [noteText, setNoteText] = useState('')
   const [taskTitle, setTaskTitle] = useState('')
   const [taskDue, setTaskDue] = useState('')
   const [err, setErr] = useState('')
-  const noteInputRef = useRef<HTMLInputElement>(null)
-  const taskInputRef = useRef<HTMLInputElement>(null)
-
-  function openPanel(focus?: 'note' | 'task') {
-    setExpanded(true)
-    if (focus) requestAnimationFrame(() => (focus === 'note' ? noteInputRef : taskInputRef).current?.focus())
-  }
 
   const { data: detail } = useQuery<{ timeline?: ContractTimelineEntry[] }>({
     queryKey: ['contract-timeline', contract._id],
     queryFn: () => api.get(`/contracts/${contract._id}`).then((r) => r.data),
-    enabled: expanded,
   })
   const { data: linkedTasks = [] } = useQuery<TaskItem[]>({
     queryKey: ['contract-tasks', contract._id],
     queryFn: () => api.get('/tasks', { params: { leadId: contract._id } }).then((r) => r.data),
-    enabled: expanded,
   })
 
   const invalidateDetail = () => {
@@ -96,31 +153,38 @@ function RenewalRow({ contract, onChanged }: { contract: ExpiringContract; onCha
     onSuccess: () => { setTaskTitle(''); setTaskDue(''); setErr(''); invalidateDetail() },
     onError: (e) => setErr(apiError(e)),
   })
+  const toggleTask = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) => api.patch(`/tasks/${id}`, { status }),
+    onSuccess: () => { setErr(''); invalidateDetail() },
+    onError: (e) => setErr(apiError(e)),
+  })
 
   const digits = (contract.customer?.phone || '').replace(/[^0-9]/g, '')
-  const urgent = contract.daysLeft <= 2
   const timeline = [...(detail?.timeline || [])].reverse()
-
-  const followUpCount = linkedTasks.filter((t) => t.status !== 'done').length
+  const openFollowUps = linkedTasks.filter((t) => t.status !== 'done')
 
   return (
-    <div style={{ borderBottom: '1px solid rgba(20,8,31,.06)', paddingBottom: 10 }}>
-      <div className="flex items-start justify-between gap-2">
+    <div className="min-w-0">
+      <button
+        type="button"
+        onClick={onBack}
+        className="lg:hidden inline-flex items-center gap-1 cursor-pointer mb-2"
+        style={{ background: 'none', border: 'none', padding: 0, fontSize: 12, fontWeight: 600, color: PURPLE }}
+      >
+        <ChevronLeft size={14} /> Back to list
+      </button>
+
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span style={{ fontSize: 13, fontWeight: 700, color: INK }}>{contract.customer?.fullName || '—'}</span>
-            <span style={{ fontSize: 12, color: MUTED }}>{contract.unit?.unitNumber}</span>
-            {followUpCount > 0 && (
-              <span style={{ fontSize: 10, fontWeight: 700, color: PURPLE, background: '#F0E9FF', borderRadius: 999, padding: '1px 7px' }}>
-                {followUpCount} open follow-up{followUpCount > 1 ? 's' : ''}
-              </span>
-            )}
+          <div style={{ fontSize: 16, fontWeight: 700, color: INK }} className="truncate">
+            {contract.customer?.fullName || '—'}
           </div>
-          <div style={{ fontSize: 12, fontWeight: urgent ? 700 : 400, color: urgent ? '#991B1B' : contract.daysLeft <= 4 ? '#B45309' : MUTED }}>
-            Expires {formatDate(contract.endDate)} · {contract.daysLeft}d left
+          <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>
+            {contract.unit?.unitNumber || '—'} · Expires {formatDate(contract.endDate)} · {contract.daysLeft}d left
           </div>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
           {contract.customer?.phone && (
             <a href={`tel:${contract.customer.phone}`} title="Call" className="p-1.5 rounded-lg hover:bg-blue-50 transition-colors">
               <Phone size={15} className="text-blue-600" />
@@ -131,119 +195,124 @@ function RenewalRow({ contract, onChanged }: { contract: ExpiringContract; onCha
               <MessageCircle size={15} className="text-green-600" />
             </a>
           )}
-          <button type="button" title="Add note" onClick={() => openPanel('note')} className="p-1.5 rounded-lg hover:bg-[#F7F3FF] transition-colors cursor-pointer">
-            <StickyNote size={15} style={{ color: PURPLE }} />
-          </button>
-          <button type="button" title="Add task" onClick={() => openPanel('task')} className="p-1.5 rounded-lg hover:bg-[#F7F3FF] transition-colors cursor-pointer">
-            <CalendarPlus size={15} style={{ color: PURPLE }} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            title={expanded ? 'Collapse' : 'View history'}
-            className="p-1.5 rounded-lg hover:bg-black/5 transition-colors cursor-pointer"
-          >
-            <ChevronDown size={15} style={{ color: MUTED, transform: expanded ? 'rotate(180deg)' : undefined, transition: 'transform .15s' }} />
-          </button>
+          {contract.customer?.phone && (
+            <span style={{ fontSize: 12, color: MUTED, fontVariantNumeric: 'tabular-nums' }}>{contract.customer.phone}</span>
+          )}
         </div>
       </div>
 
-      <div className="mt-1.5 flex gap-1 rounded-full bg-black/5 p-1 w-fit">
+      {/* Renewal status */}
+      <div className="mt-3 flex gap-1 rounded-full bg-black/5 p-1 w-fit">
         {RENEWAL_OPTIONS.map((o) => (
           <button
             key={o.value}
             type="button"
             disabled={setIntent.isPending}
             onClick={() => setIntent.mutate(o.value)}
-            className={`h-6 px-2.5 rounded-full text-[11px] font-semibold cursor-pointer transition-colors disabled:opacity-50 ${contract.renewalIntent === o.value ? o.activeClass : 'bg-transparent text-muted-foreground hover:bg-muted'}`}
+            className={`h-7 px-3 rounded-full text-[11.5px] font-semibold cursor-pointer transition-colors disabled:opacity-50 ${contract.renewalIntent === o.value ? o.activeClass : 'bg-transparent text-muted-foreground hover:bg-muted'}`}
           >
             {o.label}
           </button>
         ))}
       </div>
 
-      {expanded && (
-        <div className="mt-2 rounded-lg bg-muted/20 p-2.5">
-          {err && <p className="text-xs text-destructive mb-2">{err}</p>}
+      {err && <p className="text-xs text-destructive mt-2">{err}</p>}
 
-          <div className="flex flex-col sm:flex-row gap-4 mb-3">
-            <div className="flex-1 flex gap-2">
-              <input
-                ref={noteInputRef}
-                value={noteText}
-                onChange={(e) => setNoteText(e.target.value)}
-                placeholder="Add a note (call outcome, etc.)"
-                style={{ flex: 1, height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 12.5 }}
-              />
-              <button
-                type="button"
-                disabled={!noteText.trim() || addNote.isPending}
-                onClick={() => addNote.mutate()}
-                style={{ height: 32, padding: '0 12px', borderRadius: 8, background: PURPLE, color: 'white', fontSize: 12, fontWeight: 600, border: 'none' }}
-                className="disabled:opacity-50 cursor-pointer shrink-0"
-              >
-                {addNote.isPending ? 'Saving…' : 'Save note'}
-              </button>
-            </div>
-            <div className="flex-1 flex gap-2">
-              <input
-                ref={taskInputRef}
-                value={taskTitle}
-                onChange={(e) => setTaskTitle(e.target.value)}
-                placeholder="Follow-up task title"
-                style={{ flex: 1, height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 12.5 }}
-              />
-              <input
-                type="date"
-                value={taskDue}
-                onChange={(e) => setTaskDue(e.target.value)}
-                style={{ height: 32, padding: '0 8px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 12.5 }}
-              />
-              <button
-                type="button"
-                disabled={!taskTitle.trim() || addTask.isPending}
-                onClick={() => addTask.mutate()}
-                style={{ height: 32, padding: '0 12px', borderRadius: 8, background: PURPLE, color: 'white', fontSize: 12, fontWeight: 600, border: 'none' }}
-                className="disabled:opacity-50 cursor-pointer shrink-0"
-              >
-                {addTask.isPending ? 'Saving…' : 'Add task'}
-              </button>
-            </div>
-          </div>
+      {/* Forms */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+        <div style={{ background: '#FDFCFA', border: '1px solid rgba(20,8,31,.08)', borderRadius: 12, padding: 12 }}>
+          <div style={sectionLabel}>Add a note</div>
+          <textarea
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            placeholder="Call outcome, tenant response…"
+            rows={3}
+            style={{ ...inputStyle, height: 'auto', padding: '8px 10px', marginTop: 6, resize: 'vertical' }}
+          />
+          <button
+            type="button"
+            disabled={!noteText.trim() || addNote.isPending}
+            onClick={() => addNote.mutate()}
+            style={{ ...purpleBtn, marginTop: 8 }}
+            className="disabled:opacity-50 cursor-pointer"
+          >
+            {addNote.isPending ? 'Saving…' : 'Save note'}
+          </button>
+        </div>
 
-          {/* Follow-up tasks tied to this contract */}
-          {linkedTasks.length > 0 && (
-            <div className="mb-3">
-              <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 }}>Follow-ups</div>
-              <div className="space-y-1">
-                {linkedTasks.map((t) => (
-                  <div key={t._id} className="flex items-center justify-between gap-2" style={{ fontSize: 12.5 }}>
-                    <span style={{ color: t.status === 'done' ? MUTED : INK, textDecoration: t.status === 'done' ? 'line-through' : 'none' }}>{t.title}</span>
-                    <span style={{ color: MUTED, fontSize: 11 }}>{t.dueDate ? formatDate(t.dueDate) : ''}</span>
-                  </div>
-                ))}
+        <div style={{ background: '#FDFCFA', border: '1px solid rgba(20,8,31,.08)', borderRadius: 12, padding: 12 }}>
+          <div style={sectionLabel}>Add a follow-up task</div>
+          <input
+            value={taskTitle}
+            onChange={(e) => setTaskTitle(e.target.value)}
+            placeholder="Follow-up task title"
+            style={{ ...inputStyle, marginTop: 6 }}
+          />
+          <input
+            type="date"
+            value={taskDue}
+            onChange={(e) => setTaskDue(e.target.value)}
+            style={{ ...inputStyle, marginTop: 8 }}
+          />
+          <button
+            type="button"
+            disabled={!taskTitle.trim() || addTask.isPending}
+            onClick={() => addTask.mutate()}
+            style={{ ...purpleBtn, marginTop: 8 }}
+            className="disabled:opacity-50 cursor-pointer"
+          >
+            {addTask.isPending ? 'Saving…' : 'Add task'}
+          </button>
+        </div>
+      </div>
+
+      {/* Follow-ups */}
+      <div className="mt-4">
+        <div style={sectionLabel}>Follow-ups</div>
+        {linkedTasks.length === 0 ? (
+          <p style={{ fontSize: 12.5, color: MUTED, marginTop: 4 }}>No open follow-ups for this unit.</p>
+        ) : (
+          <div className="space-y-1 mt-1.5">
+            {linkedTasks.map((t) => (
+              <div key={t._id} className="flex items-center justify-between gap-2" style={{ fontSize: 12.5 }}>
+                <label className="flex items-center gap-2 min-w-0 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={t.status === 'done'}
+                    disabled={toggleTask.isPending}
+                    onChange={() => toggleTask.mutate({ id: t._id, status: t.status === 'done' ? 'todo' : 'done' })}
+                    className="cursor-pointer"
+                  />
+                  <span className="truncate" style={{ color: t.status === 'done' ? MUTED : INK, textDecoration: t.status === 'done' ? 'line-through' : 'none' }}>
+                    {t.title}
+                  </span>
+                </label>
+                <span style={{ color: MUTED, fontSize: 11, whiteSpace: 'nowrap' }}>{t.dueDate ? formatDate(t.dueDate) : ''}</span>
               </div>
-            </div>
-          )}
-
-          {/* Notes / activity history */}
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 }}>History</div>
-            {timeline.length === 0 ? (
-              <p style={{ fontSize: 12.5, color: MUTED }}>No notes or activity yet.</p>
-            ) : (
-              <div className="space-y-1.5 max-h-48 overflow-auto">
-                {timeline.map((t, i) => (
-                  <div key={i} className="flex items-start justify-between gap-2" style={{ fontSize: 12.5, color: '#4A4357' }}>
-                    <span>{t.text}</span>
-                    <span style={{ color: MUTED, fontSize: 11, whiteSpace: 'nowrap' }}>{formatDate(t.at)}</span>
-                  </div>
-                ))}
-              </div>
+            ))}
+            {openFollowUps.length === 0 && (
+              <p style={{ fontSize: 11.5, color: MUTED }}>No open follow-ups for this unit.</p>
             )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
+
+      {/* History */}
+      <div className="mt-4">
+        <div style={sectionLabel}>History</div>
+        {timeline.length === 0 ? (
+          <p style={{ fontSize: 12.5, color: MUTED, marginTop: 4 }}>No notes or activity yet.</p>
+        ) : (
+          <div className="space-y-1.5 max-h-56 overflow-auto mt-1.5">
+            {timeline.map((t, i) => (
+              <div key={i} className="flex items-start justify-between gap-2" style={{ fontSize: 12.5, color: '#4A4357' }}>
+                <span>{t.text}</span>
+                <span style={{ color: MUTED, fontSize: 11, whiteSpace: 'nowrap' }}>{formatDate(t.at)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -520,27 +589,85 @@ function QuickAddLead() {
   )
 }
 
+// The expiring-soon payload carries no note text or task counts, and we don't
+// want N extra requests just to decorate the list. These read react-query's
+// cache only — a row shows the extras once its detail has been opened, and
+// stays plain otherwise. Nothing is fetched or invented here.
+function notePreviewFor(qc: QueryClient, id: string) {
+  const detail = qc.getQueryData<{ timeline?: ContractTimelineEntry[] }>(['contract-timeline', id])
+  return detail?.timeline?.length ? detail.timeline[detail.timeline.length - 1].text : undefined
+}
+function openFollowUpsFor(qc: QueryClient, id: string) {
+  const tasks = qc.getQueryData<TaskItem[]>(['contract-tasks', id])
+  return tasks ? tasks.filter((t) => t.status !== 'done').length : undefined
+}
+
+// Master–detail: the list stays put on the left while the right pane carries
+// the work (status, notes, follow-ups, history), so opening one renewal no
+// longer shoves every other row down the page.
 function RenewalsCard() {
   const qc = useQueryClient()
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [showDetailOnMobile, setShowDetailOnMobile] = useState(false)
+
   const { data: contracts = [], isLoading } = useQuery<ExpiringContract[]>({
     queryKey: ['expiring-contracts'],
     queryFn: () => api.get('/contracts/expiring-soon', { params: { days: 7 } }).then((r) => r.data),
   })
   const invalidate = () => qc.invalidateQueries({ queryKey: ['expiring-contracts'] })
 
+  // Auto-select the first row so the detail pane isn't blank on desktop.
+  useEffect(() => {
+    if (contracts.length === 0) { setSelectedId(null); return }
+    setSelectedId((cur) => (cur && contracts.some((c) => c._id === cur) ? cur : contracts[0]._id))
+  }, [contracts])
+
+  const selected = contracts.find((c) => c._id === selectedId) || null
+
   return (
     <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 16, display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ fontWeight: 700, fontSize: 15, color: INK, marginBottom: 2 }}>Renewals — expiring in 7 days</div>
       <div style={{ fontSize: 11.5, color: MUTED, marginBottom: 10 }}>Call to confirm, log notes, or set a follow-up task</div>
+
       {isLoading ? (
         <Spinner />
       ) : contracts.length === 0 ? (
         <p className="text-sm text-muted-foreground py-8 text-center">Nothing expiring in the next 7 days.</p>
       ) : (
-        <div className="space-y-2.5 overflow-y-auto" style={{ maxHeight: 420 }}>
-          {contracts.map((c) => (
-            <RenewalRow key={c._id} contract={c} onChanged={invalidate} />
-          ))}
+        <div className="flex flex-col lg:flex-row gap-4" style={{ minHeight: 0 }}>
+          {/* Left: master list */}
+          <div
+            className={`${showDetailOnMobile ? 'hidden lg:block' : 'block'} shrink-0 w-full lg:w-[290px] lg:border-r lg:border-[rgba(20,8,31,0.08)]`}
+          >
+            <div className="space-y-1 overflow-y-auto lg:pr-3" style={{ maxHeight: 520 }}>
+              {contracts.map((c) => (
+                <RenewalListItem
+                  key={c._id}
+                  contract={c}
+                  selected={c._id === selectedId}
+                  onSelect={() => { setSelectedId(c._id); setShowDetailOnMobile(true) }}
+                  notePreview={notePreviewFor(qc, c._id)}
+                  openFollowUps={openFollowUpsFor(qc, c._id)}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Right: detail */}
+          <div
+            className={`${showDetailOnMobile ? 'block' : 'hidden lg:block'} flex-1 min-w-0 lg:pl-1`}
+          >
+            {selected ? (
+              <RenewalDetail
+                key={selected._id}
+                contract={selected}
+                onChanged={invalidate}
+                onBack={() => setShowDetailOnMobile(false)}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground py-8 text-center">Pick a renewal from the list.</p>
+            )}
+          </div>
         </div>
       )}
     </div>
