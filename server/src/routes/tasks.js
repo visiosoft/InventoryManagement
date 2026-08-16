@@ -6,6 +6,12 @@ import { uploadFile } from '../services/drive.js';
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 
+// Tasks is a sales-rep/admin tool — staff don't get it.
+router.use((req, res, next) => {
+  if (req.user?.role === 'staff') return res.status(403).json({ error: 'Not allowed' });
+  next();
+});
+
 const ALLOWED_PRIORITY = new Set(['low', 'medium', 'high']);
 const ALLOWED_STATUS = new Set(['todo', 'in_progress', 'done']);
 

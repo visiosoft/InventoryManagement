@@ -19,9 +19,10 @@ router.get('/', requireAdmin, async (_req, res) => {
 
 // Minimal roster for task-assignment dropdowns — any authenticated user
 // (including reps) needs this to hand a task to a teammate or admin, but
-// only name/email/role, never the full admin-only user record.
+// only name/email/role, never the full admin-only user record. Tasks is a
+// sales-rep/admin tool, so staff aren't offered as assignees.
 router.get('/assignable', async (_req, res) => {
-  const users = await User.find({ isActive: true, role: { $in: ['admin', 'staff', 'sales_rep'] } })
+  const users = await User.find({ isActive: true, role: { $in: ['admin', 'sales_rep'] } })
     .select('name email role')
     .sort({ name: 1 })
     .lean();

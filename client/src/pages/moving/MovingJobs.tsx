@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Plus, Search, ArrowRight, MapPin, Trash2, Pencil, Briefcase, CheckCircle, Clock, Truck, FileSignature } from 'lucide-react'
+import { Plus, Search, ArrowRight, MapPin, Trash2, Pencil, Briefcase, CheckCircle, Clock, Truck, FileSignature, Send } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingJob, MovingJobStatus } from '../../lib/types'
 import { Badge, Button, Modal, Spinner, movingJobStatusLabel } from '../../components/ui'
@@ -67,6 +67,8 @@ export default function MovingJobs() {
   const [search, setSearch] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<{ _id: string; jobNo: string } | null>(null)
   const [deleteErr, setDeleteErr] = useState('')
+  const [sentJobId, setSentJobId] = useState('')
+  const [sendErr, setSendErr] = useState('')
   const qc = useQueryClient()
 
   const deleteMut = useMutation({
@@ -78,6 +80,22 @@ export default function MovingJobs() {
       setDeleteErr('')
     },
     onError: (e) => setDeleteErr(apiError(e)),
+  })
+
+  // Quick "send contract" from the list — mints a signing link off the
+  // default moving template without opening the job's Notices panel first.
+  const sendMut = useMutation({
+    mutationFn: (job: MovingJob) => api.post(`/moving-jobs/${job._id}/create-signing-link`).then(r => ({ job, url: r.data?.signingUrl || '' })),
+    onSuccess: ({ job, url }) => {
+      setSendErr('')
+      setSentJobId(job._id)
+      setTimeout(() => setSentJobId((id) => (id === job._id ? '' : id)), 4000)
+      try { navigator.clipboard.writeText(url) } catch { /* clipboard optional */ }
+      const digits = (job.customer?.phone || '').replace(/[^0-9]/g, '')
+      const text = encodeURIComponent(`Hello ${job.customer?.fullName || ''},\n\nPlease review and sign your moving agreement ${job.jobNo}:\n${url}\n\nThe link is valid for 7 days.\n\nThank you,\nPurpleBox Moving`)
+      window.open(digits ? `https://wa.me/${digits}?text=${text}` : `https://wa.me/?text=${text}`, '_blank')
+    },
+    onError: (e) => setSendErr(apiError(e)),
   })
 
   const { data, isLoading } = useQuery<{ jobs: MovingJob[]; total: number }>({
@@ -124,6 +142,12 @@ export default function MovingJobs() {
           </button>
         </Link>
       </div>
+      {sendErr && (
+        <div className="rounded-lg bg-red-50 text-red-700 text-sm px-3 py-2 mb-4 flex items-center justify-between">
+          <span>{sendErr}</span>
+          <button onClick={() => setSendErr('')} className="text-red-700 hover:opacity-70 cursor-pointer">×</button>
+        </div>
+      )}
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-7">
@@ -217,12 +241,21 @@ export default function MovingJobs() {
                         <Pencil size={14} />
                       </Link>
                     )}
-                    {j.signedDocUrl && (
+                    {j.signedDocUrl ? (
                       <a href={j.signedDocUrl} target="_blank" rel="noreferrer" title="View signed agreement"
                         onClick={(e) => e.stopPropagation()}
                         className="p-1.5 rounded-lg hover:bg-emerald-500/10 transition-colors" style={{ color: MUTED }}>
                         <FileSignature size={14} />
                       </a>
+                    ) : (
+                      <button
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); sendMut.mutate(j) }}
+                        disabled={sendMut.isPending && sendMut.variables?._id === j._id}
+                        title={sentJobId === j._id ? 'Link copied' : 'Send contract for signing'}
+                        className="p-1.5 rounded-lg hover:bg-purple-500/10 transition-colors disabled:opacity-50"
+                        style={{ color: sentJobId === j._id ? '#16A34A' : MUTED }}>
+                        {sentJobId === j._id ? <CheckCircle size={14} /> : <Send size={14} />}
+                      </button>
                     )}
                     {!['in_progress', 'invoiced'].includes(j.status) && (
                       <button onClick={() => { setDeleteTarget({ _id: j._id, jobNo: j.jobNo }); setDeleteErr('') }}
@@ -273,11 +306,20 @@ export default function MovingJobs() {
                               <Pencil size={14} />
                             </Link>
                           )}
-                          {j.signedDocUrl && (
+                          {j.signedDocUrl ? (
                             <a href={j.signedDocUrl} target="_blank" rel="noreferrer" title="View signed agreement"
                               className="p-1.5 rounded-lg hover:bg-emerald-500/10 transition-colors" style={{ color: MUTED }}>
                               <FileSignature size={14} />
                             </a>
+                          ) : (
+                            <button
+                              onClick={() => sendMut.mutate(j)}
+                              disabled={sendMut.isPending && sendMut.variables?._id === j._id}
+                              title={sentJobId === j._id ? 'Link copied' : 'Send contract for signing'}
+                              className="p-1.5 rounded-lg hover:bg-purple-500/10 transition-colors disabled:opacity-50"
+                              style={{ color: sentJobId === j._id ? '#16A34A' : MUTED }}>
+                              {sentJobId === j._id ? <CheckCircle size={14} /> : <Send size={14} />}
+                            </button>
                           )}
                           {!['in_progress', 'invoiced'].includes(j.status) && (
                             <button onClick={() => { setDeleteTarget({ _id: j._id, jobNo: j.jobNo }); setDeleteErr('') }}

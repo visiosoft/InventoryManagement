@@ -253,6 +253,31 @@ function MovingNoticesCard({ job }: { job: MovingJob }) {
   const noticeRef = useRef<HTMLDivElement | null>(null)
   const noticeInitial = useRef('')
 
+  // Some jobs are missing pickup/delivery/price at booking time — these
+  // placeholders come from the job record itself, so let them be filled in
+  // right here before generating the agreement, instead of a trip to the
+  // full Edit Job form.
+  const [pickupAddress, setPickupAddress] = useState(job.pickupAddress || '')
+  const [deliveryAddress, setDeliveryAddress] = useState(job.deliveryAddress || '')
+  const [scheduledDate, setScheduledDate] = useState(job.scheduledDate ? job.scheduledDate.slice(0, 10) : '')
+  const [agreedPrice, setAgreedPrice] = useState(String(job.clientPackage?.agreedPrice ?? ''))
+  const [detailsSaved, setDetailsSaved] = useState(false)
+
+  const saveDetails = useMutation({
+    mutationFn: () => api.put(`/moving-jobs/${job._id}`, {
+      pickupAddress, deliveryAddress,
+      scheduledDate: scheduledDate || undefined,
+      clientPackage: { ...(job.clientPackage || {}), agreedPrice: Number(agreedPrice) || 0 },
+    }),
+    onSuccess: () => {
+      setError(''); setDetailsSaved(true)
+      setTimeout(() => setDetailsSaved(false), 3000)
+      qc.invalidateQueries({ queryKey: ['moving-job', job._id] })
+      if (open) openTemplate({ _id: open.id, name: open.name, isDefault: open.isDefault })
+    },
+    onError: (e) => setError(apiError(e)),
+  })
+
   const { data: templates = [] } = useQuery<NoticeTemplate[]>({
     queryKey: ['moving-notice-templates'],
     queryFn: () => api.get('/agreement-template', { params: { module: 'moving' } }).then((r) => r.data?.templates ?? []),
@@ -320,6 +345,32 @@ function MovingNoticesCard({ job }: { job: MovingJob }) {
     <Card>
       <CardHeader title="Notices" subtitle="Click a template — it opens prefilled with this job's details, ready to edit and send" />
       <CardBody className="pt-0">
+        <div className="rounded-xl border bg-muted/20 p-4 mb-4">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+            Agreement details — fill in anything missing, then generate
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Pickup address">
+              <Input value={pickupAddress} onChange={(e) => setPickupAddress(e.target.value)} placeholder="e.g. Villa 12, Al Barsha" />
+            </Field>
+            <Field label="Delivery / storage location">
+              <Input value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} placeholder="e.g. Apt 4B, JVC" />
+            </Field>
+            <Field label="Move date">
+              <Input type="date" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} />
+            </Field>
+            <Field label="Quoted price (AED)">
+              <Input type="number" min={0} value={agreedPrice} onChange={(e) => setAgreedPrice(e.target.value)} />
+            </Field>
+          </div>
+          <div className="flex items-center gap-3 mt-3">
+            <Button type="button" variant="outline" onClick={() => saveDetails.mutate()} disabled={saveDetails.isPending}>
+              {saveDetails.isPending ? 'Saving…' : 'Save details'}
+            </Button>
+            {detailsSaved && <span className="text-xs text-emerald-600 font-medium">Saved</span>}
+          </div>
+        </div>
+
         {templates.length === 0 ? (
           <p className="text-sm text-muted-foreground py-6 text-center">
             No moving templates yet — design them under Admin → Agreement Template → Moving.

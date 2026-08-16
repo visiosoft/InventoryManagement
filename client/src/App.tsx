@@ -13,6 +13,12 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
   return user?.role === 'admin' ? <>{children}</> : <Navigate to="/" replace />
 }
 
+/** Tasks is a sales-rep/admin tool — staff don't get it. */
+function TasksGuard({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth()
+  return user?.role === 'admin' || user?.role === 'sales_rep' ? <>{children}</> : <Navigate to="/" replace />
+}
+
 function SmartHome() {
   const { hasPermission } = useAuth()
   const hasMoving = hasPermission('moving_dashboard')
@@ -200,7 +206,7 @@ export default function App() {
         <Route path="/approvals" element={<AdminGuard><Approvals /></AdminGuard>} />
         <Route path="/users" element={<AdminGuard><UserManagement /></AdminGuard>} />
         <Route path="/sales-team" element={<AdminGuard><SalesTeam /></AdminGuard>} />
-        <Route path="/tasks" element={<Tasks />} />
+        <Route path="/tasks" element={<TasksGuard><Tasks /></TasksGuard>} />
         <Route path="/diary" element={<Diary />} />
         <Route path="/backup" element={<AdminGuard><Backup /></AdminGuard>} />
         <Route path="/settings" element={<Settings />} />

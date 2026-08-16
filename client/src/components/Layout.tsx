@@ -427,9 +427,11 @@ export default function Layout() {
                   <Icon size={15} />{label}
                 </NavLink>
               ))}
-              <NavLink to="/tasks" className={({ isActive }) => navLinkCls(isActive)}>
-                <ListTodo size={15} />Tasks
-              </NavLink>
+              {isAdmin && (
+                <NavLink to="/tasks" className={({ isActive }) => navLinkCls(isActive)}>
+                  <ListTodo size={15} />Tasks
+                </NavLink>
+              )}
               <NavLink to="/diary" className={({ isActive }) => navLinkCls(isActive)}>
                 <NotebookPen size={15} />Daily Diary
               </NavLink>
@@ -604,15 +606,17 @@ export default function Layout() {
                       <Icon size={15} className="text-muted-foreground" />{label}
                     </NavLink>
                   ))}
-                  <NavLink
-                    to="/tasks"
-                    className={({ isActive }) => cn(
-                      'flex items-center gap-2.5 px-3 py-2 text-sm transition-colors',
-                      isActive ? 'bg-accent text-accent-foreground font-medium' : 'text-foreground hover:bg-muted/60'
-                    )}
-                  >
-                    <ListTodo size={15} className="text-muted-foreground" />Tasks
-                  </NavLink>
+                  {isAdmin && (
+                    <NavLink
+                      to="/tasks"
+                      className={({ isActive }) => cn(
+                        'flex items-center gap-2.5 px-3 py-2 text-sm transition-colors',
+                        isActive ? 'bg-accent text-accent-foreground font-medium' : 'text-foreground hover:bg-muted/60'
+                      )}
+                    >
+                      <ListTodo size={15} className="text-muted-foreground" />Tasks
+                    </NavLink>
+                  )}
                   <NavLink
                     to="/diary"
                     className={({ isActive }) => cn(
