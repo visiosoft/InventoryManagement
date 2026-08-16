@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { ChevronDown, ChevronRight, Plus, UserPlus } from 'lucide-react'
+import { ChevronDown, ChevronRight, MessageCircle, Phone, Plus, UserPlus } from 'lucide-react'
 import { api, apiError, leadApi } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { Lead, MovingLead, MovingLeadStatus } from '../lib/types'
@@ -17,6 +17,147 @@ const PURPLE = '#5B2BC9'
 const SIZE_OPTIONS = [10, 25, 35, 50, 75, 100, 150, 200]
 const LEAD_SOURCE_OPTIONS = ['manual', 'whatsapp', 'referral', 'walk_in', 'other']
 const labelize = (s: string) => s.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
+
+interface ExpiringContract {
+  _id: string
+  contractNo: string
+  customer?: { _id: string; fullName: string; phone?: string; email?: string }
+  unit?: { _id: string; unitNumber: string; floor?: string }
+  endDate: string
+  rate: number
+  renewalIntent: 'undecided' | 'renewing' | 'not_renewing'
+  daysLeft: number
+}
+
+const RENEWAL_OPTIONS: { value: ExpiringContract['renewalIntent']; label: string; activeClass: string }[] = [
+  { value: 'undecided', label: 'Undecided', activeClass: 'bg-white text-foreground shadow-sm' },
+  { value: 'renewing', label: 'Renewing', activeClass: 'bg-emerald-500 text-white shadow-sm' },
+  { value: 'not_renewing', label: 'Not renewing', activeClass: 'bg-destructive text-white shadow-sm' },
+]
+
+function RenewalRow({ contract, onChanged }: { contract: ExpiringContract; onChanged: () => void }) {
+  const [expanded, setExpanded] = useState(false)
+  const [noteText, setNoteText] = useState('')
+  const [taskTitle, setTaskTitle] = useState('')
+  const [taskDue, setTaskDue] = useState('')
+
+  const setIntent = useMutation({
+    mutationFn: (renewalIntent: string) => api.put(`/contracts/${contract._id}`, { renewalIntent }),
+    onSuccess: onChanged,
+  })
+  const addNote = useMutation({
+    mutationFn: () => api.post(`/contracts/${contract._id}/notes`, { text: noteText }),
+    onSuccess: () => { setNoteText(''); onChanged() },
+  })
+  const addTask = useMutation({
+    mutationFn: () => api.post('/tasks', {
+      title: taskTitle,
+      dueDate: taskDue || undefined,
+      leadId: contract._id,
+      leadType: 'contract',
+      leadName: `${contract.customer?.fullName || 'Tenant'} · ${contract.unit?.unitNumber || ''}`,
+    }),
+    onSuccess: () => { setTaskTitle(''); setTaskDue(''); onChanged() },
+  })
+
+  const digits = (contract.customer?.phone || '').replace(/[^0-9]/g, '')
+  const urgent = contract.daysLeft <= 2
+
+  return (
+    <div style={{ borderBottom: '1px solid rgba(20,8,31,.06)', paddingBottom: 10 }}>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span style={{ fontSize: 13, fontWeight: 700, color: INK }}>{contract.customer?.fullName || '—'}</span>
+            <span style={{ fontSize: 12, color: MUTED }}>{contract.unit?.unitNumber}</span>
+          </div>
+          <div style={{ fontSize: 12, fontWeight: urgent ? 700 : 400, color: urgent ? '#991B1B' : contract.daysLeft <= 4 ? '#B45309' : MUTED }}>
+            Expires {formatDate(contract.endDate)} · {contract.daysLeft}d left
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {contract.customer?.phone && (
+            <a href={`tel:${contract.customer.phone}`} title="Call" className="p-1.5 rounded-lg hover:bg-blue-50 transition-colors">
+              <Phone size={15} className="text-blue-600" />
+            </a>
+          )}
+          {digits && (
+            <a href={`https://wa.me/${digits}`} target="_blank" rel="noreferrer" title="WhatsApp" className="p-1.5 rounded-lg hover:bg-green-50 transition-colors">
+              <MessageCircle size={15} className="text-green-600" />
+            </a>
+          )}
+          <div className="flex gap-1 rounded-full bg-black/5 p-1">
+            {RENEWAL_OPTIONS.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                disabled={setIntent.isPending}
+                onClick={() => setIntent.mutate(o.value)}
+                className={`h-6 px-2 rounded-full text-[11px] font-semibold cursor-pointer transition-colors disabled:opacity-50 ${contract.renewalIntent === o.value ? o.activeClass : 'bg-transparent text-muted-foreground hover:bg-muted'}`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            style={{ height: 26, padding: '0 10px', borderRadius: 8, background: 'transparent', color: PURPLE, border: '1px solid #DDD0FF', fontWeight: 600, fontSize: 11 }}
+            className="cursor-pointer hover:bg-[#F7F3FF] transition-colors"
+          >
+            {expanded ? 'Close' : 'Note / Task'}
+          </button>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="mt-2 flex flex-col sm:flex-row gap-4 rounded-lg bg-muted/20 p-2.5">
+          <div className="flex-1 flex gap-2">
+            <input
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              placeholder="Add a note (call outcome, etc.)"
+              style={{ flex: 1, height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 12.5 }}
+            />
+            <button
+              type="button"
+              disabled={!noteText.trim() || addNote.isPending}
+              onClick={() => addNote.mutate()}
+              style={{ height: 32, padding: '0 12px', borderRadius: 8, background: PURPLE, color: 'white', fontSize: 12, fontWeight: 600, border: 'none' }}
+              className="disabled:opacity-50 cursor-pointer shrink-0"
+            >
+              {addNote.isPending ? 'Saving…' : 'Save note'}
+            </button>
+          </div>
+          <div className="flex-1 flex gap-2">
+            <input
+              value={taskTitle}
+              onChange={(e) => setTaskTitle(e.target.value)}
+              placeholder="Follow-up task title"
+              style={{ flex: 1, height: 32, padding: '0 10px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 12.5 }}
+            />
+            <input
+              type="date"
+              value={taskDue}
+              onChange={(e) => setTaskDue(e.target.value)}
+              style={{ height: 32, padding: '0 8px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 12.5 }}
+            />
+            <button
+              type="button"
+              disabled={!taskTitle.trim() || addTask.isPending}
+              onClick={() => addTask.mutate()}
+              style={{ height: 32, padding: '0 12px', borderRadius: 8, background: PURPLE, color: 'white', fontSize: 12, fontWeight: 600, border: 'none' }}
+              className="disabled:opacity-50 cursor-pointer shrink-0"
+            >
+              {addTask.isPending ? 'Saving…' : 'Add task'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 
 export type TaskItem = {
   _id: string
@@ -335,6 +476,33 @@ function QuickAddLead() {
   )
 }
 
+function RenewalsCard() {
+  const qc = useQueryClient()
+  const { data: contracts = [], isLoading } = useQuery<ExpiringContract[]>({
+    queryKey: ['expiring-contracts'],
+    queryFn: () => api.get('/contracts/expiring-soon', { params: { days: 7 } }).then((r) => r.data),
+  })
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['expiring-contracts'] })
+
+  if (!isLoading && contracts.length === 0) return null
+
+  return (
+    <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 20 }} className="mb-5">
+      <div style={{ fontWeight: 700, fontSize: 15, color: INK, marginBottom: 4 }}>Renewals — expiring in 7 days</div>
+      <div style={{ fontSize: 12, color: MUTED, marginBottom: 12 }}>Call to confirm, log notes, or set a follow-up task</div>
+      {isLoading ? (
+        <Spinner />
+      ) : (
+        <div className="space-y-2.5">
+          {contracts.map((c) => (
+            <RenewalRow key={c._id} contract={c} onChanged={invalidate} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 type Row = {
   key: string
   type: 'Storage Only' | 'Moving'
@@ -445,6 +613,7 @@ export default function SalesBoard() {
       </div>
 
       <UnitAvailabilityStrip />
+      <RenewalsCard />
       <GoalsSection />
       <TasksCard />
       <QuickAddLead />

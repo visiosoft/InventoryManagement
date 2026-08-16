@@ -1381,7 +1381,7 @@ const taskSchema = new Schema(
     createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
     createdByName: { type: String, default: '' },
     leadId: { type: Schema.Types.ObjectId, default: null },
-    leadType: { type: String, enum: ['storage', 'moving', null], default: null },
+    leadType: { type: String, enum: ['storage', 'moving', 'contract', null], default: null },
     leadName: { type: String, default: '' },
     dueDate: { type: Date, default: null },
     priority: { type: String, enum: ['low', 'medium', 'high'], default: 'medium' },

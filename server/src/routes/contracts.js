@@ -205,6 +205,31 @@ router.get('/latest-notes', async (req, res) => {
   })));
 });
 
+// Contracts expiring within the next N days (default 7) — feeds the sales
+// team's renewal-calling queue. Any authenticated user can see this (incl.
+// sales reps), since renewal follow-up isn't restricted to whoever closed
+// the original deal. Declared before '/:id' so the path isn't swallowed.
+router.get('/expiring-soon', async (req, res) => {
+  const days = Math.min(30, Math.max(1, Number(req.query.days) || 7));
+  const now = new Date();
+  const cutoff = new Date(now.getTime() + days * 86400000);
+  const contracts = await Contract.find({ status: 'active', endDate: { $gte: now, $lte: cutoff } })
+    .populate('customer', 'fullName phone email')
+    .populate('unit', 'unitNumber floor')
+    .sort({ endDate: 1 })
+    .lean();
+  res.json(contracts.map((c) => ({
+    _id: c._id,
+    contractNo: c.contractNo,
+    customer: c.customer,
+    unit: c.unit,
+    endDate: c.endDate,
+    rate: c.rate,
+    renewalIntent: c.renewalIntent || 'undecided',
+    daysLeft: Math.ceil((new Date(c.endDate) - now) / 86400000),
+  })));
+});
+
 // List contracts pending admin approval.
 // Typeahead for the global search box: match a contract number, tenant name or
 // unit number and return just enough to render a result row. Declared before
