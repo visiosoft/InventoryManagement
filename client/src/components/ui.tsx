@@ -206,6 +206,7 @@ export function SlideOver({
   subtitle,
   children,
   width = 'max-w-2xl',
+  side = 'right',
 }: {
   open: boolean
   onClose: () => void
@@ -213,14 +214,15 @@ export function SlideOver({
   subtitle?: ReactNode
   children: ReactNode
   width?: string
+  side?: 'left' | 'right'
 }) {
   if (!open) return null
   return (
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0" style={{ background: 'rgba(20,8,31,.28)' }} onClick={onClose} />
       <div className={cn(
-        'absolute right-0 top-0 h-full w-full bg-card shadow-xl overflow-y-auto flex flex-col',
-        'animate-in slide-in-from-right',
+        'absolute top-0 h-full w-full bg-card shadow-xl overflow-y-auto flex flex-col',
+        side === 'left' ? 'left-0 animate-in slide-in-from-left' : 'right-0 animate-in slide-in-from-right',
         width
       )}>
         <div className="sticky top-0 bg-card border-b px-5 py-4 flex items-start justify-between gap-3 z-10">

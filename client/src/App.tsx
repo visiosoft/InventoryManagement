@@ -20,7 +20,11 @@ function TasksGuard({ children }: { children: React.ReactNode }) {
 }
 
 function SmartHome() {
-  const { hasPermission } = useAuth()
+  const { user, hasPermission } = useAuth()
+  // A rep's home is their own leads board, not the company-wide dashboard.
+  if (user?.role === 'sales_rep') {
+    return <Navigate to="/my-leads" replace />
+  }
   const hasMoving = hasPermission('moving_dashboard')
   const hasStorage = hasPermission('units') || hasPermission('dashboard')
   const isMovingOnly = hasMoving && !hasStorage

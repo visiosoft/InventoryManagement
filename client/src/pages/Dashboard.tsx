@@ -88,59 +88,6 @@ function WidgetShell({
   )
 }
 
-// Read-only KPI row (Occupancy/Available/Active/Move-ins/Move-outs), reused
-// on the sales rep's My Leads board — same numbers as the admin Dashboard,
-// minus the drag-to-reorder shell and click-through detail panels.
-export function KpiStrip() {
-  const { data } = useQuery<Summary>({
-    queryKey: ['summary'],
-    queryFn: () => api.get('/reports/summary').then((r) => r.data),
-    staleTime: 5 * 60_000,
-  })
-  if (!data) return null
-
-  return (
-    <div className="grid grid-cols-2 lg:grid-cols-5 gap-[18px] mb-5">
-      <div style={{ padding: 24, borderRadius: 22, background: '#1A0B33', color: '#FFF', display: 'flex', flexDirection: 'column', gap: 16, boxShadow: '0 8px 24px rgba(20,8,31,.10)' }}>
-        <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#A78BFA' }}>Occupancy</div>
-        <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.04em' }}>{data.occupancyPct}%</div>
-        <div style={{ fontSize: 11, color: '#DDD0FF' }}>{data.byStatus.occupied + data.byStatus.reserved} of {data.byStatus.available + data.byStatus.occupied + data.byStatus.reserved} units</div>
-        <div style={{ height: 6, borderRadius: 999, background: 'rgba(255,255,255,.14)', overflow: 'hidden', display: 'flex' }}>
-          <div style={{ width: `${data.occupancyPct}%`, background: 'linear-gradient(90deg, #7C4DFF, #A78BFA)' }} />
-        </div>
-      </div>
-
-      <div style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 1px 2px rgba(20,8,31,.05)' }}>
-        <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Available</div>
-        <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{data.byStatus.available}</div>
-        <div className="flex flex-wrap gap-1 mt-auto">
-          {data.bySize.filter(s => s.available > 0).slice(0, 3).map(s => (
-            <span key={s.sizeSqf} style={{ fontSize: 10, fontWeight: 600, padding: '3px 6px', borderRadius: 6, background: PURPLE_LIGHT, color: '#4A1FA0' }}>{s.available}×{s.sizeSqf.replace(' sq ft', '')}</span>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 1px 2px rgba(20,8,31,.05)' }}>
-        <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Active</div>
-        <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{data.activeContracts}</div>
-        <div style={{ fontSize: 11, color: '#4A4357', marginTop: 'auto' }}>{data.expiringContracts.length} expiring soon</div>
-      </div>
-
-      <div style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 1px 2px rgba(20,8,31,.05)' }}>
-        <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Move-ins</div>
-        <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{data.moveInsThisMonth}</div>
-        <div style={{ fontSize: 11, fontWeight: 600, color: (data.moveInsThisMonth - data.moveInsLastMonth) < 0 ? '#B3261E' : '#1B7A4B', marginTop: 'auto' }}>{(data.moveInsThisMonth - data.moveInsLastMonth) > 0 ? '+' : ''}{data.moveInsThisMonth - data.moveInsLastMonth} vs {data.moveInsLastMonth}</div>
-      </div>
-
-      <div style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 1px 2px rgba(20,8,31,.05)' }}>
-        <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Move-outs</div>
-        <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{data.moveOutsThisMonth}</div>
-        <div style={{ fontSize: 11, fontWeight: 600, color: (data.moveOutsThisMonth - data.moveOutsLastMonth) < 0 ? '#B3261E' : '#1B7A4B', marginTop: 'auto' }}>{(data.moveOutsThisMonth - data.moveOutsLastMonth) > 0 ? '+' : ''}{data.moveOutsThisMonth - data.moveOutsLastMonth} vs {data.moveOutsLastMonth}</div>
-      </div>
-    </div>
-  )
-}
-
 export default function Dashboard() {
   const [layout, setLayout] = useState<WidgetId[]>(() => safeLoadLayout())
   const [dragged, setDragged] = useState<WidgetId | null>(null)

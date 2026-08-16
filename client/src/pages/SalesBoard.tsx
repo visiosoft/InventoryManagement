@@ -1,18 +1,16 @@
 import { useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { DndContext, type DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { CalendarPlus, ChevronDown, ChevronRight, MessageCircle, Phone, Plus, StickyNote, UserPlus } from 'lucide-react'
 import { api, apiError, leadApi } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { Lead, MovingLead, MovingLeadStatus } from '../lib/types'
-import { Modal, Spinner } from '../components/ui'
+import { SlideOver, Spinner } from '../components/ui'
 import { formatDate } from '../lib/utils'
 import { LeadDetailPanel } from './Leads'
-import { KpiStrip } from './Dashboard'
 import {
   type TaskItem, type AssignableUser,
-  KANBAN_COLUMNS, KanbanCard, KanbanColumn, TaskDetailModal, groupTasksByDue,
+  KANBAN_COLUMNS, KanbanBoard, KanbanCard, KanbanColumn, TaskDetailModal, groupTasksByDue,
 } from './tasks/shared'
 export type { TaskItem, AssignableUser }
 export { groupTasksByDue }
@@ -259,7 +257,6 @@ function TasksCard() {
   const [priority, setPriority] = useState('medium')
   const [assignedTo, setAssignedTo] = useState('')
   const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null)
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
 
   const { data: tasks = [], isLoading } = useQuery<TaskItem[]>({
     queryKey: ['my-tasks-all'],
@@ -281,13 +278,6 @@ function TasksCard() {
     mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) => api.patch(`/tasks/${id}`, body),
     onSuccess: invalidate,
   })
-
-  function onDragEnd(e: DragEndEvent) {
-    const newStatus = e.over?.id as TaskItem['status'] | undefined
-    const task = tasks.find((t) => t._id === e.active.id)
-    if (!newStatus || !task || task.status === newStatus) return
-    updateTask.mutate({ id: task._id, body: { status: newStatus } })
-  }
 
   return (
     <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 16, display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -354,7 +344,7 @@ function TasksCard() {
       ) : tasks.length === 0 ? (
         <p className="text-sm text-muted-foreground py-4 text-center">No tasks yet.</p>
       ) : (
-        <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+        <KanbanBoard tasks={tasks} onMove={(id, status) => updateTask.mutate({ id, body: { status } })}>
           <div className="grid grid-cols-3 gap-2.5" style={{ flex: 1, minHeight: 0 }}>
             {KANBAN_COLUMNS.map((col) => {
               const items = tasks.filter((t) => t.status === col.status)
@@ -368,7 +358,7 @@ function TasksCard() {
               )
             })}
           </div>
-        </DndContext>
+        </KanbanBoard>
       )}
 
       {selectedTask && (
@@ -722,10 +712,11 @@ export default function SalesBoard() {
         </div>
       </div>
 
-      <KpiStrip />
-      <UnitAvailabilityStrip />
-
+      {/* Tasks first — it's what a rep works off all day. Unit availability
+          and goals are reference material, so they sit below. */}
       <WorkTabs />
+
+      <UnitAvailabilityStrip />
 
       <GoalsSection />
       <QuickAddLead />
@@ -815,13 +806,15 @@ export default function SalesBoard() {
         )}
       </div>
 
-      <Modal
+      <SlideOver
         open={!!viewingLead}
-        title="Lead details"
+        side="left"
+        title={viewingLead?.fullName || 'Lead details'}
+        subtitle={viewingLead?.phone}
         onClose={() => { setViewingLead(null); qc.invalidateQueries({ queryKey: ['my-leads-storage'] }) }}
       >
         {viewingLead && <LeadDetailPanel lead={viewingLead} />}
-      </Modal>
+      </SlideOver>
     </div>
   )
 }

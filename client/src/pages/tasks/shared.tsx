@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useDraggable, useDroppable } from '@dnd-kit/core'
+import { useDraggable, useDroppable, DndContext, DragOverlay, PointerSensor, useSensor, useSensors, closestCorners, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core'
 import { Calendar, CheckCircle2, Circle, MessageSquare, Paperclip, Plus, Send } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import { SlideOver, Spinner } from '../../components/ui'
@@ -129,34 +129,29 @@ export function Avatar({ name, size = 20 }: { name: string; size?: number }) {
   )
 }
 
-export function KanbanCard({
-  task, onOpen, onToggleDone,
+// Presentational only — no drag hooks. Rendered both inside the column and,
+// while dragging, inside the DragOverlay portal.
+export function TaskCardView({
+  task, onToggleDone, floating,
 }: {
   task: TaskItem
-  onOpen: (task: TaskItem) => void
   onToggleDone?: (task: TaskItem) => void
+  floating?: boolean
 }) {
   const tone = isDueSoon(task)
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: task._id })
   const commentCount = task.comments?.length ?? 0
   const attachmentCount = task.attachments?.length ?? 0
   const done = task.status === 'done'
   return (
     <div
-      ref={setNodeRef}
-      {...listeners}
-      {...attributes}
-      onClick={() => !isDragging && onOpen(task)}
       style={{
         position: 'relative',
         background: 'white', border: '1px solid rgba(20,8,31,.08)', borderRadius: 12, padding: '10px 12px',
         borderLeft: tone === 'overdue' ? '3px solid #991B1B' : tone === 'today' ? '3px solid #B45309' : '3px solid transparent',
-        opacity: isDragging ? 0.4 : 1,
-        transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
-        touchAction: 'none',
-        boxShadow: '0 1px 2px rgba(20,8,31,.04)',
+        boxShadow: floating ? '0 12px 28px rgba(20,8,31,.18)' : '0 1px 2px rgba(20,8,31,.04)',
+        transform: floating ? 'rotate(1.5deg)' : undefined,
+        cursor: floating ? 'grabbing' : undefined,
       }}
-      className="cursor-pointer select-none"
     >
       {/* priority dot, top-right corner */}
       <span
@@ -211,6 +206,71 @@ export function KanbanCard({
   )
 }
 
+export function KanbanCard({
+  task, onOpen, onToggleDone,
+}: {
+  task: TaskItem
+  onOpen: (task: TaskItem) => void
+  onToggleDone?: (task: TaskItem) => void
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task._id })
+  // Deliberately no transform here — the DragOverlay renders the moving copy
+  // outside the column's overflow, so the card can't be clipped or drag the
+  // column's scroll position with it. This one just stays put as a ghost.
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      onClick={() => onOpen(task)}
+      style={{ opacity: isDragging ? 0.35 : 1, touchAction: 'none' }}
+      className="select-none cursor-grab active:cursor-grabbing"
+    >
+      <TaskCardView task={task} onToggleDone={onToggleDone} />
+    </div>
+  )
+}
+
+// Wraps a Kanban board with drag context + the floating overlay, so both the
+// full Tasks page and the compact My Leads widget behave identically.
+export function KanbanBoard({
+  tasks, onMove, children,
+}: {
+  tasks: TaskItem[]
+  onMove: (taskId: string, status: TaskItem['status']) => void
+  children: React.ReactNode
+}) {
+  const [activeId, setActiveId] = useState<string | null>(null)
+  // A few px of movement before a drag starts, so a plain click still opens
+  // the task instead of being swallowed as a micro-drag.
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
+
+  const activeTask = activeId ? tasks.find((t) => t._id === activeId) : null
+
+  function handleEnd(e: DragEndEvent) {
+    setActiveId(null)
+    const status = e.over?.id as TaskItem['status'] | undefined
+    const task = tasks.find((t) => t._id === e.active.id)
+    if (!status || !task || task.status === status) return
+    onMove(task._id, status)
+  }
+
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCorners}
+      onDragStart={(e: DragStartEvent) => setActiveId(String(e.active.id))}
+      onDragEnd={handleEnd}
+      onDragCancel={() => setActiveId(null)}
+    >
+      {children}
+      <DragOverlay dropAnimation={{ duration: 180, easing: 'cubic-bezier(.2,.8,.3,1)' }}>
+        {activeTask ? <TaskCardView task={activeTask} floating /> : null}
+      </DragOverlay>
+    </DndContext>
+  )
+}
+
 export function KanbanColumn({
   col, children, count, onAddTask,
 }: {
@@ -223,7 +283,12 @@ export function KanbanColumn({
   return (
     <div
       ref={setNodeRef}
-      style={{ background: isOver ? '#EFEAFA' : COLUMN_BG, borderRadius: 16, padding: 10, display: 'flex', flexDirection: 'column', minHeight: 0, transition: 'background .15s' }}
+      style={{
+        background: isOver ? '#EFEAFA' : COLUMN_BG,
+        borderRadius: 16, padding: 10, display: 'flex', flexDirection: 'column', minHeight: 0,
+        transition: 'background .15s, box-shadow .15s',
+        boxShadow: isOver ? `inset 0 0 0 2px ${PURPLE}` : 'inset 0 0 0 2px transparent',
+      }}
     >
       <div className="flex items-center gap-2 mb-2" style={{ padding: '0 2px' }}>
         <span style={{ fontSize: 11, fontWeight: 700, color: INK, textTransform: 'uppercase', letterSpacing: '.06em' }}>{col.label}</span>

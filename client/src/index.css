@@ -106,6 +106,18 @@ body {
 ::-webkit-scrollbar-track  { background: transparent; }
 ::-webkit-scrollbar-thumb  { background: var(--border); border-radius: 99px; }
 
+/* Slide-over panel entrance. The `animate-in slide-in-from-*` class names
+   come from tailwindcss-animate, which isn't installed here — they were
+   silently doing nothing, so the panels popped in. These keyframes give the
+   existing markup the motion it always intended. */
+@keyframes pb-slide-in-right { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes pb-slide-in-left  { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+.slide-in-from-right { animation: pb-slide-in-right .22s cubic-bezier(.2,.8,.3,1); }
+.slide-in-from-left  { animation: pb-slide-in-left  .22s cubic-bezier(.2,.8,.3,1); }
+@media (prefers-reduced-motion: reduce) {
+  .slide-in-from-right, .slide-in-from-left { animation: none; }
+}
+
 /* Agreement/notice rich-text editors (Document Templates page, and every
    "click a template" prefilled panel on Contract/Moving Job detail pages) —
    global so it applies regardless of which page mounted first; previously

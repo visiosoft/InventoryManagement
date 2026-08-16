@@ -155,24 +155,26 @@ export default function Diary() {
                   {g.items.map((e, i) => {
                     const meta = TYPE_META[e.type] || { label: e.type, icon: StickyNote, color: '#756E80' }
                     const Icon = meta.icon
-                    // The server writes the reference into the sentence for
-                    // some types ("Created task \"X\""), so only show the
-                    // reference chip when it adds something new.
+                    // The sentence already names the action ("Created task X"),
+                    // so printing the type label above it just says everything
+                    // twice. The icon carries the type instead, and the
+                    // reference only appears when it isn't already in the text.
                     const showRef = e.refTitle && !e.text.includes(e.refTitle)
                     return (
-                      <div key={i} className="flex items-start gap-3 py-3 first:pt-0 last:pb-0">
-                        <div className="h-7 w-7 rounded-full flex items-center justify-center shrink-0" style={{ background: `${meta.color}1A` }}>
-                          <Icon size={14} style={{ color: meta.color }} />
+                      <div key={i} className="flex items-start gap-2.5 py-2 first:pt-0 last:pb-0">
+                        <div className="h-6 w-6 rounded-full flex items-center justify-center shrink-0 mt-px"
+                          title={meta.label}
+                          style={{ background: `${meta.color}1A` }}>
+                          <Icon size={12} style={{ color: meta.color }} />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-[10.5px] font-semibold uppercase tracking-wide" style={{ color: meta.color }}>{meta.label}</span>
-                            {showRef && <span className="text-xs text-muted-foreground truncate">{e.refTitle}</span>}
-                            <span className="text-xs text-muted-foreground ml-auto shrink-0">
+                          <div className="flex items-baseline gap-3">
+                            <p className="text-sm text-foreground break-words flex-1">{e.text}</p>
+                            <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums">
                               {new Date(e.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                             </span>
                           </div>
-                          <p className="text-sm text-foreground mt-0.5 break-words">{e.text}</p>
+                          {showRef && <div className="text-xs text-muted-foreground truncate mt-0.5">{e.refTitle}</div>}
                         </div>
                       </div>
                     )

@@ -60,14 +60,16 @@ const navBottom: { to: string; label: string; icon: any; perm: string }[] = []
 
 // Sales reps see one flat list matching the standalone mockup's nav order,
 // instead of the admin app's split Inventory/Sales/Moving groups.
+// Daily drivers first, then reference material. Dashboard is the rep's leads
+// board, so there's no separate Leads entry — they were the same page and
+// both lit up as active.
 const salesRepNavItems = [
   { key: 'dashboard', to: '/my-leads', label: 'Dashboard', icon: LayoutDashboard, perm: 'sales_board' },
-  { key: 'unit-map', to: '/floor-map', label: 'Unit Map', icon: MapIcon, perm: 'units' },
-  { key: 'leads', to: '/my-leads', label: 'Leads', icon: UserPlus, perm: 'sales_board' },
+  { key: 'tasks', to: '/tasks', label: 'Tasks', icon: ListTodo, perm: 'sales_board' },
   { key: 'customers', to: '/contracts', label: 'Customers', icon: Users, perm: 'contracts' },
+  { key: 'unit-map', to: '/floor-map', label: 'Unit Map', icon: MapIcon, perm: 'units' },
   { key: 'moving-schedule', to: '/moving/schedule', label: 'Moving Schedule', icon: CalendarDays, perm: 'moving_schedule' },
   { key: 'moving-estimator', to: '/moving-estimator', label: 'Moving Estimator', icon: Calculator, perm: 'sales_board' },
-  { key: 'tasks', to: '/tasks', label: 'Tasks', icon: ListTodo, perm: 'sales_board' },
   { key: 'diary', to: '/diary', label: 'Daily Diary', icon: NotebookPen, perm: 'sales_board' },
   { key: 'reports', to: '/my-performance', label: 'Reports', icon: BarChart3, perm: 'sales_board' },
   { key: 'settings', to: '/account', label: 'Settings', icon: Settings, perm: 'sales_board' },

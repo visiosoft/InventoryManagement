@@ -5,7 +5,7 @@ import { AlertTriangle, CalendarPlus, CheckSquare, FileText, Mail, MessageCircle
 import { api, apiError, leadApi, type LeadPage } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { Lead, LeadComment, LeadSource, LeadStatus } from '../lib/types'
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Textarea, leadStatusTone, statusLabel } from '../components/ui'
+import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, SlideOver, Spinner, Textarea, leadStatusTone, statusLabel } from '../components/ui'
 import { formatDate, formatDateTime } from '../lib/utils'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
@@ -1520,9 +1520,15 @@ export default function Leads() {
                 )}
             </Modal>
 
-            <Modal open={!!viewing} onClose={() => setViewing(null)} title={viewing ? viewing.fullName : 'Lead details'} wide>
+            <SlideOver
+                open={!!viewing}
+                side="left"
+                title={viewing ? viewing.fullName : 'Lead details'}
+                subtitle={viewing?.phone}
+                onClose={() => setViewing(null)}
+            >
                 {viewing && <LeadDetailPanel lead={viewing} />}
-            </Modal>
+            </SlideOver>
         </div>
     )
 }

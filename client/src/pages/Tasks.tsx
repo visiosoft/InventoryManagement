@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { DndContext, type DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { api } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -8,7 +7,7 @@ import { PageHeader, Card, CardBody, Button, Field, Input, Select, Textarea, Sli
 import { formatDate } from '../lib/utils'
 import {
   type TaskItem, type AssignableUser,
-  KANBAN_COLUMNS, KanbanCard, KanbanColumn, TaskDetailModal, TypePill,
+  KANBAN_COLUMNS, KanbanBoard, KanbanCard, KanbanColumn, TaskDetailModal, TypePill,
   PRIORITY_DOT, PRIORITY_PILL, STATUS_PILL, isDueSoon, INK, MUTED, PURPLE,
 } from './tasks/shared'
 
@@ -273,7 +272,6 @@ export default function Tasks() {
   const [leadTypeFilter, setLeadTypeFilter] = useState('')
   const [createOpen, setCreateOpen] = useState<TaskItem['status'] | 'new' | null>(null)
   const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null)
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
 
   const { data: assignableUsers = [] } = useQuery<AssignableUser[]>({
     queryKey: ['assignable-users'],
@@ -295,13 +293,6 @@ export default function Tasks() {
     mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) => api.patch(`/tasks/${id}`, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['all-tasks'] }),
   })
-
-  function onDragEnd(e: DragEndEvent) {
-    const newStatus = e.over?.id as TaskItem['status'] | undefined
-    const task = tasks.find((t) => t._id === e.active.id)
-    if (!newStatus || !task || task.status === newStatus) return
-    updateTask.mutate({ id: task._id, body: { status: newStatus } })
-  }
 
   const sortedForList = useMemo(
     () => [...tasks].sort((a, b) => (a.dueDate || '9999').localeCompare(b.dueDate || '9999')),
@@ -359,7 +350,7 @@ export default function Tasks() {
       ) : tasks.length === 0 ? (
         <Card><CardBody className="text-center py-10 text-sm text-muted-foreground">No tasks match these filters.</CardBody></Card>
       ) : view === 'kanban' ? (
-        <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+        <KanbanBoard tasks={tasks} onMove={(id, status) => updateTask.mutate({ id, body: { status } })}>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {KANBAN_COLUMNS.map((col) => {
               const items = tasks.filter((t) => t.status === col.status)
@@ -373,7 +364,7 @@ export default function Tasks() {
               )
             })}
           </div>
-        </DndContext>
+        </KanbanBoard>
       ) : view === 'calendar' ? (
         <CalendarView tasks={tasks} onOpenTask={setSelectedTask} />
       ) : (
