@@ -81,6 +81,28 @@ export const PRIORITY_PILL: Record<string, { bg: string; fg: string }> = {
   high: { bg: '#FEF3C7', fg: '#92400E' },
 }
 
+// Small solid dot used instead of a full pill where space is tight (Kanban
+// card corner, list-view title prefix, calendar chips).
+export const PRIORITY_DOT: Record<string, string> = { low: '#94A3B8', medium: '#2563EB', high: '#DC2626' }
+
+export const STATUS_PILL: Record<TaskItem['status'], { bg: string; fg: string }> = {
+  todo: { bg: '#EEF2F6', fg: '#475569' },
+  in_progress: { bg: '#FEF3C7', fg: '#92400E' },
+  done: { bg: '#D1FAE5', fg: '#065F46' },
+}
+
+// The cream/tan surface the board columns sit on.
+export const COLUMN_BG = '#F6F0E4'
+export const PURPLE_PILL = { background: '#F7F3FF', color: '#4A1FA0' } as const
+
+export function TypePill({ label }: { label: string }) {
+  return (
+    <span style={{ ...PURPLE_PILL, fontSize: 10, fontWeight: 700, borderRadius: 999, padding: '2px 8px', display: 'inline-block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      {label}
+    </span>
+  )
+}
+
 const AVATAR_COLORS = ['#5B2BC9', '#0891B2', '#B45309', '#166534', '#9D174D', '#1D4ED8']
 function avatarColor(name: string) {
   let hash = 0
@@ -116,7 +138,6 @@ export function KanbanCard({
 }) {
   const tone = isDueSoon(task)
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: task._id })
-  const pill = PRIORITY_PILL[task.priority] || PRIORITY_PILL.low
   const commentCount = task.comments?.length ?? 0
   const attachmentCount = task.attachments?.length ?? 0
   const done = task.status === 'done'
@@ -127,16 +148,26 @@ export function KanbanCard({
       {...attributes}
       onClick={() => !isDragging && onOpen(task)}
       style={{
-        background: 'white', border: '1px solid rgba(20,8,31,.08)', borderRadius: 10, padding: 10,
+        position: 'relative',
+        background: 'white', border: '1px solid rgba(20,8,31,.08)', borderRadius: 12, padding: '10px 12px',
         borderLeft: tone === 'overdue' ? '3px solid #991B1B' : tone === 'today' ? '3px solid #B45309' : '3px solid transparent',
         opacity: isDragging ? 0.4 : 1,
         transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
         touchAction: 'none',
+        boxShadow: '0 1px 2px rgba(20,8,31,.04)',
       }}
       className="cursor-pointer select-none"
     >
-      {task.leadName && <div style={{ fontSize: 11, color: MUTED, fontWeight: 600, marginBottom: 2 }}>{task.leadName}</div>}
-      <div className="flex items-start gap-2">
+      {/* priority dot, top-right corner */}
+      <span
+        title={`${task.priority} priority`}
+        style={{
+          position: 'absolute', top: 11, right: 11, width: 7, height: 7, borderRadius: '50%',
+          background: PRIORITY_DOT[task.priority] || PRIORITY_DOT.low,
+        }}
+      />
+      {task.leadName && <div style={{ marginBottom: 5, paddingRight: 12 }}><TypePill label={task.leadName} /></div>}
+      <div className="flex items-start gap-2" style={{ paddingRight: 12 }}>
         {onToggleDone && (
           <button
             type="button"
@@ -153,17 +184,17 @@ export function KanbanCard({
           {task.title}
         </div>
       </div>
-      <div className="flex items-center justify-between mt-2">
-        <span style={{ fontSize: 10, fontWeight: 700, color: pill.fg, background: pill.bg, borderRadius: 6, padding: '2px 7px', textTransform: 'capitalize' }}>{task.priority}</span>
-        {task.dueDate && (
-          <span className="flex items-center gap-1" style={{ fontSize: 10.5, fontWeight: tone !== 'normal' ? 700 : 400, color: tone === 'overdue' ? '#991B1B' : tone === 'today' ? '#B45309' : MUTED }}>
-            <Calendar size={11} />
-            {formatDate(task.dueDate)}
-          </span>
-        )}
-      </div>
-      <div className="flex items-center justify-between mt-2">
-        <div className="flex items-center gap-2.5" style={{ color: MUTED }}>
+      <div className="flex items-center justify-between mt-2.5 gap-2">
+        <div className="flex items-center gap-1.5 min-w-0">
+          {task.assignedTo?.name && <Avatar name={task.assignedTo.name} size={19} />}
+          {task.dueDate && (
+            <span className="flex items-center gap-1" style={{ fontSize: 10.5, fontWeight: tone !== 'normal' ? 700 : 500, color: tone === 'overdue' ? '#991B1B' : tone === 'today' ? '#B45309' : MUTED }}>
+              <Calendar size={11} />
+              {formatDate(task.dueDate)}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2.5 shrink-0" style={{ color: MUTED }}>
           {commentCount > 0 && (
             <span className="flex items-center gap-1" style={{ fontSize: 10.5 }}>
               <MessageSquare size={11} /> {commentCount}
@@ -175,7 +206,6 @@ export function KanbanCard({
             </span>
           )}
         </div>
-        {task.assignedTo?.name && <Avatar name={task.assignedTo.name} />}
       </div>
     </div>
   )
@@ -193,18 +223,18 @@ export function KanbanColumn({
   return (
     <div
       ref={setNodeRef}
-      style={{ background: isOver ? '#EFEAFA' : '#F7F5F0', borderRadius: 10, padding: 8, display: 'flex', flexDirection: 'column', minHeight: 0, transition: 'background .15s' }}
+      style={{ background: isOver ? '#EFEAFA' : COLUMN_BG, borderRadius: 16, padding: 10, display: 'flex', flexDirection: 'column', minHeight: 0, transition: 'background .15s' }}
     >
-      <div className="flex items-center gap-1.5 mb-1.5" style={{ padding: '0 2px' }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: MUTED, textTransform: 'uppercase', letterSpacing: '.04em' }}>{col.label}</span>
-        <span style={{ fontSize: 10, fontWeight: 700, color: MUTED, background: 'rgba(20,8,31,.08)', borderRadius: 999, padding: '1px 6px' }}>{count}</span>
+      <div className="flex items-center gap-2 mb-2" style={{ padding: '0 2px' }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: INK, textTransform: 'uppercase', letterSpacing: '.06em' }}>{col.label}</span>
+        <span style={{ fontSize: 10.5, fontWeight: 700, color: MUTED, background: 'white', borderRadius: 999, padding: '2px 8px', boxShadow: '0 1px 2px rgba(20,8,31,.06)' }}>{count}</span>
       </div>
-      <div className="space-y-1.5 overflow-y-auto" style={{ maxHeight: 260, minHeight: 40 }}>
+      <div className="space-y-2 overflow-y-auto" style={{ maxHeight: 320, minHeight: 40 }}>
         {children}
       </div>
       {onAddTask && (
         <button type="button" onClick={onAddTask}
-          className="flex items-center gap-1 mt-1.5 px-1 py-1 rounded-lg text-left cursor-pointer hover:bg-black/5 transition-colors"
+          className="flex items-center gap-1 mt-2 px-1 py-1 rounded-lg text-left cursor-pointer hover:bg-black/5 transition-colors"
           style={{ fontSize: 11.5, color: MUTED, fontWeight: 600 }}>
           <Plus size={12} /> Add task
         </button>
