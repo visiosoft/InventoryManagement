@@ -28,13 +28,19 @@ function getTransporter() {
     return transporter;
 }
 
-export async function sendMail({ to, subject, text, html, attachments }) {
+/** The address mail actually goes out as, for display and for BCC-only sends. */
+export function mailFromAddress() {
+    return process.env.SMTP_FROM
+        || (process.env.SMTP_USER ? `PurpleBox <${process.env.SMTP_USER}>` : 'PurpleBox <contact@purplebox.ae>');
+}
+
+export async function sendMail({ to, subject, text, html, attachments, bcc }) {
     if (gmailConfigured()) {
-        return sendGmail({ to, subject, text, html, attachments });
+        return sendGmail({ to, subject, text, html, attachments, bcc });
     }
     if (!smtpConfigured()) {
         throw new Error('Email is not configured — connect Gmail in Settings');
     }
     const from = process.env.SMTP_FROM || `PurpleBox <${process.env.SMTP_USER}>`;
-    return getTransporter().sendMail({ from, to, subject, text, html, attachments });
+    return getTransporter().sendMail({ from, to, subject, text, html, attachments, bcc });
 }

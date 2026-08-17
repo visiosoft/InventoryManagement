@@ -1,7 +1,9 @@
 import { Router } from 'express';
+import { isValidObjectId } from 'mongoose';
 import { Customer, Contract, Document, Payment, Invoice, Unit, Quote } from '../models/index.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { phoneClauses } from '../utils/phoneSearch.js';
+import { mailConfigured, mailFromAddress, sendMail } from '../services/mail.js';
 
 const router = Router();
 
@@ -138,6 +140,66 @@ router.post('/:id/merge-into/:targetId', async (req, res) => {
   const result = await Invoice.updateMany({ customer: id }, { $set: { customer: targetId } });
   await Customer.findByIdAndDelete(id);
   res.json({ ok: true, invoicesMoved: result.modifiedCount, deletedCustomer: source.fullName, intoCustomer: target.fullName });
+});
+
+// Gmail rejects messages with too many recipients on one send; keep each
+// batch comfortably under the ~100 cap.
+const BCC_BATCH_SIZE = 90;
+
+const chunk = (arr, size) => {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+};
+
+// One email to many customers, everyone in BCC so recipients can't see each
+// other. Batched, and honest about partial failure — a later batch can fail
+// after earlier ones already went out.
+router.post('/send-email', requireAdmin, async (req, res) => {
+  if (!mailConfigured()) return res.status(501).json({ error: 'Email is not configured — connect Gmail in Settings' });
+
+  const ids = Array.isArray(req.body?.customerIds) ? req.body.customerIds.filter((id) => isValidObjectId(id)) : [];
+  const subject = String(req.body?.subject || '').trim();
+  const html = String(req.body?.html || '').trim();
+  if (!ids.length) return res.status(400).json({ error: 'No recipients selected' });
+  if (!subject) return res.status(400).json({ error: 'Subject is required' });
+  if (!html || !html.replace(/<[^>]*>/g, '').trim()) return res.status(400).json({ error: 'Email body is required' });
+
+  // The server decides who is actually mailable, not the client.
+  const recipients = await Customer.find({ _id: { $in: ids }, email: { $nin: ['', null] } })
+    .select('email fullName')
+    .lean();
+  if (!recipients.length) return res.status(400).json({ error: 'None of the selected customers have an email address' });
+
+  const text = html.replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n\n').replace(/<[^>]*>/g, '').trim();
+  const from = mailFromAddress();
+  const sentBy = req.user?.name || req.user?.email || 'user';
+
+  const okIds = [];
+  let failed = 0;
+  let firstError = '';
+
+  for (const batch of chunk(recipients, BCC_BATCH_SIZE)) {
+    try {
+      // `To` is the sender: a message with an empty To and only BCC is widely
+      // treated as spam.
+      await sendMail({ to: from, bcc: batch.map((c) => c.email).join(', '), subject, text, html });
+      okIds.push(...batch.map((c) => c._id));
+    } catch (err) {
+      failed += batch.length;
+      if (!firstError) firstError = err.message || 'Send failed';
+    }
+  }
+
+  if (okIds.length) {
+    await Customer.updateMany(
+      { _id: { $in: okIds } },
+      { $push: { emailLog: { subject, at: new Date(), sentBy } } },
+    );
+  }
+
+  if (!okIds.length) return res.status(500).json({ error: firstError || 'Failed to send email' });
+  res.json({ sent: okIds.length, failed, total: recipients.length, ...(firstError ? { error: firstError } : {}) });
 });
 
 router.post('/bulk-delete', requireAdmin, async (req, res) => {

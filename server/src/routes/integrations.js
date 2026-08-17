@@ -3,6 +3,7 @@ import { google } from 'googleapis';
 import { requireAdmin } from '../middleware/auth.js';
 import { driveConfigured } from '../services/drive.js';
 import { gmailConfigured } from '../services/gmail.js';
+import { mailConfigured, mailFromAddress } from '../services/mail.js';
 import { zohoConfigured } from '../services/zoho.js';
 import { zohoBooksConfigured, listAllZohoContacts } from '../services/zohoBooks.js';
 import { Customer, Contract } from '../models/index.js';
@@ -24,6 +25,9 @@ router.get('/status', (_req, res) => {
                 : '',
         },
         gmail: { configured: gmailConfigured() },
+        // `from` is what mail actually goes out as, so the UI can show the real
+        // sender rather than guessing.
+        email: { configured: mailConfigured(), from: mailFromAddress() },
         whatsapp: { configured: whatsappConfigured(), missing: whatsappMissing() },
         whatsappLabelSync: getWhatsAppLabelSyncStatus(),
         stripe: { configured: stripeConfigured(), webhookConfigured: stripeWebhookConfigured() },

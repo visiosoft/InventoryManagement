@@ -22,13 +22,16 @@ function mimeEncode(str) {
     return '=?UTF-8?B?' + Buffer.from(str, 'utf8').toString('base64') + '?=';
 }
 
-function buildRawEmail({ from, to, subject, text, html, attachments }) {
+function buildRawEmail({ from, to, subject, text, html, attachments, bcc }) {
     const boundary = '____boundary_' + Date.now().toString(36);
     const nl = '\r\n';
 
     let raw = '';
     raw += `From: ${from}${nl}`;
     raw += `To: ${to}${nl}`;
+    // Comma-separated list; Gmail strips this header before delivery so
+    // recipients can't see each other.
+    if (bcc) raw += `Bcc: ${bcc}${nl}`;
     raw += `Subject: ${mimeEncode(subject)}${nl}`;
     raw += `MIME-Version: 1.0${nl}`;
 
@@ -68,11 +71,11 @@ function buildRawEmail({ from, to, subject, text, html, attachments }) {
     return Buffer.from(raw).toString('base64url');
 }
 
-export async function sendGmail({ to, subject, text, html, attachments }) {
+export async function sendGmail({ to, subject, text, html, attachments, bcc }) {
     const auth = getOAuth2Client();
     if (!auth) throw new Error('Gmail API is not configured — connect Gmail in Settings');
     const gmail = google.gmail({ version: 'v1', auth });
     const from = process.env.SMTP_FROM || process.env.SMTP_USER || 'PurpleBox <contact@purplebox.ae>';
-    const raw = buildRawEmail({ from, to, subject, text, html, attachments });
+    const raw = buildRawEmail({ from, to, subject, text, html, attachments, bcc });
     await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
 }

@@ -1,12 +1,13 @@
 import { useEffect, useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { FileText, FileBadge, Receipt, Plus, Search, Trash2, UserCheck, Merge } from 'lucide-react'
+import { FileText, FileBadge, Receipt, Plus, Search, Trash2, UserCheck, Merge, Mail } from 'lucide-react'
 import { api, apiError, customerApi } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { Customer } from '../lib/types'
 import { Button, Card, EmptyState, Input, Modal, Pagination, Spinner, Table, Td, Th } from '../components/ui'
 import { AddCustomerModal, CustomerForm } from '../components/AddCustomerModal'
+import EmailCustomersModal from './customers/EmailCustomersModal'
 import { formatDate } from '../lib/utils'
 
 // Re-export CustomerForm so existing imports (e.g. CustomerDetail) keep working
@@ -30,6 +31,7 @@ export default function Customers() {
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(25)
   const [adding, setAdding] = useState(false)
+  const [emailing, setEmailing] = useState(false)
   const [prefill, setPrefill] = useState<Partial<Customer> | null>(null)
   const [newCustomer, setNewCustomer] = useState<Customer | null>(null)
   const [actionError, setActionError] = useState('')
@@ -166,6 +168,15 @@ export default function Customers() {
               className="inline-flex items-center gap-1.5 transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               <Trash2 size={14} /> {bulkDelete.isPending ? 'Deleting…' : `Delete selected (${selected.size})`}
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              onClick={() => setEmailing(true)}
+              style={{ borderRadius: 10, height: 36, fontSize: 13, fontWeight: 600, padding: '0 14px', background: '#fff', color: INK, border: '1px solid rgba(20,8,31,.16)' }}
+              className="inline-flex items-center gap-1.5 transition-colors hover:bg-black/5"
+            >
+              <Mail size={14} /> Email customers
             </button>
           )}
           <button
@@ -360,6 +371,8 @@ export default function Customers() {
           </div>
         )}
       </Modal>
+
+      {emailing && <EmailCustomersModal onClose={() => setEmailing(false)} />}
 
       {/* ── Add customer modal (shared component) ── */}
       <AddCustomerModal

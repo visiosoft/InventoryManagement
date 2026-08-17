@@ -123,6 +123,14 @@ body {
    global so it applies regardless of which page mounted first; previously
    this only lived in a per-page <style> tag and broke wherever that page
    hadn't been visited yet in the session. */
+/* Placeholder for an empty contentEditable (the bulk-email compose body). */
+.agreement-editor[data-placeholder]:empty::before {
+  content: attr(data-placeholder);
+  color: #9AA0AE;
+  pointer-events: none;
+}
+.agreement-editor a { color: #5B2BC9; text-decoration: underline; }
+
 .agreement-editor table { border-collapse: collapse; width: 100%; margin: 8px 0; }
 .agreement-editor td, .agreement-editor th { border: 1px solid #bbb; padding: 5px 8px; font-size: 13px; vertical-align: top; }
 .agreement-editor h1 { font-size: 20px; font-weight: 700; margin: 12px 0 6px; }

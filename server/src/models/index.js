@@ -99,6 +99,13 @@ const customerSchema = new Schema(
     passportExpiry: { type: Date },
     accessPersons: [accessPersonSchema],
     notes: { type: String, default: '' },
+    // Bulk emails this customer was included in. Kept separate from `notes`,
+    // which is hand-written free text.
+    emailLog: [{
+      subject: { type: String, default: '' },
+      at: { type: Date, default: Date.now },
+      sentBy: { type: String, default: '' },
+    }],
     source: { type: String, enum: ['manual', 'import_csv', 'google'], default: 'manual' },
     importBatch: { type: String, default: null },
     googleId: { type: String, default: '' },
