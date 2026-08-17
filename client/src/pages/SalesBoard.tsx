@@ -117,9 +117,12 @@ function RenewalDetail({ contract, onChanged, onBack }: { contract: ExpiringCont
   const [taskDue, setTaskDue] = useState('')
   const [err, setErr] = useState('')
 
+  // GET /contracts/:id answers { contract, payments, documents, invoices } —
+  // the timeline is nested under `contract`, so unwrap it here. Reading
+  // r.data.timeline silently yielded undefined and History always looked empty.
   const { data: detail } = useQuery<{ timeline?: ContractTimelineEntry[] }>({
     queryKey: ['contract-timeline', contract._id],
-    queryFn: () => api.get(`/contracts/${contract._id}`).then((r) => r.data),
+    queryFn: () => api.get(`/contracts/${contract._id}`).then((r) => r.data?.contract ?? r.data),
   })
   const { data: linkedTasks = [] } = useQuery<TaskItem[]>({
     queryKey: ['contract-tasks', contract._id],
@@ -303,11 +306,16 @@ function RenewalDetail({ contract, onChanged, onBack }: { contract: ExpiringCont
         {timeline.length === 0 ? (
           <p style={{ fontSize: 12.5, color: MUTED, marginTop: 4 }}>No notes or activity yet.</p>
         ) : (
-          <div className="space-y-1.5 max-h-56 overflow-auto mt-1.5">
+          <div className="space-y-2 max-h-64 overflow-auto mt-1.5">
             {timeline.map((t, i) => (
-              <div key={i} className="flex items-start justify-between gap-2" style={{ fontSize: 12.5, color: '#4A4357' }}>
-                <span>{t.text}</span>
-                <span style={{ color: MUTED, fontSize: 11, whiteSpace: 'nowrap' }}>{formatDate(t.at)}</span>
+              <div key={i} style={{ fontSize: 12.5, color: '#4A4357' }}>
+                <div className="flex items-start justify-between gap-2">
+                  <span>{t.text}</span>
+                  <span style={{ color: MUTED, fontSize: 11, whiteSpace: 'nowrap' }}>{formatDate(t.at)}</span>
+                </div>
+                {t.author && (
+                  <div style={{ fontSize: 11, color: MUTED, marginTop: 1 }}>by {t.author}</div>
+                )}
               </div>
             ))}
           </div>
