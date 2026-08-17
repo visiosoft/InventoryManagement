@@ -27,9 +27,15 @@ function initialsOf(name: string) {
   return ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase() || '?'
 }
 
-export default function EmailCustomersModal({ onClose }: { onClose: () => void }) {
+export default function EmailCustomersModal({
+  onClose,
+  defaultSegment = 'has_email',
+}: {
+  onClose: () => void
+  defaultSegment?: Segment
+}) {
   const [query, setQuery] = useState('')
-  const [segment, setSegment] = useState<Segment>('has_email')
+  const [segment, setSegment] = useState<Segment>(defaultSegment)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [subject, setSubject] = useState('')
   const [result, setResult] = useState<SendResult | null>(null)
@@ -79,6 +85,7 @@ export default function EmailCustomersModal({ onClose }: { onClose: () => void }
   const allMailableSelected = mailable.length > 0 && mailable.every((c) => selected.has(c._id))
   const selectedCount = selected.size
   const filtering = query.trim() !== '' || segment !== 'has_email'
+  const loadingSegment = segment === 'active' && !activeContracts
 
   function toggleAll() {
     setSelected((s) => {
@@ -213,12 +220,10 @@ export default function EmailCustomersModal({ onClose }: { onClose: () => void }
             </div>
 
             <div className="flex-1 overflow-y-auto p-2 min-h-0">
-              {isLoading ? (
+              {isLoading || loadingSegment ? (
                 <Spinner />
               ) : visible.length === 0 ? (
-                <div className="text-center py-8" style={{ fontSize: 12.5, color: MUTED }}>
-                  {segment === 'active' && !activeContracts ? 'Loading active tenants…' : 'No customers match.'}
-                </div>
+                <div className="text-center py-8" style={{ fontSize: 12.5, color: MUTED }}>No customers match.</div>
               ) : (
                 visible.map((c) => {
                   const hasEmail = !!c.email

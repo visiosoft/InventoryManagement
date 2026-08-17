@@ -1,9 +1,11 @@
 import { Fragment, useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Paperclip, Search, Trash2, X } from 'lucide-react'
+import { Mail, Paperclip, Search, Trash2, X } from 'lucide-react'
 import { api, apiError } from '../lib/api'
+import { useAuth } from '../lib/auth'
 import type { Contract } from '../lib/types'
+import EmailCustomersModal from './customers/EmailCustomersModal'
 import {
   Badge, Button, Card, EmptyState, Modal, Pagination,
   Spinner, Table, Td, Th,
@@ -22,6 +24,9 @@ type PagedContracts = { data: Contract[]; total: number; page: number; pages: nu
 
 export default function Contracts() {
   const qc = useQueryClient()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+  const [emailing, setEmailing] = useState(false)
   // ?search= lets other screens link straight to a filtered list
   const [urlParams] = useSearchParams()
 
@@ -188,6 +193,27 @@ export default function Contracts() {
           </p>
         </div>
         <div className="flex gap-2">
+          {isAdmin && (
+            <button
+              onClick={() => setEmailing(true)}
+              style={{
+                background: '#fff',
+                color: INK,
+                border: '1px solid rgba(20,8,31,.16)',
+                borderRadius: 12,
+                padding: '10px 18px',
+                fontWeight: 700,
+                fontSize: 14,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                ...HEADING,
+              }}
+            >
+              <Mail size={15} /> Email tenants
+            </button>
+          )}
           {selectedContractIds.length > 0 && (
             <button
               onClick={confirmBulkDelete}
@@ -546,6 +572,9 @@ export default function Contracts() {
           </div>
         )}
       </Modal>
+
+      {/* Opens on Active tenants — this page is about live contracts. */}
+      {emailing && <EmailCustomersModal onClose={() => setEmailing(false)} defaultSegment="active" />}
     </div>
   )
 }
