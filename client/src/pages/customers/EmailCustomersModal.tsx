@@ -122,7 +122,6 @@ export default function EmailCustomersModal({
     onError: (e) => setError(apiError(e)),
   })
 
-  const bodyEmpty = !(bodyRef.current?.innerText || '').trim()
   const sendDisabled = selectedCount === 0 || !subject.trim() || send.isPending
 
   const toolbarBtn = 'w-8 h-8 rounded-lg border flex items-center justify-center cursor-pointer hover:bg-black/5 transition-colors'
@@ -311,7 +310,14 @@ export default function EmailCustomersModal({
                   Cancel
                 </button>
                 <button
-                  onClick={() => { if (bodyEmpty) { setError('Email body is required'); return } send.mutate() }}
+                  // Read the editor on click, not during render: typing in a
+                  // contentEditable doesn't re-render, so a render-time value
+                  // would still say "empty" after you'd written the message.
+                  onClick={() => {
+                    if (!(bodyRef.current?.innerText || '').trim()) { setError('Email body is required'); return }
+                    setError('')
+                    send.mutate()
+                  }}
                   disabled={sendDisabled}
                   style={{
                     height: 40, padding: '0 20px', borderRadius: 999, border: 'none', fontWeight: 600, fontSize: 13.5,
