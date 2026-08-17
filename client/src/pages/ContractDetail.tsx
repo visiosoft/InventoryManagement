@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Download, FileText, FilePlus, MessageSquare, PenLine, Plus, ShieldCheck, Trash2, Upload, X, XCircle } from 'lucide-react'
+import { CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Download, FileText, FilePlus, Mail, MessageSquare, PenLine, Plus, ShieldCheck, Trash2, Upload, X, XCircle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { AppDocument, Contract, Invoice, Payment, Unit } from '../lib/types'
@@ -1042,7 +1042,7 @@ export default function ContractDetail() {
   const daysLeft = c.endDate ? Math.ceil((new Date(c.endDate).getTime() - today2.getTime()) / 86400000) : null
 
   // Activity feed
-  type ActivityEvent = { id: string; type: 'overdue' | 'paid' | 'note' | 'invoice' | 'document'; at: Date; title: string; subtitle: string; noteIdx?: number }
+  type ActivityEvent = { id: string; type: 'overdue' | 'paid' | 'note' | 'invoice' | 'document' | 'email'; at: Date; title: string; subtitle: string; noteIdx?: number }
   const activityEvents: ActivityEvent[] = []
   // Group paid payments by invoice — show one activity row per invoice (month), not per week
   const paidByInvoice = new Map<string, typeof paid>()
@@ -1064,7 +1064,17 @@ export default function ContractDetail() {
   }
   // Timeline notes (includes contract creation, approval, signing, etc.)
   for (const [noteIdx, note] of (c.timeline ?? []).entries()) {
-    activityEvents.push({ id: `note-${noteIdx}-${note.at}`, type: 'note', at: new Date(note.at), title: note.text, subtitle: note.author ? `by ${note.author}` : '', noteIdx })
+    // Sent-email entries are written by the bulk mailer with this exact shape.
+    // They aren't hand-written notes, so they get a mail icon and no edit/delete.
+    const isEmail = /^(Email|Notice) "/.test(note.text ?? '')
+    activityEvents.push({
+      id: `note-${noteIdx}-${note.at}`,
+      type: isEmail ? 'email' : 'note',
+      at: new Date(note.at),
+      title: note.text,
+      subtitle: note.author ? `by ${note.author}` : '',
+      ...(isEmail ? {} : { noteIdx }),
+    })
   }
   // Invoice creation events
   const allInvoices = data?.invoices ?? []
@@ -1518,11 +1528,13 @@ export default function ContractDetail() {
                             <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${ev.type === 'paid' ? 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600'
                               : ev.type === 'invoice' ? 'bg-blue-100 dark:bg-blue-950/40 text-blue-600'
                                 : ev.type === 'document' ? 'bg-purple-100 dark:bg-purple-950/40 text-purple-600'
-                                  : 'bg-muted text-muted-foreground'
+                                  : ev.type === 'email' ? 'bg-amber-100 dark:bg-amber-950/40 text-amber-600'
+                                    : 'bg-muted text-muted-foreground'
                               }`}>
                               {ev.type === 'paid' && <CheckCircle2 size={15} />}
                               {ev.type === 'invoice' && <FileText size={15} />}
                               {ev.type === 'document' && <Upload size={15} />}
+                              {ev.type === 'email' && <Mail size={15} />}
                               {ev.type === 'note' && <MessageSquare size={15} />}
                             </div>
                             <div className="flex-1 min-w-0">

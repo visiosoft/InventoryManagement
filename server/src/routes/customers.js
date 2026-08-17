@@ -192,9 +192,17 @@ router.post('/send-email', requireAdmin, async (req, res) => {
   }
 
   if (okIds.length) {
+    const at = new Date();
     await Customer.updateMany(
       { _id: { $in: okIds } },
-      { $push: { emailLog: { subject, at: new Date(), sentBy } } },
+      { $push: { emailLog: { subject, at, sentBy } } },
+    );
+    // Also log on the tenant's live contracts so it shows up in the contract's
+    // Activity feed, which reads straight off contract.timeline. Active only —
+    // an ended contract shouldn't collect new correspondence.
+    await Contract.updateMany(
+      { customer: { $in: okIds }, status: 'active' },
+      { $push: { timeline: { at, text: `Email "${subject}" sent`, author: sentBy } } },
     );
   }
 
