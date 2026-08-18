@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { LayoutGrid, List, Plus, Search } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useSite, unitInSite, type Site } from '../lib/site'
@@ -124,8 +124,6 @@ export default function Units() {
   const [sizeFilter, setSizeFilter] = useState('')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Unit | null>(null)
-  // Stepping from a contract lands here when a unit has no contract to show.
-  const [unitParams, setUnitParams] = useSearchParams()
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState('')
 
@@ -133,8 +131,6 @@ export default function Units() {
     queryKey: ['units'],
     queryFn: () => api.get('/units').then((r) => r.data),
   })
-
-  const requestedUnitId = unitParams.get('unit')
 
   // Who holds each unit right now. A shared unit can carry several active
   // contracts, so this is a list per unit, not a single tenant.
@@ -167,18 +163,6 @@ export default function Units() {
     }
     return [...map.entries()].sort((a, b) => a[0] - b[0]).map(([sqf, counts]) => ({ sqf, ...counts }))
   }, [units])
-
-  // Arriving from a contract's prev/next arrows on a unit with no contract:
-  // open that unit's panel, then drop the param so a later close stays closed.
-  useEffect(() => {
-    if (!requestedUnitId || !allSiteUnits?.length) return
-    const hit = allSiteUnits.find((u) => u._id === requestedUnitId)
-    if (hit) {
-      setSelected(hit)
-      unitParams.delete('unit')
-      setUnitParams(unitParams, { replace: true })
-    }
-  }, [requestedUnitId, allSiteUnits, unitParams, setUnitParams])
 
   const filtered = useMemo(
     () =>
