@@ -4,6 +4,7 @@ import { Customer, Contract, Document, Payment, Invoice, Unit, Quote } from '../
 import { requireAdmin } from '../middleware/auth.js';
 import { phoneClauses } from '../utils/phoneSearch.js';
 import { mailConfigured, mailFromAddress, sendMail } from '../services/mail.js';
+import { zohoBooksConfigured, findZohoContactsFor, fetchZohoInvoicesForContacts } from '../services/zohoBooks.js';
 
 const router = Router();
 
@@ -106,6 +107,42 @@ router.get('/:id', async (req, res) => {
   });
 
   res.json({ customer, contracts, documents, invoices, paymentSummary });
+});
+
+// Zoho Books invoices for this person, matched on email/phone only — the two
+// systems hold different names for the same customer.
+router.get('/:id/zoho-invoices', async (req, res) => {
+  try {
+    const customer = await Customer.findById(req.params.id).select('email phone phones').lean();
+    if (!customer) return res.status(404).json({ error: 'Customer not found' });
+    if (!zohoBooksConfigured()) return res.status(501).json({ error: 'Zoho Books is not configured' });
+
+    const emails = [customer.email].filter(Boolean);
+    const phones = [...(Array.isArray(customer.phones) ? customer.phones : []), customer.phone].filter(Boolean);
+
+    const { contacts } = await findZohoContactsFor({ emails, phones });
+    const { invoices } = await fetchZohoInvoicesForContacts(contacts.map((c) => c.id));
+
+    const totals = invoices.reduce(
+      (acc, inv) => ({
+        count: acc.count + 1,
+        total: Math.round((acc.total + inv.total) * 100) / 100,
+        balance: Math.round((acc.balance + inv.balance) * 100) / 100,
+      }),
+      { count: 0, total: 0, balance: 0 },
+    );
+
+    res.json({
+      configured: true,
+      matchedContacts: contacts.map((c) => ({
+        id: c.id, name: c.name, email: c.email, phone: c.phone || c.mobile || '', matchedBy: c.matchedBy,
+      })),
+      invoices,
+      totals,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 router.post('/', async (req, res) => {

@@ -277,6 +277,45 @@ router.get('/pending-approvals', async (req, res) => {
   res.json(contracts);
 });
 
+// The next contract booked on each of this contract's units, so the Units tab
+// can warn that a unit is already spoken for after this one ends. Units with
+// nothing upcoming are simply absent from the map.
+router.get('/:id/unit-bookings', async (req, res) => {
+  try {
+    const contract = await Contract.findById(req.params.id).select('units unit endDate').lean();
+    if (!contract) return res.status(404).json({ error: 'Contract not found' });
+
+    const unitIds = (contract.units?.length ? contract.units : [contract.unit]).filter(Boolean);
+
+    const results = await Promise.all(unitIds.map((unitId) =>
+      Contract.findOne({
+        _id: { $ne: contract._id },
+        status: { $in: ['active', 'pending_signature', 'draft'] },
+        archived: { $ne: true },
+        $or: [{ unit: unitId }, { units: unitId }],
+        startDate: { $gte: contract.endDate },
+      }).sort({ startDate: 1 }).populate('customer', 'fullName').lean()
+    ));
+
+    const bookings = {};
+    unitIds.forEach((unitId, i) => {
+      const next = results[i];
+      if (!next) return;
+      bookings[String(unitId)] = {
+        contractId: String(next._id),
+        contractNo: next.contractNo || '',
+        startDate: next.startDate,
+        customerName: next.customer?.fullName || '',
+        status: next.status || '',
+      };
+    });
+
+    res.json({ bookings });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.get('/:id', async (req, res) => {
   const contract = await populateAll(Contract.findById(req.params.id));
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
@@ -951,6 +990,36 @@ router.put('/:id', async (req, res) => {
         const n = Number(sqf);
         if (Number.isFinite(n) && n > 0) await Unit.updateOne({ _id: unitId }, { $set: { sizeSqf: n } });
       }
+    }
+
+    // Per-unit ledger rows from the Units tab. Only units actually on this
+    // contract get a line; every money/date field is optional and null means
+    // "inherit the contract value", so a partially filled row is legal.
+    if (Array.isArray(req.body.unitLines)) {
+      const onContractLines = new Set(($set.units || contract.units || []).map((u) => String(u)));
+      const lines = [];
+      for (const raw of req.body.unitLines) {
+        const unitId = String(raw?.unit || '');
+        if (!isValidObjectId(unitId) || !onContractLines.has(unitId)) continue;
+        const line = { unit: unitId };
+        for (const key of ['checkIn', 'checkOut']) {
+          if (raw[key] === undefined || raw[key] === null || raw[key] === '') { line[key] = null; continue; }
+          const d = new Date(raw[key]);
+          if (Number.isNaN(d.getTime())) return res.status(400).json({ error: `unitLines.${key} is not a valid date` });
+          line[key] = d;
+        }
+        if (line.checkIn && line.checkOut && line.checkOut <= line.checkIn) {
+          return res.status(400).json({ error: 'Check out must be after check in' });
+        }
+        for (const key of ['leaseRate', 'received', 'pending']) {
+          if (raw[key] === undefined || raw[key] === null || raw[key] === '') { line[key] = null; continue; }
+          const n = Number(raw[key]);
+          if (!Number.isFinite(n) || n < 0) return res.status(400).json({ error: `unitLines.${key} must be a number of 0 or more` });
+          line[key] = n;
+        }
+        lines.push(line);
+      }
+      $set.unitLines = lines;
     }
 
     if (req.body.accessType !== undefined) {

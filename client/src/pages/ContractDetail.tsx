@@ -1,19 +1,38 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Download, FileText, FilePlus, Mail, MessageSquare, PenLine, Plus, ShieldCheck, Trash2, Upload, X, XCircle } from 'lucide-react'
+import { AlertTriangle, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Download, FileText, FilePlus, Mail, MessageSquare, PenLine, Plus, ShieldCheck, Trash2, Upload, X, XCircle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
-import type { AppDocument, Contract, Invoice, Payment, Unit } from '../lib/types'
+import type { AppDocument, Contract, Invoice, Payment, Unit, UnitLine } from '../lib/types'
 import {
   Badge, Button, Card, CardBody, CardHeader, EmptyState,
   Field, Input, Modal, Select, Spinner,
-  Table, Td, Th, Textarea,
+  Textarea,
   contractStatusTone, statusLabel,
 } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
 import { UploadDocumentForm } from './Documents'
 import { CustomerForm } from '../components/AddCustomerModal'
+
+// ── Shared design tokens (match the rest of the CRM) ──────────────────────────
+const INK = '#14081F'
+const MUTED = '#756E80'
+const PURPLE = '#5B2BC9'
+const HAIRLINE = 'rgba(20,8,31,.10)'
+const SECTION_LABEL: React.CSSProperties = {
+  fontSize: 11, fontWeight: 700, color: PURPLE,
+  textTransform: 'uppercase', letterSpacing: '.04em',
+}
+const BOX: React.CSSProperties = { border: `1px solid ${HAIRLINE}`, borderRadius: 14 }
+/** Titles offered for a free-form "other" document, mapped onto the server's type enum. */
+const OTHER_DOC_TITLES: { label: string; type: AppDocument['type'] }[] = [
+  { label: 'Tenancy Contract', type: 'other' },
+  { label: 'Trade Licence', type: 'trade_license' },
+  { label: 'Visa', type: 'visa' },
+  { label: 'Cheque', type: 'other' },
+  { label: 'Other', type: 'other' },
+]
 
 // ── Custom invoice generator modal ────────────────────────────────────────────
 type ContractDetailData = {
@@ -774,6 +793,81 @@ function EditContractForm({ contract, unitOptions, busy, error, onSubmit, onCanc
   )
 }
 
+// ── Units tab ─────────────────────────────────────────────────────────────────
+/** GET /customers/:id/zoho-invoices — invoices found in Zoho Books for this
+ *  tenant, matched on email/phone only. Names legitimately differ between the
+ *  two systems, so a name match is deliberately not attempted. */
+type ZohoInvoice = {
+  id: string; number: string; date: string; dueDate: string
+  total: number; balance: number; status: string; currency: string; customerName: string
+}
+type ZohoMatch = { id: string; name: string; email: string; phone: string; matchedBy: 'email' | 'phone' }
+type ZohoInvoicesResponse = {
+  configured: boolean
+  matchedContacts: ZohoMatch[]
+  invoices: ZohoInvoice[]
+  totals: { count: number; total: number; balance: number }
+}
+
+/** One entry of GET /contracts/:id/unit-bookings — the next contract on a unit. */
+type UnitBooking = {
+  contractId: string
+  contractNo: string
+  startDate: string
+  customerName: string
+  status: string
+}
+
+/**
+ * Click-to-edit cell used by every editable column of the Units grid.
+ * Resting state is a dashed-underline value; clicking swaps in an input that
+ * saves on blur (Enter commits, Escape reverts).
+ */
+function UnitCellEdit({ value, display, type, color, right, title, onSave }: {
+  /** Current raw value, in the input's own format (YYYY-MM-DD, or a number) */
+  value: string
+  display: React.ReactNode
+  type: 'date' | 'number'
+  color?: string
+  right?: boolean
+  title?: string
+  onSave: (next: string) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value)
+
+  if (editing) {
+    return (
+      <input
+        type={type}
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => { setEditing(false); if (draft !== value) onSave(draft) }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur()
+          if (e.key === 'Escape') { setDraft(value); setEditing(false) }
+        }}
+        style={{
+          height: 24, border: `1px solid ${PURPLE}`, borderRadius: 6, width: '100%',
+          fontSize: 12, padding: '0 5px', textAlign: right ? 'right' : 'left', color: INK,
+        }}
+      />
+    )
+  }
+  return (
+    <div style={{ textAlign: right ? 'right' : 'left' }}>
+      <span
+        onClick={() => { setDraft(value); setEditing(true) }}
+        title={title ?? 'Click to edit'}
+        style={{ borderBottom: '1px dashed rgba(20,8,31,.3)', cursor: 'pointer', color }}
+      >
+        {display}
+      </span>
+    </div>
+  )
+}
+
 export default function ContractDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -821,9 +915,23 @@ export default function ContractDetail() {
   const [customerError, setCustomerError] = useState('')
   const [editingNote, setEditingNote] = useState<{ idx: number; text: string } | null>(null)
   const [showAllActivity, setShowAllActivity] = useState(false)
+  // Documents tab: which control is mid-flight, and the picked "other" title
+  const [docBusy, setDocBusy] = useState('')
+  const [otherTitle, setOtherTitle] = useState('')
   const [searchParams, setSearchParams] = useSearchParams()
-  const activeTab = (searchParams.get('tab') as 'overview' | 'payments' | 'documents' | 'notices' | 'reminders') || 'overview'
-  const setActiveTab = (tab: 'overview' | 'payments' | 'documents' | 'notices' | 'reminders') => setSearchParams({ tab }, { replace: true })
+  const activeTab = (searchParams.get('tab') as 'overview' | 'units' | 'payments' | 'documents' | 'notices' | 'reminders') || 'overview'
+  const setActiveTab = (tab: 'overview' | 'units' | 'payments' | 'documents' | 'notices' | 'reminders') => setSearchParams({ tab }, { replace: true })
+
+  // Units tab: which units are ticked for bulk removal, and the last save error
+  const [selectedUnits, setSelectedUnits] = useState<string[]>([])
+  const [unitsError, setUnitsError] = useState('')
+
+  const { data: unitBookings = {} } = useQuery<Record<string, UnitBooking>>({
+    queryKey: ['contract-unit-bookings', id],
+    queryFn: () => api.get(`/contracts/${id}/unit-bookings`).then((r) => r.data?.bookings ?? {}),
+    enabled: activeTab === 'units',
+    staleTime: 60_000,
+  })
 
   const { data: noticeTemplates = [] } = useQuery<{ _id: string; name: string; isDefault: boolean; updatedAt?: string }[]>({
     queryKey: ['agreement-templates'],
@@ -844,6 +952,19 @@ export default function ContractDetail() {
   const { data, isLoading } = useQuery<ContractDetailData>({
     queryKey: ['contract', id],
     queryFn: () => api.get(`/contracts/${id}`).then((r) => r.data),
+  })
+
+  // Zoho Books invoices for this tenant. A 501 means Zoho isn't connected,
+  // which is a normal state to render rather than an error worth retrying.
+  // Keyed on the customer, not the contract: the same person's Zoho invoices
+  // are identical across all their contracts, so the cache is shared.
+  const zohoCustomerId = data?.contract?.customer?._id
+  const zohoInvoices = useQuery<ZohoInvoicesResponse>({
+    queryKey: ['customer-zoho-invoices', zohoCustomerId],
+    queryFn: () => api.get(`/customers/${zohoCustomerId}/zoho-invoices`).then((r) => r.data),
+    enabled: activeTab === 'payments' && Boolean(zohoCustomerId),
+    retry: false,
+    staleTime: 5 * 60_000,
   })
 
 
@@ -901,6 +1022,26 @@ export default function ContractDetail() {
     onError: (e) => setError(apiError(e)),
   })
 
+  // Units tab — every edit resends the whole unitLines array; the server replaces it wholesale
+  const saveUnitLines = useMutation({
+    mutationFn: (unitLines: UnitLine[]) => api.put(`/contracts/${id}`, { unitLines }),
+    onSuccess: () => { invalidate(); setUnitsError('') },
+    onError: (e) => setUnitsError(apiError(e)),
+  })
+
+  const toggleUnitShared = useMutation({
+    mutationFn: ({ unitId, shared }: { unitId: string; shared: boolean }) =>
+      api.put(`/units/${unitId}`, { shared }),
+    onSuccess: () => { invalidate(); setUnitsError('') },
+    onError: (e) => setUnitsError(apiError(e)),
+  })
+
+  const setContractUnits = useMutation({
+    mutationFn: (units: string[]) => api.put(`/contracts/${id}`, { units }),
+    onSuccess: () => { invalidate(); setUnitsError(''); setSelectedUnits([]) },
+    onError: (e) => setUnitsError(apiError(e)),
+  })
+
   const updateContract = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.put(`/contracts/${id}`, body),
     onSuccess: () => { invalidate(); setEditModal(false); setError('') },
@@ -952,6 +1093,46 @@ export default function ContractDetail() {
 
   if (isLoading || !data) return <Spinner />
   const { contract: c, payments, documents } = data
+
+  // ── Document upload / delete (POST /documents, DELETE /documents/:id) ───────
+  async function uploadDoc(file: File, type: AppDocument['type'], name?: string, busyKey: string = type) {
+    setDocBusy(busyKey)
+    setError('')
+    try {
+      const form = new FormData()
+      form.set('file', file)
+      form.set('type', type)
+      form.set('contract', c._id)
+      if (c.customer?._id) form.set('customer', c.customer._id)
+      if (name) form.set('name', name)
+      await api.post('/documents', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+      invalidate()
+    } catch (e) { setError(apiError(e)) }
+    finally { setDocBusy('') }
+  }
+
+  async function removeDoc(docId: string) {
+    setDocBusy(docId)
+    setError('')
+    try {
+      await api.delete(`/documents/${docId}`)
+      invalidate()
+    } catch (e) { setError(apiError(e)) }
+    finally { setDocBusy('') }
+  }
+
+  const identitySlots = [
+    { type: 'emirates_id' as const, label: 'Emirates ID' },
+    { type: 'passport' as const, label: 'Passport' },
+  ]
+  const signedContractDocs = documents.filter((d) => d.type === 'contract')
+  const otherDocs = documents.filter((d) => !['contract', 'emirates_id', 'passport'].includes(d.type))
+  const fileLabel = (d: AppDocument) => {
+    try {
+      const last = decodeURIComponent(new URL(d.url, window.location.origin).pathname.split('/').pop() || '')
+      return last || d.name
+    } catch { return d.name }
+  }
 
   // Sort and split
   const byDue = (a: Payment, b: Payment) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
@@ -1091,6 +1272,20 @@ export default function ContractDetail() {
     }
   }
   activityEvents.sort((a, b) => b.at.getTime() - a.at.getTime())
+
+  // Live alerts — derived only from figures already computed on this page
+  const liveAlerts: { id: string; text: string; tone: 'red' | 'amber' }[] = []
+  if (overdue.length > 0) {
+    liveAlerts.push({ id: 'overdue', text: `${overdue.length} payment${overdue.length !== 1 ? 's' : ''} overdue`, tone: 'red' })
+  }
+  if (daysLeft !== null) {
+    if (daysLeft < 0) liveAlerts.push({ id: 'expiry', text: `Expired ${Math.abs(daysLeft)} day${Math.abs(daysLeft) !== 1 ? 's' : ''} ago`, tone: 'red' })
+    else if (daysLeft === 0) liveAlerts.push({ id: 'expiry', text: 'Expires today', tone: 'red' })
+    else if (daysLeft <= 30) liveAlerts.push({ id: 'expiry', text: `Expires in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}`, tone: 'amber' })
+  }
+  const activityBadgeTone: Record<ActivityEvent['type'], string> = {
+    paid: 'green', invoice: 'blue', document: 'purple', email: 'amber', note: 'gray', overdue: 'red',
+  }
 
   return (
     <div>
@@ -1492,6 +1687,7 @@ export default function ContractDetail() {
           <div className="flex gap-1 border-b mb-4 overflow-x-auto scrollbar-none">
             {([
               ['overview', 'Overview', 0],
+              ['units', 'Units', 0],
               ['documents', 'Documents', 0],
               ['notices', 'Notices', 0],
               ['reminders', 'Reminders', 0],
@@ -1518,28 +1714,72 @@ export default function ContractDetail() {
                 {/* Activity feed */}
                 <Card>
                   <CardHeader title="Activity" subtitle="Most recent first" />
-                  <CardBody className="pt-0">
-                    {activityEvents.length === 0 ? (
-                      <EmptyState message="No activity yet." />
-                    ) : (
-                      <div className="divide-y">
-                        {(showAllActivity ? activityEvents : activityEvents.slice(0, 10)).map((ev) => (
-                          <div key={ev.id} className="flex gap-3 py-3">
-                            <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${ev.type === 'paid' ? 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600'
-                              : ev.type === 'invoice' ? 'bg-blue-100 dark:bg-blue-950/40 text-blue-600'
-                                : ev.type === 'document' ? 'bg-purple-100 dark:bg-purple-950/40 text-purple-600'
-                                  : ev.type === 'email' ? 'bg-amber-100 dark:bg-amber-950/40 text-amber-600'
-                                    : 'bg-muted text-muted-foreground'
-                              }`}>
-                              {ev.type === 'paid' && <CheckCircle2 size={15} />}
-                              {ev.type === 'invoice' && <FileText size={15} />}
-                              {ev.type === 'document' && <Upload size={15} />}
-                              {ev.type === 'email' && <Mail size={15} />}
-                              {ev.type === 'note' && <MessageSquare size={15} />}
+                  <CardBody className="pt-0 space-y-6">
+
+                    {/* Add Note */}
+                    <div style={BOX} className="p-3.5">
+                      <div className="flex items-center justify-between mb-2.5">
+                        <span style={SECTION_LABEL}>Add Note</span>
+                        <MessageSquare size={14} style={{ color: MUTED }} />
+                      </div>
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault()
+                          const input = e.currentTarget.elements.namedItem('noteText') as HTMLTextAreaElement
+                          if (input.value.trim()) { addNote.mutate(input.value.trim()); input.value = '' }
+                        }}
+                        className="space-y-2"
+                      >
+                        <Textarea name="noteText" className="w-full resize-none" placeholder="Type a note or follow-up..." rows={2} />
+                        <div className="flex justify-end">
+                          <Button type="submit" disabled={addNote.isPending}>
+                            {addNote.isPending ? 'Saving…' : 'Add note'}
+                          </Button>
+                        </div>
+                      </form>
+                    </div>
+
+                    {/* Live alerts */}
+                    {liveAlerts.length > 0 && (
+                      <section>
+                        <div style={SECTION_LABEL} className="mb-2.5">Live alerts</div>
+                        <div className="space-y-2">
+                          {liveAlerts.map((a) => (
+                            <div key={a.id} className="flex items-center gap-2.5 rounded-xl px-3 py-2.5"
+                              style={{
+                                border: `1px solid ${a.tone === 'red' ? 'rgba(220,38,38,.22)' : 'rgba(217,119,6,.22)'}`,
+                                background: a.tone === 'red' ? 'rgba(220,38,38,.05)' : 'rgba(217,119,6,.06)',
+                              }}>
+                              <AlertTriangle size={14} className="shrink-0"
+                                style={{ color: a.tone === 'red' ? '#DC2626' : '#B45309' }} />
+                              <span className="text-[12.5px] font-semibold flex-1 min-w-0" style={{ color: INK }}>{a.text}</span>
+                              <Badge tone={a.tone === 'red' ? 'red' : 'amber'}>
+                                {a.tone === 'red' ? 'Action needed' : 'Heads up'}
+                              </Badge>
                             </div>
-                            <div className="flex-1 min-w-0">
+                          ))}
+                        </div>
+                      </section>
+                    )}
+
+                    {/* Timeline */}
+                    <section>
+                      <div style={SECTION_LABEL} className="mb-3">Timeline</div>
+                      {activityEvents.length === 0 ? (
+                        <EmptyState message="No activity yet — edits, quotes, contracts, and notices will appear here." />
+                      ) : (
+                        <div className="relative pl-6">
+                          {/* rail */}
+                          <div className="absolute top-1.5 bottom-1.5" style={{ left: 5, width: 2, background: HAIRLINE }} />
+                          {(showAllActivity ? activityEvents : activityEvents.slice(0, 10)).map((ev) => (
+                            <div key={ev.id} className="relative pb-4 last:pb-0">
+                              <span className="absolute rounded-full" style={{ left: -19, top: 5, width: 10, height: 10, background: PURPLE }} />
+                              <div className="text-[11.5px]" style={{ color: MUTED }}>
+                                {ev.at.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                {ev.subtitle ? ` \u00b7 ${ev.subtitle.replace(/^[\s\u00b7]+/, '')}` : ''}
+                              </div>
                               {ev.type === 'note' && editingNote?.idx === ev.noteIdx ? (
-                                <div className="space-y-2">
+                                <div className="space-y-2 mt-1">
                                   <Textarea rows={2} value={editingNote!.text}
                                     onChange={(e) => setEditingNote({ idx: editingNote!.idx, text: e.target.value })} />
                                   <div className="flex gap-2">
@@ -1551,43 +1791,42 @@ export default function ContractDetail() {
                                   </div>
                                 </div>
                               ) : (
-                                <>
-                                  <div className="flex items-start justify-between gap-2">
-                                    <p className="text-sm font-medium leading-tight whitespace-pre-wrap break-words">{ev.title}</p>
-                                    <span className="flex items-center gap-1.5 shrink-0">
-                                      {ev.type === 'note' && ev.noteIdx !== undefined && (
-                                        <>
-                                          <button type="button" title="Edit note"
-                                            onClick={() => setEditingNote({ idx: ev.noteIdx!, text: ev.title })}
-                                            className="text-muted-foreground/50 hover:text-foreground transition-colors cursor-pointer">
-                                            <PenLine size={12} />
-                                          </button>
-                                          <button type="button" title="Delete note"
-                                            onClick={() => { if (confirm('Delete this note?')) deleteNote.mutate(ev.noteIdx!) }}
-                                            className="text-muted-foreground/50 hover:text-destructive transition-colors cursor-pointer">
-                                            <Trash2 size={12} />
-                                          </button>
-                                        </>
-                                      )}
-                                      <span className="text-xs text-muted-foreground">
-                                        {ev.at.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                                      </span>
-                                    </span>
-                                  </div>
-                                  {ev.subtitle && <p className="text-xs text-muted-foreground mt-0.5">{ev.subtitle}</p>}
-                                </>
+                                <div className="flex items-start justify-between gap-2 mt-0.5">
+                                  <p className="text-[13px] font-medium leading-snug whitespace-pre-wrap break-words min-w-0"
+                                    style={{ color: INK }}>
+                                    {ev.type === 'email' && <Mail size={12} className="inline-block mr-1.5 -mt-0.5 text-amber-600" />}
+                                    {ev.title}
+                                  </p>
+                                  <span className="flex items-center gap-1.5 shrink-0">
+                                    {ev.type === 'note' && ev.noteIdx !== undefined && (
+                                      <>
+                                        <button type="button" title="Edit note"
+                                          onClick={() => setEditingNote({ idx: ev.noteIdx!, text: ev.title })}
+                                          className="text-muted-foreground/50 hover:text-foreground transition-colors cursor-pointer">
+                                          <PenLine size={12} />
+                                        </button>
+                                        <button type="button" title="Delete note"
+                                          onClick={() => { if (confirm('Delete this note?')) deleteNote.mutate(ev.noteIdx!) }}
+                                          className="text-muted-foreground/50 hover:text-destructive transition-colors cursor-pointer">
+                                          <Trash2 size={12} />
+                                        </button>
+                                      </>
+                                    )}
+                                    <Badge tone={activityBadgeTone[ev.type]}>{statusLabel(ev.type)}</Badge>
+                                  </span>
+                                </div>
                               )}
                             </div>
-                          </div>
-                        ))}
-                        {!showAllActivity && activityEvents.length > 10 && (
-                          <button type="button" onClick={() => setShowAllActivity(true)}
-                            className="w-full py-2.5 text-sm font-medium text-primary hover:underline cursor-pointer">
-                            Show more ({activityEvents.length - 10} older)
-                          </button>
-                        )}
-                      </div>
-                    )}
+                          ))}
+                          {activityEvents.length > 10 && (
+                            <button type="button" onClick={() => setShowAllActivity(!showAllActivity)}
+                              className="w-full py-2.5 text-sm font-medium text-primary hover:underline cursor-pointer">
+                              {showAllActivity ? 'Show less' : `Show more (${activityEvents.length - 10} older)`}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </section>
                   </CardBody>
                 </Card>
 
@@ -1652,8 +1891,308 @@ export default function ContractDetail() {
             </div>
           )}
 
+          {/* UNITS */}
+          {activeTab === 'units' && (() => {
+            const GRID = '22px 95px 72px 88px 88px 65px 85px 85px 95px 90px 90px 160px'
+            const iso = (v?: string | null) => (v ? String(v).slice(0, 10) : '')
+            const num = (v: number | null | undefined) => (v == null ? '—' : formatMoney(v))
+            const discountPct = Number(c.firstMonthDiscountPct || 0)
+            const lines = (c.unitLines ?? []).map((l) => ({ ...l, unit: String(l.unit) }))
+            const lineFor = (unitId: string) => lines.find((l) => l.unit === unitId)
+
+            /** Merge one edit into the stored array, creating a line on first touch. */
+            const saveLine = (unitId: string, patch: Partial<UnitLine>) => {
+              const idx = lines.findIndex((l) => l.unit === unitId)
+              const next: UnitLine[] = idx >= 0
+                ? lines.map((l, i) => (i === idx ? { ...l, ...patch } : l))
+                : [...lines, { unit: unitId, checkIn: null, checkOut: null, leaseRate: null, received: null, pending: null, ...patch }]
+              saveUnitLines.mutate(next)
+            }
+
+            const rows = allUnits.map((u) => {
+              const unitId = String(u._id)
+              const line = lineFor(unitId)
+              const checkIn = iso(line?.checkIn) || iso(c.startDate)
+              const checkOut = iso(line?.checkOut) || iso(c.endDate)
+              // No per-unit override: a single-unit contract uses the negotiated
+              // leased price; a multi-unit one falls back to the unit's own
+              // asking price with the contract's first-month discount applied.
+              const leaseRate = line?.leaseRate != null
+                ? Number(line.leaseRate)
+                : allUnits.length === 1 && c.leasedPrice != null
+                  ? Number(c.leasedPrice)
+                  : u.price != null
+                    ? Math.round(Number(u.price) * (1 - discountPct / 100) * 100) / 100
+                    : null
+              const weeks = checkIn && checkOut
+                ? Math.max(1, Math.ceil(Math.round((new Date(checkOut).getTime() - new Date(checkIn).getTime()) / 86400000) / 7))
+                : 1
+              // The lease figure is a MONTHLY rate billed weekly at rate ÷ 4
+              const total = leaseRate == null ? 0 : Math.round((leaseRate / 4) * weeks * 100) / 100
+              return { u, unitId, line, checkIn, checkOut, leaseRate, weeks, total }
+            })
+
+            const sumTotal = Math.round(rows.reduce((s, r) => s + r.total, 0) * 100) / 100
+            const sumReceived = Math.round(rows.reduce((s, r) => s + Number(r.line?.received ?? 0), 0) * 100) / 100
+            const sumPending = Math.round(rows.reduce((s, r) => s + Number(r.line?.pending ?? 0), 0) * 100) / 100
+            // Same figure the Overview tab shows, so the two can be compared honestly
+            const paidFromRecords = payments.filter((p) => p.status === 'paid').reduce((s, p) => s + p.amount, 0)
+            const manualRcv = (c as { manualReceived?: number | null }).manualReceived
+            const contractReceived = Math.round((manualRcv != null ? Number(manualRcv) : paidFromRecords) * 100) / 100
+            const receivedMismatch = Math.abs(sumReceived - contractReceived) > 0.01
+
+            const quoteRef = c.quote as { _id?: string; quoteNo?: string } | string | undefined
+            const quoteNo = typeof quoteRef === 'object' && quoteRef ? quoteRef.quoteNo : undefined
+            const hasQuote = Boolean(quoteRef)
+
+            const allSelected = selectedUnits.length > 0 && selectedUnits.length === allUnits.length
+            const removeUnitIds = (drop: string[]) => {
+              const remaining = allUnits.map((u) => String(u._id)).filter((x) => !drop.includes(x))
+              if (!remaining.length) { setUnitsError('A contract must keep at least one unit.'); return }
+              setContractUnits.mutate(remaining)
+            }
+
+            return (
+              <Card>
+                <CardHeader
+                  title="Units"
+                  subtitle={`${allUnits.length} unit${allUnits.length === 1 ? '' : 's'} on this contract`}
+                  action={selectedUnits.length > 0 ? (
+                    <Button
+                      size="sm" variant="outline"
+                      disabled={allSelected || setContractUnits.isPending}
+                      title={allSelected ? 'A contract must keep at least one unit' : 'Remove the selected units from this contract'}
+                      onClick={() => {
+                        if (!confirm(`Remove ${selectedUnits.length} unit(s) from this contract?`)) return
+                        removeUnitIds(selectedUnits)
+                      }}
+                    >
+                      <Trash2 size={13} /> Remove selected
+                    </Button>
+                  ) : undefined}
+                />
+                <CardBody className="pt-0">
+                  {unitsError && (
+                    <p className="text-xs text-destructive mb-2">{unitsError}</p>
+                  )}
+                  {allUnits.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-6">No units on this contract.</p>
+                  ) : (
+                    <div style={{ overflowX: 'auto' }}>
+                      <div style={{ minWidth: 1140 }}>
+                        {/* Header */}
+                        <div style={{
+                          display: 'grid', gridTemplateColumns: GRID, gap: 14,
+                          fontSize: 13, fontWeight: 700, color: INK,
+                          borderBottom: '1px solid rgba(20,8,31,.16)', padding: '0 6px 8px',
+                        }}>
+                          <div />
+                          <div />
+                          <div>Type</div>
+                          <div>Check In</div>
+                          <div>Check Out</div>
+                          <div style={{ textAlign: 'right' }}>Asking</div>
+                          <div style={{ textAlign: 'right' }}>Lease</div>
+                          <div style={{ textAlign: 'right' }}>Weeks</div>
+                          <div style={{ textAlign: 'right' }}>Total</div>
+                          <div style={{ textAlign: 'right' }}>Received</div>
+                          <div style={{ textAlign: 'right' }}>Pending</div>
+                          <div>Next Booking</div>
+                        </div>
+
+                        {/* Rows */}
+                        {rows.map(({ u, unitId, line, checkIn, checkOut, leaseRate, weeks, total }) => {
+                          const shared = Boolean(u.shared)
+                          const booking = unitBookings[unitId]
+                          const selected = selectedUnits.includes(unitId)
+                          const weekOptions = Array.from({ length: 52 }, (_, i) => i + 1)
+                          if (weeks > 52) weekOptions.push(weeks)
+                          return (
+                            <div key={unitId} style={{ borderBottom: `1px solid ${HAIRLINE}` }}>
+                              <div style={{
+                                display: 'grid', gridTemplateColumns: GRID, gap: 14,
+                                padding: '7px 6px', fontSize: 13, alignItems: 'center', color: INK,
+                              }}>
+                                {/* 1 · select */}
+                                <input
+                                  type="checkbox"
+                                  checked={selected}
+                                  onChange={(e) => setSelectedUnits((prev) => (
+                                    e.target.checked ? [...prev, unitId] : prev.filter((x) => x !== unitId)
+                                  ))}
+                                  style={{ width: 14, height: 14, cursor: 'pointer' }}
+                                />
+
+                                {/* 2 · unit */}
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span style={{ fontWeight: 700 }}>{u.unitNumber}</span>
+                                  {c.status === 'draft' && (
+                                    <span style={{ background: '#FEF3C7', color: '#92400E', fontSize: 10, padding: '1px 6px', borderRadius: 999, fontWeight: 700 }}>
+                                      Draft
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* 3 · type — click to toggle shared/private */}
+                                <span
+                                  onClick={() => {
+                                    if (toggleUnitShared.isPending) return
+                                    toggleUnitShared.mutate({ unitId, shared: !shared })
+                                  }}
+                                  title={`Click to make this unit ${shared ? 'private' : 'shared'}`}
+                                  style={{
+                                    cursor: 'pointer', fontSize: 11, fontWeight: 700, padding: '2px 8px',
+                                    borderRadius: 999, textTransform: 'capitalize', justifySelf: 'start',
+                                    background: shared ? 'rgba(217,119,6,.12)' : 'rgba(91,43,201,.10)',
+                                    color: shared ? '#B45309' : PURPLE,
+                                  }}
+                                >
+                                  {shared ? 'shared' : 'private'}
+                                </span>
+
+                                {/* 4 · check in */}
+                                <UnitCellEdit
+                                  type="date" value={checkIn}
+                                  display={checkIn ? formatDate(checkIn) : '—'}
+                                  onSave={(v) => saveLine(unitId, { checkIn: v || null })}
+                                />
+
+                                {/* 5 · check out */}
+                                <UnitCellEdit
+                                  type="date" value={checkOut}
+                                  display={checkOut ? formatDate(checkOut) : '—'}
+                                  onSave={(v) => saveLine(unitId, { checkOut: v || null })}
+                                />
+
+                                {/* 6 · asking (read-only) */}
+                                <div style={{ textAlign: 'right', color: MUTED }}>{num(u.price)}</div>
+
+                                {/* 7 · lease */}
+                                <UnitCellEdit
+                                  type="number" right color="#4A4357"
+                                  value={leaseRate == null ? '' : String(leaseRate)}
+                                  display={num(leaseRate)}
+                                  onSave={(v) => saveLine(unitId, { leaseRate: v === '' ? null : Number(v) })}
+                                />
+
+                                {/* 8 · weeks */}
+                                <select
+                                  value={weeks}
+                                  onChange={(e) => {
+                                    const w = Number(e.target.value)
+                                    const base = checkIn || iso(c.startDate)
+                                    if (!base) { setUnitsError('Set a check-in date before choosing a number of weeks.'); return }
+                                    const end = new Date(base)
+                                    end.setDate(end.getDate() + w * 7)
+                                    saveLine(unitId, { checkIn: base, checkOut: end.toISOString().slice(0, 10) })
+                                  }}
+                                  style={{
+                                    height: 26, width: '100%', textAlign: 'right', fontSize: 12,
+                                    border: `1px solid ${HAIRLINE}`, borderRadius: 6, background: '#fff', color: INK,
+                                  }}
+                                >
+                                  {weekOptions.map((w) => <option key={w} value={w}>{w}</option>)}
+                                </select>
+
+                                {/* 9 · total */}
+                                <div style={{ textAlign: 'right', fontWeight: 700 }}>{formatMoney(total)}</div>
+
+                                {/* 10 · received */}
+                                <UnitCellEdit
+                                  type="number" right color="#16A34A"
+                                  value={line?.received == null ? '' : String(line.received)}
+                                  display={num(line?.received)}
+                                  onSave={(v) => saveLine(unitId, { received: v === '' ? null : Number(v) })}
+                                />
+
+                                {/* 11 · pending */}
+                                <UnitCellEdit
+                                  type="number" right color="#DC2626"
+                                  value={line?.pending == null ? '' : String(line.pending)}
+                                  display={num(line?.pending)}
+                                  onSave={(v) => saveLine(unitId, { pending: v === '' ? null : Number(v) })}
+                                />
+
+                                {/* 12 · next booking */}
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  {booking ? (
+                                    <span
+                                      title={booking.customerName || undefined}
+                                      style={{ background: 'rgba(217,119,6,.12)', color: '#B45309', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                                    >
+                                      {booking.contractNo} · {new Date(booking.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+                                    </span>
+                                  ) : (
+                                    <span style={{ background: 'rgba(22,163,74,.12)', color: '#16A34A', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999 }}>
+                                      Available
+                                    </span>
+                                  )}
+                                  {allUnits.length > 1 && (
+                                    <svg
+                                      width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#DC2626"
+                                      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                                      style={{ cursor: 'pointer', flexShrink: 0 }}
+                                      role="button"
+                                      aria-label={`Remove unit ${u.unitNumber}`}
+                                      onClick={() => {
+                                        if (!confirm(`Remove unit ${u.unitNumber} from this contract?`)) return
+                                        removeUnitIds([unitId])
+                                      }}
+                                    >
+                                      <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" />
+                                      <path d="M10 11v6M14 11v6" />
+                                    </svg>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Draft contracts: the mockup's per-unit "send quote" CTA has no
+                                  equivalent action here, so link to the linked quote instead. */}
+                              {c.status === 'draft' && hasQuote && (
+                                <div
+                                  onClick={() => navigate('/quotes')}
+                                  style={{ color: PURPLE, fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: '0 6px 7px' }}
+                                >
+                                  View linked quote{quoteNo ? ` ${quoteNo}` : ''} →
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+
+                        {/* Totals */}
+                        <div style={{
+                          display: 'grid', gridTemplateColumns: GRID, gap: 14,
+                          padding: '10px 6px 0', fontSize: 13, fontWeight: 700, color: INK,
+                        }}>
+                          <div /><div /><div /><div /><div /><div /><div />
+                          <div style={{ textAlign: 'right', color: MUTED, fontWeight: 400 }}>Totals</div>
+                          <div style={{ textAlign: 'right' }}>{formatMoney(sumTotal)}</div>
+                          <div style={{ textAlign: 'right', color: '#16A34A' }}>{formatMoney(sumReceived)}</div>
+                          <div style={{ textAlign: 'right', color: '#DC2626' }}>{formatMoney(sumPending)}</div>
+                          <div />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* These rows are a per-unit breakdown only — they never write back
+                      to the contract's own leasedPrice / manualReceived figures. */}
+                  {receivedMismatch && allUnits.length > 0 && (
+                    <p className="text-xs mt-3" style={{ color: MUTED }}>
+                      Per-unit Received ({formatMoney(sumReceived)}) doesn’t match the contract total
+                      ({formatMoney(contractReceived)}) shown on Overview. These rows are a breakdown
+                      only — nothing here is synced back to the contract.
+                    </p>
+                  )}
+                </CardBody>
+              </Card>
+            )
+          })()}
+
           {/* PAYMENTS */}
           {activeTab === 'payments' && (
+            <div className="space-y-4">
             <Card>
               <CardHeader title="Invoices"
                 action={<Button size="sm" variant="outline" onClick={() => setShowInvoiceModal(true)}><FilePlus size={13} /> Create Invoice</Button>}
@@ -1705,6 +2244,105 @@ export default function ContractDetail() {
                 </div>
               )}
             </Card>
+
+            {/* Zoho Books — everything billed to this person in the accounting
+                system, matched on email/phone. Read-only: Zoho is the source of
+                truth for these, so nothing here edits them. */}
+            <Card>
+              <CardHeader
+                title="Zoho Books invoices"
+                subtitle="Matched to this tenant by email or phone number, not by name"
+              />
+              <CardBody className="pt-0">
+                {zohoInvoices.isLoading ? (
+                  <p className="text-sm text-muted-foreground py-4">Looking up Zoho Books…</p>
+                ) : zohoInvoices.isError ? (
+                  (() => {
+                    const status = (zohoInvoices.error as { response?: { status?: number } })?.response?.status
+                    const msg = (zohoInvoices.error as { response?: { data?: { error?: string } } })?.response?.data?.error
+                    return (
+                      <p className="text-sm text-muted-foreground py-4">
+                        {status === 501
+                          ? 'Zoho Books is not connected — add its credentials in Settings to see invoices here.'
+                          : `Could not reach Zoho Books: ${msg || 'unknown error'}`}
+                      </p>
+                    )
+                  })()
+                ) : !zohoInvoices.data?.matchedContacts?.length ? (
+                  <p className="text-sm text-muted-foreground py-4">
+                    No Zoho Books contact matches this tenant&apos;s email or phone number
+                    {c.customer.email || c.customer.phone ? '' : ' — this tenant has neither on file'}.
+                  </p>
+                ) : (
+                  <>
+                    {/* Which Zoho contact(s) matched, and how. The names differ
+                        by design, so show what was matched instead of hiding it. */}
+                    <div className="flex flex-wrap items-center gap-1.5 pb-3">
+                      {zohoInvoices.data.matchedContacts.map((m) => (
+                        <span key={m.id} className="text-[11px] rounded-full px-2 py-0.5 border"
+                          style={{ borderColor: 'rgba(20,8,31,.16)', color: MUTED }}
+                          title={`Matched by ${m.matchedBy}: ${m.matchedBy === 'email' ? m.email : m.phone}`}>
+                          {m.name || '(unnamed)'} · matched by {m.matchedBy}
+                        </span>
+                      ))}
+                      {zohoInvoices.data.matchedContacts.length > 1 && (
+                        <span className="text-[11px] text-amber-700">
+                          {zohoInvoices.data.matchedContacts.length} Zoho contacts share these details — invoices from all of them are shown
+                        </span>
+                      )}
+                    </div>
+
+                    {zohoInvoices.data.invoices.length === 0 ? (
+                      <p className="text-sm text-muted-foreground py-3">This contact has no invoices in Zoho Books.</p>
+                    ) : (
+                      <>
+                        <div className="overflow-x-auto">
+                          <div style={{ minWidth: 560 }}>
+                            <div className="grid gap-3 pb-2 text-[13px] font-bold"
+                              style={{ gridTemplateColumns: '130px 95px 95px 1fr 90px 90px', borderBottom: '1px solid rgba(20,8,31,.16)' }}>
+                              <span>Invoice</span><span>Date</span><span>Due</span><span>Status</span>
+                              <span className="text-right">Total</span><span className="text-right">Balance</span>
+                            </div>
+                            {zohoInvoices.data.invoices.map((inv) => (
+                              <div key={inv.id} className="grid gap-3 items-center py-2 text-[13px]"
+                                style={{ gridTemplateColumns: '130px 95px 95px 1fr 90px 90px', borderBottom: '1px solid rgba(20,8,31,.06)' }}>
+                                <span className="font-semibold">{inv.number || '—'}</span>
+                                <span style={{ color: MUTED }}>{inv.date ? formatDate(inv.date) : '—'}</span>
+                                <span style={{ color: MUTED }}>{inv.dueDate ? formatDate(inv.dueDate) : '—'}</span>
+                                <span>
+                                  <span className="text-[10px] font-bold rounded-full px-2 py-0.5 capitalize"
+                                    style={
+                                      inv.status === 'paid' ? { background: '#DCFCE7', color: '#15803D' }
+                                        : inv.status === 'overdue' ? { background: '#FEE2E2', color: '#B91C1C' }
+                                          : { background: 'rgba(20,8,31,.06)', color: MUTED }
+                                    }>
+                                    {inv.status || 'unknown'}
+                                  </span>
+                                </span>
+                                <span className="text-right">{inv.currency || 'AED'} {formatMoney(inv.total)}</span>
+                                <span className="text-right font-bold" style={{ color: inv.balance > 0 ? '#DC2626' : '#16A34A' }}>
+                                  {formatMoney(inv.balance)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-5 pt-3 text-[13px]">
+                          <span style={{ color: MUTED }}>{zohoInvoices.data.totals.count} invoice{zohoInvoices.data.totals.count === 1 ? '' : 's'}</span>
+                          <span>Total <strong>{formatMoney(zohoInvoices.data.totals.total)}</strong></span>
+                          <span>Outstanding <strong style={{ color: zohoInvoices.data.totals.balance > 0 ? '#DC2626' : '#16A34A' }}>
+                            {formatMoney(zohoInvoices.data.totals.balance)}</strong></span>
+                        </div>
+                        <p className="text-[11.5px] pt-2" style={{ color: MUTED }}>
+                          These are the tenant&apos;s Zoho Books invoices across all their contracts, not only this one. Zoho is the source of truth — edit them there.
+                        </p>
+                      </>
+                    )}
+                  </>
+                )}
+              </CardBody>
+            </Card>
+            </div>
           )}
 
           {/* DOCUMENTS */}
@@ -1838,40 +2476,141 @@ export default function ContractDetail() {
 
           {activeTab === 'documents' && (
             <Card>
-              <CardHeader title="Documents" action={<Button size="sm" variant="outline" onClick={() => setUploading(true)}><Upload size={13} /> Upload</Button>} />
-              {documents.length === 0 ? <EmptyState message="No documents attached to this contract." /> : (
-                <Table>
-                  <thead><tr><Th>Name</Th><Th>Type</Th><Th>Storage</Th><Th>Uploaded</Th><Th /></tr></thead>
-                  <tbody>
-                    {documents.map((d) => (
-                      <tr key={d._id} className="hover:bg-muted/50">
-                        <Td className="font-medium">{d.name}</Td>
-                        <Td>{statusLabel(d.type)}</Td>
-                        <Td><Badge tone={d.storage === 'drive' ? 'blue' : 'gray'}>{d.storage === 'drive' ? 'Google Drive' : 'Local'}</Badge></Td>
-                        <Td>{formatDate(d.createdAt)}</Td>
-                        <Td><a href={d.url} target="_blank" rel="noreferrer" className="text-primary text-xs hover:underline">Open</a></Td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </Table>
-              )}
+              <CardHeader title="Documents"
+                action={<Button size="sm" variant="outline" onClick={() => setUploading(true)}><Upload size={13} /> Upload</Button>} />
+              <CardBody className="pt-0 space-y-6">
+
+                {/* ── A. Identity documents ──────────────────────────────── */}
+                <section>
+                  <div style={SECTION_LABEL} className="mb-2.5">Identity documents</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {identitySlots.map((slot) => {
+                      const doc = documents.find((d) => d.type === slot.type)
+                      return (
+                        <div key={slot.type} style={BOX} className="p-3.5 space-y-2.5">
+                          <div className="text-[12.5px] font-semibold" style={{ color: INK }}>{slot.label}</div>
+                          {doc && (
+                            <div className="flex items-center gap-2 rounded-lg px-2.5 py-2"
+                              style={{ background: '#DCFCE7', color: '#15803D' }}>
+                              <CheckCircle2 size={13} className="shrink-0" />
+                              <a href={doc.url} target="_blank" rel="noreferrer"
+                                className="text-[12px] font-semibold truncate flex-1 hover:underline">
+                                {doc.name}
+                              </a>
+                              <button type="button"
+                                onClick={() => { if (confirm(`Remove ${doc.name}?`)) removeDoc(doc._id) }}
+                                disabled={docBusy === doc._id}
+                                className="text-[11px] font-bold shrink-0 cursor-pointer disabled:opacity-50"
+                                style={{ color: '#DC2626' }}>
+                                {docBusy === doc._id ? 'Removing…' : 'Remove'}
+                              </button>
+                            </div>
+                          )}
+                          <label
+                            className="flex items-center justify-center gap-1.5 h-9 rounded-lg text-[12px] font-semibold cursor-pointer transition-colors hover:bg-[#5B2BC9]/5"
+                            style={{ border: `1px solid ${PURPLE}`, color: PURPLE, opacity: docBusy === slot.type ? 0.55 : 1 }}>
+                            <Upload size={12} />
+                            {docBusy === slot.type ? 'Uploading…' : `Upload ${slot.label}`}
+                            <input type="file" className="hidden" disabled={docBusy === slot.type}
+                              onChange={(e) => {
+                                const f = e.target.files?.[0]
+                                e.target.value = ''
+                                if (f) uploadDoc(f, slot.type, slot.label)
+                              }} />
+                          </label>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </section>
+
+                {/* ── B. Signed contracts ────────────────────────────────── */}
+                <section>
+                  <div style={SECTION_LABEL} className="mb-2.5">Signed contracts</div>
+                  {signedContractDocs.length === 0 ? (
+                    <div className="px-3.5 py-4 text-[12px]" style={{ ...BOX, color: MUTED }}>
+                      No signed contracts yet — a copy lands here automatically once one is signed.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {signedContractDocs.map((d) => (
+                        <div key={d._id} style={BOX} className="flex items-center justify-between gap-3 px-3.5 py-3">
+                          <div className="min-w-0">
+                            <a href={d.url} target="_blank" rel="noreferrer"
+                              className="text-[13px] font-bold truncate block hover:underline" style={{ color: INK }}>
+                              {allUnits.length ? `Unit ${allUnits.map((u) => u.unitNumber).join(', ')}` : 'Storage unit'}
+                            </a>
+                            <div className="text-[11.5px]" style={{ color: MUTED }}>{c.contractNo}</div>
+                          </div>
+                          <span className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold"
+                            style={{ background: '#DCFCE7', color: '#15803D' }}>
+                            Signed copy on file
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                {/* ── C. Other documents ─────────────────────────────────── */}
+                <section>
+                  <div style={SECTION_LABEL} className="mb-2.5">Other documents</div>
+
+                  <div style={BOX} className="p-3.5 flex flex-col sm:flex-row sm:items-end gap-3">
+                    <Field label="Document title" className="flex-1 min-w-0">
+                      <Select value={otherTitle} onChange={(e) => setOtherTitle(e.target.value)}>
+                        <option value="">Select a title…</option>
+                        {OTHER_DOC_TITLES.map((t) => <option key={t.label} value={t.label}>{t.label}</option>)}
+                      </Select>
+                    </Field>
+                    <label
+                      className={`flex items-center justify-center gap-1.5 h-9 px-4 rounded-lg text-[12px] font-semibold shrink-0 transition-colors ${otherTitle && docBusy !== 'other-upload' ? 'cursor-pointer hover:bg-[#5B2BC9]/5' : 'cursor-not-allowed'}`}
+                      style={{ border: `1px solid ${PURPLE}`, color: PURPLE, opacity: otherTitle && docBusy !== 'other-upload' ? 1 : 0.45 }}>
+                      <Upload size={12} />
+                      {docBusy === 'other-upload' ? 'Uploading…' : 'Choose file'}
+                      <input type="file" className="hidden" disabled={!otherTitle || docBusy === 'other-upload'}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0]
+                          e.target.value = ''
+                          const chosen = OTHER_DOC_TITLES.find((t) => t.label === otherTitle)
+                          if (f && chosen) {
+                            uploadDoc(f, chosen.type, chosen.label, 'other-upload').then(() => setOtherTitle(''))
+                          }
+                        }} />
+                    </label>
+                  </div>
+
+                  {otherDocs.length === 0 ? (
+                    <p className="mt-3 text-[12px]" style={{ color: MUTED }}>No other documents yet.</p>
+                  ) : (
+                    <div style={BOX} className="mt-3 overflow-hidden">
+                      <div className="grid grid-cols-[1fr_1fr_36px] gap-2 px-3.5 py-2 text-[10.5px] font-bold uppercase tracking-wide"
+                        style={{ color: MUTED, borderBottom: `1px solid ${HAIRLINE}` }}>
+                        <span>Title</span><span>File</span><span />
+                      </div>
+                      {otherDocs.map((d) => (
+                        <div key={d._id} className="grid grid-cols-[1fr_1fr_36px] gap-2 px-3.5 py-2.5 items-center"
+                          style={{ borderTop: `1px solid ${HAIRLINE}` }}>
+                          <span className="text-[12.5px] font-semibold truncate" style={{ color: INK }}>{d.name}</span>
+                          <a href={d.url} target="_blank" rel="noreferrer"
+                            className="text-[12px] truncate hover:underline" style={{ color: PURPLE }} title={fileLabel(d)}>
+                            {fileLabel(d)}
+                          </a>
+                          <button type="button" title="Delete document"
+                            onClick={() => { if (confirm(`Delete ${d.name}?`)) removeDoc(d._id) }}
+                            disabled={docBusy === d._id}
+                            className="justify-self-end p-1.5 rounded-lg transition-colors hover:bg-red-50 cursor-pointer disabled:opacity-40"
+                            style={{ color: '#DC2626' }}>
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              </CardBody>
             </Card>
           )}
-
-          {/* Add note — always visible */}
-          <Card className="mt-5">
-            <CardHeader title="Add Note"
-              action={<MessageSquare size={15} className="text-muted-foreground" />}
-            />
-            <CardBody className="pt-0">
-              <form onSubmit={(e) => { e.preventDefault(); const input = (e.currentTarget.elements.namedItem('noteText') as HTMLTextAreaElement); if (input.value.trim()) { addNote.mutate(input.value.trim()); input.value = '' } }} className="flex gap-2 items-end">
-                <Textarea name="noteText" className="flex-1 resize-none" placeholder="Type a note or follow-up..." rows={2} />
-                <Button type="submit" disabled={addNote.isPending} className="shrink-0">
-                  {addNote.isPending ? 'Saving…' : 'Add note'}
-                </Button>
-              </form>
-            </CardBody>
-          </Card>
         </div>
       </div>
 

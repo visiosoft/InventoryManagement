@@ -423,6 +423,19 @@ export interface ContractNote {
   author: string
 }
 
+/**
+ * Per-unit ledger row on a multi-unit contract (Contract detail → Units tab).
+ * `null` on any field means "inherit the contract-level value".
+ */
+export interface UnitLine {
+  unit: string
+  checkIn: string | null
+  checkOut: string | null
+  leaseRate: number | null
+  received: number | null
+  pending: number | null
+}
+
 export interface Contract {
   _id: string
   contractNo: string
@@ -462,6 +475,8 @@ export interface Contract {
   createdAt?: string
   renewalIntent?: 'undecided' | 'renewing' | 'not_renewing'
   renewalHistory?: { at: string; previousEndDate: string; newEndDate: string; author: string }[]
+  /** Per-unit ledger rows — replaced wholesale by PUT /contracts/:id { unitLines } */
+  unitLines?: UnitLine[]
 }
 
 export type PaymentStatus = 'pending' | 'paid' | 'overdue'
@@ -483,7 +498,8 @@ export interface AppDocument {
   contract?: { _id: string; contractNo: string }
   customer?: { _id: string; fullName: string }
   name: string
-  type: 'contract' | 'id_proof' | 'other'
+  // Mirrors documentSchema.type on the server
+  type: 'contract' | 'id_proof' | 'emirates_id' | 'passport' | 'visa' | 'trade_license' | 'other'
   storage: 'drive' | 'local'
   driveFileId?: string
   url: string

@@ -387,3 +387,95 @@ export async function listAllZohoContacts({ force = false } = {}) {
     contactsCache = { at: Date.now(), contacts };
     return { configured: true, contacts };
 }
+
+
+// ── Matching a local customer to Zoho Books contacts ─────────────────────────
+// Names differ between the two systems for the same person, so matching is on
+// email and phone only — never on name.
+
+const normEmail = (v) => String(v || '').trim().toLowerCase();
+
+// UAE numbers are stored inconsistently (+971 50…, 0050…, 9715…), so compare
+// on the last 9 digits. Anything shorter is skipped rather than risking a
+// false match.
+const phoneKey = (v) => {
+    const digits = String(v || '').replace(/\D/g, '');
+    return digits.length >= 9 ? digits.slice(-9) : '';
+};
+
+// Contacts in Zoho Books that match this person by email or phone only.
+export async function findZohoContactsFor({ emails = [], phones = [] } = {}) {
+    if (!zohoBooksConfigured()) return { configured: false, contacts: [] };
+
+    const emailSet = new Set(emails.map(normEmail).filter(Boolean));
+    const phoneSet = new Set(phones.map(phoneKey).filter(Boolean));
+    if (!emailSet.size && !phoneSet.size) return { configured: true, contacts: [] };
+
+    const { contacts: all } = await listAllZohoContacts();
+
+    const matched = [];
+    for (const c of all || []) {
+        const cEmail = normEmail(c.email);
+        let matchedBy = null;
+        if (cEmail && emailSet.has(cEmail)) {
+            matchedBy = 'email';
+        } else {
+            const keys = [phoneKey(c.phone), phoneKey(c.mobile)].filter(Boolean);
+            if (keys.some((k) => phoneSet.has(k))) matchedBy = 'phone';
+        }
+        if (!matchedBy) continue;
+        matched.push({
+            id: c.id,
+            name: c.name || '',
+            email: c.email || '',
+            phone: c.phone || '',
+            mobile: c.mobile || '',
+            matchedBy,
+        });
+    }
+    return { configured: true, contacts: matched };
+}
+
+// Invoices for the given Zoho contact ids.
+export async function fetchZohoInvoicesForContacts(contactIds) {
+    if (!zohoBooksConfigured()) return { configured: false, invoices: [] };
+
+    const ids = [...new Set((contactIds || []).filter(Boolean).map(String))];
+    if (!ids.length) return { configured: true, invoices: [] };
+
+    const token = await getAccessToken();
+    const headers = { Authorization: `Zoho-oauthtoken ${token}` };
+
+    const byId = new Map();
+    for (const customerId of ids) {
+        let page = 1;
+        for (;;) {
+            const { data } = await axios.get(`${API_BASE}/invoices`, {
+                headers,
+                params: { ...orgParam(), customer_id: customerId, per_page: 200, page },
+            });
+            for (const inv of data.invoices || []) {
+                if (byId.has(inv.invoice_id)) continue;
+                byId.set(inv.invoice_id, {
+                    id: inv.invoice_id,
+                    number: inv.invoice_number,
+                    date: inv.date,
+                    dueDate: inv.due_date,
+                    total: Number(inv.total || 0),
+                    balance: Number(inv.balance || 0),
+                    status: inv.status,
+                    currency: inv.currency_code,
+                    customerName: inv.customer_name,
+                });
+            }
+            if (!data.page_context?.has_more_page) break;
+            page += 1;
+            if (page > 50) break; // safety valve
+        }
+    }
+
+    const invoices = [...byId.values()].sort(
+        (a, b) => String(b.date || '').localeCompare(String(a.date || ''))
+    );
+    return { configured: true, invoices };
+}

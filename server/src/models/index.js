@@ -229,6 +229,22 @@ const contractSchema = new Schema(
     customer: { type: Schema.Types.ObjectId, ref: 'Customer', required: true },
     unit: { type: Schema.Types.ObjectId, ref: 'Unit', required: true },
     units: [{ type: Schema.Types.ObjectId, ref: 'Unit' }],
+    // Per-unit ledger rows for the contract's Units tab. Every field is an
+    // optional override: an absent line, or a null field on a line, means
+    // "use the contract-level value". Deliberately NOT written back into
+    // rate/leasedPrice/manualReceived — the Units tab surfaces the roll-up
+    // against the contract totals instead of silently overwriting them.
+    unitLines: [
+      {
+        unit: { type: Schema.Types.ObjectId, ref: 'Unit' },
+        checkIn: { type: Date, default: null },
+        checkOut: { type: Date, default: null },
+        leaseRate: { type: Number, default: null },
+        received: { type: Number, default: null },
+        pending: { type: Number, default: null },
+        _id: false,
+      },
+    ],
     billingPeriod: { type: String, enum: ['weekly', 'monthly'], required: true },
     rate: { type: Number, required: true },
     deposit: { type: Number, default: 0 },

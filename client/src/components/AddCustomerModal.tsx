@@ -48,12 +48,16 @@ export function CustomerForm({
   busy,
   error,
   submitLabel = 'Save customer',
+  requireEmail = false,
 }: {
   initial?: Partial<Customer>
   onSubmit: (b: Partial<Customer>) => void
   busy: boolean
   error: string
   submitLabel?: string
+  // Email is mandatory when creating a tenant, but not when editing: plenty of
+  // existing records predate the rule and must stay editable.
+  requireEmail?: boolean
 }) {
   const [accessPersons, setAccessPersons] = useState<AccessPerson[]>(initial?.accessPersons ?? [])
   const [phones, setPhones] = useState<string[]>(
@@ -99,7 +103,7 @@ export function CustomerForm({
         <Field label="Nationality"><Input name="nationality" defaultValue={initial?.nationality} /></Field>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Email"><Input name="email" type="email" defaultValue={initial?.email} /></Field>
+        <Field label={requireEmail ? 'Email *' : 'Email'}><Input name="email" type="email" defaultValue={initial?.email} required={requireEmail} /></Field>
         <Field label="Company"><Input name="company" defaultValue={initial?.company} /></Field>
       </div>
 
@@ -196,6 +200,7 @@ export function AddCustomerModal({
         onSubmit={(b) => create.mutate(b)}
         busy={create.isPending}
         error={error}
+        requireEmail
         submitLabel="Add customer"
       />
     </Modal>
