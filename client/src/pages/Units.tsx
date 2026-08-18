@@ -566,6 +566,66 @@ export default function Units() {
         </div>
       </div>
 
+      {/* Phrase reader */}
+      {askOpen && (
+        <div style={{ background: PAGE, border: `1px solid ${LINE}`, borderRadius: 14, padding: '14px 16px' }}>
+          <p style={{ fontSize: 11.5, color: MUTED }}>
+            Type the request in the box beside <strong>Ask PurpleBox AI</strong> above. A phrase
+            reader in your browser interprets it; <strong>Ask the model</strong> sends it to
+            OpenAI instead. It recognises a
+            fixed set of wordings — dates ("today", "next week", "in 2 weeks", "for 3 months",
+            "1 Oct", "2026-10-01"), sizes ("small", "large", "50 sq ft") and floors ("F2",
+            "first floor", "shed").
+          </p>
+          {phrase.trim() && (
+            <>
+              <div style={{ fontSize: 12, fontWeight: 600, color: MUTED, marginTop: 12, marginBottom: 6 }}>Read as:</div>
+              <div className="flex flex-wrap items-center" style={{ gap: 8 }}>
+                {parsed.from && parsed.to && (
+                  <span style={{ background: '#EDE9FE', color: DEEP, borderRadius: 999, padding: '5px 12px', fontSize: 12.5, fontWeight: 600 }}>
+                    {formatDate(parsed.from)} → {formatDate(parsed.to)}
+                  </span>
+                )}
+                {parsed.size != null && (
+                  <span style={{ background: '#EDE9FE', color: DEEP, borderRadius: 999, padding: '5px 12px', fontSize: 12.5, fontWeight: 600 }}>
+                    {parsed.size} sq ft
+                  </span>
+                )}
+                {parsed.floor && (
+                  <span style={{ background: '#EDE9FE', color: DEEP, borderRadius: 999, padding: '5px 12px', fontSize: 12.5, fontWeight: 600 }}>
+                    Floor {parsed.floor}
+                  </span>
+                )}
+                {parsed.problems.map((p) => (
+                  <span key={p} style={{ background: '#FEF3C7', color: '#92400E', borderRadius: 999, padding: '5px 12px', fontSize: 12.5 }}>
+                    {p}
+                  </span>
+                ))}
+                {aiConfigured && (
+                  <button
+                    type="button"
+                    onClick={askAi}
+                    disabled={aiBusy}
+                    title="Send this phrase to the language model for a second reading"
+                    style={{ height: 32, borderRadius: 999, background: 'transparent', color: DEEP, border: `1px solid ${DEEP}33`, fontSize: 12.5, fontWeight: 600, padding: '0 14px', opacity: aiBusy ? 0.5 : 1 }}
+                  >
+                    {aiBusy ? 'Asking…' : 'Ask the model'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={applyParsed}
+                  disabled={!parsed.from && parsed.size == null && !parsed.floor}
+                  style={{ height: 32, borderRadius: 999, background: PURPLE, color: '#fff', fontSize: 12.5, fontWeight: 600, padding: '0 14px', opacity: (!parsed.from && parsed.size == null && !parsed.floor) ? 0.4 : 1 }}
+                >
+                  Apply
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {/* ── Search card ────────────────────────────────────────────── */}
       {/* Tinted: a white panel on the white page card would have no edge. */}
       <div style={{ background: PAGE, border: `1px solid ${LINE}`, borderRadius: 18, padding: '22px 24px' }}>
@@ -636,65 +696,6 @@ export default function Units() {
           </div>
         )}
 
-        {/* Phrase reader */}
-        {askOpen && (
-          <div style={{ marginTop: 16, borderTop: `1px solid ${LINE}`, paddingTop: 16 }}>
-            <p style={{ fontSize: 11.5, color: MUTED }}>
-              Type the request in the box beside <strong>Ask PurpleBox AI</strong> above. A phrase
-              reader in your browser interprets it; <strong>Ask the model</strong> sends it to
-              OpenAI instead. It recognises a
-              fixed set of wordings — dates ("today", "next week", "in 2 weeks", "for 3 months",
-              "1 Oct", "2026-10-01"), sizes ("small", "large", "50 sq ft") and floors ("F2",
-              "first floor", "shed").
-            </p>
-            {phrase.trim() && (
-              <>
-                <div style={{ fontSize: 12, fontWeight: 600, color: MUTED, marginTop: 12, marginBottom: 6 }}>Read as:</div>
-                <div className="flex flex-wrap items-center" style={{ gap: 8 }}>
-                  {parsed.from && parsed.to && (
-                    <span style={{ background: '#EDE9FE', color: DEEP, borderRadius: 999, padding: '5px 12px', fontSize: 12.5, fontWeight: 600 }}>
-                      {formatDate(parsed.from)} → {formatDate(parsed.to)}
-                    </span>
-                  )}
-                  {parsed.size != null && (
-                    <span style={{ background: '#EDE9FE', color: DEEP, borderRadius: 999, padding: '5px 12px', fontSize: 12.5, fontWeight: 600 }}>
-                      {parsed.size} sq ft
-                    </span>
-                  )}
-                  {parsed.floor && (
-                    <span style={{ background: '#EDE9FE', color: DEEP, borderRadius: 999, padding: '5px 12px', fontSize: 12.5, fontWeight: 600 }}>
-                      Floor {parsed.floor}
-                    </span>
-                  )}
-                  {parsed.problems.map((p) => (
-                    <span key={p} style={{ background: '#FEF3C7', color: '#92400E', borderRadius: 999, padding: '5px 12px', fontSize: 12.5 }}>
-                      {p}
-                    </span>
-                  ))}
-                  {aiConfigured && (
-                    <button
-                      type="button"
-                      onClick={askAi}
-                      disabled={aiBusy}
-                      title="Send this phrase to the language model for a second reading"
-                      style={{ height: 32, borderRadius: 999, background: 'transparent', color: DEEP, border: `1px solid ${DEEP}33`, fontSize: 12.5, fontWeight: 600, padding: '0 14px', opacity: aiBusy ? 0.5 : 1 }}
-                    >
-                      {aiBusy ? 'Asking…' : 'Ask the model'}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={applyParsed}
-                    disabled={!parsed.from && parsed.size == null && !parsed.floor}
-                    style={{ height: 32, borderRadius: 999, background: PURPLE, color: '#fff', fontSize: 12.5, fontWeight: 600, padding: '0 14px', opacity: (!parsed.from && parsed.size == null && !parsed.floor) ? 0.4 : 1 }}
-                  >
-                    Apply
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        )}
       </div>
 
       {/* ── Results header ─────────────────────────────────────────── */}
