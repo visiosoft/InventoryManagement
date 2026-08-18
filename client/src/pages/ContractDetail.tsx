@@ -984,23 +984,25 @@ export default function ContractDetail() {
         num: m ? Number(m[2]) : Number.MAX_SAFE_INTEGER,
       }
     }
-    const sorted = [...unitsForNav]
-      .filter((u) => (activeByUnit[u._id] ?? []).length > 0)
-      .sort((a, b) => {
-        const ka = key(a.unitNumber, a.floor)
-        const kb = key(b.unitNumber, b.floor)
-        return ka.floor.localeCompare(kb.floor) || ka.prefix.localeCompare(kb.prefix) || ka.num - kb.num
-      })
+    const sorted = [...unitsForNav].sort((a, b) => {
+      const ka = key(a.unitNumber, a.floor)
+      const kb = key(b.unitNumber, b.floor)
+      return ka.floor.localeCompare(kb.floor) || ka.prefix.localeCompare(kb.prefix) || ka.num - kb.num
+    })
 
-    // A contract holding several units appears once, at its first unit in
-    // order. Its later units are dropped from the sequence entirely, so
+    // Every unit is a stop, in strict order — including empty ones, which are
+    // common here (F1-44 is marked occupied but has no contract at all). A
+    // contract holding several units is only a stop at its first unit, so
     // stepping never revisits a contract already passed.
     const seen = new Set<string>()
     const out: typeof sorted = []
     for (const u of sorted) {
-      const fresh = (activeByUnit[u._id] ?? []).filter((c) => !seen.has(c.contractId))
-      if (!fresh.length) continue
-      fresh.forEach((c) => seen.add(c.contractId))
+      const on = activeByUnit[u._id] ?? []
+      if (on.length) {
+        const fresh = on.filter((c) => !seen.has(c.contractId))
+        if (!fresh.length) continue
+        fresh.forEach((c) => seen.add(c.contractId))
+      }
       out.push(u)
     }
     return out
@@ -1012,7 +1014,6 @@ export default function ContractDetail() {
     const hereId = navContract._id
     const contractsOn = (unitId: string) => activeByUnit[unitId] ?? []
 
-    // Each contract has exactly one stop now, so this is a plain lookup.
     const here = unitStops.findIndex((u) => contractsOn(u._id).some((x) => x.contractId === hereId))
     if (here === -1) return { prev: null, next: null, position: '' }
 
@@ -1023,8 +1024,14 @@ export default function ContractDetail() {
       // A shared unit carries more than one contract; prefer one that isn't
       // the current contract so the arrow always moves you somewhere new.
       const pick = list.find((x) => x.contractId !== hereId) ?? list[0]
-      if (!pick) return null
-      return { unitNumber: u.unitNumber, contractId: pick.contractId, customerName: pick.customerName }
+      // A unit with no contract still gets a stop — it opens on the Units
+      // page instead, where its details are shown.
+      return {
+        unitId: u._id,
+        unitNumber: u.unitNumber,
+        to: pick ? `/contracts/${pick.contractId}` : `/units?unit=${u._id}`,
+        customerName: pick?.customerName || 'No active contract',
+      }
     }
 
     return { prev: at(here - 1), next: at(here + 1), position: `${here + 1} of ${unitStops.length}` }
@@ -1422,7 +1429,7 @@ export default function ContractDetail() {
             <button
               type="button"
               disabled={!navStop.prev}
-              onClick={() => navStop.prev && navigate(`/contracts/${navStop.prev.contractId}`)}
+              onClick={() => navStop.prev && navigate(navStop.prev.to)}
               title={navStop.prev ? `Previous unit · ${navStop.prev.unitNumber} — ${navStop.prev.customerName}` : 'This is the first unit'}
               className="flex items-center gap-1 px-3 py-2 rounded-lg border text-sm font-medium hover:bg-muted transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
               <ChevronLeft size={15} />
@@ -1431,7 +1438,7 @@ export default function ContractDetail() {
             <button
               type="button"
               disabled={!navStop.next}
-              onClick={() => navStop.next && navigate(`/contracts/${navStop.next.contractId}`)}
+              onClick={() => navStop.next && navigate(navStop.next.to)}
               title={navStop.next ? `Next unit · ${navStop.next.unitNumber} — ${navStop.next.customerName}` : 'This is the last unit'}
               className="flex items-center gap-1 px-3 py-2 rounded-lg border text-sm font-medium hover:bg-muted transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
               <span className="hidden sm:inline">{navStop.next?.unitNumber ?? 'Next'}</span>
