@@ -518,8 +518,8 @@ export default function NewContract() {
   const steps = ['Customer', mode === 'single' ? 'Unit' : 'Units', 'Terms', 'Review']
   const canNext = [
     Boolean(customerId),
-    unitIds.length > 0 && overlappingUnitIds.length === 0,
-    Boolean(startDate && endDate > startDate && selectedUnits.every((u) => getUnitRate(u) > 0) && overlappingUnitIds.length === 0),
+    unitIds.length > 0,
+    Boolean(startDate && endDate > startDate && selectedUnits.every((u) => getUnitRate(u) > 0)),
     true,
   ][step]
 
@@ -716,7 +716,9 @@ export default function NewContract() {
                       {list.map((u) => {
                         const avail = unitAvailMap.get(u._id) ?? 'maintenance'
                         const selected = unitIds.includes(u._id)
-                        const disabled = avail === 'maintenance' || avail === 'booked'
+                        // Units can be shared, so an existing booking no longer blocks
+                        // selection. Maintenance still does — that unit is out of service.
+                        const disabled = avail === 'maintenance'
                         const conflict = conflictMap.get(u._id)
                         return (
                           <button
@@ -787,7 +789,7 @@ export default function NewContract() {
 
               {overlappingUnitIds.length > 0 && (
                 <p className="text-xs text-destructive">
-                  {overlappingUnitIds.map((id) => units.find((u) => u._id === id)?.unitNumber).join(', ')} {overlappingUnitIds.length === 1 ? 'is' : 'are'} already booked for these dates. Deselect or change dates.
+                  {overlappingUnitIds.map((id) => units.find((u) => u._id === id)?.unitNumber).join(', ')} {overlappingUnitIds.length === 1 ? 'is' : 'are'} already booked for these dates — this will be a shared booking.
                 </p>
               )}
 
@@ -1015,7 +1017,7 @@ export default function NewContract() {
 
                 {overlappingUnitIds.length > 0 && (
                   <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                    {overlappingUnitIds.map((id) => units.find((u) => u._id === id)?.unitNumber).join(', ')} {overlappingUnitIds.length === 1 ? 'is' : 'are'} already booked for this period.
+                    {overlappingUnitIds.map((id) => units.find((u) => u._id === id)?.unitNumber).join(', ')} {overlappingUnitIds.length === 1 ? 'is' : 'are'} already booked for this period — this will be a shared booking.
                     Go back and choose different dates or units.
                   </div>
                 )}
@@ -1148,7 +1150,7 @@ export default function NewContract() {
             {step < 3 ? (
               <Button disabled={!canNext} onClick={() => setStep(step + 1)}>Continue</Button>
             ) : (
-              <Button disabled={create.isPending || overlappingUnitIds.length > 0} onClick={() => create.mutate()}>
+              <Button disabled={create.isPending} onClick={() => create.mutate()}>
                 {create.isPending ? 'Creating…'
                   : mode === 'multi' ? `Create ${selectedUnits.length} contract${selectedUnits.length !== 1 ? 's' : ''}`
                     : mode === 'combined' ? `Create 1 contract (${selectedUnits.length} units)`

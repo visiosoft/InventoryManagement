@@ -951,6 +951,9 @@ router.put('/:id', async (req, res) => {
       const claimed = after.filter((u) => !before.includes(u));
       const released = before.filter((u) => !after.includes(u));
 
+      // Any unit can be shared, so an existing tenancy no longer blocks a
+      // second contract on the same unit. Overlaps are recorded on the
+      // timeline instead of refused, so a genuine mistake is still traceable.
       if (claimed.length) {
         const clash = await Contract.findOne({
           _id: { $ne: contract._id },
@@ -958,10 +961,13 @@ router.put('/:id', async (req, res) => {
           units: { $in: claimed },
         }).populate('units', 'unitNumber shared').lean();
         if (clash) {
-          const taken = (clash.units || []).find((u) => claimed.includes(String(u._id)) && !u.shared);
+          const taken = (clash.units || []).find((u) => claimed.includes(String(u._id)));
           if (taken) {
-            return res.status(409).json({
-              error: `Unit ${taken.unitNumber} is already on contract ${clash.contractNo}`,
+            contract.timeline.push({
+              at: new Date(),
+              type: 'edit',
+              text: `Unit ${taken.unitNumber} is also on contract ${clash.contractNo} — booked as a shared unit`,
+              user: req.user?.name || req.user?.email || 'user',
             });
           }
         }
