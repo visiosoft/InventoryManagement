@@ -1045,6 +1045,14 @@ export default function ContractDetail() {
   // are identical across all their contracts, so the cache is shared.
   const zohoCustomerId = data?.contract?.customer?._id
 
+  // Google Drive hands out /file/d/<id>/view links, which open its viewer.
+  // Rewriting to the export form downloads the file instead. Anything else
+  // (the older purplebox.ae uploads) is already a direct link.
+  const downloadUrlFor = (url: string) => {
+    const m = url.match(/drive\.google\.com\/file\/d\/([^/]+)/)
+    return m ? `https://drive.google.com/uc?export=download&id=${m[1]}` : url
+  }
+
   // Every contract this tenant has ever had. A tenant commonly renews into a
   // new contract or rents a second unit, and those are otherwise only
   // reachable by going back out to the tenant record.
@@ -1052,6 +1060,7 @@ export default function ContractDetail() {
     _id: string; contractNo: string; status: string; startDate: string; endDate: string
     unit?: { unitNumber?: string }; units?: { unitNumber?: string }[]
     contractAmount?: number; paidAmount?: number; overdueCount?: number; documentCount?: number
+    signedDocUrl?: string
   }
   const tenantContracts = useQuery<TenantContractRow[]>({
     queryKey: ['tenant-contracts', zohoCustomerId],
@@ -2625,10 +2634,32 @@ export default function ContractDetail() {
                               {unitNames || 'No unit'} · {t.startDate ? formatDate(t.startDate) : '—'} – {t.endDate ? formatDate(t.endDate) : '—'}
                             </div>
                           </div>
-                          <div className="text-right shrink-0">
-                            <div className="text-sm font-bold">{formatMoney(t.contractAmount ?? 0)} AED</div>
-                            <div className="text-[11.5px]" style={{ color: MUTED }}>
-                              {formatMoney(t.paidAmount ?? 0)} received
+                          <div className="flex items-center gap-4 shrink-0">
+                            {t.signedDocUrl ? (
+                              <div className="flex items-center gap-1.5">
+                                {/* stopPropagation: the whole row opens the
+                                    contract, and these must not do that too. */}
+                                <a href={t.signedDocUrl} target="_blank" rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  title="Open the signed contract"
+                                  className="flex items-center gap-1 text-[11.5px] font-semibold text-primary hover:underline">
+                                  <FileText size={12} /> Signed
+                                </a>
+                                <a href={downloadUrlFor(t.signedDocUrl)} target="_blank" rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  title="Download the signed contract"
+                                  className="text-muted-foreground/60 hover:text-foreground transition-colors">
+                                  <Download size={13} />
+                                </a>
+                              </div>
+                            ) : (
+                              <span className="text-[11.5px]" style={{ color: MUTED }}>Not signed</span>
+                            )}
+                            <div className="text-right">
+                              <div className="text-sm font-bold">{formatMoney(t.contractAmount ?? 0)} AED</div>
+                              <div className="text-[11.5px]" style={{ color: MUTED }}>
+                                {formatMoney(t.paidAmount ?? 0)} received
+                              </div>
                             </div>
                           </div>
                         </div>
