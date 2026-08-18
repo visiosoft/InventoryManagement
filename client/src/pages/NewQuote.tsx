@@ -1210,6 +1210,20 @@ export default function NewQuote() {
 
   // Preselect a unit passed via ?unit=<id or number> (e.g. from the Floor Map)
   const unitParam = searchParams.get('unit')
+  // Booking from the availability lookup arrives with the window already
+  // chosen; seed it once so the dates do not have to be retyped.
+  const fromParam = searchParams.get('from')
+  const toParam = searchParams.get('to')
+  const seededRangeRef = useRef(false)
+  useEffect(() => {
+    if (seededRangeRef.current) return
+    if (!fromParam && !toParam) return
+    seededRangeRef.current = true
+    const isDate = (v: string | null) => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v)
+    if (isDate(fromParam)) setDateRangeFrom(fromParam!)
+    if (isDate(toParam)) { setDateRangeTo(toParam!); setCustomEnd(true) }
+  }, [fromParam, toParam])
+
   const autoAddedUnitRef = useRef(false)
   useEffect(() => {
     if (autoAddedUnitRef.current || !unitParam || !allUnits) return

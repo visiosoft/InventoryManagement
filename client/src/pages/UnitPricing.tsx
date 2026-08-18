@@ -1,9 +1,12 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Lock, Unlock, Check } from 'lucide-react'
+import { Lock, Unlock, Check, Pencil, Plus } from 'lucide-react'
 import { api, apiError } from '../lib/api'
-import { PageHeader, Spinner } from '../components/ui'
+import { useAuth } from '../lib/auth'
+import type { Site } from '../lib/site'
+import type { Unit } from '../lib/types'
+import { Button, Field, Input, Modal, PageHeader, Select, Spinner, Textarea, statusLabel } from '../components/ui'
 import { StatCard } from './reports/shared'
 
 export interface MatrixContract {
@@ -39,6 +42,108 @@ function derivedLeased(c: MatrixContract): number | null {
   if (c.leasedPrice != null) return c.leasedPrice
   if (c.rate == null) return null
   return Math.round(c.rate * (1 - (c.firstMonthDiscountPct || 0) / 100) * 100) / 100
+}
+
+/* ── Unit records ───────────────────────────────────────────────────────
+   Creating and editing units lives here rather than on /units, which is now
+   a read-only availability lookup used daily by reps and accounts. The form
+   below is the one that used to sit in the /units slide-over. */
+
+type UnitBody = {
+  unitNumber: string
+  floor: string
+  sizeSqf: number | null
+  price: number | null
+  lengthFt: number | null
+  widthFt: number | null
+  status: string
+  discountPct: number | null
+  shared: boolean
+  notes: string
+  site: string | null
+}
+
+const num = (v: FormDataEntryValue | null) => (v === null || v === '' ? null : Number(v))
+
+function readUnitForm(f: FormData): UnitBody {
+  return {
+    unitNumber: String(f.get('unitNumber')),
+    floor: String(f.get('floor')),
+    sizeSqf: num(f.get('sizeSqf')),
+    price: num(f.get('price')),
+    lengthFt: num(f.get('lengthFt')),
+    widthFt: num(f.get('widthFt')),
+    status: String(f.get('status') || 'available'),
+    discountPct: num(f.get('discountPct')),
+    shared: f.get('shared') === 'on',
+    notes: String(f.get('notes') || ''),
+    site: (f.get('site') as string) || null,
+  }
+}
+
+function UnitFormFields({ initial, statusLocked }: { initial?: Partial<Unit>; statusLocked?: boolean }) {
+  const { data: sites = [] } = useQuery<Site[]>({
+    queryKey: ['sites'],
+    queryFn: () => api.get('/sites').then((r) => r.data),
+  })
+  const rawSite = (initial as { site?: string | { _id: string } | null } | undefined)?.site
+  const initialSite = typeof rawSite === 'object' && rawSite ? rawSite._id : rawSite
+  return (
+    <>
+      {sites.length > 1 && (
+        <Field label="Site">
+          <Select name="site" defaultValue={initialSite || sites.find((s) => s.isDefault)?._id || ''}>
+            {sites.map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
+          </Select>
+        </Field>
+      )}
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Unit number"><Input name="unitNumber" defaultValue={initial?.unitNumber} placeholder="F1-45" required /></Field>
+        <Field label="Floor">
+          <Select name="floor" defaultValue={initial?.floor || 'F1'}>
+            <option value="F1">F1</option>
+            <option value="F2">F2</option>
+            <option value="F3">F3</option>
+            <option value="Shed">Shed</option>
+          </Select>
+        </Field>
+        <Field label="Size (sq ft)"><Input name="sizeSqf" type="number" step="1" defaultValue={initial?.sizeSqf ?? ''} /></Field>
+        <Field label="4 Weeks price (AED)">
+          {/* This page *is* where the price lock is administered, so the field
+              is editable here. A changed price is sent with priceOverride, and
+              the server still refuses it for anyone who is not an admin. */}
+          <Input name="price" type="number" step="0.01" defaultValue={initial?.price ?? ''} />
+          {initial?.price != null && (
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Already set — changing it is an admin correction.
+            </p>
+          )}
+        </Field>
+        <Field label="Length (ft)"><Input name="lengthFt" type="number" step="0.1" defaultValue={initial?.lengthFt ?? ''} /></Field>
+        <Field label="Width (ft)"><Input name="widthFt" type="number" step="0.1" defaultValue={initial?.widthFt ?? ''} /></Field>
+        <Field label="First month discount (%) — 28 days">
+          <Input name="discountPct" type="number" min={0} max={100} step="0.01"
+            defaultValue={initial?.discountPct ?? ''} placeholder="0" />
+        </Field>
+      </div>
+      <label className="flex items-center gap-2.5 cursor-pointer mt-1">
+        <input
+          type="checkbox"
+          name="shared"
+          defaultChecked={initial?.shared ?? false}
+          className="h-4 w-4 rounded"
+        />
+        <span className="text-sm text-foreground">Shared unit</span>
+      </label>
+      <Field label="Status">
+        <Select name="status" defaultValue={initial?.status || 'available'} disabled={statusLocked}>
+          {['available', 'reserved', 'occupied', 'maintenance'].map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
+        </Select>
+        {statusLocked && <p className="text-[11px] text-muted-foreground mt-1">Status is managed by the contract lifecycle.</p>}
+      </Field>
+      <Field label="Notes"><Textarea name="notes" defaultValue={initial?.notes} /></Field>
+    </>
+  )
 }
 
 function PriceCell({ unit, onSaved }: { unit: MatrixUnit; onSaved: () => void }) {
@@ -151,6 +256,10 @@ function LeasedCell({ unit, onSaved }: { unit: MatrixUnit; onSaved: () => void }
 
 export default function UnitPricing({ embedded = false }: { embedded?: boolean }) {
   const qc = useQueryClient()
+  // Settings is reachable by other roles, but the inventory itself —
+  // creating, editing, deleting — stays with admins.
+  const { user } = useAuth()
+  const canEditUnits = user?.role === 'admin'
 
   const { data, isLoading } = useQuery<{ units: MatrixUnit[] }>({
     queryKey: ['unit-pricing-matrix'],
@@ -158,7 +267,71 @@ export default function UnitPricing({ embedded = false }: { embedded?: boolean }
   })
 
   const units = data?.units ?? []
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['unit-pricing-matrix'] })
+  // Every mutation touches all three screens that read units, so all three
+  // caches are dropped: this matrix, the /units list and the tenant lookup.
+  const invalidate = () => {
+    for (const key of [['unit-pricing-matrix'], ['units'], ['unit-active-contracts']]) {
+      qc.invalidateQueries({ queryKey: key })
+    }
+  }
+
+  /* The matrix endpoint only carries the money fields, so the editor reads the
+     full unit records from the same /units list the availability page uses. */
+  const { data: fullUnits = [] } = useQuery<Unit[]>({
+    queryKey: ['units'],
+    queryFn: () => api.get('/units').then((r) => r.data),
+    enabled: canEditUnits,
+  })
+  const fullById = useMemo(() => new Map(fullUnits.map((u) => [u._id, u])), [fullUnits])
+
+  const [adding, setAdding] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [error, setError] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
+
+  const closeForms = () => { setAdding(false); setEditingId(null); setError(''); setConfirmDelete(false) }
+
+  const createUnit = useMutation({
+    mutationFn: (body: UnitBody) => api.post('/units', body),
+    onSuccess: () => { invalidate(); closeForms() },
+    onError: (e) => setError(apiError(e)),
+  })
+
+  const updateUnit = useMutation({
+    mutationFn: ({ id, ...body }: { id: string } & Partial<UnitBody> & { priceOverride?: boolean }) =>
+      api.put(`/units/${id}`, body),
+    onSuccess: () => { invalidate(); closeForms() },
+    onError: (e) => setError(apiError(e)),
+  })
+
+  const deleteUnit = useMutation({
+    mutationFn: (id: string) => api.delete(`/units/${id}`),
+    onSuccess: () => { invalidate(); closeForms() },
+    onError: (e) => setError(apiError(e)),
+  })
+
+  const editing = editingId ? fullById.get(editingId) ?? null : null
+  const editingMatrix = editingId ? units.find((u) => u._id === editingId) ?? null : null
+  // Same rule the /units form used: an occupied unit under a live contract has
+  // its status driven by the contract lifecycle, not by hand.
+  const statusLocked = editing?.status === 'occupied' && !!editingMatrix?.contract
+
+  function submitEdit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    if (!editing) return
+    const body: Partial<UnitBody> & { priceOverride?: boolean } = readUnitForm(new FormData(e.currentTarget))
+    if (statusLocked) delete body.status
+    // The server locks an already-set price and only accepts a change from an
+    // admin who explicitly opts in. The field is never silently dropped: if
+    // the server refuses, its message is shown below the form.
+    const priceChanged = !(
+      (body.price == null && editing.price == null) || Number(body.price) === Number(editing.price)
+    )
+    if (priceChanged) body.priceOverride = true
+    updateUnit.mutate({ id: editing._id, ...body })
+  }
+
+  const busy = createUnit.isPending || updateUnit.isPending || deleteUnit.isPending
 
   const grouped = useMemo(() => {
     const map = new Map<string, MatrixUnit[]>()
@@ -197,6 +370,17 @@ export default function UnitPricing({ embedded = false }: { embedded?: boolean }
           subtitle="The actual price of every unit — set once, locked after. Leased shows what each tenant actually pays." />
       )}
 
+      {canEditUnits && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs text-muted-foreground">
+            Units are created and edited here. <span className="whitespace-nowrap">/units</span> is a read-only availability lookup.
+          </p>
+          <Button type="button" onClick={() => { setError(''); setAdding(true) }} className="gap-1.5">
+            <Plus size={15} /> Add unit
+          </Button>
+        </div>
+      )}
+
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-5">
         <StatCard label="Units" value={String(units.length)} sub={unpriced > 0 ? `${unpriced} without a price` : 'all priced'} tone={unpriced > 0 ? 'amber' : 'default'} />
         <StatCard label="Leased units" value={String(leased.length)} />
@@ -231,6 +415,15 @@ export default function UnitPricing({ embedded = false }: { embedded?: boolean }
                       <span className="flex items-center gap-1 text-[10px] text-muted-foreground shrink-0">
                         {u.sizeSqf != null && `${u.sizeSqf} sqf`}
                         <span className="inline-block h-2 w-2 rounded-full" style={{ background: statusDot[u.status] ?? '#94A3B8' }} title={u.status} />
+                        {canEditUnits && (
+                          <button
+                            type="button"
+                            title={`Edit unit ${u.unitNumber}`}
+                            onClick={() => { setError(''); setConfirmDelete(false); setEditingId(u._id) }}
+                            className="p-0.5 rounded hover:bg-black/5 cursor-pointer text-muted-foreground hover:text-foreground">
+                            <Pencil size={11} />
+                          </button>
+                        )}
                       </span>
                     </div>
 
@@ -260,6 +453,53 @@ export default function UnitPricing({ embedded = false }: { embedded?: boolean }
           </div>
         )
       })}
+
+      {/* Add unit */}
+      <Modal open={adding} onClose={closeForms} title="Add unit">
+        <form
+          onSubmit={(e: FormEvent<HTMLFormElement>) => { e.preventDefault(); createUnit.mutate(readUnitForm(new FormData(e.currentTarget))) }}
+          className="space-y-4"
+        >
+          <UnitFormFields />
+          {error && <p className="text-xs text-destructive">{error}</p>}
+          <Button type="submit" className="w-full" disabled={busy}>Create unit</Button>
+        </form>
+      </Modal>
+
+      {/* Edit unit */}
+      <Modal open={!!editingId} onClose={closeForms} title={editing ? `Unit ${editing.unitNumber}` : 'Unit'}>
+        {!editing ? (
+          <Spinner />
+        ) : (
+          <form onSubmit={submitEdit} className="space-y-4">
+            {/* `key` remounts the fields when a different unit is opened, so the
+                uncontrolled defaults are re-read instead of going stale. */}
+            <UnitFormFields key={editing._id} initial={editing} statusLocked={statusLocked} />
+            {error && <p className="text-xs text-destructive">{error}</p>}
+            <Button type="submit" className="w-full" disabled={busy}>Save changes</Button>
+            {editingMatrix?.contract ? (
+              <p className="text-[11px] text-muted-foreground">
+                This unit is on contract {editingMatrix.contract.contractNo} — it cannot be deleted.
+              </p>
+            ) : confirmDelete ? (
+              <div className="flex gap-2">
+                <Button type="button" className="flex-1 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  onClick={() => deleteUnit.mutate(editing._id)} disabled={busy}>
+                  Yes, delete
+                </Button>
+                <Button type="button" variant="outline" className="flex-1" onClick={() => setConfirmDelete(false)}>
+                  Cancel
+                </Button>
+              </div>
+            ) : (
+              <Button type="button" variant="outline" className="w-full text-destructive hover:bg-destructive/10 border-destructive/30"
+                onClick={() => setConfirmDelete(true)}>
+                Delete unit
+              </Button>
+            )}
+          </form>
+        )}
+      </Modal>
     </div>
   )
 }

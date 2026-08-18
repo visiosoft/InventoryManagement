@@ -1,15 +1,15 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
   ArrowDown, ArrowRight, ArrowUp, CalendarRange, ChevronsUpDown, Database,
-  LayoutGrid, Plus, Rows3, Search, ShieldCheck, Sparkles,
+  LayoutGrid, Rows3, Search, ShieldCheck, Sparkles,
 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { useSite, unitInSite, type Site } from '../lib/site'
 import type { Unit, Contract } from '../lib/types'
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Table, Td, Th, Textarea, statusLabel, unitStatusTone } from '../components/ui'
+import { Badge, Card, EmptyState, Spinner, Table, Td, Th, statusLabel, unitStatusTone } from '../components/ui'
 import { compareUnitNumbers, formatDate, formatMoney } from '../lib/utils'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', serif", letterSpacing: '-0.02em' } as const
@@ -38,8 +38,6 @@ const STATE_STYLE: Record<AvailState, { bg: string; border: string; dot: string;
   maintenance: { bg: '#F5F4F6', border: 'rgba(20,8,31,.12)', dot: MUTED, text: MUTED },
 }
 const STATE_RANK: Record<AvailState, number> = { free: 0, partial: 1, taken: 2, maintenance: 3 }
-
-const num = (v: FormDataEntryValue | null) => (v === null || v === '' ? null : Number(v))
 
 /* ── Dates ──────────────────────────────────────────────────────────────
    Everything here works on plain `YYYY-MM-DD` strings so a window never
@@ -210,98 +208,6 @@ function parsePhrase(input: string, sizes: number[], floors: string[]): Parsed {
   return out
 }
 
-type UnitBody = {
-  unitNumber: string
-  floor: string
-  sizeSqf: number | null
-  price: number | null
-  lengthFt: number | null
-  widthFt: number | null
-  status: string
-  discountPct: number | null
-  shared: boolean
-  notes: string
-  site: string | null
-}
-
-function UnitFormFields({ initial }: { initial?: Partial<Unit> }) {
-  const { data: sites = [] } = useQuery<Site[]>({
-    queryKey: ['sites'],
-    queryFn: () => api.get('/sites').then((r) => r.data),
-  })
-  const rawSite = (initial as { site?: string | { _id: string } | null } | undefined)?.site
-  const initialSite = typeof rawSite === 'object' && rawSite ? rawSite._id : rawSite
-  return (
-    <>
-      {sites.length > 1 && (
-        <Field label="Site">
-          <Select name="site" defaultValue={initialSite || sites.find((s) => s.isDefault)?._id || ''}>
-            {sites.map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
-          </Select>
-        </Field>
-      )}
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Unit number"><Input name="unitNumber" defaultValue={initial?.unitNumber} placeholder="F1-45" required /></Field>
-        <Field label="Floor">
-          <Select name="floor" defaultValue={initial?.floor || 'F1'}>
-            <option value="F1">F1</option>
-            <option value="F2">F2</option>
-            <option value="F3">F3</option>
-            <option value="Shed">Shed</option>
-          </Select>
-        </Field>
-        <Field label="Size (sq ft)"><Input name="sizeSqf" type="number" step="1" defaultValue={initial?.sizeSqf ?? ''} /></Field>
-        <Field label="4 Weeks price (AED)">
-          {initial?.price != null ? (
-            <>
-              {/* Disabled inputs don't submit — a hidden field keeps the unchanged
-                  value in the form so saving other fields doesn't trip the price lock. */}
-              <input type="hidden" name="price" value={initial.price} />
-              <Input type="number" step="0.01" defaultValue={initial.price} disabled className="opacity-60 cursor-not-allowed" />
-              <p className="text-[11px] text-muted-foreground mt-1">
-                Locked — set from <Link to="/settings?tab=pricing" className="text-primary hover:underline">Settings → Unit Pricing</Link>
-              </p>
-            </>
-          ) : (
-            <Input name="price" type="number" step="0.01" defaultValue={initial?.price ?? ''} />
-          )}
-        </Field>
-        <Field label="Length (ft)"><Input name="lengthFt" type="number" step="0.1" defaultValue={initial?.lengthFt ?? ''} /></Field>
-        <Field label="Width (ft)"><Input name="widthFt" type="number" step="0.1" defaultValue={initial?.widthFt ?? ''} /></Field>
-        <Field label="First month discount (%) — 28 days">
-          <Input name="discountPct" type="number" min={0} max={100} step="0.01"
-            defaultValue={initial?.discountPct ?? ''} placeholder="0" />
-        </Field>
-      </div>
-      <label className="flex items-center gap-2.5 cursor-pointer mt-1">
-        <input
-          type="checkbox"
-          name="shared"
-          defaultChecked={initial?.shared ?? false}
-          className="h-4 w-4 rounded"
-        />
-        <span className="text-sm text-foreground">Shared unit</span>
-      </label>
-    </>
-  )
-}
-
-function readUnitForm(f: FormData): UnitBody {
-  return {
-    unitNumber: String(f.get('unitNumber')),
-    floor: String(f.get('floor')),
-    sizeSqf: num(f.get('sizeSqf')),
-    price: num(f.get('price')),
-    lengthFt: num(f.get('lengthFt')),
-    widthFt: num(f.get('widthFt')),
-    status: String(f.get('status') || 'available'),
-    discountPct: num(f.get('discountPct')),
-    shared: f.get('shared') === 'on',
-    notes: String(f.get('notes') || ''),
-    site: (f.get('site') as string) || null,
-  }
-}
-
 /* Small shared bits of the new layout */
 const labelStyle = { fontSize: 12, fontWeight: 600, color: MUTED, display: 'block', marginBottom: 6 } as const
 const controlStyle = {
@@ -319,9 +225,9 @@ function Control({ label, children }: { label: string; children: ReactNode }) {
 }
 
 export default function Units() {
-  const qc = useQueryClient()
-  // Sales reps and accounts can look units up, but the inventory itself —
-  // creating, editing, deleting — stays with admins.
+  // Sales reps and accounts can look units up. Changing the inventory is an
+  // admin setup job and lives in Settings → Unit Pricing, so this page only
+  // points admins at it.
   const { user } = useAuth()
   const canEditUnits = user?.role === 'admin'
   const [view, setView] = useState<'list' | 'timeline' | 'table'>('list')
@@ -335,14 +241,15 @@ export default function Units() {
   // "Free between these dates" — a unit occupied today may be free later if
   // its contract ends in the window, and vice versa, so this cannot be derived
   // from the current status.
-  const [availFrom, setAvailFrom] = useState('')
-  const [availTo, setAvailTo] = useState('')
+  const [availFrom, setAvailFrom] = useState(() => toISO(new Date()))
+  const [availTo, setAvailTo] = useState(() => addDays(toISO(new Date()), 28))
+  const [windowTouched, setWindowTouched] = useState(false)
   const [askOpen, setAskOpen] = useState(false)
   const [phrase, setPhrase] = useState('')
 
   const today = useMemo(() => toISO(new Date()), [])
   const rangeInvalid = Boolean(availFrom && availTo && availTo <= availFrom)
-  const usingDefaultWindow = !availFrom && !availTo
+  const usingDefaultWindow = !windowTouched
   // With no dates chosen the page still has to be useful, so it looks at the
   // next 28 days by default.
   const winFrom = rangeInvalid ? today : (availFrom || today)
@@ -375,8 +282,6 @@ export default function Units() {
     if (k === sortKey) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
     else { setSortKey(k); setSortDir('asc') }
   }
-  const [adding, setAdding] = useState(false)
-  const [error, setError] = useState('')
 
   const { data: allSiteUnits, isLoading } = useQuery<Unit[]>({
     queryKey: ['units'],
@@ -402,6 +307,14 @@ export default function Units() {
     () => (allSiteUnits || []).filter((u) => unitInSite((u as Unit & { site?: string | null }).site, siteId, sitesList)),
     [allSiteUnits, siteId, sitesList],
   )
+
+  // A unit with no site of its own belongs to the default site.
+  const siteNameOf = (u: Unit) => {
+    const raw = (u as Unit & { site?: string | { _id: string; name?: string } | null }).site
+    if (raw && typeof raw === 'object') return raw.name || sitesList.find((s) => s._id === raw._id)?.name || '—'
+    const id = raw ?? sitesList.find((s) => s.isDefault)?._id
+    return sitesList.find((s) => s._id === id)?.name || '—'
+  }
 
   // The size and floor dropdowns are built from the data, not a fixed list.
   const sizes = useMemo(
@@ -548,26 +461,6 @@ export default function Units() {
   const pct = (isoDate: string) => (daysBetween(tlStart, isoDate) / tlDays) * 100
   const clamp = (n: number) => Math.max(0, Math.min(100, n))
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['units'] })
-
-  const createUnit = useMutation({
-    mutationFn: (body: UnitBody) => api.post('/units', body),
-    onSuccess: () => { invalidate(); setAdding(false); setError('') },
-    onError: (e) => setError(apiError(e)),
-  })
-
-  const updateUnit = useMutation({
-    mutationFn: ({ id, ...body }: { id: string } & Partial<UnitBody>) => api.put(`/units/${id}`, body),
-    onSuccess: () => { invalidate(); setSelected(null); setError('') },
-    onError: (e) => setError(apiError(e)),
-  })
-
-  const deleteUnit = useMutation({
-    mutationFn: (id: string) => api.delete(`/units/${id}`),
-    onSuccess: () => { invalidate(); setSelected(null); setError('') },
-    onError: (e) => setError(apiError(e)),
-  })
-
   // The built-in reader runs instantly on every keystroke and is what the
   // chips show while typing. Asking the model is a deliberate step, so a
   // key is not spent on every character typed.
@@ -653,15 +546,27 @@ export default function Units() {
             Units free for a chosen window — contracts, tenancies and sent quotes all counted.
           </p>
         </div>
-        {canEditUnits && (
+        {/* Search and the AI ask live up here: they are how you start, so they
+            should not be buried at the end of the filter row. */}
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end" style={{ flexShrink: 0 }}>
+          <span style={{ height: 40, borderRadius: 10, border: `1px solid ${LINE}`, background: PAGE, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 12px' }}>
+            <Search size={14} color={MUTED} />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search unit / size…"
+              style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 13, width: 150, color: INK }}
+            />
+          </span>
           <button
-          onClick={() => setAdding(true)}
-          style={{ height: 40, borderRadius: 999, background: PURPLE, color: 'white', fontSize: 13, fontWeight: 600, flexShrink: 0 }}
-          className="px-4 flex items-center gap-1.5 hover:brightness-110 transition"
-        >
-          <Plus size={15} /> Add unit
-        </button>
-        )}
+            type="button"
+            onClick={() => setAskOpen((o) => !o)}
+            style={{ height: 40, borderRadius: 999, background: '#fff', border: `1px solid ${PURPLE}`, color: PURPLE, fontSize: 13, fontWeight: 600, padding: '0 16px' }}
+            className="flex items-center gap-1.5 hover:bg-violet-50 transition"
+          >
+            <Sparkles size={15} /> Ask PurpleBox AI
+          </button>
+        </div>
       </div>
 
       {/* ── Search card ────────────────────────────────────────────── */}
@@ -670,12 +575,12 @@ export default function Units() {
         <div className="flex flex-wrap" style={{ gap: 16, alignItems: 'end' }}>
           <Control label="Free from">
             <input type="date" value={availFrom} max={availTo || undefined}
-              onChange={(e) => setAvailFrom(e.target.value)} style={controlStyle} />
+              onChange={(e) => { setAvailFrom(e.target.value); setWindowTouched(true) }} style={controlStyle} />
           </Control>
           <ArrowRight size={16} color={MUTED} style={{ marginBottom: 12 }} />
           <Control label="Until">
             <input type="date" value={availTo} min={availFrom || undefined}
-              onChange={(e) => setAvailTo(e.target.value)} style={controlStyle} />
+              onChange={(e) => { setAvailTo(e.target.value); setWindowTouched(true) }} style={controlStyle} />
           </Control>
           <Control label="Floor">
             <select value={floorFilter} onChange={(e) => setFloorFilter(e.target.value)} style={{ ...controlStyle, minWidth: 120 }}>
@@ -695,14 +600,6 @@ export default function Units() {
               {['available', 'occupied', 'reserved', 'maintenance'].map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
             </select>
           </Control>
-          <Control label="Unit number">
-            <span style={{ ...controlStyle, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 10px' }}>
-              <Search size={14} color={MUTED} />
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search unit / size…"
-                style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 13, width: 130, color: INK }} />
-            </span>
-          </Control>
-
           <button
             type="button"
             onClick={() => { setOnlyFree(true); availability.refetch() }}
@@ -716,15 +613,6 @@ export default function Units() {
             <input type="checkbox" checked={onlyFree} onChange={(e) => setOnlyFree(e.target.checked)} className="h-4 w-4 rounded" />
             Only free units
           </label>
-
-          <button
-            type="button"
-            onClick={() => setAskOpen((o) => !o)}
-            style={{ marginLeft: 'auto', height: 40, borderRadius: 999, background: '#fff', border: `1px solid ${PURPLE}`, color: PURPLE, fontSize: 13, fontWeight: 600, padding: '0 16px' }}
-            className="flex items-center gap-1.5 hover:bg-violet-50 transition"
-          >
-            <Sparkles size={15} /> Ask PurpleBox AI
-          </button>
         </div>
 
         {(availFrom || availTo || floorFilter || sizeFilter || statusFilter || search || onlyFree) && (
@@ -1036,62 +924,35 @@ export default function Units() {
       {/* Unit detail panel */}
       {selected && (
         <div className="fixed inset-0 z-50 flex justify-end">
-          <div className="absolute inset-0 bg-black/20" onClick={() => { setSelected(null); setError('') }} />
+          <div className="absolute inset-0 bg-black/20" onClick={() => setSelected(null)} />
           <div className="relative w-full max-w-md bg-white dark:bg-gray-900 shadow-xl overflow-y-auto">
             <div className="sticky top-0 bg-white dark:bg-gray-900 border-b px-5 py-4 flex items-center justify-between z-10">
               <h2 className="text-lg font-bold">Unit {selected.unitNumber}</h2>
-              <button onClick={() => { setSelected(null); setError('') }} className="p-1 hover:bg-muted rounded cursor-pointer text-muted-foreground hover:text-foreground">✕</button>
+              <button onClick={() => setSelected(null)} className="p-1 hover:bg-muted rounded cursor-pointer text-muted-foreground hover:text-foreground">✕</button>
             </div>
             <div className="p-5">
               <UnitDetail
                 unit={selected}
-                onUpdate={(body) => updateUnit.mutate({ id: selected._id, ...body })}
-                onDelete={() => deleteUnit.mutate(selected._id)}
+                siteName={siteNameOf(selected)}
                 canEdit={canEditUnits}
-                error={error}
-                busy={updateUnit.isPending || deleteUnit.isPending}
+                bookFrom={winFrom}
+                bookTo={winTo}
               />
             </div>
           </div>
         </div>
       )}
-
-      {/* Add unit modal */}
-      <Modal open={adding} onClose={() => { setAdding(false); setError('') }} title="Add unit">
-        <form
-          onSubmit={(e: FormEvent<HTMLFormElement>) => { e.preventDefault(); createUnit.mutate(readUnitForm(new FormData(e.currentTarget))) }}
-          className="space-y-4"
-        >
-          <UnitFormFields />
-          <Field label="Status">
-            <Select name="status" defaultValue="available">
-              {['available', 'reserved', 'occupied', 'maintenance'].map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
-            </Select>
-          </Field>
-          <Field label="Notes"><Textarea name="notes" /></Field>
-          {error && <p className="text-xs text-destructive">{error}</p>}
-          <Button type="submit" className="w-full" disabled={createUnit.isPending}>Create unit</Button>
-        </form>
-      </Modal>
     </div>
   )
 }
 
-function UnitDetail({ unit, onUpdate, onDelete, error, busy, canEdit }: { unit: Unit; onUpdate: (b: Partial<UnitBody>) => void; onDelete: () => void; error: string; busy: boolean; canEdit: boolean }) {
-  const [confirmDelete, setConfirmDelete] = useState(false)
+/* A read-only record of the unit. Creating, editing and deleting units moved
+   to Settings → Unit Pricing, so this panel only reports. */
+function UnitDetail({ unit, siteName, canEdit, bookFrom, bookTo }: { unit: Unit; siteName: string; canEdit: boolean; bookFrom: string; bookTo: string }) {
   const { data, isLoading: contractsLoading } = useQuery<{ unit: Unit; contracts: Contract[] }>({
     queryKey: ['unit', unit._id],
     queryFn: () => api.get(`/units/${unit._id}`).then((r) => r.data),
   })
-  const openContract = data?.contracts.find((c) => ['active', 'pending_signature', 'draft'].includes(c.status))
-  const statusLocked = unit.status === 'occupied' && !!openContract
-
-  function submit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    const body = readUnitForm(new FormData(e.currentTarget))
-    if (statusLocked) delete (body as Partial<UnitBody>).status
-    onUpdate(body)
-  }
 
   const allContracts = (data?.contracts ?? []).filter(c => !['expired', 'terminated', 'cancelled'].includes(c.status))
   const contractStatusTone: Record<string, string> = {
@@ -1100,7 +961,7 @@ function UnitDetail({ unit, onUpdate, onDelete, error, busy, canEdit }: { unit: 
   }
 
   return (
-    <form onSubmit={submit} className="space-y-4">
+    <div className="space-y-4">
       {/* Contracts section — all contracts for this unit */}
       <div className="rounded-lg border">
         <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
@@ -1174,35 +1035,62 @@ function UnitDetail({ unit, onUpdate, onDelete, error, busy, canEdit }: { unit: 
         )}
       </div>
 
-      <UnitFormFields initial={unit} />
-
-      <Field label="Status">
-        <Select name="status" defaultValue={unit.status} disabled={statusLocked}>
-          {['available', 'occupied', 'reserved', 'maintenance'].map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
-        </Select>
-        {statusLocked && <p className="text-[11px] text-muted-foreground mt-1">Status is managed by the contract lifecycle.</p>}
-      </Field>
-      <Field label="Notes"><Textarea name="notes" defaultValue={unit.notes} /></Field>
-      {error && <p className="text-xs text-destructive">{error}</p>}
-      {/* Looking a unit up is open to reps and accounts; changing the
-          inventory is not. */}
-      {canEdit && <Button type="submit" className="w-full" disabled={busy}>Save changes</Button>}
-      {canEdit && !openContract && (
-        confirmDelete ? (
-          <div className="flex gap-2 mt-2">
-            <Button type="button" className="flex-1 bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={onDelete} disabled={busy}>
-              Yes, delete
-            </Button>
-            <Button type="button" variant="outline" className="flex-1" onClick={() => setConfirmDelete(false)}>
-              Cancel
-            </Button>
+      {/* The unit's own facts, reported rather than edited. */}
+      <div className="rounded-lg border">
+        <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
+          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Unit record</span>
+        </div>
+        <dl className="divide-y">
+          {([
+            ['Site', siteName],
+            ['Floor', unit.floor || '—'],
+            ['Size', unit.sizeSqf != null ? `${unit.sizeSqf} sq ft` : '—'],
+            ['4 weeks price', unit.price != null ? formatMoney(unit.price) : 'not set'],
+            ['Length × width', unit.lengthFt != null || unit.widthFt != null
+              ? `${unit.lengthFt ?? '—'} × ${unit.widthFt ?? '—'} ft`
+              : '—'],
+            ['First month discount', unit.discountPct ? `${unit.discountPct}% — first 28 days` : 'none'],
+            ['Shared', unit.shared ? 'Yes' : 'No'],
+          ] as [string, string][]).map(([label, value]) => (
+            <div key={label} className="flex items-start justify-between gap-3 px-3 py-2">
+              <dt className="text-xs text-muted-foreground shrink-0">{label}</dt>
+              <dd className="text-sm font-medium text-right">{value}</dd>
+            </div>
+          ))}
+          <div className="flex items-start justify-between gap-3 px-3 py-2">
+            <dt className="text-xs text-muted-foreground shrink-0">Status</dt>
+            <dd><Badge tone={unitStatusTone[unit.status]}>{statusLabel(unit.status)}</Badge></dd>
           </div>
-        ) : (
-          <Button type="button" variant="outline" className="w-full mt-2 text-destructive hover:bg-destructive/10 border-destructive/30" onClick={() => setConfirmDelete(true)}>
-            Delete unit
-          </Button>
-        )
+          <div className="px-3 py-2">
+            <dt className="text-xs text-muted-foreground">Notes</dt>
+            <dd className="text-sm mt-0.5 whitespace-pre-wrap">
+              {unit.notes?.trim() || <span className="text-muted-foreground">—</span>}
+            </dd>
+          </div>
+        </dl>
+      </div>
+
+      {/* Changing the inventory is an admin setup job, and it happens in one
+          place next to the pricing matrix that governs unit prices. */}
+      {/* Booking usually starts from here, so skip the trip to the wizard and
+          re-picking the unit. Carries the searched window, so the dates do not
+          have to be typed again. */}
+      <Link
+        to={`/quotes/new?unit=${unit._id}${bookFrom ? `&from=${bookFrom}` : ''}${bookTo ? `&to=${bookTo}` : ''}`}
+        className="flex items-center justify-center gap-1.5 w-full h-10 rounded-xl text-sm font-semibold text-white hover:opacity-90 transition-opacity"
+        style={{ background: PURPLE, textDecoration: 'none' }}
+      >
+        <CalendarRange size={15} /> Book this unit
+      </Link>
+
+      {canEdit && (
+        <p className="text-xs text-muted-foreground">
+          Edit this unit in{' '}
+          <Link to="/settings?tab=pricing" className="text-primary hover:underline font-medium">
+            Settings → Unit Pricing
+          </Link>
+        </p>
       )}
-    </form>
+    </div>
   )
 }
