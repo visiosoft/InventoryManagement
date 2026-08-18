@@ -626,7 +626,22 @@ export default function Units() {
   return (
     // No outer padding or max-width: the app layout already wraps every page
     // in p-3 sm:p-4.
-    <div style={{ background: PAGE, fontFamily: FONT, color: INK, display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div style={{ background: PAGE, fontFamily: FONT, color: INK }}>
+      {/* The page sits on one rounded white card, matching Contracts and the
+          contract detail page. The slide-over and modal stay outside it —
+          they are fixed overlays. */}
+      <div
+        className="p-5 sm:p-7"
+        style={{
+          background: '#fff',
+          border: '1px solid rgba(20,8,31,0.10)',
+          borderRadius: 24,
+          boxShadow: '0 1px 2px rgba(20,8,31,.05), 0 2px 8px rgba(20,8,31,.04)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 20,
+        }}
+      >
       {/* ── Header ─────────────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div>
@@ -650,7 +665,8 @@ export default function Units() {
       </div>
 
       {/* ── Search card ────────────────────────────────────────────── */}
-      <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 18, padding: '22px 24px', boxShadow: CARD_SHADOW }}>
+      {/* Tinted: a white panel on the white page card would have no edge. */}
+      <div style={{ background: PAGE, border: `1px solid ${LINE}`, borderRadius: 18, padding: '22px 24px' }}>
         <div className="flex flex-wrap" style={{ gap: 16, alignItems: 'end' }}>
           <Control label="Free from">
             <input type="date" value={availFrom} max={availTo || undefined}
@@ -867,7 +883,7 @@ export default function Units() {
 
       {/* ── Timeline view ──────────────────────────────────────────── */}
       {view === 'timeline' && (
-        <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 18, padding: '20px 22px', boxShadow: CARD_SHADOW }}>
+        <div style={{ background: PAGE, border: `1px solid ${LINE}`, borderRadius: 18, padding: '20px 22px' }}>
           <div style={{ fontSize: 12, color: MUTED, marginBottom: 14 }}>
             Showing {tlDays} days from {formatDate(tlStart)} · shaded band = your selected window
           </div>
@@ -1014,6 +1030,7 @@ export default function Units() {
             </div>
           ))}
         </div>
+      </div>
       </div>
 
       {/* Unit detail panel */}
