@@ -132,6 +132,15 @@ export default function Units() {
     queryFn: () => api.get('/units').then((r) => r.data),
   })
 
+  // Who holds each unit right now. A shared unit can carry several active
+  // contracts, so this is a list per unit, not a single tenant.
+  type UnitActiveContract = { contractId: string; contractNo: string; customerName: string; endDate: string | null }
+  const { data: activeByUnit = {} } = useQuery<Record<string, UnitActiveContract[]>>({
+    queryKey: ['unit-active-contracts'],
+    queryFn: () => api.get('/units/active-contracts').then((r) => r.data?.byUnit ?? {}),
+    staleTime: 60_000,
+  })
+
   // Scope to the selected site (units without a site belong to the default site)
   const { siteId } = useSite()
   const { data: sitesList = [] } = useQuery<Site[]>({
@@ -328,7 +337,7 @@ export default function Units() {
       ) : (
         <Card>
           <Table>
-            <thead><tr><Th>Unit</Th><Th>Floor</Th><Th>Size</Th><Th>L × W (ft)</Th><Th>4wk (AED)</Th><Th>1st 4wk Discount</Th><Th>Status</Th><Th>Shared</Th><Th>Notes</Th></tr></thead>
+            <thead><tr><Th>Unit</Th><Th>Floor</Th><Th>Size</Th><Th>L × W (ft)</Th><Th>4wk (AED)</Th><Th>Tenant</Th><Th>Check out</Th><Th>Status</Th><Th>Shared</Th><Th>Notes</Th></tr></thead>
             <tbody>
               {filtered.map((u) => (
                 <tr key={u._id} className="hover:bg-muted/50 cursor-pointer" onClick={() => setSelected(u)}>
@@ -337,7 +346,32 @@ export default function Units() {
                   <Td>{u.sizeSqf != null ? `${u.sizeSqf} sq ft` : '—'}</Td>
                   <Td>{u.lengthFt && u.widthFt ? `${u.lengthFt} × ${u.widthFt}` : '—'}</Td>
                   <Td>{u.price != null ? formatMoney(u.price) : '—'}</Td>
-                  <Td>{u.discountPct ? <span className="text-amber-600 font-medium">{u.discountPct}%</span> : <span className="text-muted-foreground">—</span>}</Td>
+                  <Td>
+                    {(activeByUnit[u._id] ?? []).length === 0 ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      <div className="space-y-0.5">
+                        {activeByUnit[u._id].map((c) => (
+                          <div key={c.contractId} className="truncate max-w-48" title={`${c.customerName} · ${c.contractNo}`}>
+                            {c.customerName || '(no name)'}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </Td>
+                  <Td>
+                    {(activeByUnit[u._id] ?? []).length === 0 ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      <div className="space-y-0.5">
+                        {activeByUnit[u._id].map((c) => (
+                          <div key={c.contractId} className="whitespace-nowrap">
+                            {c.endDate ? formatDate(c.endDate) : '—'}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </Td>
                   <Td><Badge tone={unitStatusTone[u.status]}>{statusLabel(u.status)}</Badge></Td>
                   <Td>{u.shared ? <Badge tone="blue">Shared</Badge> : <span className="text-muted-foreground">—</span>}</Td>
                   <Td className="text-muted-foreground max-w-60 truncate">{u.notes}</Td>

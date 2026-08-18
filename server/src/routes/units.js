@@ -62,6 +62,31 @@ router.get('/pricing-matrix', async (req, res) => {
   }
 });
 
+// Who currently holds each unit. A unit can carry several active contracts
+// now that any unit may be shared, so this returns every one of them rather
+// than a single tenant. Declared before '/:id' so the literal path wins.
+router.get('/active-contracts', async (_req, res) => {
+  const contracts = await Contract.find({ status: 'active', archived: { $ne: true } })
+    .select('contractNo customer unit units endDate')
+    .populate('customer', 'fullName')
+    .sort({ endDate: 1 })
+    .lean();
+
+  const byUnit = {};
+  for (const c of contracts) {
+    const unitIds = [c.unit, ...(c.units || [])].filter(Boolean).map(String);
+    for (const uid of new Set(unitIds)) {
+      (byUnit[uid] ||= []).push({
+        contractId: String(c._id),
+        contractNo: c.contractNo || '',
+        customerName: c.customer?.fullName || '',
+        endDate: c.endDate || null,
+      });
+    }
+  }
+  res.json({ byUnit });
+});
+
 router.get('/:id', async (req, res) => {
   const unit = await Unit.findById(req.params.id);
   if (!unit) return res.status(404).json({ error: 'Unit not found' });
