@@ -994,43 +994,44 @@ export default function ContractDetail() {
   }, [unitsForNav, activeByUnit])
 
   const navContract = data?.contract
+  // Which unit of this contract is being viewed. Carried in the URL so a
+  // contract holding several units knows where in the sequence you are —
+  // without it, F1-43 and F2-1 would be indistinguishable.
+  const viewingUnitId = searchParams.get('unit') || ''
+
   const navStop = useMemo(() => {
     if (!unitStops.length || !navContract) return { prev: null, next: null, position: '' }
     const hereId = navContract._id
     const contractsOn = (unitId: string) => activeByUnit[unitId] ?? []
-    const isThisContract = (unitId: string) => contractsOn(unitId).some((x) => x.contractId === hereId)
 
-    // One contract can hold several units, and they need not be adjacent —
-    // PB-2026-0085 holds F1-5, F1-6 and F2-78. Anchor both directions on its
-    // first unit and skip its other units along the way, so "next" lands on
-    // the genuine neighbour rather than jumping past everything in between.
-    const mine = unitStops.map((u, i) => (isThisContract(u._id) ? i : -1)).filter((i) => i >= 0)
+    // Every occupied unit is its own stop, in strict unit order — including
+    // the other units of this same contract. Stepping never skips a unit.
+    const mine = unitStops
+      .map((u, i) => (contractsOn(u._id).some((x) => x.contractId === hereId) ? i : -1))
+      .filter((i) => i >= 0)
     if (!mine.length) return { prev: null, next: null, position: '' }
-    const first = mine[0]
 
-    // Walk outwards to the nearest unit held by a different contract. A shared
-    // unit can carry more than one, so prefer whichever isn't the current one.
-    const step = (from: number, dir: -1 | 1) => {
-      for (let i = from + dir; i >= 0 && i < unitStops.length; i += dir) {
-        const u = unitStops[i]
-        const other = contractsOn(u._id).find((x) => x.contractId !== hereId)
-        if (other) {
-          return {
-            unitNumber: u.unitNumber,
-            contractId: other.contractId,
-            customerName: other.customerName,
-            more: contractsOn(u._id).length - 1,
-          }
-        }
-      }
-      return null
+    // Anchor on the unit named in the URL when it is one of this contract's,
+    // otherwise on its first unit (a plain link into the contract).
+    const fromUrl = mine.find((i) => unitStops[i]._id === viewingUnitId)
+    const here = fromUrl ?? mine[0]
+
+    const at = (i: number) => {
+      const u = unitStops[i]
+      if (!u) return null
+      const list = contractsOn(u._id)
+      // Prefer a contract other than the current one on a shared unit, so a
+      // shared unit still moves you somewhere new.
+      const pick = list.find((x) => x.contractId !== hereId) ?? list[0]
+      if (!pick) return null
+      return { unitId: u._id, unitNumber: u.unitNumber, contractId: pick.contractId, customerName: pick.customerName }
     }
 
     const position = mine.length > 1
-      ? `${first + 1} of ${unitStops.length} · ${mine.length} units`
-      : `${first + 1} of ${unitStops.length}`
-    return { prev: step(first, -1), next: step(first, 1), position }
-  }, [unitStops, activeByUnit, navContract])
+      ? `${here + 1} of ${unitStops.length} · ${unitStops[here].unitNumber}`
+      : `${here + 1} of ${unitStops.length}`
+    return { prev: at(here - 1), next: at(here + 1), position }
+  }, [unitStops, activeByUnit, navContract, viewingUnitId])
 
   // Zoho Books invoices for this tenant. A 501 means Zoho isn't connected,
   // which is a normal state to render rather than an error worth retrying.
@@ -1424,7 +1425,7 @@ export default function ContractDetail() {
             <button
               type="button"
               disabled={!navStop.prev}
-              onClick={() => navStop.prev && navigate(`/contracts/${navStop.prev.contractId}`)}
+              onClick={() => navStop.prev && navigate(`/contracts/${navStop.prev.contractId}?unit=${navStop.prev.unitId}`)}
               title={navStop.prev ? `Previous unit · ${navStop.prev.unitNumber} — ${navStop.prev.customerName}` : 'This is the first unit'}
               className="flex items-center gap-1 px-3 py-2 rounded-lg border text-sm font-medium hover:bg-muted transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
               <ChevronLeft size={15} />
@@ -1433,7 +1434,7 @@ export default function ContractDetail() {
             <button
               type="button"
               disabled={!navStop.next}
-              onClick={() => navStop.next && navigate(`/contracts/${navStop.next.contractId}`)}
+              onClick={() => navStop.next && navigate(`/contracts/${navStop.next.contractId}?unit=${navStop.next.unitId}`)}
               title={navStop.next ? `Next unit · ${navStop.next.unitNumber} — ${navStop.next.customerName}` : 'This is the last unit'}
               className="flex items-center gap-1 px-3 py-2 rounded-lg border text-sm font-medium hover:bg-muted transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
               <span className="hidden sm:inline">{navStop.next?.unitNumber ?? 'Next'}</span>
