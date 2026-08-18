@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AlertTriangle, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Download, FileText, FilePlus, Mail, MessageSquare, PenLine, Pin, Plus, ShieldCheck, Trash2, Upload, X, XCircle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -892,6 +892,7 @@ export default function ContractDetail() {
   const [invoiceBlank, setInvoiceBlank] = useState(false)
   const [editModal, setEditModal] = useState(false)
   const [noticeOpen, setNoticeOpen] = useState<{ id: string; name: string } | null>(null)
+  const [emailTemplateId, setEmailTemplateId] = useState('')
   const [noticeBusy, setNoticeBusy] = useState('')
   const [noticeSent, setNoticeSent] = useState('')
   const [noticeSignUrl, setNoticeSignUrl] = useState('')
@@ -936,7 +937,7 @@ export default function ContractDetail() {
   const { data: noticeTemplates = [] } = useQuery<{ _id: string; name: string; isDefault: boolean; updatedAt?: string }[]>({
     queryKey: ['agreement-templates'],
     queryFn: () => api.get('/agreement-template').then((r) => r.data?.templates ?? []),
-    enabled: activeTab === 'notices',
+    enabled: activeTab === 'notices' || activeTab === 'overview',
     staleTime: 60_000,
   })
 
@@ -2047,6 +2048,52 @@ export default function ContractDetail() {
 
                 {/* Right column */}
                 <div className="space-y-4">
+                  {/* Send email — picks a notice template and opens the existing
+                      composer, which merges this contract's details in. */}
+                  <Card>
+                    <CardBody className="space-y-2.5">
+                      <div style={{ ...SECTION_LABEL, color: PURPLE }}>Send email</div>
+                      {noticeTemplates.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          No templates yet — add one in{' '}
+                          <Link to="/notices" className="text-primary hover:underline">Notices</Link>.
+                        </p>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-2">
+                            <Select
+                              value={emailTemplateId}
+                              onChange={(e) => setEmailTemplateId(e.target.value)}
+                              className="flex-1"
+                            >
+                              <option value="">Choose a template…</option>
+                              {noticeTemplates.map((t) => (
+                                <option key={t._id} value={t._id}>{t.name}</option>
+                              ))}
+                            </Select>
+                            <button
+                              type="button"
+                              disabled={!emailTemplateId}
+                              onClick={() => {
+                                const t = noticeTemplates.find((x) => x._id === emailTemplateId)
+                                if (t) setNoticeOpen({ id: t._id, name: t.name })
+                              }}
+                              className="h-9 px-3.5 rounded-lg text-xs font-bold text-white whitespace-nowrap cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90"
+                              style={{ background: INK }}
+                            >
+                              Compose &amp; send
+                            </button>
+                          </div>
+                          <p className="text-[11.5px]" style={{ color: MUTED }}>
+                            {c.customer?.email
+                              ? <>Sends to {c.customer.email} · merge fields auto-fill from this contract</>
+                              : <>This tenant has no email address on file — the composer can still print or send by WhatsApp</>}
+                          </p>
+                        </>
+                      )}
+                    </CardBody>
+                  </Card>
+
                   <Card>
                     <CardHeader title="Payments" action={
                       allUnpaid.length > 1 ? <Button size="sm" variant="outline" onClick={() => setBulkTarget(allUnpaid)}><CalendarDays size={12} /> Pay multiple</Button> : null
