@@ -996,17 +996,40 @@ export default function ContractDetail() {
   const navContract = data?.contract
   const navStop = useMemo(() => {
     if (!unitStops.length || !navContract) return { prev: null, next: null, position: '' }
-    // Find this contract's unit among the stops, by contract id rather than by
-    // unit — a shared unit has several contracts and only one of them is open.
-    const here = unitStops.findIndex((u) => (activeByUnit[u._id] ?? []).some((x) => x.contractId === navContract._id))
-    if (here === -1) return { prev: null, next: null, position: '' }
-    const at = (i: number) => {
-      const u = unitStops[i]
-      if (!u) return null
-      const list = activeByUnit[u._id] ?? []
-      return list.length ? { unitNumber: u.unitNumber, contractId: list[0].contractId, customerName: list[0].customerName, more: list.length - 1 } : null
+    const hereId = navContract._id
+    const contractsOn = (unitId: string) => activeByUnit[unitId] ?? []
+    const isThisContract = (unitId: string) => contractsOn(unitId).some((x) => x.contractId === hereId)
+
+    // One contract can hold several units, and they need not be adjacent —
+    // PB-2026-0085 holds F1-5, F1-6 and F2-78. Anchor both directions on its
+    // first unit and skip its other units along the way, so "next" lands on
+    // the genuine neighbour rather than jumping past everything in between.
+    const mine = unitStops.map((u, i) => (isThisContract(u._id) ? i : -1)).filter((i) => i >= 0)
+    if (!mine.length) return { prev: null, next: null, position: '' }
+    const first = mine[0]
+
+    // Walk outwards to the nearest unit held by a different contract. A shared
+    // unit can carry more than one, so prefer whichever isn't the current one.
+    const step = (from: number, dir: -1 | 1) => {
+      for (let i = from + dir; i >= 0 && i < unitStops.length; i += dir) {
+        const u = unitStops[i]
+        const other = contractsOn(u._id).find((x) => x.contractId !== hereId)
+        if (other) {
+          return {
+            unitNumber: u.unitNumber,
+            contractId: other.contractId,
+            customerName: other.customerName,
+            more: contractsOn(u._id).length - 1,
+          }
+        }
+      }
+      return null
     }
-    return { prev: at(here - 1), next: at(here + 1), position: `${here + 1} of ${unitStops.length}` }
+
+    const position = mine.length > 1
+      ? `${first + 1} of ${unitStops.length} · ${mine.length} units`
+      : `${first + 1} of ${unitStops.length}`
+    return { prev: step(first, -1), next: step(first, 1), position }
   }, [unitStops, activeByUnit, navContract])
 
   // Zoho Books invoices for this tenant. A 501 means Zoho isn't connected,
