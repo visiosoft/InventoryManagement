@@ -1045,6 +1045,30 @@ export default function ContractDetail() {
   // are identical across all their contracts, so the cache is shared.
   const zohoCustomerId = data?.contract?.customer?._id
 
+  // The Contracts tab acts on OTHER contracts, so these take an id rather
+  // than closing over the one being viewed.
+  const [rowError, setRowError] = useState('')
+  const rowAction = useMutation({
+    mutationFn: ({ contractId, path }: { contractId: string; path: string }) =>
+      api.post(`/contracts/${contractId}/${path}`),
+    onSuccess: () => {
+      setRowError('')
+      qc.invalidateQueries({ queryKey: ['tenant-contracts'] })
+      qc.invalidateQueries({ queryKey: ['contract', id] })
+      qc.invalidateQueries({ queryKey: ['unit-active-contracts'] })
+    },
+    onError: (e) => setRowError(apiError(e)),
+  })
+  const rowDelete = useMutation({
+    mutationFn: (contractId: string) => api.delete(`/contracts/${contractId}`),
+    onSuccess: () => {
+      setRowError('')
+      qc.invalidateQueries({ queryKey: ['tenant-contracts'] })
+      qc.invalidateQueries({ queryKey: ['unit-active-contracts'] })
+    },
+    onError: (e) => setRowError(apiError(e)),
+  })
+
   // Google Drive hands out /file/d/<id>/view links, which open its viewer.
   // Rewriting to the export form downloads the file instead. Anything else
   // (the older purplebox.ae uploads) is already a direct link.
@@ -1490,6 +1514,12 @@ export default function ContractDetail() {
         )}
       </div>
 
+      {/* The page body sits on one large white card against the cream page
+          background. Navigation chrome (Back, unit arrows) stays outside it,
+          and so do the modals, which are fixed overlays. */}
+      <div className="bg-white dark:bg-gray-900 rounded-3xl p-5 sm:p-7 shadow-sm"
+        style={{ border: '1px solid rgba(20,8,31,.06)' }}>
+
       {/* Title + actions */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
         <div>
@@ -1553,9 +1583,10 @@ export default function ContractDetail() {
 
       {/* ── Main layout ── */}
       <div className="flex flex-col lg:flex-row gap-5 lg:items-start">
-        {/* Left sidebar */}
+        {/* Left sidebar. Tinted, because a white card on the white page card
+            would have no edge at all. */}
         <div className="w-full lg:w-80 lg:shrink-0 space-y-4">
-          <Card>
+          <Card className="bg-[#FBF8F3] dark:bg-gray-800/40">
             <CardBody className="space-y-4">
               {/* Avatar + name */}
               <div className="flex flex-col items-center text-center pt-2 pb-1">
@@ -2601,70 +2632,119 @@ export default function ContractDetail() {
                 subtitle="Every contract this tenant has had, newest first"
               />
               <CardBody className="pt-0">
+                {rowError && (
+                  <p className="text-[12px] text-destructive pb-2">{rowError}</p>
+                )}
+
+                <div className="flex justify-end mb-2.5">
+                  <button type="button"
+                    onClick={() => navigate(`/contracts/new?customer=${c.customer._id}`)}
+                    className="h-8 px-3.5 rounded-full text-white text-xs font-bold cursor-pointer hover:opacity-90"
+                    style={{ background: PURPLE }}>
+                    + Add contract
+                  </button>
+                </div>
+
                 {tenantContracts.isLoading ? (
                   <p className="text-sm text-muted-foreground py-4">Loading…</p>
                 ) : tenantContracts.isError ? (
                   <p className="text-sm text-muted-foreground py-4">Could not load this tenant&apos;s contracts.</p>
                 ) : !tenantContracts.data?.length ? (
-                  <p className="text-sm text-muted-foreground py-4">No other contracts for this tenant.</p>
+                  <p className="text-sm text-muted-foreground py-4">No contracts for this tenant yet.</p>
                 ) : (
-                  <div className="divide-y">
-                    {tenantContracts.data.map((t) => {
-                      const isCurrent = t._id === c._id
-                      const unitNames = (t.units?.length ? t.units : t.unit ? [t.unit] : [])
-                        .map((u) => u?.unitNumber).filter(Boolean).join(', ')
-                      return (
-                        <div key={t._id}
-                          className={`flex flex-wrap items-center justify-between gap-3 py-3 ${isCurrent ? '' : 'cursor-pointer hover:bg-muted/40'}`}
-                          onClick={() => { if (!isCurrent) navigate(`/contracts/${t._id}`) }}>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-semibold text-sm">{t.contractNo}</span>
-                              <Badge tone={contractStatusTone[t.status] ?? 'gray'}>{statusLabel(t.status)}</Badge>
+                  <div className="overflow-x-auto">
+                    <div style={{ minWidth: 720 }}>
+                      <div className="grid items-center pb-2"
+                        style={{ gridTemplateColumns: '1fr 170px 150px 1fr', padding: '0 6px 8px', borderBottom: '1px solid rgba(20,8,31,.14)' }}>
+                        <span style={SECTION_LABEL}>Units</span>
+                        <span style={SECTION_LABEL}>Contract No.</span>
+                        <span style={SECTION_LABEL}>Status</span>
+                        <span style={{ ...SECTION_LABEL, textAlign: 'right' }}>Actions</span>
+                      </div>
+
+                      {tenantContracts.data.map((t) => {
+                        const isCurrent = t._id === c._id
+                        const unitsLabel = (t.units?.length ? t.units : t.unit ? [t.unit] : [])
+                          .map((u) => u?.unitNumber).filter(Boolean).join(', ') || '—'
+                        // Which actions apply is decided by status, the same
+                        // way the server gates them — offering "End contract"
+                        // on a draft would just produce a 409.
+                        const canCreate = t.status === 'draft'
+                        const canMarkSigned = t.status === 'pending_signature'
+                        const canEnd = t.status === 'active'
+                        const busy = rowAction.isPending || rowDelete.isPending
+                        const act = 'text-[12px] font-bold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed'
+                        return (
+                          <div key={t._id} className="grid items-center"
+                            style={{ gridTemplateColumns: '1fr 170px 150px 1fr', padding: '11px 6px', borderBottom: '1px solid rgba(20,8,31,.06)' }}>
+                            <span className="font-bold text-[13px]">{unitsLabel}</span>
+                            <span className="text-[13px] flex items-center gap-1.5" style={{ color: '#4A4357' }}>
+                              {t.contractNo}
                               {isCurrent && (
-                                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: PURPLE }}>
-                                  Viewing
-                                </span>
+                                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: PURPLE }}>viewing</span>
                               )}
-                              {(t.overdueCount ?? 0) > 0 && (
-                                <Badge tone="red">{t.overdueCount} overdue</Badge>
+                            </span>
+                            <span>
+                              <Badge tone={contractStatusTone[t.status] ?? 'gray'}>{statusLabel(t.status)}</Badge>
+                            </span>
+                            <span className="flex justify-end gap-3 flex-wrap items-center">
+                              {t.signedDocUrl && (
+                                <>
+                                  <a href={t.signedDocUrl} target="_blank" rel="noopener noreferrer"
+                                    title="Open the signed contract"
+                                    className="text-[12px] font-bold hover:underline" style={{ color: PURPLE }}>
+                                    Signed
+                                  </a>
+                                  <a href={downloadUrlFor(t.signedDocUrl)} target="_blank" rel="noopener noreferrer"
+                                    title="Download the signed contract"
+                                    className="text-muted-foreground/60 hover:text-foreground transition-colors">
+                                    <Download size={13} />
+                                  </a>
+                                </>
                               )}
-                            </div>
-                            <div className="text-[11.5px] mt-0.5" style={{ color: MUTED }}>
-                              {unitNames || 'No unit'} · {t.startDate ? formatDate(t.startDate) : '—'} – {t.endDate ? formatDate(t.endDate) : '—'}
-                            </div>
+                              {canCreate && (
+                                <button type="button" disabled={busy} className={act} style={{ color: PURPLE }}
+                                  onClick={() => rowAction.mutate({ contractId: t._id, path: 'create-signing-link' })}>
+                                  Create contract &amp; send to sign
+                                </button>
+                              )}
+                              {canMarkSigned && (
+                                <button type="button" disabled={busy} className={act} style={{ color: '#16A34A' }}
+                                  onClick={() => rowAction.mutate({ contractId: t._id, path: 'mark-signed' })}>
+                                  Mark as signed
+                                </button>
+                              )}
+                              {canEnd && (
+                                <button type="button" disabled={busy} className={act} style={{ color: '#DC2626' }}
+                                  onClick={() => {
+                                    if (confirm(`End contract ${t.contractNo}? This releases its unit.`)) {
+                                      rowAction.mutate({ contractId: t._id, path: 'end' })
+                                    }
+                                  }}>
+                                  End contract
+                                </button>
+                              )}
+                              <button type="button" disabled={busy} className={act} style={{ color: '#DC2626' }}
+                                onClick={() => {
+                                  if (confirm(`Delete contract ${t.contractNo}? This cannot be undone.`)) {
+                                    // Deleting the contract you are on leaves
+                                    // nowhere to return to, so go to the list.
+                                    if (isCurrent) { rowDelete.mutate(t._id, { onSuccess: () => navigate('/contracts') }) }
+                                    else rowDelete.mutate(t._id)
+                                  }
+                                }}>
+                                Delete
+                              </button>
+                              <button type="button" disabled={isCurrent} className={act} style={{ color: PURPLE }}
+                                title={isCurrent ? 'You are on this contract' : 'Open this contract'}
+                                onClick={() => navigate(`/contracts/${t._id}`)}>
+                                Review
+                              </button>
+                            </span>
                           </div>
-                          <div className="flex items-center gap-4 shrink-0">
-                            {t.signedDocUrl ? (
-                              <div className="flex items-center gap-1.5">
-                                {/* stopPropagation: the whole row opens the
-                                    contract, and these must not do that too. */}
-                                <a href={t.signedDocUrl} target="_blank" rel="noopener noreferrer"
-                                  onClick={(e) => e.stopPropagation()}
-                                  title="Open the signed contract"
-                                  className="flex items-center gap-1 text-[11.5px] font-semibold text-primary hover:underline">
-                                  <FileText size={12} /> Signed
-                                </a>
-                                <a href={downloadUrlFor(t.signedDocUrl)} target="_blank" rel="noopener noreferrer"
-                                  onClick={(e) => e.stopPropagation()}
-                                  title="Download the signed contract"
-                                  className="text-muted-foreground/60 hover:text-foreground transition-colors">
-                                  <Download size={13} />
-                                </a>
-                              </div>
-                            ) : (
-                              <span className="text-[11.5px]" style={{ color: MUTED }}>Not signed</span>
-                            )}
-                            <div className="text-right">
-                              <div className="text-sm font-bold">{formatMoney(t.contractAmount ?? 0)} AED</div>
-                              <div className="text-[11.5px]" style={{ color: MUTED }}>
-                                {formatMoney(t.paidAmount ?? 0)} received
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })}
+                        )
+                      })}
+                    </div>
                   </div>
                 )}
               </CardBody>
@@ -2938,6 +3018,8 @@ export default function ContractDetail() {
             </Card>
           )}
         </div>
+      </div>
+
       </div>
 
       {/* ── Modals ── */}
