@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Plus, ChevronRight, ChevronLeft, Check, User, Box, FileText, Briefcase, Receipt as ReceiptIcon,
-  CreditCard, ShieldCheck, Search, Trash2, CalendarRange, Loader2, CheckCircle2, Send, Mail, Download,
+  ShieldCheck, Search, Trash2, CalendarRange, Loader2, CheckCircle2, Send, Mail, Download,
   Upload, X, Eye, ExternalLink,
 } from 'lucide-react'
 import { api, apiError, invoiceApi, quoteApi, type AvailableUnit } from '../lib/api'
@@ -162,7 +162,24 @@ function ItemEditor({ items, onChange }: { items: EditItem[]; onChange: (items: 
   )
 }
 
-// Invoice step: view all invoices, edit draft invoices, and add a suggested next-period invoice.
+/** GET /customers/:id/zoho-invoices — invoices found in Zoho Books for this
+ *  tenant, matched on email/phone only. Names legitimately differ between the
+ *  two systems, so a name match is deliberately not attempted. */
+type ZohoInvoice = {
+  id: string; number: string; date: string; dueDate: string
+  total: number; balance: number; status: string; currency: string; customerName: string
+}
+type ZohoMatch = { id: string; name: string; email: string; phone: string; matchedBy: 'email' | 'phone' }
+type ZohoInvoicesResponse = {
+  configured: boolean
+  matchedContacts: ZohoMatch[]
+  invoices: ZohoInvoice[]
+  totals: { count: number; total: number; balance: number }
+  newInvoiceUrl?: string
+}
+
+// Invoice step: show the tenant's Zoho Books invoices (where invoices are now
+// raised), plus any invoices still held locally in PurpleBox.
 export interface InvoiceStepHandle {
   isEditing: boolean
   isSaving: boolean
@@ -269,142 +286,50 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
     })))
   }
 
-  // ── Billing plan: the contract term split into 4-week periods, each matched
-  //    to its invoice (by due date) so months can be invoiced with one click. ──
-  type PeriodPlan = { idx: number; from: Date; to: Date; weeks: number; amount: number; invoice?: Invoice; coveredByAdvance: boolean }
-  const weeklyRate = Math.round((contract.rate / 4) * 100) / 100
-  const periodPlan: PeriodPlan[] = (() => {
-    const start = new Date(contract.startDate)
-    const end = new Date(contract.endDate)
-    const out: PeriodPlan[] = []
-    let cursor = new Date(start)
-    let i = 0
-    while (cursor < end && i < 40) {
-      const pEnd = new Date(cursor); pEnd.setDate(pEnd.getDate() + 28)
-      const actualEnd = pEnd > end ? end : pEnd
-      const days = Math.round((actualEnd.getTime() - cursor.getTime()) / 86400000)
-      const weeks = Math.max(1, Math.ceil(days / 7))
-      out.push({ idx: i, from: new Date(cursor), to: actualEnd, weeks, amount: Math.round(weeklyRate * weeks * 100) / 100, coveredByAdvance: false })
-      cursor = pEnd
-      i++
-    }
-    // Mark last periods as covered by advance deposit (always 4 weeks)
-    // and reduce partially-overlapping periods
-    if (out.length > 1) {
-      let advWeeksLeft = 4
-      for (let j = out.length - 1; j >= 1 && advWeeksLeft > 0; j--) {
-        if (out[j].weeks <= advWeeksLeft) {
-          out[j].coveredByAdvance = true
-          advWeeksLeft -= out[j].weeks
-        } else {
-          // Partial overlap: reduce this period's billable weeks
-          out[j].weeks -= advWeeksLeft
-          out[j].amount = Math.round(weeklyRate * out[j].weeks * 100) / 100
-          advWeeksLeft = 0
-        }
-      }
-    }
-    // Match each period to the CLOSEST invoice by due date, and let an invoice
-    // claim only one period — otherwise a later invoice dated a day earlier
-    // steals the slot and the period's real invoice drops out of the plan.
-    const claimed = new Set<string>()
-    for (const p of out) {
-      let best: Invoice | undefined
-      let bestGap = Infinity
-      for (const inv of sorted) {
-        if (claimed.has(inv._id) || !inv.dueDate) continue
-        // A due date inside the period counts as belonging to it — invoices are
-        // often raised mid-period with "today" as the due date.
-        const due = new Date(inv.dueDate)
-        const withinPeriod = due >= p.from && due < p.to
-        const gap = Math.abs(due.getTime() - p.from.getTime())
-        if ((withinPeriod || gap < 4 * 86400000) && gap < bestGap) { best = inv; bestGap = gap }
-      }
-      if (best) { p.invoice = best; claimed.add(best._id) }
-    }
-    return out
-  })()
-
-  // Inline payment recording, per invoice
-  const [payFor, setPayFor] = useState<string>('')
-  const [payAmt, setPayAmt] = useState('')
-  const [payWhen, setPayWhen] = useState(() => new Date().toISOString().slice(0, 10))
-  const [payHow, setPayHow] = useState('cash')
-  const [payReceipt, setPayReceipt] = useState<File | null>(null)
-  const recordPay = useMutation({
-    mutationFn: async (inv: Invoice) => {
-      const res = await invoiceApi.recordPayment(inv._id, { amount: Number(payAmt), method: payHow, date: payWhen })
-      if (payReceipt) {
-        const form = new FormData()
-        const ext = payReceipt.name.includes('.') ? payReceipt.name.slice(payReceipt.name.lastIndexOf('.')) : ''
-        form.append('files', new File([payReceipt], `Receipt ${payWhen}${ext}`, { type: payReceipt.type }))
-        await invoiceApi.uploadAttachments(inv._id, form)
-      }
-      return res
-    },
-    onSuccess: () => { setPayFor(''); setPayAmt(''); setPayReceipt(null); onChanged(); setErr('') },
-    onError: (e) => setErr(apiError(e)),
+  // ── Zoho Books ─────────────────────────────────────────────────────────
+  // Invoices are raised in Zoho Books — it is the accounting source of truth,
+  // so this step only reads them. Matching is on email/phone only: the two
+  // systems hold different names for the same person, so a name match is
+  // deliberately not attempted.
+  const zoho = useQuery<ZohoInvoicesResponse>({
+    queryKey: ['customer-zoho-invoices', customerId],
+    queryFn: () => api.get(`/customers/${customerId}/zoho-invoices`).then((r) => r.data),
+    enabled: Boolean(customerId),
+    retry: false,
+    staleTime: 5 * 60_000,
   })
 
-  async function shareLink(inv: Invoice) {
-    const res = await api.post(`/invoices/${inv._id}/share`)
-    return res.data.url as string
-  }
-  async function sendWhatsApp(inv: Invoice) {
+  // Opening a Zoho invoice needs the auth header, so a plain <a href> won't do
+  // — fetch it as a blob and hand the browser an object URL instead.
+  const [openingZohoPdf, setOpeningZohoPdf] = useState('')
+  const [zohoPdfError, setZohoPdfError] = useState('')
+  async function openZohoInvoicePdf(invoiceId: string) {
+    if (!customerId) return
+    setZohoPdfError('')
+    setOpeningZohoPdf(invoiceId)
     try {
-      const pdfUrl = await shareLink(inv)
-      const phone = customerPhone.replace(/\D/g, '').replace(/^00/, '')
-      const msg = `Hello ${customerName},\n\nHere is your invoice ${inv.invoiceNo} for ${formatMoney(inv.total)} AED.\n\nView: ${pdfUrl}\n\nThank you — PurpleBox`
-      window.open(phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
-    } catch (e) { setErr(apiError(e)) }
-  }
-  async function openEmail(inv: Invoice) {
-    try {
-      const pdfUrl = await shareLink(inv)
-      setEmailModal({
-        invoiceId: inv._id, to: customerEmail,
-        subject: `Invoice ${inv.invoiceNo} — PurpleBox`,
-        body: [`Hello ${customerName},`, ``, `Please find your invoice ${inv.invoiceNo} for ${formatMoney(inv.total)} AED.`, ``, `Thank you,`, `PurpleBox`].join('\n'),
-        pdfUrl,
-      })
-    } catch (e) { setErr(apiError(e)) }
-  }
-  async function openPdf(inv: Invoice) {
-    try {
-      const res = await api.get(`/invoices/${inv._id}/pdf`, { responseType: 'blob' })
-      window.open(URL.createObjectURL(res.data), '_blank')
-    } catch (e) { setErr(apiError(e)) }
-  }
-  async function removeInvoice(inv: Invoice) {
-    if (!confirm(`Delete ${inv.invoiceNo}?`)) return
-    try { await api.delete(`/invoices/${inv._id}`); onChanged() } catch (e) { setErr(apiError(e)) }
+      const r = await api.get(`/customers/${customerId}/zoho-invoices/${invoiceId}/pdf`, { responseType: 'blob' })
+      const url = window.URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }))
+      window.open(url, '_blank', 'noopener')
+      // Revoke late: revoking immediately can race the new tab's load.
+      setTimeout(() => window.URL.revokeObjectURL(url), 60_000)
+    } catch {
+      setZohoPdfError('Could not open that invoice PDF from Zoho Books.')
+    } finally {
+      setOpeningZohoPdf('')
+    }
   }
 
-  const [creatingPeriod, setCreatingPeriod] = useState<number | null>(null)
-  async function createPeriodInvoice(p: PeriodPlan) {
-    setCreatingPeriod(p.idx)
-    const dispEnd = new Date(p.to); dispEnd.setDate(dispEnd.getDate() - 1)
-    try {
-      await invoiceApi.create({
-        customer: customerId,
-        invoiceDate: new Date().toISOString().slice(0, 10),
-        dueDate: p.from.toISOString().slice(0, 10),
-        orderNumber: contract.contractNo,
-        terms: 'Due on receipt',
-        subject: `Storage Rent · ${contract.contractNo}`,
-        items: [{
-          sortOrder: 0,
-          itemDetails: `Storage Rent ${dfmt(p.from)} – ${dfmt(dispEnd)}`,
-          quantity: p.weeks, rate: weeklyRate, discountPct: 0,
-          amount: Math.round(weeklyRate * p.weeks * 100) / 100,
-        }],
-        status: 'draft',
-      })
-      onChanged()
-      setErr('')
-    } catch (e) { setErr(apiError(e)) }
-    setCreatingPeriod(null)
-  }
+  // Several Zoho contacts can share a phone number without being the same legal
+  // entity — a company and its owner, say. When more than one matched, name who
+  // each invoice was billed to so a mixed list reads as mixed.
+  const multipleZohoContacts = (zoho.data?.matchedContacts?.length ?? 0) > 1
+  const zohoCols = multipleZohoContacts
+    ? '120px 95px 95px 90px 1fr 90px 90px'
+    : '120px 95px 95px 1fr 90px 90px'
+  const newInvoiceUrl = zoho.data?.newInvoiceUrl
+  const zohoStatus = (zoho.error as { response?: { status?: number } } | null)?.response?.status
+  const zohoErrorMsg = (zoho.error as { response?: { data?: { error?: string } } } | null)?.response?.data?.error
 
   function startAddBlank() {
     setNewItems([{ sortOrder: 0, itemDetails: '', quantity: 1, rate: 0, discountPct: 0, amount: 0 }])
@@ -417,173 +342,136 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
 
   return (
     <div className="space-y-4">
-      {/* ── Billing plan: one row per month, one click to invoice it ── */}
+      {/* ── Zoho Books — invoices are raised there, not here ── */}
       <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
-        <div className="px-4 py-2.5 flex items-center justify-between" style={{ background: CHIP_BG }}>
-          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Billing plan</p>
-          <p className="text-[11px]" style={{ color: MUTED }}>{dfmt(new Date(contract.startDate))} → {dfmt(new Date(contract.endDate))}</p>
+        <div className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-2" style={{ background: CHIP_BG }}>
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Zoho Books invoices</p>
+            <p className="text-[11px]" style={{ color: MUTED }}>Matched to this tenant by email or phone number, not by name</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => { if (newInvoiceUrl) window.open(newInvoiceUrl, '_blank', 'noopener') }}
+            disabled={!newInvoiceUrl}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90 cursor-pointer"
+            style={{ background: PURPLE }}
+            title={newInvoiceUrl
+              ? 'Opens Zoho Books in a new tab to raise the invoice there'
+              : zoho.isLoading
+                ? 'Still looking up Zoho Books…'
+                : 'Zoho Books is unavailable, so a new invoice cannot be started from here'}
+          >
+            <ExternalLink size={13} /> Create invoice in Zoho Books
+          </button>
         </div>
-        {periodPlan.map((p) => {
-          const dispEnd = new Date(p.to); dispEnd.setDate(dispEnd.getDate() - 1)
-          const inv = p.invoice
-          const paidAmt = inv ? Number(inv.paymentMade || 0) : 0
-          const balance = inv ? Math.round((Number(inv.total || 0) - paidAmt) * 100) / 100 : 0
-          const isPaid = Boolean(inv) && balance <= 0
-          const editingThis = Boolean(inv) && editId === inv!._id
-          const payingThis = Boolean(inv) && payFor === inv!._id
-          // Stage: what this month needs next
-          const stage = !inv
-            ? (p.coveredByAdvance ? 'advance' : 'todo')
-            : isPaid ? 'paid' : inv.status === 'draft' ? 'send' : 'pay'
-          const STAGE_UI: Record<string, { label: string; bg: string; fg: string }> = {
-            advance: { label: 'Covered by advance deposit', bg: '#EDE5FF', fg: '#4A1FA0' },
-            todo: { label: 'Not invoiced yet', bg: CHIP_BG, fg: MUTED },
-            send: { label: 'Draft — send to customer', bg: '#FEF3C7', fg: '#92400E' },
-            pay: { label: `Awaiting payment · ${formatMoney(balance)} AED`, bg: '#DBEAFE', fg: '#1D4ED8' },
-            paid: { label: 'Paid', bg: '#D1FAE5', fg: GREEN },
-          }
-          const ui = STAGE_UI[stage]
-          const act = 'flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold hover:bg-gray-50 cursor-pointer border'
-          return (
-            <div key={p.idx} className="border-t" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
-              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 px-4 py-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
-                    style={{ background: isPaid ? '#D1FAE5' : `${PURPLE}12`, color: isPaid ? GREEN : PURPLE }}>
-                    {isPaid ? '✓' : p.idx + 1}
+
+        <div className="px-4 py-3">
+          {zoho.isLoading ? (
+            <p className="text-xs flex items-center gap-1.5" style={{ color: MUTED }}>
+              <Loader2 size={13} className="animate-spin" /> Looking up Zoho Books…
+            </p>
+          ) : zoho.isError ? (
+            <p className="text-xs" style={{ color: MUTED }}>
+              {zohoStatus === 501
+                ? 'Zoho Books is not connected — add its credentials in Settings to see invoices here.'
+                : zohoStatus === 404
+                  ? 'This lookup is not available on the API yet — the server needs to be redeployed.'
+                  : `Could not reach Zoho Books${zohoStatus ? ` (HTTP ${zohoStatus})` : ''}: ${zohoErrorMsg || 'no error message returned'}`}
+            </p>
+          ) : !zoho.data?.matchedContacts?.length ? (
+            <p className="text-xs" style={{ color: MUTED }}>
+              No Zoho Books contact matches this tenant&apos;s email or phone number
+              {customerEmail || customerPhone ? '' : ' — this tenant has neither on file'}.
+            </p>
+          ) : (
+            <>
+              {/* Which Zoho contact(s) matched, and how. The names differ by
+                  design, so show what was matched instead of hiding it. */}
+              <div className="flex flex-wrap items-center gap-1.5 pb-3">
+                {zoho.data.matchedContacts.map((m) => (
+                  <span key={m.id} className="text-[10px] rounded-full px-2 py-0.5 border"
+                    style={{ borderColor: 'rgba(20,8,31,0.16)', color: MUTED }}
+                    title={`Matched by ${m.matchedBy}: ${m.matchedBy === 'email' ? m.email : m.phone}`}>
+                    {m.name || '(unnamed)'} · matched by {m.matchedBy}
                   </span>
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold" style={{ color: INK }}>
-                      Month {p.idx + 1}
-                      {inv && <span className="ml-2 font-semibold" style={{ color: MUTED }}>{inv.invoiceNo}</span>}
-                    </p>
-                    <p className="text-[11px]" style={{ color: MUTED }}>{dfmt(p.from)} – {dfmt(dispEnd)} · {p.weeks} wk{p.weeks !== 1 ? 's' : ''}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-xs font-bold" style={{ color: INK }}>{formatMoney(p.coveredByAdvance ? 0 : (inv ? Number(inv.total || 0) : p.amount))} AED</span>
-                  <span className="text-[10px] font-semibold px-2 py-1 rounded-full whitespace-nowrap" style={{ background: ui.bg, color: ui.fg }}>{ui.label}</span>
-                </div>
+                ))}
+                {multipleZohoContacts && (
+                  <span className="text-[10px] font-semibold" style={{ color: '#92400E' }}>
+                    {zoho.data.matchedContacts.length} Zoho contacts share these details — invoices from all of them are shown
+                  </span>
+                )}
               </div>
 
-              {/* One clear next action per month */}
-              {stage === 'todo' && (
-                <div className="px-4 pb-3">
-                  <button type="button" onClick={() => createPeriodInvoice(p)} disabled={creatingPeriod !== null}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white disabled:opacity-50 hover:opacity-90 cursor-pointer"
-                    style={{ background: PURPLE }}>
-                    {creatingPeriod === p.idx ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
-                    Create invoice · {formatMoney(p.amount)} AED
-                  </button>
-                </div>
-              )}
-
-              {inv && !editingThis && !payingThis && (
-                <div className="flex flex-wrap items-center gap-1.5 px-4 pb-3">
-                  {stage === 'send' && (<>
-                    <button type="button" onClick={() => sendWhatsApp(inv)} className={`${act} text-white border-transparent`} style={{ background: '#25D366' }}>
-                      <Send size={12} /> Send on WhatsApp
-                    </button>
-                    <button type="button" onClick={() => openEmail(inv)} className={act} style={{ color: '#3B82F6', borderColor: 'rgba(20,8,31,0.12)' }}>
-                      <Mail size={12} /> Email
-                    </button>
-                    <button type="button" onClick={async () => { await invoiceApi.updateStatus(inv._id, 'sent'); onChanged() }} className={act} style={{ color: PURPLE, borderColor: 'rgba(20,8,31,0.12)' }}>
-                      <CheckCircle2 size={12} /> Mark Sent
-                    </button>
-                  </>)}
-                  {stage === 'pay' && (
-                    <button type="button"
-                      onClick={() => { setPayFor(inv._id); setPayAmt(String(balance)); setPayWhen(new Date().toISOString().slice(0, 10)) }}
-                      className={`${act} text-white border-transparent`} style={{ background: PURPLE }}>
-                      <CreditCard size={12} /> Record payment · {formatMoney(balance)} AED
-                    </button>
-                  )}
-                  {stage === 'pay' && (
-                    <button type="button" onClick={() => sendWhatsApp(inv)} className={act} style={{ color: '#25D366', borderColor: 'rgba(20,8,31,0.12)' }}>
-                      <Send size={12} /> Resend
-                    </button>
-                  )}
-                  <button type="button" onClick={() => openPdf(inv)} className={act} style={{ color: MUTED, borderColor: 'rgba(20,8,31,0.12)' }}>
-                    <Download size={12} /> PDF
-                  </button>
-                  {!isPaid && paidAmt === 0 && (<>
-                    <button type="button" onClick={() => startEdit(inv)} className={act} style={{ color: MUTED, borderColor: 'rgba(20,8,31,0.12)' }}>
-                      <FileText size={12} /> Edit
-                    </button>
-                    <button type="button" onClick={() => removeInvoice(inv)} className={act} style={{ color: '#EF4444', borderColor: 'rgba(20,8,31,0.12)' }}>
-                      <Trash2 size={12} /> Delete
-                    </button>
-                  </>)}
-                </div>
-              )}
-
-              {/* Inline record-payment form */}
-              {inv && payingThis && (
-                <div className="px-4 pb-3 space-y-2 rounded-b-xl" style={{ background: `${PURPLE}05` }}>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2">
-                    <Field label="Amount (AED)">
-                      <Input type="number" min={0.01} step="0.01" value={payAmt} onChange={(e) => setPayAmt(e.target.value)} className="h-8 text-xs" />
-                    </Field>
-                    <Field label="Date">
-                      <Input type="date" value={payWhen} onChange={(e) => setPayWhen(e.target.value)} className="h-8 text-xs" />
-                    </Field>
-                    <Field label="Method">
-                      <select value={payHow} onChange={(e) => setPayHow(e.target.value)} className="w-full h-8 rounded-lg border bg-card px-2 text-xs">
-                        <option value="cash">Cash</option>
-                        <option value="bank_transfer">Bank transfer</option>
-                        <option value="card">Card</option>
-                        <option value="cheque">Cheque</option>
-                      </select>
-                    </Field>
-                  </div>
-                  <Field label="Payment receipt *">
-                    <div className="flex items-center gap-2 w-full h-9 rounded-lg border bg-card px-3">
-                      <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp"
-                        onChange={(e) => setPayReceipt(e.target.files?.[0] ?? null)}
-                        className="w-full text-sm file:mr-3 file:px-3 file:py-1 file:rounded-lg file:border-0 file:bg-primary/10 file:text-primary file:text-xs file:font-semibold file:cursor-pointer cursor-pointer" />
+              {zoho.data.invoices.length === 0 ? (
+                <p className="text-xs" style={{ color: MUTED }}>This contact has no invoices in Zoho Books yet.</p>
+              ) : (
+                <>
+                  {zohoPdfError && <p className="text-[11px] pb-2" style={{ color: '#B91C1C' }}>{zohoPdfError}</p>}
+                  <div className="overflow-x-auto">
+                    <div style={{ minWidth: multipleZohoContacts ? 720 : 560 }}>
+                      <div className="grid gap-3 pb-2 text-[11px] font-bold uppercase tracking-wider"
+                        style={{ gridTemplateColumns: zohoCols, color: MUTED, borderBottom: '1px solid rgba(20,8,31,0.12)' }}>
+                        <span>Invoice</span><span>Date</span><span>Due</span><span>Status</span>
+                        {multipleZohoContacts && <span>Billed to</span>}
+                        <span className="text-right">Total</span><span className="text-right">Balance</span>
+                      </div>
+                      {zoho.data.invoices.map((inv) => (
+                        <div key={inv.id} className="grid gap-3 items-center py-2 text-[12px]"
+                          style={{ gridTemplateColumns: zohoCols, borderBottom: '1px solid rgba(20,8,31,0.06)' }}>
+                          <button type="button"
+                            onClick={() => openZohoInvoicePdf(inv.id)}
+                            disabled={openingZohoPdf === inv.id}
+                            className="font-bold text-left hover:underline cursor-pointer disabled:opacity-60"
+                            style={{ color: PURPLE }}
+                            title="Open this invoice's PDF from Zoho Books">
+                            {openingZohoPdf === inv.id ? 'Opening…' : (inv.number || '—')}
+                          </button>
+                          <span style={{ color: MUTED }}>{inv.date ? dfmt(new Date(inv.date)) : '—'}</span>
+                          <span style={{ color: MUTED }}>{inv.dueDate ? dfmt(new Date(inv.dueDate)) : '—'}</span>
+                          <span>
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize whitespace-nowrap"
+                              style={
+                                inv.status === 'paid' ? { background: '#D1FAE5', color: GREEN }
+                                  : inv.status === 'overdue' ? { background: '#FEE2E2', color: '#B91C1C' }
+                                    : { background: CHIP_BG, color: MUTED }
+                              }>
+                              {inv.status || 'unknown'}
+                            </span>
+                          </span>
+                          {multipleZohoContacts && (
+                            <span className="truncate" style={{ color: MUTED }} title={inv.customerName}>
+                              {inv.customerName || '—'}
+                            </span>
+                          )}
+                          <span className="text-right" style={{ color: INK }}>{inv.currency || 'AED'} {formatMoney(inv.total)}</span>
+                          <span className="text-right font-bold" style={{ color: inv.balance > 0 ? '#DC2626' : GREEN }}>
+                            {formatMoney(inv.balance)}
+                          </span>
+                        </div>
+                      ))}
                     </div>
-                    {payReceipt && <p className="text-xs text-emerald-600 mt-1 font-medium">✓ {payReceipt.name}</p>}
-                  </Field>
-                  <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => recordPay.mutate(inv)} disabled={recordPay.isPending || !Number(payAmt) || !payReceipt}
-                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white disabled:opacity-50 cursor-pointer"
-                      style={{ background: GREEN }}>
-                      {recordPay.isPending ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />} Confirm payment
-                    </button>
-                    <button type="button" onClick={() => setPayFor('')} className="text-[11px] font-medium hover:underline cursor-pointer" style={{ color: MUTED }}>Cancel</button>
                   </div>
-                </div>
+                  <div className="flex flex-wrap items-center justify-end gap-x-5 gap-y-1 pt-3 text-[12px]" style={{ color: INK }}>
+                    <span style={{ color: MUTED }}>{zoho.data.totals.count} invoice{zoho.data.totals.count === 1 ? '' : 's'}</span>
+                    <span>Total <strong>{formatMoney(zoho.data.totals.total)}</strong></span>
+                    <span>Outstanding <strong style={{ color: zoho.data.totals.balance > 0 ? '#DC2626' : GREEN }}>
+                      {formatMoney(zoho.data.totals.balance)}</strong></span>
+                  </div>
+                  <p className="text-[11px] pt-2" style={{ color: MUTED }}>
+                    Click an invoice number to open its PDF. These are the tenant&apos;s Zoho Books invoices across all their
+                    contracts, not only this one — Zoho is the source of truth, so edit them there.
+                  </p>
+                </>
               )}
-
-              {/* Inline edit */}
-              {inv && editingThis && (
-                <div className="px-4 pb-3 space-y-2 rounded-b-xl" style={{ background: `${PURPLE}05` }}>
-                  <div className="pt-2"><ItemEditor items={editItems} onChange={setEditItems} /></div>
-                  <div className="flex items-center justify-between">
-                    <Field label="Due date">
-                      <Input type="date" value={editDue} onChange={(e) => setEditDue(e.target.value)} className="h-8 text-xs w-40" />
-                    </Field>
-                    <span className="text-xs font-bold" style={{ color: INK }}>Total {formatMoney(editTotal)} AED</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => save.mutate(inv)} disabled={save.isPending}
-                      className="px-4 py-2 rounded-xl text-xs font-semibold text-white disabled:opacity-50 cursor-pointer" style={{ background: PURPLE }}>
-                      {save.isPending ? 'Saving…' : 'Save changes'}
-                    </button>
-                    <button type="button" onClick={() => { setEditId(''); editingInvRef.current = null }} className="text-[11px] font-medium hover:underline cursor-pointer" style={{ color: MUTED }}>Cancel</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )
-        })}
+            </>
+          )}
+        </div>
       </div>
-
-      {/* Invoices outside the monthly plan (custom / one-off) */}
-      {sorted.some((inv) => !periodPlan.some((p) => p.invoice?._id === inv._id)) && (
-        <p className="text-xs font-bold uppercase tracking-wider pt-1" style={{ color: MUTED }}>Other invoices</p>
+      {/* Invoices raised inside PurpleBox — kept for one-offs and older records */}
+      {sorted.length > 0 && (
+        <p className="text-xs font-bold uppercase tracking-wider pt-1" style={{ color: MUTED }}>PurpleBox invoices</p>
       )}
-      {sorted.filter((inv) => !periodPlan.some((p) => p.invoice?._id === inv._id)).map((inv) => {
+      {sorted.map((inv) => {
         const isEditing = editId === inv._id
         const canEdit = Number(inv.paymentMade || 0) === 0 && inv.status !== 'paid'
         return (
@@ -2590,11 +2478,11 @@ export default function NewQuote() {
             {/* ── Step 5: Invoice ── */}
             {step === 4 && (
               <div className="space-y-5">
-                <SectionTitle title="Invoices" subtitle="One row per rental month — create, send and collect each in a single click" />
+                <SectionTitle title="Invoices" subtitle="Invoices are raised in Zoho Books — this shows what is already billed to this tenant" />
 
                 {!contract ? (
                   <div className="text-sm text-center py-8 rounded-xl" style={{ background: CHIP_BG, color: MUTED }}>
-                    Create the contract first — the first invoice is generated automatically.
+                    Create the contract first, then raise its invoice in Zoho Books.
                   </div>
                 ) : (
                   <InvoiceStep
