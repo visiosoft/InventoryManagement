@@ -546,22 +546,19 @@ export default function Units() {
             Units free for a chosen window — contracts, tenancies and sent quotes all counted.
           </p>
         </div>
-        {/* Search and the AI ask live up here: they are how you start, so they
-            should not be buried at the end of the filter row. */}
-        <div className="flex flex-wrap items-center gap-2 sm:justify-end" style={{ flexShrink: 0 }}>
-          <span style={{ height: 40, borderRadius: 10, border: `1px solid ${LINE}`, background: PAGE, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 12px' }}>
-            <Search size={14} color={MUTED} />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search unit / size…"
-              style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 13, width: 150, color: INK }}
-            />
-          </span>
+        {/* The phrase box sits up here — it is how you start. The unit search
+            stays down with the other filters, where it belongs. */}
+        <div className="flex flex-wrap items-center gap-2" style={{ flexShrink: 0 }}>
+          <input
+            value={phrase}
+            onChange={(e) => setPhrase(e.target.value)}
+            placeholder='e.g. "a small unit on F2 for 3 weeks from 1 Oct"'
+            style={{ height: 40, borderRadius: 10, border: `1px solid ${LINE}`, background: PAGE, padding: '0 12px', fontSize: 13, color: INK, minWidth: 300, flex: '1 1 300px' }}
+          />
           <button
             type="button"
-            onClick={() => setAskOpen((o) => !o)}
-            style={{ height: 40, borderRadius: 999, background: '#fff', border: `1px solid ${PURPLE}`, color: PURPLE, fontSize: 13, fontWeight: 600, padding: '0 16px' }}
+            onClick={() => setAskOpen(true)}
+            style={{ height: 40, borderRadius: 999, background: '#fff', border: `1px solid ${PURPLE}`, color: PURPLE, fontSize: 13, fontWeight: 600, padding: '0 16px', flexShrink: 0 }}
             className="flex items-center gap-1.5 hover:bg-violet-50 transition"
           >
             <Sparkles size={15} /> Ask PurpleBox AI
@@ -600,6 +597,14 @@ export default function Units() {
               {['available', 'occupied', 'reserved', 'maintenance'].map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
             </select>
           </Control>
+          <Control label="Unit number">
+            <span style={{ ...controlStyle, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 10px' }}>
+              <Search size={14} color={MUTED} />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search unit / size…"
+                style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 13, width: 130, color: INK }} />
+            </span>
+          </Control>
+
           <button
             type="button"
             onClick={() => { setOnlyFree(true); availability.refetch() }}

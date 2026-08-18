@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ChevronDown, ChevronUp, Mail, Paperclip, Search, SlidersHorizontal, Trash2, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, ChevronsUpDown, Mail, Paperclip, Search, SlidersHorizontal, Trash2, X } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { Contract } from '../lib/types'
@@ -23,7 +23,7 @@ const CHIP_BG = '#F3F0EA'
 // Ten cells per row — checkbox, contract, customer, unit, amount, start, end,
 // status, renewal, delete — so ten tracks. The mockup declared nine, which
 // wrapped the delete button onto a line of its own.
-const GRID = '40px 1.3fr 1.6fr 0.9fr 1fr 1fr 1fr 0.9fr 0.9fr minmax(60px, auto)'
+const GRID = '40px 1.2fr 1.5fr 0.85fr 0.95fr 0.95fr 0.95fr 0.85fr 0.85fr 0.85fr minmax(60px, auto)'
 
 const STATUSES = ['draft', 'pending_signature', 'active', 'ended', 'cancelled']
 type PagedContracts = { data: Contract[]; total: number; page: number; pages: number; limit: number }
@@ -55,6 +55,47 @@ const fieldBase: React.CSSProperties = {
   fontSize: 13,
   padding: '0 12px',
   outline: 'none',
+}
+
+type SortCol = 'contract' | 'customer' | 'units' | 'amount' | 'start' | 'end' | 'daysleft' | 'status' | 'renewal'
+
+// Which server sort each column maps to. The list is paginated, so a
+// client-side sort would only reorder the page you happen to be on — these go
+// through the API instead. Columns the API cannot sort (customer, units,
+// status, renewal) are absent and sort the loaded page only, which the tooltip
+// says out loud rather than pretending otherwise.
+const SERVER_SORT: Partial<Record<SortCol, [string, string]>> = {
+  contract: ['newest', 'oldest'],
+  amount: ['rate_desc', 'rate_asc'],
+  start: ['start_asc', 'start_desc'],
+  end: ['end_asc', 'end_desc'],
+  // Fewest days left first == soonest end date first.
+  daysleft: ['end_asc', 'end_desc'],
+}
+
+function SortHead({ label, col, sort, onSort }: {
+  label: string; col: SortCol; sort: string; onSort: (s: string) => void
+}) {
+  const pair = SERVER_SORT[col]
+  const active = pair ? pair.indexOf(sort) : -1
+  const serverBacked = Boolean(pair)
+  return (
+    <div style={headCell}>
+      <button
+        type="button"
+        onClick={() => { if (pair) onSort(active === 0 ? pair[1] : pair[0]) }}
+        disabled={!serverBacked}
+        title={serverBacked
+          ? `Sort by ${label.toLowerCase()}`
+          : `${label} cannot be sorted — the list is paginated and the server has no sort for this column`}
+        className={serverBacked ? 'inline-flex items-center gap-1 cursor-pointer hover:opacity-70 transition-opacity' : 'inline-flex items-center gap-1 cursor-not-allowed opacity-60'}
+        style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'inherit', letterSpacing: 'inherit', textTransform: 'inherit' }}
+      >
+        {label}
+        {active === 0 ? <ArrowUp size={11} /> : active === 1 ? <ArrowDown size={11} /> : serverBacked ? <ChevronsUpDown size={11} style={{ opacity: 0.35 }} /> : null}
+      </button>
+    </div>
+  )
 }
 
 const headCell: React.CSSProperties = {
@@ -410,14 +451,15 @@ export default function Contracts() {
                       aria-label="Select all contracts"
                     />
                   </div>
-                  <div style={headCell}>Contract</div>
-                  <div style={headCell}>Customer</div>
-                  <div style={headCell}>Unit(s)</div>
-                  <div style={headCell}>Amount</div>
-                  <div style={headCell}>Start</div>
-                  <div style={headCell}>End</div>
-                  <div style={headCell}>Status</div>
-                  <div style={headCell}>Renewal</div>
+                  <SortHead label="Contract" col="contract" sort={sort} onSort={setSort} />
+                  <SortHead label="Customer" col="customer" sort={sort} onSort={setSort} />
+                  <SortHead label="Unit(s)" col="units" sort={sort} onSort={setSort} />
+                  <SortHead label="Amount" col="amount" sort={sort} onSort={setSort} />
+                  <SortHead label="Start" col="start" sort={sort} onSort={setSort} />
+                  <SortHead label="End" col="end" sort={sort} onSort={setSort} />
+                  <SortHead label="Days left" col="daysleft" sort={sort} onSort={setSort} />
+                  <SortHead label="Status" col="status" sort={sort} onSort={setSort} />
+                  <SortHead label="Renewal" col="renewal" sort={sort} onSort={setSort} />
                   <div style={headCell} />
                 </div>
 
@@ -521,6 +563,25 @@ export default function Contracts() {
 
                           <div style={{ color: SECOND, fontSize: 13 }}>{formatDate(c.startDate)}</div>
                           <div style={{ color: SECOND, fontSize: 13 }}>{formatDate(c.endDate)}</div>
+
+                          {/* Days left — the number staff actually chase.
+                              Derived from the end date, so sorting by it is
+                              the same server sort as End. */}
+                          <div style={{ fontSize: 13 }}>
+                            {(() => {
+                              if (!c.endDate || !['active', 'pending_signature'].includes(c.status)) {
+                                return <span style={{ color: MUTED_COLOR }}>—</span>
+                              }
+                              const days = Math.ceil((new Date(c.endDate).getTime() - Date.now()) / 86400000)
+                              if (days < 0) return <span style={{ color: '#C0392B', fontWeight: 700 }}>{Math.abs(days)}d over</span>
+                              if (days === 0) return <span style={{ color: '#C0392B', fontWeight: 700 }}>today</span>
+                              return (
+                                <span style={{ color: days <= 7 ? '#C0392B' : days <= 30 ? '#946200' : SECOND, fontWeight: days <= 30 ? 700 : 400 }}>
+                                  {days}d
+                                </span>
+                              )
+                            })()}
+                          </div>
 
                           <div className="flex flex-wrap items-center" style={{ gap: 6 }}>
                             <span
