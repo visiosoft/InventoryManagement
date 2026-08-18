@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { AlertTriangle, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Download, FileText, FilePlus, Mail, MessageSquare, PenLine, Pin, Plus, ShieldCheck, Trash2, Upload, X, XCircle } from 'lucide-react'
+import { AlertTriangle, CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Download, FileText, FilePlus, Mail, MessageSquare, PenLine, Pin, Plus, ShieldCheck, Trash2, Upload, X, XCircle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { AppDocument, Contract, Invoice, Payment, Unit, UnitLine } from '../lib/types'
@@ -955,6 +955,45 @@ export default function ContractDetail() {
     queryFn: () => api.get(`/contracts/${id}`).then((r) => r.data),
   })
 
+  // Step to the next/previous unit's contract without going back to the list.
+  // Ordered by unit number the same way the Units page orders them, and only
+  // units that actually have an active contract are stops — landing on a unit
+  // with no contract would have nothing to show.
+  const { data: unitsForNav = [] } = useQuery<{ _id: string; unitNumber: string; floor: string }[]>({
+    queryKey: ['units'],
+    queryFn: () => api.get('/units').then((r) => r.data),
+    staleTime: 5 * 60_000,
+  })
+  const { data: activeByUnit = {} } = useQuery<Record<string, { contractId: string; contractNo: string; customerName: string }[]>>({
+    queryKey: ['unit-active-contracts'],
+    queryFn: () => api.get('/units/active-contracts').then((r) => r.data?.byUnit ?? {}),
+    staleTime: 60_000,
+  })
+
+  const unitStops = useMemo(() => {
+    // Natural order: F1-9 before F1-10, which a plain string sort gets wrong.
+    const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
+    return [...unitsForNav]
+      .filter((u) => (activeByUnit[u._id] ?? []).length > 0)
+      .sort((a, b) => collator.compare(a.floor || '', b.floor || '') || collator.compare(a.unitNumber || '', b.unitNumber || ''))
+  }, [unitsForNav, activeByUnit])
+
+  const navContract = data?.contract
+  const navStop = useMemo(() => {
+    if (!unitStops.length || !navContract) return { prev: null, next: null, position: '' }
+    // Find this contract's unit among the stops, by contract id rather than by
+    // unit — a shared unit has several contracts and only one of them is open.
+    const here = unitStops.findIndex((u) => (activeByUnit[u._id] ?? []).some((x) => x.contractId === navContract._id))
+    if (here === -1) return { prev: null, next: null, position: '' }
+    const at = (i: number) => {
+      const u = unitStops[i]
+      if (!u) return null
+      const list = activeByUnit[u._id] ?? []
+      return list.length ? { unitNumber: u.unitNumber, contractId: list[0].contractId, customerName: list[0].customerName, more: list.length - 1 } : null
+    }
+    return { prev: at(here - 1), next: at(here + 1), position: `${here + 1} of ${unitStops.length}` }
+  }, [unitStops, activeByUnit, navContract])
+
   // Zoho Books invoices for this tenant. A 501 means Zoho isn't connected,
   // which is a normal state to render rather than an error worth retrying.
   // Keyed on the customer, not the contract: the same person's Zoho invoices
@@ -1334,10 +1373,37 @@ export default function ContractDetail() {
 
   return (
     <div>
-      {/* Back button */}
-      <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 mb-4 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer">
-        <span className="text-lg leading-none">←</span> Back
-      </button>
+      {/* Back, plus unit-to-unit stepping so a walk-through doesn't need a
+          round trip via the list for every unit. */}
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer">
+          <span className="text-lg leading-none">←</span> Back
+        </button>
+
+        {navStop.position && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground mr-1 hidden sm:inline">Unit {navStop.position}</span>
+            <button
+              type="button"
+              disabled={!navStop.prev}
+              onClick={() => navStop.prev && navigate(`/contracts/${navStop.prev.contractId}`)}
+              title={navStop.prev ? `Previous unit · ${navStop.prev.unitNumber} — ${navStop.prev.customerName}` : 'This is the first unit'}
+              className="flex items-center gap-1 px-3 py-2 rounded-lg border text-sm font-medium hover:bg-muted transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+              <ChevronLeft size={15} />
+              <span className="hidden sm:inline">{navStop.prev?.unitNumber ?? 'Prev'}</span>
+            </button>
+            <button
+              type="button"
+              disabled={!navStop.next}
+              onClick={() => navStop.next && navigate(`/contracts/${navStop.next.contractId}`)}
+              title={navStop.next ? `Next unit · ${navStop.next.unitNumber} — ${navStop.next.customerName}` : 'This is the last unit'}
+              className="flex items-center gap-1 px-3 py-2 rounded-lg border text-sm font-medium hover:bg-muted transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+              <span className="hidden sm:inline">{navStop.next?.unitNumber ?? 'Next'}</span>
+              <ChevronRight size={15} />
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Title + actions */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
