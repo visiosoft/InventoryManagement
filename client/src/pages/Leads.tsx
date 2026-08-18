@@ -1091,9 +1091,12 @@ export default function Leads() {
         }
     })
 
+    // No outer padding or width cap here: the app layout already gutters every
+    // page with p-3 sm:p-4, and 32px on top of a 1240px cap left most of a wide
+    // screen empty.
     return (
-        <div style={{ minHeight: '100vh', padding: '36px 32px 64px', background: '#FBF8F2', fontFamily: "'Roboto', sans-serif" }}>
-            <div style={{ maxWidth: 1240, margin: '0 auto' }}>
+        <div style={{ minHeight: '100vh', paddingBottom: 24, background: '#FBF8F2', fontFamily: "'Roboto', sans-serif" }}>
+            <div>
 
                 {/* ── Card wrapper ── */}
                 <div style={{ background: '#fff', border: '1px solid rgba(20,8,31,.10)', borderRadius: 22, boxShadow: '0 8px 24px rgba(20,8,31,.05)', padding: '24px 24px 0' }}>
