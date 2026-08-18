@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { isValidObjectId } from 'mongoose';
 import { Customer, Contract, Document, Payment, Invoice, Unit, Quote } from '../models/index.js';
+import { syncUnitStatus } from '../utils/unitStatus.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { phoneClauses } from '../utils/phoneSearch.js';
 import { mailConfigured, mailFromAddress, sendMail } from '../services/mail.js';
@@ -8,14 +9,6 @@ import { zohoBooksConfigured, findZohoContactsFor, fetchZohoInvoicesForContacts,
 
 const router = Router();
 
-async function syncUnitStatus(unitId) {
-  if (!unitId) return;
-  const unit = await Unit.findById(unitId);
-  if (!unit) return;
-  const active = await Contract.findOne({ $or: [{ unit: unitId }, { units: unitId }], status: 'active' });
-  unit.status = active ? 'rented' : 'available';
-  await unit.save();
-}
 
 async function deleteCustomerCascade(customerId) {
   const contracts = await Contract.find({ customer: customerId });

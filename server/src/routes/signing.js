@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { Contract, Unit, Document, Payment } from '../models/index.js';
+import { syncUnitStatus } from '../utils/unitStatus.js';
 import { uploadFile } from '../services/drive.js';
 import { buildContractPdf, buildSignedContractPdf } from '../services/contractDocument.js';
 
@@ -17,24 +18,6 @@ async function findByToken(token) {
   return { contract };
 }
 
-async function syncUnitStatus(unitId) {
-  const active = await Contract.findOne({ unit: unitId, status: 'active' }).select('_id');
-  if (active) {
-    await Unit.findByIdAndUpdate(unitId, { status: 'occupied' });
-    return;
-  }
-  const upcoming = await Contract.findOne({
-    unit: unitId,
-    status: { $in: ['draft', 'pending_signature'] },
-  })
-    .sort({ startDate: 1 })
-    .select('_id');
-  if (upcoming) {
-    await Unit.findByIdAndUpdate(unitId, { status: 'reserved' });
-    return;
-  }
-  await Unit.findByIdAndUpdate(unitId, { status: 'available' });
-}
 
 // GET /api/sign/:token — contract info for the signing page
 router.get('/:token', async (req, res) => {

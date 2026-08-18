@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import { Contract, Customer, Invoice, Lead, Payment, Quote, Unit, nextQuoteNo, nextContractNo, nextInvoiceNo } from '../models/index.js';
+import { syncUnitStatus } from '../utils/unitStatus.js';
 import { renderQuotePdf } from '../services/quotePdf.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { archivePdf } from '../utils/archivePdf.js';
@@ -652,15 +653,6 @@ router.post('/:id/rebuild-invoice', async (req, res) => {
 });
 
 // Mirrors syncUnitStatus in contracts.js for units touched by a conversion.
-async function syncUnitStatus(unitId) {
-    const active = await Contract.findOne({ unit: unitId, status: 'active' }).select('_id');
-    if (active) return Unit.findByIdAndUpdate(unitId, { status: 'occupied' });
-    const upcoming = await Contract.findOne({
-        unit: unitId,
-        status: { $in: ['draft', 'pending_signature'] },
-    }).select('_id');
-    return Unit.findByIdAndUpdate(unitId, { status: upcoming ? 'reserved' : 'available' });
-}
 
 // Convert an accepted quote into a draft contract, auto-populating all terms.
 router.post('/:id/convert-to-contract', async (req, res) => {

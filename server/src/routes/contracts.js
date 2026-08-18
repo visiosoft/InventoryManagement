@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { isValidObjectId, Types } from 'mongoose';
 import { stampSignature } from '../services/stampSignature.js';
 import { Contract, Customer, Unit, Payment, Document, Invoice, Quote, AgreementTemplate, nextContractNo, nextInvoiceNo } from '../models/index.js';
+import { syncUnitStatus } from '../utils/unitStatus.js';
 import { sendForSignature, downloadSignedPdf, zohoConfigured } from '../services/zoho.js';
 import { uploadFile } from '../services/drive.js';
 import { mergeAgreementText, renderAgreementTextPdf, renderAgreementHtmlPdf, looksLikeHtml } from '../services/agreementText.js';
@@ -40,24 +41,6 @@ async function findOverlappingUnitContract({ unit, startDate, endDate, excludeId
   );
 }
 
-async function syncUnitStatus(unitId) {
-  const active = await Contract.findOne({ unit: unitId, status: 'active' }).select('_id');
-  if (active) {
-    await Unit.findByIdAndUpdate(unitId, { status: 'occupied' });
-    return;
-  }
-  const upcoming = await Contract.findOne({
-    unit: unitId,
-    status: { $in: ['draft', 'pending_signature'] },
-  })
-    .sort({ startDate: 1 })
-    .select('_id startDate');
-  if (upcoming) {
-    await Unit.findByIdAndUpdate(unitId, { status: 'reserved' });
-    return;
-  }
-  await Unit.findByIdAndUpdate(unitId, { status: 'available' });
-}
 
 async function deleteContractRecord(contract) {
   if (contract.status === 'active') {
