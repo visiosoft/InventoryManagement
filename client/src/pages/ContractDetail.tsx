@@ -971,11 +971,26 @@ export default function ContractDetail() {
   })
 
   const unitStops = useMemo(() => {
-    // Natural order: F1-9 before F1-10, which a plain string sort gets wrong.
-    const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
+    // Unit numbers are stored inconsistently — "F1-36" and "F1 - 36" both
+    // occur — so sort on the parsed prefix and trailing number rather than the
+    // raw text. Sorting the text directly puts every spaced name first,
+    // because a space sorts before a hyphen.
+    const key = (unitNumber: string, floor: string) => {
+      const raw = (unitNumber || '').replace(/\s+/g, '')
+      const m = raw.match(/^(.*?)(\d+)$/)
+      return {
+        floor: (floor || '').replace(/\s+/g, '').toUpperCase(),
+        prefix: (m?.[1] ?? raw).toUpperCase().replace(/[-_]+$/, ''),
+        num: m ? Number(m[2]) : Number.MAX_SAFE_INTEGER,
+      }
+    }
     return [...unitsForNav]
       .filter((u) => (activeByUnit[u._id] ?? []).length > 0)
-      .sort((a, b) => collator.compare(a.floor || '', b.floor || '') || collator.compare(a.unitNumber || '', b.unitNumber || ''))
+      .sort((a, b) => {
+        const ka = key(a.unitNumber, a.floor)
+        const kb = key(b.unitNumber, b.floor)
+        return ka.floor.localeCompare(kb.floor) || ka.prefix.localeCompare(kb.prefix) || ka.num - kb.num
+      })
   }, [unitsForNav, activeByUnit])
 
   const navContract = data?.contract
