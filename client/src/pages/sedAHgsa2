@@ -299,7 +299,7 @@ const controlStyle = {
   padding: '0 10px', fontSize: 13, color: INK, outline: 'none', fontFamily: FONT,
 } as const
 
-function Control({ label, children }: { label: string; children: React.ReactNode }) {
+function Control({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label style={{ display: 'block' }}>
       <span style={labelStyle}>{label}</span>

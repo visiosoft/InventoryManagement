@@ -11,6 +11,7 @@ import { whatsappConfigured, whatsappMissing, verifyWebhookChallenge, verifyWhat
 import { getWhatsAppLabelSyncStatus, processWhatsAppWebhookPayload, runWhatsAppLabelReconciliation } from '../services/whatsappLeadSync.js';
 import { stripeConfigured, stripeWebhookConfigured, verifyStripeKey } from '../services/stripe.js';
 import { updateEnvFile } from '../utils/env.js';
+import { openaiConfigured, openaiModel, openaiKeyHint, verifyOpenAIKey, parseAvailabilityQuery } from '../services/openai.js';
 
 const router = Router();
 
@@ -25,6 +26,8 @@ router.get('/status', (_req, res) => {
                 : '',
         },
         gmail: { configured: gmailConfigured() },
+        // The key itself is never sent to the client — only a masked hint.
+        openai: { configured: openaiConfigured(), model: openaiModel(), keyHint: openaiKeyHint() },
         // Deep link into Zoho Books' own invoice composer, so staff who raise
         // invoices there can jump straight to it. Data-centre specific, hence
         // the env override.
@@ -80,6 +83,62 @@ router.post('/stripe/disconnect', requireAdmin, async (_req, res) => {
 // Save (and validate) WhatsApp Cloud API credentials, so the number can be
 // switched between the Meta test number and the real business number without
 // server access. Same shape as the Stripe flow above.
+// Save or rotate the OpenAI key and model. Rotating is the same call with a
+// new key: it is validated before anything is written, so a bad paste cannot
+// knock the working key out.
+router.post('/openai/connect', requireAdmin, async (req, res) => {
+    const apiKey = String(req.body?.apiKey || '').trim();
+    const model = String(req.body?.model || '').trim();
+    if (!apiKey && !model) return res.status(400).json({ error: 'Nothing to save' });
+
+    const effectiveKey = apiKey || process.env.OPENAI_API_KEY;
+    if (!effectiveKey) return res.status(400).json({ error: 'An API key is required' });
+    const effectiveModel = model || openaiModel();
+
+    try {
+        await verifyOpenAIKey(effectiveKey, effectiveModel);
+    } catch (e) {
+        const msg = e.response?.status === 401
+            ? 'OpenAI rejected that key'
+            : e.response?.data?.error?.message || e.message;
+        return res.status(400).json({ error: msg });
+    }
+
+    const updates = {};
+    if (apiKey) updates.OPENAI_API_KEY = effectiveKey;
+    if (model) updates.OPENAI_MODEL = effectiveModel;
+    updateEnvFile(updates);
+    Object.assign(process.env, updates);
+
+    res.json({ ok: true, configured: true, model: openaiModel(), keyHint: openaiKeyHint() });
+});
+
+router.post('/openai/disconnect', requireAdmin, async (_req, res) => {
+    const blanks = { OPENAI_API_KEY: '' };
+    updateEnvFile(blanks);
+    Object.assign(process.env, blanks);
+    res.json({ ok: true });
+});
+
+// Turn a phrase into availability filters. Any signed-in user may call this —
+// it reads nothing and writes nothing, it only interprets text.
+router.post('/ai/parse-availability', async (req, res) => {
+    const text = String(req.body?.text || '').trim();
+    if (!text) return res.status(400).json({ error: 'Nothing to interpret' });
+    if (!openaiConfigured()) return res.status(501).json({ error: 'OpenAI is not configured' });
+
+    const floors = Array.isArray(req.body?.floors) ? req.body.floors.map(String) : [];
+    const sizes = Array.isArray(req.body?.sizes) ? req.body.sizes.map(Number).filter(Number.isFinite) : [];
+
+    try {
+        const result = await parseAvailabilityQuery(text, { floors, sizes });
+        res.json(result);
+    } catch (e) {
+        const msg = e.response?.data?.error?.message || e.message;
+        res.status(502).json({ error: `Could not reach OpenAI: ${msg}` });
+    }
+});
+
 router.post('/whatsapp/connect', requireAdmin, async (req, res) => {
     const { phoneNumberId, accessToken, verifyToken, appSecret } = req.body || {};
     const updates = {};

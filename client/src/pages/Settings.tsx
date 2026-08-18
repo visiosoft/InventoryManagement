@@ -2,9 +2,9 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useLocation, useSearchParams } from 'react-router-dom'
-import { apiError, integrationApi, productApi, whatsappApi } from '../lib/api'
+import { api, apiError, integrationApi, productApi, whatsappApi } from '../lib/api'
 import type { IntegrationStatus, Product } from '../lib/types'
-import { Button, Card, CardBody, CardHeader, Field, Input, Modal, PageHeader, Table, Td, Th } from '../components/ui'
+import { Button, Card, CardBody, CardHeader, Field, Input, Modal, PageHeader, Select, Table, Td, Th } from '../components/ui'
 import { formatMoney } from '../lib/utils'
 import { useAuth } from '../lib/auth'
 import UnitPricing from './UnitPricing'
@@ -161,6 +161,11 @@ export default function Settings() {
   const [stripeWebhookSecret, setStripeWebhookSecret] = useState('')
   const [stripeBusy, setStripeBusy] = useState(false)
   const [waMsg, setWaMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  // OpenAI — only used to read plain-English availability requests.
+  const [aiKey, setAiKey] = useState('')
+  const [aiModel, setAiModel] = useState('')
+  const [aiBusy, setAiBusy] = useState(false)
+  const [aiMsg, setAiMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [waPhoneNumberId, setWaPhoneNumberId] = useState('')
   const [waAccessToken, setWaAccessToken] = useState('')
   const [waVerifyToken, setWaVerifyToken] = useState('')
@@ -433,6 +438,82 @@ export default function Settings() {
               </p>
             )}
           </div>
+          <div className="rounded-lg border px-4 py-3 space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <div className="font-medium">OpenAI</div>
+                <div className="text-xs text-muted-foreground">
+                  Reads plain-English availability requests on the Units page. Availability itself stays a
+                  database query — the model only fills in the filters.
+                </div>
+              </div>
+              <span className={integrations?.openai?.configured ? 'text-xs text-emerald-600 font-medium' : 'text-xs text-amber-600 font-medium'}>
+                {integrations?.openai?.configured
+                  ? `Connected — ${integrations.openai.keyHint}`
+                  : 'Not connected'}
+              </span>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-3">
+              <Field label={integrations?.openai?.configured ? 'Replace API key (leave blank to keep)' : 'API key'}>
+                <Input type="password" placeholder="sk-..." value={aiKey} onChange={(e) => setAiKey(e.target.value)} />
+              </Field>
+              <Field label="Model">
+                <Select value={aiModel || integrations?.openai?.model || 'gpt-4o-mini'} onChange={(e) => setAiModel(e.target.value)}>
+                  <option value="gpt-4o-mini">gpt-4o-mini — cheapest, ample for this</option>
+                  <option value="gpt-4.1-mini">gpt-4.1-mini</option>
+                  <option value="gpt-4.1">gpt-4.1</option>
+                  <option value="gpt-4o">gpt-4o</option>
+                </Select>
+              </Field>
+            </div>
+
+            <div className="flex items-center gap-3 flex-wrap">
+              <Button size="sm" disabled={aiBusy || (!aiKey && !aiModel)}
+                onClick={async () => {
+                  setAiBusy(true); setAiMsg(null)
+                  try {
+                    const r = await api.post('/integrations/openai/connect', {
+                      apiKey: aiKey || undefined,
+                      model: aiModel || undefined,
+                    }).then((x: { data: { model: string; keyHint: string } }) => x.data)
+                    setAiKey('')
+                    setAiMsg({ ok: true, text: `Saved. Using ${r.model} with key ${r.keyHint}.` })
+                    qc.invalidateQueries({ queryKey: ['integrations-status'] })
+                  } catch (e) {
+                    setAiMsg({ ok: false, text: apiError(e) })
+                  } finally { setAiBusy(false) }
+                }}>
+                {aiBusy ? 'Checking…' : integrations?.openai?.configured ? 'Save / rotate key' : 'Connect'}
+              </Button>
+              {integrations?.openai?.configured && (
+                <Button size="sm" variant="outline" disabled={aiBusy}
+                  onClick={async () => {
+                    if (!confirm('Remove the OpenAI key? Plain-English search will stop working.')) return
+                    setAiBusy(true); setAiMsg(null)
+                    try {
+                      await api.post('/integrations/openai/disconnect')
+                      setAiMsg({ ok: true, text: 'Key removed.' })
+                      qc.invalidateQueries({ queryKey: ['integrations-status'] })
+                    } catch (e) {
+                      setAiMsg({ ok: false, text: apiError(e) })
+                    } finally { setAiBusy(false) }
+                  }}>
+                  Disconnect
+                </Button>
+              )}
+              <span className="text-xs text-muted-foreground">
+                The key is verified with OpenAI before it is saved, so a bad paste cannot replace a working one.
+              </span>
+            </div>
+
+            {aiMsg && (
+              <p className={`text-xs ${aiMsg.ok ? 'text-emerald-700 dark:text-emerald-400' : 'text-destructive'}`}>
+                {aiMsg.text}
+              </p>
+            )}
+          </div>
+
           <div className="rounded-lg border px-4 py-3 space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div>
