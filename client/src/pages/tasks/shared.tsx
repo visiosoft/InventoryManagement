@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useDraggable, useDroppable, DndContext, DragOverlay, PointerSensor, useSensor, useSensors, closestCorners, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core'
 import { Calendar, CheckCircle2, Circle, MessageSquare, Paperclip, Plus, Send } from 'lucide-react'
@@ -95,12 +96,29 @@ export const STATUS_PILL: Record<TaskItem['status'], { bg: string; fg: string }>
 export const COLUMN_BG = '#F6F0E4'
 export const PURPLE_PILL = { background: '#F7F3FF', color: '#4A1FA0' } as const
 
-export function TypePill({ label }: { label: string }) {
-  return (
-    <span style={{ ...PURPLE_PILL, fontSize: 10, fontWeight: 700, borderRadius: 999, padding: '2px 8px', display: 'inline-block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-      {label}
-    </span>
-  )
+export function TypePill({ label, to }: { label: string; to?: string }) {
+  const style = { ...PURPLE_PILL, fontSize: 10, fontWeight: 700, borderRadius: 999, padding: '2px 8px', display: 'inline-block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } as const
+  // A task raised against a contract links straight to it. stopPropagation
+  // because the card itself opens the task panel and is also draggable.
+  if (to) {
+    return (
+      <Link to={to} style={{ ...style, textDecoration: 'none' }}
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+        title="Open this contract">
+        {label}
+      </Link>
+    )
+  }
+  return <span style={style}>{label}</span>
+}
+
+/** Where a task's linked record lives, when it is one we can open. */
+export function taskLinkTo(task: { leadType?: string | null; leadId?: string }) {
+  if (!task.leadId) return undefined
+  if (task.leadType === 'contract') return `/contracts/${task.leadId}`
+  if (task.leadType === 'moving') return `/moving/leads/${task.leadId}`
+  return undefined
 }
 
 const AVATAR_COLORS = ['#5B2BC9', '#0891B2', '#B45309', '#166534', '#9D174D', '#1D4ED8']
@@ -161,7 +179,7 @@ export function TaskCardView({
           background: PRIORITY_DOT[task.priority] || PRIORITY_DOT.low,
         }}
       />
-      {task.leadName && <div style={{ marginBottom: 5, paddingRight: 12 }}><TypePill label={task.leadName} /></div>}
+      {task.leadName && <div style={{ marginBottom: 5, paddingRight: 12 }}><TypePill label={task.leadName} to={taskLinkTo(task)} /></div>}
       <div className="flex items-start gap-2" style={{ paddingRight: 12 }}>
         {onToggleDone && (
           <button
@@ -441,7 +459,11 @@ export function TaskDetailModal({
           {(detail.leadName || detail.createdByName) && (
             <div className="text-xs text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
               {detail.createdByName && <span>Created by {detail.createdByName}</span>}
-              {detail.leadName && <span>{detail.leadName}</span>}
+              {detail.leadName && (
+                taskLinkTo(detail)
+                  ? <Link to={taskLinkTo(detail)!} className="text-primary font-semibold hover:underline" title="Open this contract">{detail.leadName}</Link>
+                  : <span>{detail.leadName}</span>
+              )}
             </div>
           )}
           {error && <p className="text-xs text-destructive">{error}</p>}

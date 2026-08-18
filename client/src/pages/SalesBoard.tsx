@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { ChevronDown, ChevronLeft, ChevronRight, MessageCircle, Phone, Plus, UserPlus } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, ExternalLink, MessageCircle, Phone, Plus, UserPlus } from 'lucide-react'
 import { api, apiError, leadApi } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { Lead, MovingLead, MovingLeadStatus } from '../lib/types'
@@ -687,6 +687,17 @@ function RenewalsCard() {
 // visible on the inactive tab so nothing gets forgotten.
 function WorkTabs() {
   const [tab, setTab] = useState<'tasks' | 'renewals'>('tasks')
+  const { user } = useAuth()
+  // Accounts chase invoices, not renewals — that queue belongs to sales.
+  const isAccounts = user?.role === 'accounts'
+
+  const { data: integrations } = useQuery<{ zohoBooks?: { configured: boolean; newInvoiceUrl?: string } }>({
+    queryKey: ['integration-status'],
+    queryFn: () => api.get('/integrations/status').then((r) => r.data),
+    enabled: isAccounts,
+    staleTime: 10 * 60_000,
+  })
+  const zohoNewInvoiceUrl = integrations?.zohoBooks?.newInvoiceUrl
 
   // Same query keys the cards below use, so react-query serves these from
   // cache rather than issuing extra requests.
@@ -697,16 +708,18 @@ function WorkTabs() {
   const { data: contracts = [] } = useQuery<ExpiringContract[]>({
     queryKey: ['expiring-contracts'],
     queryFn: () => api.get('/contracts/expiring-soon', { params: { days: 7 } }).then((r) => r.data),
+    enabled: !isAccounts,
   })
 
   const TABS = [
     { key: 'tasks' as const, label: 'Follow-ups & Tasks', count: tasks.filter((t) => t.status !== 'done').length },
-    { key: 'renewals' as const, label: 'Renewals — 7 days', count: contracts.length },
+    ...(isAccounts ? [] : [{ key: 'renewals' as const, label: 'Renewals — 7 days', count: contracts.length }]),
   ]
 
   return (
     <div className="mb-5">
-      <div className="flex gap-1 rounded-full p-1 mb-3 w-fit" style={{ background: '#F6F0E4' }}>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+      <div className="flex gap-1 rounded-full p-1 w-fit" style={{ background: '#F6F0E4' }}>
         {TABS.map((t) => {
           const active = tab === t.key
           return (
@@ -733,7 +746,23 @@ function WorkTabs() {
           )
         })}
       </div>
-      {tab === 'tasks' ? <TasksCard /> : <RenewalsCard />}
+
+      {isAccounts && (
+        <a
+          href={zohoNewInvoiceUrl || undefined}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={zohoNewInvoiceUrl
+            ? 'Opens Zoho Books to raise a new invoice'
+            : 'Zoho Books is not connected'}
+          className={`inline-flex items-center gap-1.5 h-9 px-4 rounded-full text-[13px] font-bold text-white ${zohoNewInvoiceUrl ? 'cursor-pointer hover:opacity-90' : 'opacity-50 pointer-events-none'}`}
+          style={{ background: PURPLE, textDecoration: 'none' }}
+        >
+          <ExternalLink size={14} /> Create invoice in Zoho Books
+        </a>
+      )}
+      </div>
+      {tab === 'tasks' || isAccounts ? <TasksCard /> : <RenewalsCard />}
     </div>
   )
 }

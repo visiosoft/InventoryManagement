@@ -25,6 +25,15 @@ router.get('/status', (_req, res) => {
                 : '',
         },
         gmail: { configured: gmailConfigured() },
+        // Deep link into Zoho Books' own invoice composer, so staff who raise
+        // invoices there can jump straight to it. Data-centre specific, hence
+        // the env override.
+        zohoBooks: {
+            configured: zohoBooksConfigured(),
+            newInvoiceUrl: zohoBooksConfigured()
+                ? `${process.env.ZOHO_BOOKS_APP_BASE || 'https://books.zoho.com'}/app/${process.env.ZOHO_BOOKS_ORG_ID}#/invoices/new`
+                : '',
+        },
         // `from` is what mail actually goes out as, so the UI can show the real
         // sender rather than guessing.
         email: { configured: mailConfigured(), from: mailFromAddress() },
