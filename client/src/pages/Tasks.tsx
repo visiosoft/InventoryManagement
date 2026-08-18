@@ -263,7 +263,10 @@ function CreateTaskPanel({ onClose, assignableUsers, defaultStatus }: { onClose:
   )
 }
 
-export default function Tasks() {
+// `embedded` drops the page title when rendered inside another page's tab
+// (the Dashboard), where a second "Tasks" heading under the Tasks tab just
+// repeats itself. The controls still render.
+export default function Tasks({ embedded = false }: { embedded?: boolean } = {}) {
   const { user } = useAuth()
   const qc = useQueryClient()
   const isAdmin = user?.role === 'admin' || user?.role === 'staff'
@@ -302,7 +305,7 @@ export default function Tasks() {
   return (
     <div>
       <PageHeader
-        title="Tasks"
+        title={embedded ? '' : 'Tasks'}
         subtitle={isAdmin ? 'All tasks across the team' : 'Tasks assigned to you, and tasks you handed off'}
         action={
           <div className="flex items-center gap-2">

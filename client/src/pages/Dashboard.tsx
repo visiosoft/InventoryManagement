@@ -4,9 +4,11 @@ import { Link } from 'react-router-dom'
 import { GripVertical, X } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { api, apiError } from '../lib/api'
+import { useAuth } from '../lib/auth'
 import type { Summary } from '../lib/types'
 import { Spinner, EmptyState, Table, Th, Td, Button } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
+import TasksPage from './Tasks'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
 const INK = '#14081F'
@@ -49,6 +51,35 @@ function safeLoadLayout() {
   }
 }
 
+type DashTab = 'overview' | 'tasks'
+
+function DashboardTabs({ tab, setTab }: { tab: DashTab; setTab: (t: DashTab) => void }) {
+  const TABS: { value: DashTab; label: string }[] = [
+    { value: 'overview', label: 'Overview' },
+    { value: 'tasks', label: 'Tasks' },
+  ]
+  return (
+    <div className="flex gap-1 rounded-full p-1 mb-5 w-fit" style={{ background: '#F6F0E4' }}>
+      {TABS.map((t) => {
+        const active = tab === t.value
+        return (
+          <button
+            key={t.value}
+            type="button"
+            onClick={() => setTab(t.value)}
+            className="px-4 py-1.5 rounded-full text-[13px] font-semibold cursor-pointer transition-colors"
+            style={active
+              ? { background: 'white', color: INK, boxShadow: '0 1px 2px rgba(20,8,31,.10)' }
+              : { background: 'transparent', color: MUTED_CLR }}
+          >
+            {t.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function WidgetShell({
   title,
   subtitle,
@@ -89,6 +120,11 @@ function WidgetShell({
 }
 
 export default function Dashboard() {
+  const { user } = useAuth()
+  // Tasks is an admin/sales-rep tool and the server blocks staff outright, so
+  // don't offer a tab that would only 403.
+  const showTasksTab = user?.role === 'admin' || user?.role === 'sales_rep'
+  const [tab, setTab] = useState<DashTab>('overview')
   const [layout, setLayout] = useState<WidgetId[]>(() => safeLoadLayout())
   const [dragged, setDragged] = useState<WidgetId | null>(null)
   const [movePanel, setMovePanel] = useState<'in' | 'out' | 'available' | null>(null)
@@ -414,6 +450,18 @@ export default function Dashboard() {
   )
 
   // Early returns come AFTER all hooks so hook call order is always stable
+
+  // Tasks lives above the data guards: a failing /reports/summary shouldn't
+  // take the task board down with it.
+  if (showTasksTab && tab === 'tasks') {
+    return (
+      <div style={{ background: '#FBF8F2', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+        <DashboardTabs tab={tab} setTab={setTab} />
+        <TasksPage embedded />
+      </div>
+    )
+  }
+
   if (isLoading) return <Spinner />
   if (isError || !data) {
     return (
@@ -439,6 +487,8 @@ export default function Dashboard() {
 
   return (
     <div style={{ background: '#FBF8F2', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+
+      {showTasksTab && <DashboardTabs tab={tab} setTab={setTab} />}
 
       {draftInvoices > 0 && (
         <Link
