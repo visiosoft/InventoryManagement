@@ -1,12 +1,12 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { LayoutGrid, List, Plus, Search } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronsUpDown, LayoutGrid, List, Plus, Search } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useSite, unitInSite, type Site } from '../lib/site'
 import type { Unit, Contract } from '../lib/types'
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Table, Td, Th, Textarea, statusLabel, unitStatusTone } from '../components/ui'
-import { cn, formatDate, formatMoney } from '../lib/utils'
+import { cn, compareUnitNumbers, formatDate, formatMoney } from '../lib/utils'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
 const INK = '#14081F'
@@ -124,6 +124,15 @@ export default function Units() {
   const [sizeFilter, setSizeFilter] = useState('')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Unit | null>(null)
+  // Table sorting. Default is the natural unit order; clicking a header sorts
+  // by that column, clicking again reverses it.
+  type SortKey = 'unit' | 'floor' | 'size' | 'price' | 'tenant' | 'checkout' | 'status' | 'shared'
+  const [sortKey, setSortKey] = useState<SortKey>('unit')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  function toggleSort(k: SortKey) {
+    if (k === sortKey) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    else { setSortKey(k); setSortDir('asc') }
+  }
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState('')
 
@@ -174,14 +183,48 @@ export default function Units() {
             (!sizeFilter || u.sizeSqf === Number(sizeFilter)) &&
             (!search || u.unitNumber.toLowerCase().includes(search.toLowerCase()) || String(u.sizeSqf ?? '') === search)
         )
-        .sort((a, b) => {
-          const floorCmp = a.floor.localeCompare(b.floor)
-          if (floorCmp !== 0) return floorCmp
-          const norm = (s: string) => s.replace(/\s+/g, '')
-          return norm(a.unitNumber).localeCompare(norm(b.unitNumber), undefined, { numeric: true })
-        }),
+        .sort(compareUnitNumbers),
     [units, statusFilter, floorFilter, sizeFilter, search]
   )
+
+  // Sorted view for the table. The card view keeps the natural unit order,
+  // since it is grouped by floor and has no headers to sort by.
+  const sortedRows = useMemo(() => {
+    // Tenant and check-out come from the active contracts, so a unit with
+    // none has no value to sort on; those sort last in both directions rather
+    // than jumping to the top on a descending sort.
+    const firstContract = (u: Unit) => (activeByUnit[u._id] ?? [])[0]
+    const dir = sortDir === 'asc' ? 1 : -1
+    const text = (v?: string | null) => (v ?? '').toLowerCase()
+
+    const cmp = (a: Unit, b: Unit): number => {
+      switch (sortKey) {
+        case 'floor': return text(a.floor).localeCompare(text(b.floor)) || compareUnitNumbers(a, b)
+        case 'size': return (a.sizeSqf ?? -1) - (b.sizeSqf ?? -1)
+        case 'price': return (a.price ?? -1) - (b.price ?? -1)
+        case 'status': return text(a.status).localeCompare(text(b.status))
+        case 'shared': return Number(Boolean(a.shared)) - Number(Boolean(b.shared))
+        case 'tenant': {
+          const ta = text(firstContract(a)?.customerName)
+          const tb = text(firstContract(b)?.customerName)
+          if (!ta && !tb) return 0
+          if (!ta) return 1 * dir   // cancels the dir applied below: always last
+          if (!tb) return -1 * dir
+          return ta.localeCompare(tb)
+        }
+        case 'checkout': {
+          const da = firstContract(a)?.endDate
+          const db = firstContract(b)?.endDate
+          if (!da && !db) return 0
+          if (!da) return 1 * dir
+          if (!db) return -1 * dir
+          return new Date(da).getTime() - new Date(db).getTime()
+        }
+        default: return compareUnitNumbers(a, b)
+      }
+    }
+    return [...filtered].sort((a, b) => cmp(a, b) * dir || compareUnitNumbers(a, b))
+  }, [filtered, sortKey, sortDir, activeByUnit])
 
   const grouped = useMemo(() => {
     const map = new Map<string, Unit[]>()
@@ -337,14 +380,32 @@ export default function Units() {
       ) : (
         <Card>
           <Table>
-            <thead><tr><Th>Unit</Th><Th>Floor</Th><Th>Size</Th><Th>L × W (ft)</Th><Th>4wk (AED)</Th><Th>Tenant</Th><Th>Check out</Th><Th>Status</Th><Th>Shared</Th><Th>Notes</Th></tr></thead>
+            <thead>
+              <tr>
+                {([
+                  ['unit', 'Unit'], ['floor', 'Floor'], ['size', 'Size'], ['price', '4wk (AED)'],
+                  ['tenant', 'Tenant'], ['checkout', 'Check out'], ['status', 'Status'], ['shared', 'Shared'],
+                ] as [SortKey, string][]).map(([k, label]) => (
+                  <Th key={k}>
+                    <button type="button" onClick={() => toggleSort(k)}
+                      className="inline-flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors"
+                      title={`Sort by ${label}`}>
+                      {label}
+                      {sortKey === k
+                        ? (sortDir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />)
+                        : <ChevronsUpDown size={11} className="opacity-30" />}
+                    </button>
+                  </Th>
+                ))}
+                <Th>Notes</Th>
+              </tr>
+            </thead>
             <tbody>
-              {filtered.map((u) => (
+              {sortedRows.map((u) => (
                 <tr key={u._id} className="hover:bg-muted/50 cursor-pointer" onClick={() => setSelected(u)}>
                   <Td className="font-medium">{u.unitNumber}</Td>
                   <Td>{u.floor}</Td>
                   <Td>{u.sizeSqf != null ? `${u.sizeSqf} sq ft` : '—'}</Td>
-                  <Td>{u.lengthFt && u.widthFt ? `${u.lengthFt} × ${u.widthFt}` : '—'}</Td>
                   <Td>{u.price != null ? formatMoney(u.price) : '—'}</Td>
                   <Td>
                     {(activeByUnit[u._id] ?? []).length === 0 ? (
@@ -379,7 +440,7 @@ export default function Units() {
               ))}
             </tbody>
           </Table>
-          {filtered.length === 0 && <EmptyState message="No units match the filters." />}
+          {sortedRows.length === 0 && <EmptyState message="No units match the filters." />}
         </Card>
       )}
 

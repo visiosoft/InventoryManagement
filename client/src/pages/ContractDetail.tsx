@@ -11,7 +11,7 @@ import {
   Textarea,
   contractStatusTone, statusLabel,
 } from '../components/ui'
-import { formatDate, formatMoney } from '../lib/utils'
+import { compareUnitNumbers, formatDate, formatMoney } from '../lib/utils'
 import { UploadDocumentForm } from './Documents'
 import { CustomerForm } from '../components/AddCustomerModal'
 
@@ -975,22 +975,9 @@ export default function ContractDetail() {
     // occur — so sort on the parsed prefix and trailing number rather than the
     // raw text. Sorting the text directly puts every spaced name first,
     // because a space sorts before a hyphen.
-    const key = (unitNumber: string, floor: string) => {
-      const raw = (unitNumber || '').replace(/\s+/g, '')
-      const m = raw.match(/^(.*?)(\d+)$/)
-      return {
-        floor: (floor || '').replace(/\s+/g, '').toUpperCase(),
-        prefix: (m?.[1] ?? raw).toUpperCase().replace(/[-_]+$/, ''),
-        num: m ? Number(m[2]) : Number.MAX_SAFE_INTEGER,
-      }
-    }
     const sorted = [...unitsForNav]
       .filter((u) => (activeByUnit[u._id] ?? []).length > 0)
-      .sort((a, b) => {
-        const ka = key(a.unitNumber, a.floor)
-        const kb = key(b.unitNumber, b.floor)
-        return ka.floor.localeCompare(kb.floor) || ka.prefix.localeCompare(kb.prefix) || ka.num - kb.num
-      })
+      .sort(compareUnitNumbers)
 
     // A contract holding several units appears once, at its first unit in
     // order. Its later units are dropped from the sequence entirely, so
@@ -1009,20 +996,7 @@ export default function ContractDetail() {
   // The same order over ALL units, used only to name the units an arrow jumps
   // over so the skip is visible rather than silent.
   const allUnitsSorted = useMemo(() => {
-    const key = (unitNumber: string, floor: string) => {
-      const raw = (unitNumber || '').replace(/\s+/g, '')
-      const m = raw.match(/^(.*?)(\d+)$/)
-      return {
-        floor: (floor || '').replace(/\s+/g, '').toUpperCase(),
-        prefix: (m?.[1] ?? raw).toUpperCase().replace(/[-_]+$/, ''),
-        num: m ? Number(m[2]) : Number.MAX_SAFE_INTEGER,
-      }
-    }
-    return [...unitsForNav].sort((a, b) => {
-      const ka = key(a.unitNumber, a.floor)
-      const kb = key(b.unitNumber, b.floor)
-      return ka.floor.localeCompare(kb.floor) || ka.prefix.localeCompare(kb.prefix) || ka.num - kb.num
-    })
+    return [...unitsForNav].sort(compareUnitNumbers)
   }, [unitsForNav])
 
   const navContract = data?.contract
