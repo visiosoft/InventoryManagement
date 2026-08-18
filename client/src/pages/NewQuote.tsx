@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Plus, ChevronRight, ChevronLeft, Check, User, Box, FileText, Briefcase, Receipt as ReceiptIcon,
   ShieldCheck, Search, Trash2, CalendarRange, Loader2, CheckCircle2, Send, Mail, Download,
-  Upload, X, Eye, ExternalLink,
+  Upload, X, Eye, ExternalLink, ClipboardList,
 } from 'lucide-react'
 import { api, apiError, invoiceApi, quoteApi, type AvailableUnit } from '../lib/api'
 import type { AccessPerson, Customer, Invoice, Lead, Quote } from '../lib/types'
@@ -198,6 +198,7 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
   onChanged: () => void
   handleRef?: React.MutableRefObject<InvoiceStepHandle | null>
 }) {
+  const navigate = useNavigate()
   const [editId, setEditId] = useState('')
   const [editItems, setEditItems] = useState<EditItem[]>([])
   const [editDue, setEditDue] = useState('')
@@ -208,6 +209,54 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
   const [emailModal, setEmailModal] = useState<{ invoiceId: string; to: string; subject: string; body: string; pdfUrl: string } | null>(null)
   const [emailSending, setEmailSending] = useState(false)
   const [emailSent, setEmailSent] = useState('')
+
+  // Invoices are raised by the accounts team in Zoho Books, so booking hands
+  // them a task carrying the contract and its numbers rather than trying to
+  // create the invoice here.
+  const [taskOpen, setTaskOpen] = useState(false)
+  const [taskAssignee, setTaskAssignee] = useState('')
+  const [taskPriority, setTaskPriority] = useState<'low' | 'medium' | 'high'>('high')
+  const [taskDue, setTaskDue] = useState(new Date().toISOString().slice(0, 10))
+  const [taskNote, setTaskNote] = useState('')
+  const [taskDone, setTaskDone] = useState<{ id: string; to: string } | null>(null)
+
+  // /users is admin-only; /users/assignable is readable by every role, which
+  // matters because sales reps do the booking.
+  const users = useQuery<{ _id: string; name: string; email: string; role: string }[]>({
+    queryKey: ['assignable-users'],
+    queryFn: () => api.get('/users/assignable').then((r) => r.data),
+    enabled: taskOpen,
+  })
+
+  const taskSummary = [
+    `Contract: ${contract.contractNo}`,
+    `Tenant: ${customerName}`,
+    customerPhone ? `Phone: ${customerPhone}` : '',
+    customerEmail ? `Email: ${customerEmail}` : '',
+    `Period: ${dfmt(new Date(contract.startDate))} – ${dfmt(new Date(contract.endDate))}`,
+    `Monthly rate: ${formatMoney(contract.rate)} AED`,
+  ].filter(Boolean).join('\n')
+
+  const createAccountsTask = useMutation({
+    mutationFn: () => api.post('/tasks', {
+      title: `Raise invoice in Zoho Books — ${contract.contractNo}`,
+      description: [taskSummary, taskNote.trim() ? `\nNotes: ${taskNote.trim()}` : ''].join('\n'),
+      assignedTo: taskAssignee,
+      priority: taskPriority,
+      dueDate: taskDue || null,
+      leadType: 'contract',
+      leadId: contract._id,
+      leadName: contract.contractNo,
+    }).then((r) => r.data),
+    onSuccess: (t) => {
+      const to = users.data?.find((u) => u._id === taskAssignee)
+      setTaskDone({ id: t._id, to: to?.name || to?.email || 'the assignee' })
+      setTaskOpen(false)
+      setTaskNote('')
+      setErr('')
+    },
+    onError: (e) => setErr(apiError(e)),
+  })
 
   useEffect(() => { setErr('') }, [invoices.length])
 
@@ -327,7 +376,6 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
   const zohoCols = multipleZohoContacts
     ? '120px 95px 95px 90px 1fr 90px 90px'
     : '120px 95px 95px 1fr 90px 90px'
-  const newInvoiceUrl = zoho.data?.newInvoiceUrl
   const zohoStatus = (zoho.error as { response?: { status?: number } } | null)?.response?.status
   const zohoErrorMsg = (zoho.error as { response?: { data?: { error?: string } } } | null)?.response?.data?.error
 
@@ -351,19 +399,91 @@ function InvoiceStep({ contract, invoices, customerId, customerName, customerPho
           </div>
           <button
             type="button"
-            onClick={() => { if (newInvoiceUrl) window.open(newInvoiceUrl, '_blank', 'noopener') }}
-            disabled={!newInvoiceUrl}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90 cursor-pointer"
+            onClick={() => { setTaskOpen((v) => !v); setTaskDone(null) }}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white hover:opacity-90 cursor-pointer"
             style={{ background: PURPLE }}
-            title={newInvoiceUrl
-              ? 'Opens Zoho Books in a new tab to raise the invoice there'
-              : zoho.isLoading
-                ? 'Still looking up Zoho Books…'
-                : 'Zoho Books is unavailable, so a new invoice cannot be started from here'}
+            title="Assign the accounts team a task to raise this invoice in Zoho Books"
           >
-            <ExternalLink size={13} /> Create invoice in Zoho Books
+            <ClipboardList size={13} /> Create task for accounts
           </button>
         </div>
+
+        {taskDone && (
+          <div className="px-4 py-3 flex flex-wrap items-center gap-2 text-xs border-b"
+            style={{ background: '#ECFDF5', borderColor: 'rgba(20,8,31,0.08)', color: '#047857' }}>
+            <CheckCircle2 size={14} />
+            <span>Task assigned to <strong>{taskDone.to}</strong>.</span>
+            <button type="button" onClick={() => navigate('/tasks')}
+              className="underline font-semibold cursor-pointer" style={{ color: '#047857' }}>
+              Open tasks
+            </button>
+          </div>
+        )}
+
+        {taskOpen && (
+          <div className="px-4 py-3 border-b space-y-3" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
+            {/* What accounts will receive — shown so the sender can see the
+                contract details are actually attached, not just promised. */}
+            <div className="rounded-lg px-3 py-2 text-[11.5px] whitespace-pre-wrap"
+              style={{ background: CHIP_BG, color: MUTED }}>
+              <span className="font-bold" style={{ color: PURPLE }}>Raise invoice in Zoho Books — {contract.contractNo}</span>
+              {'\n'}{taskSummary}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <label className="text-[11px] font-semibold" style={{ color: MUTED }}>
+                Assign to
+                <select value={taskAssignee} onChange={(e) => setTaskAssignee(e.target.value)}
+                  className="mt-1 w-full h-9 rounded-lg border px-2 text-xs"
+                  style={{ borderColor: 'rgba(20,8,31,0.14)', color: INK }}>
+                  <option value="">{users.isLoading ? 'Loading people…' : 'Choose a person'}</option>
+                  {(users.data || []).map((u) => (
+                    <option key={u._id} value={u._id}>{u.name || u.email} ({u.role.replace('_', ' ')})</option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-[11px] font-semibold" style={{ color: MUTED }}>
+                Priority
+                <select value={taskPriority} onChange={(e) => setTaskPriority(e.target.value as 'low' | 'medium' | 'high')}
+                  className="mt-1 w-full h-9 rounded-lg border px-2 text-xs"
+                  style={{ borderColor: 'rgba(20,8,31,0.14)', color: INK }}>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                </select>
+              </label>
+              <label className="text-[11px] font-semibold" style={{ color: MUTED }}>
+                Due
+                <input type="date" value={taskDue} onChange={(e) => setTaskDue(e.target.value)}
+                  className="mt-1 w-full h-9 rounded-lg border px-2 text-xs"
+                  style={{ borderColor: 'rgba(20,8,31,0.14)', color: INK }} />
+              </label>
+            </div>
+
+            <textarea rows={2} value={taskNote} onChange={(e) => setTaskNote(e.target.value)}
+              placeholder="Anything else accounts should know (optional)"
+              className="w-full rounded-lg border px-3 py-2 text-xs"
+              style={{ borderColor: 'rgba(20,8,31,0.14)', color: INK }} />
+
+            <div className="flex items-center gap-2">
+              <button type="button"
+                disabled={!taskAssignee || createAccountsTask.isPending}
+                onClick={() => createAccountsTask.mutate()}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90 cursor-pointer"
+                style={{ background: PURPLE }}>
+                {createAccountsTask.isPending ? 'Creating…' : 'Create task'}
+              </button>
+              <button type="button" onClick={() => setTaskOpen(false)}
+                className="px-3 py-2 rounded-xl text-xs font-semibold border cursor-pointer"
+                style={{ borderColor: 'rgba(20,8,31,0.14)', color: MUTED }}>
+                Cancel
+              </button>
+              {!taskAssignee && (
+                <span className="text-[11px]" style={{ color: MUTED }}>Pick who should do it</span>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="px-4 py-3">
           {zoho.isLoading ? (

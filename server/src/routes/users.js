@@ -22,7 +22,9 @@ router.get('/', requireAdmin, async (_req, res) => {
 // only name/email/role, never the full admin-only user record. Tasks is a
 // sales-rep/admin tool, so staff aren't offered as assignees.
 router.get('/assignable', async (_req, res) => {
-  const users = await User.find({ isActive: true, role: { $in: ['admin', 'sales_rep'] } })
+  // Staff are included: accounts and ops sit in this role, and tasks are
+  // routed to them (e.g. "raise this invoice in Zoho Books").
+  const users = await User.find({ isActive: true, role: { $in: ['admin', 'sales_rep', 'staff'] } })
     .select('name email role')
     .sort({ name: 1 })
     .lean();
