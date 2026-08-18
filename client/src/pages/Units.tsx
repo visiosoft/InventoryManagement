@@ -6,6 +6,7 @@ import {
   LayoutGrid, Plus, Rows3, Search, ShieldCheck, Sparkles,
 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
+import { useAuth } from '../lib/auth'
 import { useSite, unitInSite, type Site } from '../lib/site'
 import type { Unit, Contract } from '../lib/types'
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Table, Td, Th, Textarea, statusLabel, unitStatusTone } from '../components/ui'
@@ -319,6 +320,10 @@ function Control({ label, children }: { label: string; children: ReactNode }) {
 
 export default function Units() {
   const qc = useQueryClient()
+  // Sales reps and accounts can look units up, but the inventory itself —
+  // creating, editing, deleting — stays with admins.
+  const { user } = useAuth()
+  const canEditUnits = user?.role === 'admin'
   const [view, setView] = useState<'list' | 'timeline' | 'table'>('list')
   const [statusFilter, setStatusFilter] = useState('')
   const [floorFilter, setFloorFilter] = useState('')
@@ -635,13 +640,15 @@ export default function Units() {
             open its record.
           </p>
         </div>
-        <button
+        {canEditUnits && (
+          <button
           onClick={() => setAdding(true)}
           style={{ height: 40, borderRadius: 999, background: PURPLE, color: 'white', fontSize: 13, fontWeight: 600, flexShrink: 0 }}
           className="px-4 flex items-center gap-1.5 hover:brightness-110 transition"
         >
           <Plus size={15} /> Add unit
         </button>
+        )}
       </div>
 
       {/* ── Search card ────────────────────────────────────────────── */}
@@ -1025,6 +1032,7 @@ export default function Units() {
                 unit={selected}
                 onUpdate={(body) => updateUnit.mutate({ id: selected._id, ...body })}
                 onDelete={() => deleteUnit.mutate(selected._id)}
+                canEdit={canEditUnits}
                 error={error}
                 busy={updateUnit.isPending || deleteUnit.isPending}
               />
@@ -1054,7 +1062,7 @@ export default function Units() {
   )
 }
 
-function UnitDetail({ unit, onUpdate, onDelete, error, busy }: { unit: Unit; onUpdate: (b: Partial<UnitBody>) => void; onDelete: () => void; error: string; busy: boolean }) {
+function UnitDetail({ unit, onUpdate, onDelete, error, busy, canEdit }: { unit: Unit; onUpdate: (b: Partial<UnitBody>) => void; onDelete: () => void; error: string; busy: boolean; canEdit: boolean }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const { data, isLoading: contractsLoading } = useQuery<{ unit: Unit; contracts: Contract[] }>({
     queryKey: ['unit', unit._id],
@@ -1161,8 +1169,10 @@ function UnitDetail({ unit, onUpdate, onDelete, error, busy }: { unit: Unit; onU
       </Field>
       <Field label="Notes"><Textarea name="notes" defaultValue={unit.notes} /></Field>
       {error && <p className="text-xs text-destructive">{error}</p>}
-      <Button type="submit" className="w-full" disabled={busy}>Save changes</Button>
-      {!openContract && (
+      {/* Looking a unit up is open to reps and accounts; changing the
+          inventory is not. */}
+      {canEdit && <Button type="submit" className="w-full" disabled={busy}>Save changes</Button>}
+      {canEdit && !openContract && (
         confirmDelete ? (
           <div className="flex gap-2 mt-2">
             <Button type="button" className="flex-1 bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={onDelete} disabled={busy}>
