@@ -900,6 +900,7 @@ export default function ContractDetail() {
   } | null>(null)
   const [templateEmailBusy, setTemplateEmailBusy] = useState(false)
   const [templateEmailMsg, setTemplateEmailMsg] = useState('')
+  const [saveEmailToTenant, setSaveEmailToTenant] = useState(true)
   const [noticeBusy, setNoticeBusy] = useState('')
   const [noticeSent, setNoticeSent] = useState('')
   const [noticeSignUrl, setNoticeSignUrl] = useState('')
@@ -3168,8 +3169,23 @@ export default function ContractDetail() {
       >
         {templateEmail && (
           <div className="space-y-3">
-            <Field label="To"><Input value={templateEmail.to}
-              onChange={(e) => setTemplateEmail({ ...templateEmail, to: e.target.value })} /></Field>
+            <Field label="To">
+              <Input value={templateEmail.to} autoFocus={!templateEmail.to}
+                placeholder="name@example.com"
+                onChange={(e) => setTemplateEmail({ ...templateEmail, to: e.target.value })} />
+            </Field>
+            {!c.customer?.email && (
+              /* 130 of 299 tenants have no email on file. Rather than a dead
+                 end, capture it here and write it back to the tenant. */
+              <label className="flex items-start gap-2 text-[11.5px] -mt-1" style={{ color: MUTED }}>
+                <input type="checkbox" checked={saveEmailToTenant} className="mt-0.5"
+                  onChange={(e) => setSaveEmailToTenant(e.target.checked)} />
+                <span>
+                  No email on file for {c.customer?.fullName || 'this tenant'} — save this address to
+                  their record so it is there next time.
+                </span>
+              </label>
+            )}
             <Field label="Subject"><Input value={templateEmail.subject}
               onChange={(e) => setTemplateEmail({ ...templateEmail, subject: e.target.value })} /></Field>
             <Field label="Message">
@@ -3195,6 +3211,14 @@ export default function ContractDetail() {
                       to: templateEmail.to, subject: templateEmail.subject,
                       html: templateEmail.html, label: templateEmail.label,
                     })
+                    // Only after the send succeeds — no point storing an
+                    // address that just bounced the request.
+                    if (saveEmailToTenant && !c.customer?.email && c.customer?._id && templateEmail.to.trim()) {
+                      try {
+                        await api.put(`/customers/${c.customer._id}`, { email: templateEmail.to.trim() })
+                        qc.invalidateQueries({ queryKey: ['customers'] })
+                      } catch { /* the email went out; saving it is a bonus */ }
+                    }
                     setTemplateEmail(null)
                     setEmailTemplateId('')
                     invalidate()
