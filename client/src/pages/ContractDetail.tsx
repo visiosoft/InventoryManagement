@@ -920,8 +920,8 @@ export default function ContractDetail() {
   const [docBusy, setDocBusy] = useState('')
   const [otherTitle, setOtherTitle] = useState('')
   const [searchParams, setSearchParams] = useSearchParams()
-  const activeTab = (searchParams.get('tab') as 'overview' | 'units' | 'payments' | 'documents' | 'notices' | 'reminders') || 'overview'
-  const setActiveTab = (tab: 'overview' | 'units' | 'payments' | 'documents' | 'notices' | 'reminders') => setSearchParams({ tab }, { replace: true })
+  const activeTab = (searchParams.get('tab') as 'overview' | 'contracts' | 'units' | 'payments' | 'documents' | 'notices' | 'reminders') || 'overview'
+  const setActiveTab = (tab: typeof activeTab) => setSearchParams({ tab }, { replace: true })
 
   // Units tab: which units are ticked for bulk removal, and the last save error
   const [selectedUnits, setSelectedUnits] = useState<string[]>([])
@@ -1044,6 +1044,23 @@ export default function ContractDetail() {
   // Keyed on the customer, not the contract: the same person's Zoho invoices
   // are identical across all their contracts, so the cache is shared.
   const zohoCustomerId = data?.contract?.customer?._id
+
+  // Every contract this tenant has ever had. A tenant commonly renews into a
+  // new contract or rents a second unit, and those are otherwise only
+  // reachable by going back out to the tenant record.
+  type TenantContractRow = {
+    _id: string; contractNo: string; status: string; startDate: string; endDate: string
+    unit?: { unitNumber?: string }; units?: { unitNumber?: string }[]
+    contractAmount?: number; paidAmount?: number; overdueCount?: number; documentCount?: number
+  }
+  const tenantContracts = useQuery<TenantContractRow[]>({
+    queryKey: ['tenant-contracts', zohoCustomerId],
+    queryFn: () => api
+      .get('/contracts', { params: { customer: zohoCustomerId, limit: 200, archived: 'all', sort: 'start_desc' } })
+      .then((r) => r.data?.data ?? []),
+    enabled: activeTab === 'contracts' && Boolean(zohoCustomerId),
+  })
+
   const zohoInvoices = useQuery<ZohoInvoicesResponse>({
     queryKey: ['customer-zoho-invoices', zohoCustomerId],
     queryFn: () => api.get(`/customers/${zohoCustomerId}/zoho-invoices`).then((r) => r.data),
@@ -1858,6 +1875,7 @@ export default function ContractDetail() {
             {([
               ['overview', 'Overview', 0],
               ['units', 'Units', 0],
+              ['contracts', 'Contracts', 0],
               ['documents', 'Documents', 0],
               ['notices', 'Notices', 0],
               ['reminders', 'Reminders', 0],
@@ -2565,6 +2583,61 @@ export default function ContractDetail() {
               </CardBody>
             </Card>
             </div>
+          )}
+
+          {activeTab === 'contracts' && (
+            <Card>
+              <CardHeader
+                title={`Contracts for ${c.customer.fullName}`}
+                subtitle="Every contract this tenant has had, newest first"
+              />
+              <CardBody className="pt-0">
+                {tenantContracts.isLoading ? (
+                  <p className="text-sm text-muted-foreground py-4">Loading…</p>
+                ) : tenantContracts.isError ? (
+                  <p className="text-sm text-muted-foreground py-4">Could not load this tenant&apos;s contracts.</p>
+                ) : !tenantContracts.data?.length ? (
+                  <p className="text-sm text-muted-foreground py-4">No other contracts for this tenant.</p>
+                ) : (
+                  <div className="divide-y">
+                    {tenantContracts.data.map((t) => {
+                      const isCurrent = t._id === c._id
+                      const unitNames = (t.units?.length ? t.units : t.unit ? [t.unit] : [])
+                        .map((u) => u?.unitNumber).filter(Boolean).join(', ')
+                      return (
+                        <div key={t._id}
+                          className={`flex flex-wrap items-center justify-between gap-3 py-3 ${isCurrent ? '' : 'cursor-pointer hover:bg-muted/40'}`}
+                          onClick={() => { if (!isCurrent) navigate(`/contracts/${t._id}`) }}>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-semibold text-sm">{t.contractNo}</span>
+                              <Badge tone={contractStatusTone[t.status] ?? 'gray'}>{statusLabel(t.status)}</Badge>
+                              {isCurrent && (
+                                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: PURPLE }}>
+                                  Viewing
+                                </span>
+                              )}
+                              {(t.overdueCount ?? 0) > 0 && (
+                                <Badge tone="red">{t.overdueCount} overdue</Badge>
+                              )}
+                            </div>
+                            <div className="text-[11.5px] mt-0.5" style={{ color: MUTED }}>
+                              {unitNames || 'No unit'} · {t.startDate ? formatDate(t.startDate) : '—'} – {t.endDate ? formatDate(t.endDate) : '—'}
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <div className="text-sm font-bold">{formatMoney(t.contractAmount ?? 0)} AED</div>
+                            <div className="text-[11.5px]" style={{ color: MUTED }}>
+                              {formatMoney(t.paidAmount ?? 0)} received
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </CardBody>
+            </Card>
           )}
 
           {/* DOCUMENTS */}
