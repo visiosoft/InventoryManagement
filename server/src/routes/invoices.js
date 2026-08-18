@@ -796,6 +796,24 @@ router.post('/:id/send-email', async (req, res) => {
             attachments: [{ filename: `${invoice.invoiceNo}.pdf`, content: pdf, contentType: 'application/pdf' }],
         });
         if (invoice.status === 'draft') { invoice.status = 'sent'; await invoice.save(); }
+
+        // Invoices hang off a contract by contract number; log the send there
+        // so the tenant's activity feed shows every email they were sent.
+        if (invoice.orderNumber) {
+            await Contract.updateOne(
+                { contractNo: invoice.orderNumber },
+                {
+                    $push: {
+                        timeline: {
+                            at: new Date(),
+                            text: `Email "${subjectLine}" sent to ${email}`,
+                            author: req.user?.name || req.user?.email || '',
+                        },
+                    },
+                },
+            );
+        }
+
         res.json({ ok: true });
     } catch (err) {
         console.error('send-email error:', err);

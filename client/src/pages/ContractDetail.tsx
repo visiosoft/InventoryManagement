@@ -1437,13 +1437,19 @@ export default function ContractDetail() {
   for (const [noteIdx, note] of (c.timeline ?? []).entries()) {
     // Sent-email entries are written by the bulk mailer with this exact shape.
     // They aren't hand-written notes, so they get a mail icon and no edit/delete.
-    const isEmail = /^(Email|Notice) "/.test(note.text ?? '')
+    // Sent-email entries are logged as: Email "<subject>" sent to <address>.
+    // The row shows the subject alone with a mail icon — who it went to and
+    // who sent it belong on the muted line, not in the headline.
+    const emailMatch = /^(?:Email|Notice) "(.+?)"(?:\s+(?:sent|emailed)(?:\s+to\s+(.+))?)?$/.exec(note.text ?? '')
+    const isEmail = Boolean(emailMatch)
+    const recipient = emailMatch?.[2]?.trim()
     activityEvents.push({
       id: `note-${noteIdx}-${note.at}`,
       type: isEmail ? 'email' : 'note',
       at: new Date(note.at),
-      title: note.text,
-      subtitle: note.author ? `by ${note.author}` : '',
+      title: isEmail ? emailMatch![1] : note.text,
+      subtitle: [note.author ? `by ${note.author}` : '', recipient ? `to ${recipient}` : '']
+        .filter(Boolean).join(' · '),
       pinned: Boolean(note.pinned),
       ...(isEmail ? {} : { noteIdx }),
     })

@@ -1526,9 +1526,9 @@ router.post('/:id/template-email', async (req, res) => {
     });
 
     const actor = req.user?.name || req.user?.email || '';
-    const label = String(req.body?.label || subject);
+    // Log the subject the tenant actually received, not the template's name.
     await Contract.findByIdAndUpdate(contract._id, {
-      $push: { timeline: { at: new Date(), text: `Email "${label}" sent to ${to}`, author: actor } },
+      $push: { timeline: { at: new Date(), text: `Email "${subject}" sent to ${to}`, author: actor } },
     });
 
     res.json({ ok: true, to });
@@ -1613,6 +1613,18 @@ router.post('/:id/send-email', async (req, res) => {
     html: `<p>Dear ${contract.customer.fullName},</p><p>Please find your storage contract <strong>${contract.contractNo}</strong> attached.</p><p>Thank you,<br/>PurpleBox</p>`,
     attachments: [{ filename: `${contract.contractNo}.pdf`, content: pdf, contentType: 'application/pdf' }],
   });
+
+  // Everything sent to a tenant belongs on the activity feed.
+  await Contract.findByIdAndUpdate(contract._id, {
+    $push: {
+      timeline: {
+        at: new Date(),
+        text: `Email "Your Storage Contract ${contract.contractNo} — PurpleBox" sent to ${email}`,
+        author: req.user?.name || req.user?.email || '',
+      },
+    },
+  });
+
   res.json({ ok: true });
 });
 
