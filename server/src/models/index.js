@@ -328,6 +328,9 @@ const contractSchema = new Schema(
         at: { type: Date, default: Date.now },
         text: { type: String, default: '' },
         author: { type: String, default: '' },
+        // Pinned notes float to the top of the contract's activity feed, so a
+        // standing instruction isn't buried under routine document/edit rows.
+        pinned: { type: Boolean, default: false },
       },
     ],
   },

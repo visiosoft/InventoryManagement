@@ -421,6 +421,8 @@ export interface ContractNote {
   at: string
   text: string
   author: string
+  /** Pinned notes sort to the top of the contract's activity timeline. */
+  pinned?: boolean
 }
 
 /**

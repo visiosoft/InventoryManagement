@@ -1386,6 +1386,19 @@ router.put('/:id/notes/:idx', async (req, res) => {
   res.json(contract.timeline);
 });
 
+// Pin or unpin a timeline note by index
+router.put('/:id/notes/:idx/pin', async (req, res) => {
+  const contract = await Contract.findById(req.params.id);
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  const idx = Number(req.params.idx);
+  if (!Number.isInteger(idx) || idx < 0 || idx >= contract.timeline.length) {
+    return res.status(400).json({ error: 'Invalid note index' });
+  }
+  contract.timeline[idx].pinned = Boolean(req.body?.pinned);
+  await contract.save({ timestamps: false, versionKey: false });
+  res.json(contract.timeline);
+});
+
 // Delete a timeline note by index
 router.delete('/:id/notes/:idx', async (req, res) => {
   const contract = await Contract.findById(req.params.id);

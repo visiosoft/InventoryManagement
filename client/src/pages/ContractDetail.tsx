@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { AlertTriangle, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Download, FileText, FilePlus, Mail, MessageSquare, PenLine, Plus, ShieldCheck, Trash2, Upload, X, XCircle } from 'lucide-react'
+import { AlertTriangle, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Download, FileText, FilePlus, Mail, MessageSquare, PenLine, Pin, Plus, ShieldCheck, Trash2, Upload, X, XCircle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { AppDocument, Contract, Invoice, Payment, Unit, UnitLine } from '../lib/types'
@@ -1106,6 +1106,13 @@ export default function ContractDetail() {
     onError: (e) => setError(apiError(e)),
   })
 
+  const pinNote = useMutation({
+    mutationFn: ({ idx, pinned }: { idx: number; pinned: boolean }) =>
+      api.put(`/contracts/${id}/notes/${idx}/pin`, { pinned }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['contract', id] }),
+    onError: (e) => setError(apiError(e)),
+  })
+
   const createSigningLink = useMutation({
     mutationFn: () => api.post(`/contracts/${id}/create-signing-link`),
     onSuccess: (res) => {
@@ -1255,7 +1262,7 @@ export default function ContractDetail() {
   const daysLeft = c.endDate ? Math.ceil((new Date(c.endDate).getTime() - today2.getTime()) / 86400000) : null
 
   // Activity feed
-  type ActivityEvent = { id: string; type: 'overdue' | 'paid' | 'note' | 'invoice' | 'document' | 'email'; at: Date; title: string; subtitle: string; noteIdx?: number }
+  type ActivityEvent = { id: string; type: 'overdue' | 'paid' | 'note' | 'invoice' | 'document' | 'email'; at: Date; title: string; subtitle: string; noteIdx?: number; pinned?: boolean }
   const activityEvents: ActivityEvent[] = []
   // Group paid payments by invoice — show one activity row per invoice (month), not per week
   const paidByInvoice = new Map<string, typeof paid>()
@@ -1286,6 +1293,7 @@ export default function ContractDetail() {
       at: new Date(note.at),
       title: note.text,
       subtitle: note.author ? `by ${note.author}` : '',
+      pinned: Boolean(note.pinned),
       ...(isEmail ? {} : { noteIdx }),
     })
   }
@@ -1303,7 +1311,12 @@ export default function ContractDetail() {
       activityEvents.push({ id: `doc-${doc._id}`, type: 'document', at: new Date(doc.createdAt), title: `Document uploaded${typeLabel}`, subtitle: doc.name })
     }
   }
-  activityEvents.sort((a, b) => b.at.getTime() - a.at.getTime())
+  // Pinned notes float to the top; everything else stays newest-first. A pinned
+  // note is also exempt from the collapse, so it can't hide behind "Show more".
+  activityEvents.sort((a, b) =>
+    (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.at.getTime() - a.at.getTime()
+  )
+  const pinnedCount = activityEvents.filter((e) => e.pinned).length
 
   // Live alerts — derived only from figures already computed on this page
   const liveAlerts: { id: string; text: string; tone: 'red' | 'amber' }[] = []
@@ -1803,9 +1816,10 @@ export default function ContractDetail() {
                         <div className="relative pl-6">
                           {/* rail */}
                           <div className="absolute top-1.5 bottom-1.5" style={{ left: 5, width: 2, background: HAIRLINE }} />
-                          {(showAllActivity ? activityEvents : activityEvents.slice(0, 10)).map((ev) => (
-                            <div key={ev.id} className="relative pb-4 last:pb-0">
-                              <span className="absolute rounded-full" style={{ left: -19, top: 5, width: 10, height: 10, background: PURPLE }} />
+                          {(showAllActivity ? activityEvents : activityEvents.slice(0, Math.max(10, pinnedCount))).map((ev) => (
+                            <div key={ev.id} className="relative pb-4 last:pb-0"
+                              style={ev.pinned ? { background: '#FEF9C3', borderRadius: 10, padding: '8px 10px', marginBottom: 8 } : undefined}>
+                              <span className="absolute rounded-full" style={{ left: ev.pinned ? -29 : -19, top: ev.pinned ? 13 : 5, width: 10, height: 10, background: ev.pinned ? '#CA8A04' : PURPLE }} />
                               <div className="text-[11.5px]" style={{ color: MUTED }}>
                                 {ev.at.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                                 {ev.subtitle ? ` \u00b7 ${ev.subtitle.replace(/^[\s\u00b7]+/, '')}` : ''}
@@ -1827,11 +1841,20 @@ export default function ContractDetail() {
                                   <p className="text-[13px] font-medium leading-snug whitespace-pre-wrap break-words min-w-0"
                                     style={{ color: INK }}>
                                     {ev.type === 'email' && <Mail size={12} className="inline-block mr-1.5 -mt-0.5 text-amber-600" />}
+                                    {ev.pinned && (
+                                      <span className="text-[10px] font-bold uppercase tracking-wider mr-1.5" style={{ color: '#A16207' }}>Pinned</span>
+                                    )}
                                     {ev.title}
                                   </p>
                                   <span className="flex items-center gap-1.5 shrink-0">
                                     {ev.type === 'note' && ev.noteIdx !== undefined && (
                                       <>
+                                        <button type="button"
+                                          title={ev.pinned ? 'Unpin this note' : 'Pin this note to the top'}
+                                          onClick={() => pinNote.mutate({ idx: ev.noteIdx!, pinned: !ev.pinned })}
+                                          className={`transition-colors cursor-pointer ${ev.pinned ? 'text-yellow-600' : 'text-muted-foreground/50 hover:text-foreground'}`}>
+                                          <Pin size={12} fill={ev.pinned ? 'currentColor' : 'none'} />
+                                        </button>
                                         <button type="button" title="Edit note"
                                           onClick={() => setEditingNote({ idx: ev.noteIdx!, text: ev.title })}
                                           className="text-muted-foreground/50 hover:text-foreground transition-colors cursor-pointer">
