@@ -1720,16 +1720,17 @@ export default function ContractDetail() {
                           : 'border-border bg-muted/30'
                       return (
                         <div className={`my-2.5 rounded-xl border-2 px-3 py-2.5 ${cardCls}`}>
-                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                            <span className="shrink-0 text-sm font-bold">Renewal Status</span>
-                            <div className="flex flex-wrap gap-1 rounded-full bg-black/5 dark:bg-white/5 p-1 self-start sm:self-auto">
+                          <div className="space-y-2">
+                            <span className="block text-sm font-bold">Renewal Status</span>
+                            <div className="grid grid-cols-3 gap-1 rounded-lg bg-black/5 dark:bg-white/5 p-1">
                               {options.map((o) => (
                                 <button
                                   key={o.value}
                                   type="button"
                                   disabled={updateContract.isPending}
                                   onClick={() => updateContract.mutate({ renewalIntent: o.value })}
-                                  className={`h-7 px-2 sm:px-2.5 rounded-full text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors disabled:opacity-50 ${renewalIntent === o.value ? o.activeClass : 'bg-transparent text-muted-foreground hover:bg-muted'}`}
+                                  title={o.label}
+                                  className={`h-7 px-1 rounded-md text-[11px] font-semibold leading-none whitespace-nowrap overflow-hidden text-ellipsis cursor-pointer transition-colors disabled:opacity-50 ${renewalIntent === o.value ? o.activeClass : 'bg-transparent text-muted-foreground hover:bg-muted'}`}
                                 >
                                   {o.label}
                                 </button>
