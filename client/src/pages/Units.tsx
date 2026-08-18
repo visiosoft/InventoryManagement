@@ -1,7 +1,7 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { ArrowDown, ArrowUp, ChevronsUpDown, LayoutGrid, List, Plus, Search } from 'lucide-react'
+import { ArrowDown, ArrowUp, CalendarRange, ChevronsUpDown, LayoutGrid, List, Plus, Search } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useSite, unitInSite, type Site } from '../lib/site'
 import type { Unit, Contract } from '../lib/types'
@@ -124,6 +124,34 @@ export default function Units() {
   const [sizeFilter, setSizeFilter] = useState('')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Unit | null>(null)
+
+  // "Free between these dates" — a unit occupied today may be free later if
+  // its contract ends in the window, and vice versa, so this cannot be derived
+  // from the current status.
+  const [availFrom, setAvailFrom] = useState('')
+  const [availTo, setAvailTo] = useState('')
+  const windowActive = Boolean(availFrom && availTo && availTo > availFrom)
+
+  type AvailUnit = {
+    _id: string
+    bookedInPeriod?: boolean
+    bookings?: { kind: string; ref: string; customer: string; startDate: string; endDate: string; status: string }[]
+  }
+  const availability = useQuery<AvailUnit[]>({
+    queryKey: ['unit-availability', availFrom, availTo],
+    // `all=true` returns every unit flagged, not only the ones free today.
+    queryFn: () => api
+      .get('/quotes/available-units', { params: { from: availFrom, to: availTo, all: 'true' } })
+      .then((r) => r.data ?? []),
+    enabled: windowActive,
+    staleTime: 60_000,
+  })
+
+  const bookedInWindow = useMemo(() => {
+    const m = new Map<string, AvailUnit>()
+    for (const u of availability.data ?? []) m.set(u._id, u)
+    return m
+  }, [availability.data])
   // Table sorting. Default is the natural unit order; clicking a header sorts
   // by that column, clicking again reverses it.
   type SortKey = 'unit' | 'floor' | 'size' | 'price' | 'tenant' | 'checkout' | 'status' | 'shared'
@@ -181,10 +209,16 @@ export default function Units() {
             (!statusFilter || u.status === statusFilter) &&
             (!floorFilter || u.floor === floorFilter) &&
             (!sizeFilter || u.sizeSqf === Number(sizeFilter)) &&
-            (!search || u.unitNumber.toLowerCase().includes(search.toLowerCase()) || String(u.sizeSqf ?? '') === search)
+            (!search || u.unitNumber.toLowerCase().includes(search.toLowerCase()) || String(u.sizeSqf ?? '') === search) &&
+            // With a date window set, show only units genuinely free for the
+            // whole of it. Maintenance units are never bookable, whatever the
+            // contracts say.
+            (!windowActive || !availability.data || (
+              u.status !== 'maintenance' && !bookedInWindow.get(u._id)?.bookedInPeriod
+            ))
         )
         .sort(compareUnitNumbers),
-    [units, statusFilter, floorFilter, sizeFilter, search]
+    [units, statusFilter, floorFilter, sizeFilter, search, windowActive, availability.data, bookedInWindow]
   )
 
   // Sorted view for the table. The card view keeps the natural unit order,
@@ -343,6 +377,28 @@ export default function Units() {
             {['available', 'occupied', 'reserved', 'maintenance'].map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
           </select>
         </div>
+        {/* Availability window */}
+        <div style={{ height: 36, borderRadius: 10, background: CHIP_BG }} className="flex items-center gap-1.5 px-3">
+          <CalendarRange size={14} color={MUTED} />
+          <span style={{ fontSize: 12, color: MUTED }}>Free</span>
+          <input type="date" value={availFrom} max={availTo || undefined}
+            onChange={(e) => setAvailFrom(e.target.value)}
+            title="Available from"
+            style={{ background: 'transparent', outline: 'none', border: 'none', fontSize: 12.5, color: INK }} />
+          <span style={{ fontSize: 12, color: MUTED }}>→</span>
+          <input type="date" value={availTo} min={availFrom || undefined}
+            onChange={(e) => setAvailTo(e.target.value)}
+            title="Available until"
+            style={{ background: 'transparent', outline: 'none', border: 'none', fontSize: 12.5, color: INK }} />
+          {(availFrom || availTo) && (
+            <button type="button" onClick={() => { setAvailFrom(''); setAvailTo('') }}
+              title="Clear the date window"
+              className="cursor-pointer hover:opacity-70" style={{ color: MUTED, fontSize: 14, lineHeight: 1 }}>
+              ×
+            </button>
+          )}
+        </div>
+
         <div className="ml-auto flex items-center gap-3" style={{ fontSize: 11, color: MUTED }}>
           <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> Available</span>
           <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-violet-500" /> Occupied</span>
@@ -350,6 +406,33 @@ export default function Units() {
           <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-gray-400" /> Maintenance</span>
         </div>
       </div>
+
+      {availFrom && availTo && availTo <= availFrom && (
+        <div className="mb-4 rounded-xl px-4 py-2.5 text-[13px]" style={{ background: '#FEF3C7', color: '#92400E' }}>
+          The end date must be after the start date.
+        </div>
+      )}
+      {windowActive && (
+        <div className="mb-4 rounded-xl px-4 py-2.5 text-[13px] flex flex-wrap items-center gap-x-2 gap-y-1"
+          style={{ background: '#EDE9FE', color: '#4A1FA0' }}>
+          {availability.isLoading ? (
+            <span>Checking availability…</span>
+          ) : availability.isError ? (
+            <span>Could not check availability for those dates.</span>
+          ) : (
+            <>
+              <strong>{filtered.length}</strong>
+              <span>of {units.length} units are free for the whole period</span>
+              <span style={{ opacity: 0.75 }}>
+                {formatDate(availFrom)} – {formatDate(availTo)}
+              </span>
+              <span style={{ opacity: 0.75 }}>
+                · counts contracts and sent quotes that overlap it
+              </span>
+            </>
+          )}
+        </div>
+      )}
 
       {view === 'grid' ? (
         <div className="space-y-6">
