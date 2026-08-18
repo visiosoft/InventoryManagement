@@ -893,6 +893,13 @@ export default function ContractDetail() {
   const [editModal, setEditModal] = useState(false)
   const [noticeOpen, setNoticeOpen] = useState<{ id: string; name: string } | null>(null)
   const [emailTemplateId, setEmailTemplateId] = useState('')
+  // Composer for a message template: prefilled from the server-merged
+  // version, editable before it goes.
+  const [templateEmail, setTemplateEmail] = useState<{
+    label: string; to: string; subject: string; html: string; unfilled: string[]
+  } | null>(null)
+  const [templateEmailBusy, setTemplateEmailBusy] = useState(false)
+  const [templateEmailMsg, setTemplateEmailMsg] = useState('')
   const [noticeBusy, setNoticeBusy] = useState('')
   const [noticeSent, setNoticeSent] = useState('')
   const [noticeSignUrl, setNoticeSignUrl] = useState('')
@@ -932,6 +939,15 @@ export default function ContractDetail() {
     queryFn: () => api.get(`/contracts/${id}/unit-bookings`).then((r) => r.data?.bookings ?? {}),
     enabled: activeTab === 'units',
     staleTime: 60_000,
+  })
+
+  // Settings → Message Templates: subject + email/WhatsApp bodies with
+  // @placeholders, the same ones the automation rules send.
+  const { data: messageTemplates = [] } = useQuery<{ _id: string; label: string; key: string }[]>({
+    queryKey: ['message-templates'],
+    queryFn: () => api.get('/message-templates').then((r) => r.data ?? []),
+    enabled: activeTab === 'overview',
+    staleTime: 5 * 60_000,
   })
 
   const { data: noticeTemplates = [] } = useQuery<{ _id: string; name: string; isDefault: boolean; updatedAt?: string }[]>({
@@ -1951,10 +1967,10 @@ export default function ContractDetail() {
                         contract's details in. */}
                     <div style={BOX} className="p-3.5 space-y-2.5">
                       <div style={{ ...SECTION_LABEL, color: PURPLE }}>Send email</div>
-                      {noticeTemplates.length === 0 ? (
+                      {messageTemplates.length === 0 ? (
                         <p className="text-xs text-muted-foreground">
                           No templates yet — add one in{' '}
-                          <Link to="/notices" className="text-primary hover:underline">Notices</Link>.
+                          <Link to="/settings/templates" className="text-primary hover:underline">Settings → Message Templates</Link>.
                         </p>
                       ) : (
                         <>
@@ -1965,23 +1981,37 @@ export default function ContractDetail() {
                               className="flex-1"
                             >
                               <option value="">Choose a template…</option>
-                              {noticeTemplates.map((t) => (
-                                <option key={t._id} value={t._id}>{t.name}</option>
+                              {messageTemplates.map((t) => (
+                                <option key={t._id} value={t._id}>{t.label}</option>
                               ))}
                             </Select>
                             <button
                               type="button"
-                              disabled={!emailTemplateId}
-                              onClick={() => {
-                                const t = noticeTemplates.find((x) => x._id === emailTemplateId)
-                                if (t) setNoticeOpen({ id: t._id, name: t.name })
+                              disabled={!emailTemplateId || templateEmailBusy}
+                              onClick={async () => {
+                                setTemplateEmailBusy(true); setTemplateEmailMsg('')
+                                try {
+                                  const r = await api
+                                    .get(`/contracts/${id}/message-template/${emailTemplateId}`)
+                                    .then((x) => x.data)
+                                  setTemplateEmail({
+                                    label: r.label || '', to: r.to || c.customer?.email || '',
+                                    subject: r.subject || '', html: r.html || '',
+                                    unfilled: r.unfilled || [],
+                                  })
+                                } catch (e) {
+                                  setTemplateEmailMsg(apiError(e))
+                                } finally { setTemplateEmailBusy(false) }
                               }}
                               className="h-10 px-4 rounded-lg text-sm font-bold text-white whitespace-nowrap cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90"
                               style={{ background: INK }}
                             >
-                              Compose &amp; send
+                              {templateEmailBusy ? 'Opening…' : 'Compose & send'}
                             </button>
                           </div>
+                          {templateEmailMsg && (
+                            <p className="text-[11.5px] text-destructive">{templateEmailMsg}</p>
+                          )}
                           <p className="text-[11.5px]" style={{ color: MUTED }}>
                             {c.customer?.email
                               ? <>Sends to {c.customer.email} · merge fields auto-fill from this contract</>
@@ -3131,6 +3161,55 @@ export default function ContractDetail() {
       </div>
 
       {/* ── Modals ── */}
+      <Modal
+        open={!!templateEmail}
+        onClose={() => { setTemplateEmail(null); setTemplateEmailMsg('') }}
+        title={templateEmail?.label || 'Send email'}
+      >
+        {templateEmail && (
+          <div className="space-y-3">
+            <Field label="To"><Input value={templateEmail.to}
+              onChange={(e) => setTemplateEmail({ ...templateEmail, to: e.target.value })} /></Field>
+            <Field label="Subject"><Input value={templateEmail.subject}
+              onChange={(e) => setTemplateEmail({ ...templateEmail, subject: e.target.value })} /></Field>
+            <Field label="Message">
+              <Textarea rows={12} value={templateEmail.html}
+                onChange={(e) => setTemplateEmail({ ...templateEmail, html: e.target.value })} />
+            </Field>
+            {templateEmail.unfilled.length > 0 && (
+              /* A placeholder this contract cannot fill would otherwise go out
+                 as a literal "@foo" in the tenant's email. */
+              <p className="text-[11.5px] text-amber-700">
+                These placeholders have no value on this contract and will send as-is:{' '}
+                {templateEmail.unfilled.map((v) => `@${v}`).join(', ')}
+              </p>
+            )}
+            {templateEmailMsg && <p className="text-xs text-destructive">{templateEmailMsg}</p>}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setTemplateEmail(null)}>Cancel</Button>
+              <Button disabled={templateEmailBusy || !templateEmail.to.trim() || !templateEmail.subject.trim()}
+                onClick={async () => {
+                  setTemplateEmailBusy(true); setTemplateEmailMsg('')
+                  try {
+                    await api.post(`/contracts/${id}/template-email`, {
+                      to: templateEmail.to, subject: templateEmail.subject,
+                      html: templateEmail.html, label: templateEmail.label,
+                    })
+                    setTemplateEmail(null)
+                    setEmailTemplateId('')
+                    invalidate()
+                  } catch (e) {
+                    setTemplateEmailMsg(apiError(e))
+                  } finally { setTemplateEmailBusy(false) }
+                }}>
+                {templateEmailBusy ? 'Sending…' : 'Send email'}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+
       {/* Record payment — right panel */}
       {recordingPayment && (
         <div className="fixed inset-0 z-50">

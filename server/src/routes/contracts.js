@@ -2,7 +2,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { isValidObjectId, Types } from 'mongoose';
 import { stampSignature } from '../services/stampSignature.js';
-import { Contract, Customer, Unit, Payment, Document, Invoice, Quote, AgreementTemplate, nextContractNo, nextInvoiceNo } from '../models/index.js';
+import { Contract, Customer, Unit, Payment, Document, Invoice, Quote, AgreementTemplate, nextContractNo, nextInvoiceNo, MessageTemplate } from '../models/index.js';
 import { syncUnitStatus } from '../utils/unitStatus.js';
 import { sendForSignature, downloadSignedPdf, zohoConfigured } from '../services/zoho.js';
 import { uploadFile } from '../services/drive.js';
@@ -1432,6 +1432,111 @@ router.post('/:id/notice-pdf', async (req, res) => {
 });
 
 // Email the notice (PDF attached) to the tenant and log it on the timeline
+// Merge a message template against this contract. Returns the filled subject
+// and bodies so the composer can show exactly what will go out, and be edited
+// before it does.
+// Templates use @name placeholders, matching the automation engine.
+function interpolateVars(text, vars) {
+  return String(text || '').replace(/@(\w+)/g, (m, key) => (vars[key] !== undefined ? String(vars[key]) : m));
+}
+
+function findUnfilled(text, vars) {
+  const seen = new Set();
+  for (const m of String(text || '').matchAll(/@(\w+)/g)) {
+    if (vars[m[1]] === undefined) seen.add(m[1]);
+  }
+  return [...seen];
+}
+
+async function contractTemplateVars(contract) {
+  const fmt = (d) => (d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '');
+  const units = contract.units?.length > 1
+    ? contract.units.map((u) => u.unitNumber).join(', ')
+    : (contract.unit?.unitNumber ?? '');
+
+  const payments = await Payment.find({ contract: contract._id }).lean();
+  const now = Date.now();
+  const unpaid = payments.filter((p) => p.status !== 'paid');
+  const overdue = unpaid.filter((p) => new Date(p.dueDate).getTime() < now);
+  const nextDue = unpaid
+    .filter((p) => new Date(p.dueDate).getTime() >= now)
+    .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))[0];
+  const round2 = (n) => Math.round(n * 100) / 100;
+
+  return {
+    name: contract.customer?.fullName || '',
+    email: contract.customer?.email || '',
+    phone: contract.customer?.phone || '',
+    unit: units,
+    contractNo: contract.contractNo || '',
+    startDate: fmt(contract.startDate),
+    endDate: fmt(contract.endDate),
+    daysLeft: contract.endDate
+      ? String(Math.ceil((new Date(contract.endDate).getTime() - now) / 86400000))
+      : '',
+    rate: String(round2(Number(contract.rate || 0))),
+    amountOverdue: String(round2(overdue.reduce((sum, p) => sum + Number(p.amount || 0), 0))),
+    nextDueDate: nextDue ? fmt(nextDue.dueDate) : '',
+    nextDueAmount: nextDue ? String(round2(Number(nextDue.amount || 0))) : '',
+  };
+}
+
+router.get('/:id/message-template/:templateId', async (req, res) => {
+  try {
+    const contract = await populateAll(Contract.findById(req.params.id));
+    if (!contract) return res.status(404).json({ error: 'Contract not found' });
+    const template = await MessageTemplate.findById(req.params.templateId).lean();
+    if (!template) return res.status(404).json({ error: 'Template not found' });
+
+    const vars = await contractTemplateVars(contract);
+    res.json({
+      to: contract.customer?.email || '',
+      label: template.label || '',
+      subject: interpolateVars(template.subject, vars),
+      html: interpolateVars(template.emailBody, vars),
+      whatsapp: interpolateVars(template.whatsappBody, vars),
+      // Named so the composer can flag placeholders this contract cannot fill.
+      unfilled: findUnfilled([template.subject, template.emailBody].join(' '), vars),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Send a composed template email. The body IS the email here — unlike
+// notice-email, which attaches a rendered PDF and sends fixed covering text.
+router.post('/:id/template-email', async (req, res) => {
+  try {
+    if (!mailConfigured()) return res.status(501).json({ error: 'Email is not configured' });
+    const contract = await populateAll(Contract.findById(req.params.id));
+    if (!contract) return res.status(404).json({ error: 'Contract not found' });
+
+    const to = String(req.body?.to || contract.customer?.email || '').trim();
+    if (!to) return res.status(400).json({ error: 'Tenant has no email address' });
+    const subject = String(req.body?.subject || '').trim();
+    if (!subject) return res.status(400).json({ error: 'Subject is required' });
+    const html = String(req.body?.html || '').trim();
+    if (!html) return res.status(400).json({ error: 'Message body is required' });
+
+    await sendMail({
+      to,
+      subject,
+      html,
+      text: html.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').trim(),
+    });
+
+    const actor = req.user?.name || req.user?.email || '';
+    const label = String(req.body?.label || subject);
+    await Contract.findByIdAndUpdate(contract._id, {
+      $push: { timeline: { at: new Date(), text: `Email "${label}" sent to ${to}`, author: actor } },
+    });
+
+    res.json({ ok: true, to });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.post('/:id/notice-email', async (req, res) => {
   try {
     if (!mailConfigured()) return res.status(501).json({ error: 'SMTP is not configured' });
