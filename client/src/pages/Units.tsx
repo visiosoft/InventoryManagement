@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
@@ -26,14 +26,17 @@ const CARD_SHADOW = '0 1px 2px rgba(20,8,31,.06), 0 2px 8px rgba(20,8,31,.04)'
 const GREEN = '#22c55e'
 const AMBER = '#D98A1A'
 
-type AvailState = 'available' | 'occupied' | 'reserved' | 'maintenance'
+/* How free a unit is across the *chosen window* — deliberately not the same
+   thing as Unit.status, which only describes today. */
+type AvailState = 'free' | 'partial' | 'taken' | 'maintenance'
 
-const STATE_COLOR: Record<AvailState, string> = {
-  available: GREEN,
-  occupied: PURPLE,
-  reserved: AMBER,
-  maintenance: MUTED,
+const STATE_STYLE: Record<AvailState, { bg: string; border: string; dot: string; text: string }> = {
+  free: { bg: '#F3FBF6', border: '#BBEBCD', dot: GREEN, text: '#1D8A46' },
+  partial: { bg: '#FEF9F0', border: '#F5DFB8', dot: AMBER, text: '#B45309' },
+  taken: { bg: '#F4F0FF', border: '#DDD0FF', dot: PURPLE, text: DEEP },
+  maintenance: { bg: '#F5F4F6', border: 'rgba(20,8,31,.12)', dot: MUTED, text: MUTED },
 }
+const STATE_RANK: Record<AvailState, number> = { free: 0, partial: 1, taken: 2, maintenance: 3 }
 
 const num = (v: FormDataEntryValue | null) => (v === null || v === '' ? null : Number(v))
 
@@ -55,6 +58,7 @@ const addDays = (s: string, n: number) => {
 }
 const daysBetween = (a: string, b: string) => Math.round((fromISO(b).getTime() - fromISO(a).getTime()) / DAY_MS)
 const dayOnly = (s?: string | null) => (s ? String(s).slice(0, 10) : '')
+const shortDate = (s: string) => fromISO(dayOnly(s)).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
 
 /* ── Plain-English phrase parser ────────────────────────────────────────
    There is no language model in this project. This is a deterministic
@@ -157,6 +161,11 @@ function parsePhrase(input: string, sizes: number[], floors: string[]): Parsed {
     }
   }
 
+  // "for 2 months" with no start named means starting now.
+  if (!out.from && durDays) {
+    out.from = today
+    out.problems.push('No start date in that phrase — assumed it starts today.')
+  }
   if (out.from && durDays) out.to = addDays(out.from, durDays)
   if (out.from && !out.to) {
     out.to = addDays(out.from, 28)
@@ -299,7 +308,7 @@ const controlStyle = {
   padding: '0 10px', fontSize: 13, color: INK, outline: 'none', fontFamily: FONT,
 } as const
 
-function Control({ label, children }: { label: string; children: React.ReactNode }) {
+function Control({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label style={{ display: 'block' }}>
       <span style={labelStyle}>{label}</span>
@@ -389,54 +398,79 @@ export default function Units() {
     [allSiteUnits, siteId, sitesList],
   )
 
-  const sizeBreakdown = useMemo(() => {
-    const map = new Map<number, { available: number; total: number }>()
-    for (const u of units || []) {
-      if (u.sizeSqf == null) continue
-      const entry = map.get(u.sizeSqf) ?? { available: 0, total: 0 }
-      entry.total += 1
-      if (u.status === 'available') entry.available += 1
-      map.set(u.sizeSqf, entry)
-    }
-    return [...map.entries()].sort((a, b) => a[0] - b[0]).map(([sqf, counts]) => ({ sqf, ...counts }))
-  }, [units])
-
   // The size and floor dropdowns are built from the data, not a fixed list.
-  const sizes = useMemo(() => sizeBreakdown.map((s) => s.sqf), [sizeBreakdown])
+  const sizes = useMemo(
+    () => [...new Set((units || []).map((u) => u.sizeSqf).filter((s): s is number => s != null))].sort((a, b) => a - b),
+    [units],
+  )
   const floors = useMemo(() => [...new Set((units || []).map((u) => u.floor).filter(Boolean))].sort(), [units])
 
-  /* Availability of a unit inside the chosen window */
+  /* How free a unit is across the chosen window. This is worked out from the
+     bookings that overlap the window — never from Unit.status, which only
+     describes today and would hide exactly the cases this page exists for. */
   const availOf = useMemo(() => {
     return (u: Unit): { state: AvailState; line: string; detail: string } => {
-      const entry = bookedInWindow.get(u._id)
-      const bookings = entry?.bookings ?? []
       if (u.status === 'maintenance') {
-        return { state: 'maintenance', line: 'Out of service', detail: u.notes?.trim() || 'Under maintenance' }
+        return { state: 'maintenance', line: 'Maintenance', detail: u.notes?.trim() || 'Out of service' }
       }
-      const clashing = bookings.filter((b) => dayOnly(b.startDate) <= winTo && dayOnly(b.endDate) >= winFrom)
-      if (entry?.bookedInPeriod && clashing.length) {
-        const hard = clashing.find((b) => b.kind !== 'quote')
-        const b = hard ?? clashing[0]
-        const who = b.customer || b.ref || 'a booking'
+      const bookings = bookedInWindow.get(u._id)?.bookings ?? []
+      // Clip every overlapping booking to the window, then merge the ones that
+      // touch, so a back-to-back pair does not read as a gap.
+      const spans = bookings
+        .map((b) => ({ b, s: dayOnly(b.startDate), e: dayOnly(b.endDate) }))
+        .filter((x) => x.s && x.e && x.s <= winTo && x.e >= winFrom)
+        .map((x) => ({ b: x.b, s: x.s < winFrom ? winFrom : x.s, e: x.e > winTo ? winTo : x.e }))
+        .sort((a, b) => a.s.localeCompare(b.s))
+
+      if (!spans.length) {
+        return { state: 'free', line: 'Free entire window', detail: `${shortDate(winFrom)} – ${shortDate(winTo)}` }
+      }
+
+      const merged: { s: string; e: string }[] = []
+      for (const sp of spans) {
+        const last = merged[merged.length - 1]
+        if (last && sp.s <= addDays(last.e, 1)) { if (sp.e > last.e) last.e = sp.e }
+        else merged.push({ s: sp.s, e: sp.e })
+      }
+
+      const coversAll = merged.length === 1 && merged[0].s <= winFrom && merged[0].e >= winTo
+      if (coversAll) {
+        // Name the tenant from the booking that runs longest into the future,
+        // preferring a contract over a quote hold.
+        const ranked = [...spans].sort((a, b) =>
+          (a.b.kind === 'quote' ? 1 : 0) - (b.b.kind === 'quote' ? 1 : 0) ||
+          dayOnly(b.b.endDate).localeCompare(dayOnly(a.b.endDate)))
+        const lead = ranked[0]?.b
+        const who = lead?.customer || (activeByUnit[u._id] ?? [])[0]?.customerName || lead?.ref || ''
+        const until = dayOnly(lead?.endDate) || dayOnly((activeByUnit[u._id] ?? [])[0]?.endDate)
         return {
-          state: hard ? 'occupied' : 'reserved',
-          line: hard ? `Taken until ${formatDate(b.endDate)}` : `Held on quote ${b.ref}`,
-          detail: `${who} · ${formatDate(b.startDate)} – ${formatDate(b.endDate)}`,
+          state: 'taken',
+          line: 'Occupied entire window',
+          detail: who && until ? `${who} · until ${shortDate(until)}`
+            : who ? who
+            : until ? `Until ${shortDate(until)}`
+            : 'Booked for the whole window',
         }
       }
-      if (u.status === 'reserved') {
-        return { state: 'reserved', line: 'Reserved', detail: 'Marked reserved on the unit record' }
+
+      if (merged[0].s > winFrom) {
+        return {
+          state: 'partial',
+          line: `Free until ${shortDate(addDays(merged[0].s, -1))}`,
+          detail: merged.length > 1
+            ? `Then occupied across ${merged.length} periods`
+            : 'Then occupied for part of the window',
+        }
       }
-      const next = bookings
-        .filter((b) => dayOnly(b.startDate) > winTo)
-        .sort((a, b) => dayOnly(a.startDate).localeCompare(dayOnly(b.startDate)))[0]
       return {
-        state: 'available',
-        line: 'Free for the whole window',
-        detail: next ? `Next booked ${formatDate(next.startDate)}` : 'No bookings on file after this window',
+        state: 'partial',
+        line: `Free from ${shortDate(addDays(merged[0].e, 1))}`,
+        detail: merged.length > 1
+          ? 'Occupied at the start, and again later in the window'
+          : 'Occupied at the start of the window',
       }
     }
-  }, [bookedInWindow, winFrom, winTo])
+  }, [bookedInWindow, winFrom, winTo, activeByUnit])
 
   const filtered = useMemo(
     () =>
@@ -454,10 +488,14 @@ export default function Units() {
 
   // Units genuinely free for the whole window. Maintenance units are never
   // bookable, whatever the contracts say.
-  const freeUnits = useMemo(() => filtered.filter((u) => availOf(u).state === 'available'), [filtered, availOf])
+  const freeUnits = useMemo(() => filtered.filter((u) => availOf(u).state === 'free'), [filtered, availOf])
   // "Only free units" narrows every view; off by default so the colour-coded
-  // cards can show the whole picture.
-  const shown = onlyFree ? freeUnits : filtered
+  // cards can show the whole picture. What can be sold sorts first.
+  const shown = useMemo(() => {
+    const list = onlyFree ? freeUnits : filtered
+    return [...list].sort((a, b) =>
+      STATE_RANK[availOf(a).state] - STATE_RANK[availOf(b).state] || compareUnitNumbers(a, b))
+  }, [onlyFree, freeUnits, filtered, availOf])
 
   // Sorted view for the table.
   const sortedRows = useMemo(() => {
@@ -525,7 +563,51 @@ export default function Units() {
     onError: (e) => setError(apiError(e)),
   })
 
-  const parsed = useMemo(() => parsePhrase(phrase, sizes, floors), [phrase, sizes, floors])
+  // The built-in reader runs instantly on every keystroke and is what the
+  // chips show while typing. Asking the model is a deliberate step, so a
+  // key is not spent on every character typed.
+  const localParsed = useMemo(() => parsePhrase(phrase, sizes, floors), [phrase, sizes, floors])
+  const [aiParsed, setAiParsed] = useState<Parsed | null>(null)
+  const [aiBusy, setAiBusy] = useState(false)
+  const parsed = aiParsed ?? localParsed
+
+  // Clear a model reading as soon as the phrase changes, or the chips would
+  // describe a sentence that is no longer on screen.
+  useEffect(() => { setAiParsed(null) }, [phrase])
+
+  const { data: integrationStatus } = useQuery<{ openai?: { configured: boolean; model: string } }>({
+    queryKey: ['integrations-status'],
+    queryFn: () => api.get('/integrations/status').then((r) => r.data),
+    staleTime: 5 * 60_000,
+  })
+  const aiConfigured = Boolean(integrationStatus?.openai?.configured)
+
+  async function askAi() {
+    if (!phrase.trim()) return
+    setAiBusy(true)
+    try {
+      const r = await api.post('/integrations/ai/parse-availability', {
+        text: phrase, sizes, floors,
+      }).then((x) => x.data)
+      const f = r?.filters ?? {}
+      setAiParsed({
+        from: f.from ?? null,
+        to: f.to ?? null,
+        size: f.sizeSqf ?? null,
+        floor: f.floor ?? null,
+        problems: [r?.unreadable, `Read by ${r?.model || 'the model'}`].filter(Boolean) as string[],
+      })
+    } catch (e) {
+      // Fall back to the built-in reader rather than leaving the user stuck.
+      setAiParsed({
+        ...localParsed,
+        problems: [...localParsed.problems, `Could not reach the model (${apiError(e)}) — read here instead`],
+      })
+    } finally {
+      setAiBusy(false)
+    }
+  }
+
   function applyParsed() {
     if (parsed.from && parsed.to) { setAvailFrom(parsed.from); setAvailTo(parsed.to) }
     if (parsed.size != null) setSizeFilter(String(parsed.size))
@@ -620,7 +702,7 @@ export default function Units() {
             style={{ marginLeft: 'auto', height: 40, borderRadius: 999, background: '#fff', border: `1px solid ${PURPLE}`, color: PURPLE, fontSize: 13, fontWeight: 600, padding: '0 16px' }}
             className="flex items-center gap-1.5 hover:bg-violet-50 transition"
           >
-            <Sparkles size={15} /> Ask in plain English
+            <Sparkles size={15} /> Ask PurpleBox AI
           </button>
         </div>
 
@@ -679,6 +761,17 @@ export default function Units() {
                       {p}
                     </span>
                   ))}
+                  {aiConfigured && (
+                    <button
+                      type="button"
+                      onClick={askAi}
+                      disabled={aiBusy}
+                      title="Send this phrase to the language model for a second reading"
+                      style={{ height: 32, borderRadius: 999, background: 'transparent', color: DEEP, border: `1px solid ${DEEP}33`, fontSize: 12.5, fontWeight: 600, padding: '0 14px', opacity: aiBusy ? 0.5 : 1 }}
+                    >
+                      {aiBusy ? 'Asking…' : 'Ask the model'}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={applyParsed}
@@ -693,37 +786,6 @@ export default function Units() {
           </div>
         )}
       </div>
-
-      {/* ── Size summary cards (also size filters) ─────────────────── */}
-      {sizeBreakdown.length > 0 && (
-        <div className="flex flex-wrap" style={{ gap: 8 }}>
-          {sizeBreakdown.map(({ sqf, available, total }) => {
-            const active = sizeFilter === String(sqf)
-            return (
-              <button
-                key={sqf}
-                type="button"
-                onClick={() => setSizeFilter(active ? '' : String(sqf))}
-                style={{
-                  background: active ? `${PURPLE}10` : '#fff',
-                  border: `1.5px solid ${active ? PURPLE : LINE}`,
-                  borderRadius: 12,
-                  padding: '10px 14px',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s',
-                }}
-              >
-                <div style={{ fontSize: 12, fontWeight: 600, color: INK }}>{sqf} sq ft</div>
-                <div style={{ marginTop: 2, fontSize: 12, fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: available === 0 ? MUTED : '#047857' }}>
-                  {available} / {total}
-                </div>
-                <div style={{ fontSize: 10, color: MUTED }}>available now</div>
-              </button>
-            )
-          })}
-        </div>
-      )}
 
       {/* ── Results header ─────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -764,25 +826,25 @@ export default function Units() {
           <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
             {shown.map((u) => {
               const a = availOf(u)
-              const c = STATE_COLOR[a.state]
+              const s = STATE_STYLE[a.state]
               return (
                 <button
                   key={u._id}
                   onClick={() => setSelected(u)}
                   title={u.notes}
                   style={{
-                    position: 'relative', textAlign: 'left', background: '#fff',
-                    border: `1px solid ${a.state === 'available' ? 'rgba(34,197,94,0.35)' : LINE}`,
+                    position: 'relative', textAlign: 'left', background: s.bg,
+                    border: `1px solid ${s.border}`,
                     borderRadius: 16, padding: '16px 18px', boxShadow: CARD_SHADOW, cursor: 'pointer',
                   }}
                   className="hover:-translate-y-0.5 transition-transform"
                 >
-                  <span style={{ position: 'absolute', top: 16, right: 16, width: 10, height: 10, borderRadius: 999, background: c }} />
+                  <span style={{ position: 'absolute', top: 16, right: 16, width: 10, height: 10, borderRadius: 999, background: s.dot }} />
                   <div style={{ ...HEADING, fontWeight: 700, fontSize: 18, paddingRight: 18 }}>{u.unitNumber}</div>
                   <div style={{ fontSize: 13, color: MUTED, marginTop: 2 }}>
                     {u.sizeSqf != null ? `${u.sizeSqf} sqft` : 'size not set'} · Floor {u.floor}
                   </div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: c === GREEN ? '#15803d' : c, marginTop: 12 }}>{a.line}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: s.text, marginTop: 12 }}>{a.line}</div>
                   <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>{a.detail}</div>
                   {(u.discountPct || u.shared) && (
                     <div className="flex flex-wrap gap-1.5" style={{ marginTop: 8 }}>
@@ -923,9 +985,9 @@ export default function Units() {
 
       {/* ── Legend ─────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center" style={{ gap: 16, fontSize: 12, color: MUTED }}>
-        <span className="flex items-center gap-1.5"><span style={{ width: 10, height: 10, borderRadius: 999, background: GREEN }} /> Available</span>
-        <span className="flex items-center gap-1.5"><span style={{ width: 10, height: 10, borderRadius: 999, background: PURPLE }} /> Occupied</span>
-        <span className="flex items-center gap-1.5"><span style={{ width: 10, height: 10, borderRadius: 999, background: AMBER }} /> Reserved</span>
+        <span className="flex items-center gap-1.5"><span style={{ width: 10, height: 10, borderRadius: 999, background: GREEN }} /> Free entire window</span>
+        <span className="flex items-center gap-1.5"><span style={{ width: 10, height: 10, borderRadius: 999, background: AMBER }} /> Partly free (also a quote hold on the timeline)</span>
+        <span className="flex items-center gap-1.5"><span style={{ width: 10, height: 10, borderRadius: 999, background: PURPLE }} /> Occupied entire window</span>
         <span className="flex items-center gap-1.5"><span style={{ width: 10, height: 10, borderRadius: 999, background: MUTED }} /> Maintenance</span>
       </div>
 
