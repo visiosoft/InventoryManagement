@@ -1096,7 +1096,7 @@ export default function ContractDetail() {
   const zohoInvoices = useQuery<ZohoInvoicesResponse>({
     queryKey: ['customer-zoho-invoices', zohoCustomerId],
     queryFn: () => api.get(`/customers/${zohoCustomerId}/zoho-invoices`).then((r) => r.data),
-    enabled: activeTab === 'payments' && Boolean(zohoCustomerId),
+    enabled: (activeTab === 'payments' || activeTab === 'overview') && Boolean(zohoCustomerId),
     retry: false,
     staleTime: 5 * 60_000,
   })
@@ -2047,7 +2047,7 @@ export default function ContractDetail() {
                 {/* Right column */}
                 <div className="space-y-4">
                   <Card>
-                    <CardHeader title="Next payments" action={
+                    <CardHeader title="Payments" action={
                       allUnpaid.length > 1 ? <Button size="sm" variant="outline" onClick={() => setBulkTarget(allUnpaid)}><CalendarDays size={12} /> Pay multiple</Button> : null
                     } />
                     <CardBody className="pt-0 space-y-2">
@@ -2076,6 +2076,65 @@ export default function ContractDetail() {
                           </div>
                         )
                       })}
+
+                      {/* Zoho Books is where invoices actually live, so the
+                          payments card shows them alongside the schedule.
+                          Matched to this tenant by email/phone, never name. */}
+                      <div className="pt-2 mt-1" style={{ borderTop: '1px solid rgba(20,8,31,.08)' }}>
+                        <div style={SECTION_LABEL} className="mb-1.5">Zoho Books</div>
+                        {zohoInvoices.isLoading ? (
+                          <p className="text-xs text-muted-foreground py-1">Looking up…</p>
+                        ) : zohoInvoices.isError ? (
+                          <p className="text-xs text-muted-foreground py-1">
+                            {(zohoInvoices.error as { response?: { status?: number } })?.response?.status === 501
+                              ? 'Not connected'
+                              : 'Could not reach Zoho Books'}
+                          </p>
+                        ) : !zohoInvoices.data?.invoices?.length ? (
+                          <p className="text-xs text-muted-foreground py-1">
+                            {zohoInvoices.data?.matchedContacts?.length ? 'No invoices' : 'No matching contact'}
+                          </p>
+                        ) : (
+                          <>
+                            {zohoInvoices.data.invoices.slice(0, 4).map((inv) => (
+                              <button key={inv.id} type="button"
+                                onClick={() => openZohoInvoicePdf(inv.id)}
+                                disabled={openingZohoPdf === inv.id}
+                                title="Open this invoice's PDF"
+                                className="w-full flex items-center justify-between gap-2 py-1 text-left cursor-pointer hover:opacity-80 disabled:opacity-60">
+                                <span className="text-xs font-semibold truncate text-primary">
+                                  {openingZohoPdf === inv.id ? 'Opening…' : inv.number}
+                                </span>
+                                <span className="flex items-center gap-1.5 shrink-0">
+                                  <span className="text-xs font-bold">{formatMoney(inv.total)}</span>
+                                  <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded-full capitalize"
+                                    style={
+                                      inv.status === 'paid' ? { background: '#DCFCE7', color: '#15803D' }
+                                        : inv.status === 'overdue' ? { background: '#FEE2E2', color: '#B91C1C' }
+                                          : { background: 'rgba(20,8,31,.06)', color: MUTED }
+                                    }>
+                                    {inv.status}
+                                  </span>
+                                </span>
+                              </button>
+                            ))}
+                            <div className="flex items-center justify-between pt-1.5 mt-1 text-[11.5px]"
+                              style={{ borderTop: '1px solid rgba(20,8,31,.06)', color: MUTED }}>
+                              <span>
+                                {zohoInvoices.data.totals.count} invoice{zohoInvoices.data.totals.count === 1 ? '' : 's'}
+                                {zohoInvoices.data.invoices.length > 4 ? ' · showing 4' : ''}
+                              </span>
+                              <span>
+                                Outstanding{' '}
+                                <strong style={{ color: zohoInvoices.data.totals.balance > 0 ? '#DC2626' : '#16A34A' }}>
+                                  {formatMoney(zohoInvoices.data.totals.balance)}
+                                </strong>
+                              </span>
+                            </div>
+                            {zohoPdfError && <p className="text-[11px] text-destructive pt-1">{zohoPdfError}</p>}
+                          </>
+                        )}
+                      </div>
                     </CardBody>
                   </Card>
 
