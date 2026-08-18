@@ -634,10 +634,8 @@ export default function Units() {
             PurpleBox · Operations
           </div>
           <h1 style={{ ...HEADING, fontWeight: 700, fontSize: 36, margin: '6px 0 0' }}>Unit availability</h1>
-          <p style={{ fontSize: 15, color: SECONDARY, maxWidth: '62ch', lineHeight: 1.55, marginTop: 8 }}>
-            Pick the dates a customer needs and see which units are genuinely free for the whole
-            window — contracts, current tenancies and sent quotes all counted. Click any unit to
-            open its record.
+          <p style={{ fontSize: 14, color: SECONDARY, marginTop: 6 }}>
+            Units free for a chosen window — contracts, tenancies and sent quotes all counted.
           </p>
         </div>
         {canEditUnits && (
