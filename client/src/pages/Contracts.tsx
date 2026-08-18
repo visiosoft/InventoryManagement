@@ -20,7 +20,10 @@ const FIELD_LINE = 'rgba(20,8,31,0.14)'
 const CHIP_BG = '#F3F0EA'
 
 // checkbox | Contract | Customer | Unit(s) | Amount | Start | End | Status | Renewal | delete
-const GRID = '40px 1.3fr 1.6fr 0.9fr 1fr 1fr 1fr 0.9fr 60px'
+// Ten cells per row — checkbox, contract, customer, unit, amount, start, end,
+// status, renewal, delete — so ten tracks. The mockup declared nine, which
+// wrapped the delete button onto a line of its own.
+const GRID = '40px 1.3fr 1.6fr 0.9fr 1fr 1fr 1fr 0.9fr 0.9fr minmax(60px, auto)'
 
 const STATUSES = ['draft', 'pending_signature', 'active', 'ended', 'cancelled']
 type PagedContracts = { data: Contract[]; total: number; page: number; pages: number; limit: number }
