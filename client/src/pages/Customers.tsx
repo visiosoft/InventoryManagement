@@ -402,7 +402,7 @@ export default function Customers() {
             <p className="text-sm text-muted-foreground">What would you like to do next?</p>
 
             <div className="grid grid-cols-3 gap-3">
-              <button onClick={() => goTo(`/contracts/new?customer=${newCustomer._id}`)}
+              <button onClick={() => goTo(`/quotes/new?customer=${newCustomer._id}`)}
                 className="group rounded-xl border-2 border-border bg-card p-4 text-left transition-all hover:border-primary hover:shadow-md cursor-pointer">
                 <div className="mb-2.5 flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
                   <FileText size={18} />

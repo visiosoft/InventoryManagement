@@ -45,7 +45,6 @@ import Customers from './pages/Customers'
 import CustomerContractRedirect from './pages/CustomerContractRedirect'
 import Contracts from './pages/Contracts'
 import ContractDetail from './pages/ContractDetail'
-import NewContract from './pages/NewContract'
 import Payments from './pages/Payments'
 import Documents from './pages/Documents'
 import Reports from './pages/Reports'
@@ -194,7 +193,6 @@ export default function App() {
         <Route path="/expenses" element={<Expenses />} />
         <Route path="/moving-inventory" element={<MovingInventory />} />
         <Route path="/contracts" element={<Contracts />} />
-        <Route path="/contracts/new" element={<NewContract />} />
         <Route path="/contracts/:id" element={<ContractDetail />} />
         <Route path="/payments" element={<PermGuard module="payments"><Payments /></PermGuard>} />
         <Route path="/documents" element={<PermGuard module="documents"><Documents /></PermGuard>} />

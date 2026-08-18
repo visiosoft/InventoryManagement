@@ -864,6 +864,9 @@ export default function NewQuote() {
   const [searchParams] = useSearchParams()
   const leadParam = searchParams.get('lead')
   const quoteParam = searchParams.get('quote')
+  // Booking a further unit for an existing tenant arrives with the customer
+  // already known, e.g. from the contract page's "Add contract".
+  const customerParam = searchParams.get('customer')
 
   const [step, setStep] = useState(0)
   const [err, setErr] = useState('')
@@ -887,6 +890,22 @@ export default function NewQuote() {
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
   const [customerEmail, setCustomerEmail] = useState('')
+
+  // Preselect the tenant named in ?customer=, once and only once, so a later
+  // manual change is not undone by this effect.
+  const customerPreselectedRef = useRef(false)
+  useEffect(() => {
+    if (!customerParam || customerPreselectedRef.current) return
+    customerPreselectedRef.current = true
+    api.get(`/customers/${customerParam}`).then((r) => {
+      const cu = r.data?.customer ?? r.data
+      if (!cu?._id) return
+      setCustomerId(cu._id)
+      setCustomerName(cu.fullName || '')
+      setCustomerPhone((cu.phones && cu.phones[0]) || cu.phone || '')
+      setCustomerEmail(cu.email || '')
+    }).catch(() => { /* fall back to picking the tenant by hand */ })
+  }, [customerParam])
 
   // Quote
   const [dateRangeFrom, setDateRangeFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10) })

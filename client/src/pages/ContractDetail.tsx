@@ -2614,7 +2614,7 @@ export default function ContractDetail() {
 
                 <div className="flex justify-end mb-2.5">
                   <button type="button"
-                    onClick={() => navigate(`/contracts/new?customer=${c.customer._id}`)}
+                    onClick={() => navigate(`/quotes/new?customer=${c.customer._id}`)}
                     className="h-8 px-3.5 rounded-full text-white text-xs font-bold cursor-pointer hover:opacity-90"
                     style={{ background: PURPLE }}>
                     + Add contract
