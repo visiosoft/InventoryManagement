@@ -479,3 +479,16 @@ export async function fetchZohoInvoicesForContacts(contactIds) {
     );
     return { configured: true, invoices };
 }
+
+// The rendered PDF for one Zoho invoice, so staff can read it without holding
+// a Zoho Books login of their own. Returns a Buffer.
+export async function fetchZohoInvoicePdf(invoiceId) {
+    if (!zohoBooksConfigured()) return { configured: false, pdf: null };
+    const token = await getAccessToken();
+    const { data } = await axios.get(`${API_BASE}/invoices/${invoiceId}`, {
+        headers: { Authorization: `Zoho-oauthtoken ${token}`, Accept: 'application/pdf' },
+        params: { ...orgParam(), accept: 'pdf' },
+        responseType: 'arraybuffer',
+    });
+    return { configured: true, pdf: Buffer.from(data) };
+}

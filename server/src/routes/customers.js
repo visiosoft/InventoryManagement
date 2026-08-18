@@ -4,7 +4,7 @@ import { Customer, Contract, Document, Payment, Invoice, Unit, Quote } from '../
 import { requireAdmin } from '../middleware/auth.js';
 import { phoneClauses } from '../utils/phoneSearch.js';
 import { mailConfigured, mailFromAddress, sendMail } from '../services/mail.js';
-import { zohoBooksConfigured, findZohoContactsFor, fetchZohoInvoicesForContacts } from '../services/zohoBooks.js';
+import { zohoBooksConfigured, findZohoContactsFor, fetchZohoInvoicesForContacts, fetchZohoInvoicePdf } from '../services/zohoBooks.js';
 
 const router = Router();
 
@@ -140,6 +140,34 @@ router.get('/:id/zoho-invoices', async (req, res) => {
       invoices,
       totals,
     });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// The PDF for one of this tenant's Zoho invoices. The invoice must belong to a
+// Zoho contact that matches this customer — otherwise any authenticated user
+// could pull an arbitrary invoice out of the accounting system by guessing ids.
+router.get('/:id/zoho-invoices/:invoiceId/pdf', async (req, res) => {
+  try {
+    const customer = await Customer.findById(req.params.id).select('email phone phones').lean();
+    if (!customer) return res.status(404).json({ error: 'Customer not found' });
+    if (!zohoBooksConfigured()) return res.status(501).json({ error: 'Zoho Books is not configured' });
+
+    const emails = [customer.email].filter(Boolean);
+    const phones = [...(Array.isArray(customer.phones) ? customer.phones : []), customer.phone].filter(Boolean);
+    const { contacts } = await findZohoContactsFor({ emails, phones });
+    const { invoices } = await fetchZohoInvoicesForContacts(contacts.map((c) => c.id));
+
+    const invoice = invoices.find((i) => String(i.id) === String(req.params.invoiceId));
+    if (!invoice) return res.status(404).json({ error: 'That invoice does not belong to this customer' });
+
+    const { pdf } = await fetchZohoInvoicePdf(invoice.id);
+    if (!pdf) return res.status(502).json({ error: 'Zoho Books returned no PDF' });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${(invoice.number || 'invoice').replace(/[^\w.-]/g, '_')}.pdf"`);
+    res.send(pdf);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

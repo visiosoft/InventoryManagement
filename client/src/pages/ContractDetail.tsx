@@ -967,6 +967,37 @@ export default function ContractDetail() {
     staleTime: 5 * 60_000,
   })
 
+  // Several Zoho contacts can share a phone number, and they are not always the
+  // same legal entity — a company and its owner, say. When more than one
+  // matched, name who each invoice was actually billed to so a mixed list reads
+  // as mixed rather than as one person's account.
+  // Opening a Zoho invoice needs the auth header, so a plain link won't do —
+  // fetch it as a blob and hand the browser an object URL, same as the local
+  // invoice PDFs elsewhere in the app.
+  const [openingZohoPdf, setOpeningZohoPdf] = useState('')
+  const [zohoPdfError, setZohoPdfError] = useState('')
+  async function openZohoInvoicePdf(invoiceId: string) {
+    if (!zohoCustomerId) return
+    setZohoPdfError('')
+    setOpeningZohoPdf(invoiceId)
+    try {
+      const r = await api.get(`/customers/${zohoCustomerId}/zoho-invoices/${invoiceId}/pdf`, { responseType: 'blob' })
+      const url = window.URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }))
+      window.open(url, '_blank', 'noopener')
+      // Revoke late: revoking immediately can race the new tab's load.
+      setTimeout(() => window.URL.revokeObjectURL(url), 60_000)
+    } catch {
+      setZohoPdfError('Could not open that invoice PDF from Zoho Books.')
+    } finally {
+      setOpeningZohoPdf('')
+    }
+  }
+
+  const multipleZohoContacts = (zohoInvoices.data?.matchedContacts?.length ?? 0) > 1
+  const zohoCols = multipleZohoContacts
+    ? '130px 95px 95px 90px 1fr 90px 90px'
+    : '130px 95px 95px 1fr 90px 90px'
+
 
   function invalidate() {
     qc.invalidateQueries({ queryKey: ['contract', id] })
@@ -2264,7 +2295,9 @@ export default function ContractDetail() {
                       <p className="text-sm text-muted-foreground py-4">
                         {status === 501
                           ? 'Zoho Books is not connected — add its credentials in Settings to see invoices here.'
-                          : `Could not reach Zoho Books: ${msg || 'unknown error'}`}
+                          : status === 404
+                            ? 'This lookup is not available on the API yet — the server needs to be redeployed.'
+                            : `Could not reach Zoho Books${status ? ` (HTTP ${status})` : ''}: ${msg || 'no error message returned'}`}
                       </p>
                     )
                   })()
@@ -2296,17 +2329,27 @@ export default function ContractDetail() {
                       <p className="text-sm text-muted-foreground py-3">This contact has no invoices in Zoho Books.</p>
                     ) : (
                       <>
+                        {zohoPdfError && (
+                          <p className="text-[12px] text-destructive pb-2">{zohoPdfError}</p>
+                        )}
                         <div className="overflow-x-auto">
-                          <div style={{ minWidth: 560 }}>
+                          <div style={{ minWidth: multipleZohoContacts ? 720 : 560 }}>
                             <div className="grid gap-3 pb-2 text-[13px] font-bold"
-                              style={{ gridTemplateColumns: '130px 95px 95px 1fr 90px 90px', borderBottom: '1px solid rgba(20,8,31,.16)' }}>
+                              style={{ gridTemplateColumns: zohoCols, borderBottom: '1px solid rgba(20,8,31,.16)' }}>
                               <span>Invoice</span><span>Date</span><span>Due</span><span>Status</span>
+                              {multipleZohoContacts && <span>Billed to</span>}
                               <span className="text-right">Total</span><span className="text-right">Balance</span>
                             </div>
                             {zohoInvoices.data.invoices.map((inv) => (
                               <div key={inv.id} className="grid gap-3 items-center py-2 text-[13px]"
-                                style={{ gridTemplateColumns: '130px 95px 95px 1fr 90px 90px', borderBottom: '1px solid rgba(20,8,31,.06)' }}>
-                                <span className="font-semibold">{inv.number || '—'}</span>
+                                style={{ gridTemplateColumns: zohoCols, borderBottom: '1px solid rgba(20,8,31,.06)' }}>
+                                <button type="button"
+                                  onClick={() => openZohoInvoicePdf(inv.id)}
+                                  disabled={openingZohoPdf === inv.id}
+                                  className="font-semibold text-left text-primary hover:underline cursor-pointer disabled:opacity-60"
+                                  title="Open this invoice's PDF from Zoho Books">
+                                  {openingZohoPdf === inv.id ? 'Opening…' : (inv.number || '—')}
+                                </button>
                                 <span style={{ color: MUTED }}>{inv.date ? formatDate(inv.date) : '—'}</span>
                                 <span style={{ color: MUTED }}>{inv.dueDate ? formatDate(inv.dueDate) : '—'}</span>
                                 <span>
@@ -2319,6 +2362,11 @@ export default function ContractDetail() {
                                     {inv.status || 'unknown'}
                                   </span>
                                 </span>
+                                {multipleZohoContacts && (
+                                  <span className="truncate" style={{ color: MUTED }} title={inv.customerName}>
+                                    {inv.customerName || '—'}
+                                  </span>
+                                )}
                                 <span className="text-right">{inv.currency || 'AED'} {formatMoney(inv.total)}</span>
                                 <span className="text-right font-bold" style={{ color: inv.balance > 0 ? '#DC2626' : '#16A34A' }}>
                                   {formatMoney(inv.balance)}
@@ -2334,7 +2382,7 @@ export default function ContractDetail() {
                             {formatMoney(zohoInvoices.data.totals.balance)}</strong></span>
                         </div>
                         <p className="text-[11.5px] pt-2" style={{ color: MUTED }}>
-                          These are the tenant&apos;s Zoho Books invoices across all their contracts, not only this one. Zoho is the source of truth — edit them there.
+                          Click an invoice number to open its PDF. These are the tenant&apos;s Zoho Books invoices across all their contracts, not only this one — Zoho is the source of truth, so edit them there.
                         </p>
                       </>
                     )}
