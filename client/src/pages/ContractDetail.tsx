@@ -1945,6 +1945,52 @@ export default function ContractDetail() {
                       </form>
                     </div>
 
+                    {/* Send email — sits with Add Note because both are
+                        "reach the tenant" actions. Picks a notice template and
+                        opens the existing composer, which merges this
+                        contract's details in. */}
+                    <div style={BOX} className="p-3.5 space-y-2.5">
+                      <div style={{ ...SECTION_LABEL, color: PURPLE }}>Send email</div>
+                      {noticeTemplates.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          No templates yet — add one in{' '}
+                          <Link to="/notices" className="text-primary hover:underline">Notices</Link>.
+                        </p>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-2.5">
+                            <Select
+                              value={emailTemplateId}
+                              onChange={(e) => setEmailTemplateId(e.target.value)}
+                              className="flex-1"
+                            >
+                              <option value="">Choose a template…</option>
+                              {noticeTemplates.map((t) => (
+                                <option key={t._id} value={t._id}>{t.name}</option>
+                              ))}
+                            </Select>
+                            <button
+                              type="button"
+                              disabled={!emailTemplateId}
+                              onClick={() => {
+                                const t = noticeTemplates.find((x) => x._id === emailTemplateId)
+                                if (t) setNoticeOpen({ id: t._id, name: t.name })
+                              }}
+                              className="h-10 px-4 rounded-lg text-sm font-bold text-white whitespace-nowrap cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90"
+                              style={{ background: INK }}
+                            >
+                              Compose &amp; send
+                            </button>
+                          </div>
+                          <p className="text-[11.5px]" style={{ color: MUTED }}>
+                            {c.customer?.email
+                              ? <>Sends to {c.customer.email} · merge fields auto-fill from this contract</>
+                              : <>This tenant has no email address on file — the composer can still print or send by WhatsApp</>}
+                          </p>
+                        </>
+                      )}
+                    </div>
+
                     {/* Live alerts */}
                     {liveAlerts.length > 0 && (
                       <section>
@@ -2048,52 +2094,6 @@ export default function ContractDetail() {
 
                 {/* Right column */}
                 <div className="space-y-4">
-                  {/* Send email — picks a notice template and opens the existing
-                      composer, which merges this contract's details in. */}
-                  <Card>
-                    <CardBody className="space-y-2.5">
-                      <div style={{ ...SECTION_LABEL, color: PURPLE }}>Send email</div>
-                      {noticeTemplates.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">
-                          No templates yet — add one in{' '}
-                          <Link to="/notices" className="text-primary hover:underline">Notices</Link>.
-                        </p>
-                      ) : (
-                        <>
-                          <div className="flex items-center gap-2">
-                            <Select
-                              value={emailTemplateId}
-                              onChange={(e) => setEmailTemplateId(e.target.value)}
-                              className="flex-1"
-                            >
-                              <option value="">Choose a template…</option>
-                              {noticeTemplates.map((t) => (
-                                <option key={t._id} value={t._id}>{t.name}</option>
-                              ))}
-                            </Select>
-                            <button
-                              type="button"
-                              disabled={!emailTemplateId}
-                              onClick={() => {
-                                const t = noticeTemplates.find((x) => x._id === emailTemplateId)
-                                if (t) setNoticeOpen({ id: t._id, name: t.name })
-                              }}
-                              className="h-9 px-3.5 rounded-lg text-xs font-bold text-white whitespace-nowrap cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90"
-                              style={{ background: INK }}
-                            >
-                              Compose &amp; send
-                            </button>
-                          </div>
-                          <p className="text-[11.5px]" style={{ color: MUTED }}>
-                            {c.customer?.email
-                              ? <>Sends to {c.customer.email} · merge fields auto-fill from this contract</>
-                              : <>This tenant has no email address on file — the composer can still print or send by WhatsApp</>}
-                          </p>
-                        </>
-                      )}
-                    </CardBody>
-                  </Card>
-
                   <Card>
                     <CardHeader title="Payments" action={
                       allUnpaid.length > 1 ? <Button size="sm" variant="outline" onClick={() => setBulkTarget(allUnpaid)}><CalendarDays size={12} /> Pay multiple</Button> : null
