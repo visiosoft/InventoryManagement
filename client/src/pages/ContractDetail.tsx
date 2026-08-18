@@ -807,6 +807,7 @@ type ZohoInvoicesResponse = {
   matchedContacts: ZohoMatch[]
   invoices: ZohoInvoice[]
   totals: { count: number; total: number; balance: number }
+  newInvoiceUrl?: string
 }
 
 /** One entry of GET /contracts/:id/unit-bookings — the next contract on a unit. */
@@ -2226,7 +2227,32 @@ export default function ContractDetail() {
             <div className="space-y-4">
             <Card>
               <CardHeader title="Invoices"
-                action={<Button size="sm" variant="outline" onClick={() => setShowInvoiceModal(true)}><FilePlus size={13} /> Create Invoice</Button>}
+                action={
+                  <div className="flex items-center gap-2">
+                    {/* Invoices are raised in Zoho Books — it is the accounting
+                        source of truth. The local composer stays reachable
+                        because this contract's payment schedule and reminders
+                        are driven by local invoice records, not Zoho ones. */}
+                    <Button size="sm" variant="outline"
+                      onClick={() => {
+                        const url = zohoInvoices.data?.newInvoiceUrl
+                        if (url) window.open(url, '_blank', 'noopener')
+                        else setShowInvoiceModal(true)
+                      }}
+                      title={zohoInvoices.data?.newInvoiceUrl
+                        ? 'Opens Zoho Books to raise the invoice there'
+                        : 'Zoho Books unavailable — opens the local invoice form'}>
+                      <FilePlus size={13} /> Create Invoice
+                    </Button>
+                    <button type="button"
+                      onClick={() => setShowInvoiceModal(true)}
+                      className="text-[12px] underline cursor-pointer"
+                      style={{ color: MUTED }}
+                      title="Create an invoice inside PurpleBox — this is what drives the payment schedule and reminders below">
+                      Local invoice
+                    </button>
+                  </div>
+                }
               />
               {/* Invoice list */}
               {invoiceGroups.length === 0 ? (

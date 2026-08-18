@@ -132,6 +132,15 @@ router.get('/:id/zoho-invoices', async (req, res) => {
       { count: 0, total: 0, balance: 0 },
     );
 
+    // Deep link into Zoho Books' own invoice composer, pre-selecting the
+    // matched contact when there is exactly one obvious candidate. The app
+    // domain differs per data centre, hence the env override.
+    const appBase = process.env.ZOHO_BOOKS_APP_BASE || 'https://books.zoho.com';
+    const orgId = process.env.ZOHO_BOOKS_ORG_ID;
+    const soleContactId = contacts.length === 1 ? contacts[0].id : null;
+    const newInvoiceUrl = `${appBase}/app/${orgId}#/invoices/new`
+      + (soleContactId ? `?customer_id=${encodeURIComponent(soleContactId)}` : '');
+
     res.json({
       configured: true,
       matchedContacts: contacts.map((c) => ({
@@ -139,6 +148,7 @@ router.get('/:id/zoho-invoices', async (req, res) => {
       })),
       invoices,
       totals,
+      newInvoiceUrl,
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
