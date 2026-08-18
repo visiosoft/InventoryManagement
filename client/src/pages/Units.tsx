@@ -1092,24 +1092,59 @@ function UnitDetail({ unit, onUpdate, onDelete, error, busy }: { unit: Unit; onU
         ) : (
           <ul className="divide-y">
             {allContracts.map(c => (
-              <li key={c._id} className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted/20">
-                <Link
-                  to={`/contracts/${c._id}`}
-                  onClick={e => e.stopPropagation()}
-                  className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
-                >
-                  View
-                </Link>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm">{c.contractNo}</p>
-                  <p className="text-xs text-muted-foreground truncate">
-                    {c.customer?.fullName}
-                    {c.endDate ? ` · until ${formatDate(c.endDate)}` : ''}
-                  </p>
+              <li key={c._id} className="px-3 py-2 text-sm hover:bg-muted/20">
+                <div className="flex items-center gap-2">
+                  <Link
+                    to={`/contracts/${c._id}`}
+                    onClick={e => e.stopPropagation()}
+                    className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
+                  >
+                    View
+                  </Link>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm">{c.contractNo}</p>
+                    <p className="text-xs text-muted-foreground truncate">{c.customer?.fullName}</p>
+                  </div>
+                  <Badge tone={contractStatusTone[c.status] as Parameters<typeof Badge>[0]['tone'] ?? 'default'} className="shrink-0 text-xs capitalize">
+                    {c.status.replace(/_/g, ' ')}
+                  </Badge>
                 </div>
-                <Badge tone={contractStatusTone[c.status] as Parameters<typeof Badge>[0]['tone'] ?? 'default'} className="shrink-0 text-xs capitalize">
-                  {c.status.replace(/_/g, ' ')}
-                </Badge>
+
+                {/* Term on its own row — the dates are what people come here
+                    to check, and they were previously squeezed into the
+                    customer line as "· until 10 Sept". */}
+                <div className="grid grid-cols-3 gap-2 mt-1.5 pl-[3.25rem] text-xs">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Checked in</div>
+                    <div className="font-medium">{c.startDate ? formatDate(c.startDate) : '—'}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Check out</div>
+                    <div className="font-medium">{c.endDate ? formatDate(c.endDate) : '—'}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                      {(() => {
+                        if (!c.endDate) return 'Term'
+                        const days = Math.round((new Date(c.endDate).getTime() - Date.now()) / 86400000)
+                        return days < 0 ? 'Ended' : 'Remaining'
+                      })()}
+                    </div>
+                    <div className="font-medium">
+                      {(() => {
+                        if (!c.startDate || !c.endDate) return '—'
+                        const days = Math.round((new Date(c.endDate).getTime() - Date.now()) / 86400000)
+                        const weeks = Math.ceil(
+                          Math.round((new Date(c.endDate).getTime() - new Date(c.startDate).getTime()) / 86400000) / 7
+                        )
+                        // For a live contract the useful number is days left;
+                        // for a finished one, how long it ran.
+                        if (c.status !== 'active') return `${weeks} wk${weeks === 1 ? '' : 's'}`
+                        return days < 0 ? `${Math.abs(days)}d ago` : `${days}d`
+                      })()}
+                    </div>
+                  </div>
+                </div>
               </li>
             ))}
           </ul>
