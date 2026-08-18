@@ -866,13 +866,21 @@ export default function SalesBoard() {
   const filtered = statusFilter ? rows.filter((r) => r.status === statusFilter) : rows
   const isLoading = storageLoading || movingLoading
 
+  // Accounts works invoices, not leads. The whole lead half of this board is
+  // hidden for that role, leaving tasks and unit availability.
+  const isAccounts = user?.role === 'accounts'
+
   return (
     <div style={{ background: '#FDFCFA', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
       {/* Top bar */}
       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-7">
         <div>
-          <div style={{ ...HEADING, fontSize: 26, fontWeight: 700, color: INK }}>My Leads</div>
-          <div style={{ fontSize: 14, color: MUTED, marginTop: 4 }}>{rows.length} lead{rows.length !== 1 ? 's' : ''} assigned to you</div>
+          <div style={{ ...HEADING, fontSize: 26, fontWeight: 700, color: INK }}>
+            {isAccounts ? 'My Work' : 'My Leads'}
+          </div>
+          {!isAccounts && (
+            <div style={{ fontSize: 14, color: MUTED, marginTop: 4 }}>{rows.length} lead{rows.length !== 1 ? 's' : ''} assigned to you</div>
+          )}
         </div>
       </div>
 
@@ -883,8 +891,10 @@ export default function SalesBoard() {
       <UnitAvailabilityStrip />
 
       <GoalsSection />
-      <QuickAddLead />
+      {!isAccounts && <QuickAddLead />}
 
+      {!isAccounts && (
+        <>
       {/* Status filter pills */}
       <div className="flex gap-2 flex-wrap mb-5">
         <button
@@ -969,9 +979,11 @@ export default function SalesBoard() {
           </div>
         )}
       </div>
+        </>
+      )}
 
       <SlideOver
-        open={!!viewingLead}
+        open={!isAccounts && !!viewingLead}
         side="left"
         title={viewingLead?.fullName || 'Lead details'}
         subtitle={viewingLead?.phone}
