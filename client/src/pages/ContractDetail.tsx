@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { AlertTriangle, CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Download, FileText, FilePlus, Mail, MessageSquare, PenLine, Pin, Plus, ShieldCheck, Trash2, Upload, X, XCircle } from 'lucide-react'
+import { AlertTriangle, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Download, FileText, FilePlus, Mail, MessageSquare, PenLine, Pin, Plus, ShieldCheck, Trash2, Upload, X, XCircle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { AppDocument, Contract, Invoice, Payment, Unit, UnitLine } from '../lib/types'
@@ -900,7 +900,6 @@ export default function ContractDetail() {
   const noticeInitial = useRef('')
   const [inlineField, setInlineField] = useState<string | null>(null)
   const [inlineValue, setInlineValue] = useState('')
-  const [renewalHistoryOpen, setRenewalHistoryOpen] = useState(false)
 
   // Units to choose from in the edit panel or inline unit picker
   const { data: unitOptions = [] } = useQuery<Unit[]>({
@@ -1708,7 +1707,6 @@ export default function ContractDetail() {
                     {Row('Expiring In', daysLeft === null ? '—' : daysLeft < 0 ? `Expired ${Math.abs(daysLeft)}d ago` : `${daysLeft}d left`)}
                     {(() => {
                       const renewalIntent = c.renewalIntent || 'undecided'
-                      const renewalHistory = c.renewalHistory || []
                       const options: { value: string; label: string; activeClass: string }[] = [
                         { value: 'undecided', label: 'Undecided', activeClass: 'bg-white text-foreground shadow-sm dark:bg-white/10' },
                         { value: 'renewing', label: 'Renewing', activeClass: 'bg-emerald-500 text-white shadow-sm' },
@@ -1758,28 +1756,6 @@ export default function ContractDetail() {
                                   Extend →
                                 </button>
                               </div>
-                            </div>
-                          )}
-                          {renewalHistory.length > 0 && (
-                            <div className="mt-2">
-                              <button
-                                type="button"
-                                onClick={() => setRenewalHistoryOpen((v) => !v)}
-                                className="flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground cursor-pointer"
-                              >
-                                {renewalHistoryOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                                History ({renewalHistory.length})
-                              </button>
-                              {renewalHistoryOpen && (
-                                <div className="mt-1.5 rounded-lg bg-white/60 dark:bg-black/20 px-2.5 py-1.5 space-y-1">
-                                  {[...renewalHistory].reverse().map((h, i) => (
-                                    <div key={i} className="text-xs text-muted-foreground flex justify-between gap-2">
-                                      <span>{formatDate(h.previousEndDate)} → {formatDate(h.newEndDate)}</span>
-                                      <span className="shrink-0">{h.author}{h.at ? ` · ${formatDate(h.at)}` : ''}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
                             </div>
                           )}
                         </div>
@@ -2744,6 +2720,31 @@ export default function ContractDetail() {
                           </div>
                         )
                       })}
+                    </div>
+                  </div>
+                )}
+                {/* Renewal history lives here rather than in the sidebar: it
+                    is a record of this contract's term changing, which belongs
+                    with the contract list, not beside the status toggle. */}
+                {(c.renewalHistory?.length ?? 0) > 0 && (
+                  <div className="mt-6">
+                    <div style={SECTION_LABEL} className="mb-2">Renewal history</div>
+                    <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(20,8,31,.08)' }}>
+                      {[...(c.renewalHistory ?? [])].reverse().map((h, i) => (
+                        <div key={i}
+                          className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 text-[13px]"
+                          style={{ borderTop: i === 0 ? 'none' : '1px solid rgba(20,8,31,.06)' }}>
+                          <span>
+                            <span style={{ color: MUTED }}>Check out</span>{' '}
+                            <span className="font-semibold">{formatDate(h.previousEndDate)}</span>
+                            <span style={{ color: MUTED }}> → </span>
+                            <span className="font-semibold">{formatDate(h.newEndDate)}</span>
+                          </span>
+                          <span className="text-[11.5px]" style={{ color: MUTED }}>
+                            {h.author || 'unknown'}{h.at ? ` · ${formatDate(h.at)}` : ''}
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
