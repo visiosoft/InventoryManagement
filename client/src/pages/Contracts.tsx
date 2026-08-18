@@ -1,26 +1,68 @@
 import { Fragment, useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Mail, Paperclip, Search, Trash2, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, Mail, Paperclip, Search, SlidersHorizontal, Trash2, X } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { Contract } from '../lib/types'
 import EmailCustomersModal from './customers/EmailCustomersModal'
-import {
-  Badge, Button, Card, EmptyState, Modal, Pagination,
-  Spinner, Table, Td, Th,
-  contractStatusTone, statusLabel,
-} from '../components/ui'
+import { Button, EmptyState, Modal, Spinner, statusLabel } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
 
-const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
+const HEADING = { fontFamily: "'Bricolage Grotesque', serif", letterSpacing: '-0.02em' } as const
+const PAGE_BG = '#FBF8F2'
 const INK = '#14081F'
 const MUTED_COLOR = '#756E80'
-const CREAM = '#FDFCFA'
+const SECOND = '#4A4357'
+const PURPLE = '#5B2BC9'
+const LINE = 'rgba(20,8,31,0.10)'
+const FIELD_LINE = 'rgba(20,8,31,0.14)'
 const CHIP_BG = '#F3F0EA'
+
+// checkbox | Contract | Customer | Unit(s) | Amount | Start | End | Status | Renewal | delete
+const GRID = '40px 1.3fr 1.6fr 0.9fr 1fr 1fr 1fr 0.9fr 60px'
 
 const STATUSES = ['draft', 'pending_signature', 'active', 'ended', 'cancelled']
 type PagedContracts = { data: Contract[]; total: number; page: number; pages: number; limit: number }
+
+// Pill palette per status — active is the mockup's green, the rest get their
+// own tone so a glance separates a signed contract from a dead one.
+const STATUS_PILL: Record<string, { bg: string; fg: string; dot: string }> = {
+  active: { bg: '#EAF7EE', fg: '#1D8A46', dot: '#22c55e' },
+  draft: { bg: '#F3F0EA', fg: '#6B6478', dot: '#A79EB3' },
+  pending_signature: { bg: '#FFF3DF', fg: '#946200', dot: '#F59E0B' },
+  ended: { bg: '#EDF0F6', fg: '#4A5568', dot: '#94A3B8' },
+  cancelled: { bg: '#FDEEEE', fg: '#C0392B', dot: '#EF4444' },
+}
+
+const CSS = `
+.ctr-row:hover { background: #F7F3FF; }
+.ctr-link:hover { text-decoration: underline; }
+.ctr-del:hover { background: #FDEEEE; color: #C0392B; }
+.ctr-ghost:hover { background: #F7F3FF; }
+.ctr-page-btn:not(:disabled):hover { filter: brightness(0.96); }
+`
+
+const fieldBase: React.CSSProperties = {
+  height: 44,
+  borderRadius: 12,
+  border: `1px solid ${FIELD_LINE}`,
+  background: '#fff',
+  color: INK,
+  fontSize: 13,
+  padding: '0 12px',
+  outline: 'none',
+}
+
+const headCell: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  fontSize: 11,
+  fontWeight: 700,
+  letterSpacing: '0.08em',
+  textTransform: 'uppercase',
+  color: MUTED_COLOR,
+}
 
 export default function Contracts() {
   const qc = useQueryClient()
@@ -41,6 +83,7 @@ export default function Contracts() {
   const [showArchived, setShowArchived] = useState(false)
   const [sort, setSort] = useState('newest')
   const [groupBy, setGroupBy] = useState<'none' | 'status' | 'payment' | 'floor' | 'billing'>('none')
+  const [moreOpen, setMoreOpen] = useState(false)
 
   // Reset to page 1 when any filter changes
   useEffect(() => { setPage(1) }, [search, status, billing, floor, from, to, limit, showArchived, sort])
@@ -155,372 +198,466 @@ export default function Contracts() {
     }
   }
 
-  const pillSelect: React.CSSProperties = {
-    background: CHIP_BG,
-    border: 'none',
-    borderRadius: 10,
-    height: 36,
-    padding: '0 12px',
-    fontSize: 13,
-    color: INK,
-    outline: 'none',
-    cursor: 'pointer',
-    minWidth: 130,
-  }
-
-  const pillDate: React.CSSProperties = {
-    background: CHIP_BG,
-    border: 'none',
-    borderRadius: 10,
-    height: 36,
-    padding: '0 12px',
-    fontSize: 13,
-    color: INK,
-    outline: 'none',
-    width: 140,
-  }
+  const totalPages = data?.pages ?? 1
+  const canPrev = page > 1
+  const canNext = page < totalPages
 
   return (
-    <div style={{ background: CREAM, borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 mb-6">
-        <div>
-          <h1 style={{ ...HEADING, color: INK, fontSize: 28, fontWeight: 800, lineHeight: 1.15, margin: 0 }}>
-            Tenants
-          </h1>
-          <p style={{ color: MUTED_COLOR, fontSize: 14, marginTop: 4 }}>
-            {data ? `${data.total} tenant${data.total !== 1 ? 's' : ''}${hasFilters ? ' (filtered)' : ''}` : ' '}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          {isAdmin && (
-            <button
-              onClick={() => setEmailing(true)}
-              style={{
-                background: '#fff',
-                color: INK,
-                border: '1px solid rgba(20,8,31,.16)',
-                borderRadius: 12,
-                padding: '10px 18px',
-                fontWeight: 700,
-                fontSize: 14,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                ...HEADING,
-              }}
-            >
-              <Mail size={15} /> Email tenants
-            </button>
-          )}
-          {selectedContractIds.length > 0 && (
-            <button
-              onClick={confirmBulkDelete}
-              disabled={deleteManyContracts.isPending}
-              style={{
-                background: '#DC2626',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 12,
-                padding: '10px 22px',
-                fontWeight: 700,
-                fontSize: 14,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                opacity: deleteManyContracts.isPending ? 0.6 : 1,
-                ...HEADING,
-              }}
-            >
-              {deleteManyContracts.isPending ? 'Deleting…' : `Delete selected (${selectedContractIds.length})`}
-            </button>
-          )}
-        </div>
-      </div>
+    <div style={{ background: PAGE_BG, padding: 'clamp(16px, 4vw, 40px)', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", color: INK }}>
+      <style>{CSS}</style>
 
-      {/* ── Filter bar ───────────────────────────────────────────── */}
-      <div className="mb-5 flex flex-wrap items-end gap-2">
-        <div className="relative flex-1" style={{ minWidth: 200, maxWidth: 280 }}>
-          <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: MUTED_COLOR }} />
-          <input
-            placeholder="Customer, unit, contract #…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{
-              width: '100%',
-              background: CHIP_BG,
-              border: 'none',
-              borderRadius: 10,
-              height: 36,
-              paddingLeft: 36,
-              paddingRight: 12,
-              fontSize: 13,
-              color: INK,
-              outline: 'none',
-            }}
-          />
-        </div>
-
-        <select value={status} onChange={(e) => setStatus(e.target.value)} style={pillSelect}>
-          <option value="">All statuses</option>
-          {STATUSES.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
-        </select>
-
-        <select value={floor} onChange={(e) => setFloor(e.target.value)} style={{ ...pillSelect, minWidth: 110 }}>
-          <option value="">All floors</option>
-          <option value="F1">Floor F1</option>
-          <option value="F2">Floor F2</option>
-          <option value="F3">Floor F3</option>
-          <option value="Shed">Shed</option>
-        </select>
-
-        <select value={sort} onChange={(e) => setSort(e.target.value)} style={{ ...pillSelect, minWidth: 150 }}>
-          <option value="newest">Sort: Newest first</option>
-          <option value="oldest">Sort: Oldest first</option>
-          <option value="start_asc">Sort: Start date ↑</option>
-          <option value="start_desc">Sort: Start date ↓</option>
-          <option value="end_asc">Sort: End date ↑</option>
-          <option value="end_desc">Sort: End date ↓</option>
-          <option value="rate_desc">Sort: Rate high → low</option>
-          <option value="rate_asc">Sort: Rate low → high</option>
-        </select>
-
-        <select value={groupBy} onChange={(e) => setGroupBy(e.target.value as typeof groupBy)} style={{ ...pillSelect, minWidth: 150 }}>
-          <option value="none">Group: None</option>
-          <option value="status">Group: Status</option>
-          <option value="payment">Group: Payment</option>
-          <option value="floor">Group: Floor</option>
-          <option value="billing">Group: Billing</option>
-        </select>
-
-        <div className="flex items-end gap-1">
+      <div
+        style={{
+          maxWidth: 1400,
+          margin: '0 auto',
+          background: '#fff',
+          border: `1px solid ${LINE}`,
+          borderRadius: 28,
+          boxShadow: '0 8px 24px rgba(20,8,31,.08), 0 2px 6px rgba(20,8,31,.04)',
+          overflow: 'hidden',
+        }}
+      >
+        {/* ── Header ───────────────────────────────────────────────── */}
+        <div
+          className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+          style={{ padding: '36px 40px 28px', borderBottom: `1px solid ${LINE}` }}
+        >
           <div>
-            <p style={{ fontSize: 10, color: MUTED_COLOR, marginBottom: 2 }}>Start from</p>
-            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={pillDate} />
+            <h1 style={{ ...HEADING, color: INK, fontSize: 32, fontWeight: 700, lineHeight: 1.15, margin: 0 }}>
+              Tenants
+            </h1>
+            <p style={{ color: MUTED_COLOR, fontSize: 14, marginTop: 6 }}>
+              {data ? `${data.total} tenant${data.total !== 1 ? 's' : ''}${hasFilters ? ' (filtered)' : ''}` : ' '}
+            </p>
           </div>
-          <div>
-            <p style={{ fontSize: 10, color: MUTED_COLOR, marginBottom: 2 }}>to</p>
-            <input type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} style={pillDate} />
+
+          <div className="flex flex-wrap items-center gap-2">
+            {selectedContractIds.length > 0 && (
+              <button
+                onClick={confirmBulkDelete}
+                disabled={deleteManyContracts.isPending}
+                className="ctr-page-btn"
+                style={{
+                  height: 48,
+                  padding: '0 22px',
+                  background: '#DC2626',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 999,
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: 'pointer',
+                  opacity: deleteManyContracts.isPending ? 0.6 : 1,
+                }}
+              >
+                {deleteManyContracts.isPending ? 'Deleting…' : `Delete selected (${selectedContractIds.length})`}
+              </button>
+            )}
+            {isAdmin && (
+              <button
+                onClick={() => setEmailing(true)}
+                className="ctr-page-btn"
+                style={{
+                  height: 48,
+                  padding: '0 22px',
+                  background: PURPLE,
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 999,
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
+                <Mail size={16} /> Email tenants
+              </button>
+            )}
           </div>
         </div>
 
-        <label className="flex items-center gap-1.5" style={{ fontSize: 12, color: MUTED_COLOR, paddingBottom: 8, cursor: 'pointer' }}>
-          <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
-          Archived &amp; ended
-        </label>
+        {/* ── Filter bar ───────────────────────────────────────────── */}
+        <div style={{ padding: '22px 40px', background: PAGE_BG, borderBottom: `1px solid ${LINE}` }}>
+          <div className="flex flex-wrap items-center" style={{ gap: 12 }}>
+            <div style={{ position: 'relative', flex: '1 1 260px' }}>
+              <Search size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: MUTED_COLOR }} />
+              <input
+                placeholder="Customer, unit, contract #…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                style={{ ...fieldBase, width: '100%', paddingLeft: 40, paddingRight: 12 }}
+              />
+            </div>
 
-        {hasFilters && (
-          <button
-            onClick={clearFilters}
-            style={{
-              background: CHIP_BG,
-              border: 'none',
-              borderRadius: 10,
-              height: 36,
-              padding: '0 14px',
-              fontSize: 13,
-              color: INK,
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-            }}
-          >
-            <X size={12} /> Clear
-          </button>
-        )}
-      </div>
+            <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ ...fieldBase, cursor: 'pointer', minWidth: 150 }}>
+              <option value="">All statuses</option>
+              {STATUSES.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
+            </select>
 
-      {/* ── Table ────────────────────────────────────────────────── */}
-      {isLoading ? (
-        <Spinner />
-      ) : (
-        <Card>
-          {deleteError && <p className="px-4 pt-4 text-xs text-destructive">{deleteError}</p>}
-          <Table>
-            <thead>
-              <tr>
-                <Th>
-                  <input
-                    type="checkbox"
-                    checked={allVisibleSelected}
-                    onChange={toggleAllVisibleContracts}
-                    aria-label="Select all contracts"
-                  />
-                </Th>
-                <Th>Contract</Th>
-                <Th>Customer</Th>
-                <Th>Unit(s)</Th>
-                <Th>Contract Amount</Th>
-                <Th>Start</Th>
-                <Th>End</Th>
-                <Th>Status</Th>
-                <Th>Renewal</Th>
-                <Th>Invoice</Th>
-                <Th>Docs</Th>
-                <Th />
-              </tr>
-            </thead>
-            <tbody>
-              {groups.map((g) => (
-                <Fragment key={g.label || 'all'}>
-                  {g.label && (
-                    <tr>
-                      <td colSpan={12} style={{ background: '#F7F3FF', padding: '6px 14px', fontSize: 12, fontWeight: 700, color: '#4A1FA0' }}>
+            <select value={floor} onChange={(e) => setFloor(e.target.value)} style={{ ...fieldBase, cursor: 'pointer', minWidth: 130 }}>
+              <option value="">All floors</option>
+              <option value="F1">Floor F1</option>
+              <option value="F2">Floor F2</option>
+              <option value="F3">Floor F3</option>
+              <option value="Shed">Shed</option>
+            </select>
+
+            <select value={sort} onChange={(e) => setSort(e.target.value)} style={{ ...fieldBase, cursor: 'pointer', minWidth: 170 }}>
+              <option value="newest">Sort: Newest first</option>
+              <option value="oldest">Sort: Oldest first</option>
+              <option value="start_asc">Sort: Start date ↑</option>
+              <option value="start_desc">Sort: Start date ↓</option>
+              <option value="end_asc">Sort: End date ↑</option>
+              <option value="end_desc">Sort: End date ↓</option>
+              <option value="rate_desc">Sort: Rate high → low</option>
+              <option value="rate_asc">Sort: Rate low → high</option>
+            </select>
+
+            <button
+              onClick={() => setMoreOpen((v) => !v)}
+              className="ctr-ghost"
+              aria-expanded={moreOpen}
+              style={{
+                ...fieldBase,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                fontWeight: 600,
+                cursor: 'pointer',
+                padding: '0 16px',
+              }}
+            >
+              <SlidersHorizontal size={15} /> More filters
+              {moreOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+            </button>
+          </div>
+
+          {moreOpen && (
+            <div
+              className="flex flex-wrap items-end"
+              style={{ gap: 12, marginTop: 14, paddingTop: 14, borderTop: `1px dashed ${FIELD_LINE}` }}
+            >
+              <select value={groupBy} onChange={(e) => setGroupBy(e.target.value as typeof groupBy)} style={{ ...fieldBase, cursor: 'pointer', minWidth: 170 }}>
+                <option value="none">Group: None</option>
+                <option value="status">Group: Status</option>
+                <option value="payment">Group: Payment</option>
+                <option value="floor">Group: Floor</option>
+                <option value="billing">Group: Billing</option>
+              </select>
+
+              <select value={billing} onChange={(e) => setBilling(e.target.value)} style={{ ...fieldBase, cursor: 'pointer', minWidth: 160 }}>
+                <option value="">All billing periods</option>
+                <option value="weekly">Weekly billing</option>
+                <option value="monthly">Monthly billing</option>
+              </select>
+
+              <div>
+                <p style={{ fontSize: 11, color: MUTED_COLOR, marginBottom: 4 }}>Start from</p>
+                <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ ...fieldBase, width: 160 }} />
+              </div>
+              <div>
+                <p style={{ fontSize: 11, color: MUTED_COLOR, marginBottom: 4 }}>to</p>
+                <input type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} style={{ ...fieldBase, width: 160 }} />
+              </div>
+
+              <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} style={{ ...fieldBase, cursor: 'pointer', minWidth: 140 }}>
+                {[25, 50, 100, 200].map((n) => <option key={n} value={n}>{n} per page</option>)}
+              </select>
+
+              <label className="flex items-center gap-2" style={{ fontSize: 13, color: SECOND, height: 44, cursor: 'pointer' }}>
+                <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+                Archived &amp; ended
+              </label>
+
+              {hasFilters && (
+                <button
+                  onClick={clearFilters}
+                  className="ctr-ghost"
+                  style={{ ...fieldBase, display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', padding: '0 16px' }}
+                >
+                  <X size={14} /> Clear
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── Table ────────────────────────────────────────────────── */}
+        <div style={{ borderBottom: `1px solid ${LINE}` }}>
+          {deleteError && (
+            <p style={{ padding: '14px 40px 0', fontSize: 12, color: '#C0392B' }}>{deleteError}</p>
+          )}
+
+          {isLoading ? (
+            <div style={{ padding: 40 }}><Spinner /></div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <div style={{ minWidth: 1200 }}>
+                {/* Header row */}
+                <div style={{ display: 'grid', gridTemplateColumns: GRID, padding: '0 40px', height: 48, borderBottom: `1px solid ${LINE}` }}>
+                  <div style={{ ...headCell }}>
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      onChange={toggleAllVisibleContracts}
+                      aria-label="Select all contracts"
+                    />
+                  </div>
+                  <div style={headCell}>Contract</div>
+                  <div style={headCell}>Customer</div>
+                  <div style={headCell}>Unit(s)</div>
+                  <div style={headCell}>Amount</div>
+                  <div style={headCell}>Start</div>
+                  <div style={headCell}>End</div>
+                  <div style={headCell}>Status</div>
+                  <div style={headCell}>Renewal</div>
+                  <div style={headCell} />
+                </div>
+
+                {groups.map((g) => (
+                  <Fragment key={g.label || 'all'}>
+                    {g.label && (
+                      <div style={{ background: '#F7F3FF', padding: '8px 40px', fontSize: 12, fontWeight: 700, color: '#4A1FA0', borderBottom: '1px solid rgba(20,8,31,0.07)' }}>
                         {g.label} <span style={{ opacity: .6, fontWeight: 600 }}>· {g.items.length}</span>
-                      </td>
-                    </tr>
-                  )}
-                  {g.items.map((c) => {
-                    const allUnits = c.units?.length ? c.units : [c.unit]
-                    return (
-                      <tr key={c._id} className="hover:bg-muted/50">
-                        <Td>
-                          <input
-                            type="checkbox"
-                            checked={selectedContractIds.includes(c._id)}
-                            onChange={() => toggleContractSelection(c._id)}
-                            aria-label={`Select contract ${c.contractNo}`}
-                          />
-                        </Td>
-                        <Td>
-                          <Link to={`/contracts/${c._id}`} className="font-medium text-primary hover:underline">
-                            {c.contractNo}
-                          </Link>
-                        </Td>
-                        <Td>
-                          {c.customer ? c.customer.fullName : '—'}
-                        </Td>
-                        <Td>
-                          {allUnits.length === 1 ? (
-                            <span>
-                              {c.unit?.unitNumber}
-                              {c.unit?.sizeSqf != null && (
-                                <span className="text-muted-foreground text-xs"> ({c.unit.sizeSqf} sqf)</span>
-                              )}
-                            </span>
-                          ) : (
-                            <span className="flex flex-wrap gap-1">
-                              {allUnits.map((u) => (
-                                <span key={u._id} className="rounded bg-accent px-1.5 py-0.5 text-[11px] font-medium">
-                                  {u.unitNumber}
-                                </span>
-                              ))}
-                            </span>
-                          )}
-                        </Td>
-                        <Td>
-                          <span className="font-medium" title={`${c.billingPeriod === 'weekly' ? 'Weekly' : 'Monthly'} billing · rate ${formatMoney(c.rate)}`}>
-                            {contractValue(c) ? formatMoney(contractValue(c)) : '—'}
-                          </span>
-                        </Td>
-                        <Td>{formatDate(c.startDate)}</Td>
-                        <Td>{formatDate(c.endDate)}</Td>
-                        <Td>
-                          <div className="flex items-center gap-1">
-                            <Badge tone={contractStatusTone[c.status]}>{statusLabel(c.status)}</Badge>
-                            {c.archived && <Badge tone="gray">Archived</Badge>}
+                      </div>
+                    )}
+                    {g.items.map((c) => {
+                      const allUnits = c.units?.length ? c.units : c.unit ? [c.unit] : []
+                      const pill = STATUS_PILL[c.status] ?? STATUS_PILL.draft
+                      const value = contractValue(c)
+                      return (
+                        <div
+                          key={c._id}
+                          className="ctr-row"
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: GRID,
+                            padding: '0 40px',
+                            minHeight: 76,
+                            alignItems: 'center',
+                            borderBottom: '1px solid rgba(20,8,31,0.07)',
+                            transition: 'background .12s ease',
+                          }}
+                        >
+                          <div>
+                            <input
+                              type="checkbox"
+                              checked={selectedContractIds.includes(c._id)}
+                              onChange={() => toggleContractSelection(c._id)}
+                              aria-label={`Select contract ${c.contractNo}`}
+                            />
                           </div>
-                        </Td>
-                        <Td>
-                          {c.status === 'active' ? (
-                            <span
-                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap ${
-                                c.renewalIntent === 'renewing'
-                                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400'
-                                  : c.renewalIntent === 'not_renewing'
-                                  ? 'bg-destructive/10 text-destructive'
-                                  : 'bg-muted text-muted-foreground'
-                              }`}
+
+                          <div>
+                            <Link
+                              to={`/contracts/${c._id}`}
+                              className="ctr-link"
+                              style={{ color: PURPLE, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}
                             >
-                              {c.renewalIntent === 'renewing' ? 'Renewing' : c.renewalIntent === 'not_renewing' ? 'Not renewing' : 'Undecided'}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground text-xs">—</span>
-                          )}
-                        </Td>
-                        <Td>
-                          {c.paymentStatus === 'paid' && (
-                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap"
-                              style={{ background: '#EAF7EF', color: '#1B7A4B' }}
-                              title={`Fully paid · ${formatMoney(c.paidAmount ?? 0)}`}>
-                              Fully paid
-                            </span>
-                          )}
-                          {c.paymentStatus === 'partial' && (
-                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap"
-                              style={{ background: '#FDF3D8', color: '#8A6A2F' }}
-                              title={`Paid ${formatMoney(c.paidAmount ?? 0)} of ${formatMoney(c.totalAmount ?? 0)}${c.overdueCount ? ` · ${c.overdueCount} overdue` : ''}`}>
-                              Partial
-                            </span>
-                          )}
-                          {c.paymentStatus === 'unpaid' && (
-                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold whitespace-nowrap"
-                              style={{ background: '#FDECEC', color: '#B3261E' }}
-                              title={`Nothing paid of ${formatMoney(c.totalAmount ?? 0)}${c.overdueCount ? ` · ${c.overdueCount} overdue` : ''}`}>
-                              Unpaid
-                            </span>
-                          )}
-                          {c.paymentStatus === 'no_invoice' && (
-                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap"
-                              style={{ background: '#F3F0EA', color: '#756E80' }}
-                              title="No invoice / payment schedule yet">
-                              No invoice
-                            </span>
-                          )}
-                        </Td>
-                        <Td>
-                          {typeof c.documentCount === 'number' && (c.documentCount > 0 ? (
-                            <span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
-                              style={{ background: '#EAF7EF', color: '#1B7A4B' }}
-                              title={`${c.documentCount} document${c.documentCount !== 1 ? 's' : ''} attached`}>
-                              <Paperclip size={9} />{c.documentCount}
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold"
-                              style={{ background: '#FDECEC', color: '#B3261E' }}
-                              title="No documents attached">
-                              <Paperclip size={9} />0
-                            </span>
-                          ))}
-                        </Td>
-                        <Td>
-                          {c.archived && (
-                            <button
-                              onClick={() => archiveContract.mutate({ id: c._id, archived: false })}
-                              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
-                              title="Unarchive contract"
-                              disabled={archiveContract.isPending}
-                            >
-                              Unarchive
-                            </button>
-                          )}
-                          <button
-                            onClick={() => { setDeleteTarget(c); setDeleteError('') }}
-                            className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
-                            title="Delete contract"
+                              {c.contractNo}
+                            </Link>
+                            {typeof c.documentCount === 'number' && (
+                              <span
+                                title={c.documentCount > 0
+                                  ? `${c.documentCount} document${c.documentCount !== 1 ? 's' : ''} attached`
+                                  : 'No documents attached'}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 2,
+                                  marginLeft: 8,
+                                  padding: '1px 6px',
+                                  borderRadius: 999,
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  background: c.documentCount > 0 ? '#EAF7EF' : '#FDECEC',
+                                  color: c.documentCount > 0 ? '#1B7A4B' : '#B3261E',
+                                  verticalAlign: 'middle',
+                                }}
+                              >
+                                <Paperclip size={9} />{c.documentCount}
+                              </span>
+                            )}
+                          </div>
+
+                          <div style={{ fontWeight: 600, fontSize: 14, color: INK }}>
+                            {c.customer ? c.customer.fullName : '—'}
+                          </div>
+
+                          <div style={{ color: SECOND, fontSize: 13 }}>
+                            {allUnits.length === 0 ? '—' : allUnits.length === 1 ? (
+                              <span>
+                                {c.unit?.unitNumber ?? allUnits[0]?.unitNumber}
+                                {c.unit?.sizeSqf != null && (
+                                  <span style={{ color: MUTED_COLOR, fontSize: 11 }}> ({c.unit.sizeSqf} sqf)</span>
+                                )}
+                              </span>
+                            ) : (
+                              <span className="flex flex-wrap" style={{ gap: 4 }}>
+                                {allUnits.map((u) => (
+                                  <span key={u._id} style={{ background: CHIP_BG, borderRadius: 6, padding: '2px 6px', fontSize: 11, fontWeight: 600 }}>
+                                    {u.unitNumber}
+                                  </span>
+                                ))}
+                              </span>
+                            )}
+                          </div>
+
+                          <div
+                            style={{ fontWeight: 700, fontSize: 14, fontVariantNumeric: 'tabular-nums', color: INK }}
+                            title={`${c.billingPeriod === 'weekly' ? 'Weekly' : 'Monthly'} billing · rate ${formatMoney(c.rate)}${
+                              c.paymentStatus ? ` · ${PAYMENT_LABELS[c.paymentStatus]}` : ''
+                            }${c.overdueCount ? ` · ${c.overdueCount} overdue` : ''}`}
                           >
-                            <Trash2 size={14} />
-                          </button>
-                        </Td>
-                      </tr>
-                    )
-                  })}
-                </Fragment>
-              ))}
-            </tbody>
-          </Table>
-          {contracts.length === 0 && (
+                            {value ? formatMoney(value) : '—'}
+                          </div>
+
+                          <div style={{ color: SECOND, fontSize: 13 }}>{formatDate(c.startDate)}</div>
+                          <div style={{ color: SECOND, fontSize: 13 }}>{formatDate(c.endDate)}</div>
+
+                          <div className="flex flex-wrap items-center" style={{ gap: 6 }}>
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                background: pill.bg,
+                                color: pill.fg,
+                                borderRadius: 999,
+                                padding: '4px 10px',
+                                fontSize: 12,
+                                fontWeight: 700,
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              <span style={{ width: 6, height: 6, borderRadius: 999, background: pill.dot }} />
+                              {statusLabel(c.status)}
+                            </span>
+                            {c.archived && (
+                              <span style={{ background: CHIP_BG, color: MUTED_COLOR, borderRadius: 999, padding: '4px 8px', fontSize: 11, fontWeight: 600 }}>
+                                Archived
+                              </span>
+                            )}
+                          </div>
+
+                          <div>
+                            {c.status === 'active' ? (
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  background: CHIP_BG,
+                                  color: MUTED_COLOR,
+                                  borderRadius: 999,
+                                  padding: '4px 10px',
+                                  fontSize: 12,
+                                  fontWeight: 600,
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {c.renewalIntent === 'renewing' ? 'Renewing' : c.renewalIntent === 'not_renewing' ? 'Not renewing' : 'Undecided'}
+                              </span>
+                            ) : (
+                              <span style={{ color: MUTED_COLOR, fontSize: 12 }}>—</span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-end" style={{ gap: 4 }}>
+                            {c.archived && (
+                              <button
+                                onClick={() => archiveContract.mutate({ id: c._id, archived: false })}
+                                disabled={archiveContract.isPending}
+                                className="ctr-ghost"
+                                title="Unarchive contract"
+                                style={{ background: 'transparent', border: 'none', borderRadius: 8, padding: '4px 6px', fontSize: 11, color: MUTED_COLOR, cursor: 'pointer' }}
+                              >
+                                Unarchive
+                              </button>
+                            )}
+                            <button
+                              onClick={() => { setDeleteTarget(c); setDeleteError('') }}
+                              className="ctr-del"
+                              title="Delete contract"
+                              style={{
+                                width: 36,
+                                height: 36,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderRadius: 10,
+                                border: 'none',
+                                background: 'transparent',
+                                color: MUTED_COLOR,
+                                cursor: 'pointer',
+                                transition: 'background .12s ease, color .12s ease',
+                              }}
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </Fragment>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!isLoading && contracts.length === 0 && (
             <EmptyState message={hasFilters ? 'No contracts match the filters.' : 'No contracts yet. Create your first contract.'} />
           )}
-          {data && data.pages > 1 && (
-            <Pagination page={data.page} pages={data.pages} total={data.total} limit={limit}
-              onPage={setPage} onLimit={(l) => setLimit(l)} />
-          )}
-        </Card>
-      )}
+        </div>
+
+        {/* ── Footer ───────────────────────────────────────────────── */}
+        <div className="flex flex-wrap items-center justify-between" style={{ padding: '20px 40px', gap: 12 }}>
+          <span style={{ fontSize: 13, color: MUTED_COLOR }}>
+            Showing {contracts.length} of {data?.total ?? 0}
+          </span>
+          <div className="flex items-center" style={{ gap: 8 }}>
+            <button
+              onClick={() => canPrev && setPage(page - 1)}
+              disabled={!canPrev}
+              className="ctr-page-btn"
+              style={{
+                height: 36,
+                padding: '0 16px',
+                borderRadius: 10,
+                border: `1px solid ${FIELD_LINE}`,
+                background: '#fff',
+                color: INK,
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: canPrev ? 'pointer' : 'not-allowed',
+                opacity: canPrev ? 1 : 0.45,
+              }}
+            >
+              Previous
+            </button>
+            <button
+              onClick={() => canNext && setPage(page + 1)}
+              disabled={!canNext}
+              className="ctr-page-btn"
+              style={{
+                height: 36,
+                padding: '0 16px',
+                borderRadius: 10,
+                border: 'none',
+                background: PURPLE,
+                color: '#fff',
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: canNext ? 'pointer' : 'not-allowed',
+                opacity: canNext ? 1 : 0.45,
+              }}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* ── Delete confirmation modal ─────────────────────────────── */}
       <Modal
