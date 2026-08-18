@@ -639,14 +639,10 @@ export default function Units() {
         {/* Phrase reader */}
         {askOpen && (
           <div style={{ marginTop: 16, borderTop: `1px solid ${LINE}`, paddingTop: 16 }}>
-            <input
-              value={phrase}
-              onChange={(e) => setPhrase(e.target.value)}
-              placeholder='e.g. "a small unit on F2 for 3 weeks from 1 Oct"'
-              style={{ ...controlStyle, width: '100%', height: 44 }}
-            />
-            <p style={{ fontSize: 11.5, color: MUTED, marginTop: 8 }}>
-              This is a phrase reader running in your browser, not an AI model. It recognises a
+            <p style={{ fontSize: 11.5, color: MUTED }}>
+              Type the request in the box beside <strong>Ask PurpleBox AI</strong> above. A phrase
+              reader in your browser interprets it; <strong>Ask the model</strong> sends it to
+              OpenAI instead. It recognises a
               fixed set of wordings — dates ("today", "next week", "in 2 weeks", "for 3 months",
               "1 Oct", "2026-10-01"), sizes ("small", "large", "50 sq ft") and floors ("F2",
               "first floor", "shed").

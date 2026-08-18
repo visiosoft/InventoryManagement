@@ -6,8 +6,8 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { Summary } from '../lib/types'
-import { Spinner, EmptyState, Table, Th, Td, Button } from '../components/ui'
-import { formatDate, formatMoney } from '../lib/utils'
+import { Spinner, EmptyState, Table, Th, Td, Button, Badge } from '../components/ui'
+import { formatDate } from '../lib/utils'
 import TasksPage from './Tasks'
 import { isSalesRepRole } from '../lib/roles'
 
@@ -23,7 +23,7 @@ type WidgetId =
   | 'floor-occupancy'
   | 'overdue-aging'
   | 'expiring-contracts'
-  | 'top-delinquents'
+  | 'team-tasks'
   | 'latest-notes'
 
 const DASHBOARD_LAYOUT_KEY = 'pb_dashboard_layout_v2'
@@ -34,7 +34,7 @@ const DEFAULT_LAYOUT: WidgetId[] = [
   'floor-occupancy',
   'overdue-aging',
   'expiring-contracts',
-  'top-delinquents',
+  'team-tasks',
   'latest-notes',
 ]
 
@@ -144,6 +144,26 @@ export default function Dashboard() {
     staleTime: 5 * 60_000,
   })
 
+  // Latest tasks across everyone. Admins get the whole team from this
+  // endpoint; a rep would only ever see their own, so this card is for the
+  // admin dashboard.
+  type TeamTask = {
+    _id: string; title: string; status: string; dueDate?: string | null
+    leadName?: string; leadType?: string | null; leadId?: string
+    assignedTo?: { name?: string; email?: string } | null
+    createdAt?: string
+  }
+  const { data: allTeamTasks = [] } = useQuery<TeamTask[]>({
+    queryKey: ['team-tasks-latest'],
+    queryFn: () => api.get('/tasks').then((r) => r.data),
+    staleTime: 60_000,
+  })
+  // The endpoint sorts by due date; this card is about what was raised most
+  // recently, so re-sort on createdAt.
+  const teamTasks = [...allTeamTasks]
+    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+    .slice(0, 6)
+
   const { data: draftInvoicesPage } = useQuery<{ total: number }>({
     queryKey: ['invoices-draft-count'],
     queryFn: () => api.get('/invoices', { params: { status: 'draft', limit: 1 } }).then((r) => r.data),
@@ -175,23 +195,6 @@ export default function Dashboard() {
     }
   }
 
-  const delinquentMap = new Map<string, {
-    customerId: string; customerName: string; count: number; total: number; oldestDue: number
-  }>()
-  for (const p of data?.overduePayments ?? []) {
-    const pid = p.contract?.customer?._id || p.contract?._id || 'unknown'
-    const dueTs = new Date(p.dueDate).getTime()
-    const hit = delinquentMap.get(pid)
-    if (hit) { hit.count += 1; hit.total += p.amount || 0; hit.oldestDue = Math.min(hit.oldestDue, dueTs); continue }
-    delinquentMap.set(pid, {
-      customerId: p.contract?.customer?._id || '',
-      customerName: p.contract?.customer?.fullName || 'Unknown customer',
-      count: 1, total: p.amount || 0, oldestDue: dueTs,
-    })
-  }
-  const topDelinquents = [...delinquentMap.values()]
-    .sort((a, b) => b.total - a.total || b.count - a.count)
-    .slice(0, 5)
 
   const onDragStart = (id: WidgetId) => setDragged(id)
   const onDragOver = (e: React.DragEvent<HTMLDivElement>) => e.preventDefault()
@@ -368,33 +371,50 @@ export default function Dashboard() {
             )}
           </WidgetShell>
         ),
-        'top-delinquents': (
+        'team-tasks': (
           <WidgetShell
-            id="top-delinquents"
-            title="Top delinquent customers"
-            subtitle="Highest current overdue balances"
+            id="team-tasks"
+            title="Latest tasks from the team"
+            subtitle="Newest first, across everyone"
             onDragStart={onDragStart}
             onDragOver={onDragOver}
             onDrop={onDrop}
           >
-            {topDelinquents.length === 0 ? (
-              <EmptyState message="No customers with overdue balances." />
+            {teamTasks.length === 0 ? (
+              <EmptyState message="No tasks yet." />
             ) : (
               <Table>
-                <thead><tr><Th>Customer</Th><Th>Overdue items</Th><Th>Oldest due</Th><Th>Total overdue</Th></tr></thead>
+                <thead><tr><Th>Task</Th><Th>Assigned to</Th><Th>Due</Th><Th>Status</Th></tr></thead>
                 <tbody>
-                  {topDelinquents.map((c) => (
-                    <tr key={c.customerId || c.customerName} className="hover:bg-muted/50">
+                  {teamTasks.map((t) => (
+                    <tr key={t._id} className="hover:bg-muted/50">
                       <Td>
-                        {c.customerId ? (
-                          <Link className="text-primary font-medium hover:underline" to={`/customers/${c.customerId}`}>{c.customerName}</Link>
-                        ) : (
-                          c.customerName
+                        <div className="font-medium">{t.title}</div>
+                        {t.leadName && (
+                          t.leadType === 'contract' && t.leadId
+                            ? <Link to={`/contracts/${t.leadId}`} className="text-xs text-primary hover:underline">{t.leadName}</Link>
+                            : <span className="text-xs text-muted-foreground">{t.leadName}</span>
                         )}
                       </Td>
-                      <Td>{c.count}</Td>
-                      <Td>{formatDate(new Date(c.oldestDue).toISOString())}</Td>
-                      <Td className="font-medium text-destructive">{formatMoney(c.total)}</Td>
+                      <Td className="text-sm">{t.assignedTo?.name || t.assignedTo?.email || '—'}</Td>
+                      <Td className="text-sm">
+                        {t.dueDate ? (
+                          (() => {
+                            const days = Math.ceil((new Date(t.dueDate).getTime() - Date.now()) / 86400000)
+                            const late = days < 0 && t.status !== 'done'
+                            return (
+                              <span className={late ? 'text-destructive font-medium' : ''}>
+                                {formatDate(t.dueDate)}{late ? ` · ${Math.abs(days)}d late` : ''}
+                              </span>
+                            )
+                          })()
+                        ) : '—'}
+                      </Td>
+                      <Td>
+                        <Badge tone={t.status === 'done' ? 'green' : t.status === 'in_progress' ? 'blue' : 'gray'}>
+                          {t.status === 'in_progress' ? 'In progress' : t.status === 'done' ? 'Done' : 'To do'}
+                        </Badge>
+                      </Td>
                     </tr>
                   ))}
                 </tbody>
@@ -447,7 +467,7 @@ export default function Dashboard() {
         ),
       })
     },
-    [data, latestNotes, overdueAging, onDrop, topDelinquents, totalUnits]
+    [data, latestNotes, overdueAging, onDrop, teamTasks, totalUnits]
   )
 
   // Early returns come AFTER all hooks so hook call order is always stable
@@ -529,8 +549,8 @@ export default function Dashboard() {
             )
           }
 
-          if (id === 'expiring-contracts' || id === 'top-delinquents') {
-            const peerIds: WidgetId[] = ['expiring-contracts', 'top-delinquents']
+          if (id === 'expiring-contracts' || id === 'team-tasks') {
+            const peerIds: WidgetId[] = ['expiring-contracts', 'team-tasks']
             const first = peerIds.find((x) => layout.includes(x))
             if (id !== first) return null
             return (
