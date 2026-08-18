@@ -16,13 +16,13 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
 /** Tasks is a sales-rep/admin tool — staff don't get it. */
 function TasksGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
-  return user?.role === 'admin' || user?.role === 'sales_rep' ? <>{children}</> : <Navigate to="/" replace />
+  return user?.role === 'admin' || isSalesRepRole(user?.role) ? <>{children}</> : <Navigate to="/" replace />
 }
 
 function SmartHome() {
   const { user, hasPermission } = useAuth()
   // A rep's home is their own leads board, not the company-wide dashboard.
-  if (user?.role === 'sales_rep') {
+  if (isSalesRepRole(user?.role)) {
     return <Navigate to="/my-leads" replace />
   }
   const hasMoving = hasPermission('moving_dashboard')
@@ -126,6 +126,7 @@ import ResetPassword from './pages/ResetPassword'
 import PortalLogin from './pages/portal/PortalLogin'
 import PortalApp from './pages/portal/PortalApp'
 import { CustomerAuthProvider } from './lib/customerAuth'
+import { isSalesRepRole } from './lib/roles'
 
 export default function App() {
   const { user } = useAuth()

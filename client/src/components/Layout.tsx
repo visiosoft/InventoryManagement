@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import GlobalSearch from './GlobalSearch'
 import { cn } from '../lib/utils'
+import { isSalesRepRole } from '../lib/roles'
 
 const navTop = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard' as string | undefined },
@@ -197,7 +198,7 @@ export default function Layout() {
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
   const isAdmin = user?.role === 'admin'
-  const isSalesRepUser = user?.role === 'sales_rep'
+  const isSalesRepUser = isSalesRepRole(user?.role)
   const isMovingOnly = hasPermission('moving_dashboard') && !hasPermission('units') && !hasPermission('dashboard')
 
   // Site switcher disabled for now — clear any previously selected site
@@ -273,7 +274,7 @@ export default function Layout() {
           // unit list that permission also happens to gate.
           const visibleItems = group.items
             .filter(({ perm }) => !perm || hasPermission(perm))
-            .filter(({ to }) => !(to === '/units' && user?.role === 'sales_rep'))
+            .filter(({ to }) => !(to === '/units' && isSalesRepRole(user?.role)))
           if (visibleItems.length === 0) return null
           return (
             <div key={group.title || visibleItems[0]?.to} className="pt-3">

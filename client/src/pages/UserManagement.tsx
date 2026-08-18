@@ -8,6 +8,7 @@ import {
   Modal, PageHeader, Select, Spinner, Table, Td, Textarea, Th,
 } from '../components/ui'
 import { formatDate } from '../lib/utils'
+import { isSalesRepRole, roleLabel } from '../lib/roles'
 
 // ── Module definitions ────────────────────────────────────────────────────────
 
@@ -185,7 +186,7 @@ function UserModal({ editing, onClose, onDone }: {
   const [password, setPassword]   = useState('')
   const [role, setRole]           = useState(editing?.role ?? 'staff')
   const [permissions, setPerms]   = useState<string[]>(
-    editing?.permissions?.length ? editing.permissions : (editing?.role === 'admin' ? ALL_MODULE_KEYS : editing?.role === 'sales_rep' ? ['sales_board'] : [])
+    editing?.permissions?.length ? editing.permissions : (editing?.role === 'admin' ? ALL_MODULE_KEYS : isSalesRepRole(editing?.role) ? ['sales_board'] : [])
   )
   const [isActive, setIsActive]   = useState(editing?.isActive ?? true)
   const [err, setErr]             = useState('')
@@ -193,11 +194,11 @@ function UserModal({ editing, onClose, onDone }: {
   const qc = useQueryClient()
 
   const isAdmin = role === 'admin'
-  const isSalesRep = role === 'sales_rep'
+  const isSalesRep = isSalesRepRole(role)
 
   function changeRole(next: string) {
     setRole(next)
-    if (next === 'sales_rep') setPerms(['sales_board'])
+    if (isSalesRepRole(next)) setPerms(['sales_board'])
     else if (permissions.length === 1 && permissions[0] === 'sales_board') setPerms([])
   }
 
@@ -242,6 +243,7 @@ function UserModal({ editing, onClose, onDone }: {
               <option value="staff">Staff — limited to assigned modules</option>
               <option value="admin">Admin — full access to everything</option>
               <option value="sales_rep">Sales Rep — only their assigned leads</option>
+              <option value="accounts">Accounts — same access as a sales rep</option>
             </Select>
           </Field>
 
@@ -530,12 +532,12 @@ export default function UserManagement() {
             <div className="text-sm text-muted-foreground">{me?.email}</div>
             <div className="mt-1 flex items-center gap-2">
               <span className={`rounded-full px-2 py-0.5 text-xs font-semibold
-                ${me?.role === 'admin' ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' : me?.role === 'sales_rep' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}`}>
-                {me?.role === 'admin' ? '👑 Admin' : me?.role === 'sales_rep' ? '🎯 Sales Rep' : '👤 Staff'}
+                ${me?.role === 'admin' ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' : isSalesRepRole(me?.role) ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}`}>
+                {me?.role === 'admin' ? '👑 Admin' : me?.role === 'accounts' ? '🧾 Accounts' : me?.role === 'sales_rep' ? '🎯 Sales Rep' : '👤 Staff'}
               </span>
               {me?.role === 'admin'
                 ? <span className="text-xs text-muted-foreground">Full access to all modules</span>
-                : me?.role === 'sales_rep'
+                : isSalesRepRole(me?.role)
                 ? <span className="text-xs text-muted-foreground">My Leads board only</span>
                 : <span className="text-xs text-muted-foreground">{me?.permissions?.length ?? 0} module{me?.permissions?.length !== 1 ? 's' : ''} assigned</span>
               }
@@ -586,15 +588,15 @@ export default function UserManagement() {
                     </Td>
                     <Td>
                       <span className={`flex items-center gap-1 text-xs font-semibold rounded-full px-2 py-0.5 w-fit
-                        ${u.role === 'admin' ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' : u.role === 'sales_rep' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}`}>
+                        ${u.role === 'admin' ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' : isSalesRepRole(u.role) ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}`}>
                         {u.role === 'admin' ? <ShieldCheck size={11} /> : <UserCog size={11} />}
-                        {u.role === 'admin' ? 'Admin' : u.role === 'sales_rep' ? 'Sales Rep' : 'Staff'}
+                        {roleLabel(u.role)}
                       </span>
                     </Td>
                     <Td>
                       {u.role === 'admin' && moduleCount === 0 ? (
                         <span className="text-xs text-muted-foreground italic">All modules</span>
-                      ) : u.role === 'sales_rep' ? (
+                      ) : isSalesRepRole(u.role) ? (
                         <span className="text-xs text-muted-foreground italic">My Leads board only</span>
                       ) : moduleCount === 0 ? (
                         <span className="flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
@@ -623,7 +625,7 @@ export default function UserManagement() {
                     <Td className="text-xs text-muted-foreground">{formatDate(u.createdAt)}</Td>
                     <Td>
                       <div className="flex items-center gap-1 justify-end">
-                        {u.role === 'sales_rep' && (
+                        {isSalesRepRole(u.role) && (
                           <>
                             <Button size="sm" variant="ghost" title="Set targets" onClick={() => setTargetsUser(u)}>
                               <Target size={13} />

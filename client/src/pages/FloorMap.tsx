@@ -5,6 +5,7 @@ import { api } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { useSite, unitInSite, type Site } from '../lib/site'
 import { Spinner } from '../components/ui'
+import { isSalesRepRole } from '../lib/roles'
 
 // ─── Types ────────────────────────────────────────────────────────────────
 type ShapeType = 'unit' | 'walkway' | 'staircase' | 'lift' | 'entrance' | 'office' | 'toilet' | 'loading' | 'wall' | 'column' | 'label'
@@ -1153,7 +1154,7 @@ export default function FloorMap() {
                     <input key={`vrate-${single.id}`} type="number" defaultValue={unitPrice(single) || ''} disabled
                       className={fieldCls} style={{ ...fieldStyle, opacity: 0.6, cursor: 'not-allowed' }} />
                     <span style={{ fontSize: 11, color: MUTED }}>
-                      {user?.role === 'sales_rep'
+                      {isSalesRepRole(user?.role)
                         ? 'Locked'
                         : <>Locked — change from <Link to="/settings?tab=pricing" style={{ color: PURPLE, fontWeight: 600 }}>Settings → Unit Pricing</Link></>}
                     </span>
@@ -1280,7 +1281,7 @@ export default function FloorMap() {
                             <input key={`rate-${single.id}`} type="number" defaultValue={unitPrice(single) || ''} disabled
                               className={fieldCls} style={{ ...fieldStyle, opacity: 0.6, cursor: 'not-allowed' }} />
                             <span style={{ fontSize: 11, color: MUTED }}>
-                              {user?.role === 'sales_rep'
+                              {isSalesRepRole(user?.role)
                                 ? 'Locked'
                                 : <>Locked — change from <Link to="/settings?tab=pricing" style={{ color: PURPLE, fontWeight: 600 }}>Settings → Unit Pricing</Link></>}
                             </span>

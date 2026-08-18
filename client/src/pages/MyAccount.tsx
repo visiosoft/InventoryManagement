@@ -4,6 +4,7 @@ import { Check, KeyRound, Target, User } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { PageHeader, Card, CardHeader, Field, Input, Button, Spinner } from '../components/ui'
+import { isSalesRepRole } from '../lib/roles'
 
 interface TargetsResponse {
   targets: {
@@ -147,7 +148,7 @@ export default function MyAccount() {
     <div className="max-w-xl space-y-4">
       <PageHeader title="Settings" subtitle="Your account" />
 
-      {user?.role === 'sales_rep' && <TargetsCard />}
+      {isSalesRepRole(user?.role) && <TargetsCard />}
 
       <Card>
         <CardHeader title="My account" />

@@ -16,7 +16,7 @@ const ALLOWED_PRIORITY = new Set(['low', 'medium', 'high']);
 const ALLOWED_STATUS = new Set(['todo', 'in_progress', 'done']);
 
 function isSalesRep(req) {
-  return req.user?.role === 'sales_rep';
+  return req.user?.role === 'sales_rep' || req.user?.role === 'accounts';
 }
 function isPrivileged(req) {
   return req.user?.role === 'admin' || req.user?.role === 'staff';

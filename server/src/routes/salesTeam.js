@@ -33,7 +33,7 @@ router.get('/', requireManager, async (req, res) => {
   const monthStart = startOfMonth(now);
   const staleCutoff = new Date(now.getTime() - STALE_AFTER_MS);
 
-  const reps = await User.find({ role: 'sales_rep' }).select('name email').lean();
+  const reps = await User.find({ role: { $in: ['sales_rep', 'accounts'] } }).select('name email').lean();
 
   const repRows = await Promise.all(reps.map(async (rep) => {
     const [

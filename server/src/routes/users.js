@@ -5,7 +5,10 @@ import { requireAdmin, signToken } from '../middleware/auth.js';
 
 const router = Router();
 
-const VALID_ROLES = ['admin', 'staff', 'sales_rep'];
+const VALID_ROLES = ['admin', 'staff', 'sales_rep', 'accounts'];
+// Roles that get the sales rep's access. 'accounts' is a duplicate of
+// 'sales_rep' by design — same permissions, same own-records-only scope.
+const SALES_REP_ROLES = ['sales_rep', 'accounts'];
 const normalizeRole = (role) => (VALID_ROLES.includes(role) ? role : 'staff');
 // A rep's default toolkit: their own leads board, plus read access to the
 // unit map, tenant directory, and moving schedule for sales conversations.
@@ -24,7 +27,7 @@ router.get('/', requireAdmin, async (_req, res) => {
 router.get('/assignable', async (_req, res) => {
   // Staff are included: accounts and ops sit in this role, and tasks are
   // routed to them (e.g. "raise this invoice in Zoho Books").
-  const users = await User.find({ isActive: true, role: { $in: ['admin', 'sales_rep', 'staff'] } })
+  const users = await User.find({ isActive: true, role: { $in: ['admin', 'sales_rep', 'accounts', 'staff'] } })
     .select('name email role')
     .sort({ name: 1 })
     .lean();
@@ -54,7 +57,7 @@ router.post('/', requireAdmin, async (req, res) => {
     passwordHash,
     role: normalizedRole,
     // Sales reps default to their own board when no explicit permissions are given.
-    permissions: cleanPermissions.length === 0 && normalizedRole === 'sales_rep' ? SALES_REP_DEFAULT_PERMISSIONS : cleanPermissions,
+    permissions: cleanPermissions.length === 0 && SALES_REP_ROLES.includes(normalizedRole) ? SALES_REP_DEFAULT_PERMISSIONS : cleanPermissions,
     isActive: true,
   });
   res.status(201).json({ id: user._id, name: user.name, email: user.email, role: user.role, permissions: user.permissions, isActive: user.isActive });
@@ -84,7 +87,7 @@ router.put('/:id', requireAdmin, async (req, res) => {
   }
   if (role !== undefined) user.role = normalizeRole(role);
   if (Array.isArray(permissions)) user.permissions = permissions.filter(p => ALL_MODULES.includes(p));
-  else if (role === 'sales_rep' && user.permissions.length === 0) user.permissions = SALES_REP_DEFAULT_PERMISSIONS;
+  else if (SALES_REP_ROLES.includes(role) && user.permissions.length === 0) user.permissions = SALES_REP_DEFAULT_PERMISSIONS;
   if (isActive !== undefined) user.isActive = Boolean(isActive);
 
   await user.save();

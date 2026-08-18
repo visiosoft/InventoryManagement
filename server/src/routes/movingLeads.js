@@ -5,7 +5,7 @@ const router = Router();
 
 // Sales reps only ever see/touch leads assigned to them — enforced server-side.
 function isSalesRep(req) {
-  return req.user?.role === 'sales_rep';
+  return req.user?.role === 'sales_rep' || req.user?.role === 'accounts';
 }
 function ownsLead(req, lead) {
   return String(lead.owner?._id || lead.owner || '') === String(req.user.id);

@@ -9,6 +9,7 @@ import type { Summary } from '../lib/types'
 import { Spinner, EmptyState, Table, Th, Td, Button } from '../components/ui'
 import { formatDate, formatMoney } from '../lib/utils'
 import TasksPage from './Tasks'
+import { isSalesRepRole } from '../lib/roles'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
 const INK = '#14081F'
@@ -123,7 +124,7 @@ export default function Dashboard() {
   const { user } = useAuth()
   // Tasks is an admin/sales-rep tool and the server blocks staff outright, so
   // don't offer a tab that would only 403.
-  const showTasksTab = user?.role === 'admin' || user?.role === 'sales_rep'
+  const showTasksTab = user?.role === 'admin' || isSalesRepRole(user?.role)
   const [tab, setTab] = useState<DashTab>('overview')
   const [layout, setLayout] = useState<WidgetId[]>(() => safeLoadLayout())
   const [dragged, setDragged] = useState<WidgetId | null>(null)

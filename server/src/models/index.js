@@ -26,7 +26,9 @@ const userSchema = new Schema(
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true, lowercase: true },
     passwordHash: { type: String, required: true },
-    role: { type: String, enum: ['admin', 'staff', 'sales_rep'], default: 'staff' },
+    // 'accounts' is a second sales-rep-equivalent role: identical access and
+    // data scope, kept separate only so the two teams can be told apart.
+    role: { type: String, enum: ['admin', 'staff', 'sales_rep', 'accounts'], default: 'staff' },
     // Modules this user can access. Admins bypass this check entirely.
     permissions: { type: [String], default: [] },
     isActive: { type: Boolean, default: true },
