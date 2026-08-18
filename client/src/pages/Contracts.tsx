@@ -205,8 +205,10 @@ export default function Contracts() {
   const canPrev = page > 1
   const canNext = page < totalPages
 
+  // No outer padding here: the app layout already wraps every page in
+  // p-3 sm:p-4, and adding 40px on top left a very wide gutter.
   return (
-    <div style={{ background: PAGE_BG, padding: 'clamp(16px, 4vw, 40px)', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", color: INK }}>
+    <div style={{ background: PAGE_BG, fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", color: INK }}>
       <style>{CSS}</style>
 
       <div
