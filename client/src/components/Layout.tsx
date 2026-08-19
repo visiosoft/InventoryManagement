@@ -42,6 +42,7 @@ const profileMenuItems = [
   { to: '/settings/agreement', label: 'Agreement Template', icon: FileText, perm: 'settings' },
   { to: '/zoho-comparison', label: 'Zoho Comparison', icon: RefreshCw, perm: 'settings' },
   { to: '/settings/automation', label: 'Automation Rules', icon: RefreshCw, perm: 'settings' },
+  { to: '/moving/leads', label: 'Moving Leads', icon: UserPlus, perm: 'moving_leads' },
   { to: '/moving/workers', label: 'Workers', icon: Users2, perm: 'moving_workers' },
   { to: '/moving/fleet', label: 'Fleet', icon: Truck, perm: 'moving_fleet' },
   { to: '/moving-inventory', label: 'Moving Inventory', icon: Box, perm: 'moving_dashboard' },
@@ -80,17 +81,32 @@ const salesRepNavItems = [
   { key: 'settings', to: '/account', label: 'Settings', icon: Settings, perm: 'sales_board' },
 ]
 
-const movingNavItems = [
-  { to: '/moving', label: 'Dashboard', icon: LayoutDashboard, perm: 'moving_dashboard' as string },
-  { to: '/moving/schedule', label: 'Schedule Jobs', icon: CalendarDays, perm: 'moving_schedule' },
-  { to: '/moving/visits', label: 'Site Visits', icon: CalendarCheck, perm: 'moving_jobs' },
-  { to: '/moving/jobs', label: 'Jobs List', icon: ClipboardList, perm: 'moving_jobs' },
-  { to: '/moving/leads', label: 'Leads', icon: UserPlus, perm: 'moving_leads' },
-  { to: '/moving/quotes', label: 'Quotes', icon: ScrollText, perm: 'moving_jobs' },
-  { to: '/moving/invoices', label: 'Invoices', icon: ReceiptText, perm: 'moving_invoices' },
-  { to: '/moving/dispatch', label: 'Dispatch', icon: Package, perm: 'moving_dispatch' },
-  { to: '/moving/claims', label: 'Claims', icon: AlertTriangle, perm: 'moving_dashboard' },
+// The moving menu, grouped the way the work splits: what the crews do day
+// to day, then the money. Leads sits in the profile menu with the other
+// occasional screens.
+const movingNavGroups = [
+  {
+    title: 'Moving',
+    items: [
+      { to: '/moving', label: 'Dashboard', icon: LayoutDashboard, perm: 'moving_dashboard' as string },
+      { to: '/moving/schedule', label: 'Schedule Jobs', icon: CalendarDays, perm: 'moving_schedule' },
+      { to: '/moving/visits', label: 'Site Visits', icon: CalendarCheck, perm: 'moving_jobs' },
+      { to: '/moving/jobs', label: 'Jobs List', icon: ClipboardList, perm: 'moving_jobs' },
+      { to: '/moving/dispatch', label: 'Dispatch', icon: Package, perm: 'moving_dispatch' },
+      { to: '/moving/claims', label: 'Claims', icon: AlertTriangle, perm: 'moving_dashboard' },
+    ],
+  },
+  {
+    title: 'Accounts',
+    items: [
+      { to: '/moving/quotes', label: 'Quotes', icon: ScrollText, perm: 'moving_jobs' },
+      { to: '/moving/invoices', label: 'Invoices', icon: ReceiptText, perm: 'moving_invoices' },
+    ],
+  },
 ]
+
+// Flattened for the permission and route checks that only need the paths.
+const movingNavItems = movingNavGroups.flatMap((g) => g.items)
 
 const movingReportItems = [
   { to: '/moving/reports/ar', label: 'Accounts Receivable', icon: Wallet, perm: 'reports_moving_ar' },
@@ -229,7 +245,9 @@ export default function Layout() {
   // ── Business switcher ──────────────────────────────────────────
   // Storage and Moving are two businesses in one app; the sidebar shows one
   // at a time instead of stacking both.
-  const hasMovingAccess = movingNavItems.some(({ perm }) => hasPermission(perm))
+  // Moving Leads lives in the profile menu now, so count it here too — it is
+  // still moving access even though it is not in the sidebar list.
+  const hasMovingAccess = movingNavItems.some(({ perm }) => hasPermission(perm)) || hasPermission('moving_leads')
     || movingReportItems.some(({ perm }) => hasPermission(perm))
   const hasStorageAccess = navTop.some(({ perm }) => !perm || hasPermission(perm))
     || navGroups.some(g => g.items.some(({ perm }) => !perm || hasPermission(perm)))
@@ -464,12 +482,12 @@ export default function Layout() {
 
 
         {/* Moving Business */}
-        {showMovingNav && (() => {
-          const visibleMoving = movingNavItems.filter(({ perm }) => hasPermission(perm))
+        {showMovingNav && movingNavGroups.map((group) => {
+          const visibleMoving = group.items.filter(({ perm }) => hasPermission(perm))
           if (visibleMoving.length === 0) return null
           return (
-            <div className="pt-3">
-              {isCollapsed ? <div className="border-t border-white/10 my-1" /> : <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-sidebar-muted/60">Moving</div>}
+            <div key={group.title} className="pt-3">
+              {isCollapsed ? <div className="border-t border-white/10 my-1" /> : <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-sidebar-muted/60">{group.title}</div>}
               <div className="space-y-0.5">
                 {visibleMoving.map(({ to, label, icon: Icon }) => (
                   <NavLink key={to} to={to} end={to === '/moving'}
@@ -481,7 +499,7 @@ export default function Layout() {
               </div>
             </div>
           )
-        })()}
+        })}
 
         {/* Moving Reports */}
         {showMovingNav && (() => {
