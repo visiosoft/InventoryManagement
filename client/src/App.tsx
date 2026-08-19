@@ -59,6 +59,7 @@ import ExpiringContractsReport from './pages/reports/ExpiringContractsReport'
 import IncomeAnalysis from './pages/reports/IncomeAnalysis'
 import Settings from './pages/Settings'
 import MessageTemplates from './pages/MessageTemplates'
+import WhatsAppDebug from './pages/WhatsAppDebug'
 import AgreementTemplate from './pages/AgreementTemplate'
 import ZohoComparison from './pages/ZohoComparison'
 import Backup from './pages/Backup'
@@ -214,6 +215,7 @@ export default function App() {
         <Route path="/backup" element={<AdminGuard><Backup /></AdminGuard>} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/settings/templates" element={<AdminGuard><MessageTemplates /></AdminGuard>} />
+        <Route path="/settings/whatsapp-debug" element={<AdminGuard><WhatsAppDebug /></AdminGuard>} />
         <Route path="/settings/agreement" element={<AdminGuard><AgreementTemplate /></AdminGuard>} />
         <Route path="/zoho-comparison" element={<AdminGuard><ZohoComparison /></AdminGuard>} />
         <Route path="/settings/reminders" element={<AdminGuard><ReminderSettings /></AdminGuard>} />
