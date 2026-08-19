@@ -183,7 +183,7 @@ function revokeAllMedia() {
 
 /** Renders one attachment. Mounts only for messages actually on screen, and
  *  the fetch starts on mount — so loading is lazy per rendered message. */
-function Attachment({ messageId, media, outbound }: { messageId: string; media: WaMedia; outbound: boolean }) {
+function Attachment({ messageId, media }: { messageId: string; media: WaMedia }) {
   const [url, setUrl] = useState<string | null>(() => mediaUrls.get(messageId) ?? null)
   const [failed, setFailed] = useState(false)
 
@@ -205,7 +205,7 @@ function Attachment({ messageId, media, outbound }: { messageId: string; media: 
 
   if (failed) {
     return (
-      <p className="text-xs italic" style={{ color: outbound ? 'rgba(255,255,255,.75)' : FAINT_INK }}>
+      <p className="text-xs italic" style={{ color: FAINT_INK }}>
         Attachment unavailable
       </p>
     )
@@ -216,8 +216,8 @@ function Attachment({ messageId, media, outbound }: { messageId: string; media: 
       <div
         className="flex items-center justify-center rounded-lg text-[11px] h-16 w-40 animate-pulse"
         style={{
-          background: outbound ? 'rgba(255,255,255,.22)' : 'rgba(20,8,31,.07)',
-          color: outbound ? 'rgba(255,255,255,.85)' : FAINT_INK,
+          background: 'rgba(20,8,31,.07)',
+          color: FAINT_INK,
         }}
       >
         Loading {media.kind}…
@@ -263,7 +263,7 @@ function Attachment({ messageId, media, outbound }: { messageId: string; media: 
         href={url}
         download={media.filename || 'document'}
         className="wa-doc inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm"
-        style={{ background: outbound ? 'rgba(255,255,255,.18)' : 'rgba(20,8,31,.05)' }}
+        style={{ background: 'rgba(20,8,31,.05)' }}
       >
         <FileText size={16} />
         <span className="truncate max-w-[200px]">{media.filename || 'Document'}</span>
@@ -369,12 +369,14 @@ function MessageBubble({ msg }: { msg: WaMsg }) {
         className="max-w-[75%] rounded-2xl px-3.5 py-2 text-sm"
         style={
           out
-            ? { background: '#5B2BC9', color: '#fff', borderBottomRightRadius: 6, boxShadow: '0 1px 2px rgba(20,8,31,.12)' }
+            // WhatsApp's own outgoing green, with dark text — white on this
+            // tint fails contrast badly.
+            ? { background: '#D9FDD3', color: INK, borderBottomRightRadius: 6, boxShadow: '0 1px 2px rgba(20,8,31,.10)' }
             : { background: '#fff', color: INK, borderBottomLeftRadius: 6, border: `1px solid ${LINE}`, boxShadow: '0 1px 2px rgba(20,8,31,.06)' }
         }
       >
         {msg.media ? (
-          <Attachment messageId={msg.messageId} media={msg.media} outbound={out} />
+          <Attachment messageId={msg.messageId} media={msg.media} />
         ) : (
           <p className="whitespace-pre-wrap break-words">
             {msg.text || <span className="italic opacity-60">[{msg.type}]</span>}
@@ -385,11 +387,13 @@ function MessageBubble({ msg }: { msg: WaMsg }) {
         )}
         <div
           className="flex items-center justify-end gap-1 mt-1 text-[10px]"
-          style={{ color: out ? 'rgba(255,255,255,.72)' : FAINT_INK }}
+          style={{ color: out ? 'rgba(20,8,31,.45)' : FAINT_INK }}
           title={out ? msg.status || 'sent' : undefined}
         >
           <span>{formatClock(msg.occurredAt)}</span>
-          {out && <CheckCheck size={13} style={{ color: msg.status === 'read' ? '#7DD3FC' : 'rgba(255,255,255,.72)' }} />}
+          {/* Grey until read, then WhatsApp's blue — the same signal people
+              already read without being told. */}
+          {out && <CheckCheck size={13} style={{ color: msg.status === 'read' ? '#53BDEB' : 'rgba(20,8,31,.35)' }} />}
         </div>
       </div>
     </div>
