@@ -21,10 +21,9 @@ type MessageTemplate = {
   _id: string
   key: string
   label: string
-  subject: string
-  emailBody: string
   whatsappBody: string
-  variables: string[]
+  category?: string
+  sortOrder?: number
 }
 
 const MUTE_KEY = 'wa_inbox_muted'
@@ -534,10 +533,12 @@ export default function WhatsApp() {
     enabled: true,
   })
 
-  // Quick replies are the real Settings → Message Templates records.
+  // WhatsApp quick replies are their own kind of template, kept apart from
+  // the contract ones the reminder engine sends — different audience,
+  // different wording. Managed under Settings → Message Templates.
   const { data: templates } = useQuery<MessageTemplate[]>({
-    queryKey: ['message-templates'],
-    queryFn: () => api.get('/message-templates').then((r) => r.data ?? []),
+    queryKey: ['message-templates', 'quick_reply'],
+    queryFn: () => api.get('/message-templates', { params: { kind: 'quick_reply' } }).then((r) => r.data ?? []),
     staleTime: 60_000,
   })
 
@@ -545,6 +546,17 @@ export default function WhatsApp() {
     () => (templates ?? []).filter((t) => (t.whatsappBody ?? '').trim().length > 0),
     [templates]
   )
+
+  // Grouped for the panel, keeping the server's order inside each group.
+  const quickReplyGroups = useMemo(() => {
+    const groups = new Map<string, MessageTemplate[]>()
+    for (const t of quickReplies) {
+      const cat = (t.category || '').trim() || 'Other'
+      if (!groups.has(cat)) groups.set(cat, [])
+      groups.get(cat)!.push(t)
+    }
+    return [...groups.entries()]
+  }, [quickReplies])
 
   // Free every attachment blob when the inbox is left.
   useEffect(() => revokeAllMedia, [])
@@ -1087,61 +1099,64 @@ export default function WhatsApp() {
             </div>
 
             <div className="wa-scroll flex-1 min-h-0 px-3 py-3 space-y-3">
-              {/* Templates come straight from Settings → Message Templates, which
-                  carry no category field — so they live under one heading. */}
-              <div style={{ border: `1px solid ${LINE}`, borderRadius: 12, overflow: 'hidden' }}>
-                <button
-                  type="button"
-                  onClick={() => setCatOpen((p) => ({ ...p, templates: !p.templates }))}
-                  className="w-full flex items-center justify-between px-3 py-2.5 cursor-pointer"
-                  style={{ background: '#F7F3FF' }}
-                >
-                  <span style={{ fontSize: 12.5, fontWeight: 700, color: '#4A1FA0' }}>
-                    Message templates ({quickReplies.length})
-                  </span>
-                  <ChevronDown
-                    size={15}
-                    style={{ color: '#4A1FA0', transform: catOpen.templates ? 'rotate(180deg)' : undefined, transition: 'transform .15s' }}
-                  />
-                </button>
-                {catOpen.templates && (
-                  <div className="divide-y" style={{ borderColor: LINE }}>
-                    {quickReplies.length === 0 ? (
-                      <p className="px-3 py-3" style={{ fontSize: 12, color: FAINT_INK }}>
-                        No WhatsApp templates yet. Add them under Settings → Message Templates.
-                      </p>
-                    ) : (
-                      quickReplies.map((t) => (
-                        <div key={t._id} className="flex items-start gap-2 px-3 py-2.5">
-                          <div className="min-w-0 flex-1">
-                            <div style={{ fontSize: 12, fontWeight: 600, color: '#4A1FA0' }}>{t.label}</div>
+              {quickReplies.length === 0 ? (
+                <p className="px-1 py-2" style={{ fontSize: 12, color: FAINT_INK }}>
+                  No quick replies yet. Add them under{' '}
+                  <Link to="/settings/templates" style={{ color: '#4A1FA0', fontWeight: 600 }}>
+                    Settings → Message Templates
+                  </Link>.
+                </p>
+              ) : (
+                quickReplyGroups.map(([category, items]) => (
+                  <div key={category} style={{ border: `1px solid ${LINE}`, borderRadius: 12, overflow: 'hidden' }}>
+                    <button
+                      type="button"
+                      onClick={() => setCatOpen((prev) => ({ ...prev, [category]: !prev[category] }))}
+                      className="w-full flex items-center justify-between px-3 py-2.5 cursor-pointer"
+                      style={{ background: '#F7F3FF' }}
+                    >
+                      <span style={{ fontSize: 12.5, fontWeight: 700, color: '#4A1FA0' }}>
+                        {category} ({items.length})
+                      </span>
+                      <ChevronDown
+                        size={15}
+                        style={{ color: '#4A1FA0', transform: catOpen[category] ? 'rotate(180deg)' : undefined, transition: 'transform .15s' }}
+                      />
+                    </button>
+                    {catOpen[category] && (
+                      <div className="divide-y" style={{ borderColor: LINE }}>
+                        {items.map((t) => (
+                          <div key={t._id} className="flex items-start gap-2 px-3 py-2.5">
+                            <div className="min-w-0 flex-1">
+                              <div style={{ fontSize: 12, fontWeight: 600, color: '#4A1FA0' }}>{t.label}</div>
+                              <button
+                                type="button"
+                                onClick={() => insertText(t.whatsappBody)}
+                                className="text-left w-full cursor-pointer hover:opacity-75"
+                                style={{ fontSize: 12.5, color: MUTED_INK, whiteSpace: 'pre-wrap' }}
+                                title="Insert into composer"
+                              >
+                                {t.whatsappBody}
+                              </button>
+                            </div>
                             <button
                               type="button"
-                              onClick={() => insertText(t.whatsappBody)}
-                              className="text-left w-full cursor-pointer hover:opacity-75"
-                              style={{ fontSize: 12.5, color: MUTED_INK, whiteSpace: 'pre-wrap' }}
-                              title="Insert into composer"
+                              onClick={() => sendText(t.whatsappBody)}
+                              disabled={!selectedPhone || send.isPending}
+                              className="shrink-0 inline-flex items-center justify-center rounded-full cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                              style={{ width: 26, height: 26, background: '#5B2BC9', color: '#fff' }}
+                              title="Send now"
+                              aria-label={`Send ${t.label} now`}
                             >
-                              {t.whatsappBody}
+                              <Send size={12} />
                             </button>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => sendText(t.whatsappBody)}
-                            disabled={!selectedPhone || send.isPending}
-                            className="shrink-0 inline-flex items-center justify-center rounded-full cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                            style={{ width: 26, height: 26, background: '#5B2BC9', color: '#fff' }}
-                            title="Send now"
-                            aria-label={`Send ${t.label} now`}
-                          >
-                            <Send size={12} />
-                          </button>
-                        </div>
-                      ))
+                        ))}
+                      </div>
                     )}
                   </div>
-                )}
-              </div>
+                ))
+              )}
 
               {/* Custom message */}
               <div style={{ border: `1px solid ${LINE}`, borderRadius: 12, overflow: 'hidden' }}>

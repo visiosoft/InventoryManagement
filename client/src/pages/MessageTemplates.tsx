@@ -15,8 +15,30 @@ type Template = {
   variables: string[]
 }
 
+type QuickReply = {
+  _id: string
+  key: string
+  label: string
+  category?: string
+  whatsappBody: string
+  sortOrder?: number
+  kind?: string
+}
+
+const UNCATEGORISED = 'Uncategorised'
+
+function slugKey(label: string) {
+  const base = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+  return `qr_${base || 'reply'}`
+}
+
+function statusOf(e: unknown) {
+  return (e as { response?: { status?: number } })?.response?.status
+}
+
 export default function MessageTemplates() {
   const qc = useQueryClient()
+  const [mode, setMode] = useState<'templates' | 'quick'>('templates')
   const [selected, setSelected] = useState<Template | null>(null)
   const [tab, setTab] = useState<'email' | 'whatsapp'>('email')
   const [subject, setSubject] = useState('')
@@ -38,7 +60,7 @@ export default function MessageTemplates() {
   const updateMut = useMutation({
     mutationFn: (body: { subject: string; emailBody: string; whatsappBody: string }) =>
       api.put(`/message-templates/${selected!._id}`, body),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['message-templates'] }); setSuccess('Saved!'); setError(''); setTimeout(() => setSuccess(''), 2000) },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['message-templates'], exact: true }); setSuccess('Saved!'); setError(''); setTimeout(() => setSuccess(''), 2000) },
     onError: (e) => setError(apiError(e)),
   })
 
@@ -46,7 +68,7 @@ export default function MessageTemplates() {
     mutationFn: (body: { key: string; label: string }) =>
       api.post('/message-templates', body),
     onSuccess: (res) => {
-      qc.invalidateQueries({ queryKey: ['message-templates'] })
+      qc.invalidateQueries({ queryKey: ['message-templates'], exact: true })
       setCreating(false); setNewLabel(''); setNewKey('')
       selectTemplate(res.data as Template)
     },
@@ -56,7 +78,7 @@ export default function MessageTemplates() {
   const deleteMut = useMutation({
     mutationFn: (id: string) => api.delete(`/message-templates/${id}`),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['message-templates'] })
+      qc.invalidateQueries({ queryKey: ['message-templates'], exact: true })
       setSelected(null); setSuccess('Deleted'); setTimeout(() => setSuccess(''), 2000)
     },
     onError: (e) => setError(apiError(e)),
@@ -65,13 +87,103 @@ export default function MessageTemplates() {
   const resetMut = useMutation({
     mutationFn: (key: string) => api.post(`/message-templates/${key}/reset`),
     onSuccess: (res) => {
-      qc.invalidateQueries({ queryKey: ['message-templates'] })
+      qc.invalidateQueries({ queryKey: ['message-templates'], exact: true })
       const t = res.data as Template
       setSubject(t.subject); setEmailBody(t.emailBody); setWhatsappBody(t.whatsappBody)
       setSuccess('Reset to default'); setTimeout(() => setSuccess(''), 2000)
     },
     onError: (e) => setError(apiError(e)),
   })
+
+  /* ---------- WhatsApp quick replies ---------- */
+  const [qrDrafts, setQrDrafts] = useState<Record<string, { label: string; category: string; whatsappBody: string; sortOrder: number }>>({})
+  const [qrAdding, setQrAdding] = useState(false)
+  const [qrLabel, setQrLabel] = useState('')
+  const [qrCategory, setQrCategory] = useState('')
+  const [qrBody, setQrBody] = useState('')
+  const [qrSort, setQrSort] = useState('0')
+
+  const { data: quickReplies = [], isLoading: qrLoading } = useQuery<QuickReply[]>({
+    queryKey: ['message-templates', 'quick_reply'],
+    queryFn: () => api.get('/message-templates', { params: { kind: 'quick_reply' } }).then(r => r.data),
+  })
+
+  const invalidateQuick = () => qc.invalidateQueries({ queryKey: ['message-templates', 'quick_reply'] })
+
+  const qrCategories = Array.from(new Set(quickReplies.map(q => (q.category || '').trim()).filter(Boolean))).sort()
+
+  const qrGroups = (() => {
+    const map = new Map<string, QuickReply[]>()
+    for (const q of quickReplies) {
+      const cat = (q.category || '').trim() || UNCATEGORISED
+      const list = map.get(cat)
+      if (list) list.push(q)
+      else map.set(cat, [q])
+    }
+    return Array.from(map.entries()).sort((a, b) =>
+      a[0] === UNCATEGORISED ? 1 : b[0] === UNCATEGORISED ? -1 : a[0].localeCompare(b[0]))
+  })()
+
+  function qrDraft(q: QuickReply) {
+    return qrDrafts[q._id] ?? {
+      label: q.label,
+      category: q.category || '',
+      whatsappBody: q.whatsappBody || '',
+      sortOrder: q.sortOrder ?? 0,
+    }
+  }
+
+  function setQrDraft(q: QuickReply, patch: Partial<{ label: string; category: string; whatsappBody: string; sortOrder: number }>) {
+    setQrDrafts(prev => ({ ...prev, [q._id]: { ...qrDraft(q), ...patch } }))
+  }
+
+  const qrCreateMut = useMutation({
+    mutationFn: async (body: { label: string; category: string; whatsappBody: string; sortOrder: number }) => {
+      const base = slugKey(body.label)
+      for (let attempt = 0; attempt < 25; attempt++) {
+        const key = attempt === 0 ? base : `${base}_${attempt + 1}`
+        try {
+          const res = await api.post('/message-templates', { ...body, key, kind: 'quick_reply' })
+          return res.data as QuickReply
+        } catch (e) {
+          if (statusOf(e) === 409) continue
+          throw e
+        }
+      }
+      throw new Error('Could not find a free key for this quick reply — try a different label.')
+    },
+    onSuccess: () => {
+      invalidateQuick()
+      setQrAdding(false); setQrLabel(''); setQrCategory(''); setQrBody(''); setQrSort('0')
+      setError(''); setSuccess('Quick reply added'); setTimeout(() => setSuccess(''), 2000)
+    },
+    onError: (e) => setError(apiError(e)),
+  })
+
+  const qrUpdateMut = useMutation({
+    mutationFn: (v: { id: string; label: string; category: string; whatsappBody: string; sortOrder: number }) =>
+      api.put(`/message-templates/${v.id}`, { label: v.label, category: v.category, whatsappBody: v.whatsappBody, sortOrder: v.sortOrder }),
+    onSuccess: (_res, v) => {
+      invalidateQuick()
+      setQrDrafts(prev => { const next = { ...prev }; delete next[v.id]; return next })
+      setError(''); setSuccess('Saved!'); setTimeout(() => setSuccess(''), 2000)
+    },
+    onError: (e) => setError(apiError(e)),
+  })
+
+  const qrDeleteMut = useMutation({
+    mutationFn: (id: string) => api.delete(`/message-templates/${id}`),
+    onSuccess: (_res, id) => {
+      invalidateQuick()
+      setQrDrafts(prev => { const next = { ...prev }; delete next[id]; return next })
+      setError(''); setSuccess('Deleted'); setTimeout(() => setSuccess(''), 2000)
+    },
+    onError: (e) => setError(apiError(e)),
+  })
+
+  function switchMode(m: 'templates' | 'quick') {
+    setMode(m); setError(''); setSuccess('')
+  }
 
   function selectTemplate(t: Template) {
     setSelected(t)
@@ -81,11 +193,12 @@ export default function MessageTemplates() {
     setError(''); setSuccess('')
   }
 
-  if (isLoading) return <Spinner />
-
   return (
     <div>
-      <PageHeader title="Message Templates" subtitle="Edit email and WhatsApp templates for automated messages" />
+      <PageHeader title="Message Templates"
+        subtitle={mode === 'templates'
+          ? 'Edit email and WhatsApp templates for automated messages'
+          : 'Manage the canned replies shown in the WhatsApp console'} />
 
       {/* Tabs */}
       <div className="flex gap-1 mb-5 border-b">
@@ -98,6 +211,130 @@ export default function MessageTemplates() {
         </Link>
       </div>
 
+      {/* Mode switch */}
+      <div className="flex rounded-lg border overflow-hidden text-sm mb-5 max-w-lg">
+        <button onClick={() => switchMode('templates')}
+          className={`flex-1 py-2 px-3 font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${mode === 'templates' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-muted-foreground'}`}>
+          <Mail size={14} /> Contract templates
+        </button>
+        <button onClick={() => switchMode('quick')}
+          className={`flex-1 py-2 px-3 font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${mode === 'quick' ? 'bg-emerald-600 text-white' : 'hover:bg-muted text-muted-foreground'}`}>
+          <MessageSquare size={14} /> WhatsApp quick replies
+        </button>
+      </div>
+
+      {mode === 'quick' ? (
+        qrLoading ? <Spinner /> : (
+        <div className="space-y-5">
+          <p className="text-xs text-muted-foreground rounded-lg border border-dashed px-4 py-3">
+            These replies appear in the quick-replies panel of the WhatsApp console. Placeholders such as
+            {' '}<span className="font-mono text-foreground">@name</span>{' '}are <strong>not</strong> substituted there —
+            the console only has a phone number, not a contract, so anything you type is sent exactly as written.
+          </p>
+
+          {/* Add quick reply */}
+          {qrAdding ? (
+            <Card>
+              <CardHeader title="New quick reply" subtitle="The key is generated from the label" />
+              <CardBody className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_100px] gap-3">
+                  <Field label="Label">
+                    <Input value={qrLabel} onChange={e => setQrLabel(e.target.value)} placeholder="e.g. Opening hours" autoFocus />
+                  </Field>
+                  <Field label="Category">
+                    <Input list="qr-categories" value={qrCategory} onChange={e => setQrCategory(e.target.value)} placeholder="Reuse an existing one" />
+                  </Field>
+                  <Field label="Order">
+                    <Input type="number" value={qrSort} onChange={e => setQrSort(e.target.value)} />
+                  </Field>
+                </div>
+                <Field label="Message">
+                  <Textarea value={qrBody} onChange={e => setQrBody(e.target.value)} rows={5} className="font-mono text-sm" placeholder="WhatsApp message..." />
+                </Field>
+                <div className="flex gap-2">
+                  <Button size="sm"
+                    onClick={() => qrCreateMut.mutate({ label: qrLabel.trim(), category: qrCategory.trim(), whatsappBody: qrBody, sortOrder: Number(qrSort) || 0 })}
+                    disabled={!qrLabel.trim() || !qrBody.trim() || qrCreateMut.isPending}>
+                    <Plus size={13} /> {qrCreateMut.isPending ? 'Adding…' : 'Add quick reply'}
+                  </Button>
+                  <Button size="sm" variant="outline"
+                    onClick={() => { setQrAdding(false); setQrLabel(''); setQrCategory(''); setQrBody(''); setQrSort('0'); setError('') }}>
+                    Cancel
+                  </Button>
+                </div>
+                {error && <p className="text-xs text-destructive">{error}</p>}
+              </CardBody>
+            </Card>
+          ) : (
+            <button onClick={() => { setQrAdding(true); setError('') }}
+              className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-dashed px-4 py-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors cursor-pointer">
+              <Plus size={14} /> New Quick Reply
+            </button>
+          )}
+
+          <datalist id="qr-categories">
+            {qrCategories.map(c => <option key={c} value={c} />)}
+          </datalist>
+
+          {/* Grouped list */}
+          {qrGroups.map(([category, items]) => (
+            <div key={category} className="space-y-3">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold">{category}</h3>
+                <span className="text-xs text-muted-foreground">{items.length}</span>
+              </div>
+              {items.map(q => {
+                const d = qrDraft(q)
+                const dirty = d.label !== q.label || d.category !== (q.category || '')
+                  || d.whatsappBody !== (q.whatsappBody || '') || d.sortOrder !== (q.sortOrder ?? 0)
+                return (
+                  <Card key={q._id}>
+                    <CardBody className="space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_100px] gap-3">
+                        <Field label="Label">
+                          <Input value={d.label} onChange={e => setQrDraft(q, { label: e.target.value })} />
+                        </Field>
+                        <Field label="Category">
+                          <Input list="qr-categories" value={d.category} onChange={e => setQrDraft(q, { category: e.target.value })} placeholder="Uncategorised" />
+                        </Field>
+                        <Field label="Order">
+                          <Input type="number" value={d.sortOrder}
+                            onChange={e => setQrDraft(q, { sortOrder: Number(e.target.value) || 0 })} />
+                        </Field>
+                      </div>
+                      <Field label="Message">
+                        <Textarea value={d.whatsappBody} rows={4} className="font-mono text-sm"
+                          onChange={e => setQrDraft(q, { whatsappBody: e.target.value })} />
+                      </Field>
+                      <div className="flex items-center gap-2">
+                        <Button size="sm" disabled={!dirty || !d.label.trim() || qrUpdateMut.isPending}
+                          onClick={() => qrUpdateMut.mutate({ id: q._id, label: d.label.trim(), category: d.category.trim(), whatsappBody: d.whatsappBody, sortOrder: d.sortOrder })}>
+                          <Save size={13} /> Save
+                        </Button>
+                        {dirty && (
+                          <Button size="sm" variant="outline"
+                            onClick={() => setQrDrafts(prev => { const next = { ...prev }; delete next[q._id]; return next })}>
+                            Revert
+                          </Button>
+                        )}
+                        <Button size="sm" variant="destructive" className="ml-auto" disabled={qrDeleteMut.isPending}
+                          onClick={() => { if (confirm(`Delete quick reply "${q.label}"?`)) qrDeleteMut.mutate(q._id) }}>
+                          <Trash2 size={13} /> Delete
+                        </Button>
+                      </div>
+                      <div className="text-xs text-muted-foreground font-mono">Key: {q.key}</div>
+                    </CardBody>
+                  </Card>
+                )
+              })}
+            </div>
+          ))}
+
+          {!qrAdding && error && <p className="text-xs text-destructive">{error}</p>}
+          {success && <p className="text-xs text-emerald-600 font-medium">{success}</p>}
+        </div>
+        )
+      ) : isLoading ? <Spinner /> : (
       <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-5">
         {/* Template list */}
         <div className="space-y-1.5">
@@ -239,6 +476,7 @@ export default function MessageTemplates() {
           </Card>
         )}
       </div>
+      )}
     </div>
   )
 }
