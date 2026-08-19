@@ -528,9 +528,12 @@ export default function Settings() {
             </div>
 
             <div className="grid sm:grid-cols-2 gap-3">
-              <Field label="Phone number ID">
+              <Field label="Phone number ID (not the phone number)">
                 <Input placeholder="e.g. 123456789012345" value={waPhoneNumberId}
                   onChange={(e) => setWaPhoneNumberId(e.target.value)} />
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Meta → WhatsApp → API Setup, the long digits-only id shown under your number.
+                </p>
               </Field>
               <Field label="Access token">
                 <Input type="password" placeholder="Permanent token from Meta" value={waAccessToken}

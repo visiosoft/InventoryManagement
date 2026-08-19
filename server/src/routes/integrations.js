@@ -142,7 +142,22 @@ router.post('/ai/parse-availability', async (req, res) => {
 router.post('/whatsapp/connect', requireAdmin, async (req, res) => {
     const { phoneNumberId, accessToken, verifyToken, appSecret } = req.body || {};
     const updates = {};
-    if (phoneNumberId) updates.WHATSAPP_PHONE_NUMBER_ID = String(phoneNumberId).trim();
+    if (phoneNumberId) {
+        const raw = String(phoneNumberId).trim();
+        // The commonest mistake here is pasting the WhatsApp phone number
+        // instead of Meta's Phone number ID. Meta answers that with
+        // "Object with ID ... does not exist", which explains nothing, so
+        // catch the unambiguous shapes first: a leading +, or separators.
+        if (/^\+/.test(raw) || /[\s()\-]/.test(raw.replace(/^\+/, ''))) {
+            return res.status(400).json({
+                error: `"${raw}" looks like a phone number, not a Phone number ID. The ID is a long digits-only value in Meta → WhatsApp → API Setup, under the number itself.`,
+            });
+        }
+        if (!/^\d+$/.test(raw)) {
+            return res.status(400).json({ error: 'The Phone number ID should be digits only.' });
+        }
+        updates.WHATSAPP_PHONE_NUMBER_ID = raw;
+    }
     if (accessToken) updates.WHATSAPP_ACCESS_TOKEN = String(accessToken).trim();
     if (verifyToken) updates.WHATSAPP_VERIFY_TOKEN = String(verifyToken).trim();
     if (appSecret) updates.WHATSAPP_APP_SECRET = String(appSecret).trim();
@@ -157,7 +172,13 @@ router.post('/whatsapp/connect', requireAdmin, async (req, res) => {
         try {
             profile = await verifyWhatsAppCredentials({ phoneNumberId: effectiveId, accessToken: effectiveToken });
         } catch (e) {
-            return res.status(400).json({ error: `Meta rejected these credentials: ${e.message}` });
+            // A short digits-only value is most likely a phone number too, but
+            // not certainly, so this only adds a hint to Meta's own message.
+            const looksLikeNumber = /^\d{7,14}$/.test(String(effectiveId || ''));
+            const hint = looksLikeNumber
+                ? ' — that value looks like a phone number; the Phone number ID is a separate, longer id shown in Meta → WhatsApp → API Setup.'
+                : '';
+            return res.status(400).json({ error: `Meta rejected these credentials: ${e.message}${hint}` });
         }
     }
 
