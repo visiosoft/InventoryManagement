@@ -15,7 +15,6 @@ import { isSalesRepRole } from '../lib/roles'
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
 const INK = '#14081F'
 const MUTED_CLR = '#756E80'
-const PURPLE = '#5B2BC9'
 const PURPLE_LIGHT = '#F7F3FF'
 
 type WidgetId =
@@ -165,13 +164,6 @@ export default function Dashboard() {
   const teamTasks = [...allTeamTasks]
     .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
     .slice(0, 6)
-
-  const { data: draftInvoicesPage } = useQuery<{ total: number }>({
-    queryKey: ['invoices-draft-count'],
-    queryFn: () => api.get('/invoices', { params: { status: 'draft', limit: 1 } }).then((r) => r.data),
-    staleTime: 5 * 60_000,
-  })
-  const draftInvoices = draftInvoicesPage?.total ?? 0
 
   // ── All derived values must be computed before any early return so hooks
   //    (useMemo below) are always called in the same order every render. ──────
@@ -523,20 +515,6 @@ export default function Dashboard() {
     <div style={{ background: '#FBF8F2', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
 
       {showTasksTab && <DashboardTabs tab={tab} setTab={setTab} />}
-
-      {draftInvoices > 0 && (
-        <Link
-          to="/invoices?status=draft"
-          className="mb-5 flex items-center gap-[18px] transition-colors hover:brightness-95"
-          style={{ padding: '16px 20px', borderRadius: 18, background: '#F6F0E4', border: '1px solid #EDE3CF' }}
-        >
-          <div style={{ flex: 'none', width: 38, height: 38, borderRadius: 11, background: '#FFF', border: '1px solid #EDE3CF', display: 'grid', placeItems: 'center', ...HEADING, fontWeight: 700, fontSize: 16, color: '#4A1FA0' }}>{draftInvoices}</div>
-          <div className="flex-1 min-w-0">
-            <div style={{ fontSize: 15, fontWeight: 600, color: INK }}>{draftInvoices} draft invoice{draftInvoices !== 1 ? 's' : ''} awaiting send</div>
-          </div>
-          <div style={{ flex: 'none', display: 'flex', alignItems: 'center', height: 40, padding: '0 20px', borderRadius: 999, background: PURPLE, color: '#FFF', fontSize: 14, fontWeight: 600 }}>Review & send</div>
-        </Link>
-      )}
 
       <div className="space-y-5">
         {layout.map((id) => {
