@@ -468,7 +468,7 @@ export default function Dashboard() {
   // take the task board down with it.
   if (showTasksTab && tab === 'tasks') {
     return (
-      <div style={{ background: '#FBF8F2', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+      <div style={{ background: '#fff', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
         <DashboardTabs tab={tab} setTab={setTab} />
         <TasksPage embedded />
       </div>
@@ -478,7 +478,7 @@ export default function Dashboard() {
   if (isLoading) return <Spinner />
   if (isError || !data) {
     return (
-      <div style={{ background: '#FBF8F2', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+      <div style={{ background: '#fff', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
         <div className="mb-7">
           <div style={{ ...HEADING, fontSize: 26, fontWeight: 700, color: INK }}>Dashboard</div>
           <div style={{ fontSize: 14, color: MUTED_CLR, marginTop: 4 }}>Facility overview at a glance</div>
@@ -499,7 +499,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div style={{ background: '#FBF8F2', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+    <div style={{ background: '#fff', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
 
       {showTasksTab && <DashboardTabs tab={tab} setTab={setTab} />}
 
