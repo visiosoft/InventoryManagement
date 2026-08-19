@@ -82,6 +82,27 @@ const CSS = `
 `
 
 /* ── formatting ───────────────────────────────────────────────────────── */
+/** What to call a conversation.
+ *
+ *  The server resolves this against customers and leads and sends it as
+ *  `displayName`. A lead created from a chat gets an auto-generated name like
+ *  "WhatsApp Contact 4797", which is not a name — the number is more useful,
+ *  so it is filtered here too in case an older payload arrives without the
+ *  resolved field. */
+function convDisplayName(c: {
+  displayName?: string
+  customer?: { fullName?: string } | null
+  lead?: { fullName?: string } | null
+  phone?: string
+  phoneNormalized: string
+}) {
+  const placeholder = (n?: string) => !n || /^whatsapp\s*contact/i.test(n.trim())
+  if (c.displayName && !placeholder(c.displayName)) return c.displayName
+  if (c.customer?.fullName) return c.customer.fullName
+  if (!placeholder(c.lead?.fullName)) return c.lead!.fullName!
+  return c.phone || `+${c.phoneNormalized}`
+}
+
 function formatClock(iso: string) {
   return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 }
@@ -616,7 +637,7 @@ export default function WhatsApp() {
     const q = search.trim().toLowerCase()
     if (!q) return convoList
     return convoList.filter((c) => {
-      const name = (c.lead?.fullName ?? '').toLowerCase()
+      const name = (convDisplayName(c) ?? '').toLowerCase()
       return name.includes(q) || c.phoneNormalized.includes(q) || (c.phone ?? '').toLowerCase().includes(q)
     })
   }, [convoList, search])
@@ -631,7 +652,7 @@ export default function WhatsApp() {
       : null)
 
   const convoTitle = selectedConvo
-    ? selectedConvo.lead?.fullName || selectedConvo.phone || `+${selectedConvo.phoneNormalized}`
+    ? convDisplayName(selectedConvo)
     : 'All messages'
 
   /* Auto-scroll: follow the newest message, unless the reader has scrolled up
@@ -842,7 +863,7 @@ export default function WhatsApp() {
               filteredConvos.map((c) => {
                 const unread = unreadByPhone[c.phoneNormalized] ?? 0
                 const isSelected = c.phoneNormalized === selectedPhone
-                const label = c.lead?.fullName || c.phone || `+${c.phoneNormalized}`
+                const label = convDisplayName(c)
                 const isUnread = unread > 0 && !isSelected
                 return (
                   <button

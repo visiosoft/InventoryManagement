@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { mediaFromRaw } from './whatsappMedia.js';
-import { WhatsAppMessage, Lead } from '../models/index.js';
+import { WhatsAppMessage, Lead, Customer } from '../models/index.js';
 import { sendWhatsAppText, sendWhatsAppMedia, uploadWhatsAppMedia, whatsappMediaKind, whatsappSendConfigured, whatsappSendMissing } from '../services/whatsapp.js';
 import multer from 'multer';
 import { createLeadFromWhatsAppPhone } from '../services/whatsappLeadSync.js';
@@ -61,15 +61,42 @@ router.get('/conversations', async (_req, res) => {
         },
     ]);
 
-    res.json(rows.map((r) => ({
-        phoneNormalized: r._id,
-        phone: r.phone,
-        count: r.count,
-        lastAt: r.lastAt,
-        lead: r.lead?.[0]
-            ? { _id: r.lead[0]._id, fullName: r.lead[0].fullName, status: r.lead[0].status }
-            : null,
-    })));
+    // Resolve a real name where we have one. Customers are matched on the
+    // last 9 digits because numbers are stored inconsistently (+971 …, 0…,
+    // 971…), the same rule the Zoho matcher uses.
+    const suffix = (v) => {
+        const d = String(v || '').replace(/\D/g, '');
+        return d.length >= 9 ? d.slice(-9) : '';
+    };
+    const customers = await Customer.find({}).select('fullName phone phones').lean();
+    const byPhone = new Map();
+    for (const c of customers) {
+        for (const p of [...(c.phones || []), c.phone]) {
+            const k = suffix(p);
+            if (k && !byPhone.has(k)) byPhone.set(k, c);
+        }
+    }
+
+    // Leads created from a chat get an auto-generated placeholder name. It is
+    // not a name, so it must never win over the number.
+    const isPlaceholderName = (n) => !n || /^whatsapp\s*contact/i.test(String(n).trim());
+
+    res.json(rows.map((r) => {
+        const lead = r.lead?.[0] || null;
+        const customer = byPhone.get(suffix(r._id)) || null;
+        const leadName = isPlaceholderName(lead?.fullName) ? '' : lead.fullName;
+        return {
+            phoneNormalized: r._id,
+            phone: r.phone,
+            count: r.count,
+            lastAt: r.lastAt,
+            lead: lead ? { _id: lead._id, fullName: lead.fullName, status: lead.status } : null,
+            customer: customer ? { _id: customer._id, fullName: customer.fullName } : null,
+            // What the inbox should show: a real name if we hold one,
+            // otherwise the number itself — never a placeholder.
+            displayName: customer?.fullName || leadName || (r.phone || r._id),
+        };
+    }));
 });
 
 // Link a chat to a lead. Inbound chats usually get one automatically from the

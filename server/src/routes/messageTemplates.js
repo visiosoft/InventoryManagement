@@ -12,9 +12,47 @@ const DEFAULT_TEMPLATES = [
   { key: 'contract_ended', label: 'Contract Ended', subject: 'Contract @contractNo Has Ended', emailBody: 'Dear @name,\n\nYour contract @contractNo for Unit @unit has ended as of @endDate.\n\nPlease ensure all belongings have been removed. Your deposit will be processed as per terms.\n\nThank you for storing with us.\n\nBest regards,\nPurpleBox Team', whatsappBody: 'Hello @name,\n\nYour contract *@contractNo* has ended.\nUnit @unit is now released.\n\nThank you for choosing PurpleBox!', variables: ['@name', '@contractNo', '@unit', '@endDate'] },
 ];
 
-// Get all templates (seed defaults if empty)
-router.get('/', async (_req, res) => {
-  let templates = await MessageTemplate.find().sort({ key: 1 });
+// Starter quick replies for the WhatsApp console. Deliberately generic —
+// anything with an address, a price or an opening time would be inventing
+// facts about the business, so those are left for staff to fill in.
+const DEFAULT_QUICK_REPLIES = [
+  { key: 'qr_greeting', label: 'Greeting', category: 'Greeting / intro', sortOrder: 10,
+    whatsappBody: 'Hello! Thanks for contacting PurpleBox Storage. How can we help you today?' },
+  { key: 'qr_intro', label: 'Who we are', category: 'Greeting / intro', sortOrder: 20,
+    whatsappBody: 'We provide clean, secure self-storage units with flexible terms. Tell us roughly how much you need to store and we will suggest a size.' },
+  { key: 'qr_sizes', label: 'Ask what they need', category: 'Unit sizes & pricing', sortOrder: 30,
+    whatsappBody: 'Could you tell us what you are planning to store and for how long? We will recommend the right unit size and share the price.' },
+  { key: 'qr_availability', label: 'Checking availability', category: 'Availability check', sortOrder: 40,
+    whatsappBody: 'Let me check availability for those dates and come back to you shortly.' },
+  { key: 'qr_location', label: 'Location', category: 'Location & directions', sortOrder: 50,
+    whatsappBody: 'Our address is: [add your address here]. Let us know when you would like to visit.' },
+  { key: 'qr_booking', label: 'Booking confirmed', category: 'Booking confirmation', sortOrder: 60,
+    whatsappBody: 'Your booking is confirmed. We will send the agreement shortly — please review and sign it, and let us know if anything needs changing.' },
+  { key: 'qr_followup', label: 'Following up', category: 'Follow-up / no reply', sortOrder: 70,
+    whatsappBody: 'Just following up on your enquiry — is there anything else you would like to know before deciding?' },
+  { key: 'qr_moving', label: 'Moving service', category: 'Packing & moving service', sortOrder: 80,
+    whatsappBody: 'We can also arrange packing and moving. Tell us the pickup address and roughly what needs moving, and we will send a quote.' },
+];
+
+// Get templates. ?kind=quick_reply returns the WhatsApp canned replies;
+// anything else returns the contract/automation ones. Each set seeds itself
+// on first request so a fresh install is not empty.
+router.get('/', async (req, res) => {
+  const kind = req.query.kind === 'quick_reply' ? 'quick_reply' : 'automation';
+
+  if (kind === 'quick_reply') {
+    let quick = await MessageTemplate.find({ kind: 'quick_reply' }).sort({ sortOrder: 1, label: 1 });
+    if (quick.length === 0) {
+      quick = await MessageTemplate.insertMany(
+        DEFAULT_QUICK_REPLIES.map((t) => ({ ...t, kind: 'quick_reply', subject: '', emailBody: '', variables: [] })),
+      );
+    }
+    return res.json(quick);
+  }
+
+  // Existing rows predate the kind field, so treat a missing value as
+  // 'automation' rather than hiding them.
+  let templates = await MessageTemplate.find({ kind: { $ne: 'quick_reply' } }).sort({ key: 1 });
   if (templates.length === 0) {
     templates = await MessageTemplate.insertMany(DEFAULT_TEMPLATES);
   }
@@ -23,9 +61,11 @@ router.get('/', async (_req, res) => {
 
 // Update a template
 router.put('/:id', async (req, res) => {
-  const { subject, emailBody, whatsappBody, label } = req.body;
+  const { subject, emailBody, whatsappBody, label, category, sortOrder } = req.body;
   const update = { subject, emailBody, whatsappBody };
   if (label) update.label = label;
+  if (category !== undefined) update.category = String(category);
+  if (sortOrder !== undefined && Number.isFinite(Number(sortOrder))) update.sortOrder = Number(sortOrder);
   const template = await MessageTemplate.findByIdAndUpdate(
     req.params.id,
     update,
@@ -38,11 +78,14 @@ router.put('/:id', async (req, res) => {
 // Create a new custom template
 router.post('/', async (req, res) => {
   try {
-    const { key, label, subject, emailBody, whatsappBody, variables } = req.body;
+    const { key, label, subject, emailBody, whatsappBody, variables, kind, category, sortOrder } = req.body;
     if (!key || !label) return res.status(400).json({ error: 'key and label are required' });
     const existing = await MessageTemplate.findOne({ key });
     if (existing) return res.status(409).json({ error: 'Template with this key already exists' });
     const template = await MessageTemplate.create({
+      kind: kind === 'quick_reply' ? 'quick_reply' : 'automation',
+      category: String(category || ''),
+      sortOrder: Number.isFinite(Number(sortOrder)) ? Number(sortOrder) : 0,
       key, label, subject: subject || '', emailBody: emailBody || '',
       whatsappBody: whatsappBody || '', variables: variables || ['@name', '@amount', '@unit', '@dueDate', '@contractNo'],
     });

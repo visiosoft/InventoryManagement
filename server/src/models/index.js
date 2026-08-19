@@ -1404,6 +1404,14 @@ const messageTemplateSchema = new Schema({
   emailBody: { type: String, default: '' },
   whatsappBody: { type: String, default: '' },
   variables: [String],
+  // 'automation' templates are the contract-driven ones the reminder engine
+  // and the contract page send. 'quick_reply' are the canned replies staff
+  // pick from in the WhatsApp console — different audience, different
+  // wording, so they are kept apart rather than sharing one list.
+  kind: { type: String, enum: ['automation', 'quick_reply'], default: 'automation' },
+  // Only meaningful for quick replies, which the console groups by it.
+  category: { type: String, default: '' },
+  sortOrder: { type: Number, default: 0 },
 }, { timestamps: true });
 export const MessageTemplate = model('MessageTemplate', messageTemplateSchema);
 
