@@ -804,12 +804,15 @@ export default function WhatsApp() {
       </div>
 
       {/* ── columns ────────────────────────────────────────────────── */}
-      <div className="relative flex flex-1 min-h-0">
+      <div
+        className="relative flex flex-1 min-h-0"
+        style={{ flexDirection: 'row', flexWrap: 'nowrap' }}
+      >
 
         {/* 2. Sidebar */}
         <aside
           className={cn('wa-sidebar flex flex-col min-h-0', sidebarOpen && 'wa-sidebar-open')}
-          style={{ flex: '0 0 300px', background: '#fff', borderRight: `1px solid ${LINE}` }}
+          style={{ flex: '0 0 300px', width: 300, background: '#fff', borderRight: `1px solid ${LINE}` }}
         >
           <div className="shrink-0 px-4 pt-4 pb-3 space-y-3">
             <div className="flex items-center justify-between gap-2">
