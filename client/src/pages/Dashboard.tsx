@@ -9,7 +9,6 @@ import type { Summary } from '../lib/types'
 import { Spinner, EmptyState, Table, Th, Td, Button, Badge } from '../components/ui'
 import { formatDate } from '../lib/utils'
 import TasksPage from './Tasks'
-import WhatsAppPage from './WhatsApp'
 import { isSalesRepRole } from '../lib/roles'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
@@ -52,13 +51,12 @@ function safeLoadLayout() {
   }
 }
 
-type DashTab = 'overview' | 'tasks' | 'whatsapp'
+type DashTab = 'overview' | 'tasks'
 
 function DashboardTabs({ tab, setTab }: { tab: DashTab; setTab: (t: DashTab) => void }) {
   const TABS: { value: DashTab; label: string }[] = [
     { value: 'overview', label: 'Overview' },
     { value: 'tasks', label: 'Tasks' },
-    { value: 'whatsapp', label: 'WhatsApp' },
   ]
   return (
     <div className="flex gap-1 rounded-full p-1 mb-5 w-fit" style={{ background: '#F6F0E4' }}>
@@ -468,17 +466,6 @@ export default function Dashboard() {
 
   // Tasks lives above the data guards: a failing /reports/summary shouldn't
   // take the task board down with it.
-  if (showTasksTab && tab === 'whatsapp') {
-    // The console sizes itself to the viewport, so it gets a plain wrapper
-    // rather than the padded card the other tabs use.
-    return (
-      <div style={{ background: '#FBF8F2', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
-        <DashboardTabs tab={tab} setTab={setTab} />
-        <WhatsAppPage />
-      </div>
-    )
-  }
-
   if (showTasksTab && tab === 'tasks') {
     return (
       <div style={{ background: '#FBF8F2', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
