@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
   Send, MessageSquare, RefreshCw, UserPlus, UserCheck, Bell, BellOff, FileText,
-  Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Info,
+  Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Info, Paperclip,
 } from 'lucide-react'
 import { api, whatsappApi, leadApi, apiError, type WhatsAppConversation, type WhatsAppMsg } from '../lib/api'
 import { cn } from '../lib/utils'
@@ -753,6 +753,36 @@ export default function WhatsApp() {
     setSidebarOpen(false)
   }
 
+  // Outbound attachment: picked here, uploaded to Meta by the server, which
+  // returns once the message is actually sent.
+  const fileRef = useRef<HTMLInputElement | null>(null)
+  const [pending, setPending] = useState<File | null>(null)
+  const [preview, setPreview] = useState<string>('')
+
+  useEffect(() => {
+    if (!pending || !pending.type.startsWith('image/')) { setPreview(''); return }
+    const url = URL.createObjectURL(pending)
+    setPreview(url)
+    return () => URL.revokeObjectURL(url)
+  }, [pending])
+
+  const sendMedia = useMutation({
+    mutationFn: async (payload: { to: string; file: File; caption: string }) => {
+      const form = new FormData()
+      form.append('to', payload.to)
+      form.append('file', payload.file)
+      if (payload.caption) form.append('caption', payload.caption)
+      return api.post('/whatsapp/send-media', form).then((r) => r.data)
+    },
+    onSuccess: () => {
+      setSendErr(''); setPending(null); setDraft('')
+      if (fileRef.current) fileRef.current.value = ''
+      stickToBottom.current = true
+      onSent()
+    },
+    onError: (e) => setSendErr(apiError(e)),
+  })
+
   const send = useMutation({
     mutationFn: (payload: { to: string; body: string }) => whatsappApi.send(payload.to, payload.body),
     onSuccess: () => { setSendErr(''); stickToBottom.current = true; onSent() },
@@ -767,9 +797,16 @@ export default function WhatsApp() {
   }
 
   function sendComposer() {
-    const text = draft.trim()
-    if (!text || send.isPending) return
+    if (send.isPending || sendMedia.isPending) return
     if (!selectedPhone) { setSendErr('Pick a conversation first, or start a new chat.'); return }
+    // With a file attached the draft becomes its caption, so one press sends
+    // both rather than the text going out as a separate message.
+    if (pending) {
+      sendMedia.mutate({ to: selectedPhone, file: pending, caption: draft.trim() })
+      return
+    }
+    const text = draft.trim()
+    if (!text) return
     setDraft('')
     send.mutate({ to: selectedPhone, body: text })
   }
@@ -1042,10 +1079,61 @@ export default function WhatsApp() {
             <span className="wa-grip-bar" />
           </div>
 
+          {pending && (
+            <div
+              className="shrink-0 flex items-center gap-3 px-4 py-2"
+              style={{ background: '#fff', borderTop: `1px solid ${LINE}` }}
+            >
+              {preview ? (
+                <img src={preview} alt="" style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 8 }} />
+              ) : (
+                <span
+                  className="inline-flex items-center justify-center shrink-0"
+                  style={{ width: 44, height: 44, borderRadius: 8, background: '#F7F3FF' }}
+                >
+                  <Paperclip size={18} style={{ color: '#5B2BC9' }} />
+                </span>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="truncate" style={{ fontSize: 13, fontWeight: 600, color: INK }}>{pending.name}</div>
+                <div style={{ fontSize: 11.5, color: FAINT_INK }}>
+                  {(pending.size / 1024 / 1024).toFixed(2)} MB
+                  {pending.size > 16 * 1024 * 1024 && ' · too large, WhatsApp allows 16 MB'}
+                  {' · the message box becomes its caption'}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setPending(null); if (fileRef.current) fileRef.current.value = '' }}
+                className="shrink-0 cursor-pointer"
+                style={{ color: FAINT_INK }}
+                title="Remove attachment"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          )}
+
           <div
             className="shrink-0 flex items-end gap-2 px-4 pb-3 pt-1"
             style={{ background: '#fff' }}
           >
+            <input
+              ref={fileRef}
+              type="file"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                if (f) { setPending(f); setSendErr('') }
+              }}
+            />
+            <IconButton
+              title="Attach a photo, video, audio or document"
+              onClick={() => fileRef.current?.click()}
+              className="!h-10 !w-10 shrink-0"
+            >
+              <Paperclip size={16} />
+            </IconButton>
             <IconButton title="Quick replies" onClick={() => setQrOpen((v) => !v)} className="!h-10 !w-10 shrink-0">
               <Zap size={16} />
             </IconButton>
@@ -1057,7 +1145,7 @@ export default function WhatsApp() {
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendComposer() }
               }}
-              placeholder={selectedPhone ? 'Type a message…' : 'Pick a chat to start typing…'}
+              placeholder={pending ? 'Add a caption (optional)…' : selectedPhone ? 'Type a message…' : 'Pick a chat to start typing…'}
               className="flex-1 resize-none px-4 py-2.5 text-sm focus:outline-none"
               style={{
                 background: '#F7F3FF',
@@ -1071,7 +1159,7 @@ export default function WhatsApp() {
             <button
               type="button"
               onClick={sendComposer}
-              disabled={send.isPending || !draft.trim() || !selectedPhone}
+              disabled={send.isPending || sendMedia.isPending || (!draft.trim() && !pending) || !selectedPhone}
               className="shrink-0 inline-flex items-center justify-center rounded-full cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed"
               style={{ width: 44, height: 44, background: '#5B2BC9', color: '#fff' }}
               aria-label="Send"
