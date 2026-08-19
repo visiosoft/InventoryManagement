@@ -263,6 +263,19 @@ async function persistMessages(messages) {
     let saved = 0;
 
     for (const msg of messages) {
+        // A delivery receipt carries the same id as the message it refers to.
+        // It updates that message's status — it is never a message of its own,
+        // and storing it as one produced empty "[status]" bubbles in the chat.
+        if (msg.type === 'status') {
+            if (msg.messageId && msg.status) {
+                await WhatsAppMessage.updateOne(
+                    { messageId: msg.messageId },
+                    { $set: { status: msg.status } },
+                );
+            }
+            continue;
+        }
+
         const existing = msg.messageId
             ? await WhatsAppMessage.findOne({ messageId: msg.messageId }).select('_id')
             : null;
