@@ -2,9 +2,12 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './lib/auth'
 
 /** Renders children only if the user has the given module permission (or is admin). Otherwise redirects home. */
-function PermGuard({ module, children }: { module: string; children: React.ReactNode }) {
-  const { hasPermission } = useAuth()
-  return hasPermission(module) ? <>{children}</> : <Navigate to="/" replace />
+function PermGuard({ module, orSalesRep, children }: { module: string; orSalesRep?: boolean; children: React.ReactNode }) {
+  const { hasPermission, user } = useAuth()
+  // Booking a unit is a rep's core job, but 'quotes' is not one of the
+  // permissions reps are created with, so the role opens the door instead.
+  const allowed = hasPermission(module) || (orSalesRep && isSalesRepRole(user?.role))
+  return allowed ? <>{children}</> : <Navigate to="/" replace />
 }
 
 /** Admin-only guard */
@@ -182,8 +185,8 @@ export default function App() {
         <Route path="/moving-estimator" element={<PermGuard module="sales_board"><MovingEstimator /></PermGuard>} />
         <Route path="/my-performance" element={<PermGuard module="sales_board"><MyPerformance /></PermGuard>} />
         <Route path="/account" element={<MyAccount />} />
-        <Route path="/quotes" element={<PermGuard module="quotes"><Quotations /></PermGuard>} />
-        <Route path="/quotes/new" element={<PermGuard module="quotes"><NewQuote /></PermGuard>} />
+        <Route path="/quotes" element={<PermGuard module="quotes" orSalesRep><Quotations /></PermGuard>} />
+        <Route path="/quotes/new" element={<PermGuard module="quotes" orSalesRep><NewQuote /></PermGuard>} />
         <Route path="/quotations" element={<PermGuard module="quotes"><Quotes /></PermGuard>} />
         <Route path="/invoices" element={<Invoices />} />
         <Route path="/invoices/:id" element={<InvoiceDetail />} />

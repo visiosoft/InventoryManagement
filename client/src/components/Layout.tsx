@@ -96,16 +96,40 @@ const navBottom: { to: string; label: string; icon: any; perm: string }[] = []
 // Daily drivers first, then reference material. Dashboard is the rep's leads
 // board, so there's no separate Leads entry — they were the same page and
 // both lit up as active.
-const salesRepNavItems = [
+// A rep's own board and their to-do list sit above the groups — they are
+// what the day starts on, not a category of work.
+const salesRepNavTop = [
   { key: 'dashboard', to: '/my-leads', label: 'Dashboard', icon: LayoutDashboard, perm: 'sales_board' },
-  { key: 'whatsapp', to: '/whatsapp', label: 'WhatsApp', icon: MessageCircle, perm: 'sales_board' },
   { key: 'tasks', to: '/tasks', label: 'Tasks', icon: ListTodo, perm: 'sales_board' },
-  { key: 'customers', to: '/contracts', label: 'Customers', icon: Users, perm: 'contracts' },
-  { key: 'search-units', to: '/units', label: 'Search Units', icon: Box, perm: 'units' },
-  { key: 'moving-schedule', to: '/moving/schedule', label: 'Moving Schedule', icon: CalendarDays, perm: 'moving_schedule' },
-  { key: 'moving-estimator', to: '/moving-estimator', label: 'Moving Estimator', icon: Calculator, perm: 'sales_board' },
-  { key: 'diary', to: '/diary', label: 'Daily Diary', icon: NotebookPen, perm: 'sales_board' },
-  { key: 'reports', to: '/my-performance', label: 'Reports', icon: BarChart3, perm: 'sales_board' },
+]
+
+const salesRepNavGroups = [
+  {
+    title: 'Sales',
+    items: [
+      { key: 'whatsapp', to: '/whatsapp', label: 'WhatsApp', icon: MessageCircle, perm: 'sales_board' },
+      { key: 'diary', to: '/diary', label: 'Daily Diary', icon: NotebookPen, perm: 'sales_board' },
+      { key: 'reports', to: '/my-performance', label: 'Reports', icon: BarChart3, perm: 'sales_board' },
+    ],
+  },
+  {
+    title: 'Storage',
+    items: [
+      { key: 'book-unit', to: '/quotes', label: 'Book Unit', icon: FileText, perm: 'sales_board' },
+      { key: 'customers', to: '/contracts', label: 'Customers', icon: Users, perm: 'contracts' },
+      { key: 'search-units', to: '/units', label: 'Search Units', icon: Box, perm: 'units' },
+    ],
+  },
+  {
+    title: 'Moving',
+    items: [
+      { key: 'moving-schedule', to: '/moving/schedule', label: 'Moving Schedule', icon: CalendarDays, perm: 'moving_schedule' },
+      { key: 'moving-estimator', to: '/moving-estimator', label: 'Moving Estimator', icon: Calculator, perm: 'sales_board' },
+    ],
+  },
+]
+
+const salesRepNavBottom = [
   { key: 'settings', to: '/account', label: 'Settings', icon: Settings, perm: 'sales_board' },
 ]
 
@@ -415,13 +439,37 @@ export default function Layout() {
 
       {/* Nav */}
       <nav className={cn("flex-1 overflow-y-auto py-3 space-y-0.5", isCollapsed ? 'px-1.5' : 'px-2.5')}>
-        {isSalesRepUser && salesRepNavItems.filter(({ perm }) => !perm || hasPermission(perm)).map(({ key, to, label, icon: Icon }) => (
-          <NavLink key={key} to={to}
-            className={({ isActive }) => isCollapsed ? cn('flex items-center justify-center rounded-lg p-2 transition-all duration-150', isActive ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8') : navLinkCls(isActive)}
-            title={isCollapsed ? label : undefined}>
-            <Icon size={isCollapsed ? 18 : 15} />{!isCollapsed && label}
-          </NavLink>
-        ))}
+        {isSalesRepUser && (() => {
+          const link = ({ key, to, label, icon: Icon }: { key: string; to: string; label: string; icon: any }) => (
+            <NavLink key={key} to={to}
+              className={({ isActive }) => isCollapsed ? cn('flex items-center justify-center rounded-lg p-2 transition-all duration-150', isActive ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8') : navLinkCls(isActive)}
+              title={isCollapsed ? label : undefined}>
+              <Icon size={isCollapsed ? 18 : 15} />{!isCollapsed && label}
+            </NavLink>
+          )
+          return (
+            <>
+              {salesRepNavTop.filter(({ perm }) => !perm || hasPermission(perm)).map(link)}
+
+              {salesRepNavGroups.map((group) => {
+                const items = group.items.filter(({ perm }) => !perm || hasPermission(perm))
+                if (items.length === 0) return null
+                return (
+                  <div key={group.title} className="pt-3">
+                    {isCollapsed
+                      ? <div className="border-t border-white/10 my-1" />
+                      : <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-sidebar-muted/60">{group.title}</div>}
+                    <div className="space-y-0.5">{items.map(link)}</div>
+                  </div>
+                )
+              })}
+
+              <div className="pt-3">
+                {salesRepNavBottom.filter(({ perm }) => !perm || hasPermission(perm)).map(link)}
+              </div>
+            </>
+          )
+        })()}
 
         {showStorageNav && navTop.filter(({ perm }) => !perm || hasPermission(perm)).map(({ to, label, icon: Icon }) => (
           <NavLink key={to} to={to} end={to === '/'}
