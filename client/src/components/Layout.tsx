@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ShieldCheck, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Target, Calculator, ListTodo, NotebookPen, MessageCircle } from 'lucide-react'
+import { LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Target, Calculator, ListTodo, NotebookPen, MessageCircle } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import GlobalSearch from './GlobalSearch'
@@ -27,7 +27,6 @@ const navGroups = [
       { to: '/my-performance', label: 'Reports', icon: BarChart3, perm: 'sales_board' },
       { to: '/account', label: 'Settings', icon: Settings, perm: 'sales_board' },
       { to: '/leads', label: 'Leads', icon: UserPlus, perm: 'leads' },
-      { to: '/quotations', label: 'Quotations', icon: ScrollText, perm: 'quotes' },
     ],
   },
 ]
@@ -294,14 +293,6 @@ export default function Layout() {
             </div>
           )
         })}
-
-        {!isMovingOnly && isAdmin && hasPermission('quotes') && (
-          <NavLink to="/approvals"
-            className={({ isActive }) => isCollapsed ? cn('flex items-center justify-center rounded-lg p-2 transition-all duration-150', isActive ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8') : navLinkCls(isActive)}
-            title={isCollapsed ? 'Approvals' : undefined}>
-            <ShieldCheck size={isCollapsed ? 18 : 15} />{!isCollapsed && 'Approvals'}
-          </NavLink>
-        )}
 
         {/* Reports */}
         {!isMovingOnly && (() => {
