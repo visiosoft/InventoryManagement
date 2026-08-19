@@ -105,6 +105,30 @@ const movingReportItems = [
 ]
 
 
+type BusinessMode = 'storage' | 'moving'
+
+const BUSINESS_MODE_KEY = 'pb_business_mode'
+
+// Routes that belong to the Moving business. `/moving-estimator` is
+// deliberately excluded — it lives in the Sales group on the storage side.
+function isMovingPath(pathname: string): boolean {
+  return pathname === '/moving' || pathname.startsWith('/moving/') || pathname.startsWith('/moving-inventory')
+}
+
+// Every route reachable from the storage half of the nav, used to snap the
+// switcher back to Storage when the stored preference contradicts the page.
+const storagePaths = [
+  ...navTop.map(i => i.to),
+  ...navGroups.flatMap(g => g.items.map(i => i.to)),
+  ...reportItems.map(i => i.to),
+  ...navBottom.map(i => i.to),
+  ...profileMenuItems.map(i => i.to),
+]
+
+function isStoragePath(pathname: string): boolean {
+  return storagePaths.some(p => pathname === p || (p !== '/' && pathname.startsWith(p + '/')))
+}
+
 const navLinkCls = (isActive: boolean) => cn(
   'flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-all duration-150',
   isActive
@@ -201,6 +225,38 @@ export default function Layout() {
   const isSalesRepUser = isSalesRepRole(user?.role)
   const isMovingOnly = hasPermission('moving_dashboard') && !hasPermission('units') && !hasPermission('dashboard')
 
+  // ── Business switcher ──────────────────────────────────────────
+  // Storage and Moving are two businesses in one app; the sidebar shows one
+  // at a time instead of stacking both.
+  const hasMovingAccess = movingNavItems.some(({ perm }) => hasPermission(perm))
+    || movingReportItems.some(({ perm }) => hasPermission(perm))
+  const hasStorageAccess = navTop.some(({ perm }) => !perm || hasPermission(perm))
+    || navGroups.some(g => g.items.some(({ perm }) => !perm || hasPermission(perm)))
+    || reportItems.some(({ perm }) => hasPermission(perm))
+    || navBottom.some(({ perm }) => !perm || hasPermission(perm))
+  // Nothing to switch to → no switcher (moving-only users, storage-only users,
+  // and sales reps, who keep their own flat nav).
+  const showBusinessSwitcher = !isSalesRepUser && !isMovingOnly && hasMovingAccess && hasStorageAccess
+  const [storedMode, setStoredMode] = useState<BusinessMode>(
+    () => (localStorage.getItem(BUSINESS_MODE_KEY) === 'moving' ? 'moving' : 'storage')
+  )
+  // The route wins over the stored preference, so the menu can never
+  // contradict the page you are looking at.
+  const businessMode: BusinessMode =
+    isMovingOnly || !hasStorageAccess ? 'moving'
+    : !hasMovingAccess ? 'storage'
+    : isMovingPath(location.pathname) ? 'moving'
+    : isStoragePath(location.pathname) ? 'storage'
+    : storedMode
+  useEffect(() => { localStorage.setItem(BUSINESS_MODE_KEY, businessMode) }, [businessMode])
+  const switchBusiness = (mode: BusinessMode) => {
+    setStoredMode(mode)
+    localStorage.setItem(BUSINESS_MODE_KEY, mode)
+    navigate(mode === 'moving' ? '/moving' : '/')
+  }
+  const showStorageNav = !isMovingOnly && !isSalesRepUser && businessMode === 'storage'
+  const showMovingNav = !isSalesRepUser && businessMode === 'moving'
+
   // Site switcher disabled for now — clear any previously selected site
   useEffect(() => { localStorage.removeItem('pb_site_id') }, [])
 
@@ -251,6 +307,65 @@ export default function Layout() {
         </button>
       </div>
 
+      {/* Business switcher — Storage or Moving, never both at once */}
+      {showBusinessSwitcher && (
+        isCollapsed ? (
+          <div className="shrink-0 flex flex-col items-center gap-1 border-b border-white/10 px-1.5 py-2">
+            <button
+              onClick={() => switchBusiness('storage')}
+              title="Storage"
+              className={cn(
+                'flex h-8 w-8 items-center justify-center rounded-lg transition-all duration-150 cursor-pointer',
+                businessMode === 'storage'
+                  ? 'bg-[#FFF799] text-[#111218] shadow-sm'
+                  : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8'
+              )}
+            >
+              <Box size={16} />
+            </button>
+            <button
+              onClick={() => switchBusiness('moving')}
+              title="Moving"
+              className={cn(
+                'flex h-8 w-8 items-center justify-center rounded-lg transition-all duration-150 cursor-pointer',
+                businessMode === 'moving'
+                  ? 'bg-[#FFF799] text-[#111218] shadow-sm'
+                  : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8'
+              )}
+            >
+              <Truck size={16} />
+            </button>
+          </div>
+        ) : (
+          <div className="shrink-0 border-b border-white/10 px-2.5 py-2.5">
+            <div className="flex items-center gap-1 rounded-xl bg-white/5 p-1">
+              <button
+                onClick={() => switchBusiness('storage')}
+                className={cn(
+                  'flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[12px] font-semibold transition-all duration-150 cursor-pointer',
+                  businessMode === 'storage'
+                    ? 'bg-[#FFF799] text-[#111218] shadow-sm'
+                    : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8'
+                )}
+              >
+                <Box size={14} />Storage
+              </button>
+              <button
+                onClick={() => switchBusiness('moving')}
+                className={cn(
+                  'flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[12px] font-semibold transition-all duration-150 cursor-pointer',
+                  businessMode === 'moving'
+                    ? 'bg-[#FFF799] text-[#111218] shadow-sm'
+                    : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8'
+                )}
+              >
+                <Truck size={14} />Moving
+              </button>
+            </div>
+          </div>
+        )
+      )}
+
       {/* Nav */}
       <nav className={cn("flex-1 overflow-y-auto py-3 space-y-0.5", isCollapsed ? 'px-1.5' : 'px-2.5')}>
         {isSalesRepUser && salesRepNavItems.filter(({ perm }) => !perm || hasPermission(perm)).map(({ key, to, label, icon: Icon }) => (
@@ -261,7 +376,7 @@ export default function Layout() {
           </NavLink>
         ))}
 
-        {!isMovingOnly && !isSalesRepUser && navTop.filter(({ perm }) => !perm || hasPermission(perm)).map(({ to, label, icon: Icon }) => (
+        {showStorageNav && navTop.filter(({ perm }) => !perm || hasPermission(perm)).map(({ to, label, icon: Icon }) => (
           <NavLink key={to} to={to} end={to === '/'}
             className={({ isActive }) => isCollapsed ? cn('flex items-center justify-center rounded-lg p-2 transition-all duration-150', isActive ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8') : navLinkCls(isActive)}
             title={isCollapsed ? label : undefined}>
@@ -269,7 +384,7 @@ export default function Layout() {
           </NavLink>
         ))}
 
-        {!isMovingOnly && !isSalesRepUser && navGroups.map((group) => {
+        {showStorageNav && navGroups.map((group) => {
           // Reps get 'units' for the read-only Floor Map, not the editable
           // unit list that permission also happens to gate.
           const visibleItems = group.items
@@ -296,7 +411,7 @@ export default function Layout() {
         })}
 
         {/* Reports */}
-        {!isMovingOnly && (() => {
+        {showStorageNav && (() => {
           const visibleReports = reportItems.filter(({ perm }) => hasPermission(perm))
           if (visibleReports.length === 0) return null
           if (isCollapsed) {
@@ -338,7 +453,7 @@ export default function Layout() {
           )
         })()}
 
-        {!isMovingOnly && navBottom.filter(({ perm }) => !perm || hasPermission(perm)).map(({ to, label, icon: Icon }) => (
+        {showStorageNav && navBottom.filter(({ perm }) => !perm || hasPermission(perm)).map(({ to, label, icon: Icon }) => (
           <NavLink key={to} to={to}
             className={({ isActive }) => isCollapsed ? cn('flex items-center justify-center rounded-lg p-2 transition-all duration-150', isActive ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8') : navLinkCls(isActive)}
             title={isCollapsed ? label : undefined}>
@@ -348,7 +463,7 @@ export default function Layout() {
 
 
         {/* Moving Business */}
-        {!isSalesRepUser && (() => {
+        {showMovingNav && (() => {
           const visibleMoving = movingNavItems.filter(({ perm }) => hasPermission(perm))
           if (visibleMoving.length === 0) return null
           return (
@@ -368,7 +483,7 @@ export default function Layout() {
         })()}
 
         {/* Moving Reports */}
-        {(() => {
+        {showMovingNav && (() => {
           const visibleMovingReports = movingReportItems.filter(({ perm }) => hasPermission(perm))
           if (visibleMovingReports.length === 0) return null
           if (isCollapsed) {
