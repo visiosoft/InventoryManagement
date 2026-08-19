@@ -5,7 +5,8 @@ import { api, apiError } from '../lib/api'
 import { Button, Card, CardBody, CardHeader, Field, Input, PageHeader, Spinner } from '../components/ui'
 
 type Step = { name: string; ok: boolean; detail: string; fix?: string }
-type Result = { steps: Step[]; phoneId: string; tokenHint: string; usingOverride: boolean }
+type Hit = { at: string; ok: boolean; reason: string; hasSignature: boolean; field: string; messageCount: number; statusCount: number; from: string }
+type Result = { steps: Step[]; phoneId: string; tokenHint: string; usingOverride: boolean; hits?: Hit[] }
 
 /**
  * Why WhatsApp will not connect, in one page.
@@ -92,6 +93,44 @@ export default function WhatsAppDebug() {
                 </div>
               </div>
             ))}
+          </CardBody>
+        </Card>
+      )}
+
+      {result && (
+        <Card className="mt-4">
+          <CardHeader
+            title="Webhook deliveries from Meta"
+            subtitle="Every call Meta has made, accepted or rejected — this is how to tell 'not delivering' from 'delivered and refused'"
+          />
+          <CardBody className="pt-0">
+            {!result.hits?.length ? (
+              <p className="text-sm text-muted-foreground py-2">
+                Nothing recorded. Meta has not called this server since logging was added — reply to your
+                WhatsApp number and run the checks again. If it stays empty, the <strong>messages</strong> field
+                is not subscribed in Meta → WhatsApp → Configuration → Manage.
+              </p>
+            ) : (
+              <div className="space-y-1">
+                {result.hits.map((h, i) => (
+                  <div key={`${h.at}-${i}`} className="flex items-start gap-2.5 py-1.5 border-b last:border-b-0 text-[12.5px]">
+                    <span className="mt-0.5 shrink-0" style={{ color: h.ok ? '#15803D' : '#B91C1C' }}>
+                      {h.ok ? '✓' : '✕'}
+                    </span>
+                    <span className="shrink-0 text-muted-foreground w-40">
+                      {new Date(h.at).toLocaleString('en-GB')}
+                    </span>
+                    <span className="min-w-0">
+                      {h.field || 'unknown field'}
+                      {h.messageCount > 0 && ` · ${h.messageCount} message(s)`}
+                      {h.statusCount > 0 && ` · ${h.statusCount} status update(s)`}
+                      {h.from && ` · from ${h.from}`}
+                      {!h.ok && <span style={{ color: '#B91C1C' }}> — {h.reason}</span>}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardBody>
         </Card>
       )}

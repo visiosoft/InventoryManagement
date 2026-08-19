@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { requireAdmin } from '../middleware/auth.js';
+import { WhatsAppWebhookHit } from '../models/index.js';
 
 const router = Router();
 const GRAPH = 'https://graph.facebook.com/v20.0';
@@ -103,7 +104,31 @@ router.post('/diagnostics', requireAdmin, async (req, res) => {
             num.ok ? '' : 'Meta returns this both for a wrong id and for an id the token may not see. If the checks above are green, the id is wrong; if they are red, fix those first.');
     }
 
-    res.json({ steps, phoneId, tokenHint: mask(token), usingOverride });
+    // 6. Receiving side. Sending can work perfectly while replies never
+    //    arrive, which is a separate chain: app secret → Meta delivering →
+    //    signature matching.
+    const secret = process.env.WHATSAPP_APP_SECRET || '';
+    add('App secret set (needed to accept replies)', Boolean(secret),
+        secret ? `${secret.length} characters` : 'missing — every delivery from Meta is rejected with 401',
+        secret ? '' : 'Copy the App Secret from Meta → App → Settings → Basic into Settings → WhatsApp.');
+
+    const hits = await WhatsAppWebhookHit.find().sort({ at: -1 }).limit(30).lean();
+    const lastOk = hits.find((h) => h.ok);
+    const lastBad = hits.find((h) => !h.ok);
+    add('Meta has called the webhook', hits.length > 0,
+        hits.length
+            ? `${hits.length} recent call(s), last ${new Date(hits[0].at).toUTCString()}`
+            : 'no calls recorded since logging was added',
+        hits.length
+            ? ''
+            : 'Meta → WhatsApp → Configuration: set the callback URL, then Manage → subscribe to the "messages" field. The field subscription is separate from saving the URL and is the usual omission.');
+    if (hits.length) {
+        add('Calls accepted', Boolean(lastOk),
+            lastOk ? `last accepted ${new Date(lastOk.at).toUTCString()}` : `all rejected — ${lastBad?.reason || 'unknown reason'}`,
+            lastOk ? '' : 'Meta is delivering but we are refusing it. Check the App Secret above matches this app.');
+    }
+
+    res.json({ steps, phoneId, tokenHint: mask(token), usingOverride, hits });
 });
 
 function mask(t) {
