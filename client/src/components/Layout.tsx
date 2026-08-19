@@ -27,6 +27,7 @@ const navGroups = [
       { to: '/my-performance', label: 'Reports', icon: BarChart3, perm: 'sales_board' },
       { to: '/account', label: 'Settings', icon: Settings, perm: 'sales_board' },
       { to: '/leads', label: 'Leads', icon: UserPlus, perm: 'leads' },
+      { to: '/whatsapp', label: 'WhatsApp', icon: MessageCircle, perm: 'leads' },
     ],
   },
 ]
@@ -64,8 +65,8 @@ const navBottom: { to: string; label: string; icon: any; perm: string }[] = []
 // both lit up as active.
 const salesRepNavItems = [
   { key: 'dashboard', to: '/my-leads', label: 'Dashboard', icon: LayoutDashboard, perm: 'sales_board' },
-  { key: 'tasks', to: '/tasks', label: 'Tasks', icon: ListTodo, perm: 'sales_board' },
   { key: 'whatsapp', to: '/whatsapp', label: 'WhatsApp', icon: MessageCircle, perm: 'sales_board' },
+  { key: 'tasks', to: '/tasks', label: 'Tasks', icon: ListTodo, perm: 'sales_board' },
   { key: 'customers', to: '/contracts', label: 'Customers', icon: Users, perm: 'contracts' },
   { key: 'search-units', to: '/units', label: 'Search Units', icon: Box, perm: 'units' },
   { key: 'moving-schedule', to: '/moving/schedule', label: 'Moving Schedule', icon: CalendarDays, perm: 'moving_schedule' },
