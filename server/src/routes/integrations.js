@@ -175,9 +175,15 @@ router.post('/whatsapp/connect', requireAdmin, async (req, res) => {
             // A short digits-only value is most likely a phone number too, but
             // not certainly, so this only adds a hint to Meta's own message.
             const looksLikeNumber = /^\d{7,14}$/.test(String(effectiveId || ''));
-            const hint = looksLikeNumber
+            let hint = looksLikeNumber
                 ? ' — that value looks like a phone number; the Phone number ID is a separate, longer id shown in Meta → WhatsApp → API Setup.'
                 : '';
+            // The token field starts blank, so saving without it validates
+            // against the stored one. When that is what expired, say so —
+            // otherwise the error looks like the new token was rejected.
+            if (!accessToken && /expire/i.test(e.message || '')) {
+                hint = ' — this is the token already saved here, not one you just entered. Paste the new token into the Access token field and save again.';
+            }
             return res.status(400).json({ error: `Meta rejected these credentials: ${e.message}${hint}` });
         }
     }
