@@ -463,7 +463,12 @@ function LeadAction({ convo, onChanged }: { convo: WhatsAppConversation; onChang
 
 export default function WhatsApp() {
   const qc = useQueryClient()
-  const [selectedPhone, setSelectedPhone] = useState<string | null>(null)
+  // The last chat opened, so returning to the inbox lands where you left off
+  // instead of on a combined feed of everyone.
+  const LAST_CHAT_KEY = 'wa_last_chat'
+  const [selectedPhone, setSelectedPhone] = useState<string | null>(
+    () => localStorage.getItem(LAST_CHAT_KEY) || null
+  )
   const [muted, setMuted] = useState<boolean>(() => localStorage.getItem(MUTE_KEY) === '1')
   const [lastSeen, setLastSeen] = useState<Record<string, string>>(readSeen)
   const [blinking, setBlinking] = useState<Record<string, number>>({})
@@ -729,9 +734,13 @@ export default function WhatsApp() {
   }, [draft])
 
   function openConversation(phone: string) {
-    const next = phone === selectedPhone ? null : phone
+    // Clicking the open chat used to deselect it, which dropped you back to
+    // the all-messages feed. There is nowhere to fall back to now, so it
+    // simply stays open.
+    const next = phone
     stickToBottom.current = true
     setSelectedPhone(next)
+    localStorage.setItem(LAST_CHAT_KEY, next)
     setSendErr('')
     setSidebarOpen(false)
     if (next) {
@@ -1030,8 +1039,8 @@ export default function WhatsApp() {
               </>
             ) : (
               <div className="min-w-0 flex-1">
-                <div style={{ fontSize: 15, fontWeight: 700, color: INK }}>All messages</div>
-                <div style={{ fontSize: 12, color: FAINT_INK }}>Pick a chat on the left to reply</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: INK }}>No chat open</div>
+                <div style={{ fontSize: 12, color: FAINT_INK }}>Pick a conversation on the left</div>
               </div>
             )}
             <button
@@ -1045,8 +1054,29 @@ export default function WhatsApp() {
             </button>
           </header>
 
-          <div ref={scrollRef} onScroll={onScroll} className="wa-scroll flex-1 min-h-0 flex flex-col gap-[10px]" style={{ padding: '22px 26px' }}>
-            {loadingMsgs ? (
+          <div
+            ref={scrollRef}
+            onScroll={onScroll}
+            className="wa-scroll flex-1 min-h-0 flex flex-col gap-[10px]"
+            style={{
+              padding: '22px 26px',
+              // Tiled wallpaper behind the bubbles, over the cream base so the
+              // tile's own edges never show as bands.
+              backgroundColor: '#F6F0E4',
+              backgroundImage: 'url(/chat-b.jpg)',
+              backgroundRepeat: 'repeat',
+              backgroundSize: '400px auto',
+            }}
+          >
+            {!selectedPhone ? (
+              /* One combined feed of every contact was never useful to reply
+                 from — a chat is always chosen now, and the last one is
+                 remembered between visits. */
+              <div className="flex-1 flex flex-col items-center justify-center gap-2" style={{ color: FAINT_INK }}>
+                <MessageSquare size={22} />
+                <p className="text-sm">Pick a conversation on the left to read and reply.</p>
+              </div>
+            ) : loadingMsgs ? (
               <p className="text-sm" style={{ color: FAINT_INK }}>Loading…</p>
             ) : sorted.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center gap-2" style={{ color: FAINT_INK }}>
