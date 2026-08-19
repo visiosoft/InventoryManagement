@@ -97,6 +97,7 @@ export default function MessageTemplates() {
 
   /* ---------- WhatsApp quick replies ---------- */
   const [qrDrafts, setQrDrafts] = useState<Record<string, { label: string; category: string; whatsappBody: string; sortOrder: number }>>({})
+  const [qrSelectedId, setQrSelectedId] = useState<string | null>(null)
   const [qrAdding, setQrAdding] = useState(false)
   const [qrLabel, setQrLabel] = useState('')
   const [qrCategory, setQrCategory] = useState('')
@@ -225,113 +226,154 @@ export default function MessageTemplates() {
 
       {mode === 'quick' ? (
         qrLoading ? <Spinner /> : (
-        <div className="space-y-5">
+        <div className="space-y-4">
           <p className="text-xs text-muted-foreground rounded-lg border border-dashed px-4 py-3">
             These replies appear in the quick-replies panel of the WhatsApp console. Placeholders such as
             {' '}<span className="font-mono text-foreground">@name</span>{' '}are <strong>not</strong> substituted there —
             the console only has a phone number, not a contract, so anything you type is sent exactly as written.
           </p>
 
-          {/* Add quick reply */}
-          {qrAdding ? (
-            <Card>
-              <CardHeader title="New quick reply" subtitle="The key is generated from the label" />
-              <CardBody className="space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_100px] gap-3">
-                  <Field label="Label">
-                    <Input value={qrLabel} onChange={e => setQrLabel(e.target.value)} placeholder="e.g. Opening hours" autoFocus />
-                  </Field>
-                  <Field label="Category">
-                    <Input list="qr-categories" value={qrCategory} onChange={e => setQrCategory(e.target.value)} placeholder="Reuse an existing one" />
-                  </Field>
-                  <Field label="Order">
-                    <Input type="number" value={qrSort} onChange={e => setQrSort(e.target.value)} />
-                  </Field>
+          <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-5">
+            {/* List, grouped by category — the same shape as contract templates */}
+            <div className="space-y-3">
+              {qrGroups.map(([category, items]) => (
+                <div key={category} className="space-y-1.5">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-1">
+                    {category} <span className="opacity-60">{items.length}</span>
+                  </div>
+                  {items.map(q => (
+                    <button
+                      key={q._id}
+                      onClick={() => { setQrSelectedId(q._id); setQrAdding(false); setError(''); setSuccess('') }}
+                      className={`w-full text-left rounded-lg border px-4 py-3 transition-colors cursor-pointer ${qrSelectedId === q._id && !qrAdding ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}
+                    >
+                      <div className="font-medium text-sm">{q.label}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                        {q.whatsappBody || 'No message yet'}
+                      </div>
+                    </button>
+                  ))}
                 </div>
-                <Field label="Message">
-                  <Textarea value={qrBody} onChange={e => setQrBody(e.target.value)} rows={5} className="font-mono text-sm" placeholder="WhatsApp message..." />
-                </Field>
-                <div className="flex gap-2">
-                  <Button size="sm"
-                    onClick={() => qrCreateMut.mutate({ label: qrLabel.trim(), category: qrCategory.trim(), whatsappBody: qrBody, sortOrder: Number(qrSort) || 0 })}
-                    disabled={!qrLabel.trim() || !qrBody.trim() || qrCreateMut.isPending}>
-                    <Plus size={13} /> {qrCreateMut.isPending ? 'Adding…' : 'Add quick reply'}
-                  </Button>
-                  <Button size="sm" variant="outline"
-                    onClick={() => { setQrAdding(false); setQrLabel(''); setQrCategory(''); setQrBody(''); setQrSort('0'); setError('') }}>
-                    Cancel
-                  </Button>
-                </div>
-                {error && <p className="text-xs text-destructive">{error}</p>}
-              </CardBody>
-            </Card>
-          ) : (
-            <button onClick={() => { setQrAdding(true); setError('') }}
-              className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-dashed px-4 py-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors cursor-pointer">
-              <Plus size={14} /> New Quick Reply
-            </button>
-          )}
+              ))}
+
+              <button
+                onClick={() => { setQrAdding(true); setQrSelectedId(null); setError(''); setSuccess('') }}
+                className={`w-full rounded-lg border border-dashed px-4 py-3 text-sm font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${qrAdding ? 'border-primary bg-primary/5 text-primary' : 'text-muted-foreground hover:bg-muted/50'}`}
+              >
+                <Plus size={14} /> New Quick Reply
+              </button>
+            </div>
+
+            {/* Editor */}
+            {qrAdding ? (
+              <Card>
+                <CardHeader title="New quick reply" subtitle="The key is generated from the label" />
+                <CardBody className="space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_100px] gap-3">
+                    <Field label="Label">
+                      <Input value={qrLabel} onChange={e => setQrLabel(e.target.value)} placeholder="e.g. Opening hours" autoFocus />
+                    </Field>
+                    <Field label="Category">
+                      <Input list="qr-categories" value={qrCategory} onChange={e => setQrCategory(e.target.value)} placeholder="Reuse an existing one" />
+                    </Field>
+                    <Field label="Order">
+                      <Input type="number" value={qrSort} onChange={e => setQrSort(e.target.value)} />
+                    </Field>
+                  </div>
+                  <Field label="Message">
+                    <Textarea rows={6} value={qrBody} onChange={e => setQrBody(e.target.value)}
+                      placeholder="What staff should be able to send in one click" />
+                  </Field>
+                  {error && <p className="text-xs text-destructive">{error}</p>}
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => qrCreateMut.mutate({
+                        label: qrLabel.trim(), category: qrCategory.trim(),
+                        whatsappBody: qrBody, sortOrder: Number(qrSort) || 0,
+                      })}
+                      disabled={!qrLabel.trim() || !qrBody.trim() || qrCreateMut.isPending}
+                    >
+                      <Plus size={14} /> {qrCreateMut.isPending ? 'Adding…' : 'Add quick reply'}
+                    </Button>
+                    <Button variant="outline" onClick={() => { setQrAdding(false); setError('') }}>Cancel</Button>
+                  </div>
+                </CardBody>
+              </Card>
+            ) : (() => {
+              const q = quickReplies.find(x => x._id === qrSelectedId)
+              if (!q) {
+                return (
+                  <Card>
+                    <CardBody className="py-16 text-center text-muted-foreground">
+                      <MessageSquare size={30} className="mx-auto mb-3 opacity-40" />
+                      <p className="text-sm">Select a quick reply from the left to edit</p>
+                    </CardBody>
+                  </Card>
+                )
+              }
+              const draft = qrDraft(q)
+              const dirty = draft.label !== q.label
+                || draft.category !== (q.category || '')
+                || draft.whatsappBody !== (q.whatsappBody || '')
+                || draft.sortOrder !== (q.sortOrder ?? 0)
+              return (
+                <Card>
+                  <CardHeader title={q.label} subtitle={`Key: ${q.key}`} />
+                  <CardBody className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_100px] gap-3">
+                      <Field label="Label">
+                        <Input value={draft.label} onChange={e => setQrDraft(q, { label: e.target.value })} />
+                      </Field>
+                      <Field label="Category">
+                        <Input list="qr-categories" value={draft.category} onChange={e => setQrDraft(q, { category: e.target.value })} />
+                      </Field>
+                      <Field label="Order">
+                        <Input type="number" value={String(draft.sortOrder)}
+                          onChange={e => setQrDraft(q, { sortOrder: Number(e.target.value) || 0 })} />
+                      </Field>
+                    </div>
+                    <Field label="Message">
+                      <Textarea rows={10} value={draft.whatsappBody}
+                        onChange={e => setQrDraft(q, { whatsappBody: e.target.value })} />
+                    </Field>
+                    {error && <p className="text-xs text-destructive">{error}</p>}
+                    {success && <p className="text-xs text-emerald-600 font-medium">{success}</p>}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={() => qrUpdateMut.mutate({ id: q._id, ...draft })}
+                          disabled={!dirty || qrUpdateMut.isPending}
+                        >
+                          <Save size={14} /> {qrUpdateMut.isPending ? 'Saving…' : 'Save'}
+                        </Button>
+                        {dirty && (
+                          <Button variant="outline"
+                            onClick={() => setQrDrafts(prev => { const n = { ...prev }; delete n[q._id]; return n })}>
+                            <RotateCcw size={14} /> Revert
+                          </Button>
+                        )}
+                      </div>
+                      <Button
+                        variant="destructive"
+                        onClick={() => {
+                          if (!confirm(`Delete "${q.label}"? This cannot be undone.`)) return
+                          qrDeleteMut.mutate(q._id)
+                          setQrSelectedId(null)
+                        }}
+                        disabled={qrDeleteMut.isPending}
+                      >
+                        <Trash2 size={14} /> Delete
+                      </Button>
+                    </div>
+                  </CardBody>
+                </Card>
+              )
+            })()}
+          </div>
 
           <datalist id="qr-categories">
             {qrCategories.map(c => <option key={c} value={c} />)}
           </datalist>
-
-          {/* Grouped list */}
-          {qrGroups.map(([category, items]) => (
-            <div key={category} className="space-y-3">
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold">{category}</h3>
-                <span className="text-xs text-muted-foreground">{items.length}</span>
-              </div>
-              {items.map(q => {
-                const d = qrDraft(q)
-                const dirty = d.label !== q.label || d.category !== (q.category || '')
-                  || d.whatsappBody !== (q.whatsappBody || '') || d.sortOrder !== (q.sortOrder ?? 0)
-                return (
-                  <Card key={q._id}>
-                    <CardBody className="space-y-3">
-                      <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_100px] gap-3">
-                        <Field label="Label">
-                          <Input value={d.label} onChange={e => setQrDraft(q, { label: e.target.value })} />
-                        </Field>
-                        <Field label="Category">
-                          <Input list="qr-categories" value={d.category} onChange={e => setQrDraft(q, { category: e.target.value })} placeholder="Uncategorised" />
-                        </Field>
-                        <Field label="Order">
-                          <Input type="number" value={d.sortOrder}
-                            onChange={e => setQrDraft(q, { sortOrder: Number(e.target.value) || 0 })} />
-                        </Field>
-                      </div>
-                      <Field label="Message">
-                        <Textarea value={d.whatsappBody} rows={4} className="font-mono text-sm"
-                          onChange={e => setQrDraft(q, { whatsappBody: e.target.value })} />
-                      </Field>
-                      <div className="flex items-center gap-2">
-                        <Button size="sm" disabled={!dirty || !d.label.trim() || qrUpdateMut.isPending}
-                          onClick={() => qrUpdateMut.mutate({ id: q._id, label: d.label.trim(), category: d.category.trim(), whatsappBody: d.whatsappBody, sortOrder: d.sortOrder })}>
-                          <Save size={13} /> Save
-                        </Button>
-                        {dirty && (
-                          <Button size="sm" variant="outline"
-                            onClick={() => setQrDrafts(prev => { const next = { ...prev }; delete next[q._id]; return next })}>
-                            Revert
-                          </Button>
-                        )}
-                        <Button size="sm" variant="destructive" className="ml-auto" disabled={qrDeleteMut.isPending}
-                          onClick={() => { if (confirm(`Delete quick reply "${q.label}"?`)) qrDeleteMut.mutate(q._id) }}>
-                          <Trash2 size={13} /> Delete
-                        </Button>
-                      </div>
-                      <div className="text-xs text-muted-foreground font-mono">Key: {q.key}</div>
-                    </CardBody>
-                  </Card>
-                )
-              })}
-            </div>
-          ))}
-
-          {!qrAdding && error && <p className="text-xs text-destructive">{error}</p>}
-          {success && <p className="text-xs text-emerald-600 font-medium">{success}</p>}
         </div>
         )
       ) : isLoading ? <Spinner /> : (
