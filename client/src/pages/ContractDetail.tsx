@@ -1065,6 +1065,22 @@ export default function ContractDetail() {
   // The Contracts tab acts on OTHER contracts, so these take an id rather
   // than closing over the one being viewed.
   const [rowError, setRowError] = useState('')
+  // Opening the contract as a PDF. When the tenant has e-signed there is a
+  // stored file to link straight to; otherwise the server renders the current
+  // agreement wording on demand. The generated one needs an authenticated
+  // request, so it comes back as a blob rather than a plain href.
+  const [pdfBusy, setPdfBusy] = useState('')
+  async function openContractPdf(contractId: string, signedDocUrl?: string) {
+    if (signedDocUrl) { window.open(signedDocUrl, '_blank', 'noopener'); return }
+    setPdfBusy(contractId); setRowError('')
+    try {
+      const r = await api.get(`/contracts/${contractId}/pdf`, { responseType: 'blob' })
+      const url = URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }))
+      window.open(url, '_blank')
+      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch (e) { setRowError(apiError(e)) } finally { setPdfBusy('') }
+  }
+
   const rowAction = useMutation({
     mutationFn: ({ contractId, path }: { contractId: string; path: string }) =>
       api.post(`/contracts/${contractId}/${path}`),
@@ -2808,19 +2824,19 @@ export default function ContractDetail() {
                               <Badge tone={contractStatusTone[t.status] ?? 'gray'}>{statusLabel(t.status)}</Badge>
                             </span>
                             <span className="flex justify-end gap-3 flex-wrap items-center">
+                              <button type="button" disabled={pdfBusy === t._id} className={act} style={{ color: PURPLE }}
+                                title={t.signedDocUrl
+                                  ? 'Open the signed contract PDF'
+                                  : 'Open this contract as a PDF — not signed yet'}
+                                onClick={() => openContractPdf(t._id, t.signedDocUrl)}>
+                                {pdfBusy === t._id ? 'Opening…' : t.signedDocUrl ? 'Signed PDF' : 'View PDF'}
+                              </button>
                               {t.signedDocUrl && (
-                                <>
-                                  <a href={t.signedDocUrl} target="_blank" rel="noopener noreferrer"
-                                    title="Open the signed contract"
-                                    className="text-[12px] font-bold hover:underline" style={{ color: PURPLE }}>
-                                    Signed
-                                  </a>
-                                  <a href={downloadUrlFor(t.signedDocUrl)} target="_blank" rel="noopener noreferrer"
-                                    title="Download the signed contract"
-                                    className="text-muted-foreground/60 hover:text-foreground transition-colors">
-                                    <Download size={13} />
-                                  </a>
-                                </>
+                                <a href={downloadUrlFor(t.signedDocUrl)} target="_blank" rel="noopener noreferrer"
+                                  title="Download the signed contract"
+                                  className="text-muted-foreground/60 hover:text-foreground transition-colors">
+                                  <Download size={13} />
+                                </a>
                               )}
                               {canCreate && (
                                 <button type="button" disabled={busy} className={act} style={{ color: PURPLE }}
