@@ -6,7 +6,7 @@ import { gmailConfigured } from '../services/gmail.js';
 import { mailConfigured, mailFromAddress } from '../services/mail.js';
 import { zohoConfigured } from '../services/zoho.js';
 import { zohoBooksConfigured, listAllZohoContacts } from '../services/zohoBooks.js';
-import { Customer, Contract } from '../models/index.js';
+import { Customer, Contract, WhatsAppWebhookHit } from '../models/index.js';
 import { whatsappConfigured, whatsappMissing, verifyWebhookChallenge, verifyWhatsAppSignature, verifyWhatsAppCredentials } from '../services/whatsapp.js';
 import { getWhatsAppLabelSyncStatus, processWhatsAppWebhookPayload, runWhatsAppLabelReconciliation } from '../services/whatsappLeadSync.js';
 import { stripeConfigured, stripeWebhookConfigured, verifyStripeKey } from '../services/stripe.js';
@@ -338,15 +338,44 @@ router.get('/whatsapp/webhook', (req, res) => {
 router.post('/whatsapp/webhook', async (req, res) => {
     const signature = req.headers['x-hub-signature-256'];
     const rawBody = req.rawBody || Buffer.from(JSON.stringify(req.body || {}));
+
+    // Summarise the payload for the hit log — never the message text.
+    const change = req.body?.entry?.[0]?.changes?.[0];
+    const value = change?.value || {};
+    const hit = {
+        hasSignature: Boolean(signature),
+        field: change?.field || '',
+        messageCount: (value.messages || []).length,
+        statusCount: (value.statuses || []).length,
+        from: value.messages?.[0]?.from || '',
+    };
+    const record = async (ok, reason) => {
+        try {
+            await WhatsAppWebhookHit.create({ ...hit, ok, reason });
+            // Keep it bounded — this is a diagnostic, not an archive.
+            const cutoff = await WhatsAppWebhookHit.find().sort({ at: -1 }).skip(200).select('_id').lean();
+            if (cutoff.length) await WhatsAppWebhookHit.deleteMany({ _id: { $in: cutoff.map((d) => d._id) } });
+        } catch { /* logging must never break delivery */ }
+    };
+
     if (!verifyWhatsAppSignature(String(signature || ''), rawBody)) {
+        await record(false, signature ? 'signature did not match WHATSAPP_APP_SECRET' : 'no x-hub-signature-256 header');
         return res.status(401).json({ error: 'Invalid WhatsApp signature' });
     }
     try {
         const result = await processWhatsAppWebhookPayload(req.body || {});
+        await record(true, 'processed');
         return res.json({ ok: true, received: true, result });
     } catch (err) {
+        await record(false, `processing failed: ${err?.message || 'unknown'}`);
         return res.status(500).json({ error: err?.message || 'Failed to process webhook payload' });
     }
+});
+
+// What Meta has actually sent us lately — the answer to "are replies arriving".
+router.get('/whatsapp/webhook-hits', requireAdmin, async (_req, res) => {
+    const hits = await WhatsAppWebhookHit.find().sort({ at: -1 }).limit(30).lean();
+    res.json({ hits });
 });
 
 

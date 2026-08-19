@@ -1290,6 +1290,25 @@ export const Customer = model('Customer', customerSchema);
 export const Lead = model('Lead', leadSchema);
 export const WhatsAppWebhookEvent = model('WhatsAppWebhookEvent', whatsappWebhookEventSchema);
 export const WhatsAppLabelState = model('WhatsAppLabelState', whatsappLabelStateSchema);
+// Every call Meta makes to the webhook, accepted or not. Without this a
+// rejected delivery is indistinguishable from Meta never calling at all,
+// which is exactly the question when replies do not arrive.
+const whatsappWebhookHitSchema = new Schema(
+  {
+    at: { type: Date, default: Date.now },
+    ok: { type: Boolean, default: false },
+    reason: { type: String, default: '' },
+    hasSignature: { type: Boolean, default: false },
+    field: { type: String, default: '' },
+    messageCount: { type: Number, default: 0 },
+    statusCount: { type: Number, default: 0 },
+    from: { type: String, default: '' },
+  },
+  { versionKey: false },
+);
+whatsappWebhookHitSchema.index({ at: -1 });
+export const WhatsAppWebhookHit = model('WhatsAppWebhookHit', whatsappWebhookHitSchema);
+
 export const WhatsAppMessage = model('WhatsAppMessage', whatsappMessageSchema);
 export const Contract = model('Contract', contractSchema);
 export const Quote = model('Quote', quoteSchema);
