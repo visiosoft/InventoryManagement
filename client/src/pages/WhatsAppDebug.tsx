@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api, apiError } from '../lib/api'
 import { Button, Card, CardBody, CardHeader, Field, Input, PageHeader, Spinner } from '../components/ui'
@@ -18,18 +18,40 @@ type Result = { steps: Step[]; phoneId: string; tokenHint: string; usingOverride
 export default function WhatsAppDebug() {
   const [token, setToken] = useState('')
   const [phoneId, setPhoneId] = useState('')
+  const [wabaId, setWabaId] = useState('')
+  const [subMsg, setSubMsg] = useState('')
 
   const run = useMutation<Result, unknown, void>({
     mutationFn: () => api
       .post('/whatsapp-debug/diagnostics', {
         accessToken: token.trim() || undefined,
         phoneNumberId: phoneId.trim() || undefined,
+        wabaId: wabaId.trim() || undefined,
       })
       .then((r) => r.data),
   })
 
+  const subscribe = useMutation({
+    mutationFn: () => api.post('/whatsapp-debug/subscribe-waba', {
+      wabaId: wabaId.trim(),
+      accessToken: token.trim() || undefined,
+    }).then((r) => r.data),
+    onSuccess: () => { setSubMsg('Subscribed. Send yourself a WhatsApp reply, then run the checks again.'); run.mutate() },
+    onError: (e) => setSubMsg(apiError(e)),
+  })
+
+  // The delivery log is worth seeing before running anything — it answers
+  // "is Meta calling us at all" on its own.
+  const hitLog = useQuery<{ hits: Hit[] }>({
+    queryKey: ['whatsapp-webhook-hits'],
+    queryFn: () => api.get('/integrations/whatsapp/webhook-hits').then((r) => r.data),
+    refetchInterval: 15_000,
+  })
+
   const result = run.data
   const firstFailure = result?.steps.find((s) => !s.ok)
+  // Prefer the freshly-run result, fall back to the standalone poll.
+  const hits = result?.hits ?? hitLog.data?.hits ?? []
 
   return (
     <div>
@@ -49,6 +71,10 @@ export default function WhatsAppDebug() {
               <Input placeholder="e.g. 830995726773662"
                 value={phoneId} onChange={(e) => setPhoneId(e.target.value)} />
             </Field>
+            <Field label="WhatsApp Business Account ID">
+              <Input placeholder="e.g. 823788580389455"
+                value={wabaId} onChange={(e) => setWabaId(e.target.value)} />
+            </Field>
           </div>
           <p className="text-[11.5px] text-muted-foreground">
             Anything typed here is used for this one check and never written to the server.
@@ -58,8 +84,14 @@ export default function WhatsAppDebug() {
             <Button onClick={() => run.mutate()} disabled={run.isPending}>
               {run.isPending ? 'Checking…' : 'Run checks'}
             </Button>
+            <Button variant="outline" disabled={!wabaId.trim() || subscribe.isPending}
+              onClick={() => { setSubMsg(''); subscribe.mutate() }}
+              title="Tells Meta to deliver this account's messages to our webhook">
+              {subscribe.isPending ? 'Subscribing…' : 'Subscribe app to WABA'}
+            </Button>
             <Link to="/settings" className="text-sm text-primary hover:underline">Back to Settings</Link>
           </div>
+          {subMsg && <p className="text-sm" style={{ color: subMsg.startsWith('Subscribed') ? '#15803D' : '#B91C1C' }}>{subMsg}</p>}
           {run.isError && <p className="text-sm text-destructive">{apiError(run.error)}</p>}
         </CardBody>
       </Card>
@@ -97,14 +129,14 @@ export default function WhatsAppDebug() {
         </Card>
       )}
 
-      {result && (
+      {(
         <Card className="mt-4">
           <CardHeader
             title="Webhook deliveries from Meta"
             subtitle="Every call Meta has made, accepted or rejected — this is how to tell 'not delivering' from 'delivered and refused'"
           />
           <CardBody className="pt-0">
-            {!result.hits?.length ? (
+            {!hits.length ? (
               <p className="text-sm text-muted-foreground py-2">
                 Nothing recorded. Meta has not called this server since logging was added — reply to your
                 WhatsApp number and run the checks again. If it stays empty, the <strong>messages</strong> field
@@ -112,7 +144,7 @@ export default function WhatsAppDebug() {
               </p>
             ) : (
               <div className="space-y-1">
-                {result.hits.map((h, i) => (
+                {hits.map((h, i) => (
                   <div key={`${h.at}-${i}`} className="flex items-start gap-2.5 py-1.5 border-b last:border-b-0 text-[12.5px]">
                     <span className="mt-0.5 shrink-0" style={{ color: h.ok ? '#15803D' : '#B91C1C' }}>
                       {h.ok ? '✓' : '✕'}

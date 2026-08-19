@@ -128,7 +128,44 @@ router.post('/diagnostics', requireAdmin, async (req, res) => {
             lastOk ? '' : 'Meta is delivering but we are refusing it. Check the App Secret above matches this app.');
     }
 
-    res.json({ steps, phoneId, tokenHint: mask(token), usingOverride, hits });
+    // 7. Is the app actually subscribed to the WhatsApp Business Account?
+    //    Without this Meta accepts the callback URL and then sends nothing,
+    //    which is indistinguishable from a misconfigured webhook.
+    const waba = String(req.body?.wabaId || process.env.WHATSAPP_WABA_ID || '').trim();
+    if (waba) {
+        const subs = await graph(`${waba}/subscribed_apps`, token);
+        const apps = (subs.body?.data || []).map((a) => a.whatsapp_business_api_data?.name || a.whatsapp_business_api_data?.id || 'unknown');
+        add('App subscribed to the WhatsApp account', subs.ok && apps.length > 0,
+            subs.ok
+                ? (apps.length ? apps.join(', ') : 'no app is subscribed — Meta will not send anything')
+                : subs.error,
+            subs.ok && apps.length === 0
+                ? 'Press "Subscribe app to WABA" below, or do it in Meta → WhatsApp → Configuration.'
+                : (!subs.ok ? 'The token cannot read this WhatsApp account — fix the asset checks above first.' : ''));
+    } else {
+        add('App subscribed to the WhatsApp account', false,
+            'No WhatsApp Business Account ID supplied.',
+            'Enter the WABA ID above (WhatsApp Manager → your account) so this can be checked.');
+    }
+
+    res.json({ steps, phoneId, tokenHint: mask(token), usingOverride, hits, wabaId: waba });
+});
+
+// Subscribe the app to the WhatsApp Business Account. This is the step that
+// makes Meta actually deliver inbound messages to the callback URL.
+router.post('/subscribe-waba', requireAdmin, async (req, res) => {
+    const token = String(req.body?.accessToken || process.env.WHATSAPP_ACCESS_TOKEN || '').trim();
+    const waba = String(req.body?.wabaId || process.env.WHATSAPP_WABA_ID || '').trim();
+    if (!token) return res.status(400).json({ error: 'No access token available' });
+    if (!waba) return res.status(400).json({ error: 'A WhatsApp Business Account ID is required' });
+
+    const r = await fetch(`${GRAPH}/${waba}/subscribed_apps`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) return res.status(400).json({ error: body?.error?.message || `HTTP ${r.status}` });
+    res.json({ ok: true, result: body });
 });
 
 function mask(t) {
