@@ -8,6 +8,7 @@ import { isSalesRepRole } from '../lib/roles'
 
 const navTop = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard' as string | undefined },
+  { to: '/tasks', label: 'Tasks', icon: ListTodo, perm: 'dashboard' },
 ]
 
 const navGroups = [
@@ -41,6 +42,9 @@ const profileMenuItems = [
   { to: '/settings/agreement', label: 'Agreement Template', icon: FileText, perm: 'settings' },
   { to: '/zoho-comparison', label: 'Zoho Comparison', icon: RefreshCw, perm: 'settings' },
   { to: '/settings/automation', label: 'Automation Rules', icon: RefreshCw, perm: 'settings' },
+  { to: '/moving/workers', label: 'Workers', icon: Users2, perm: 'moving_workers' },
+  { to: '/moving/fleet', label: 'Fleet', icon: Truck, perm: 'moving_fleet' },
+  { to: '/moving-inventory', label: 'Moving Inventory', icon: Box, perm: 'moving_dashboard' },
   { to: '/settings', label: 'Settings', icon: Settings, perm: 'settings' },
 ]
 
@@ -82,9 +86,6 @@ const movingNavItems = [
   { to: '/moving/visits', label: 'Site Visits', icon: CalendarCheck, perm: 'moving_jobs' },
   { to: '/moving/jobs', label: 'Jobs List', icon: ClipboardList, perm: 'moving_jobs' },
   { to: '/moving/leads', label: 'Leads', icon: UserPlus, perm: 'moving_leads' },
-  { to: '/moving/workers', label: 'Workers', icon: Users2, perm: 'moving_workers' },
-  { to: '/moving/fleet', label: 'Fleet', icon: Truck, perm: 'moving_fleet' },
-  { to: '/moving-inventory', label: 'Inventory', icon: Box, perm: 'moving_dashboard' },
   { to: '/moving/quotes', label: 'Quotes', icon: ScrollText, perm: 'moving_jobs' },
   { to: '/moving/invoices', label: 'Invoices', icon: ReceiptText, perm: 'moving_invoices' },
   { to: '/moving/dispatch', label: 'Dispatch', icon: Package, perm: 'moving_dispatch' },

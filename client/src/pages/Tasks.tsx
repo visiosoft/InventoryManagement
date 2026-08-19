@@ -303,7 +303,12 @@ export default function Tasks({ embedded = false }: { embedded?: boolean } = {})
   )
 
   return (
-    <div>
+    // Standalone, this sits on a white card like Contracts and Units. Embedded
+    // in another page's tab it stays bare, so it does not nest card in card.
+    <div
+      className={embedded ? undefined : 'p-5 sm:p-7'}
+      style={embedded ? undefined : { background: '#fff', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }}
+    >
       <PageHeader
         title={embedded ? '' : 'Tasks'}
         subtitle={isAdmin ? 'All tasks across the team' : 'Tasks assigned to you, and tasks you handed off'}
