@@ -19,6 +19,7 @@ import reportRoutes from './routes/reports.js';
 import leadRoutes from './routes/leads.js';
 import integrationRoutes from './routes/integrations.js';
 import whatsappDiagnosticsRoutes from './routes/whatsappDiagnostics.js';
+import whatsappMediaRoutes from './routes/whatsappMedia.js';
 import quoteRoutes from './routes/quotes.js';
 import invoiceRoutes from './routes/invoices.js';
 import vendorRoutes from './routes/vendors.js';
@@ -176,6 +177,7 @@ app.use(
 );
 
 app.use('/api/whatsapp-debug', requireAuth, whatsappDiagnosticsRoutes);
+app.use('/api/whatsapp-media', requireAuth, whatsappMediaRoutes);
 app.use('/api/users', requireAuth, userRoutes);
 app.use('/api/backup', requireAuth, backupRoutes);
 app.use('/api/whatsapp', requireAuth, whatsappRoutes);

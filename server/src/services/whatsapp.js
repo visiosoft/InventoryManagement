@@ -81,6 +81,61 @@ export async function verifyWhatsAppCredentials({ phoneNumberId, accessToken }) 
     };
 }
 
+// Outbound media is two calls: upload the bytes to get an id, then send a
+// message referencing that id. The id is reusable for 30 days but we do not
+// cache it — the same file sent twice is rare, and a stale id fails silently.
+export async function uploadWhatsAppMedia({ buffer, mimeType, filename }) {
+    if (!whatsappSendConfigured()) throw new Error('WhatsApp is not configured');
+    if (!buffer?.length) throw new Error('The file is empty');
+
+    const form = new FormData();
+    form.append('messaging_product', 'whatsapp');
+    form.append('type', mimeType || 'application/octet-stream');
+    form.append('file', new Blob([buffer], { type: mimeType || 'application/octet-stream' }), filename || 'file');
+
+    const r = await fetch(`https://graph.facebook.com/v20.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/media`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}` },
+        body: form,
+    });
+    const json = await r.json().catch(() => ({}));
+    if (!r.ok || !json?.id) throw new Error(json?.error?.message || `Upload failed (HTTP ${r.status})`);
+    return json.id;
+}
+
+/** Which WhatsApp message type a file becomes. */
+export function whatsappMediaKind(mimeType) {
+    const m = String(mimeType || '').toLowerCase();
+    if (m.startsWith('image/')) return m.includes('webp') ? 'sticker' : 'image';
+    if (m.startsWith('video/')) return 'video';
+    if (m.startsWith('audio/')) return 'audio';
+    return 'document';
+}
+
+export async function sendWhatsAppMedia({ to, mediaId, kind, caption, filename }) {
+    if (!whatsappSendConfigured()) throw new Error('WhatsApp is not configured');
+    const normalizedTo = normalizeRecipientPhone(to);
+    if (!normalizedTo) throw new Error('Recipient phone number is required');
+
+    // Only image, video and document accept a caption; audio and sticker do
+    // not, and Meta rejects the whole message if one is sent.
+    const node = { id: mediaId };
+    if (caption && ['image', 'video', 'document'].includes(kind)) node.caption = caption;
+    if (kind === 'document' && filename) node.filename = filename;
+
+    const r = await fetch(`https://graph.facebook.com/v20.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ messaging_product: 'whatsapp', to: normalizedTo, type: kind, [kind]: node }),
+    });
+    const json = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(json?.error?.message || `Send failed (HTTP ${r.status})`);
+    return json;
+}
+
 export async function sendWhatsAppText({ to, body }) {
     if (!whatsappSendConfigured()) {
         throw new Error('WhatsApp is not configured');

@@ -1,6 +1,8 @@
 import { Router } from 'express';
+import { mediaFromRaw } from './whatsappMedia.js';
 import { WhatsAppMessage, Lead } from '../models/index.js';
-import { sendWhatsAppText, whatsappSendConfigured, whatsappSendMissing } from '../services/whatsapp.js';
+import { sendWhatsAppText, sendWhatsAppMedia, uploadWhatsAppMedia, whatsappMediaKind, whatsappSendConfigured, whatsappSendMissing } from '../services/whatsapp.js';
+import multer from 'multer';
 import { createLeadFromWhatsAppPhone } from '../services/whatsappLeadSync.js';
 
 const router = Router();
@@ -17,9 +19,19 @@ router.get('/messages', async (req, res) => {
     const messages = await WhatsAppMessage.find(q)
         .populate('lead', 'fullName phone status source')
         .sort({ occurredAt: -1, createdAt: -1 })
-        .limit(limit);
+        .limit(limit)
+        .lean();
 
-    res.json(messages);
+    // Attachments are described inside the stored webhook payload. Surface a
+    // small descriptor so the client can render the right element without
+    // shipping the whole raw payload to the browser.
+    res.json(messages.map((m) => {
+        const media = mediaFromRaw(m.raw);
+        const { raw, ...rest } = m;
+        return media
+            ? { ...rest, media: { kind: media.kind, mimeType: media.mimeType, filename: media.filename, caption: media.caption } }
+            : rest;
+    }));
 });
 
 router.get('/conversations', async (_req, res) => {
@@ -116,6 +128,52 @@ router.post('/send', async (req, res) => {
     });
 
     res.json({ ok: true, result });
+});
+
+// Send a file. Stored as an outbound message carrying the same media shape
+// the webhook produces for inbound ones, so the thread renders both the same
+// way and the media proxy can serve it back.
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 * 1024 * 1024 } });
+
+router.post('/send-media', upload.single('file'), async (req, res) => {
+    try {
+        if (!whatsappSendConfigured()) {
+            return res.status(400).json({ error: `WhatsApp not configured. Missing: ${whatsappSendMissing().join(', ')}` });
+        }
+        const to = String(req.body?.to || '').trim();
+        if (!to) return res.status(400).json({ error: 'to is required' });
+        if (!req.file) return res.status(400).json({ error: 'A file is required' });
+
+        const caption = String(req.body?.caption || '').trim();
+        const kind = whatsappMediaKind(req.file.mimetype);
+
+        const mediaId = await uploadWhatsAppMedia({
+            buffer: req.file.buffer,
+            mimeType: req.file.mimetype,
+            filename: req.file.originalname,
+        });
+        const result = await sendWhatsAppMedia({
+            to, mediaId, kind, caption, filename: req.file.originalname,
+        });
+
+        await WhatsAppMessage.create({
+            messageId: result?.messages?.[0]?.id || '',
+            phone: to,
+            phoneNormalized: String(to).replace(/\D/g, ''),
+            direction: 'outbound',
+            type: kind,
+            text: caption,
+            status: 'sent',
+            occurredAt: new Date(),
+            // Mirror the inbound webhook shape so mediaFromRaw finds it and the
+            // same proxy serves it back into the thread.
+            raw: { [kind]: { id: mediaId, mime_type: req.file.mimetype, filename: req.file.originalname, caption }, sendResult: result },
+        });
+
+        res.json({ ok: true, kind, mediaId });
+    } catch (e) {
+        res.status(400).json({ error: e.message });
+    }
 });
 
 export default router;
