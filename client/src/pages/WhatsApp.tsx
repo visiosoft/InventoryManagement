@@ -1063,9 +1063,11 @@ export default function WhatsApp() {
               // Tiled wallpaper behind the bubbles, over the cream base so the
               // tile's own edges never show as bands.
               backgroundColor: '#F6F0E4',
-              backgroundImage: 'url(/chat-b.jpg)',
-              backgroundRepeat: 'repeat',
-              backgroundSize: '400px auto',
+              // A cream wash over the tile knocks the pattern back so the
+              // bubbles stay the thing you read.
+              backgroundImage: 'linear-gradient(rgba(246,240,228,.82), rgba(246,240,228,.82)), url(/chat-bg.avif)',
+              backgroundRepeat: 'repeat, repeat',
+              backgroundSize: 'auto, 400px auto',
             }}
           >
             {!selectedPhone ? (
