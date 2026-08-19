@@ -33,21 +33,49 @@ const navGroups = [
   },
 ]
 
-const profileMenuItems = [
-  { to: '/invoices', label: 'Invoices', icon: ReceiptText, perm: 'invoices' },
-  { to: '/documents', label: 'Documents', icon: FolderOpen, perm: 'documents' },
-  { to: '/customers', label: 'Tenants', icon: Users, perm: 'customers' },
-  { to: '/sites', label: 'Sites', icon: Building2, perm: 'units' },
-  { to: '/settings/templates', label: 'Message Templates', icon: Mail, perm: 'settings' },
-  { to: '/settings/agreement', label: 'Agreement Template', icon: FileText, perm: 'settings' },
-  { to: '/zoho-comparison', label: 'Zoho Comparison', icon: RefreshCw, perm: 'settings' },
-  { to: '/settings/automation', label: 'Automation Rules', icon: RefreshCw, perm: 'settings' },
-  { to: '/moving/leads', label: 'Moving Leads', icon: UserPlus, perm: 'moving_leads' },
-  { to: '/moving/workers', label: 'Workers', icon: Users2, perm: 'moving_workers' },
-  { to: '/moving/fleet', label: 'Fleet', icon: Truck, perm: 'moving_fleet' },
-  { to: '/moving-inventory', label: 'Moving Inventory', icon: Box, perm: 'moving_dashboard' },
-  { to: '/settings', label: 'Settings', icon: Settings, perm: 'settings' },
+// The profile menu, laid out in two columns of labelled groups. Settings,
+// dark mode and cache live in the footer, so they are not listed here.
+const profileMenuGroups = [
+  {
+    label: 'Storage',
+    items: [
+      { to: '/invoices', label: 'Invoices', icon: ReceiptText, perm: 'invoices' as string | undefined, adminOnly: false },
+      { to: '/documents', label: 'Documents', icon: FolderOpen, perm: 'documents', adminOnly: false },
+      { to: '/customers', label: 'Tenants', icon: Users, perm: 'customers', adminOnly: false },
+      { to: '/sites', label: 'Sites', icon: Building2, perm: 'units', adminOnly: false },
+    ],
+  },
+  {
+    label: 'Moving',
+    items: [
+      { to: '/moving/leads', label: 'Moving Leads', icon: UserPlus, perm: 'moving_leads', adminOnly: false },
+      { to: '/moving/workers', label: 'Workers', icon: Users2, perm: 'moving_workers', adminOnly: false },
+      { to: '/moving/fleet', label: 'Fleet', icon: Truck, perm: 'moving_fleet', adminOnly: false },
+      { to: '/moving-inventory', label: 'Moving Inventory', icon: Box, perm: 'moving_dashboard', adminOnly: false },
+    ],
+  },
+  {
+    label: 'Configuration',
+    items: [
+      { to: '/settings/templates', label: 'Message Templates', icon: Mail, perm: 'settings', adminOnly: false },
+      { to: '/settings/agreement', label: 'Agreement Template', icon: FileText, perm: 'settings', adminOnly: false },
+      { to: '/settings/automation', label: 'Automation Rules', icon: RefreshCw, perm: 'settings', adminOnly: false },
+      { to: '/zoho-comparison', label: 'Zoho Comparison', icon: RefreshCw, perm: 'settings', adminOnly: false },
+    ],
+  },
+  {
+    label: 'Workspace',
+    items: [
+      { to: '/tasks', label: 'Tasks', icon: ListTodo, perm: undefined, adminOnly: true },
+      { to: '/diary', label: 'Daily Diary', icon: NotebookPen, perm: undefined, adminOnly: false },
+      { to: '/users', label: 'Users', icon: UserCog, perm: undefined, adminOnly: true },
+      { to: '/sales-team', label: 'Sales Team', icon: Target, perm: undefined, adminOnly: true },
+      { to: '/backup', label: 'Backup', icon: DatabaseBackup, perm: undefined, adminOnly: true },
+    ],
+  },
 ]
+
+const profileMenuItems = profileMenuGroups.flatMap((g) => g.items)
 
 const reportItems = [
   { to: '/reports/monthly', label: 'Monthly Payments', icon: CalendarClock, perm: 'reports_monthly' },
@@ -139,7 +167,7 @@ const storagePaths = [
   ...navGroups.flatMap(g => g.items.map(i => i.to)),
   ...reportItems.map(i => i.to),
   ...navBottom.map(i => i.to),
-  ...profileMenuItems.map(i => i.to),
+  ...profileMenuItems.map(i => i.to).filter(to => !to.startsWith('/moving')),
 ]
 
 function isStoragePath(pathname: string): boolean {
@@ -546,7 +574,9 @@ export default function Layout() {
 
         {/* Settings & admin — mobile only; desktop reaches these via the profile dropdown */}
         {!isSalesRepUser && (() => {
-          const visibleProfile = profileMenuItems.filter(({ perm }) => hasPermission(perm))
+          const visibleProfile = profileMenuItems.filter(
+            ({ perm, adminOnly }) => (!perm || hasPermission(perm)) && (!adminOnly || isAdmin)
+          )
           if (visibleProfile.length === 0 && !isAdmin) return null
           return (
             <div className="pt-3 md:hidden">
@@ -556,26 +586,10 @@ export default function Layout() {
                   <Icon size={15} />{label}
                 </NavLink>
               ))}
-              {isAdmin && (
-                <NavLink to="/tasks" className={({ isActive }) => navLinkCls(isActive)}>
-                  <ListTodo size={15} />Tasks
+              {hasPermission('settings') && (
+                <NavLink to="/settings" className={({ isActive }) => navLinkCls(isActive)}>
+                  <Settings size={15} />Settings
                 </NavLink>
-              )}
-              <NavLink to="/diary" className={({ isActive }) => navLinkCls(isActive)}>
-                <NotebookPen size={15} />Daily Diary
-              </NavLink>
-              {isAdmin && (
-                <>
-                  <NavLink to="/users" className={({ isActive }) => navLinkCls(isActive)}>
-                    <UserCog size={15} />Users
-                  </NavLink>
-                  <NavLink to="/sales-team" className={({ isActive }) => navLinkCls(isActive)}>
-                    <Target size={15} />Sales Team
-                  </NavLink>
-                  <NavLink to="/backup" className={({ isActive }) => navLinkCls(isActive)}>
-                    <DatabaseBackup size={15} />Backup
-                  </NavLink>
-                </>
               )}
             </div>
           )
@@ -714,102 +728,127 @@ export default function Layout() {
             </button>
 
             {profileOpen && (
-              <div className="absolute right-0 top-full mt-1 w-56 rounded-xl border border-border bg-white dark:bg-neutral-900 shadow-xl py-1.5 z-50">
-                {/* User info */}
-                <div className="px-3 py-2 border-b border-border/60">
-                  <div className="text-sm font-semibold text-foreground truncate">{user?.name}</div>
-                  <div className="text-xs text-muted-foreground truncate">{user?.email}</div>
-                </div>
-
-                {/* Profile menu items */}
-                <div className="py-1">
-                  {profileMenuItems.filter(({ perm }) => hasPermission(perm)).map(({ to, label, icon: Icon }) => (
-                    <NavLink
-                      key={to}
-                      to={to}
-                      className={({ isActive }) => cn(
-                        'flex items-center gap-2.5 px-3 py-2 text-sm transition-colors',
-                        isActive ? 'bg-accent text-accent-foreground font-medium' : 'text-foreground hover:bg-muted/60'
-                      )}
-                    >
-                      <Icon size={15} className="text-muted-foreground" />{label}
-                    </NavLink>
-                  ))}
-                  {isAdmin && (
-                    <NavLink
-                      to="/tasks"
-                      className={({ isActive }) => cn(
-                        'flex items-center gap-2.5 px-3 py-2 text-sm transition-colors',
-                        isActive ? 'bg-accent text-accent-foreground font-medium' : 'text-foreground hover:bg-muted/60'
-                      )}
-                    >
-                      <ListTodo size={15} className="text-muted-foreground" />Tasks
-                    </NavLink>
-                  )}
-                  <NavLink
-                    to="/diary"
-                    className={({ isActive }) => cn(
-                      'flex items-center gap-2.5 px-3 py-2 text-sm transition-colors',
-                      isActive ? 'bg-accent text-accent-foreground font-medium' : 'text-foreground hover:bg-muted/60'
-                    )}
+              <div
+                className="absolute right-0 top-full mt-3 z-50 overflow-hidden"
+                style={{
+                  width: 640,
+                  background: '#fff',
+                  borderRadius: 18,
+                  border: '1px solid rgba(20,8,31,.10)',
+                  boxShadow: '0 24px 60px rgba(20,8,31,.14), 0 6px 16px rgba(20,8,31,.06)',
+                }}
+              >
+                {/* Who you are signed in as */}
+                <div
+                  className="flex items-center gap-3.5"
+                  style={{ padding: '20px 24px', borderBottom: '1px solid rgba(20,8,31,.10)' }}
+                >
+                  <div
+                    className="grid place-items-center shrink-0"
+                    style={{ width: 44, height: 44, borderRadius: '50%', background: '#5B2BC9', color: '#fff', fontWeight: 700, fontSize: 17 }}
                   >
-                    <NotebookPen size={15} className="text-muted-foreground" />Daily Diary
-                  </NavLink>
-                </div>
-
-                {/* Admin items */}
-                {isAdmin && (
-                  <div className="border-t border-border/60 py-1">
-                    <NavLink
-                      to="/users"
-                      className={({ isActive }) => cn(
-                        'flex items-center gap-2.5 px-3 py-2 text-sm transition-colors',
-                        isActive ? 'bg-accent text-accent-foreground font-medium' : 'text-foreground hover:bg-muted/60'
-                      )}
-                    >
-                      <UserCog size={15} className="text-muted-foreground" />Users
-                    </NavLink>
-                    <NavLink
-                      to="/sales-team"
-                      className={({ isActive }) => cn(
-                        'flex items-center gap-2.5 px-3 py-2 text-sm transition-colors',
-                        isActive ? 'bg-accent text-accent-foreground font-medium' : 'text-foreground hover:bg-muted/60'
-                      )}
-                    >
-                      <Target size={15} className="text-muted-foreground" />Sales Team
-                    </NavLink>
-                    <NavLink
-                      to="/backup"
-                      className={({ isActive }) => cn(
-                        'flex items-center gap-2.5 px-3 py-2 text-sm transition-colors',
-                        isActive ? 'bg-accent text-accent-foreground font-medium' : 'text-foreground hover:bg-muted/60'
-                      )}
-                    >
-                      <DatabaseBackup size={15} className="text-muted-foreground" />Backup
-                    </NavLink>
+                    {user?.name?.charAt(0)?.toUpperCase() ?? 'U'}
                   </div>
-                )}
+                  <div className="min-w-0">
+                    <div className="truncate" style={{ fontWeight: 700, fontSize: 15, color: '#14081F' }}>{user?.name}</div>
+                    <div className="truncate" style={{ fontSize: 13, color: '#756E80', marginTop: 1 }}>{user?.email}</div>
+                  </div>
+                </div>
 
-                {/* Dark mode + Logout */}
-                <div className="border-t border-border/60 py-1">
+                {/* Two columns of grouped links */}
+                <div className="grid grid-cols-2" style={{ columnGap: 28, rowGap: 22, padding: '20px 24px' }}>
+                  {profileMenuGroups.map((group) => {
+                    const items = group.items.filter(
+                      (i) => (!i.perm || hasPermission(i.perm)) && (!i.adminOnly || isAdmin)
+                    )
+                    if (items.length === 0) return null
+                    return (
+                      <div key={group.label}>
+                        <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#4A1FA0', marginBottom: 8, padding: '0 8px' }}>
+                          {group.label}
+                        </div>
+                        <div className="grid" style={{ gap: 2 }}>
+                          {items.map(({ to, label, icon: Icon }) => (
+                            <NavLink
+                              key={to}
+                              to={to}
+                              className="flex items-center gap-2.5 rounded-lg transition-colors hover:bg-[#F7F3FF]"
+                              style={({ isActive }) => ({
+                                padding: '7px 8px',
+                                fontSize: 14,
+                                fontWeight: isActive ? 600 : 500,
+                                color: isActive ? '#4A1FA0' : '#4A4357',
+                                background: isActive ? '#F7F3FF' : undefined,
+                              })}
+                            >
+                              <Icon size={16} className="shrink-0" style={{ color: '#756E80' }} />
+                              <span className="truncate">{label}</span>
+                            </NavLink>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Settings, dark mode, cache, sign out */}
+                <div
+                  className="flex items-center gap-2"
+                  style={{ padding: '14px 24px', borderTop: '1px solid rgba(20,8,31,.10)', background: '#F7F3FF' }}
+                >
+                  {hasPermission('settings') && (
+                    <>
+                      <NavLink
+                        to="/settings"
+                        className="flex items-center gap-2 rounded-lg hover:bg-white transition-colors"
+                        style={{ padding: '7px 10px', fontSize: 14, fontWeight: 500, color: '#4A4357' }}
+                      >
+                        <Settings size={16} style={{ color: '#756E80' }} />
+                        <span>Settings</span>
+                      </NavLink>
+                      <span style={{ width: 1, height: 18, background: 'rgba(20,8,31,.14)' }} />
+                    </>
+                  )}
+
+                  <div className="flex items-center gap-2 flex-1" style={{ padding: '7px 10px', fontSize: 14, fontWeight: 500, color: '#4A4357' }}>
+                    {dark ? <Sun size={16} style={{ color: '#756E80' }} /> : <Moon size={16} style={{ color: '#756E80' }} />}
+                    <span>Dark mode</span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={dark}
+                      aria-label="Dark mode"
+                      onClick={() => setDark(!dark)}
+                      className="relative cursor-pointer ml-auto"
+                      style={{ width: 36, height: 20, borderRadius: 999, background: dark ? '#5B2BC9' : 'rgba(20,8,31,.18)', transition: 'background .15s' }}
+                    >
+                      <span
+                        className="absolute"
+                        style={{ top: 2, left: dark ? 18 : 2, width: 16, height: 16, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 2px rgba(20,8,31,.2)', transition: 'left .15s' }}
+                      />
+                    </button>
+                  </div>
+
+                  <span style={{ width: 1, height: 18, background: 'rgba(20,8,31,.14)' }} />
                   <button
-                    onClick={() => setDark(!dark)}
-                    className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-muted/60 transition-colors cursor-pointer"
-                  >
-                    {dark ? <Sun size={15} className="text-muted-foreground" /> : <Moon size={15} className="text-muted-foreground" />}
-                    {dark ? 'Light mode' : 'Dark mode'}
-                  </button>
-                  <button
+                    type="button"
                     onClick={async () => { if ('caches' in window) { const keys = await caches.keys(); await Promise.all(keys.map(k => caches.delete(k))); } window.location.reload(); }}
-                    className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-muted/60 transition-colors cursor-pointer"
+                    className="flex items-center gap-2 rounded-lg hover:bg-white transition-colors cursor-pointer"
+                    style={{ padding: '7px 10px', fontSize: 14, fontWeight: 500, color: '#756E80' }}
                   >
-                    <RefreshCw size={15} className="text-muted-foreground" />Clear cache
+                    <RefreshCw size={14} />
+                    <span>Clear cache</span>
                   </button>
+
+                  <span style={{ width: 1, height: 18, background: 'rgba(20,8,31,.14)' }} />
                   <button
+                    type="button"
                     onClick={() => { logout(); navigate('/login') }}
-                    className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-muted/60 transition-colors cursor-pointer"
+                    className="flex items-center gap-2 rounded-lg hover:bg-white transition-colors cursor-pointer"
+                    style={{ padding: '7px 10px', fontSize: 14, fontWeight: 600, color: '#C0332C' }}
                   >
-                    <LogOut size={15} />Logout
+                    <LogOut size={15} />
+                    <span>Logout</span>
                   </button>
                 </div>
               </div>
