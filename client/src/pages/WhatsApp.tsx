@@ -47,6 +47,9 @@ const CSS = `
 .wa-thumb:hover { opacity: 0.92; }
 .wa-doc:hover { text-decoration: underline; }
 .wa-row:hover { background-color: #FAF7FF; }
+.wa-grip { height: 12px; display: grid; place-items: center; cursor: ns-resize; touch-action: none; }
+.wa-grip-bar { width: 44px; height: 4px; border-radius: 999px; background: rgba(20,8,31,.16); transition: background .15s ease; }
+.wa-grip:hover .wa-grip-bar { background: rgba(91,43,201,.55); }
 .wa-scroll { overflow-y: auto; }
 .wa-scroll::-webkit-scrollbar { width: 8px; }
 .wa-scroll::-webkit-scrollbar-thumb { background: rgba(20,8,31,.16); border-radius: 999px; }
@@ -463,6 +466,34 @@ export default function WhatsApp() {
   const [blinking, setBlinking] = useState<Record<string, number>>({})
   const [search, setSearch] = useState('')
   const [draft, setDraft] = useState('')
+  // Composer height, dragged from the bar above it. Persisted so it stays
+  // where you left it; clamped so it can never swallow the whole chat.
+  const COMPOSER_MIN = 44
+  const COMPOSER_MAX = 420
+  const [composerH, setComposerH] = useState(() => {
+    const saved = Number(localStorage.getItem('wa_composer_h'))
+    return Number.isFinite(saved) && saved >= COMPOSER_MIN ? Math.min(saved, COMPOSER_MAX) : COMPOSER_MIN
+  })
+  const dragRef = useRef<{ startY: number; startH: number } | null>(null)
+
+  const onDragStart = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    dragRef.current = { startY: e.clientY, startH: composerH }
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  }
+  const onDragMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = dragRef.current
+    if (!d) return
+    // Dragging up (a smaller clientY) makes it taller.
+    const next = Math.min(COMPOSER_MAX, Math.max(COMPOSER_MIN, d.startH + (d.startY - e.clientY)))
+    setComposerH(next)
+  }
+  const onDragEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragRef.current) return
+    dragRef.current = null
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId) } catch { /* already released */ }
+    localStorage.setItem('wa_composer_h', String(composerH))
+  }
   const [sendErr, setSendErr] = useState('')
   const [qrOpen, setQrOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -978,9 +1009,26 @@ export default function WhatsApp() {
             <p className="shrink-0 px-6 pb-1 text-xs" style={{ color: '#B91C1C' }}>{sendErr}</p>
           )}
 
+          {/* Drag upward to make the message box taller — long replies are
+              painful in a one-line field. Double-click resets it. */}
           <div
-            className="shrink-0 flex items-end gap-2 px-4 py-3"
+            className="wa-grip shrink-0"
+            onPointerDown={onDragStart}
+            onPointerMove={onDragMove}
+            onPointerUp={onDragEnd}
+            onPointerCancel={onDragEnd}
+            onDoubleClick={() => { setComposerH(COMPOSER_MIN); localStorage.setItem('wa_composer_h', String(COMPOSER_MIN)) }}
+            title="Drag up to expand the message box · double-click to reset"
+            role="separator"
+            aria-orientation="horizontal"
             style={{ background: '#fff', borderTop: `1px solid ${LINE}` }}
+          >
+            <span className="wa-grip-bar" />
+          </div>
+
+          <div
+            className="shrink-0 flex items-end gap-2 px-4 pb-3 pt-1"
+            style={{ background: '#fff' }}
           >
             <IconButton title="Quick replies" onClick={() => setQrOpen((v) => !v)} className="!h-10 !w-10 shrink-0">
               <Zap size={16} />
@@ -998,8 +1046,8 @@ export default function WhatsApp() {
               style={{
                 background: '#F7F3FF',
                 border: '1px solid #EDE5FF',
-                borderRadius: 20,
-                maxHeight: 110,
+                borderRadius: composerH > 80 ? 14 : 20,
+                height: composerH,
                 color: INK,
                 lineHeight: 1.4,
               }}
