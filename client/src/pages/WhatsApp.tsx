@@ -1,81 +1,372 @@
-import { useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Send, MessageSquare, RefreshCw, UserPlus, UserCheck } from 'lucide-react'
-import { whatsappApi, leadApi, apiError, type WhatsAppConversation, type WhatsAppMsg } from '../lib/api'
-import { Button, Card, CardBody, CardHeader, Field, Input, PageHeader } from '../components/ui'
+import {
+  Send, MessageSquare, RefreshCw, UserPlus, UserCheck, Bell, BellOff, FileText,
+  Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Info,
+} from 'lucide-react'
+import { api, whatsappApi, leadApi, apiError, type WhatsAppConversation, type WhatsAppMsg } from '../lib/api'
 import { cn } from '../lib/utils'
 
-function formatTime(iso: string) {
-  const d = new Date(iso)
-  return d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })
+/* ── local types ──────────────────────────────────────────────────────────
+   The API layer's WhatsAppMsg predates attachments; /whatsapp/messages now
+   adds a `media` descriptor on messages that carry one. Widened here because
+   this page is the only consumer. */
+type WaMediaKind = 'image' | 'video' | 'audio' | 'voice' | 'document' | 'sticker'
+type WaMedia = { kind: WaMediaKind; mimeType: string; filename: string; caption: string }
+type WaMsg = WhatsAppMsg & { media?: WaMedia }
+
+/** Settings → Message Templates. Reused verbatim as the quick-reply library. */
+type MessageTemplate = {
+  _id: string
+  key: string
+  label: string
+  subject: string
+  emailBody: string
+  whatsappBody: string
+  variables: string[]
 }
 
-function SendForm({ prefillTo, onSent }: { prefillTo?: string; onSent: () => void }) {
-  const [to, setTo] = useState(prefillTo ?? '')
-  const [body, setBody] = useState('')
-  const [err, setErr] = useState('')
+const MUTE_KEY = 'wa_inbox_muted'
+const SEEN_KEY = 'wa_inbox_last_seen'
+const BLINK_MS = 4000
+const PING_SRC = '/whatsappaduio.mp3'
 
-  const send = useMutation({
-    mutationFn: () => whatsappApi.send(to.trim(), body.trim()),
-    onSuccess: () => { setBody(''); setErr(''); onSent() },
-    onError: (e) => setErr(apiError(e)),
-  })
+const INK = '#14081F'
+const MUTED_INK = '#4A4357'
+const FAINT_INK = '#756E80'
+const LINE = 'rgba(20,8,31,.10)'
 
-  function submit(e: FormEvent) {
-    e.preventDefault()
-    if (!to.trim() || !body.trim()) return
-    send.mutate()
+const CSS = `
+@keyframes wa-blink-bg {
+  0%, 100% { background-color: transparent; }
+  50%      { background-color: rgba(91, 43, 201, 0.16); }
+}
+.wa-blink { animation: wa-blink-bg 1s ease-in-out 4; }
+.wa-thumb { cursor: zoom-in; }
+.wa-thumb:hover { opacity: 0.92; }
+.wa-doc:hover { text-decoration: underline; }
+.wa-row:hover { background-color: #FAF7FF; }
+.wa-scroll { overflow-y: auto; }
+.wa-scroll::-webkit-scrollbar { width: 8px; }
+.wa-scroll::-webkit-scrollbar-thumb { background: rgba(20,8,31,.16); border-radius: 999px; }
+.wa-scroll::-webkit-scrollbar-track { background: transparent; }
+.wa-mobile-only { display: none !important; }
+.wa-scrim { display: none; }
+
+/* Below ~1100px the quick-replies panel floats over the chat instead of
+   squeezing it. */
+@media (max-width: 1100px) {
+  .wa-qr {
+    position: absolute; top: 0; right: 0; bottom: 0;
+    width: 320px; z-index: 25;
+    box-shadow: -10px 0 34px rgba(20,8,31,.18);
   }
+}
+@media (max-width: 440px) {
+  .wa-qr { width: 100%; }
+}
 
+/* Below ~700px the chat list collapses to a drawer. */
+@media (max-width: 700px) {
+  .wa-sidebar {
+    position: absolute; top: 0; left: 0; bottom: 0;
+    width: 282px; z-index: 30; flex: none;
+    transform: translateX(-102%); transition: transform .2s ease;
+    box-shadow: 10px 0 34px rgba(20,8,31,.18);
+  }
+  .wa-sidebar.wa-sidebar-open { transform: translateX(0); }
+  .wa-mobile-only { display: inline-flex !important; }
+  .wa-scrim { display: block; position: absolute; inset: 0; z-index: 28; background: rgba(20,8,31,.34); }
+}
+`
+
+/* ── formatting ───────────────────────────────────────────────────────── */
+function formatClock(iso: string) {
+  return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+}
+
+function formatListTime(iso: string) {
+  const d = new Date(iso)
+  const now = new Date()
+  if (d.toDateString() === now.toDateString()) return formatClock(iso)
+  const days = Math.floor((now.getTime() - d.getTime()) / 86_400_000)
+  if (days < 7) return d.toLocaleDateString(undefined, { weekday: 'short' })
+  return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short' })
+}
+
+function initials(label: string) {
+  const cleaned = label.replace(/^\+/, '').trim()
+  const words = cleaned.split(/\s+/).filter(Boolean)
+  if (words.length === 0) return '?'
+  if (/^\d/.test(words[0])) return cleaned.slice(-2)
+  return (words[0][0] + (words[1]?.[0] ?? '')).toUpperCase()
+}
+
+const AVATAR_COLORS = ['#5B2BC9', '#7C3AED', '#9333EA', '#C026D3', '#DB2777', '#E11D48', '#EA580C', '#0891B2', '#0D9488', '#16A34A']
+
+/** Stable per-contact colour, derived from the number so it never shifts. */
+function avatarColor(seed: string) {
+  let h = 0
+  for (let i = 0; i < seed.length; i += 1) h = (h * 31 + seed.charCodeAt(i)) >>> 0
+  return AVATAR_COLORS[h % AVATAR_COLORS.length]
+}
+
+function Avatar({ seed, label, size = 40 }: { seed: string; label: string; size?: number }) {
   return (
-    <form onSubmit={submit} className="space-y-3">
-      <Field label="To (WhatsApp number with country code)">
-        <Input
-          placeholder="e.g. 971569420950"
-          value={to}
-          onChange={(e) => setTo(e.target.value)}
-          required
-        />
-      </Field>
-      <Field label="Message">
-        <textarea
-          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-          rows={3}
-          placeholder="Type your message…"
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          required
-        />
-      </Field>
-      {err && <p className="text-xs text-destructive">{err}</p>}
-      <div className="flex justify-end">
-        <Button type="submit" disabled={send.isPending || !to.trim() || !body.trim()}>
-          <Send size={14} />
-          {send.isPending ? 'Sending…' : 'Send Message'}
-        </Button>
-      </div>
-    </form>
+    <div
+      className="shrink-0 rounded-full flex items-center justify-center text-white font-bold"
+      style={{ width: size, height: size, background: avatarColor(seed), fontSize: size * 0.34 }}
+      aria-hidden
+    >
+      {initials(label)}
+    </div>
   )
 }
 
-function MessageBubble({ msg }: { msg: WhatsAppMsg }) {
+/* ── attachment blobs ─────────────────────────────────────────────────────
+   /whatsapp-media/:messageId is authenticated, so the bytes have to come
+   through the axios client (which attaches the bearer token) rather than a
+   bare <img src>. Object URLs are cached by WhatsApp message id so that
+   polling, re-renders and scrolling never refetch the same file, and are
+   revoked wholesale when the page unmounts. */
+const mediaUrls = new Map<string, string>()
+const mediaPending = new Map<string, Promise<string>>()
+
+function loadMediaUrl(messageId: string): Promise<string> {
+  const cached = mediaUrls.get(messageId)
+  if (cached) return Promise.resolve(cached)
+  let p = mediaPending.get(messageId)
+  if (!p) {
+    p = api
+      .get(`/whatsapp-media/${encodeURIComponent(messageId)}`, { responseType: 'blob' })
+      .then((r) => {
+        const url = URL.createObjectURL(r.data as Blob)
+        mediaUrls.set(messageId, url)
+        return url
+      })
+      .finally(() => { mediaPending.delete(messageId) })
+    mediaPending.set(messageId, p)
+  }
+  return p
+}
+
+function revokeAllMedia() {
+  for (const url of mediaUrls.values()) URL.revokeObjectURL(url)
+  mediaUrls.clear()
+  mediaPending.clear()
+}
+
+/** Renders one attachment. Mounts only for messages actually on screen, and
+ *  the fetch starts on mount — so loading is lazy per rendered message. */
+function Attachment({ messageId, media, outbound }: { messageId: string; media: WaMedia; outbound: boolean }) {
+  const [url, setUrl] = useState<string | null>(() => mediaUrls.get(messageId) ?? null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    const cached = mediaUrls.get(messageId)
+    if (cached) { setUrl(cached); setFailed(false); return }
+    let alive = true
+    setUrl(null)
+    setFailed(false)
+    loadMediaUrl(messageId)
+      .then((u) => { if (alive) setUrl(u) })
+      .catch(() => { if (alive) setFailed(true) })
+    return () => { alive = false }
+  }, [messageId])
+
+  const caption = media.caption ? (
+    <p className="whitespace-pre-wrap break-words mt-1">{media.caption}</p>
+  ) : null
+
+  if (failed) {
+    return (
+      <p className="text-xs italic" style={{ color: outbound ? 'rgba(255,255,255,.75)' : FAINT_INK }}>
+        Attachment unavailable
+      </p>
+    )
+  }
+
+  if (!url) {
+    return (
+      <div
+        className="flex items-center justify-center rounded-lg text-[11px] h-16 w-40 animate-pulse"
+        style={{
+          background: outbound ? 'rgba(255,255,255,.22)' : 'rgba(20,8,31,.07)',
+          color: outbound ? 'rgba(255,255,255,.85)' : FAINT_INK,
+        }}
+      >
+        Loading {media.kind}…
+      </div>
+    )
+  }
+
+  if (media.kind === 'image' || media.kind === 'sticker') {
+    return (
+      <div>
+        <img
+          src={url}
+          alt={media.filename || media.kind}
+          onClick={() => window.open(url, '_blank', 'noopener')}
+          className={cn('wa-thumb rounded-lg object-contain', media.kind === 'sticker' ? 'max-h-32' : 'max-h-64')}
+        />
+        {caption}
+      </div>
+    )
+  }
+
+  if (media.kind === 'video') {
+    return (
+      <div>
+        <video src={url} controls className="rounded-lg max-h-64 max-w-full" />
+        {caption}
+      </div>
+    )
+  }
+
+  if (media.kind === 'audio' || media.kind === 'voice') {
+    return (
+      <div>
+        <audio src={url} controls className="max-w-[240px]" />
+        {caption}
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <a
+        href={url}
+        download={media.filename || 'document'}
+        className="wa-doc inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm"
+        style={{ background: outbound ? 'rgba(255,255,255,.18)' : 'rgba(20,8,31,.05)' }}
+      >
+        <FileText size={16} />
+        <span className="truncate max-w-[200px]">{media.filename || 'Document'}</span>
+      </a>
+      {caption}
+    </div>
+  )
+}
+
+/* ── notification sound ───────────────────────────────────────────────────
+   A real asset (public/whatsappaduio.mp3) played through one shared
+   HTMLAudioElement. Browsers refuse playback before a user gesture, so the
+   element is primed with a muted play/pause on the first interaction, and
+   every failure is swallowed — audio must never break the inbox. */
+let pingEl: HTMLAudioElement | null = null
+let pingPrimed = false
+
+function getPingElement(): HTMLAudioElement | null {
+  if (typeof Audio === 'undefined') return null
+  if (!pingEl) {
+    try {
+      pingEl = new Audio(PING_SRC)
+      pingEl.preload = 'auto'
+    } catch {
+      return null
+    }
+  }
+  return pingEl
+}
+
+/** Muted play/pause on a gesture so later programmatic plays are allowed. */
+function primePing() {
+  if (pingPrimed) return
+  const el = getPingElement()
+  if (!el) return
+  pingPrimed = true
+  try {
+    el.muted = true
+    const p = el.play()
+    const settle = () => { try { el.pause(); el.currentTime = 0 } catch { /* ignore */ } el.muted = false }
+    if (p && typeof p.then === 'function') p.then(settle, () => { el.muted = false })
+    else settle()
+  } catch {
+    el.muted = false
+  }
+}
+
+function playPing() {
+  const el = getPingElement()
+  if (!el) return
+  try {
+    el.currentTime = 0 // otherwise a second message plays from the finished end
+    const p = el.play()
+    if (p && typeof p.catch === 'function') p.catch(() => { /* blocked — never mind */ })
+  } catch {
+    /* audio is a nicety — never let it break the inbox */
+  }
+}
+
+function readSeen(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(SEEN_KEY)
+    const parsed = raw ? JSON.parse(raw) : null
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, string>) : {}
+  } catch {
+    return {}
+  }
+}
+
+/* ── small presentational helpers ─────────────────────────────────────── */
+function IconButton({
+  title, onClick, children, tone = 'light', className,
+}: {
+  title: string
+  onClick: () => void
+  children: ReactNode
+  tone?: 'light' | 'dark'
+  className?: string
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={onClick}
+      className={cn('inline-flex items-center justify-center rounded-lg transition-colors cursor-pointer h-8 w-8', className)}
+      style={
+        tone === 'dark'
+          ? { background: 'rgba(255,255,255,.08)', border: '1px solid rgba(255,255,255,.14)', color: '#fff' }
+          : { background: '#F7F3FF', border: '1px solid #EDE5FF', color: '#4A1FA0' }
+      }
+    >
+      {children}
+    </button>
+  )
+}
+
+function MessageBubble({ msg }: { msg: WaMsg }) {
   const out = msg.direction === 'outbound'
   return (
     <div className={cn('flex', out ? 'justify-end' : 'justify-start')}>
       <div
-        className={cn(
-          'max-w-[75%] rounded-2xl px-4 py-2 text-sm shadow-sm',
+        className="max-w-[75%] rounded-2xl px-3.5 py-2 text-sm"
+        style={
           out
-            ? 'bg-emerald-600 text-white rounded-br-sm'
-            : 'bg-muted text-foreground rounded-bl-sm'
-        )}
+            ? { background: '#5B2BC9', color: '#fff', borderBottomRightRadius: 6, boxShadow: '0 1px 2px rgba(20,8,31,.12)' }
+            : { background: '#fff', color: INK, borderBottomLeftRadius: 6, border: `1px solid ${LINE}`, boxShadow: '0 1px 2px rgba(20,8,31,.06)' }
+        }
       >
-        <p className="whitespace-pre-wrap break-words">{msg.text || <span className="italic opacity-60">[{msg.type}]</span>}</p>
-        <p className={cn('text-[10px] mt-1 text-right', out ? 'text-emerald-100' : 'text-muted-foreground')}>
-          {formatTime(msg.occurredAt)}
-          {out && ` · ${msg.status || 'sent'}`}
-        </p>
+        {msg.media ? (
+          <Attachment messageId={msg.messageId} media={msg.media} outbound={out} />
+        ) : (
+          <p className="whitespace-pre-wrap break-words">
+            {msg.text || <span className="italic opacity-60">[{msg.type}]</span>}
+          </p>
+        )}
+        {msg.media && msg.text && !msg.media.caption && (
+          <p className="whitespace-pre-wrap break-words mt-1">{msg.text}</p>
+        )}
+        <div
+          className="flex items-center justify-end gap-1 mt-1 text-[10px]"
+          style={{ color: out ? 'rgba(255,255,255,.72)' : FAINT_INK }}
+          title={out ? msg.status || 'sent' : undefined}
+        >
+          <span>{formatClock(msg.occurredAt)}</span>
+          {out && <CheckCheck size={13} style={{ color: msg.status === 'read' ? '#7DD3FC' : 'rgba(255,255,255,.72)' }} />}
+        </div>
       </div>
     </div>
   )
@@ -102,24 +393,41 @@ function LeadAction({ convo, onChanged }: { convo: WhatsAppConversation; onChang
     onError: (e) => setErr(apiError(e)),
   })
 
+  const pill = 'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold cursor-pointer transition-colors disabled:opacity-60 disabled:cursor-not-allowed'
+
   return (
     <div className="flex items-center gap-2 flex-wrap justify-end">
-      {err && <span className="text-xs text-destructive">{err}</span>}
+      {err && <span className="text-xs text-red-600 max-w-[220px] truncate" title={err}>{err}</span>}
       {!convo.lead ? (
-        <Button size="sm" variant="outline" disabled={createLead.isPending} onClick={() => createLead.mutate()}>
+        <button
+          type="button"
+          className={pill}
+          style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', color: '#4A1FA0' }}
+          disabled={createLead.isPending}
+          onClick={() => createLead.mutate()}
+        >
           <UserPlus size={13} /> {createLead.isPending ? 'Creating…' : 'Create lead'}
-        </Button>
+        </button>
       ) : convo.lead.status === 'won' ? (
-        <Link to={`/leads?q=${encodeURIComponent(convo.lead.fullName)}`}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:underline">
-          <UserCheck size={13} /> Customer · {convo.lead.fullName}
+        <Link
+          to={`/leads?q=${encodeURIComponent(convo.lead.fullName)}`}
+          className="inline-flex items-center gap-1.5 text-xs font-semibold hover:underline"
+          style={{ color: '#047857' }}
+        >
+          <UserCheck size={13} /> {convo.lead.fullName}
         </Link>
       ) : (
         <>
-          <span className="text-xs text-muted-foreground">Lead: {convo.lead.fullName}</span>
-          <Button size="sm" disabled={convert.isPending} onClick={() => convert.mutate()}>
+          <span className="text-xs hidden sm:inline" style={{ color: FAINT_INK }}>Lead: {convo.lead.fullName}</span>
+          <button
+            type="button"
+            className={pill}
+            style={{ background: '#5B2BC9', color: '#fff' }}
+            disabled={convert.isPending}
+            onClick={() => convert.mutate()}
+          >
             <UserCheck size={13} /> {convert.isPending ? 'Saving…' : 'Save as customer'}
-          </Button>
+          </button>
         </>
       )}
     </div>
@@ -129,6 +437,24 @@ function LeadAction({ convo, onChanged }: { convo: WhatsAppConversation; onChang
 export default function WhatsApp() {
   const qc = useQueryClient()
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null)
+  const [muted, setMuted] = useState<boolean>(() => localStorage.getItem(MUTE_KEY) === '1')
+  const [lastSeen, setLastSeen] = useState<Record<string, string>>(readSeen)
+  const [blinking, setBlinking] = useState<Record<string, number>>({})
+  const [search, setSearch] = useState('')
+  const [draft, setDraft] = useState('')
+  const [sendErr, setSendErr] = useState('')
+  const [qrOpen, setQrOpen] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [setupOpen, setSetupOpen] = useState(false)
+  const [catOpen, setCatOpen] = useState<Record<string, boolean>>({ templates: true })
+  const [custom, setCustom] = useState('')
+  // Numbers typed via "New chat" have no conversation record yet.
+  const [adhocPhone, setAdhocPhone] = useState<string | null>(null)
+
+  const mutedRef = useRef(muted)
+  mutedRef.current = muted
+  const selectedRef = useRef(selectedPhone)
+  selectedRef.current = selectedPhone
 
   const { data: conversations, isLoading: loadingConvos, refetch: refetchConvos } = useQuery<WhatsAppConversation[]>({
     queryKey: ['wa-conversations'],
@@ -136,136 +462,651 @@ export default function WhatsApp() {
     refetchInterval: 15_000,
   })
 
-  const { data: messages, isLoading: loadingMsgs } = useQuery<WhatsAppMsg[]>({
+  // Whole-inbox feed: drives unread counts, the blink and the ping. When no
+  // conversation is selected this shares its cache entry with the chat query
+  // below, so it costs no extra request in that case.
+  const { data: allMessages } = useQuery<WaMsg[]>({
+    queryKey: ['wa-messages', null],
+    queryFn: () => whatsappApi.messages(),
+    refetchInterval: 10_000,
+  })
+
+  const { data: messages, isLoading: loadingMsgs } = useQuery<WaMsg[]>({
     queryKey: ['wa-messages', selectedPhone],
     queryFn: () => whatsappApi.messages(selectedPhone ?? undefined),
     refetchInterval: 10_000,
     enabled: true,
   })
 
+  // Quick replies are the real Settings → Message Templates records.
+  const { data: templates } = useQuery<MessageTemplate[]>({
+    queryKey: ['message-templates'],
+    queryFn: () => api.get('/message-templates').then((r) => r.data ?? []),
+    staleTime: 60_000,
+  })
+
+  const quickReplies = useMemo(
+    () => (templates ?? []).filter((t) => (t.whatsappBody ?? '').trim().length > 0),
+    [templates]
+  )
+
+  // Free every attachment blob when the inbox is left.
+  useEffect(() => revokeAllMedia, [])
+
+  // Browsers only allow audio after a gesture — prime the element on the first one.
+  useEffect(() => {
+    const warm = () => { primePing() }
+    window.addEventListener('pointerdown', warm)
+    window.addEventListener('keydown', warm)
+    return () => {
+      window.removeEventListener('pointerdown', warm)
+      window.removeEventListener('keydown', warm)
+    }
+  }, [])
+
+  /* New-message detection: the ids present on the first successful load form
+     the baseline, so nothing fires on mount/navigation. Every later poll that
+     introduces an id we have not seen before, and whose direction is inbound,
+     counts as new — outbound messages (including our own sends) never ping. */
+  const seenIds = useRef<Set<string> | null>(null)
+  useEffect(() => {
+    if (!allMessages) return
+    if (seenIds.current === null) {
+      seenIds.current = new Set(allMessages.map((m) => m._id))
+      return
+    }
+    const fresh = allMessages.filter((m) => !seenIds.current!.has(m._id))
+    if (fresh.length === 0) return
+    for (const m of fresh) seenIds.current!.add(m._id)
+    const inbound = fresh.filter((m) => m.direction === 'inbound')
+    if (inbound.length === 0) return
+    if (!mutedRef.current) playPing()
+    const until = Date.now() + BLINK_MS
+    setBlinking((prev) => {
+      const next = { ...prev }
+      for (const m of inbound) if (m.phoneNormalized !== selectedRef.current) next[m.phoneNormalized] = until
+      return next
+    })
+  }, [allMessages])
+
+  // Retire blink markers once their window has elapsed.
+  useEffect(() => {
+    if (Object.keys(blinking).length === 0) return
+    const t = window.setTimeout(() => {
+      const now = Date.now()
+      setBlinking((prev) => {
+        const next: Record<string, number> = {}
+        for (const [phone, until] of Object.entries(prev)) if (until > now) next[phone] = until
+        return Object.keys(next).length === Object.keys(prev).length ? prev : next
+      })
+    }, BLINK_MS + 200)
+    return () => window.clearTimeout(t)
+  }, [blinking])
+
+  const markSeen = useCallback((phone: string, iso: string) => {
+    setLastSeen((prev) => {
+      if (prev[phone] && new Date(prev[phone]).getTime() >= new Date(iso).getTime()) return prev
+      const next = { ...prev, [phone]: iso }
+      try { localStorage.setItem(SEEN_KEY, JSON.stringify(next)) } catch { /* quota — ignore */ }
+      return next
+    })
+  }, [])
+
+  // Anything arriving in the open conversation is read on arrival.
+  useEffect(() => {
+    if (!selectedPhone || !messages || messages.length === 0) return
+    const newest = messages.reduce((a, m) => (m.occurredAt > a ? m.occurredAt : a), messages[0].occurredAt)
+    markSeen(selectedPhone, newest)
+    setBlinking((prev) => (prev[selectedPhone] ? Object.fromEntries(Object.entries(prev).filter(([p]) => p !== selectedPhone)) : prev))
+  }, [selectedPhone, messages, markSeen])
+
+  const unreadByPhone = useMemo(() => {
+    const out: Record<string, number> = {}
+    for (const m of allMessages ?? []) {
+      if (m.direction !== 'inbound') continue
+      const seen = lastSeen[m.phoneNormalized]
+      if (seen && new Date(m.occurredAt).getTime() <= new Date(seen).getTime()) continue
+      out[m.phoneNormalized] = (out[m.phoneNormalized] ?? 0) + 1
+    }
+    return out
+  }, [allMessages, lastSeen])
+
+  const totalUnread = useMemo(
+    () => Object.values(unreadByPhone).reduce((a, b) => a + b, 0),
+    [unreadByPhone]
+  )
+
+  // Last inbound/outbound line per chat, for the list preview.
+  const previewByPhone = useMemo(() => {
+    const out: Record<string, string> = {}
+    for (const m of allMessages ?? []) {
+      const prev = out[m.phoneNormalized]
+      if (prev !== undefined) continue
+      out[m.phoneNormalized] = m.text?.trim() || (m.media ? `[${m.media.kind}]` : `[${m.type}]`)
+    }
+    return out
+  }, [allMessages])
+
   function onSent() {
     qc.invalidateQueries({ queryKey: ['wa-messages'] })
     qc.invalidateQueries({ queryKey: ['wa-conversations'] })
   }
 
-  const sorted = [...(messages ?? [])].sort(
-    (a, b) => new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime()
+  function toggleMute() {
+    setMuted((m) => {
+      const next = !m
+      try { localStorage.setItem(MUTE_KEY, next ? '1' : '0') } catch { /* ignore */ }
+      if (!next) primePing()
+      return next
+    })
+  }
+
+  const sorted = useMemo(
+    () => [...(messages ?? [])].sort((a, b) => new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime()),
+    [messages]
   )
 
-  const selectedConvo = (conversations ?? []).find((c) => c.phoneNormalized === selectedPhone) ?? null
+  // Newest activity first, so an incoming message floats its chat to the top.
+  const convoList = useMemo(
+    () => [...(conversations ?? [])].sort((a, b) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime()),
+    [conversations]
+  )
+
+  const filteredConvos = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return convoList
+    return convoList.filter((c) => {
+      const name = (c.lead?.fullName ?? '').toLowerCase()
+      return name.includes(q) || c.phoneNormalized.includes(q) || (c.phone ?? '').toLowerCase().includes(q)
+    })
+  }, [convoList, search])
+
+  const realConvo = convoList.find((c) => c.phoneNormalized === selectedPhone) ?? null
+  // A number typed into "New chat" behaves like an empty conversation so the
+  // composer and the lead action keep working before the first message lands.
+  const selectedConvo: WhatsAppConversation | null =
+    realConvo ??
+    (selectedPhone && selectedPhone === adhocPhone
+      ? { phoneNormalized: selectedPhone, phone: `+${selectedPhone}`, count: 0, lastAt: new Date().toISOString(), lead: null }
+      : null)
+
+  const convoTitle = selectedConvo
+    ? selectedConvo.lead?.fullName || selectedConvo.phone || `+${selectedConvo.phoneNormalized}`
+    : 'All messages'
+
+  /* Auto-scroll: follow the newest message, unless the reader has scrolled up
+     into history — then leave their position alone. */
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  const stickToBottom = useRef(true)
+
+  const onScroll = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60
+  }, [])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || !stickToBottom.current) return
+    el.scrollTop = el.scrollHeight
+  }, [sorted, selectedPhone])
+
+  // Auto-growing composer, capped at 110px.
+  const taRef = useRef<HTMLTextAreaElement | null>(null)
+  useEffect(() => {
+    const el = taRef.current
+    if (!el) return
+    el.style.height = '0px'
+    el.style.height = `${Math.min(el.scrollHeight, 110)}px`
+  }, [draft])
+
+  function openConversation(phone: string) {
+    const next = phone === selectedPhone ? null : phone
+    stickToBottom.current = true
+    setSelectedPhone(next)
+    setSendErr('')
+    setSidebarOpen(false)
+    if (next) {
+      const convo = convoList.find((c) => c.phoneNormalized === next)
+      if (convo) markSeen(next, convo.lastAt)
+      setBlinking((prev) => Object.fromEntries(Object.entries(prev).filter(([p]) => p !== next)))
+    }
+  }
+
+  function startNewChat() {
+    const raw = window.prompt('WhatsApp number with country code', '971')
+    if (raw === null) return
+    const digits = raw.replace(/\D/g, '')
+    if (!digits) return
+    setAdhocPhone(digits)
+    stickToBottom.current = true
+    setSelectedPhone(digits)
+    setSendErr('')
+    setSidebarOpen(false)
+  }
+
+  const send = useMutation({
+    mutationFn: (payload: { to: string; body: string }) => whatsappApi.send(payload.to, payload.body),
+    onSuccess: () => { setSendErr(''); stickToBottom.current = true; onSent() },
+    onError: (e) => setSendErr(apiError(e)),
+  })
+
+  function sendText(body: string) {
+    const text = body.trim()
+    if (!text) return
+    if (!selectedPhone) { setSendErr('Pick a conversation first, or start a new chat.'); return }
+    send.mutate({ to: selectedPhone, body: text })
+  }
+
+  function sendComposer() {
+    const text = draft.trim()
+    if (!text || send.isPending) return
+    if (!selectedPhone) { setSendErr('Pick a conversation first, or start a new chat.'); return }
+    setDraft('')
+    send.mutate({ to: selectedPhone, body: text })
+  }
+
+  function insertText(text: string) {
+    setDraft((prev) => (prev.trim() ? `${prev.replace(/\s+$/, '')}\n${text}` : text))
+    window.setTimeout(() => taRef.current?.focus(), 0)
+  }
 
   return (
-    <div className="max-w-5xl space-y-4">
-      <PageHeader
-        title="WhatsApp Inbox"
-        subtitle="Reply to customers and turn chats into leads"
-        action={
-          <Button variant="outline" size="sm" onClick={() => { refetchConvos(); qc.invalidateQueries({ queryKey: ['wa-messages'] }) }}>
-            <RefreshCw size={14} /> Refresh
-          </Button>
-        }
-      />
+    <div
+      className="flex flex-col rounded-2xl overflow-hidden h-[calc(100vh-5rem)] md:h-[calc(100vh-5.5rem)] min-h-[520px]"
+      style={{ border: `1px solid ${LINE}`, background: '#fff', boxShadow: '0 6px 28px rgba(20,8,31,.07)' }}
+    >
+      <style>{CSS}</style>
 
-      {/* Send panel */}
-      <Card>
-        <CardHeader
-          title="Send a message"
-          subtitle="Test account — recipient must be added in Meta dashboard"
-        />
-        <CardBody>
-          <SendForm prefillTo={selectedPhone ?? ''} onSent={onSent} />
-        </CardBody>
-      </Card>
+      {/* ── 1. Top bar ─────────────────────────────────────────────── */}
+      <div
+        className="shrink-0 flex items-center justify-between gap-3 px-4"
+        style={{ height: 60, background: '#1A0B33', color: '#fff' }}
+      >
+        <div className="flex items-center gap-2.5 min-w-0">
+          <button
+            type="button"
+            className="wa-mobile-only items-center justify-center h-8 w-8 rounded-lg cursor-pointer"
+            style={{ background: 'rgba(255,255,255,.08)', border: '1px solid rgba(255,255,255,.14)', color: '#fff' }}
+            aria-label="Show chats"
+            onClick={() => setSidebarOpen((v) => !v)}
+          >
+            <Menu size={16} />
+          </button>
+          <div
+            className="shrink-0 flex items-center justify-center"
+            style={{ width: 30, height: 30, borderRadius: 9, background: '#5B2BC9' }}
+            aria-hidden
+          >
+            <MessageSquare size={16} color="#fff" />
+          </div>
+          <div className="min-w-0 leading-tight">
+            <div style={{ fontFamily: "'Bricolage Grotesque', serif", fontWeight: 700, fontSize: 17, letterSpacing: '-0.02em' }}>
+              PurpleBox
+            </div>
+            <div className="text-[11px] truncate" style={{ color: '#A78BFA' }}>
+              WhatsApp Console{totalUnread > 0 ? ` · ${totalUnread} unread` : ''}
+            </div>
+          </div>
+        </div>
 
-      <div className="grid grid-cols-[220px_1fr] gap-4">
-        {/* Conversations sidebar */}
-        <Card>
-          <CardHeader title="Conversations" />
-          {loadingConvos ? (
-            <CardBody className="text-sm text-muted-foreground">Loading…</CardBody>
-          ) : (conversations ?? []).length === 0 ? (
-            <CardBody className="text-xs text-muted-foreground">No conversations yet. Send a message first.</CardBody>
-          ) : (
-            <div className="divide-y">
-              {(conversations ?? []).map((c) => (
-                <button
-                  key={c.phoneNormalized}
-                  onClick={() => setSelectedPhone(c.phoneNormalized === selectedPhone ? null : c.phoneNormalized)}
-                  className={cn(
-                    'w-full text-left px-4 py-3 text-sm transition-colors hover:bg-muted/50 cursor-pointer',
-                    c.phoneNormalized === selectedPhone ? 'bg-muted font-medium' : ''
-                  )}
-                >
-                  <div className="font-medium truncate">{c.lead?.fullName || c.phone || `+${c.phoneNormalized}`}</div>
-                  <div className="text-xs text-muted-foreground flex items-center gap-1.5 flex-wrap">
-                    <span>{c.count} msg · {formatTime(c.lastAt)}</span>
-                    {c.lead && (
-                      <span className={cn(
-                        'rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
-                        c.lead.status === 'won'
-                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400'
-                          : 'bg-primary/10 text-primary'
-                      )}>
-                        {c.lead.status === 'won' ? 'Customer' : 'Lead'}
+        <div className="flex items-center gap-2">
+          <IconButton title={muted ? 'Notification sound is off' : 'Notification sound is on'} tone="dark" onClick={toggleMute}>
+            {muted ? <BellOff size={15} /> : <Bell size={15} />}
+          </IconButton>
+          <IconButton
+            title="Refresh"
+            tone="dark"
+            onClick={() => { refetchConvos(); qc.invalidateQueries({ queryKey: ['wa-messages'] }) }}
+          >
+            <RefreshCw size={15} />
+          </IconButton>
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setSetupOpen((v) => !v)}
+              className="flex items-center gap-2 px-3 py-1.5 cursor-pointer"
+              style={{
+                background: 'rgba(255,255,255,.08)',
+                border: '1px solid rgba(255,255,255,.14)',
+                borderRadius: 999,
+                fontSize: 12,
+              }}
+              title="Setup checklist"
+            >
+              <span className="shrink-0 rounded-full" style={{ width: 7, height: 7, background: '#F5A524' }} aria-hidden />
+              <span className="hidden sm:inline">Test mode — recipient must be added in Meta dashboard</span>
+              <span className="sm:hidden">Test mode</span>
+              <Info size={13} style={{ opacity: 0.7 }} />
+            </button>
+
+            {setupOpen && (
+              <div
+                className="absolute right-0 top-full mt-2 w-[340px] max-w-[85vw] rounded-xl p-3.5 text-xs z-50 space-y-2"
+                style={{ background: '#fff', color: MUTED_INK, border: `1px solid ${LINE}`, boxShadow: '0 12px 34px rgba(20,8,31,.2)' }}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold" style={{ color: INK, fontSize: 13 }}>Setup checklist</span>
+                  <button type="button" className="cursor-pointer" onClick={() => setSetupOpen(false)} aria-label="Close">
+                    <X size={14} />
+                  </button>
+                </div>
+                <p>1. Enter your phone number ID, access token, verify token and app secret under <strong>Settings → Integrations</strong>.</p>
+                <p>2. In Meta Dashboard → WhatsApp → Configuration → Webhook, set the Callback URL to <code style={{ background: '#F7F3FF', padding: '1px 4px', borderRadius: 4 }}>https://api.purplebox.ae/api/integrations/whatsapp/webhook</code></p>
+                <p>3. Set the Verify Token there to the same string you entered in Settings.</p>
+                <p>4. Subscribe to the <strong>messages</strong> field under Webhook Fields.</p>
+                <p style={{ color: '#B45309' }}>On a Meta test number you can only message 5 pre-registered recipients. A verified business number has no such limit.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── columns ────────────────────────────────────────────────── */}
+      <div className="relative flex flex-1 min-h-0">
+
+        {/* 2. Sidebar */}
+        <aside
+          className={cn('wa-sidebar flex flex-col min-h-0', sidebarOpen && 'wa-sidebar-open')}
+          style={{ flex: '0 0 300px', background: '#fff', borderRight: `1px solid ${LINE}` }}
+        >
+          <div className="shrink-0 px-4 pt-4 pb-3 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <h2 style={{ fontFamily: "'Bricolage Grotesque', serif", fontWeight: 700, fontSize: 19, color: INK }}>Chats</h2>
+              <IconButton title="New chat" onClick={startNewChat}><Plus size={15} /></IconButton>
+            </div>
+            <div className="relative">
+              <Search size={14} style={{ color: FAINT_INK }} className="absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search name or number"
+                className="w-full pl-8 pr-3 py-2 text-[13px] focus:outline-none"
+                style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', borderRadius: 10, color: INK }}
+              />
+            </div>
+          </div>
+
+          <div className="wa-scroll flex-1 min-h-0">
+            {loadingConvos ? (
+              <p className="px-4 py-3 text-sm" style={{ color: FAINT_INK }}>Loading…</p>
+            ) : filteredConvos.length === 0 ? (
+              <p className="px-4 py-3 text-xs" style={{ color: FAINT_INK }}>
+                {convoList.length === 0 ? 'No conversations yet. Start a new chat.' : 'No chats match that search.'}
+              </p>
+            ) : (
+              filteredConvos.map((c) => {
+                const unread = unreadByPhone[c.phoneNormalized] ?? 0
+                const isSelected = c.phoneNormalized === selectedPhone
+                const label = c.lead?.fullName || c.phone || `+${c.phoneNormalized}`
+                const isUnread = unread > 0 && !isSelected
+                return (
+                  <button
+                    key={c.phoneNormalized}
+                    onClick={() => openConversation(c.phoneNormalized)}
+                    className={cn(
+                      'wa-row w-full text-left px-4 py-2.5 flex items-center gap-3 cursor-pointer transition-colors',
+                      blinking[c.phoneNormalized] ? 'wa-blink' : ''
+                    )}
+                    style={isSelected ? { background: '#F3EDFF' } : undefined}
+                  >
+                    <Avatar seed={c.phoneNormalized} label={label} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline gap-2">
+                        {isUnread && <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: '#5B2BC9' }} aria-hidden />}
+                        <span
+                          className="truncate flex-1"
+                          style={{ fontSize: 14, fontWeight: isUnread ? 800 : 600, color: INK }}
+                        >
+                          {label}
+                        </span>
+                        <span className="shrink-0" style={{ fontSize: 11, color: FAINT_INK }}>{formatListTime(c.lastAt)}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="truncate flex-1" style={{ fontSize: 12, color: MUTED_INK }}>
+                          {previewByPhone[c.phoneNormalized] ?? `${c.count} messages`}
+                        </span>
+                        {c.lead && (
+                          <span
+                            className="shrink-0 rounded-full px-1.5 py-0.5"
+                            style={
+                              c.lead.status === 'won'
+                                ? { fontSize: 10, fontWeight: 700, background: '#DCFCE7', color: '#047857' }
+                                : { fontSize: 10, fontWeight: 700, background: '#F3EDFF', color: '#4A1FA0' }
+                            }
+                          >
+                            {c.lead.status === 'won' ? 'Customer' : 'Lead'}
+                          </span>
+                        )}
+                        {isUnread && (
+                          <span
+                            className="shrink-0 rounded-full px-1.5 py-0.5 text-white"
+                            style={{ fontSize: 10, fontWeight: 700, background: '#5B2BC9' }}
+                          >
+                            {unread > 99 ? '99+' : unread}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                )
+              })
+            )}
+          </div>
+        </aside>
+
+        {sidebarOpen && <div className="wa-scrim" onClick={() => setSidebarOpen(false)} aria-hidden />}
+
+        {/* 3. Chat pane */}
+        <section className="flex flex-col flex-1 min-w-0 min-h-0" style={{ background: '#F6F0E4' }}>
+          <header
+            className="shrink-0 flex items-center gap-3 px-4"
+            style={{ height: 64, background: '#fff', borderBottom: `1px solid ${LINE}` }}
+          >
+            {selectedConvo ? (
+              <>
+                <Avatar seed={selectedConvo.phoneNormalized} label={convoTitle} size={38} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="truncate" style={{ fontSize: 15, fontWeight: 700, color: INK }}>{convoTitle}</span>
+                    {selectedConvo.lead?.status === 'won' && (
+                      <span className="shrink-0 rounded-full px-2 py-0.5" style={{ fontSize: 10, fontWeight: 700, background: '#DCFCE7', color: '#047857' }}>
+                        Customer
                       </span>
                     )}
                   </div>
+                  <div className="truncate" style={{ fontSize: 12, color: FAINT_INK }}>+{selectedConvo.phoneNormalized}</div>
+                </div>
+                <LeadAction convo={selectedConvo} onChanged={onSent} />
+              </>
+            ) : (
+              <div className="min-w-0 flex-1">
+                <div style={{ fontSize: 15, fontWeight: 700, color: INK }}>All messages</div>
+                <div style={{ fontSize: 12, color: FAINT_INK }}>Pick a chat on the left to reply</div>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setQrOpen((v) => !v)}
+              className="shrink-0 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 cursor-pointer"
+              style={{ fontSize: 12, fontWeight: 600, background: '#F7F3FF', border: '1px solid #EDE5FF', color: '#4A1FA0' }}
+              title="Quick replies"
+            >
+              <Zap size={13} /> <span className="hidden sm:inline">Quick replies</span>
+            </button>
+          </header>
+
+          <div ref={scrollRef} onScroll={onScroll} className="wa-scroll flex-1 min-h-0 flex flex-col gap-[10px]" style={{ padding: '22px 26px' }}>
+            {loadingMsgs ? (
+              <p className="text-sm" style={{ color: FAINT_INK }}>Loading…</p>
+            ) : sorted.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center gap-2" style={{ color: FAINT_INK }}>
+                <MessageSquare size={22} />
+                <p className="text-sm">No messages yet.</p>
+              </div>
+            ) : (
+              sorted.map((m) => <MessageBubble key={m._id} msg={m} />)
+            )}
+          </div>
+
+          {sendErr && (
+            <p className="shrink-0 px-6 pb-1 text-xs" style={{ color: '#B91C1C' }}>{sendErr}</p>
+          )}
+
+          <div
+            className="shrink-0 flex items-end gap-2 px-4 py-3"
+            style={{ background: '#fff', borderTop: `1px solid ${LINE}` }}
+          >
+            <IconButton title="Quick replies" onClick={() => setQrOpen((v) => !v)} className="!h-10 !w-10 shrink-0">
+              <Zap size={16} />
+            </IconButton>
+            <textarea
+              ref={taRef}
+              rows={1}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendComposer() }
+              }}
+              placeholder={selectedPhone ? 'Type a message…' : 'Pick a chat to start typing…'}
+              className="flex-1 resize-none px-4 py-2.5 text-sm focus:outline-none"
+              style={{
+                background: '#F7F3FF',
+                border: '1px solid #EDE5FF',
+                borderRadius: 20,
+                maxHeight: 110,
+                color: INK,
+                lineHeight: 1.4,
+              }}
+            />
+            <button
+              type="button"
+              onClick={sendComposer}
+              disabled={send.isPending || !draft.trim() || !selectedPhone}
+              className="shrink-0 inline-flex items-center justify-center rounded-full cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed"
+              style={{ width: 44, height: 44, background: '#5B2BC9', color: '#fff' }}
+              aria-label="Send"
+              title="Send"
+            >
+              <Send size={18} />
+            </button>
+          </div>
+        </section>
+
+        {/* 4. Quick replies */}
+        {qrOpen && (
+          <aside
+            className="wa-qr flex flex-col min-h-0"
+            style={{ flex: '0 0 320px', background: '#fff', borderLeft: `1px solid ${LINE}` }}
+          >
+            <div className="shrink-0 flex items-start gap-2 px-4 py-3.5" style={{ borderBottom: `1px solid ${LINE}` }}>
+              <div className="min-w-0 flex-1">
+                <h2 style={{ fontFamily: "'Bricolage Grotesque', serif", fontWeight: 700, fontSize: 17, color: INK }}>Quick replies</h2>
+                <p style={{ fontSize: 11.5, color: FAINT_INK }}>Click text to insert · tap send icon to send now</p>
+              </div>
+              <button type="button" onClick={() => setQrOpen(false)} className="cursor-pointer p-1" style={{ color: FAINT_INK }} aria-label="Close quick replies">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="wa-scroll flex-1 min-h-0 px-3 py-3 space-y-3">
+              {/* Templates come straight from Settings → Message Templates, which
+                  carry no category field — so they live under one heading. */}
+              <div style={{ border: `1px solid ${LINE}`, borderRadius: 12, overflow: 'hidden' }}>
+                <button
+                  type="button"
+                  onClick={() => setCatOpen((p) => ({ ...p, templates: !p.templates }))}
+                  className="w-full flex items-center justify-between px-3 py-2.5 cursor-pointer"
+                  style={{ background: '#F7F3FF' }}
+                >
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: '#4A1FA0' }}>
+                    Message templates ({quickReplies.length})
+                  </span>
+                  <ChevronDown
+                    size={15}
+                    style={{ color: '#4A1FA0', transform: catOpen.templates ? 'rotate(180deg)' : undefined, transition: 'transform .15s' }}
+                  />
                 </button>
-              ))}
-            </div>
-          )}
-        </Card>
+                {catOpen.templates && (
+                  <div className="divide-y" style={{ borderColor: LINE }}>
+                    {quickReplies.length === 0 ? (
+                      <p className="px-3 py-3" style={{ fontSize: 12, color: FAINT_INK }}>
+                        No WhatsApp templates yet. Add them under Settings → Message Templates.
+                      </p>
+                    ) : (
+                      quickReplies.map((t) => (
+                        <div key={t._id} className="flex items-start gap-2 px-3 py-2.5">
+                          <div className="min-w-0 flex-1">
+                            <div style={{ fontSize: 12, fontWeight: 600, color: '#4A1FA0' }}>{t.label}</div>
+                            <button
+                              type="button"
+                              onClick={() => insertText(t.whatsappBody)}
+                              className="text-left w-full cursor-pointer hover:opacity-75"
+                              style={{ fontSize: 12.5, color: MUTED_INK, whiteSpace: 'pre-wrap' }}
+                              title="Insert into composer"
+                            >
+                              {t.whatsappBody}
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => sendText(t.whatsappBody)}
+                            disabled={!selectedPhone || send.isPending}
+                            className="shrink-0 inline-flex items-center justify-center rounded-full cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                            style={{ width: 26, height: 26, background: '#5B2BC9', color: '#fff' }}
+                            title="Send now"
+                            aria-label={`Send ${t.label} now`}
+                          >
+                            <Send size={12} />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
 
-        {/* Messages panel */}
-        <Card>
-          <CardHeader
-            title={selectedPhone ? `Chat — +${selectedPhone}` : 'All messages'}
-            subtitle={selectedPhone ? undefined : 'Click a conversation to filter'}
-            action={selectedConvo ? <LeadAction convo={selectedConvo} onChanged={onSent} /> : undefined}
-          />
-          {loadingMsgs ? (
-            <CardBody className="text-sm text-muted-foreground">Loading…</CardBody>
-          ) : sorted.length === 0 ? (
-            <CardBody className="text-sm text-muted-foreground flex items-center gap-2">
-              <MessageSquare size={16} />
-              No messages found.
-            </CardBody>
-          ) : (
-            <div className="px-4 py-3 space-y-2 max-h-[480px] overflow-y-auto">
-              {sorted.map((m) => (
-                <MessageBubble key={m._id} msg={m} />
-              ))}
+              {/* Custom message */}
+              <div style={{ border: `1px solid ${LINE}`, borderRadius: 12, overflow: 'hidden' }}>
+                <div className="px-3 py-2.5" style={{ background: '#F7F3FF', fontSize: 12.5, fontWeight: 700, color: '#4A1FA0' }}>
+                  Custom message
+                </div>
+                <div className="p-3 space-y-2">
+                  <textarea
+                    rows={4}
+                    value={custom}
+                    onChange={(e) => setCustom(e.target.value)}
+                    placeholder="Write a one-off message…"
+                    className="w-full resize-none px-3 py-2 text-[12.5px] focus:outline-none"
+                    style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', borderRadius: 10, color: INK }}
+                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { if (custom.trim()) insertText(custom.trim()) }}
+                      disabled={!custom.trim()}
+                      className="flex-1 rounded-lg py-1.5 cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed"
+                      style={{ fontSize: 12, fontWeight: 600, background: '#F7F3FF', border: '1px solid #EDE5FF', color: '#4A1FA0' }}
+                    >
+                      Insert
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { if (custom.trim()) { sendText(custom); setCustom('') } }}
+                      disabled={!custom.trim() || !selectedPhone || send.isPending}
+                      className="flex-1 rounded-lg py-1.5 text-white cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed"
+                      style={{ fontSize: 12, fontWeight: 600, background: '#5B2BC9' }}
+                    >
+                      {send.isPending ? 'Sending…' : 'Send now'}
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
-          )}
-        </Card>
+          </aside>
+        )}
       </div>
-
-      {/* Webhook setup hint */}
-      <Card>
-        <CardHeader title="Setup checklist" subtitle="Required before receiving inbound messages" />
-        <CardBody className="text-sm space-y-2">
-          <div className="flex items-start gap-2">
-            <span className="text-emerald-600 font-bold mt-0.5">1.</span>
-            <span>Enter your phone number ID, access token, verify token and app secret under <strong>Settings → Integrations</strong>.</span>
-          </div>
-          <div className="flex items-start gap-2">
-            <span className="text-emerald-600 font-bold mt-0.5">2.</span>
-            <span>In Meta Dashboard → WhatsApp → Configuration → Webhook, set Callback URL to <code className="bg-muted px-1 rounded text-xs">https://api.purplebox.ae/api/integrations/whatsapp/webhook</code></span>
-          </div>
-          <div className="flex items-start gap-2">
-            <span className="text-emerald-600 font-bold mt-0.5">3.</span>
-            <span>Set the Verify Token there to the same string you entered in Settings.</span>
-          </div>
-          <div className="flex items-start gap-2">
-            <span className="text-emerald-600 font-bold mt-0.5">4.</span>
-            <span>Subscribe to the <strong>messages</strong> field under Webhook Fields.</span>
-          </div>
-          <div className="flex items-start gap-2">
-            <span className="text-amber-600 font-bold mt-0.5">!</span>
-            <span className="text-muted-foreground">On a Meta test number you can only message 5 pre-registered recipients. A verified business number has no such limit.</span>
-          </div>
-        </CardBody>
-      </Card>
     </div>
   )
 }
