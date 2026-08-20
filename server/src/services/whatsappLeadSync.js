@@ -1,6 +1,6 @@
 import { Lead, User, WhatsAppLabelState, WhatsAppWebhookEvent, WhatsAppMessage } from '../models/index.js';
 import { normalizeLeadPhone } from '../routes/leads.js';
-import { noteInboundForBot } from './aiBot.js';
+import { noteInboundForBot, pauseBotForHuman } from './aiBot.js';
 
 const DEFAULT_STATUS_BY_LABEL = {
     lead: 'new',
@@ -170,7 +170,7 @@ function eventKeyFromPayload(payload) {
     return `fallback:${String(hash)}:${compact.length}`;
 }
 
-function extractMessagesFromPayload(payload) {
+export function extractMessagesFromPayload(payload) {
     const out = [];
     const entries = Array.isArray(payload?.entry) ? payload.entry : [];
     for (const entry of entries) {
@@ -178,23 +178,42 @@ function extractMessagesFromPayload(payload) {
         for (const change of changes) {
             const value = change?.value || {};
 
+            // Our own number, so a message "from" it is one of ours going out.
+            const ourNumber = normalizeLeadPhone(value?.metadata?.display_phone_number || '');
+
+            // Messages staff send from the WhatsApp Business app come back as
+            // echoes rather than under `messages`. Meta has used more than one
+            // name for the field depending on the Coexistence setup, so match
+            // on the suffix rather than pinning one spelling.
+            const echoKeys = Object.keys(value).filter((k) => k.endsWith('message_echoes'));
+            const echoes = echoKeys.flatMap((k) => (Array.isArray(value[k]) ? value[k] : []));
+
             const messages = Array.isArray(value?.messages) ? value.messages : [];
-            for (const msg of messages) {
+
+            for (const msg of [...messages, ...echoes]) {
                 const text = msg?.text?.body || '';
-                const from = msg?.from || '';
                 const messageId = msg?.id || '';
                 const type = msg?.type || 'text';
                 const ts = msg?.timestamp ? new Date(Number(msg.timestamp) * 1000) : new Date();
-                const phoneNormalized = normalizeLeadPhone(from);
+
+                // An echo carries `to`; an inbound message carries `from`. A
+                // message whose `from` is our own number is also outbound —
+                // some setups deliver echoes inside `messages` rather than in
+                // a field of their own.
+                const from = msg?.from || '';
+                const outbound = Boolean(msg?.to) || (ourNumber && normalizeLeadPhone(from) === ourNumber);
+                const counterparty = outbound ? (msg?.to || '') : from;
+
+                const phoneNormalized = normalizeLeadPhone(counterparty);
                 if (!phoneNormalized) continue;
                 out.push({
                     messageId,
-                    phone: from,
+                    phone: counterparty,
                     phoneNormalized,
-                    direction: 'inbound',
+                    direction: outbound ? 'outbound' : 'inbound',
                     type,
                     text,
-                    status: '',
+                    status: outbound ? 'sent' : '',
                     occurredAt: Number.isNaN(ts.getTime()) ? new Date() : ts,
                     raw: msg,
                 });
@@ -324,6 +343,16 @@ async function persistMessages(messages) {
                     type: msg.type,
                     occurredAt: msg.occurredAt,
                 });
+            } catch { /* the assistant must never break message delivery */ }
+        } else {
+            // A new outbound message we did not send ourselves is a colleague
+            // replying from the WhatsApp Business app, so the assistant stands
+            // back exactly as it does when someone types in the console.
+            // Messages we sent — including the assistant's own — were stored
+            // when they were sent and are skipped as duplicates above, so they
+            // never reach this line.
+            try {
+                await pauseBotForHuman(msg.phoneNormalized);
             } catch { /* the assistant must never break message delivery */ }
         }
     }

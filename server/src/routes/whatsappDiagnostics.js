@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { requireAdmin } from '../middleware/auth.js';
-import { WhatsAppWebhookHit } from '../models/index.js';
+import { WhatsAppWebhookHit, WhatsAppWebhookEvent, WhatsAppMessage } from '../models/index.js';
 
 const router = Router();
 const GRAPH = 'https://graph.facebook.com/v20.0';
@@ -171,5 +171,73 @@ router.post('/subscribe-waba', requireAdmin, async (req, res) => {
 function mask(t) {
     return t.length > 14 ? `${t.slice(0, 8)}…${t.slice(-4)}` : '(short)';
 }
+
+/**
+ * Which webhook fields Meta has actually sent, and the shape of each.
+ *
+ * "Is Meta sending us X?" has come up for every part of this integration —
+ * inbound messages, delivery receipts, and now echoes of messages staff send
+ * from the WhatsApp Business app. Guessing from the docs is slower and less
+ * reliable than reading what has arrived, so this reports it.
+ *
+ * Message text is never returned: only the field names, the keys inside them
+ * and counts, which is all that is needed to tell whether a field is arriving.
+ */
+router.get('/webhook-fields', requireAdmin, async (_req, res) => {
+    const events = await WhatsAppWebhookEvent.find({})
+        .sort({ createdAt: -1 }).limit(400).select('payload createdAt').lean();
+
+    const seen = new Map();
+    for (const ev of events) {
+        for (const entry of ev.payload?.entry || []) {
+            for (const change of entry?.changes || []) {
+                const field = change?.field || '(none)';
+                const value = change?.value || {};
+                const row = seen.get(field) || { field, count: 0, valueKeys: new Set(), sampleShape: null, lastAt: null };
+                row.count += 1;
+                for (const k of Object.keys(value)) row.valueKeys.add(k);
+                if (!row.lastAt) row.lastAt = ev.createdAt;
+                // One redacted sample: the keys of the first array element, so
+                // the shape is visible without exposing what anyone wrote.
+                if (!row.sampleShape) {
+                    for (const [k, v] of Object.entries(value)) {
+                        if (Array.isArray(v) && v.length && typeof v[0] === 'object') {
+                            row.sampleShape = { arrayKey: k, itemKeys: Object.keys(v[0]) };
+                            break;
+                        }
+                    }
+                }
+                seen.set(field, row);
+            }
+        }
+    }
+
+    // Where the stored messages came from. The top-level keys of the saved
+    // payload identify the writer: our own send route stores the Graph
+    // response, the webhook stores Meta's message object.
+    const recent = await WhatsAppMessage.find({})
+        .sort({ occurredAt: -1 }).limit(300).select('direction type raw occurredAt sentByAi').lean();
+
+    const sources = new Map();
+    for (const m of recent) {
+        const key = `${m.direction}|${Object.keys(m.raw || {}).sort().join(',') || '(empty)'}`;
+        const row = sources.get(key) || { direction: m.direction, rawKeys: Object.keys(m.raw || {}).sort(), count: 0, types: new Set(), lastAt: m.occurredAt };
+        row.count += 1;
+        row.types.add(m.type);
+        sources.set(key, row);
+    }
+
+    res.json({
+        eventsExamined: events.length,
+        oldest: events.length ? events[events.length - 1].createdAt : null,
+        fields: [...seen.values()]
+            .map((r) => ({ ...r, valueKeys: [...r.valueKeys] }))
+            .sort((a, b) => b.count - a.count),
+        messagesExamined: recent.length,
+        messageSources: [...sources.values()]
+            .map((r) => ({ ...r, types: [...r.types] }))
+            .sort((a, b) => b.count - a.count),
+    });
+});
 
 export default router;
