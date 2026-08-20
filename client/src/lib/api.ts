@@ -260,6 +260,8 @@ export type WhatsAppMsg = {
   text: string
   status: string
   occurredAt: string
+  // Written by the AI assistant rather than a colleague.
+  sentByAi?: boolean
   lead?: { _id: string; fullName: string; phone: string; status: string; source: string }
 }
 
@@ -271,6 +273,10 @@ export type WhatsAppConversation = {
   count: number
   lastAt: string
   lead: WhatsAppLeadRef | null
+  // AI assistant state for this thread: '' when it has never looked at it.
+  botStatus?: '' | 'bot' | 'escalated' | 'paused'
+  botDraft?: string
+  botEscalationReason?: string
 }
 
 export type WhatsAppCredentials = {

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import { Contract, Customer, Invoice, Lead, Payment, Quote, Unit, nextQuoteNo, nextContractNo, nextInvoiceNo } from '../models/index.js';
+import { availableUnitsResponse } from '../services/unitAvailability.js';
 import { syncUnitStatus } from '../utils/unitStatus.js';
 import { renderQuotePdf } from '../services/quotePdf.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
@@ -237,70 +238,7 @@ router.get('/available-units', async (req, res) => {
     const from = req.query.from ? new Date(req.query.from) : null;
     const to = req.query.to ? new Date(req.query.to) : null;
     const includeAll = req.query.all === 'true';
-
-    const unitFilter = includeAll ? {} : { status: { $in: ['available', 'reserved'] } };
-    const allUnits = await Unit.find(unitFilter).sort({ unitNumber: 1 }).lean();
-
-    const bookedUnitIds = new Set();
-    // unitId -> booking details, for hover tooltips in the unit picker
-    const bookingMap = new Map();
-    const addBooking = (unitId, entry) => {
-        const key = String(unitId);
-        if (!bookingMap.has(key)) bookingMap.set(key, []);
-        bookingMap.get(key).push(entry);
-    };
-
-    const openContracts = await Contract.find({ status: { $in: ['active', 'pending_signature'] } })
-        .select('contractNo customer unit units startDate endDate status')
-        .populate('customer', 'fullName')
-        .lean();
-
-    for (const c of openContracts) {
-        const unitIds = [c.unit, ...(c.units || [])].filter(Boolean).map(String);
-        const overlaps = from && to && new Date(c.startDate) <= to && new Date(c.endDate) >= from;
-        for (const uid of new Set(unitIds)) {
-            if (overlaps) {
-                bookedUnitIds.add(uid);
-                addBooking(uid, { kind: 'contract', ref: c.contractNo, customer: c.customer?.fullName || '', startDate: c.startDate, endDate: c.endDate, status: c.status });
-            } else if (includeAll) {
-                // Current tenancy that does not clash with the requested period
-                addBooking(uid, { kind: 'current', ref: c.contractNo, customer: c.customer?.fullName || '', startDate: c.startDate, endDate: c.endDate, status: c.status });
-            }
-        }
-    }
-
-    if (from && to) {
-        const openQuotes = await Quote.find({
-            status: { $in: ['sent', 'accepted'] },
-            'units.startDate': { $lte: to },
-            'units.endDate': { $gte: from },
-        })
-            .select('quoteNo customer units status')
-            .populate('customer', 'fullName')
-            .lean();
-
-        for (const q of openQuotes) {
-            for (const u of q.units || []) {
-                if (new Date(u.startDate) <= to && new Date(u.endDate) >= from) {
-                    const uid = String(u.unit);
-                    bookedUnitIds.add(uid);
-                    addBooking(uid, { kind: 'quote', ref: q.quoteNo, customer: q.customer?.fullName || '', startDate: u.startDate, endDate: u.endDate, status: q.status });
-                }
-            }
-        }
-    }
-
-    if (includeAll) {
-        // Every unit, flagged with whether it is booked for the requested period + booking details.
-        return res.json(allUnits.map((u) => ({
-            ...u,
-            bookedInPeriod: bookedUnitIds.has(u._id.toString()),
-            bookings: bookingMap.get(u._id.toString()) || [],
-        })));
-    }
-
-    if (!from || !to) return res.json(allUnits);
-    res.json(allUnits.filter((u) => !bookedUnitIds.has(u._id.toString())));
+    res.json(await availableUnitsResponse({ from, to, includeAll }));
 });
 
 router.get('/', async (req, res) => {

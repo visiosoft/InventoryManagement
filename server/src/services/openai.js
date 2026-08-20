@@ -45,6 +45,37 @@ export async function verifyOpenAIKey(apiKey, model) {
 }
 
 /**
+ * A chat completion constrained to JSON, which is how everything here talks to
+ * the model — prose answers are impossible to validate, and every caller needs
+ * to check the model's output before acting on it.
+ *
+ * Returns the parsed object, or `null` when the model produced something that
+ * is not JSON. Callers must treat null as a failure to answer, never as an
+ * empty answer.
+ */
+export async function chatJson({ system, messages = [], temperature = 0, maxTokens = 400, timeout = 30000 }) {
+    const { data } = await axios.post(
+        `${API_BASE}/chat/completions`,
+        {
+            model: openaiModel(),
+            messages: [{ role: 'system', content: system }, ...messages],
+            response_format: { type: 'json_object' },
+            temperature,
+            max_tokens: maxTokens,
+        },
+        { headers: headers(), timeout },
+    );
+
+    const raw = data?.choices?.[0]?.message?.content || '';
+    try {
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
  * Parse a phrase into availability filters.
  *
  * `context` supplies the real floors and sizes so the model maps "small" or

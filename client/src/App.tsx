@@ -64,6 +64,7 @@ import Settings from './pages/Settings'
 import MessageTemplates from './pages/MessageTemplates'
 import WhatsAppDebug from './pages/WhatsAppDebug'
 import AgreementTemplate from './pages/AgreementTemplate'
+import AiAssistant from './pages/AiAssistant'
 import ZohoComparison from './pages/ZohoComparison'
 import Backup from './pages/Backup'
 import Leads from './pages/Leads'
@@ -223,6 +224,7 @@ export default function App() {
         <Route path="/zoho-comparison" element={<AdminGuard><ZohoComparison /></AdminGuard>} />
         <Route path="/settings/reminders" element={<AdminGuard><ReminderSettings /></AdminGuard>} />
         <Route path="/settings/automation" element={<AdminGuard><AutomationRules /></AdminGuard>} />
+        <Route path="/settings/ai" element={<AdminGuard><AiAssistant /></AdminGuard>} />
         <Route path="/whatsapp" element={<WhatsApp />} />
         <Route path="/whatsapp/setup" element={<AdminGuard><WhatsAppSetup /></AdminGuard>} />
 

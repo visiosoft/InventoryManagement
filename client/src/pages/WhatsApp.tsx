@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import {
   Send, MessageSquare, RefreshCw, UserPlus, UserCheck, Bell, BellOff, FileText,
   Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Info, Paperclip,
+  Bot,
 } from 'lucide-react'
 import { api, whatsappApi, leadApi, apiError, type WhatsAppConversation, type WhatsAppMsg } from '../lib/api'
 import { cn } from '../lib/utils'
@@ -389,6 +390,13 @@ function MessageBubble({ msg }: { msg: WaMsg }) {
           style={{ color: out ? 'rgba(20,8,31,.45)' : FAINT_INK }}
           title={out ? msg.status || 'sent' : undefined}
         >
+          {/* Say when the assistant wrote it. Letting an AI reply pass as a
+              colleague's is the kind of thing people mind afterwards. */}
+          {msg.sentByAi && (
+            <span className="inline-flex items-center gap-0.5" title="Written by the AI assistant">
+              <Bot size={11} /> AI
+            </span>
+          )}
           <span>{formatClock(msg.occurredAt)}</span>
           {/* Grey until read, then WhatsApp's blue — the same signal people
               already read without being told. */}
@@ -798,6 +806,14 @@ export default function WhatsApp() {
     onError: (e) => setSendErr(apiError(e)),
   })
 
+  // Clearing a suggestion is a server-side change: the draft lives on the
+  // thread, so dismissing it locally would only have it reappear on the next
+  // poll.
+  const dismissDraft = useMutation({
+    mutationFn: (phone: string) => api.post(`/ai-bot/threads/${phone}/dismiss-draft`).then((r) => r.data),
+    onSuccess: () => onSent(),
+  })
+
   function sendText(body: string) {
     const text = body.trim()
     if (!text) return
@@ -984,6 +1000,22 @@ export default function WhatsApp() {
                         <span className="truncate flex-1" style={{ fontSize: 12, color: MUTED_INK }}>
                           {previewByPhone[c.phoneNormalized] ?? `${c.count} messages`}
                         </span>
+                        {/* The assistant is waiting on someone, or has one
+                            ready to send — both need a person, so both are
+                            visible without opening the thread. */}
+                        {c.botStatus === 'escalated' ? (
+                          <span className="shrink-0 rounded-full px-1.5 py-0.5"
+                            style={{ fontSize: 10, fontWeight: 700, background: '#FFF1CC', color: '#8A5A00' }}
+                            title={c.botEscalationReason || 'The assistant handed this over'}>
+                            Needs you
+                          </span>
+                        ) : c.botDraft ? (
+                          <span className="shrink-0 rounded-full px-1.5 py-0.5"
+                            style={{ fontSize: 10, fontWeight: 700, background: '#EDE5FF', color: '#4A1FA0' }}
+                            title="A suggested reply is waiting">
+                            Reply ready
+                          </span>
+                        ) : null}
                         {c.lead && (
                           <span
                             className="shrink-0 rounded-full px-1.5 py-0.5"
@@ -1092,6 +1124,54 @@ export default function WhatsApp() {
 
           {sendErr && (
             <p className="shrink-0 px-6 pb-1 text-xs" style={{ color: '#B91C1C' }}>{sendErr}</p>
+          )}
+
+          {/* The assistant handed this thread over. Shown rather than silently
+              going quiet, so nobody wonders why it stopped replying. */}
+          {selectedConvo?.botStatus === 'escalated' && (
+            <div className="shrink-0 mx-6 mb-2 flex items-start gap-2 rounded-xl px-3.5 py-2.5"
+              style={{ background: '#FFF7E6', border: '1px solid #F5D9A0' }}>
+              <UserCheck size={15} style={{ color: '#8A5A00', flex: '0 0 auto', marginTop: 1 }} />
+              <div className="min-w-0" style={{ fontSize: 12.5, color: '#6B4500' }}>
+                <span style={{ fontWeight: 700 }}>Waiting for a person.</span>{' '}
+                {selectedConvo.botEscalationReason || 'The assistant could not answer this one.'}
+              </div>
+            </div>
+          )}
+
+          {/* A suggested reply. It is never sent on its own — someone reads it
+              and presses Send, or edits it in the composer first. */}
+          {selectedConvo?.botDraft && (
+            <div className="shrink-0 mx-6 mb-2 rounded-xl px-3.5 py-3"
+              style={{ background: '#F3EEFF', border: '1px solid #D9CBFA' }}>
+              <div className="flex items-center gap-1.5 mb-1.5" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#4A1FA0' }}>
+                <Bot size={13} /> Suggested reply
+              </div>
+              <div className="whitespace-pre-wrap" style={{ fontSize: 13, color: MUTED_INK }}>
+                {selectedConvo.botDraft}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 mt-2.5">
+                <button type="button"
+                  onClick={() => sendText(selectedConvo.botDraft!)}
+                  disabled={send.isPending}
+                  className="h-7 px-3 rounded-full text-white cursor-pointer disabled:opacity-50"
+                  style={{ background: '#5B2BC9', fontSize: 12, fontWeight: 700 }}>
+                  Send
+                </button>
+                <button type="button"
+                  onClick={() => { insertText(selectedConvo.botDraft!); dismissDraft.mutate(selectedConvo.phoneNormalized) }}
+                  className="h-7 px-3 rounded-full cursor-pointer"
+                  style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, fontWeight: 600, color: MUTED_INK }}>
+                  Edit
+                </button>
+                <button type="button"
+                  onClick={() => dismissDraft.mutate(selectedConvo.phoneNormalized)}
+                  className="h-7 px-2.5 rounded-full cursor-pointer"
+                  style={{ fontSize: 12, fontWeight: 600, color: FAINT_INK }}>
+                  Dismiss
+                </button>
+              </div>
+            </div>
           )}
 
           {/* Drag upward to make the message box taller — long replies are

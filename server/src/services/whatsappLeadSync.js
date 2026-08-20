@@ -1,5 +1,6 @@
 import { Lead, User, WhatsAppLabelState, WhatsAppWebhookEvent, WhatsAppMessage } from '../models/index.js';
 import { normalizeLeadPhone } from '../routes/leads.js';
+import { noteInboundForBot } from './aiBot.js';
 
 const DEFAULT_STATUS_BY_LABEL = {
     lead: 'new',
@@ -308,6 +309,22 @@ async function persistMessages(messages) {
         if (lead && msg.direction === 'inbound' && msg.text) {
             pushTimeline(lead, 'whatsapp_message', `Inbound WhatsApp message: ${msg.text.slice(0, 200)}`);
             await lead.save();
+        }
+
+        // Hand the message to the AI assistant's queue. Inbound only — noting
+        // our own outbound messages would have it answering itself. The worker
+        // decides whether to reply; this only records that something arrived,
+        // so the webhook still returns to Meta immediately.
+        if (msg.direction === 'inbound') {
+            try {
+                await noteInboundForBot({
+                    phoneNormalized: msg.phoneNormalized,
+                    messageId: msg.messageId,
+                    text: msg.text,
+                    type: msg.type,
+                    occurredAt: msg.occurredAt,
+                });
+            } catch { /* the assistant must never break message delivery */ }
         }
     }
 

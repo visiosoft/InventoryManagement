@@ -217,6 +217,9 @@ const whatsappMessageSchema = new Schema(
     text: { type: String, default: '' },
     status: { type: String, default: '' },
     occurredAt: { type: Date, default: Date.now },
+    // Written by the assistant rather than a colleague. The console labels
+    // these, so a customer's reply is never mistaken for a human's work.
+    sentByAi: { type: Boolean, default: false },
     raw: { type: Schema.Types.Mixed },
   },
   { timestamps: true }
@@ -1238,6 +1241,52 @@ const reminderLogSchema = new Schema({
 }, { timestamps: true });
 reminderLogSchema.index({ payment: 1, sentAt: -1 });
 reminderLogSchema.index({ contract: 1, sentAt: -1 });
+
+// ── WhatsApp AI assistant ────────────────────────────────────────────────────
+// One config document for the whole account, the same shape reminderConfig uses.
+// `mode` is the safety switch: 'draft' writes a suggestion into the console for
+// a human to send, 'auto' sends it to the customer with nobody in between.
+const aiBotConfigSchema = new Schema({
+  enabled: { type: Boolean, default: false },
+  mode: { type: String, enum: ['draft', 'auto'], default: 'draft' },
+  systemPrompt: { type: String, default: '' },
+  useAvailability: { type: Boolean, default: true },
+  escalateTo: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+  handoverKeywords: { type: [String], default: ['human', 'agent', 'manager', 'call me', 'speak to someone'] },
+  maxRepliesPerThreadPerDay: { type: Number, default: 20 },
+  humanPauseHours: { type: Number, default: 12 },
+}, { timestamps: true });
+
+// One per conversation, holding the state machine and any pending draft.
+//
+// `pendingMessageId` vs `handledMessageId` is the whole idempotency story: the
+// webhook only records what arrived, and the worker marks it handled before it
+// generates anything, so a crash mid-send can never produce a second reply.
+const aiBotThreadSchema = new Schema({
+  phoneNormalized: { type: String, required: true, unique: true },
+  // 'bot' answers, 'escalated' waits for the assigned person, 'paused' means a
+  // colleague replied by hand and the assistant stays out of the way for a while.
+  status: { type: String, enum: ['bot', 'escalated', 'paused'], default: 'bot' },
+  pausedUntil: { type: Date, default: null },
+  pendingMessageId: { type: String, default: '' },
+  pendingText: { type: String, default: '' },
+  pendingType: { type: String, default: 'text' },
+  pendingAt: { type: Date, default: null },
+  handledMessageId: { type: String, default: '' },
+  draftText: { type: String, default: '' },
+  draftAt: { type: Date, default: null },
+  // Reply budget, reset when the date string changes rather than on a timer.
+  repliesOn: { type: String, default: '' },
+  repliesCount: { type: Number, default: 0 },
+  escalatedAt: { type: Date, default: null },
+  escalationReason: { type: String, default: '' },
+  escalationTask: { type: Schema.Types.ObjectId, ref: 'Task', default: null },
+  lastError: { type: String, default: '' },
+}, { timestamps: true });
+aiBotThreadSchema.index({ status: 1, updatedAt: -1 });
+
+export const AiBotConfig = model('AiBotConfig', aiBotConfigSchema);
+export const AiBotThread = model('AiBotThread', aiBotThreadSchema);
 
 const counterSchema = new Schema({
   key: { type: String, required: true, unique: true },

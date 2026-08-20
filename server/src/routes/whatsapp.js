@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { mediaFromRaw } from './whatsappMedia.js';
-import { WhatsAppMessage, Lead, Customer } from '../models/index.js';
+import { WhatsAppMessage, Lead, Customer, AiBotThread } from '../models/index.js';
 import { sendWhatsAppText, sendWhatsAppMedia, uploadWhatsAppMedia, whatsappMediaKind, whatsappSendConfigured, whatsappSendMissing } from '../services/whatsapp.js';
+import { pauseBotForHuman } from '../services/aiBot.js';
 import multer from 'multer';
 import { createLeadFromWhatsAppPhone } from '../services/whatsappLeadSync.js';
 
@@ -81,10 +82,18 @@ router.get('/conversations', async (_req, res) => {
     // not a name, so it must never win over the number.
     const isPlaceholderName = (n) => !n || /^whatsapp\s*contact/i.test(String(n).trim());
 
+    // The AI assistant's state per thread — whether it has a suggestion waiting
+    // and whether it has handed the conversation over.
+    const botThreads = await AiBotThread.find({ phoneNormalized: { $in: rows.map((r) => r._id) } })
+        .select('phoneNormalized status draftText escalationReason')
+        .lean();
+    const byThread = new Map(botThreads.map((t) => [t.phoneNormalized, t]));
+
     res.json(rows.map((r) => {
         const lead = r.lead?.[0] || null;
         const customer = byPhone.get(suffix(r._id)) || null;
         const leadName = isPlaceholderName(lead?.fullName) ? '' : lead.fullName;
+        const bot = byThread.get(r._id) || null;
         return {
             phoneNormalized: r._id,
             phone: r.phone,
@@ -95,6 +104,9 @@ router.get('/conversations', async (_req, res) => {
             // What the inbox should show: a real name if we hold one,
             // otherwise the number itself — never a placeholder.
             displayName: customer?.fullName || leadName || (r.phone || r._id),
+            botStatus: bot?.status || '',
+            botDraft: bot?.draftText || '',
+            botEscalationReason: bot?.escalationReason || '',
         };
     }));
 });
@@ -151,8 +163,15 @@ router.post('/send', async (req, res) => {
         text: body,
         status: 'sent',
         occurredAt: new Date(),
+        // Set explicitly by the assistant's own send; a message from this route
+        // is always someone typing it.
+        sentByAi: false,
         raw: result,
     });
+
+    // A colleague has taken the conversation, so the assistant steps back and
+    // its pending suggestion — now stale — is dropped.
+    await pauseBotForHuman(phoneNormalized);
 
     res.json({ ok: true, result });
 });
@@ -196,6 +215,8 @@ router.post('/send-media', upload.single('file'), async (req, res) => {
             // same proxy serves it back into the thread.
             raw: { [kind]: { id: mediaId, mime_type: req.file.mimetype, filename: req.file.originalname, caption }, sendResult: result },
         });
+
+        await pauseBotForHuman(String(to).replace(/\D/g, ''));
 
         res.json({ ok: true, kind, mediaId });
     } catch (e) {

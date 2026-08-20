@@ -31,6 +31,7 @@ import signingRoutes from './routes/signing.js';
 import stripeWebhookRoutes from './routes/stripeWebhook.js';
 import userRoutes from './routes/users.js';
 import whatsappRoutes from './routes/whatsapp.js';
+import aiBotRoutes from './routes/aiBot.js';
 import workerRoutes from './routes/workers.js';
 import truckRoutes from './routes/trucks.js';
 import movingJobRoutes, { publicUploadRouter as movingJobPublicUpload, publicShareRouter as movingJobPublicShare } from './routes/movingJobs.js';
@@ -58,6 +59,7 @@ import crewAuthRoutes from './routes/crewAuth.js';
 import crewPortalRoutes from './routes/crewPortal.js';
 import { startBackupScheduler } from './services/backup.js';
 import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
+import { runAiBotTick } from './services/aiBot.js';
 import { runAutomationRules, getAutoSend } from './services/automationEngine.js';
 
 const app = express();
@@ -181,6 +183,7 @@ app.use('/api/whatsapp-media', requireAuth, whatsappMediaRoutes);
 app.use('/api/users', requireAuth, userRoutes);
 app.use('/api/backup', requireAuth, backupRoutes);
 app.use('/api/whatsapp', requireAuth, whatsappRoutes);
+app.use('/api/ai-bot', requireAuth, aiBotRoutes);
 app.use('/api/reminder-config', requireAuth, reminderConfigRoutes);
 app.use('/api/message-templates', requireAuth, messageTemplateRoutes);
 app.use('/api/agreement-template', requireAuth, agreementTemplateRoutes);
@@ -255,6 +258,15 @@ async function start() {
     await automationTick();
     setInterval(automationTick, REMINDER_INTERVAL);
   }, 15_000);
+
+  // WhatsApp AI assistant. Deliberately not run inside the webhook: an OpenAI
+  // round trip in front of Meta's ACK would make the webhook slow enough for
+  // Meta to retry it, and the retry would send the customer a second reply.
+  // The short interval also lets a burst of messages settle into one answer.
+  const AI_BOT_INTERVAL = 10 * 1000;
+  setTimeout(() => setInterval(() => {
+    runAiBotTick().catch((e) => console.error('[AI bot]', e.message));
+  }, AI_BOT_INTERVAL), 20_000);
 }
 
 start().catch((err) => {

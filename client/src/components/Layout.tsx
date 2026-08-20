@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Target, Calculator, ListTodo, NotebookPen, MessageCircle } from 'lucide-react'
+import { Bot, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Target, Calculator, ListTodo, NotebookPen, MessageCircle } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import GlobalSearch from './GlobalSearch'
@@ -60,6 +60,7 @@ const profileMenuGroups = [
       { to: '/settings/templates', label: 'Message Templates', icon: Mail, perm: 'settings', adminOnly: false },
       { to: '/settings/agreement', label: 'Agreement Template', icon: FileText, perm: 'settings', adminOnly: false },
       { to: '/settings/automation', label: 'Automation Rules', icon: RefreshCw, perm: 'settings', adminOnly: false },
+      { to: '/settings/ai', label: 'AI Assistant', icon: Bot, perm: 'settings', adminOnly: false },
       { to: '/zoho-comparison', label: 'Zoho Comparison', icon: RefreshCw, perm: 'settings', adminOnly: false },
     ],
   },
