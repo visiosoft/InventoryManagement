@@ -262,6 +262,10 @@ export type WhatsAppMsg = {
   occurredAt: string
   // Written by the AI assistant rather than a colleague.
   sentByAi?: boolean
+  // Set when the sender edited, deleted or reacted to this message afterwards.
+  editedAt?: string | null
+  deletedAt?: string | null
+  reaction?: string
   lead?: { _id: string; fullName: string; phone: string; status: string; source: string }
 }
 

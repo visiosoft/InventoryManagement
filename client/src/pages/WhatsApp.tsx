@@ -375,14 +375,18 @@ function MessageBubble({ msg }: { msg: WaMsg }) {
             : { background: '#fff', color: INK, borderBottomLeftRadius: 6, border: `1px solid ${LINE}`, boxShadow: '0 1px 2px rgba(20,8,31,.06)' }
         }
       >
-        {msg.media ? (
+        {/* A deleted message keeps its place in the thread — the gap where it
+            was is part of the conversation — but its content is gone. */}
+        {msg.deletedAt ? (
+          <p className="italic opacity-60">This message was deleted</p>
+        ) : msg.media ? (
           <Attachment messageId={msg.messageId} media={msg.media} />
         ) : (
           <p className="whitespace-pre-wrap break-words">
             {msg.text || <span className="italic opacity-60">[{msg.type}]</span>}
           </p>
         )}
-        {msg.media && msg.text && !msg.media.caption && (
+        {!msg.deletedAt && msg.media && msg.text && !msg.media.caption && (
           <p className="whitespace-pre-wrap break-words mt-1">{msg.text}</p>
         )}
         <div
@@ -390,6 +394,7 @@ function MessageBubble({ msg }: { msg: WaMsg }) {
           style={{ color: out ? 'rgba(20,8,31,.45)' : FAINT_INK }}
           title={out ? msg.status || 'sent' : undefined}
         >
+          {msg.editedAt && !msg.deletedAt && <span className="italic">edited</span>}
           {/* Say when the assistant wrote it. Letting an AI reply pass as a
               colleague's is the kind of thing people mind afterwards. */}
           {msg.sentByAi && (
@@ -402,6 +407,17 @@ function MessageBubble({ msg }: { msg: WaMsg }) {
               already read without being told. */}
           {out && <CheckCheck size={13} style={{ color: msg.status === 'read' ? '#53BDEB' : 'rgba(20,8,31,.35)' }} />}
         </div>
+        {msg.reaction && (
+          <div className={cn('flex -mb-1 mt-0.5', out ? 'justify-end' : 'justify-start')}>
+            <span
+              className="inline-flex items-center rounded-full px-1.5 py-0.5"
+              style={{ background: '#fff', border: `1px solid ${LINE}`, fontSize: 12, lineHeight: 1.2, boxShadow: '0 1px 2px rgba(20,8,31,.08)' }}
+              title="Reaction"
+            >
+              {msg.reaction}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   )

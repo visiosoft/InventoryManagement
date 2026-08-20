@@ -206,13 +206,25 @@ export function extractMessagesFromPayload(payload) {
 
                 const phoneNormalized = normalizeLeadPhone(counterparty);
                 if (!phoneNormalized) continue;
+
+                // An edit, a delete or a reaction is a change to a message we
+                // already hold, not a new one. Each names its target, so it is
+                // carried as a control record and applied rather than stored.
+                const target = msg?.edit?.original_message_id
+                    || msg?.revoke?.original_message_id
+                    || msg?.reaction?.message_id
+                    || '';
+
                 out.push({
                     messageId,
                     phone: counterparty,
                     phoneNormalized,
                     direction: outbound ? 'outbound' : 'inbound',
                     type,
-                    text,
+                    text: type === 'edit' ? (msg?.edit?.message?.text?.body || '')
+                        : type === 'reaction' ? (msg?.reaction?.emoji || '')
+                        : text,
+                    targetMessageId: target,
                     status: outbound ? 'sent' : '',
                     occurredAt: Number.isNaN(ts.getTime()) ? new Date() : ts,
                     raw: msg,
@@ -292,6 +304,22 @@ async function persistMessages(messages) {
                     { messageId: msg.messageId },
                     { $set: { status: msg.status } },
                 );
+            }
+            continue;
+        }
+
+        // Edits, deletions and reactions change a message already in the
+        // thread. Storing them as bubbles of their own is what produced the
+        // blank rows in the console — an edit showed as a second message and a
+        // deletion as an empty one.
+        if (msg.type === 'edit' || msg.type === 'revoke' || msg.type === 'reaction') {
+            if (msg.targetMessageId) {
+                const change =
+                    msg.type === 'edit' ? { text: msg.text, editedAt: msg.occurredAt }
+                    : msg.type === 'revoke' ? { deletedAt: msg.occurredAt }
+                    // An empty emoji is how WhatsApp says a reaction was removed.
+                    : { reaction: msg.text || '' };
+                await WhatsAppMessage.updateOne({ messageId: msg.targetMessageId }, { $set: change });
             }
             continue;
         }

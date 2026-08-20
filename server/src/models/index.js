@@ -220,6 +220,12 @@ const whatsappMessageSchema = new Schema(
     // Written by the assistant rather than a colleague. The console labels
     // these, so a customer's reply is never mistaken for a human's work.
     sentByAi: { type: Boolean, default: false },
+    // WhatsApp lets people edit, delete and react to a message after sending
+    // it. Each arrives as its own webhook naming the message it changes, so
+    // they are recorded here rather than stored as bubbles of their own.
+    editedAt: { type: Date, default: null },
+    deletedAt: { type: Date, default: null },
+    reaction: { type: String, default: '' },
     raw: { type: Schema.Types.Mixed },
   },
   { timestamps: true }

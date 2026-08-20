@@ -212,6 +212,21 @@ router.get('/webhook-fields', requireAdmin, async (_req, res) => {
         }
     }
 
+    // The structure of a stored payload, values replaced by their type, so a
+    // message shape can be read without reading anyone's message.
+    const shapeOf = (v, depth = 0) => {
+        if (v === null) return 'null';
+        if (Array.isArray(v)) return depth > 2 ? '[…]' : [shapeOf(v[0], depth + 1)];
+        if (typeof v !== 'object') return typeof v;
+        if (depth > 2) return '{…}';
+        return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, shapeOf(x, depth + 1)]));
+    };
+
+    const wanted = String(_req.query.shape || '').trim();
+    const shapeSample = wanted
+        ? await WhatsAppMessage.findOne({ type: wanted }).sort({ occurredAt: -1 }).select('raw type direction').lean()
+        : null;
+
     // Where the stored messages came from. The top-level keys of the saved
     // payload identify the writer: our own send route stores the Graph
     // response, the webhook stores Meta's message object.
@@ -233,11 +248,80 @@ router.get('/webhook-fields', requireAdmin, async (_req, res) => {
         fields: [...seen.values()]
             .map((r) => ({ ...r, valueKeys: [...r.valueKeys] }))
             .sort((a, b) => b.count - a.count),
+        shape: shapeSample ? { type: shapeSample.type, direction: shapeSample.direction, raw: shapeOf(shapeSample.raw) } : null,
         messagesExamined: recent.length,
         messageSources: [...sources.values()]
             .map((r) => ({ ...r, types: [...r.types] }))
             .sort((a, b) => b.count - a.count),
     });
+});
+
+/**
+ * What this app is actually subscribed to on Meta's side.
+ *
+ * Ticking a webhook field in the App Dashboard can fail for reasons the
+ * dashboard does not explain — the field may not exist for this app, or the
+ * number may not have completed Coexistence onboarding. This reports the real
+ * state so the failure can be told apart from a mis-click.
+ */
+router.get('/webhook-subscription', requireAdmin, async (_req, res) => {
+    const token = String(process.env.WHATSAPP_ACCESS_TOKEN || '').trim();
+    const secret = String(process.env.WHATSAPP_APP_SECRET || '').trim();
+    const waba = String(process.env.WHATSAPP_WABA_ID || '').trim();
+    if (!token) return res.status(400).json({ error: 'No WhatsApp access token is configured' });
+
+    const out = { waba: waba || null };
+
+    // Which app the token belongs to, and therefore whose subscriptions matter.
+    const dbg = await graph(`debug_token?input_token=${encodeURIComponent(token)}`, token);
+    out.token = dbg.ok
+        ? {
+            appId: dbg.body?.data?.app_id || null,
+            appName: dbg.body?.data?.application || null,
+            valid: dbg.body?.data?.is_valid ?? null,
+            scopes: dbg.body?.data?.scopes || [],
+            expiresAt: dbg.body?.data?.expires_at || null,
+        }
+        : { error: dbg.error || `HTTP ${dbg.status}` };
+
+    // Which apps the WhatsApp Business Account has authorised.
+    if (waba) {
+        const subs = await graph(`${waba}/subscribed_apps`, token);
+        out.subscribedApps = subs.ok ? subs.body?.data || [] : { error: subs.error || `HTTP ${subs.status}` };
+    } else {
+        out.subscribedApps = { error: 'WHATSAPP_WABA_ID is not set' };
+    }
+
+    // The webhook fields the app is subscribed to. This needs an app access
+    // token, which is the app id and secret joined — a user token is rejected.
+    const appId = out.token?.appId;
+    if (appId && secret) {
+        const appToken = `${appId}|${secret}`;
+        const r = await graph(`${appId}/subscriptions?access_token=${encodeURIComponent(appToken)}`, appToken);
+        if (r.ok) {
+            const wa = (r.body?.data || []).find((d) => d.object === 'whatsapp_business_account');
+            out.webhook = wa
+                ? {
+                    callbackUrl: wa.callback_url,
+                    active: wa.active,
+                    fields: (wa.fields || []).map((f) => (typeof f === 'string' ? f : f.name)).sort(),
+                }
+                : { error: 'This app has no whatsapp_business_account webhook subscription' };
+        } else {
+            out.webhook = { error: r.error || `HTTP ${r.status}` };
+        }
+    } else {
+        out.webhook = { error: !appId ? 'Could not determine the app id from the token' : 'WHATSAPP_APP_SECRET is not set' };
+    }
+
+    // The answer to the question that prompted this.
+    const fields = Array.isArray(out.webhook?.fields) ? out.webhook.fields : [];
+    out.echoes = {
+        subscribed: fields.some((f) => f.endsWith('message_echoes')),
+        fieldsMatching: fields.filter((f) => f.endsWith('message_echoes')),
+    };
+
+    res.json(out);
 });
 
 export default router;

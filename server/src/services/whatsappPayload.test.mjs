@@ -86,6 +86,42 @@ test('a message with no usable number is dropped rather than stored blank', () =
     assert.equal(extractMessagesFromPayload(payload({ messages: [{ id: 'x', type: 'text', from: '' }] })).length, 0);
 });
 
+test('an edit carries the new text and the message it replaces', () => {
+    const [m] = extractMessagesFromPayload(payload({
+        messages: [{
+            from: CUSTOMER, id: 'wamid.E', type: 'edit', timestamp: '1755700400',
+            edit: { original_message_id: 'wamid.IN1', message: { type: 'text', text: { body: 'Actually, 75 sqft' } } },
+        }],
+    }));
+    assert.equal(m.type, 'edit');
+    assert.equal(m.targetMessageId, 'wamid.IN1');
+    assert.equal(m.text, 'Actually, 75 sqft');
+});
+
+test('a deletion names the message it removes', () => {
+    const [m] = extractMessagesFromPayload(payload({
+        messages: [{
+            from: CUSTOMER, id: 'wamid.R', type: 'revoke', timestamp: '1755700500',
+            revoke: { original_message_id: 'wamid.IN1' },
+        }],
+    }));
+    assert.equal(m.type, 'revoke');
+    assert.equal(m.targetMessageId, 'wamid.IN1');
+});
+
+test('a reaction carries its emoji and target, and an empty one means removed', () => {
+    const react = (emoji) => extractMessagesFromPayload(payload({
+        messages: [{
+            from: CUSTOMER, id: 'wamid.K', type: 'reaction', timestamp: '1755700600',
+            reaction: { message_id: 'wamid.IN1', emoji },
+        }],
+    }))[0];
+    const thumbsUp = '\u{1F44D}';
+    assert.equal(react(thumbsUp).text, thumbsUp);
+    assert.equal(react(thumbsUp).targetMessageId, 'wamid.IN1');
+    assert.equal(react('').text, '');
+});
+
 test('an empty payload yields nothing', () => {
     assert.deepEqual(extractMessagesFromPayload({}), []);
     assert.deepEqual(extractMessagesFromPayload(payload({})), []);
