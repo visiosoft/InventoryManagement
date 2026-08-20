@@ -60,14 +60,28 @@ test('replies just inside the window', () => {
 });
 
 test('hands over media it cannot read', () => {
-    for (const type of ['image', 'audio', 'document', 'video']) {
+    for (const type of ['image', 'audio', 'document', 'video', 'voice', 'location', 'contacts']) {
         const r = decide({ pendingType: type, pendingText: '' });
         assert.equal(r.action, 'escalate', `${type} should escalate`);
     }
 });
 
-test('hands over an empty message rather than answering nothing', () => {
-    assert.equal(decide({ pendingText: '   ' }).action, 'escalate');
+test('media handover reads as English, not "a unsupported"', () => {
+    assert.match(decide({ pendingType: 'image', pendingText: '' }).reason, /sent a photo/);
+    assert.match(decide({ pendingType: 'voice', pendingText: '' }).reason, /sent a voice note/);
+});
+
+test('ignores reactions and system notices instead of handing them over', () => {
+    // Escalating mutes the thread. A thumbs-up must never be able to stop the
+    // assistant answering that customer for good.
+    for (const type of ['reaction', 'system', 'unsupported', 'ephemeral', 'sticker']) {
+        const r = decide({ pendingType: type, pendingText: '' });
+        assert.equal(r.action, 'skip', `${type} should be ignored, not escalated`);
+    }
+});
+
+test('ignores an empty message rather than raising a task about it', () => {
+    assert.equal(decide({ pendingText: '   ' }).action, 'skip');
 });
 
 test('hands over when the daily cap is reached', () => {

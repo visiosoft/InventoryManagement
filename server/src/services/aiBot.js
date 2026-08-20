@@ -14,6 +14,25 @@ const REPLY_WINDOW_HOURS = 23;
 // a long-running thread cannot grow the prompt without limit.
 const HISTORY_TURNS = 12;
 
+// Message types that carry no question. A thumbs-up reaction, a system notice
+// or something this WhatsApp version cannot render is not a customer asking
+// for help — treating them as unreadable content handed whole conversations
+// to a person and silenced the assistant on them for good.
+const IGNORED_TYPES = new Set(['reaction', 'system', 'unsupported', 'ephemeral', 'sticker']);
+
+// Real content a customer sent that the assistant genuinely cannot read, so a
+// person should look at it.
+const MEDIA_LABELS = {
+    image: 'a photo',
+    video: 'a video',
+    audio: 'an audio message',
+    voice: 'a voice note',
+    document: 'a document',
+    location: 'a location',
+    contacts: 'a contact card',
+    order: 'an order',
+};
+
 const DEFAULT_PROMPT = [
     'You are the assistant for PurpleBox Storage in Dubai, replying to customers on WhatsApp.',
     '',
@@ -124,6 +143,16 @@ export async function generateReply({ phoneNormalized, inboundText, config }) {
         .reverse()
         .map((m) => ({ role: m.direction === 'inbound' ? 'user' : 'assistant', content: m.text }));
 
+    // The message being answered must always be the last thing the model sees.
+    // In production the webhook has usually stored it already, but depending on
+    // that write ordering meant the model sometimes got no question at all and
+    // just introduced itself.
+    const text = String(inboundText || '').trim();
+    const last = messages[messages.length - 1];
+    if (text && !(last && last.role === 'user' && last.content === text)) {
+        messages.push({ role: 'user', content: text });
+    }
+
     // The operator writes the voice; these rules are ours and are not editable
     // in Settings, because they are what keeps the assistant from committing
     // the business to something.
@@ -134,7 +163,8 @@ export async function generateReply({ phoneNormalized, inboundText, config }) {
         facts.text || '(no unit data available)',
         '',
         'RULES:',
-        '- Use only the facts above for any price, size or availability. Never estimate, round or invent one.',
+        '- Every factual claim must come from the facts above or from the instructions at the top. That covers prices, sizes and availability, and equally opening hours, the address, access arrangements, insurance, notice periods, deposits and payment terms.',
+        '- If a detail is not given to you, say you will check and set needsHuman true. Never estimate, round, or fill in something plausible.',
         '- If the facts do not answer the question, set needsHuman true instead of guessing.',
         '- Never confirm a booking, hold a unit, agree a discount, or promise a refund.',
         '- For questions about an existing contract, invoice, payment or complaint, set needsHuman true.',
@@ -225,6 +255,8 @@ async function escalate(thread, reason, config, draft = '') {
 /** Record an inbound message for the worker to consider. Called by the webhook. */
 export async function noteInboundForBot({ phoneNormalized, messageId, text, type, occurredAt }) {
     if (!phoneNormalized || !messageId) return;
+    // Filtered here as well as in decideAction, so noise never even queues.
+    if (IGNORED_TYPES.has(type)) return;
     await AiBotThread.findOneAndUpdate(
         { phoneNormalized },
         {
@@ -285,14 +317,23 @@ export function decideAction({ thread, config, now = new Date() }) {
         return { action: 'skip', reason: 'Message is outside the 24-hour WhatsApp reply window', notable: true };
     }
 
-    // Media carries meaning the assistant cannot read. Guessing at a photo of a
-    // damaged item or a payment receipt would be worse than handing it over.
+    // Reactions and system notices are noise, not questions. They must be
+    // ignored rather than handed over: escalating mutes the thread, so a
+    // single thumbs-up would stop the assistant answering that customer again.
+    const type = thread.pendingType || 'text';
+    if (IGNORED_TYPES.has(type)) {
+        return { action: 'skip', reason: `Ignoring a ${type}` };
+    }
+
+    // Real media does carry meaning the assistant cannot read. Guessing at a
+    // photo of a damaged item or a payment receipt would be worse than
+    // handing it over.
     const text = String(thread.pendingText || '').trim();
-    if (thread.pendingType !== 'text') {
-        return { action: 'escalate', reason: `Customer sent a ${thread.pendingType}, which the assistant cannot read` };
+    if (type !== 'text') {
+        return { action: 'escalate', reason: `Customer sent ${MEDIA_LABELS[type] || `a ${type}`}, which the assistant cannot read` };
     }
     if (!text) {
-        return { action: 'escalate', reason: 'Customer sent an empty message' };
+        return { action: 'skip', reason: 'Ignoring an empty message' };
     }
 
     // The budget resets when the date string changes, so a stale count from

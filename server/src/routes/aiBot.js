@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { requireAdmin } from '../middleware/auth.js';
 import { AiBotThread, User } from '../models/index.js';
-import { getAiBotConfig, generateReply, runAiBotTick, aiBotState, DEFAULT_PROMPT } from '../services/aiBot.js';
+import { getAiBotConfig, generateReply, decideAction, runAiBotTick, aiBotState, DEFAULT_PROMPT } from '../services/aiBot.js';
 import { openaiConfigured, openaiModel } from '../services/openai.js';
 
 const router = Router();
@@ -82,13 +82,32 @@ router.post('/test', requireAdmin, async (req, res) => {
         config.systemPrompt = req.body.systemPrompt;
     }
 
+    // Run the same guards the worker runs, so the box shows the real outcome.
+    // Testing only the model would hide the handover keywords entirely, and
+    // those decide a good share of real conversations.
+    const decision = decideAction({
+        thread: {
+            status: 'bot',
+            pendingText: text,
+            pendingType: 'text',
+            pendingAt: new Date(),
+            repliesOn: '',
+            repliesCount: 0,
+        },
+        config,
+    });
+
+    if (decision.action === 'escalate') {
+        return res.json({ reply: '', needsHuman: true, reason: decision.reason, decidedBy: 'rule' });
+    }
+
     try {
         const result = await generateReply({
             phoneNormalized: String(req.body?.phone || '').replace(/\D/g, ''),
             inboundText: text,
             config,
         });
-        res.json(result);
+        res.json({ ...result, decidedBy: 'model' });
     } catch (err) {
         res.status(502).json({ error: err?.message || 'Could not reach OpenAI' });
     }
