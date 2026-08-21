@@ -1248,6 +1248,28 @@ const reminderLogSchema = new Schema({
 reminderLogSchema.index({ payment: 1, sentAt: -1 });
 reminderLogSchema.index({ contract: 1, sentAt: -1 });
 
+// ── WhatsApp chat labels ─────────────────────────────────────────────────────
+// The same idea as labels in the WhatsApp Business app: a short, named tag a
+// person puts on a conversation so it can be found again. Deliberately separate
+// from WhatsAppLabelState, which mirrors labels coming the other way — from the
+// legacy sync — and is overwritten wholesale on every webhook.
+const whatsappLabelSchema = new Schema({
+  name: { type: String, required: true, trim: true },
+  color: { type: String, default: '#5B2BC9' },
+  sortOrder: { type: Number, default: 0 },
+}, { timestamps: true });
+whatsappLabelSchema.index({ name: 1 }, { unique: true });
+
+// Which labels are on a conversation. Keyed by number rather than by lead or
+// customer, because a chat has a number long before it has either.
+const whatsappChatLabelSchema = new Schema({
+  phoneNormalized: { type: String, required: true, unique: true },
+  labels: [{ type: Schema.Types.ObjectId, ref: 'WhatsAppLabel' }],
+}, { timestamps: true });
+
+export const WhatsAppLabel = model('WhatsAppLabel', whatsappLabelSchema);
+export const WhatsAppChatLabel = model('WhatsAppChatLabel', whatsappChatLabelSchema);
+
 // ── WhatsApp AI assistant ────────────────────────────────────────────────────
 // One config document for the whole account, the same shape reminderConfig uses.
 // `mode` is the safety switch: 'draft' writes a suggestion into the console for

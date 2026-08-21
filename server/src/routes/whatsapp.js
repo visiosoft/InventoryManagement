@@ -1,12 +1,85 @@
 import { Router } from 'express';
 import { mediaFromRaw } from './whatsappMedia.js';
-import { WhatsAppMessage, Lead, Customer, AiBotThread } from '../models/index.js';
+import { WhatsAppMessage, Lead, Customer, AiBotThread, WhatsAppLabel, WhatsAppChatLabel } from '../models/index.js';
 import { sendWhatsAppText, sendWhatsAppMedia, uploadWhatsAppMedia, whatsappMediaKind, whatsappSendConfigured, whatsappSendMissing } from '../services/whatsapp.js';
 import { pauseBotForHuman } from '../services/aiBot.js';
 import multer from 'multer';
 import { createLeadFromWhatsAppPhone } from '../services/whatsappLeadSync.js';
 
 const router = Router();
+
+// ── Chat labels ──────────────────────────────────────────────────────────────
+// Named tags a person puts on a conversation, the way the WhatsApp Business
+// app does, so a chat can be found again later.
+
+router.get('/labels', async (_req, res) => {
+    const labels = await WhatsAppLabel.find({}).sort({ sortOrder: 1, name: 1 }).lean();
+    // How many chats carry each one, so an unused label is obvious.
+    const counts = await WhatsAppChatLabel.aggregate([
+        { $unwind: '$labels' },
+        { $group: { _id: '$labels', n: { $sum: 1 } } },
+    ]);
+    const byId = new Map(counts.map((c) => [String(c._id), c.n]));
+    res.json(labels.map((l) => ({ ...l, chatCount: byId.get(String(l._id)) || 0 })));
+});
+
+router.post('/labels', async (req, res) => {
+    const name = String(req.body?.name || '').trim();
+    if (!name) return res.status(400).json({ error: 'A label name is required' });
+    const existing = await WhatsAppLabel.findOne({ name });
+    if (existing) return res.status(409).json({ error: `There is already a label called "${name}"` });
+    const label = await WhatsAppLabel.create({
+        name,
+        color: String(req.body?.color || '#5B2BC9'),
+        sortOrder: Number(req.body?.sortOrder) || 0,
+    });
+    res.status(201).json({ ...label.toObject(), chatCount: 0 });
+});
+
+router.patch('/labels/:id', async (req, res) => {
+    const label = await WhatsAppLabel.findById(req.params.id);
+    if (!label) return res.status(404).json({ error: 'Label not found' });
+    if (req.body?.name !== undefined) {
+        const name = String(req.body.name).trim();
+        if (!name) return res.status(400).json({ error: 'A label name is required' });
+        const clash = await WhatsAppLabel.findOne({ name, _id: { $ne: label._id } });
+        if (clash) return res.status(409).json({ error: `There is already a label called "${name}"` });
+        label.name = name;
+    }
+    if (req.body?.color !== undefined) label.color = String(req.body.color);
+    if (req.body?.sortOrder !== undefined) label.sortOrder = Number(req.body.sortOrder) || 0;
+    await label.save();
+    res.json(label);
+});
+
+router.delete('/labels/:id', async (req, res) => {
+    const label = await WhatsAppLabel.findById(req.params.id);
+    if (!label) return res.status(404).json({ error: 'Label not found' });
+    // Take it off every chat too, or those chats keep a reference to nothing.
+    await WhatsAppChatLabel.updateMany({ labels: label._id }, { $pull: { labels: label._id } });
+    await label.deleteOne();
+    res.json({ ok: true });
+});
+
+// Set the labels on one conversation — the whole set, not a delta, so the
+// picker can send exactly what is ticked.
+router.put('/conversations/:phoneNormalized/labels', async (req, res) => {
+    const phoneNormalized = String(req.params.phoneNormalized || '').replace(/\D/g, '');
+    if (!phoneNormalized) return res.status(400).json({ error: 'A phone number is required' });
+
+    const wanted = Array.isArray(req.body?.labelIds) ? req.body.labelIds.map(String) : [];
+    // Only ids that still exist, so a label deleted in another tab cannot be
+    // written back onto a chat.
+    const valid = await WhatsAppLabel.find({ _id: { $in: wanted } }).select('_id').lean();
+    const labels = valid.map((l) => l._id);
+
+    await WhatsAppChatLabel.findOneAndUpdate(
+        { phoneNormalized },
+        { $set: { labels }, $setOnInsert: { phoneNormalized } },
+        { upsert: true },
+    );
+    res.json({ ok: true, labels: labels.map(String) });
+});
 
 router.get('/messages', async (req, res) => {
     const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
@@ -89,6 +162,11 @@ router.get('/conversations', async (_req, res) => {
         .lean();
     const byThread = new Map(botThreads.map((t) => [t.phoneNormalized, t]));
 
+    const chatLabels = await WhatsAppChatLabel.find({ phoneNormalized: { $in: rows.map((r) => r._id) } })
+        .populate('labels', 'name color sortOrder')
+        .lean();
+    const byLabels = new Map(chatLabels.map((c) => [c.phoneNormalized, c.labels || []]));
+
     res.json(rows.map((r) => {
         const lead = r.lead?.[0] || null;
         const customer = byPhone.get(suffix(r._id)) || null;
@@ -104,6 +182,7 @@ router.get('/conversations', async (_req, res) => {
             // What the inbox should show: a real name if we hold one,
             // otherwise the number itself — never a placeholder.
             displayName: customer?.fullName || leadName || (r.phone || r._id),
+            labels: byLabels.get(r._id) || [],
             botStatus: bot?.status || '',
             botDraft: bot?.draftText || '',
             botEscalationReason: bot?.escalationReason || '',

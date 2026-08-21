@@ -271,12 +271,22 @@ export type WhatsAppMsg = {
 
 export type WhatsAppLeadRef = { _id: string; fullName: string; status: string }
 
+/** A named tag a person puts on a conversation, as in the WhatsApp Business app. */
+export type WhatsAppLabel = {
+  _id: string
+  name: string
+  color: string
+  sortOrder?: number
+  chatCount?: number
+}
+
 export type WhatsAppConversation = {
   phoneNormalized: string
   phone: string
   count: number
   lastAt: string
   lead: WhatsAppLeadRef | null
+  labels: WhatsAppLabel[]
   // AI assistant state for this thread: '' when it has never looked at it.
   botStatus?: '' | 'bot' | 'escalated' | 'paused'
   botDraft?: string
@@ -295,6 +305,16 @@ export const whatsappApi = {
   messages: (phone?: string) =>
     api.get<WhatsAppMsg[]>('/whatsapp/messages', { params: phone ? { phone } : {} }).then((r) => r.data),
   send: (to: string, body: string) => api.post<{ ok: boolean }>('/whatsapp/send', { to, body }).then((r) => r.data),
+  labels: () => api.get<WhatsAppLabel[]>('/whatsapp/labels').then((r) => r.data),
+  createLabel: (body: { name: string; color: string }) =>
+    api.post<WhatsAppLabel>('/whatsapp/labels', body).then((r) => r.data),
+  updateLabel: (id: string, body: Partial<{ name: string; color: string; sortOrder: number }>) =>
+    api.patch<WhatsAppLabel>(`/whatsapp/labels/${id}`, body).then((r) => r.data),
+  deleteLabel: (id: string) => api.delete(`/whatsapp/labels/${id}`).then((r) => r.data),
+  setChatLabels: (phoneNormalized: string, labelIds: string[]) =>
+    api.put<{ ok: boolean; labels: string[] }>(
+      `/whatsapp/conversations/${phoneNormalized}/labels`, { labelIds }
+    ).then((r) => r.data),
   createLead: (phoneNormalized: string, fullName?: string) =>
     api.post<{ action: 'created' | 'exists'; lead: WhatsAppLeadRef }>(
       `/whatsapp/conversations/${phoneNormalized}/lead`, { fullName }

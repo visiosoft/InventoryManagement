@@ -4,9 +4,9 @@ import { Link } from 'react-router-dom'
 import {
   Send, MessageSquare, RefreshCw, UserPlus, UserCheck, Bell, BellOff, FileText,
   Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Info, Paperclip,
-  Bot,
+  Bot, Tag, Check,
 } from 'lucide-react'
-import { api, whatsappApi, leadApi, apiError, type WhatsAppConversation, type WhatsAppMsg } from '../lib/api'
+import { api, whatsappApi, leadApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel } from '../lib/api'
 import { cn } from '../lib/utils'
 
 /* ── local types ──────────────────────────────────────────────────────────
@@ -423,6 +423,152 @@ function MessageBubble({ msg }: { msg: WaMsg }) {
   )
 }
 
+const LABEL_COLOURS = ['#DC2626', '#EA580C', '#CA8A04', '#16A34A', '#0891B2', '#2563EB', '#5B2BC9', '#DB2777']
+
+/** A label as it appears on a chat row or in the header — colour plus name. */
+function LabelChip({ label, onRemove }: { label: WaLabel; onRemove?: () => void }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-full shrink-0"
+      style={{ padding: '1px 7px', fontSize: 10, fontWeight: 700, background: `${label.color}1A`, color: label.color }}
+      title={label.name}
+    >
+      <span className="rounded-full" style={{ width: 5, height: 5, background: label.color }} aria-hidden />
+      <span className="truncate" style={{ maxWidth: 90 }}>{label.name}</span>
+      {onRemove && (
+        <button type="button" onClick={onRemove} className="cursor-pointer hover:opacity-60" aria-label={`Remove ${label.name}`}>
+          <X size={9} />
+        </button>
+      )}
+    </span>
+  )
+}
+
+/**
+ * Tick which labels are on this chat, and make new ones without leaving.
+ *
+ * The whole ticked set is sent on each change rather than a delta, so what is
+ * stored is always exactly what is on screen.
+ */
+function LabelPicker({ convo, labels, onChanged }: {
+  convo: WhatsAppConversation
+  labels: WaLabel[]
+  onChanged: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [colour, setColour] = useState(LABEL_COLOURS[6])
+  const [err, setErr] = useState('')
+  const boxRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const away = (e: MouseEvent) => {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', away)
+    return () => document.removeEventListener('mousedown', away)
+  }, [open])
+
+  const on = new Set((convo.labels || []).map((l) => l._id))
+
+  const setLabels = useMutation({
+    mutationFn: (ids: string[]) => whatsappApi.setChatLabels(convo.phoneNormalized, ids),
+    onSuccess: () => { setErr(''); onChanged() },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  const create = useMutation({
+    mutationFn: () => whatsappApi.createLabel({ name: newName.trim(), color: colour }),
+    // A label made from here is meant for this chat, so it goes straight on it.
+    onSuccess: (label) => {
+      setNewName(''); setErr('')
+      setLabels.mutate([...on, label._id])
+    },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  const toggle = (id: string) => {
+    const next = new Set(on)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    setLabels.mutate([...next])
+  }
+
+  return (
+    <div className="relative" ref={boxRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold cursor-pointer"
+        style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', color: '#4A1FA0' }}
+        title="Label this chat"
+      >
+        <Tag size={13} /> Labels{on.size > 0 ? ` (${on.size})` : ''}
+      </button>
+
+      {open && (
+        <div
+          className="absolute right-0 top-full mt-2 z-40 overflow-hidden"
+          style={{ width: 260, background: '#fff', borderRadius: 14, border: `1px solid ${LINE}`, boxShadow: '0 18px 44px rgba(20,8,31,.16)' }}
+        >
+          <div className="max-h-56 overflow-y-auto py-1">
+            {labels.length === 0 ? (
+              <p className="px-3 py-2.5" style={{ fontSize: 12, color: FAINT_INK }}>No labels yet. Make one below.</p>
+            ) : labels.map((l) => (
+              <button
+                key={l._id}
+                type="button"
+                onClick={() => toggle(l._id)}
+                disabled={setLabels.isPending}
+                className="w-full flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-[#F7F3FF] disabled:opacity-60"
+              >
+                <span className="rounded-full shrink-0" style={{ width: 9, height: 9, background: l.color }} aria-hidden />
+                <span className="flex-1 text-left truncate" style={{ fontSize: 12.5, color: INK }}>{l.name}</span>
+                {on.has(l._id) && <Check size={13} style={{ color: '#4A1FA0' }} />}
+              </button>
+            ))}
+          </div>
+
+          <div className="px-3 py-2.5 space-y-2" style={{ borderTop: `1px solid ${LINE}`, background: '#FBF8F2' }}>
+            <div className="flex items-center gap-1">
+              {LABEL_COLOURS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setColour(c)}
+                  aria-label={`Colour ${c}`}
+                  className="rounded-full cursor-pointer"
+                  style={{ width: 15, height: 15, background: c, outline: colour === c ? '2px solid #14081F' : 'none', outlineOffset: 1 }}
+                />
+              ))}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && newName.trim()) create.mutate() }}
+                placeholder="New label name"
+                className="flex-1 px-2 py-1.5 focus:outline-none"
+                style={{ fontSize: 12, background: '#fff', border: `1px solid ${LINE}`, borderRadius: 8, color: INK }}
+              />
+              <button
+                type="button"
+                onClick={() => create.mutate()}
+                disabled={!newName.trim() || create.isPending}
+                className="rounded-lg px-2.5 py-1.5 text-white cursor-pointer disabled:opacity-40"
+                style={{ background: '#5B2BC9', fontSize: 12, fontWeight: 700 }}
+              >
+                Add
+              </button>
+            </div>
+            {err && <p style={{ fontSize: 11, color: '#B91C1C' }}>{err}</p>}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // One button that walks a chat through the pipeline: no lead yet → create one;
 // lead exists → convert it to a customer; already won → just link to the record.
 function LeadAction({ convo, onChanged }: { convo: WhatsAppConversation; onChanged: () => void }) {
@@ -527,6 +673,24 @@ export default function WhatsApp() {
     localStorage.setItem('wa_composer_h', String(composerH))
   }
   const [sendErr, setSendErr] = useState('')
+
+  // The label list, and which one the sidebar is filtered to.
+  const { data: waLabels = [] } = useQuery<WaLabel[]>({
+    queryKey: ['wa-labels'],
+    queryFn: () => whatsappApi.labels(),
+    staleTime: 60_000,
+  })
+  const [labelFilter, setLabelFilter] = useState<string>('')
+  const [notifOpen, setNotifOpen] = useState(false)
+  const notifRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!notifOpen) return
+    const away = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false)
+    }
+    document.addEventListener('mousedown', away)
+    return () => document.removeEventListener('mousedown', away)
+  }, [notifOpen])
   const [qrOpen, setQrOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [setupOpen, setSetupOpen] = useState(false)
@@ -673,6 +837,24 @@ export default function WhatsApp() {
     [unreadByPhone]
   )
 
+  // Clearing the panel marks each chat read up to its newest message, rather
+  // than to "now" — a message that arrives mid-click stays unread.
+  const markAllSeen = useCallback(() => {
+    setLastSeen((prev) => {
+      const next = { ...prev }
+      for (const m of allMessages ?? []) {
+        if (m.direction !== 'inbound') continue
+        const at = next[m.phoneNormalized]
+        if (!at || new Date(m.occurredAt).getTime() > new Date(at).getTime()) {
+          next[m.phoneNormalized] = m.occurredAt
+        }
+      }
+      try { localStorage.setItem(SEEN_KEY, JSON.stringify(next)) } catch { /* quota — ignore */ }
+      return next
+    })
+    setBlinking({})
+  }, [allMessages])
+
   // Last inbound/outbound line per chat, for the list preview.
   const previewByPhone = useMemo(() => {
     const out: Record<string, string> = {}
@@ -711,12 +893,22 @@ export default function WhatsApp() {
 
   const filteredConvos = useMemo(() => {
     const q = search.trim().toLowerCase()
-    if (!q) return convoList
-    return convoList.filter((c) => {
+    let list = convoList
+    if (labelFilter) list = list.filter((c) => (c.labels || []).some((l) => l._id === labelFilter))
+    if (!q) return list
+    return list.filter((c) => {
       const name = (convDisplayName(c) ?? '').toLowerCase()
       return name.includes(q) || c.phoneNormalized.includes(q) || (c.phone ?? '').toLowerCase().includes(q)
     })
-  }, [convoList, search])
+  }, [convoList, search, labelFilter])
+
+  // The unread chats, newest first — what the notification panel lists.
+  const unreadConvos = useMemo(
+    () => convoList
+      .filter((c) => (unreadByPhone[c.phoneNormalized] ?? 0) > 0)
+      .sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1)),
+    [convoList, unreadByPhone]
+  )
 
   const realConvo = convoList.find((c) => c.phoneNormalized === selectedPhone) ?? null
   // A number typed into "New chat" behaves like an empty conversation so the
@@ -724,7 +916,7 @@ export default function WhatsApp() {
   const selectedConvo: WhatsAppConversation | null =
     realConvo ??
     (selectedPhone && selectedPhone === adhocPhone
-      ? { phoneNormalized: selectedPhone, phone: `+${selectedPhone}`, count: 0, lastAt: new Date().toISOString(), lead: null }
+      ? { phoneNormalized: selectedPhone, phone: `+${selectedPhone}`, count: 0, lastAt: new Date().toISOString(), lead: null, labels: [] }
       : null)
 
   const convoTitle = selectedConvo
@@ -897,6 +1089,84 @@ export default function WhatsApp() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Everything unanswered in one place, so a chat further down the
+              list is not missed just because it scrolled out of view. */}
+          <div className="relative" ref={notifRef}>
+            <IconButton
+              title={totalUnread > 0 ? `${totalUnread} unread` : 'Nothing unread'}
+              tone="dark"
+              onClick={() => setNotifOpen((v) => !v)}
+            >
+              <Bell size={15} />
+            </IconButton>
+            {totalUnread > 0 && (
+              <span
+                className="absolute pointer-events-none rounded-full text-white grid place-items-center"
+                style={{ top: -3, right: -3, minWidth: 16, height: 16, padding: '0 4px', background: '#DC2626', fontSize: 9.5, fontWeight: 800 }}
+                aria-hidden
+              >
+                {totalUnread > 99 ? '99+' : totalUnread}
+              </span>
+            )}
+
+            {notifOpen && (
+              <div
+                className="absolute right-0 top-full mt-2 z-50 overflow-hidden"
+                style={{ width: 320, background: '#fff', borderRadius: 14, border: `1px solid ${LINE}`, boxShadow: '0 20px 50px rgba(20,8,31,.20)' }}
+              >
+                <div className="flex items-center justify-between px-3.5 py-2.5" style={{ borderBottom: `1px solid ${LINE}` }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: INK }}>
+                    Unread{totalUnread > 0 ? ` (${totalUnread})` : ''}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => { markAllSeen(); setNotifOpen(false) }}
+                    disabled={totalUnread === 0}
+                    className="cursor-pointer disabled:opacity-40"
+                    style={{ fontSize: 11.5, fontWeight: 600, color: '#4A1FA0' }}
+                  >
+                    Mark all read
+                  </button>
+                </div>
+
+                <div className="max-h-80 overflow-y-auto">
+                  {unreadConvos.length === 0 ? (
+                    <p className="px-3.5 py-5 text-center" style={{ fontSize: 12, color: FAINT_INK }}>
+                      Nothing new. You are all caught up.
+                    </p>
+                  ) : unreadConvos.map((c) => (
+                    <button
+                      key={c.phoneNormalized}
+                      type="button"
+                      onClick={() => { openConversation(c.phoneNormalized); setNotifOpen(false); setSidebarOpen(false) }}
+                      className="w-full flex items-start gap-2.5 px-3.5 py-2.5 text-left cursor-pointer hover:bg-[#F7F3FF]"
+                      style={{ borderBottom: `1px solid ${LINE}` }}
+                    >
+                      <Avatar seed={c.phoneNormalized} label={convDisplayName(c)} size={30} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline gap-2">
+                          <span className="truncate flex-1" style={{ fontSize: 12.5, fontWeight: 700, color: INK }}>
+                            {convDisplayName(c)}
+                          </span>
+                          <span className="shrink-0" style={{ fontSize: 10.5, color: FAINT_INK }}>{formatListTime(c.lastAt)}</span>
+                        </div>
+                        <div className="truncate" style={{ fontSize: 11.5, color: MUTED_INK }}>
+                          {previewByPhone[c.phoneNormalized] ?? `${c.count} messages`}
+                        </div>
+                      </div>
+                      <span
+                        className="shrink-0 rounded-full text-white grid place-items-center"
+                        style={{ minWidth: 17, height: 17, padding: '0 5px', background: '#5B2BC9', fontSize: 10, fontWeight: 800 }}
+                      >
+                        {(unreadByPhone[c.phoneNormalized] ?? 0) > 99 ? '99+' : unreadByPhone[c.phoneNormalized]}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           <IconButton title={muted ? 'Notification sound is off' : 'Notification sound is on'} tone="dark" onClick={toggleMute}>
             {muted ? <BellOff size={15} /> : <Bell size={15} />}
           </IconButton>
@@ -975,6 +1245,42 @@ export default function WhatsApp() {
                 style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', borderRadius: 10, color: INK }}
               />
             </div>
+
+            {/* Click a label to narrow the list to the chats carrying it. */}
+            {waLabels.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {waLabels.map((l) => {
+                  const active = labelFilter === l._id
+                  return (
+                    <button
+                      key={l._id}
+                      type="button"
+                      onClick={() => setLabelFilter(active ? '' : l._id)}
+                      className="inline-flex items-center gap-1 rounded-full cursor-pointer transition-colors"
+                      style={{
+                        padding: '2px 8px', fontSize: 11, fontWeight: 700,
+                        background: active ? l.color : `${l.color}14`,
+                        color: active ? '#fff' : l.color,
+                      }}
+                      title={`${l.chatCount ?? 0} chats`}
+                    >
+                      <span className="rounded-full" style={{ width: 5, height: 5, background: active ? '#fff' : l.color }} aria-hidden />
+                      {l.name}
+                    </button>
+                  )
+                })}
+                {labelFilter && (
+                  <button
+                    type="button"
+                    onClick={() => setLabelFilter('')}
+                    className="inline-flex items-center gap-1 rounded-full cursor-pointer"
+                    style={{ padding: '2px 8px', fontSize: 11, fontWeight: 600, color: FAINT_INK }}
+                  >
+                    <X size={10} /> Clear
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="wa-scroll flex-1 min-h-0">
@@ -1053,6 +1359,11 @@ export default function WhatsApp() {
                           </span>
                         )}
                       </div>
+                      {(c.labels || []).length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {c.labels.map((l) => <LabelChip key={l._id} label={l} />)}
+                        </div>
+                      )}
                     </div>
                   </button>
                 )
@@ -1083,6 +1394,14 @@ export default function WhatsApp() {
                   </div>
                   <div className="truncate" style={{ fontSize: 12, color: FAINT_INK }}>+{selectedConvo.phoneNormalized}</div>
                 </div>
+                <LabelPicker
+                  convo={selectedConvo}
+                  labels={waLabels}
+                  onChanged={() => {
+                    refetchConvos()
+                    qc.invalidateQueries({ queryKey: ['wa-labels'] })
+                  }}
+                />
                 <LeadAction convo={selectedConvo} onChanged={onSent} />
               </>
             ) : (
