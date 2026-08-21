@@ -7,7 +7,7 @@ import { mailConfigured, mailFromAddress } from '../services/mail.js';
 import { zohoConfigured } from '../services/zoho.js';
 import { zohoBooksConfigured, listAllZohoContacts } from '../services/zohoBooks.js';
 import { Customer, Contract, WhatsAppWebhookHit } from '../models/index.js';
-import { whatsappConfigured, whatsappMissing, verifyWebhookChallenge, verifyWhatsAppSignature, verifyWhatsAppCredentials } from '../services/whatsapp.js';
+import { whatsappConfigured, whatsappMissing, verifyWebhookChallenge, verifyWhatsAppSignature, verifyWhatsAppCredentials, inspectWhatsAppToken } from '../services/whatsapp.js';
 import { getWhatsAppLabelSyncStatus, processWhatsAppWebhookPayload, runWhatsAppLabelReconciliation } from '../services/whatsappLeadSync.js';
 import { stripeConfigured, stripeWebhookConfigured, verifyStripeKey } from '../services/stripe.js';
 import { updateEnvFile } from '../utils/env.js';
@@ -197,6 +197,13 @@ router.post('/whatsapp/connect', requireAdmin, async (req, res) => {
         displayPhoneNumber: profile.displayPhoneNumber,
         verifiedName: profile.verifiedName,
     });
+});
+
+// Whether the WhatsApp token still works, and when it stops. Separate from
+// /status so a Graph call never slows the pages that only need to know which
+// integrations are switched on.
+router.get('/whatsapp/token', requireAdmin, async (req, res) => {
+    res.json(await inspectWhatsAppToken({ force: req.query.refresh === 'true' }));
 });
 
 router.post('/whatsapp/disconnect', requireAdmin, async (_req, res) => {

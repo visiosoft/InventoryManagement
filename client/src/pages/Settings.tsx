@@ -171,6 +171,21 @@ export default function Settings() {
   const [waVerifyToken, setWaVerifyToken] = useState('')
   const [waAppSecret, setWaAppSecret] = useState('')
   const [waProfile, setWaProfile] = useState('')
+
+  // Asked for separately from /integrations/status so a call out to Meta never
+  // delays the rest of the page.
+  type WaToken = {
+    configured: boolean; valid?: boolean | null; neverExpires?: boolean
+    expiresAt?: string | null; expiresInHours?: number | null
+    appName?: string; type?: string; error?: string
+  }
+  const { data: waToken } = useQuery<WaToken>({
+    queryKey: ['whatsapp-token'],
+    queryFn: () => api.get('/integrations/whatsapp/token').then((r) => r.data),
+    enabled: isAdmin,
+    staleTime: 5 * 60_000,
+    retry: false,
+  })
   const [waBusy, setWaBusy] = useState(false)
   useEffect(() => {
     const params = new URLSearchParams(location.search)
@@ -526,6 +541,29 @@ export default function Settings() {
                   : `Missing: ${(integrations?.whatsapp?.missing || []).join(', ') || 'keys'}`}
               </span>
             </div>
+
+            {/* The token's own expiry. A temporary token from Meta's API Setup
+                page dies within 24 hours, which otherwise only shows up as
+                sending quietly stopping. */}
+            {integrations?.whatsapp?.configured && waToken && (
+              waToken.valid === false ? (
+                <p className="text-xs rounded-md px-3 py-2 bg-red-50 text-red-800 border border-red-200 dark:bg-red-950/40 dark:text-red-200 dark:border-red-900">
+                  <strong>This token no longer works.</strong> {waToken.error} Paste a new one below.
+                </p>
+              ) : waToken.neverExpires ? (
+                <p className="text-xs text-emerald-700 dark:text-emerald-400">
+                  Permanent token{waToken.appName ? ` — ${waToken.appName}` : ''}. It does not expire.
+                </p>
+              ) : waToken.expiresAt ? (
+                <p className={`text-xs rounded-md px-3 py-2 border ${(waToken.expiresInHours ?? 0) < 48
+                  ? 'bg-amber-50 text-amber-900 border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-900'
+                  : 'text-muted-foreground border-transparent px-0 py-0'}`}>
+                  This token expires {new Date(waToken.expiresAt).toLocaleString()}
+                  {typeof waToken.expiresInHours === 'number' && ` (${waToken.expiresInHours}h)`}.
+                  {(waToken.expiresInHours ?? 0) < 48 && ' Temporary tokens from Meta’s API Setup page last 24 hours — use a System User token to stop having to replace it.'}
+                </p>
+              ) : null
+            )}
 
             <div className="grid sm:grid-cols-2 gap-3">
               <Field label="Phone number ID (not the phone number)">

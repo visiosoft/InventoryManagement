@@ -60,6 +60,7 @@ import crewPortalRoutes from './routes/crewPortal.js';
 import { startBackupScheduler } from './services/backup.js';
 import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
 import { runAiBotTick } from './services/aiBot.js';
+import { inspectWhatsAppToken } from './services/whatsapp.js';
 import { runAutomationRules, getAutoSend } from './services/automationEngine.js';
 
 const app = express();
@@ -263,6 +264,25 @@ async function start() {
   // round trip in front of Meta's ACK would make the webhook slow enough for
   // Meta to retry it, and the retry would send the customer a second reply.
   // The short interval also lets a burst of messages settle into one answer.
+  // Say at boot whether the WhatsApp token still works. A deploy is exactly
+  // when a token saved through Settings can be lost — the Settings page writes
+  // it to .env, and hosts that rebuild the filesystem on deploy discard that —
+  // so this is the moment the answer is most worth having in the log.
+  setTimeout(async () => {
+    try {
+      const t = await inspectWhatsAppToken({ force: true });
+      if (!t.configured) return console.warn('[WhatsApp] No access token configured — sending is off.');
+      if (t.valid === false) return console.error(`[WhatsApp] Access token rejected: ${t.error}`);
+      if (t.neverExpires) return console.log('[WhatsApp] Access token valid, does not expire.');
+      if (t.expiresAt) {
+        const hours = t.expiresInHours ?? 0;
+        const line = `[WhatsApp] Access token expires ${t.expiresAt} (${hours}h).`;
+        if (hours < 48) console.warn(`${line} Temporary tokens last 24 hours — use a System User token instead.`);
+        else console.log(line);
+      }
+    } catch { /* a diagnostic must never stop the server booting */ }
+  }, 5_000);
+
   const AI_BOT_INTERVAL = 10 * 1000;
   setTimeout(() => setInterval(() => {
     runAiBotTick().catch((e) => console.error('[AI bot]', e.message));

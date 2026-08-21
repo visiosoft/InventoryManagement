@@ -66,6 +66,54 @@ function normalizeRecipientPhone(input) {
 // is connected. Throws with Meta's own message so the user sees the real
 // reason (expired token, wrong ID, missing permission) rather than a generic
 // failure.
+// Meta's answer about our own token, cached — it changes daily at most and
+// the Settings page asks for it on every render.
+let tokenCache = { at: 0, data: null };
+
+/**
+ * What kind of access token is configured and when it dies.
+ *
+ * Worth surfacing because the two token types behave very differently: the one
+ * on Meta's API Setup page is temporary and expires within 24 hours, while a
+ * System User token can be set never to expire. Without this the difference
+ * only shows up as sending mysteriously stopping.
+ */
+export async function inspectWhatsAppToken({ force = false } = {}) {
+    const token = String(process.env.WHATSAPP_ACCESS_TOKEN || '').trim();
+    if (!token) return { configured: false };
+    if (!force && tokenCache.data && Date.now() - tokenCache.at < 10 * 60 * 1000) return tokenCache.data;
+
+    let data;
+    try {
+        const r = await fetch(
+            `https://graph.facebook.com/v20.0/debug_token?input_token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(token)}`,
+        );
+        const body = await r.json().catch(() => ({}));
+        const d = body?.data;
+        if (!r.ok || !d) {
+            data = { configured: true, valid: false, error: body?.error?.message || `HTTP ${r.status}` };
+        } else {
+            // Meta reports a token that never expires as 0, not as absent.
+            const expiresAt = d.expires_at ? new Date(d.expires_at * 1000).toISOString() : null;
+            data = {
+                configured: true,
+                valid: Boolean(d.is_valid),
+                type: d.type || '',
+                appName: d.application || '',
+                neverExpires: d.expires_at === 0,
+                expiresAt,
+                expiresInHours: expiresAt ? Math.round((new Date(expiresAt) - Date.now()) / 3600_000) : null,
+                error: d.is_valid ? '' : (d.error?.message || 'The token is no longer valid'),
+            };
+        }
+    } catch (e) {
+        data = { configured: true, valid: null, error: `Could not reach Meta: ${e.message}` };
+    }
+
+    tokenCache = { at: Date.now(), data };
+    return data;
+}
+
 export async function verifyWhatsAppCredentials({ phoneNumberId, accessToken }) {
     const endpoint = `https://graph.facebook.com/v20.0/${encodeURIComponent(phoneNumberId)}?fields=display_phone_number,verified_name`;
     const response = await fetch(endpoint, {
