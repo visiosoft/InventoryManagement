@@ -7,6 +7,8 @@ import {
   Bot, Tag, Check,
 } from 'lucide-react'
 import { api, whatsappApi, leadApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel } from '../lib/api'
+import { convDisplayName, formatListTime, Avatar } from '../lib/whatsappDisplay'
+import { useSeen, markSeen as markSeenShared, unreadFrom } from '../lib/whatsappSeen'
 import { cn } from '../lib/utils'
 
 /* ── local types ──────────────────────────────────────────────────────────
@@ -28,7 +30,6 @@ type MessageTemplate = {
 }
 
 const MUTE_KEY = 'wa_inbox_muted'
-const SEEN_KEY = 'wa_inbox_last_seen'
 const BLINK_MS = 4000
 const PING_SRC = '/whatsappaduio.mp3'
 
@@ -85,67 +86,8 @@ const CSS = `
 `
 
 /* ── formatting ───────────────────────────────────────────────────────── */
-/** What to call a conversation.
- *
- *  The server resolves this against customers and leads and sends it as
- *  `displayName`. A lead created from a chat gets an auto-generated name like
- *  "WhatsApp Contact 4797", which is not a name — the number is more useful,
- *  so it is filtered here too in case an older payload arrives without the
- *  resolved field. */
-function convDisplayName(c: {
-  displayName?: string
-  customer?: { fullName?: string } | null
-  lead?: { fullName?: string } | null
-  phone?: string
-  phoneNormalized: string
-}) {
-  const placeholder = (n?: string) => !n || /^whatsapp\s*contact/i.test(n.trim())
-  if (c.displayName && !placeholder(c.displayName)) return c.displayName
-  if (c.customer?.fullName) return c.customer.fullName
-  if (!placeholder(c.lead?.fullName)) return c.lead!.fullName!
-  return c.phone || `+${c.phoneNormalized}`
-}
-
 function formatClock(iso: string) {
   return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-}
-
-function formatListTime(iso: string) {
-  const d = new Date(iso)
-  const now = new Date()
-  if (d.toDateString() === now.toDateString()) return formatClock(iso)
-  const days = Math.floor((now.getTime() - d.getTime()) / 86_400_000)
-  if (days < 7) return d.toLocaleDateString(undefined, { weekday: 'short' })
-  return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short' })
-}
-
-function initials(label: string) {
-  const cleaned = label.replace(/^\+/, '').trim()
-  const words = cleaned.split(/\s+/).filter(Boolean)
-  if (words.length === 0) return '?'
-  if (/^\d/.test(words[0])) return cleaned.slice(-2)
-  return (words[0][0] + (words[1]?.[0] ?? '')).toUpperCase()
-}
-
-const AVATAR_COLORS = ['#5B2BC9', '#7C3AED', '#9333EA', '#C026D3', '#DB2777', '#E11D48', '#EA580C', '#0891B2', '#0D9488', '#16A34A']
-
-/** Stable per-contact colour, derived from the number so it never shifts. */
-function avatarColor(seed: string) {
-  let h = 0
-  for (let i = 0; i < seed.length; i += 1) h = (h * 31 + seed.charCodeAt(i)) >>> 0
-  return AVATAR_COLORS[h % AVATAR_COLORS.length]
-}
-
-function Avatar({ seed, label, size = 40 }: { seed: string; label: string; size?: number }) {
-  return (
-    <div
-      className="shrink-0 rounded-full flex items-center justify-center text-white font-bold"
-      style={{ width: size, height: size, background: avatarColor(seed), fontSize: size * 0.34 }}
-      aria-hidden
-    >
-      {initials(label)}
-    </div>
-  )
 }
 
 /* ── attachment blobs ─────────────────────────────────────────────────────
@@ -320,16 +262,6 @@ function playPing() {
     if (p && typeof p.catch === 'function') p.catch(() => { /* blocked — never mind */ })
   } catch {
     /* audio is a nicety — never let it break the inbox */
-  }
-}
-
-function readSeen(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(SEEN_KEY)
-    const parsed = raw ? JSON.parse(raw) : null
-    return parsed && typeof parsed === 'object' ? (parsed as Record<string, string>) : {}
-  } catch {
-    return {}
   }
 }
 
@@ -649,7 +581,7 @@ export default function WhatsApp() {
     return digits || localStorage.getItem(LAST_CHAT_KEY) || null
   })
   const [muted, setMuted] = useState<boolean>(() => localStorage.getItem(MUTE_KEY) === '1')
-  const [lastSeen, setLastSeen] = useState<Record<string, string>>(readSeen)
+  const lastSeen = useSeen()
   const [blinking, setBlinking] = useState<Record<string, number>>({})
   const [search, setSearch] = useState('')
   const [draft, setDraft] = useState('')
@@ -814,12 +746,7 @@ export default function WhatsApp() {
   }, [blinking])
 
   const markSeen = useCallback((phone: string, iso: string) => {
-    setLastSeen((prev) => {
-      if (prev[phone] && new Date(prev[phone]).getTime() >= new Date(iso).getTime()) return prev
-      const next = { ...prev, [phone]: iso }
-      try { localStorage.setItem(SEEN_KEY, JSON.stringify(next)) } catch { /* quota — ignore */ }
-      return next
-    })
+    markSeenShared(phone, iso)
   }, [])
 
   // Anything arriving in the open conversation is read on arrival.
@@ -830,39 +757,12 @@ export default function WhatsApp() {
     setBlinking((prev) => (prev[selectedPhone] ? Object.fromEntries(Object.entries(prev).filter(([p]) => p !== selectedPhone)) : prev))
   }, [selectedPhone, messages, markSeen])
 
-  const unreadByPhone = useMemo(() => {
-    const out: Record<string, number> = {}
-    for (const m of allMessages ?? []) {
-      if (m.direction !== 'inbound') continue
-      const seen = lastSeen[m.phoneNormalized]
-      if (seen && new Date(m.occurredAt).getTime() <= new Date(seen).getTime()) continue
-      out[m.phoneNormalized] = (out[m.phoneNormalized] ?? 0) + 1
-    }
-    return out
-  }, [allMessages, lastSeen])
+  const unreadByPhone = useMemo(() => unreadFrom(allMessages, lastSeen), [allMessages, lastSeen])
 
   const totalUnread = useMemo(
     () => Object.values(unreadByPhone).reduce((a, b) => a + b, 0),
     [unreadByPhone]
   )
-
-  // Clearing the panel marks each chat read up to its newest message, rather
-  // than to "now" — a message that arrives mid-click stays unread.
-  const markAllSeen = useCallback(() => {
-    setLastSeen((prev) => {
-      const next = { ...prev }
-      for (const m of allMessages ?? []) {
-        if (m.direction !== 'inbound') continue
-        const at = next[m.phoneNormalized]
-        if (!at || new Date(m.occurredAt).getTime() > new Date(at).getTime()) {
-          next[m.phoneNormalized] = m.occurredAt
-        }
-      }
-      try { localStorage.setItem(SEEN_KEY, JSON.stringify(next)) } catch { /* quota — ignore */ }
-      return next
-    })
-    setBlinking({})
-  }, [allMessages])
 
   // Last inbound/outbound line per chat, for the list preview.
   const previewByPhone = useMemo(() => {
@@ -910,14 +810,6 @@ export default function WhatsApp() {
       return name.includes(q) || c.phoneNormalized.includes(q) || (c.phone ?? '').toLowerCase().includes(q)
     })
   }, [convoList, search, labelFilter])
-
-  // The unread chats, newest first — what the notification panel lists.
-  const unreadConvos = useMemo(
-    () => convoList
-      .filter((c) => (unreadByPhone[c.phoneNormalized] ?? 0) > 0)
-      .sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1)),
-    [convoList, unreadByPhone]
-  )
 
   const realConvo = convoList.find((c) => c.phoneNormalized === selectedPhone) ?? null
   // A number typed into "New chat" behaves like an empty conversation so the
@@ -1098,84 +990,6 @@ export default function WhatsApp() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Everything unanswered in one place, so a chat further down the
-              list is not missed just because it scrolled out of view. */}
-          <div className="relative" ref={notifRef}>
-            <IconButton
-              title={totalUnread > 0 ? `${totalUnread} unread` : 'Nothing unread'}
-              tone="dark"
-              onClick={() => setNotifOpen((v) => !v)}
-            >
-              <Bell size={15} />
-            </IconButton>
-            {totalUnread > 0 && (
-              <span
-                className="absolute pointer-events-none rounded-full text-white grid place-items-center"
-                style={{ top: -3, right: -3, minWidth: 16, height: 16, padding: '0 4px', background: '#DC2626', fontSize: 9.5, fontWeight: 800 }}
-                aria-hidden
-              >
-                {totalUnread > 99 ? '99+' : totalUnread}
-              </span>
-            )}
-
-            {notifOpen && (
-              <div
-                className="absolute right-0 top-full mt-2 z-50 overflow-hidden"
-                style={{ width: 320, background: '#fff', borderRadius: 14, border: `1px solid ${LINE}`, boxShadow: '0 20px 50px rgba(20,8,31,.20)' }}
-              >
-                <div className="flex items-center justify-between px-3.5 py-2.5" style={{ borderBottom: `1px solid ${LINE}` }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 700, color: INK }}>
-                    Unread{totalUnread > 0 ? ` (${totalUnread})` : ''}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => { markAllSeen(); setNotifOpen(false) }}
-                    disabled={totalUnread === 0}
-                    className="cursor-pointer disabled:opacity-40"
-                    style={{ fontSize: 11.5, fontWeight: 600, color: '#4A1FA0' }}
-                  >
-                    Mark all read
-                  </button>
-                </div>
-
-                <div className="max-h-80 overflow-y-auto">
-                  {unreadConvos.length === 0 ? (
-                    <p className="px-3.5 py-5 text-center" style={{ fontSize: 12, color: FAINT_INK }}>
-                      Nothing new. You are all caught up.
-                    </p>
-                  ) : unreadConvos.map((c) => (
-                    <button
-                      key={c.phoneNormalized}
-                      type="button"
-                      onClick={() => { openConversation(c.phoneNormalized); setNotifOpen(false); setSidebarOpen(false) }}
-                      className="w-full flex items-start gap-2.5 px-3.5 py-2.5 text-left cursor-pointer hover:bg-[#F7F3FF]"
-                      style={{ borderBottom: `1px solid ${LINE}` }}
-                    >
-                      <Avatar seed={c.phoneNormalized} label={convDisplayName(c)} size={30} />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-baseline gap-2">
-                          <span className="truncate flex-1" style={{ fontSize: 12.5, fontWeight: 700, color: INK }}>
-                            {convDisplayName(c)}
-                          </span>
-                          <span className="shrink-0" style={{ fontSize: 10.5, color: FAINT_INK }}>{formatListTime(c.lastAt)}</span>
-                        </div>
-                        <div className="truncate" style={{ fontSize: 11.5, color: MUTED_INK }}>
-                          {previewByPhone[c.phoneNormalized] ?? `${c.count} messages`}
-                        </div>
-                      </div>
-                      <span
-                        className="shrink-0 rounded-full text-white grid place-items-center"
-                        style={{ minWidth: 17, height: 17, padding: '0 5px', background: '#5B2BC9', fontSize: 10, fontWeight: 800 }}
-                      >
-                        {(unreadByPhone[c.phoneNormalized] ?? 0) > 99 ? '99+' : unreadByPhone[c.phoneNormalized]}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
           <IconButton title={muted ? 'Notification sound is off' : 'Notification sound is on'} tone="dark" onClick={toggleMute}>
             {muted ? <BellOff size={15} /> : <Bell size={15} />}
           </IconButton>

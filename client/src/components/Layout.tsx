@@ -1,4 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import WhatsAppBell from './WhatsAppBell'
 import { Bot, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Target, Calculator, ListTodo, NotebookPen, MessageCircle } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
@@ -326,6 +327,7 @@ export default function Layout() {
     localStorage.setItem(BUSINESS_MODE_KEY, mode)
     navigate(mode === 'moving' ? '/moving' : '/')
   }
+  const canSeeWhatsApp = hasPermission('leads') || hasPermission('sales_board')
   const showStorageNav = !isMovingOnly && !isSalesRepUser && businessMode === 'storage'
   const showMovingNav = !isSalesRepUser && businessMode === 'moving'
 
@@ -764,6 +766,10 @@ export default function Layout() {
           <h1 className="text-lg font-semibold shrink-0" style={{ color: '#14081F' }}>{getPageTitle(location.pathname)}</h1>
           <div className="flex items-center gap-3">
           {!isMovingOnly && <GlobalSearch />}
+          {/* Unread WhatsApp, on every page — the console is not the only place
+              someone works, and a waiting customer should not depend on being
+              in the right tab to notice. */}
+          {canSeeWhatsApp && <WhatsAppBell />}
           <div ref={profileRef} className="relative">
             <button
               onClick={() => setProfileOpen(o => !o)}
