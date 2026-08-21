@@ -535,10 +535,19 @@ export default function Settings() {
                 <div className="font-medium">WhatsApp Inbox (Meta Cloud API)</div>
                 <div className="text-xs text-muted-foreground">Receive and reply to messages inside the app</div>
               </div>
-              <span className={integrations?.whatsapp?.configured ? 'text-xs text-emerald-600 font-medium' : 'text-xs text-amber-600 font-medium'}>
-                {integrations?.whatsapp?.configured
-                  ? `Connected${waProfile ? ` — ${waProfile}` : ''}`
-                  : `Missing: ${(integrations?.whatsapp?.missing || []).join(', ') || 'keys'}`}
+              {/* Credentials being present is not the same as them working, and
+                  saying "Connected" over a rejected token is how an outage goes
+                  unnoticed. */}
+              <span className={
+                !integrations?.whatsapp?.configured ? 'text-xs text-amber-600 font-medium'
+                  : waToken?.valid === false ? 'text-xs text-red-600 font-medium'
+                    : 'text-xs text-emerald-600 font-medium'
+              }>
+                {!integrations?.whatsapp?.configured
+                  ? `Missing: ${(integrations?.whatsapp?.missing || []).join(', ') || 'keys'}`
+                  : waToken?.valid === false
+                    ? 'Token expired — not sending'
+                    : `Connected${waProfile ? ` — ${waProfile}` : ''}`}
               </span>
             </div>
 
@@ -548,7 +557,11 @@ export default function Settings() {
             {integrations?.whatsapp?.configured && waToken && (
               waToken.valid === false ? (
                 <p className="text-xs rounded-md px-3 py-2 bg-red-50 text-red-800 border border-red-200 dark:bg-red-950/40 dark:text-red-200 dark:border-red-900">
-                  <strong>This token no longer works.</strong> {waToken.error} Paste a new one below.
+                  <strong>This token no longer works.</strong> {waToken.error}
+                  {' '}Paste a new one below — and to stop this recurring, generate it as a
+                  {' '}<strong>System User</strong> token with expiry set to <strong>Never</strong>
+                  {' '}(Meta → Business Settings → Users → System Users), not the temporary one on the
+                  {' '}API Setup page, which lasts 24 hours.
                 </p>
               ) : waToken.neverExpires ? (
                 <p className="text-xs text-emerald-700 dark:text-emerald-400">

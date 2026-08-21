@@ -923,6 +923,14 @@ export default function WhatsApp() {
     onSuccess: () => onSent(),
   })
 
+  // Handing a thread over mutes the assistant on it. Without a way back the
+  // mute is permanent, and that customer never gets an automatic reply again.
+  const resumeBot = useMutation({
+    mutationFn: (phone: string) => api.post(`/ai-bot/threads/${phone}/resume`).then((r) => r.data),
+    onSuccess: () => { setSendErr(''); onSent() },
+    onError: (e) => setSendErr(apiError(e)),
+  })
+
   function sendText(body: string) {
     const text = body.trim()
     if (!text) return
@@ -1290,10 +1298,20 @@ export default function WhatsApp() {
             <div className="shrink-0 mx-6 mb-2 flex items-start gap-2 rounded-xl px-3.5 py-2.5"
               style={{ background: '#FFF7E6', border: '1px solid #F5D9A0' }}>
               <UserCheck size={15} style={{ color: '#8A5A00', flex: '0 0 auto', marginTop: 1 }} />
-              <div className="min-w-0" style={{ fontSize: 12.5, color: '#6B4500' }}>
+              <div className="min-w-0 flex-1" style={{ fontSize: 12.5, color: '#6B4500' }}>
                 <span style={{ fontWeight: 700 }}>Waiting for a person.</span>{' '}
                 {selectedConvo.botEscalationReason || 'The assistant could not answer this one.'}
               </div>
+              <button
+                type="button"
+                onClick={() => resumeBot.mutate(selectedConvo.phoneNormalized)}
+                disabled={resumeBot.isPending}
+                className="shrink-0 rounded-full px-3 py-1 cursor-pointer disabled:opacity-50"
+                style={{ background: '#8A5A00', color: '#fff', fontSize: 11.5, fontWeight: 700 }}
+                title="The assistant will answer this conversation again"
+              >
+                {resumeBot.isPending ? 'Handing back…' : 'Hand back to AI'}
+              </button>
             </div>
           )}
 
