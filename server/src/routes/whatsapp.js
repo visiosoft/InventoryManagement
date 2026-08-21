@@ -8,6 +8,53 @@ import { createLeadFromWhatsAppPhone } from '../services/whatsappLeadSync.js';
 
 const router = Router();
 
+/**
+ * The WhatsApp thread belonging to a customer, for the Chat tab on a contract.
+ *
+ * Resolved here rather than in the browser because the numbers are stored
+ * inconsistently — +971…, 0…, 971… — so matching is done on the last nine
+ * digits, the same rule the inbox and the Zoho matcher already use. A customer
+ * can have several numbers; whichever has been messaged most recently wins.
+ */
+router.get('/customer-thread/:customerId', async (req, res) => {
+    const customer = await Customer.findById(req.params.customerId).select('fullName phone phones').lean();
+    if (!customer) return res.status(404).json({ error: 'Customer not found' });
+
+    const suffixes = [...(customer.phones || []), customer.phone]
+        .map((p) => String(p || '').replace(/\D/g, ''))
+        .filter((d) => d.length >= 9)
+        .map((d) => d.slice(-9));
+
+    if (suffixes.length === 0) {
+        return res.json({ phoneNormalized: '', numbersTried: [], messages: [] });
+    }
+
+    const unique = [...new Set(suffixes)];
+    const match = { $or: unique.map((sfx) => ({ phoneNormalized: { $regex: `${sfx}$` } })) };
+
+    // Which of their numbers actually has a conversation, most recent first.
+    const newest = await WhatsAppMessage.findOne(match).sort({ occurredAt: -1 }).select('phoneNormalized').lean();
+    if (!newest) return res.json({ phoneNormalized: '', numbersTried: unique, messages: [] });
+
+    const limit = Math.min(Math.max(Number(req.query.limit) || 60, 1), 300);
+    const messages = await WhatsAppMessage.find({ phoneNormalized: newest.phoneNormalized })
+        .sort({ occurredAt: -1 })
+        .limit(limit)
+        .lean();
+
+    res.json({
+        phoneNormalized: newest.phoneNormalized,
+        numbersTried: unique,
+        messages: messages.map((m) => {
+            const media = mediaFromRaw(m.raw);
+            const { raw, ...rest } = m;
+            return media
+                ? { ...rest, media: { kind: media.kind, mimeType: media.mimeType, filename: media.filename, caption: media.caption } }
+                : rest;
+        }),
+    });
+});
+
 // ── Chat labels ──────────────────────────────────────────────────────────────
 // Named tags a person puts on a conversation, the way the WhatsApp Business
 // app does, so a chat can be found again later.

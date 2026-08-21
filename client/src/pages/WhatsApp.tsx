@@ -641,9 +641,13 @@ export default function WhatsApp() {
   // The last chat opened, so returning to the inbox lands where you left off
   // instead of on a combined feed of everyone.
   const LAST_CHAT_KEY = 'wa_last_chat'
-  const [selectedPhone, setSelectedPhone] = useState<string | null>(
-    () => localStorage.getItem(LAST_CHAT_KEY) || null
-  )
+  // ?phone= wins over the remembered chat, so a link from elsewhere in the app
+  // — a contract's Chat tab, say — opens the conversation it names.
+  const [selectedPhone, setSelectedPhone] = useState<string | null>(() => {
+    const asked = new URLSearchParams(window.location.search).get('phone')
+    const digits = String(asked || '').replace(/\D/g, '')
+    return digits || localStorage.getItem(LAST_CHAT_KEY) || null
+  })
   const [muted, setMuted] = useState<boolean>(() => localStorage.getItem(MUTE_KEY) === '1')
   const [lastSeen, setLastSeen] = useState<Record<string, string>>(readSeen)
   const [blinking, setBlinking] = useState<Record<string, number>>({})

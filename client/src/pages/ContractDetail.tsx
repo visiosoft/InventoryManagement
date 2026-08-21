@@ -928,7 +928,7 @@ export default function ContractDetail() {
   const [docBusy, setDocBusy] = useState('')
   const [otherTitle, setOtherTitle] = useState('')
   const [searchParams, setSearchParams] = useSearchParams()
-  const activeTab = (searchParams.get('tab') as 'overview' | 'contracts' | 'units' | 'payments' | 'documents' | 'notices' | 'reminders') || 'overview'
+  const activeTab = (searchParams.get('tab') as 'overview' | 'contracts' | 'units' | 'payments' | 'documents' | 'notices' | 'reminders' | 'chat') || 'overview'
   const setActiveTab = (tab: typeof activeTab) => setSearchParams({ tab }, { replace: true })
 
   // Units tab: which units are ticked for bulk removal, and the last save error
@@ -1125,6 +1125,22 @@ export default function ContractDetail() {
       .get('/contracts', { params: { customer: zohoCustomerId, limit: 200, archived: 'all', sort: 'start_desc' } })
       .then((r) => r.data?.data ?? []),
     enabled: activeTab === 'contracts' && Boolean(zohoCustomerId),
+  })
+
+  // The tenant's WhatsApp thread, for reference while looking at the contract.
+  // The server resolves which of their numbers has the conversation — they are
+  // stored in several formats, so matching cannot be done here.
+  type ChatMsg = {
+    _id: string; messageId: string; direction: 'inbound' | 'outbound'; type: string
+    text: string; occurredAt: string; status?: string; sentByAi?: boolean
+    deletedAt?: string | null; editedAt?: string | null; reaction?: string
+    media?: { kind: string; mimeType: string; filename: string; caption: string }
+  }
+  const chatThread = useQuery<{ phoneNormalized: string; numbersTried: string[]; messages: ChatMsg[] }>({
+    queryKey: ['customer-chat', zohoCustomerId],
+    queryFn: () => api.get(`/whatsapp/customer-thread/${zohoCustomerId}`).then((r) => r.data),
+    enabled: activeTab === 'chat' && Boolean(zohoCustomerId),
+    refetchInterval: activeTab === 'chat' ? 20_000 : false,
   })
 
   const zohoInvoices = useQuery<ZohoInvoicesResponse>({
@@ -1937,6 +1953,7 @@ export default function ContractDetail() {
               ['notices', 'Notices', 0],
               ['reminders', 'Reminders', 0],
               ['payments', 'Payments', unpaidGroups.length],
+              ['chat', 'Chat', 0],
             ] as [typeof activeTab, string, number][]).map(([key, label, count]) => (
               <button key={key} onClick={() => setActiveTab(key)}
                 className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px flex items-center gap-1.5 ${activeTab === key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
@@ -2759,6 +2776,101 @@ export default function ContractDetail() {
               </CardBody>
             </Card>
             </div>
+          )}
+
+          {activeTab === 'chat' && (
+            <Card>
+              <CardHeader
+                title={`WhatsApp with ${c.customer.fullName}`}
+                subtitle={
+                  chatThread.data?.phoneNormalized
+                    ? `+${chatThread.data.phoneNormalized} — newest last`
+                    : 'Their WhatsApp conversation, for reference'
+                }
+                action={chatThread.data?.phoneNormalized ? (
+                  <Link
+                    to={`/whatsapp?phone=${chatThread.data.phoneNormalized}`}
+                    className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-bold cursor-pointer hover:opacity-90"
+                    style={{ background: PURPLE, color: '#fff' }}
+                  >
+                    <MessageSquare size={13} /> Open in console
+                  </Link>
+                ) : undefined}
+              />
+              <CardBody className="pt-0">
+                {chatThread.isLoading ? (
+                  <p className="text-sm text-muted-foreground py-4">Loading…</p>
+                ) : chatThread.isError ? (
+                  <p className="text-sm text-muted-foreground py-4">Could not load the conversation.</p>
+                ) : !chatThread.data?.messages.length ? (
+                  <div className="py-10 text-center">
+                    <MessageSquare size={26} className="mx-auto mb-2.5 opacity-30" />
+                    <p className="text-sm text-muted-foreground">
+                      No WhatsApp messages with this tenant yet.
+                    </p>
+                    {chatThread.data?.numbersTried?.length === 0 && (
+                      <p className="text-xs mt-1" style={{ color: MUTED }}>
+                        No phone number on this tenant to match against.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div
+                    className="rounded-xl p-3.5 space-y-2 overflow-y-auto"
+                    style={{ background: '#FBF8F2', border: '1px solid rgba(20,8,31,.06)', maxHeight: 520 }}
+                  >
+                    {/* Oldest first, so it reads the way the conversation ran. */}
+                    {[...chatThread.data.messages].reverse().map((m) => {
+                      const out = m.direction === 'outbound'
+                      return (
+                        <div key={m._id} className={`flex ${out ? 'justify-end' : 'justify-start'}`}>
+                          <div
+                            className="max-w-[78%] rounded-2xl px-3 py-2"
+                            style={out
+                              ? { background: '#D9FDD3', color: INK, borderBottomRightRadius: 5 }
+                              : { background: '#fff', color: INK, borderBottomLeftRadius: 5, border: '1px solid rgba(20,8,31,.08)' }}
+                          >
+                            {m.deletedAt ? (
+                              <p className="text-[13px] italic opacity-60">This message was deleted</p>
+                            ) : m.media ? (
+                              <p className="text-[13px] italic opacity-70">
+                                [{m.media.kind}] {m.media.caption || m.media.filename || ''}
+                              </p>
+                            ) : (
+                              <p className="text-[13px] whitespace-pre-wrap break-words">
+                                {m.text || <span className="italic opacity-60">[{m.type}]</span>}
+                              </p>
+                            )}
+                            <div
+                              className="flex items-center justify-end gap-1.5 mt-0.5 text-[10px]"
+                              style={{ color: out ? 'rgba(20,8,31,.45)' : MUTED }}
+                            >
+                              {m.editedAt && !m.deletedAt && <span className="italic">edited</span>}
+                              {m.sentByAi && <span>AI</span>}
+                              <span>
+                                {new Date(m.occurredAt).toLocaleString(undefined, {
+                                  day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+                                })}
+                              </span>
+                            </div>
+                            {m.reaction && (
+                              <div className={`flex mt-0.5 ${out ? 'justify-end' : 'justify-start'}`}>
+                                <span
+                                  className="inline-flex rounded-full px-1.5"
+                                  style={{ background: '#fff', border: '1px solid rgba(20,8,31,.08)', fontSize: 11 }}
+                                >
+                                  {m.reaction}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </CardBody>
+            </Card>
           )}
 
           {activeTab === 'contracts' && (
