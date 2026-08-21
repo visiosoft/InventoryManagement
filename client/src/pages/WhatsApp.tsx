@@ -423,6 +423,11 @@ function MessageBubble({ msg }: { msg: WaMsg }) {
   )
 }
 
+// The chat panel's own type and width, from the ChatPanel design: Manrope for
+// a rounder, friendlier list, and a little more room than the 300px it had.
+const CHAT_PANEL_W = 360
+const CHAT_PANEL_FONT = "'Manrope', ui-sans-serif, system-ui, sans-serif"
+
 const LABEL_COLOURS = ['#DC2626', '#EA580C', '#CA8A04', '#16A34A', '#0891B2', '#2563EB', '#5B2BC9', '#DB2777']
 
 /** A label as it appears on a chat row or in the header — colour plus name. */
@@ -1228,7 +1233,7 @@ export default function WhatsApp() {
         {/* 2. Sidebar */}
         <aside
           className={cn('wa-sidebar flex flex-col min-h-0', sidebarOpen && 'wa-sidebar-open')}
-          style={{ flex: '0 0 300px', width: 300, background: '#fff', borderRight: `1px solid ${LINE}` }}
+          style={{ flex: `0 0 ${CHAT_PANEL_W}px`, width: CHAT_PANEL_W, background: '#fff', borderRight: `1px solid ${LINE}`, fontFamily: CHAT_PANEL_FONT }}
         >
           <div className="shrink-0 px-4 pt-4 pb-3 space-y-3">
             <div className="flex items-center justify-between gap-2">
