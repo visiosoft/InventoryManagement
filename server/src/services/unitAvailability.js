@@ -49,11 +49,29 @@ export async function computeUnitAvailability({ from = null, to = null, includeA
             'units.startDate': { $lte: to },
             'units.endDate': { $gte: from },
         })
-            .select('quoteNo customer units status')
+            .select('quoteNo customer units status contract')
             .populate('customer', 'fullName')
             .lean();
 
-        for (const q of openQuotes) {
+        // A quote that has already become a contract is not a hold of its own:
+        // the contract decides. Once that contract ends or is cancelled, the
+        // unit is free — but the quote stays "accepted" forever, so counting it
+        // separately kept the unit blocked for good. F2-37 was still showing as
+        // taken until 28 August on a quote whose contract ended on the 27th.
+        //
+        // A quote whose contract row has since been deleted is treated the same
+        // way: there is nothing left to honour.
+        const contractIds = openQuotes.map((q) => q.contract).filter(Boolean);
+        const liveContracts = contractIds.length
+            ? await Contract.find({
+                _id: { $in: contractIds },
+                status: { $nin: ['ended', 'cancelled'] },
+            }).select('_id').lean()
+            : [];
+        const stillLive = new Set(liveContracts.map((c) => String(c._id)));
+        const holdsUnit = (q) => !q.contract || stillLive.has(String(q.contract));
+
+        for (const q of openQuotes.filter(holdsUnit)) {
             for (const u of q.units || []) {
                 if (new Date(u.startDate) <= to && new Date(u.endDate) >= from) {
                     const uid = String(u.unit);
