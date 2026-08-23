@@ -163,12 +163,27 @@ router.put('/auto-send', async (req, res) => {
     }
 });
 
-// POST /api/automation-rules/run — run the engine now; ?dry=1 previews without sending
+// POST /api/automation-rules/run — run the engine now; ?dry=1 previews without sending.
+//
+// A real run messages every tenant its rules match — 127 active contracts at the
+// time of writing — so the preview flag is read generously. It used to accept
+// only `dry`, which meant a caller asking for `dryRun` got a live send instead,
+// silently. The aliases below cost nothing and remove that trap.
+const PREVIEW_KEYS = ['dry', 'dryRun', 'dry_run', 'preview'];
+
 router.post('/run', async (req, res) => {
     try {
-        const dryRun = req.query.dry === '1' || req.body?.dry === true;
+        const asked = (v) => v === true || v === '1' || v === 'true';
+        const dryRun = PREVIEW_KEYS.some((k) => asked(req.query?.[k]) || asked(req.body?.[k]));
         const result = await runAutomationRules({ dryRun });
-        res.json({ ok: true, dryRun, ...result });
+        res.json({
+            ok: true,
+            dryRun,
+            // Stated outright, because "did that actually send?" is the first
+            // thing anyone asks when they see the numbers.
+            note: dryRun ? 'Preview only — nothing was sent' : 'Live run — messages were sent',
+            ...result,
+        });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
