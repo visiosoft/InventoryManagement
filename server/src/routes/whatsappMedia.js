@@ -39,7 +39,7 @@ export function mediaFromRaw(raw) {
  */
 router.get('/:messageId', async (req, res) => {
     try {
-        const msg = await WhatsAppMessage.findOne({ messageId: req.params.messageId }).select('raw type').lean();
+        const msg = await WhatsAppMessage.findOne({ messageId: req.params.messageId }).select('raw type occurredAt').lean();
         if (!msg) return res.status(404).json({ error: 'Message not found' });
 
         const media = mediaFromRaw(msg.raw);
@@ -63,7 +63,20 @@ router.get('/:messageId', async (req, res) => {
         const lookup = await fetch(`${GRAPH}/${media.id}`, { headers: { Authorization: `Bearer ${token}` } });
         const info = await lookup.json().catch(() => ({}));
         if (!lookup.ok || !info?.url) {
-            return res.status(502).json({ error: info?.error?.message || 'Could not resolve the attachment' });
+            const detail = info?.error?.message || `HTTP ${lookup.status}`;
+            // "Unavailable" on its own sends people looking in the wrong place.
+            // The two things that actually go wrong here are a dead token and
+            // Meta having deleted the file, and they need different fixes.
+            const ageDays = msg.occurredAt ? (Date.now() - new Date(msg.occurredAt)) / 86_400_000 : 0;
+            let error = detail;
+            if (lookup.status === 401 || /auth|token|session|expired/i.test(detail)) {
+                error = 'The WhatsApp access token is not valid — reconnect it in Settings → Integrations';
+            } else if (ageDays > 30) {
+                // Meta keeps media for 30 days. Past that it is gone for good,
+                // whatever the credentials say.
+                error = 'WhatsApp deleted this attachment — it only keeps files for 30 days';
+            }
+            return res.status(502).json({ error });
         }
 
         const file = await fetch(info.url, { headers: { Authorization: `Bearer ${token}` } });

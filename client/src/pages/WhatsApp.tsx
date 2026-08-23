@@ -111,6 +111,21 @@ function loadMediaUrl(messageId: string): Promise<string> {
         mediaUrls.set(messageId, url)
         return url
       })
+      .catch(async (e) => {
+        // The server says why it could not fetch the file, but because the
+        // request asked for a blob the error body arrives as one too. Read it
+        // back, or the reason is lost and every failure looks the same.
+        const blob = e?.response?.data
+        if (blob instanceof Blob) {
+          try {
+            const parsed = JSON.parse(await blob.text())
+            if (parsed?.error) throw new Error(parsed.error)
+          } catch (inner) {
+            if (inner instanceof Error && inner.message) throw inner
+          }
+        }
+        throw e
+      })
       .finally(() => { mediaPending.delete(messageId) })
     mediaPending.set(messageId, p)
   }
@@ -127,17 +142,18 @@ function revokeAllMedia() {
  *  the fetch starts on mount — so loading is lazy per rendered message. */
 function Attachment({ messageId, media }: { messageId: string; media: WaMedia }) {
   const [url, setUrl] = useState<string | null>(() => mediaUrls.get(messageId) ?? null)
-  const [failed, setFailed] = useState(false)
+  // The reason the fetch failed, shown in place of the attachment.
+  const [failed, setFailed] = useState('')
 
   useEffect(() => {
     const cached = mediaUrls.get(messageId)
-    if (cached) { setUrl(cached); setFailed(false); return }
+    if (cached) { setUrl(cached); setFailed(''); return }
     let alive = true
     setUrl(null)
-    setFailed(false)
+    setFailed('')
     loadMediaUrl(messageId)
       .then((u) => { if (alive) setUrl(u) })
-      .catch(() => { if (alive) setFailed(true) })
+      .catch((e) => { if (alive) setFailed(e?.message || 'Attachment unavailable') })
     return () => { alive = false }
   }, [messageId])
 
@@ -147,8 +163,8 @@ function Attachment({ messageId, media }: { messageId: string; media: WaMedia })
 
   if (failed) {
     return (
-      <p className="text-xs italic" style={{ color: FAINT_INK }}>
-        Attachment unavailable
+      <p className="text-xs italic" style={{ color: FAINT_INK }} title={failed}>
+        {failed}
       </p>
     )
   }
