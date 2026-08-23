@@ -436,6 +436,67 @@ export async function findZohoContactsFor({ emails = [], phones = [] } = {}) {
     return { configured: true, contacts: matched };
 }
 
+/**
+ * What each local customer owes, according to Zoho Books.
+ *
+ * Built from the cached contact list, which already carries
+ * `outstanding_receivable_amount` per contact — so this costs one API call
+ * every five minutes rather than one call per customer. Fetching invoices
+ * instead would mean a request per contact: 138 sequential round trips, far
+ * too slow to sit behind a filter on a list page.
+ *
+ * Matching is on email and phone only, never name, because the same person is
+ * routinely spelled differently in the two systems. That is deliberate and it
+ * has a cost: a customer whose email and phone do not appear in Zoho cannot be
+ * matched at all, so callers are told how many owed balances went unclaimed
+ * rather than being left to assume the list is complete.
+ *
+ * Returns { byCustomer: Map<customerId, {outstanding, zohoName}>, unmatchedOwing }.
+ */
+export async function zohoOutstandingByCustomer(customers) {
+    if (!zohoBooksConfigured()) return { configured: false, byCustomer: new Map(), unmatchedOwing: 0 };
+
+    const { contacts } = await listAllZohoContacts();
+
+    // Index the Zoho side once, then walk our customers — the reverse would be
+    // quadratic across a few hundred of each.
+    const byEmail = new Map();
+    const byPhone = new Map();
+    for (const c of contacts || []) {
+        const e = normEmail(c.email);
+        if (e && !byEmail.has(e)) byEmail.set(e, c);
+        for (const key of [phoneKey(c.phone), phoneKey(c.mobile)]) {
+            if (key && !byPhone.has(key)) byPhone.set(key, c);
+        }
+    }
+
+    const byCustomer = new Map();
+    const claimed = new Set();
+    for (const cust of customers || []) {
+        const e = normEmail(cust.email);
+        let hit = e ? byEmail.get(e) : null;
+        if (!hit) {
+            const keys = [...(Array.isArray(cust.phones) ? cust.phones : []), cust.phone]
+                .map(phoneKey).filter(Boolean);
+            for (const k of keys) { hit = byPhone.get(k); if (hit) break; }
+        }
+        if (!hit) continue;
+        claimed.add(String(hit.id));
+        byCustomer.set(String(cust._id), {
+            outstanding: Number(hit.outstanding || 0),
+            zohoName: hit.name || '',
+        });
+    }
+
+    // Money Zoho says is owed that we could not attach to anyone here. Shown in
+    // the UI so an incomplete list never reads as a complete one.
+    const unmatchedOwing = (contacts || [])
+        .filter((c) => Number(c.outstanding || 0) > 0 && !claimed.has(String(c.id)))
+        .length;
+
+    return { configured: true, byCustomer, unmatchedOwing };
+}
+
 // Invoices for the given Zoho contact ids.
 export async function fetchZohoInvoicesForContacts(contactIds) {
     if (!zohoBooksConfigured()) return { configured: false, invoices: [] };

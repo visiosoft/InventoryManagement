@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { FileText, FileBadge, Receipt, Plus, Search, Trash2, UserCheck, Merge, Mail } from 'lucide-react'
+import { FileText, FileBadge, Receipt, Plus, Search, Trash2, UserCheck, Merge, Mail, AlertTriangle } from 'lucide-react'
 import { api, apiError, customerApi } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { Customer } from '../lib/types'
@@ -28,6 +28,10 @@ export default function Customers() {
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState('date_added_desc')
+  // Who the team should be calling: renewal intent comes off the tenant's
+  // active contract, "owes" off their Zoho Books balance.
+  const [renewal, setRenewal] = useState('')
+  const [owing, setOwing] = useState(false)
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(25)
   const [adding, setAdding] = useState(false)
@@ -72,17 +76,27 @@ export default function Customers() {
     onError: (e) => setActionError(apiError(e)),
   })
 
-  type PagedCustomers = { data: Customer[]; total: number; page: number; pages: number; limit: number }
+  // `outstanding` rides along per row when Zoho Books is connected;
+  // `unmatchedOwing` counts balances Zoho holds for people we could not match.
+  type PagedCustomers = {
+    data: (Customer & { outstanding?: number; zohoName?: string })[]
+    total: number; page: number; pages: number; limit: number
+    unmatchedOwing?: number
+  }
   const { data, isLoading } = useQuery<PagedCustomers>({
-    queryKey: ['customers', search, sort, page, limit],
-    queryFn: () => api.get('/customers', { params: { search, sort, page, limit } }).then((r) => r.data),
+    queryKey: ['customers', search, sort, page, limit, renewal, owing],
+    queryFn: () => api.get('/customers', {
+      params: { search, sort, page, limit, ...(renewal ? { renewal } : {}), ...(owing ? { owing: true } : {}) },
+    }).then((r) => r.data),
     staleTime: 30_000,
     placeholderData: (prev) => prev,
   })
   const customers = data?.data ?? []
 
   // Clear selection when page/search changes
-  useEffect(() => { setSelected(new Set()) }, [search, sort, page])
+  useEffect(() => { setSelected(new Set()) }, [search, sort, page, renewal, owing])
+
+  useEffect(() => { setPage(1) }, [renewal, owing])
 
   const allPageIds = customers.map((c) => c._id)
   const allSelected = allPageIds.length > 0 && allPageIds.every((id) => selected.has(id))
@@ -223,6 +237,69 @@ export default function Customers() {
         </div>
       </div>
 
+      {/* Who to focus on. Renewal intent is set by the team from each contract;
+          the money comes from Zoho Books. */}
+      <div className="mb-4 flex flex-wrap items-center gap-1.5">
+        {([
+          ['', 'All tenants'],
+          ['undecided', 'Undecided'],
+          ['renewing', 'Renewing'],
+          ['not_renewing', 'Not renewing'],
+        ] as [string, string][]).map(([value, label]) => {
+          const active = renewal === value
+          return (
+            <button
+              key={value || 'all'}
+              type="button"
+              onClick={() => setRenewal(value)}
+              className="rounded-full cursor-pointer transition-colors"
+              style={{
+                padding: '5px 12px', fontSize: 12.5, fontWeight: 700,
+                background: active ? PURPLE : CHIP_BG,
+                color: active ? '#fff' : MUTED_COLOR,
+              }}
+            >
+              {label}
+            </button>
+          )
+        })}
+
+        <span style={{ width: 1, height: 18, background: 'rgba(20,8,31,.14)' }} className="mx-1" />
+
+        <button
+          type="button"
+          onClick={() => setOwing((v) => !v)}
+          className="rounded-full cursor-pointer transition-colors inline-flex items-center gap-1.5"
+          style={{
+            padding: '5px 12px', fontSize: 12.5, fontWeight: 700,
+            background: owing ? '#B91C1C' : CHIP_BG,
+            color: owing ? '#fff' : MUTED_COLOR,
+          }}
+          title="Tenants with an unpaid balance in Zoho Books"
+        >
+          <AlertTriangle size={12} /> Behind on payments
+        </button>
+
+        {(renewal || owing) && (
+          <span style={{ fontSize: 12, color: MUTED_COLOR }} className="ml-1">
+            {data?.total ?? 0} {(data?.total ?? 0) === 1 ? 'tenant' : 'tenants'}
+          </span>
+        )}
+      </div>
+
+      {/* Zoho holds balances for people we cannot match on email or phone.
+          Saying so keeps a short list from reading as a complete one. */}
+      {owing && (data?.unmatchedOwing ?? 0) > 0 && (
+        <p
+          className="mb-4 rounded-lg px-3 py-2"
+          style={{ fontSize: 12, background: '#FFF7E6', border: '1px solid #F5D9A0', color: '#6B4500' }}
+        >
+          {data!.unmatchedOwing} more {data!.unmatchedOwing === 1 ? 'balance' : 'balances'} in Zoho Books could not be
+          matched to a tenant here. Matching is on email and phone only — never name — so a tenant whose email or
+          number differs between the two systems will not appear in this list.
+        </p>
+      )}
+
       {isLoading ? (
         <Spinner />
       ) : (
@@ -234,7 +311,7 @@ export default function Customers() {
                 <Th className="w-8">
                   <input type="checkbox" checked={allSelected} onChange={toggleAll} className="cursor-pointer" />
                 </Th>
-                <Th>Name</Th><Th>Client ID</Th><Th>Email</Th><Th>Phone</Th><Th>Nationality</Th><Th>Since</Th><Th />
+                <Th>Name</Th><Th>Client ID</Th><Th>Email</Th><Th>Phone</Th><Th>Nationality</Th><Th>Owes</Th><Th>Since</Th><Th />
               </tr>
             </thead>
             <tbody>
@@ -254,6 +331,20 @@ export default function Customers() {
                   <Td>{c.email || '—'}</Td>
                   <Td>{c.phones?.[0] ?? c.phone ?? '—'}</Td>
                   <Td>{c.nationality || '—'}</Td>
+                  {/* A number here is what Zoho Books says is unpaid. Blank
+                      means either nothing owed or no match — the notice above
+                      the table covers the difference. */}
+                  <Td>
+                    {Number(c.outstanding) > 0 ? (
+                      <span
+                        className="inline-flex rounded-full px-2 py-0.5 whitespace-nowrap"
+                        style={{ background: '#FEE2E2', color: '#B91C1C', fontSize: 11.5, fontWeight: 700 }}
+                        title={c.zohoName ? `Zoho Books: ${c.zohoName}` : undefined}
+                      >
+                        AED {Number(c.outstanding).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    ) : '—'}
+                  </Td>
                   <Td>{formatDate(c.createdAt)}</Td>
                   <Td className="text-right">
                     {isAdmin && (

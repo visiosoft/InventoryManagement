@@ -5,7 +5,7 @@ import { syncUnitStatus } from '../utils/unitStatus.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { phoneClauses } from '../utils/phoneSearch.js';
 import { mailConfigured, mailFromAddress, sendMail } from '../services/mail.js';
-import { zohoBooksConfigured, findZohoContactsFor, fetchZohoInvoicesForContacts, fetchZohoInvoicePdf } from '../services/zohoBooks.js';
+import { zohoBooksConfigured, findZohoContactsFor, fetchZohoInvoicesForContacts, fetchZohoInvoicePdf, zohoOutstandingByCustomer } from '../services/zohoBooks.js';
 
 const router = Router();
 
@@ -30,8 +30,26 @@ function escRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+const RENEWAL_INTENTS = new Set(['undecided', 'renewing', 'not_renewing']);
+
 router.get('/', async (req, res) => {
   const filter = {};
+
+  // Renewal intent lives on the contract, not the tenant, so narrow to the
+  // customers whose *active* contract carries it. An ended contract's intent is
+  // history and must not put someone back on the calling list.
+  const renewal = String(req.query.renewal || '').trim();
+  if (RENEWAL_INTENTS.has(renewal)) {
+    const contracts = await Contract.find({
+      status: 'active',
+      // Older contracts predate the field, and an absent value means undecided.
+      ...(renewal === 'undecided'
+        ? { $or: [{ renewalIntent: 'undecided' }, { renewalIntent: { $exists: false } }, { renewalIntent: '' }] }
+        : { renewalIntent: renewal }),
+    }).select('customer').lean();
+    filter._id = { $in: [...new Set(contracts.map((c) => String(c.customer)))] };
+  }
+
   if (req.query.search) {
     const re = new RegExp(escRegex(req.query.search), 'i');
     filter.$or = [
@@ -63,13 +81,49 @@ router.get('/', async (req, res) => {
   const limit = Math.min(Math.max(1, Number(req.query.limit) || 25), 9999);
   const skip  = (page - 1) * limit;
 
+  // Who owes money, from Zoho. This has to be resolved before paging, because
+  // the balance lives in Zoho and cannot be sorted or sliced by Mongo.
+  const owingOnly = req.query.owing === 'true';
+  let owed = null;
+  let unmatchedOwing = 0;
+  if (owingOnly && zohoBooksConfigured()) {
+    const candidates = await Customer.find(filter).select('email phone phones').lean();
+    const zoho = await zohoOutstandingByCustomer(candidates);
+    owed = zoho.byCustomer;
+    unmatchedOwing = zoho.unmatchedOwing;
+    filter._id = {
+      $in: [...owed.entries()].filter(([, v]) => v.outstanding > 0).map(([id]) => id),
+    };
+  }
+
   // .lean() skips Mongoose document hydration, which dominates this endpoint:
   // 274 customers took ~2.5s hydrated vs ~950ms lean. The response is read-only.
   const [customers, total] = await Promise.all([
     Customer.find(filter).sort(sort).skip(skip).limit(limit).lean(),
     Customer.countDocuments(filter),
   ]);
-  res.json({ data: customers, total, page, pages: Math.ceil(total / limit), limit });
+
+  // The balance for whoever is on this page, so the amount can be shown next to
+  // the name. Only for the page, so an unfiltered list costs nothing extra.
+  let data = customers;
+  if (zohoBooksConfigured() && customers.length) {
+    const balances = owed ?? (await zohoOutstandingByCustomer(customers)).byCustomer;
+    data = customers.map((c) => {
+      const hit = balances.get(String(c._id));
+      return hit ? { ...c, outstanding: hit.outstanding, zohoName: hit.zohoName } : c;
+    });
+  }
+
+  res.json({
+    data,
+    total,
+    page,
+    pages: Math.ceil(total / limit),
+    limit,
+    // Balances Zoho holds that no tenant here could be matched to. Surfaced so
+    // a short list is never mistaken for a complete one.
+    ...(owingOnly ? { unmatchedOwing } : {}),
+  });
 });
 
 router.get('/:id', async (req, res) => {
