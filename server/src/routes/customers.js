@@ -289,7 +289,7 @@ router.post('/send-email', requireAdmin, async (req, res) => {
 
   // The server decides who is actually mailable, not the client.
   const recipients = await Customer.find({ _id: { $in: ids }, email: { $nin: ['', null] } })
-    .select('email fullName')
+    .select('email fullName company')
     .lean();
   if (!recipients.length) return res.status(400).json({ error: 'None of the selected customers have an email address' });
 
@@ -301,15 +301,42 @@ router.post('/send-email', requireAdmin, async (req, res) => {
   let failed = 0;
   let firstError = '';
 
-  for (const batch of chunk(recipients, BCC_BATCH_SIZE)) {
-    try {
-      // `To` is the sender: a message with an empty To and only BCC is widely
-      // treated as spam.
-      await sendMail({ to: from, bcc: batch.map((c) => c.email).join(', '), subject, text, html });
-      okIds.push(...batch.map((c) => c._id));
-    } catch (err) {
-      failed += batch.length;
-      if (!firstError) firstError = err.message || 'Send failed';
+  // Personalised sending is one message each, so `@name` can be filled in.
+  // The BCC form cannot do that — everyone shares one message body — which is
+  // why a template with placeholders is worth sending the slower way.
+  const personalise = req.body?.personalise === true;
+
+  if (personalise) {
+    const fill = (value, customer) => String(value || '')
+      .replace(/@name/g, customer.fullName || 'there')
+      .replace(/@email/g, customer.email || '')
+      .replace(/@company/g, customer.company || '');
+
+    for (const customer of recipients) {
+      try {
+        await sendMail({
+          to: customer.email,
+          subject: fill(subject, customer),
+          text: fill(text, customer),
+          html: fill(html, customer),
+        });
+        okIds.push(customer._id);
+      } catch (err) {
+        failed += 1;
+        if (!firstError) firstError = err.message || 'Send failed';
+      }
+    }
+  } else {
+    for (const batch of chunk(recipients, BCC_BATCH_SIZE)) {
+      try {
+        // `To` is the sender: a message with an empty To and only BCC is widely
+        // treated as spam.
+        await sendMail({ to: from, bcc: batch.map((c) => c.email).join(', '), subject, text, html });
+        okIds.push(...batch.map((c) => c._id));
+      } catch (err) {
+        failed += batch.length;
+        if (!firstError) firstError = err.message || 'Send failed';
+      }
     }
   }
 

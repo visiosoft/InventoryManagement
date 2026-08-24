@@ -27,6 +27,15 @@ function initialsOf(name: string) {
   return ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase() || '?'
 }
 
+/** Plain-text template body into paragraphs, so the editor has real markup
+ *  to work with rather than one run-on block. */
+function textToHtml(text: string) {
+  return text
+    .split(/\n{2,}/)
+    .map((para) => `<p>${para.replace(/\n/g, '<br/>')}</p>`)
+    .join('')
+}
+
 export default function EmailCustomersModal({
   onClose,
   defaultSegment = 'has_email',
@@ -38,6 +47,19 @@ export default function EmailCustomersModal({
   const [segment, setSegment] = useState<Segment>(defaultSegment)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [subject, setSubject] = useState('')
+  // Personalised sending is one message each, which is the only way @name can
+  // be filled in — a BCC send shares one body between everybody.
+  const [personalise, setPersonalise] = useState(false)
+  const [templateId, setTemplateId] = useState('')
+
+  // The email templates from Settings → Message Templates. Quick replies are
+  // WhatsApp-only, so they are not offered here.
+  type EmailTemplate = { _id: string; label: string; subject: string; emailBody: string; emailHtml?: string }
+  const { data: templates = [] } = useQuery<EmailTemplate[]>({
+    queryKey: ['message-templates', 'automation'],
+    queryFn: () => api.get('/message-templates', { params: { kind: 'automation' } }).then((r) => r.data ?? []),
+    staleTime: 60_000,
+  })
   const [result, setResult] = useState<SendResult | null>(null)
   const [error, setError] = useState('')
   const bodyRef = useRef<HTMLDivElement | null>(null)
@@ -114,6 +136,7 @@ export default function EmailCustomersModal({
 
   const send = useMutation({
     mutationFn: () => api.post('/customers/send-email', {
+      personalise,
       customerIds: [...selected],
       subject,
       html: bodyRef.current?.innerHTML ?? '',
@@ -121,6 +144,24 @@ export default function EmailCustomersModal({
     onSuccess: (r) => { setError(''); setResult(r) },
     onError: (e) => setError(apiError(e)),
   })
+
+  // Which placeholders the chosen template actually uses, split by whether a
+  // bulk send can resolve them. Recomputed when the template changes, not on
+  // every keystroke — the editor is uncontrolled, so its content is only read
+  // on send anyway.
+  const FILLABLE = ['@name', '@email', '@company']
+  const { usedPlaceholders, unfillable } = useMemo(() => {
+    const t = templates.find((x) => x._id === templateId)
+    if (!t) return { usedPlaceholders: [] as string[], unfillable: [] as string[] }
+    const source = `${t.subject || ''} ${t.emailHtml || t.emailBody || ''}`
+    const found = [...new Set((source.match(/@\w+/g) || []))]
+    return {
+      usedPlaceholders: found,
+      // Contract-level values — a bulk email is not tied to one contract, so
+      // these have nothing to resolve against however it is sent.
+      unfillable: found.filter((v) => !FILLABLE.includes(v)),
+    }
+  }, [templateId, templates])
 
   const sendDisabled = selectedCount === 0 || !subject.trim() || send.isPending
 
@@ -266,6 +307,62 @@ export default function EmailCustomersModal({
                   : 'No recipients selected'}
               </span>
             </div>
+            <div className="flex items-center gap-2.5 py-2.5" style={{ borderBottom: '1px solid rgba(20,8,31,.10)' }}>
+              <span style={{ fontSize: 12.5, color: MUTED, width: 52 }}>Template</span>
+              <select
+                value={templateId}
+                onChange={(e) => {
+                  const t = templates.find((x) => x._id === e.target.value)
+                  setTemplateId(e.target.value)
+                  if (!t) return
+                  setSubject(t.subject || '')
+                  // The designed version if the template has one, otherwise the
+                  // plain text turned into paragraphs so the editor has markup
+                  // to work with rather than one run-on block.
+                  if (bodyRef.current) {
+                    bodyRef.current.innerHTML = t.emailHtml || textToHtml(t.emailBody || '')
+                  }
+                }}
+                style={{ flex: 1, border: 'none', outline: 'none', fontSize: 13.5, color: templateId ? INK : MUTED, background: 'transparent', cursor: 'pointer' }}
+              >
+                <option value="">Start from blank, or pick a template…</option>
+                {templates.map((t) => <option key={t._id} value={t._id}>{t.label}</option>)}
+              </select>
+            </div>
+
+            {/* Placeholders are per-tenant. Which of them can actually be
+                filled depends on how this is sent, so say so rather than let
+                someone mail 175 people a literal "@name". */}
+            {usedPlaceholders.length > 0 && (
+              <div className="py-2.5" style={{ borderBottom: '1px solid rgba(20,8,31,.10)' }}>
+                <label className="flex items-start gap-2 cursor-pointer" style={{ fontSize: 12.5, color: MUTED }}>
+                  <input
+                    type="checkbox"
+                    checked={personalise}
+                    onChange={(e) => setPersonalise(e.target.checked)}
+                    style={{ marginTop: 2 }}
+                  />
+                  <span>
+                    <strong style={{ color: INK }}>Send individually so names are filled in.</strong>{' '}
+                    This message uses {usedPlaceholders.join(', ')}.
+                    {personalise
+                      ? ' Each person gets their own copy — slower, and it uses more of the daily sending allowance.'
+                      : ' Without this, everyone shares one blind-copied message and those appear exactly as written.'}
+                    {unfillable.length > 0 && (
+                      <>
+                        {' '}
+                        <span style={{ color: '#B45309' }}>
+                          {unfillable.join(', ')} {unfillable.length === 1 ? 'belongs' : 'belong'} to a contract, not a
+                          tenant, so {unfillable.length === 1 ? 'it' : 'they'} cannot be filled in either way — edit
+                          {unfillable.length === 1 ? ' it' : ' them'} out.
+                        </span>
+                      </>
+                    )}
+                  </span>
+                </label>
+              </div>
+            )}
+
             <div className="flex items-center gap-2.5 py-2.5" style={{ borderBottom: '1px solid rgba(20,8,31,.10)' }}>
               <span style={{ fontSize: 12.5, color: MUTED, width: 52 }}>Subject</span>
               <input
