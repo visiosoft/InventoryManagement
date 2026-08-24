@@ -66,6 +66,7 @@ import WhatsAppDebug from './pages/WhatsAppDebug'
 import AgreementTemplate from './pages/AgreementTemplate'
 import AiAssistant from './pages/AiAssistant'
 import Marketing from './pages/Marketing'
+import SentEmails from './pages/SentEmails'
 import ZohoComparison from './pages/ZohoComparison'
 import Backup from './pages/Backup'
 import Leads from './pages/Leads'
@@ -227,6 +228,7 @@ export default function App() {
         <Route path="/settings/automation" element={<AdminGuard><AutomationRules /></AdminGuard>} />
         <Route path="/settings/ai" element={<AdminGuard><AiAssistant /></AdminGuard>} />
         <Route path="/marketing" element={<AdminGuard><Marketing /></AdminGuard>} />
+        <Route path="/settings/sent-emails" element={<AdminGuard><SentEmails /></AdminGuard>} />
         <Route path="/whatsapp" element={<WhatsApp />} />
         <Route path="/whatsapp/setup" element={<AdminGuard><WhatsAppSetup /></AdminGuard>} />
 

@@ -133,6 +133,10 @@ async function dispatch({ rule, contract, eventKey, stepIdx, messages, dryRun, r
           subject: messages.emailSubject,
           text: messages.emailText,
           ...(messages.emailHtml ? { html: messages.emailHtml } : {}),
+          context: {
+            kind: 'reminder', label: rule.name, sentBy: 'Automation',
+            customer: customer._id, contract: contract._id,
+          },
         });
         await AutomationLog.create({ ...base, channel, message: messages.emailText, status: 'sent' });
       }

@@ -1267,6 +1267,36 @@ const reminderLogSchema = new Schema({
 reminderLogSchema.index({ payment: 1, sentAt: -1 });
 reminderLogSchema.index({ contract: 1, sentAt: -1 });
 
+// ── Sent email log ───────────────────────────────────────────────────────────
+// Every email that leaves the system, recorded centrally in sendMail() rather
+// than by each of the eleven callers. Before this there were three partial
+// histories — automation logs, campaign recipients, and a per-customer list —
+// and transactional mail such as a contract PDF appeared in none of them, so
+// "did we email them?" had no single answer.
+const sentEmailSchema = new Schema({
+  to: { type: String, default: '' },
+  // Bulk sends put the list here and the sender in `to`; the count is what
+  // matters on a list page, the addresses are for opening one row.
+  bcc: { type: String, default: '' },
+  recipientCount: { type: Number, default: 1 },
+  subject: { type: String, default: '' },
+  status: { type: String, enum: ['sent', 'failed'], default: 'sent' },
+  error: { type: String, default: '' },
+  hasAttachments: { type: Boolean, default: false },
+  // What this email was, so the list can be read without opening every row.
+  kind: { type: String, default: 'other' },   // reminder | campaign | bulk | contract | invoice | quote | notice | lead | auth | other
+  label: { type: String, default: '' },       // e.g. the rule or campaign name
+  customer: { type: Schema.Types.ObjectId, ref: 'Customer', default: null },
+  contract: { type: Schema.Types.ObjectId, ref: 'Contract', default: null },
+  sentBy: { type: String, default: '' },
+  at: { type: Date, default: Date.now },
+}, { timestamps: true });
+sentEmailSchema.index({ at: -1 });
+sentEmailSchema.index({ status: 1, at: -1 });
+sentEmailSchema.index({ customer: 1, at: -1 });
+
+export const SentEmail = model('SentEmail', sentEmailSchema);
+
 // ── Marketing campaigns ──────────────────────────────────────────────────────
 // One deliberate send to a group: a discount, an event, a seasonal greeting.
 // Kept well away from the transactional mail in automationEngine — different

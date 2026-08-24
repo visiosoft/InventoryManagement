@@ -369,6 +369,7 @@ router.post('/send-email', requireAdmin, async (req, res) => {
           subject: filledSubject,
           text: fillPlaceholders(text, customer, contract),
           html: filledHtml,
+          context: { kind: 'bulk', label: 'Email customers', sentBy, customer: customer._id, contract: contract?._id || null },
         });
         okIds.push(customer._id);
       } catch (err) {
@@ -381,7 +382,10 @@ router.post('/send-email', requireAdmin, async (req, res) => {
       try {
         // `To` is the sender: a message with an empty To and only BCC is widely
         // treated as spam.
-        await sendMail({ to: from, bcc: batch.map((c) => c.email).join(', '), subject, text, html });
+        await sendMail({
+        to: from, bcc: batch.map((c) => c.email).join(', '), subject, text, html,
+        context: { kind: 'bulk', label: 'Email customers (blind copied)', sentBy },
+      });
         okIds.push(...batch.map((c) => c._id));
       } catch (err) {
         failed += batch.length;

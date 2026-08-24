@@ -62,6 +62,7 @@ const profileMenuGroups = [
       { to: '/settings/agreement', label: 'Agreement Template', icon: FileText, perm: 'settings', adminOnly: false },
       { to: '/settings/automation', label: 'Automation Rules', icon: RefreshCw, perm: 'settings', adminOnly: false },
       { to: '/settings/ai', label: 'AI Assistant', icon: Bot, perm: 'settings', adminOnly: false },
+      { to: '/settings/sent-emails', label: 'Sent Emails', icon: Mail, perm: 'settings', adminOnly: true },
       { to: '/marketing', label: 'Marketing', icon: Megaphone, perm: 'settings', adminOnly: true },
       { to: '/zoho-comparison', label: 'Zoho Comparison', icon: RefreshCw, perm: 'settings', adminOnly: false },
     ],
