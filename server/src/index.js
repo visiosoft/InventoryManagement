@@ -32,6 +32,7 @@ import stripeWebhookRoutes from './routes/stripeWebhook.js';
 import userRoutes from './routes/users.js';
 import whatsappRoutes from './routes/whatsapp.js';
 import aiBotRoutes from './routes/aiBot.js';
+import campaignRoutes from './routes/campaigns.js';
 import workerRoutes from './routes/workers.js';
 import truckRoutes from './routes/trucks.js';
 import movingJobRoutes, { publicUploadRouter as movingJobPublicUpload, publicShareRouter as movingJobPublicShare } from './routes/movingJobs.js';
@@ -60,6 +61,7 @@ import crewPortalRoutes from './routes/crewPortal.js';
 import { startBackupScheduler } from './services/backup.js';
 import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
 import { runAiBotTick } from './services/aiBot.js';
+import { runCampaignTick } from './services/campaignSender.js';
 import { inspectWhatsAppToken } from './services/whatsapp.js';
 import { runAutomationRules, getAutoSend } from './services/automationEngine.js';
 
@@ -185,6 +187,7 @@ app.use('/api/users', requireAuth, userRoutes);
 app.use('/api/backup', requireAuth, backupRoutes);
 app.use('/api/whatsapp', requireAuth, whatsappRoutes);
 app.use('/api/ai-bot', requireAuth, aiBotRoutes);
+app.use('/api/campaigns', requireAuth, campaignRoutes);
 app.use('/api/reminder-config', requireAuth, reminderConfigRoutes);
 app.use('/api/message-templates', requireAuth, messageTemplateRoutes);
 app.use('/api/agreement-template', requireAuth, agreementTemplateRoutes);
@@ -282,6 +285,14 @@ async function start() {
       }
     } catch { /* a diagnostic must never stop the server booting */ }
   }, 5_000);
+
+  // Marketing campaigns work through their recipients here rather than in the
+  // request that starts them: several hundred sends take minutes, and the
+  // batching is what keeps a campaign from spending the whole daily mail
+  // allowance at once.
+  setTimeout(() => setInterval(() => {
+    runCampaignTick().catch((e) => console.error('[Campaign]', e.message));
+  }, 15 * 1000), 25_000);
 
   const AI_BOT_INTERVAL = 10 * 1000;
   setTimeout(() => setInterval(() => {

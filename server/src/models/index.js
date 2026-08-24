@@ -111,6 +111,9 @@ const customerSchema = new Schema(
     source: { type: String, enum: ['manual', 'import_csv', 'google'], default: 'manual' },
     importBatch: { type: String, default: null },
     googleId: { type: String, default: '' },
+    // Excluded from marketing campaigns. Never consulted for transactional mail
+    // — an invoice or a contract still has to reach them.
+    unsubscribed: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
@@ -132,6 +135,8 @@ const leadSchema = new Schema(
     whatsappNo: { type: String, default: '' },
     phoneNormalized: { type: String, required: true, unique: true },
     preferredContact: { type: String, enum: ['email', 'whatsapp'], default: 'whatsapp' },
+    // Excluded from marketing campaigns; sales follow-up is unaffected.
+    unsubscribed: { type: Boolean, default: false },
     status: {
       type: String,
       enum: ['new', 'contacted', 'qualified', 'proposal_sent', 'won', 'lost'],
@@ -1247,6 +1252,81 @@ const reminderLogSchema = new Schema({
 }, { timestamps: true });
 reminderLogSchema.index({ payment: 1, sentAt: -1 });
 reminderLogSchema.index({ contract: 1, sentAt: -1 });
+
+// ── Marketing campaigns ──────────────────────────────────────────────────────
+// One deliberate send to a group: a discount, an event, a seasonal greeting.
+// Kept well away from the transactional mail in automationEngine — different
+// audience, different consent, and marketing must never borrow a channel that
+// someone only agreed to receive their invoices on.
+const campaignSchema = new Schema({
+  name: { type: String, required: true },
+  channel: { type: String, enum: ['email', 'whatsapp', 'both'], default: 'email' },
+
+  // How the audience was chosen. Stored so a sent campaign can say who it went
+  // to in the terms it was built with, not just as a list of ids.
+  audience: {
+    tenants: { type: Boolean, default: true },
+    pastTenants: { type: Boolean, default: false },
+    leads: { type: Boolean, default: false },
+    leadStatuses: { type: [String], default: [] },
+    renewalIntent: { type: String, default: '' },
+    owingOnly: { type: Boolean, default: false },
+    labels: [{ type: Schema.Types.ObjectId, ref: 'WhatsAppLabel' }],
+  },
+
+  emailSubject: { type: String, default: '' },
+  emailHtml: { type: String, default: '' },
+
+  // WhatsApp marketing has to go out as a template Meta has approved; free-form
+  // is only legal inside 24 hours of the person writing to us.
+  whatsapp: {
+    templateName: { type: String, default: '' },
+    language: { type: String, default: 'en' },
+    variables: { type: [String], default: [] },
+  },
+
+  status: {
+    type: String,
+    enum: ['draft', 'sending', 'sent', 'cancelled', 'failed'],
+    default: 'draft',
+  },
+  stats: {
+    targeted: { type: Number, default: 0 },
+    sent: { type: Number, default: 0 },
+    failed: { type: Number, default: 0 },
+    skipped: { type: Number, default: 0 },
+  },
+  lastError: { type: String, default: '' },
+  createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
+  createdByName: { type: String, default: '' },
+  startedAt: { type: Date, default: null },
+  finishedAt: { type: Date, default: null },
+}, { timestamps: true });
+
+// One row per person per channel, written before anything is sent.
+//
+// This is what makes a campaign auditable — "it went to these 412 people" —
+// and what lets the sender resume after a restart without messaging anyone a
+// second time. Resolving the audience as it sends would give neither.
+const campaignRecipientSchema = new Schema({
+  campaign: { type: Schema.Types.ObjectId, ref: 'Campaign', required: true },
+  kind: { type: String, enum: ['customer', 'lead'], required: true },
+  refId: { type: Schema.Types.ObjectId, required: true },
+  name: { type: String, default: '' },
+  channel: { type: String, enum: ['email', 'whatsapp'], required: true },
+  email: { type: String, default: '' },
+  phoneNormalized: { type: String, default: '' },
+  status: { type: String, enum: ['pending', 'sent', 'failed', 'skipped'], default: 'pending' },
+  reason: { type: String, default: '' },
+  sentAt: { type: Date, default: null },
+}, { timestamps: true });
+campaignRecipientSchema.index({ campaign: 1, status: 1 });
+// The same person must not appear twice on one campaign and one channel, even
+// if they arrived from both the tenant list and the lead list.
+campaignRecipientSchema.index({ campaign: 1, channel: 1, kind: 1, refId: 1 }, { unique: true });
+
+export const Campaign = model('Campaign', campaignSchema);
+export const CampaignRecipient = model('CampaignRecipient', campaignRecipientSchema);
 
 // ── WhatsApp chat labels ─────────────────────────────────────────────────────
 // The same idea as labels in the WhatsApp Business app: a short, named tag a

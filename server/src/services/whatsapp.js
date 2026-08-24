@@ -184,6 +184,92 @@ export async function sendWhatsAppMedia({ to, mediaId, kind, caption, filename }
     return json;
 }
 
+// Approved templates change rarely and the composer asks on every render.
+let templateCache = { at: 0, data: null };
+
+/**
+ * The message templates Meta holds for this account.
+ *
+ * Marketing cannot go out as free-form text: WhatsApp only permits that inside
+ * 24 hours of the person's last message to us. Anything else must be a template
+ * Meta has approved in advance, so the composer can only offer what this returns
+ * with status APPROVED.
+ */
+export async function listWhatsAppTemplates({ force = false } = {}) {
+    const waba = String(process.env.WHATSAPP_WABA_ID || '').trim();
+    const token = String(process.env.WHATSAPP_ACCESS_TOKEN || '').trim();
+    if (!waba) return { configured: false, error: 'WHATSAPP_WABA_ID is not set', templates: [] };
+    if (!token) return { configured: false, error: 'WhatsApp is not configured', templates: [] };
+    if (!force && templateCache.data && Date.now() - templateCache.at < 10 * 60 * 1000) return templateCache.data;
+
+    const url = `https://graph.facebook.com/v20.0/${waba}/message_templates?limit=200`;
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) {
+        return { configured: true, error: body?.error?.message || `HTTP ${r.status}`, templates: [] };
+    }
+
+    const templates = (body.data || []).map((t) => ({
+        name: t.name,
+        language: t.language,
+        status: t.status,
+        category: t.category,
+        components: t.components || [],
+        // {{1}}, {{2}} … in the body, which the campaign has to supply values for.
+        variableCount: countTemplateVariables(t.components || []),
+        bodyText: (t.components || []).find((c) => c.type === 'BODY')?.text || '',
+    }));
+
+    const data = { configured: true, error: '', templates };
+    templateCache = { at: Date.now(), data };
+    return data;
+}
+
+function countTemplateVariables(components) {
+    const body = components.find((c) => c.type === 'BODY')?.text || '';
+    const found = new Set([...body.matchAll(/\{\{(\d+)\}\}/g)].map((m) => m[1]));
+    return found.size;
+}
+
+/**
+ * Send one approved template.
+ *
+ * `variables` fill {{1}}, {{2}} … in order. Passing the wrong number of them is
+ * rejected by Meta rather than silently truncated, so the caller checks first.
+ */
+export async function sendWhatsAppTemplate({ to, name, language = 'en', variables = [] }) {
+    if (!whatsappSendConfigured()) throw new Error('WhatsApp is not configured');
+    const normalizedTo = normalizeRecipientPhone(to);
+    if (!normalizedTo) throw new Error('Recipient phone number is required');
+    if (!name) throw new Error('A template name is required');
+
+    const components = variables.length
+        ? [{ type: 'body', parameters: variables.map((v) => ({ type: 'text', text: String(v ?? '') })) }]
+        : [];
+
+    const endpoint = `https://graph.facebook.com/v20.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
+    const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            to: normalizedTo,
+            type: 'template',
+            template: { name, language: { code: language }, ...(components.length ? { components } : {}) },
+        }),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        const detail = payload?.error?.message || payload?.message || `HTTP ${response.status}`;
+        throw new Error(`WhatsApp template send failed: ${detail}`);
+    }
+    return payload;
+}
+
 export async function sendWhatsAppText({ to, body }) {
     if (!whatsappSendConfigured()) {
         throw new Error('WhatsApp is not configured');
