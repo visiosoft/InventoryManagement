@@ -39,7 +39,7 @@ type Channels = {
   templates: { configured: boolean; error: string; approved: WaTemplate[]; all: WaTemplate[] }
 }
 
-type Counts = { total: number; byEmail: number; byWhatsApp: number; unreachable: number }
+type Counts = { total: number; byEmail: number; byWhatsApp: number; unreachable: number; recentlyMessaged: number; noWhatsAppOptIn: number }
 
 const emptyAudience: Audience = {
   tenants: true, pastTenants: false, leads: false,
@@ -121,6 +121,8 @@ export default function Marketing() {
         </Card>
       )}
 
+      {!editing && <OptInPanel />}
+
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       {editing ? (
@@ -169,6 +171,125 @@ export default function Marketing() {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * WhatsApp marketing needs a recorded opt-in per person, and nobody has one, so
+ * the WhatsApp audience is empty until this is run. Offered as a deliberate,
+ * previewed action rather than a default, because it is a judgement about your
+ * customers to make once and knowingly.
+ */
+function OptInPanel() {
+  const qc = useQueryClient()
+  const [preview, setPreview] = useState<{ customers: number; leads: number } | null>(null)
+  const [done, setDone] = useState('')
+  const [err, setErr] = useState('')
+
+  const dry = useMutation({
+    mutationFn: () => api.post('/campaigns/opt-in/backfill?dry=1').then((r) => r.data),
+    onSuccess: (d) => { setPreview({ customers: d.customers, leads: d.leads }); setErr('') },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  const run = useMutation({
+    mutationFn: () => api.post('/campaigns/opt-in/backfill').then((r) => r.data),
+    onSuccess: (d) => {
+      setDone(`${d.customers} tenants and ${d.leads} leads now opted in`)
+      setPreview(null)
+      qc.invalidateQueries({ queryKey: ['campaigns'] })
+    },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  return (
+    <Card>
+      <CardHeader
+        title="WhatsApp marketing opt-in"
+        subtitle="Meta requires a recorded opt-in before a marketing template can be sent"
+      />
+      <CardBody className="space-y-2.5 text-[13px]">
+        <p style={{ color: MUTED }}>
+          Nobody is opted in yet, so WhatsApp campaigns currently reach zero people. You can record an
+          opt-in for everyone who has messaged your business first — a defensible basis for consent, but
+          a judgement about your customers, so it is yours to make.
+        </p>
+        {preview && (
+          <p className="rounded-lg px-3 py-2" style={{ background: '#F7F3FF', border: '1px solid #EDE5FF' }}>
+            This would opt in <strong>{preview.customers}</strong> tenants and <strong>{preview.leads}</strong> leads.
+            Nothing has changed yet.
+          </p>
+        )}
+        {done && <p className="text-emerald-600 font-medium">{done}</p>}
+        {err && <p className="text-destructive">{err}</p>}
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => dry.mutate()} disabled={dry.isPending}>
+            {dry.isPending ? 'Checking…' : 'Preview'}
+          </Button>
+          {preview && (preview.customers + preview.leads) > 0 && (
+            <Button
+              onClick={() => {
+                if (!confirm(`Record a WhatsApp marketing opt-in for ${preview.customers + preview.leads} people who messaged you first?`)) return
+                run.mutate()
+              }}
+              disabled={run.isPending}
+            >
+              {run.isPending ? 'Recording…' : 'Record opt-in'}
+            </Button>
+          )}
+        </div>
+      </CardBody>
+    </Card>
+  )
+}
+
+/** What actually happened, per person — the record of the send, not tracking. */
+function Results({ campaignId }: { campaignId: string }) {
+  const [failedOnly, setFailedOnly] = useState(false)
+  const { data } = useQuery<{ recipients: Array<{ _id: string; name: string; channel: string; email: string; phoneNormalized: string; status: string; reason: string }> }>({
+    queryKey: ['campaign-results', campaignId],
+    queryFn: () => api.get(`/campaigns/${campaignId}`).then((r) => r.data),
+    refetchInterval: 8_000,
+  })
+  const rows = data?.recipients ?? []
+  const shown = failedOnly ? rows.filter((r) => r.status === 'failed') : rows
+  const failures = rows.filter((r) => r.status === 'failed').length
+
+  if (!rows.length) return null
+
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ border: '1px solid rgba(20,8,31,.08)' }}>
+      <div className="flex items-center justify-between px-3.5 py-2.5" style={{ background: '#FBF8F2' }}>
+        <span className="text-[13px] font-semibold">{rows.length} recipients</span>
+        {failures > 0 && (
+          <button type="button" onClick={() => setFailedOnly((v) => !v)}
+            className="text-[12px] font-semibold cursor-pointer"
+            style={{ color: failedOnly ? PURPLE : '#B91C1C' }}>
+            {failedOnly ? 'Show all' : `Show ${failures} failed`}
+          </button>
+        )}
+      </div>
+      <div className="max-h-72 overflow-y-auto">
+        {shown.map((r) => (
+          <div key={r._id} className="flex items-center gap-2 px-3.5 py-2 text-[12.5px]"
+            style={{ borderTop: '1px solid rgba(20,8,31,.05)' }}>
+            <span className="flex-1 truncate">{r.name || r.email || r.phoneNormalized}</span>
+            <span className="shrink-0" style={{ color: MUTED }}>{r.channel}</span>
+            <span
+              className="shrink-0 rounded-full px-2 py-0.5"
+              style={r.status === 'sent'
+                ? { background: '#DCFCE7', color: '#047857', fontSize: 11, fontWeight: 700 }
+                : r.status === 'failed'
+                  ? { background: '#FEE2E2', color: '#B91C1C', fontSize: 11, fontWeight: 700 }
+                  : { background: '#F3F0EA', color: MUTED, fontSize: 11, fontWeight: 700 }}
+              title={r.reason || undefined}
+            >
+              {r.status}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -248,6 +369,7 @@ function Composer({ campaign, channels, onClose, onDelete }: {
         action={<Button variant="outline" onClick={onClose}>Back</Button>}
       />
       <CardBody className="space-y-4">
+        {readOnly && <Results campaignId={draft._id} />}
         <div className="grid grid-cols-1 sm:grid-cols-[1fr_180px] gap-3">
           <Field label="Campaign name">
             <Input value={draft.name} disabled={readOnly} onChange={(e) => set({ name: e.target.value })} />
@@ -302,13 +424,25 @@ function Composer({ campaign, channels, onClose, onDelete }: {
           </div>
 
           {counts && (
-            <p className="text-[12.5px]" style={{ color: MUTED }}>
-              <strong style={{ color: PURPLE }}>{counts.total}</strong> people ·{' '}
-              {counts.byEmail} reachable by email · {counts.byWhatsApp} by WhatsApp
-              {counts.unreachable > 0 && ` · ${counts.unreachable} with neither`}
-              <br />
-              People who appear in more than one list are counted once. Anyone who has unsubscribed is excluded.
-            </p>
+            <div className="text-[12.5px] space-y-1" style={{ color: MUTED }}>
+              <p>
+                <strong style={{ color: PURPLE }}>{counts.total}</strong> people ·{' '}
+                {counts.byEmail} reachable by email · {counts.byWhatsApp} by WhatsApp
+                {counts.unreachable > 0 && ` · ${counts.unreachable} with neither`}
+              </p>
+              {/* A number that drops for a reason should say the reason. */}
+              {(counts.noWhatsAppOptIn > 0 || counts.recentlyMessaged > 0) && (
+                <p>
+                  Held back:
+                  {counts.noWhatsAppOptIn > 0 && ` ${counts.noWhatsAppOptIn} with no WhatsApp opt-in`}
+                  {counts.noWhatsAppOptIn > 0 && counts.recentlyMessaged > 0 && ' ·'}
+                  {counts.recentlyMessaged > 0 && ` ${counts.recentlyMessaged} messaged in the last 7 days`}
+                </p>
+              )}
+              <p>
+                People in more than one list are counted once. Anyone unsubscribed is excluded.
+              </p>
+            </div>
           )}
         </div>
 

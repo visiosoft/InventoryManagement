@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { requireAdmin } from '../middleware/auth.js';
-import { Campaign, CampaignRecipient } from '../models/index.js';
+import { Campaign, CampaignRecipient, Customer, Lead, WhatsAppMessage } from '../models/index.js';
 import { buildAudience } from '../services/campaignAudience.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { listWhatsAppTemplates, sendWhatsAppTemplate, whatsappSendConfigured } from '../services/whatsapp.js';
@@ -37,6 +37,56 @@ router.post('/preview', async (req, res) => {
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
+});
+
+/**
+ * Record a WhatsApp marketing opt-in for everyone who has written to us.
+ *
+ * Meta requires an opt-in before a MARKETING template may be sent, and nobody
+ * has one, so the WhatsApp audience is empty until this is run. Someone who
+ * messaged the business first is a defensible basis for that consent — but it
+ * is a judgement about your customers, so it is an explicit action taken once,
+ * not a default buried in a query.
+ */
+router.post('/opt-in/backfill', async (req, res) => {
+    const dryRun = req.body?.dry === true || req.query.dry === '1';
+
+    const numbers = await WhatsAppMessage.distinct('phoneNormalized', { direction: 'inbound' });
+    const wrote = new Set(numbers.map((n) => String(n || '').slice(-9)).filter((n) => n.length === 9));
+    if (!wrote.size) return res.json({ ok: true, dryRun, customers: 0, leads: 0 });
+
+    // Matched in code rather than in the query: numbers are stored in several
+    // formats, so identity is the last nine digits — the same rule the inbox and
+    // the Zoho matcher use, and not something a Mongo filter expresses well.
+    const key = (v) => {
+        const d = String(v || '').replace(/\D/g, '');
+        return d.length >= 9 ? d.slice(-9) : '';
+    };
+
+    const customers = await Customer.find({ 'whatsappOptIn.at': null }).select('phone phones').lean();
+    const customerIds = customers
+        .filter((c) => [...(c.phones || []), c.phone].map(key).some((k) => k && wrote.has(k)))
+        .map((c) => c._id);
+
+    const leads = await Lead.find({ 'whatsappOptIn.at': null }).select('phone whatsappNo phoneNormalized').lean();
+    const leadIds = leads
+        .filter((l) => [l.phoneNormalized, l.phone, l.whatsappNo].map(key).some((k) => k && wrote.has(k)))
+        .map((l) => l._id);
+
+    if (dryRun) {
+        return res.json({
+            ok: true, dryRun: true,
+            customers: customerIds.length, leads: leadIds.length,
+            note: 'Preview only — nothing was changed',
+        });
+    }
+
+    const set = { $set: { whatsappOptIn: { at: new Date(), source: 'inbound_message' } } };
+    const [c, l] = await Promise.all([
+        Customer.updateMany({ _id: { $in: customerIds } }, set),
+        Lead.updateMany({ _id: { $in: leadIds } }, set),
+    ]);
+    res.json({ ok: true, dryRun: false, customers: c.modifiedCount, leads: l.modifiedCount });
 });
 
 router.get('/', async (_req, res) => {

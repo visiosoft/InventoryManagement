@@ -114,6 +114,13 @@ const customerSchema = new Schema(
     // Excluded from marketing campaigns. Never consulted for transactional mail
     // — an invoice or a contract still has to reach them.
     unsubscribed: { type: Boolean, default: false },
+    // Meta requires a recorded opt-in before a MARKETING template may be sent.
+    // Separate from `unsubscribed`, which is about email: agreeing to one
+    // channel is not agreeing to the other.
+    whatsappOptIn: {
+      at: { type: Date, default: null },
+      source: { type: String, default: '' },   // form | inbound_message | manual
+    },
   },
   { timestamps: true }
 );
@@ -137,6 +144,13 @@ const leadSchema = new Schema(
     preferredContact: { type: String, enum: ['email', 'whatsapp'], default: 'whatsapp' },
     // Excluded from marketing campaigns; sales follow-up is unaffected.
     unsubscribed: { type: Boolean, default: false },
+    // Meta requires a recorded opt-in before a MARKETING template may be sent.
+    // Separate from `unsubscribed`, which is about email: agreeing to one
+    // channel is not agreeing to the other.
+    whatsappOptIn: {
+      at: { type: Date, default: null },
+      source: { type: String, default: '' },   // form | inbound_message | manual
+    },
     status: {
       type: String,
       enum: ['new', 'contacted', 'qualified', 'proposal_sent', 'won', 'lost'],
@@ -1272,6 +1286,9 @@ const campaignSchema = new Schema({
     renewalIntent: { type: String, default: '' },
     owingOnly: { type: Boolean, default: false },
     labels: [{ type: Schema.Types.ObjectId, ref: 'WhatsAppLabel' }],
+    // Skip anyone who already had a campaign on this channel within N days, so
+    // two campaigns in a week do not both land on the same person.
+    minDaysBetween: { type: Number, default: 7 },
   },
 
   emailSubject: { type: String, default: '' },

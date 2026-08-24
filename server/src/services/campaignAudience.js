@@ -1,4 +1,4 @@
-import { Customer, Contract, Lead, WhatsAppChatLabel } from '../models/index.js';
+import { Customer, Contract, Lead, WhatsAppChatLabel, CampaignRecipient } from '../models/index.js';
 import { zohoBooksConfigured, zohoOutstandingByCustomer } from './zohoBooks.js';
 
 /**
@@ -80,7 +80,7 @@ export async function buildAudience(audience = {}) {
         }
 
         const customers = await Customer.find({ unsubscribed: { $ne: true } })
-            .select('fullName email phone phones').lean();
+            .select('fullName email phone phones whatsappOptIn').lean();
 
         let owing = null;
         if (owingOnly && zohoBooksConfigured()) {
@@ -103,6 +103,7 @@ export async function buildAudience(audience = {}) {
                 name: c.fullName || '',
                 email: normEmail(c.email),
                 phoneNormalized: firstPhone(c),
+                whatsappOptIn: Boolean(c.whatsappOptIn?.at),
             });
         }
     }
@@ -122,7 +123,7 @@ export async function buildAudience(audience = {}) {
             filter.phoneNormalized = { $in: numbers };
         }
 
-        const rows = await Lead.find(filter).select('fullName email phone whatsappNo phoneNormalized').lean();
+        const rows = await Lead.find(filter).select('fullName email phone whatsappNo phoneNormalized whatsappOptIn').lean();
         for (const l of rows) {
             add({
                 kind: 'lead',
@@ -130,14 +131,44 @@ export async function buildAudience(audience = {}) {
                 name: l.fullName || '',
                 email: normEmail(l.email),
                 phoneNormalized: phoneKey(l.phoneNormalized) || firstPhone(l),
+                whatsappOptIn: Boolean(l.whatsappOptIn?.at),
             });
         }
     }
 
-    return { people, counts: countsFor(people) };
+    // Anyone messaged too recently on a channel drops off that channel — a
+    // campaign a week ago should not be followed by another one today.
+    const days = Number(audience.minDaysBetween ?? 7);
+    let recentEmail = new Set();
+    let recentWhatsApp = new Set();
+    if (days > 0) {
+        const since = new Date(Date.now() - days * 86_400_000);
+        const rows = await CampaignRecipient.find({ status: 'sent', sentAt: { $gte: since } })
+            .select('refId channel').lean();
+        for (const r of rows) {
+            (r.channel === 'email' ? recentEmail : recentWhatsApp).add(String(r.refId));
+        }
+    }
+
+    const excluded = { recentlyMessaged: 0, noWhatsAppOptIn: 0 };
+
+    for (const p of people) {
+        const id = String(p.refId);
+        if (p.email && recentEmail.has(id)) { p.email = ''; p.skipEmail = 'messaged recently'; }
+        if (p.phoneNormalized) {
+            if (recentWhatsApp.has(id)) { p.phoneNormalized = ''; p.skipWhatsApp = 'messaged recently'; }
+            // Meta requires a recorded opt-in before a marketing template.
+            // Without it the person is simply not a WhatsApp audience.
+            else if (!p.whatsappOptIn) { p.phoneNormalized = ''; p.skipWhatsApp = 'no opt-in'; }
+        }
+        if (p.skipEmail === 'messaged recently' || p.skipWhatsApp === 'messaged recently') excluded.recentlyMessaged += 1;
+        if (p.skipWhatsApp === 'no opt-in') excluded.noWhatsAppOptIn += 1;
+    }
+
+    return { people, counts: countsFor(people, excluded) };
 }
 
-function countsFor(people) {
+function countsFor(people, excluded = {}) {
     return {
         total: people.length,
         byEmail: people.filter((p) => p.email).length,
@@ -145,5 +176,7 @@ function countsFor(people) {
         // Neither an address nor a number — counted so a shortfall between the
         // audience size and what can actually be sent is never a surprise.
         unreachable: people.filter((p) => !p.email && !p.phoneNormalized).length,
+        recentlyMessaged: excluded.recentlyMessaged || 0,
+        noWhatsAppOptIn: excluded.noWhatsAppOptIn || 0,
     };
 }

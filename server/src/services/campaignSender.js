@@ -1,6 +1,7 @@
 import { Campaign, CampaignRecipient } from '../models/index.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { sendWhatsAppTemplate, whatsappSendConfigured } from './whatsapp.js';
+import { unsubscribeFooterHtml, unsubscribeFooterText } from './marketingConsent.js';
 
 /**
  * Works through campaigns that are sending, a slice at a time.
@@ -31,14 +32,13 @@ const stripHtml = (html) => String(html || '').replace(/<[^>]+>/g, ' ').replace(
 async function sendOne(campaign, recipient) {
     if (recipient.channel === 'email') {
         if (!mailConfigured()) throw new Error('Email is not configured');
-        // Sent individually rather than BCC: a campaign needs to record who
-        // received it, and later to carry a per-person unsubscribe link.
-        await sendMail({
-            to: recipient.email,
-            subject: campaign.emailSubject,
-            html: campaign.emailHtml,
-            text: stripHtml(campaign.emailHtml),
-        });
+        // Sent individually rather than BCC, which is what makes a per-person
+        // unsubscribe link possible at all — and the link is appended here
+        // rather than written into the campaign, so it cannot be left out of
+        // the one send where it mattered.
+        const html = `${campaign.emailHtml || ''}${unsubscribeFooterHtml(recipient.kind, recipient.refId)}`;
+        const text = `${stripHtml(campaign.emailHtml)}${unsubscribeFooterText(recipient.kind, recipient.refId)}`;
+        await sendMail({ to: recipient.email, subject: campaign.emailSubject, html, text });
         return;
     }
 
