@@ -17,17 +17,40 @@
  */
 
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 
 const TAG_LENGTH = 16;
 
+/**
+ * The key itself, from a file or from the environment.
+ *
+ * A PEM is multi-line and a .env value is not, so pasting one inline means
+ * flattening its newlines to the characters \n and hoping nothing along the way
+ * mangles them. It usually does: dotenv silently keeps only the first line, and
+ * the failure surfaces much later as "unsupported" from the decoder rather than
+ * as anything about the file being truncated.
+ *
+ * So a path is the better answer and is preferred here, matching
+ * GOOGLE_SERVICE_ACCOUNT_FILE elsewhere in this app. The inline form still
+ * works for hosts where writing a file is awkward.
+ */
+function readPem() {
+  const file = process.env.WHATSAPP_FLOW_PRIVATE_KEY_FILE;
+  if (file) return fs.readFileSync(file, 'utf8');
+  return String(process.env.WHATSAPP_FLOW_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+}
+
 export function flowKeysConfigured() {
-  return Boolean(process.env.WHATSAPP_FLOW_PRIVATE_KEY);
+  return Boolean(process.env.WHATSAPP_FLOW_PRIVATE_KEY_FILE || process.env.WHATSAPP_FLOW_PRIVATE_KEY);
 }
 
 function privateKey() {
-  // Newlines survive a .env round trip as the two characters \n, so they are
-  // put back before the key is parsed.
-  const pem = String(process.env.WHATSAPP_FLOW_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+  const pem = readPem();
+  // Caught early and named, rather than surfacing as a decoder error that
+  // reads like a problem with the key rather than with how it was pasted.
+  if (!pem.includes('PRIVATE KEY-----')) {
+    throw new Error('The private key looks truncated — a PEM pasted into .env keeps only its first line. Use WHATSAPP_FLOW_PRIVATE_KEY_FILE instead.');
+  }
   const passphrase = process.env.WHATSAPP_FLOW_KEY_PASSPHRASE || '';
   return crypto.createPrivateKey(passphrase ? { key: pem, passphrase } : { key: pem });
 }
