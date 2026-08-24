@@ -76,6 +76,52 @@ export async function chatJson({ system, messages = [], temperature = 0, maxToke
 }
 
 /**
+ * The same JSON-only contract as chatJson, for a call that carries an image.
+ *
+ * The image goes as a data URL rather than a link: uploads here live behind
+ * auth or in a private Drive folder, and making a customer's Emirates ID
+ * publicly fetchable so a model could read it would be a far worse problem
+ * than the typing it saves.
+ *
+ * Returns the parsed object, or null when the model produced anything else.
+ * Callers must treat null as a failure to read, never as an empty document.
+ */
+export async function visionJson({ system, imageBase64, mimeType, prompt = '', maxTokens = 500, timeout = 45000 }) {
+    const { data } = await axios.post(
+        `${API_BASE}/chat/completions`,
+        {
+            model: openaiModel(),
+            messages: [
+                { role: 'system', content: system },
+                {
+                    role: 'user',
+                    content: [
+                        ...(prompt ? [{ type: 'text', text: prompt }] : []),
+                        { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}`, detail: 'high' } },
+                    ],
+                },
+            ],
+            response_format: { type: 'json_object' },
+            temperature: 0,
+            max_tokens: maxTokens,
+        },
+        { headers: headers(), timeout },
+    );
+
+    const raw = data?.choices?.[0]?.message?.content || '';
+    let parsed = null;
+    try {
+        const p = JSON.parse(raw);
+        parsed = p && typeof p === 'object' && !Array.isArray(p) ? p : null;
+    } catch {
+        parsed = null;
+    }
+    // Usage comes back with the response; the caller logs it so the cost per
+    // document is a measured number rather than an estimate.
+    return { parsed, usage: data?.usage ?? null };
+}
+
+/**
  * Parse a phrase into availability filters.
  *
  * `context` supplies the real floors and sizes so the model maps "small" or
