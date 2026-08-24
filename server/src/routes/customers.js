@@ -5,6 +5,7 @@ import { syncUnitStatus } from '../utils/unitStatus.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { phoneClauses } from '../utils/phoneSearch.js';
 import { mailConfigured, mailFromAddress, sendMail } from '../services/mail.js';
+import { fillPlaceholders, leftoverPlaceholders } from '../services/emailPlaceholders.js';
 import { zohoBooksConfigured, findZohoContactsFor, fetchZohoInvoicesForContacts, fetchZohoInvoicePdf, zohoOutstandingByCustomer } from '../services/zohoBooks.js';
 
 const router = Router();
@@ -301,24 +302,63 @@ router.post('/send-email', requireAdmin, async (req, res) => {
   let failed = 0;
   let firstError = '';
 
-  // Personalised sending is one message each, so `@name` can be filled in.
-  // The BCC form cannot do that — everyone shares one message body — which is
-  // why a template with placeholders is worth sending the slower way.
+  // Personalised sending is one message each, which is what makes placeholders
+  // possible: a blind-copied send shares one body between everybody, so nothing
+  // per-tenant can be filled in.
   const personalise = req.body?.personalise === true;
 
+  // Anything still looking like @word after filling has no value behind it, and
+  // an email reading "expires on @endDate" is worse than no email. A shared BCC
+  // body can never fill one, so that combination is refused outright.
+
+  if (!personalise) {
+    const leftover = leftoverPlaceholders(`${subject} ${html}`);
+    if (leftover.length) {
+      return res.status(400).json({
+        error: `This message uses ${leftover.join(', ')}, which cannot be filled in when one email is blind-copied to everyone. Tick "Send individually", or remove them.`,
+      });
+    }
+  }
+
+  const skipped = [];
+
   if (personalise) {
-    const fill = (value, customer) => String(value || '')
-      .replace(/@name/g, customer.fullName || 'there')
-      .replace(/@email/g, customer.email || '')
-      .replace(/@company/g, customer.company || '');
+    // Each tenant's live contract supplies the unit, dates and rate. Without
+    // one there is nothing to fill from, so that person is skipped rather than
+    // sent a message full of raw placeholders.
+    const contracts = await Contract.find({
+      customer: { $in: recipients.map((c) => c._id) },
+      status: 'active',
+    }).populate('unit', 'unitNumber').populate('units', 'unitNumber').sort({ endDate: 1 }).lean();
+
+    const byCustomer = new Map();
+    for (const c of contracts) {
+      if (!byCustomer.has(String(c.customer))) byCustomer.set(String(c.customer), c);
+    }
 
     for (const customer of recipients) {
+      const contract = byCustomer.get(String(customer._id)) || null;
+      const filledSubject = fillPlaceholders(subject, customer, contract);
+      const filledHtml = fillPlaceholders(html, customer, contract);
+
+      const leftover = leftoverPlaceholders(`${filledSubject} ${filledHtml}`);
+      if (leftover.length) {
+        skipped.push({
+          name: customer.fullName,
+          email: customer.email,
+          reason: contract
+            ? `nothing to fill ${leftover.join(', ')} from`
+            : 'no active contract, so the contract details could not be filled in',
+        });
+        continue;
+      }
+
       try {
         await sendMail({
           to: customer.email,
-          subject: fill(subject, customer),
-          text: fill(text, customer),
-          html: fill(html, customer),
+          subject: filledSubject,
+          text: fillPlaceholders(text, customer, contract),
+          html: filledHtml,
         });
         okIds.push(customer._id);
       } catch (err) {
@@ -355,8 +395,26 @@ router.post('/send-email', requireAdmin, async (req, res) => {
     );
   }
 
-  if (!okIds.length) return res.status(500).json({ error: firstError || 'Failed to send email' });
-  res.json({ sent: okIds.length, failed, total: recipients.length, ...(firstError ? { error: firstError } : {}) });
+  if (!okIds.length) {
+    // Nothing sent because nothing could be filled in is a different problem
+    // from nothing sent because the mail server refused, and the caller needs
+    // to be told which.
+    if (skipped.length && !failed) {
+      return res.status(400).json({
+        error: `Nothing was sent. ${skipped.length} ${skipped.length === 1 ? 'recipient' : 'recipients'} could not be filled in — ${skipped[0].reason}.`,
+        skipped,
+      });
+    }
+    return res.status(500).json({ error: firstError || 'Failed to send email' });
+  }
+  res.json({
+    sent: okIds.length,
+    failed,
+    total: recipients.length,
+    // Named, not just counted: "3 skipped" leaves someone guessing who.
+    skipped,
+    ...(firstError ? { error: firstError } : {}),
+  });
 });
 
 router.post('/bulk-delete', requireAdmin, async (req, res) => {

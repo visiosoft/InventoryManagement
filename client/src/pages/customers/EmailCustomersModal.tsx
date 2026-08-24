@@ -20,7 +20,11 @@ const SEGMENTS: { value: Segment; label: string }[] = [
   { value: 'active', label: 'Active tenants' },
 ]
 
-type SendResult = { sent: number; failed: number; total: number; error?: string }
+type SendResult = {
+  sent: number; failed: number; total: number; error?: string
+  // Recipients deliberately not sent to, named so nobody has to guess who.
+  skipped?: { name: string; email: string; reason: string }[]
+}
 
 function initialsOf(name: string) {
   const parts = (name || '').trim().split(/\s+/)
@@ -149,7 +153,11 @@ export default function EmailCustomersModal({
   // bulk send can resolve them. Recomputed when the template changes, not on
   // every keystroke — the editor is uncontrolled, so its content is only read
   // on send anyway.
-  const FILLABLE = ['@name', '@email', '@company']
+  const FILLABLE = [
+    '@name', '@email', '@company',
+    '@contractNo', '@unit', '@startDate', '@endDate', '@dueDate',
+    '@daysLeft', '@rate', '@lateFee', '@renewLink', '@moveOutLink',
+  ]
   const { usedPlaceholders, unfillable } = useMemo(() => {
     const t = templates.find((x) => x._id === templateId)
     if (!t) return { usedPlaceholders: [] as string[], unfillable: [] as string[] }
@@ -195,6 +203,24 @@ export default function EmailCustomersModal({
               ? `${result.error || 'Some recipients could not be reached.'} The ${result.sent} that went out are logged on their records.`
               : 'Your email has been handed to the mail server. Customers will receive it shortly.'}
           </div>
+
+          {/* Skipped is not failed — these were held back on purpose, and the
+              reason matters more than the count. */}
+          {(result.skipped?.length ?? 0) > 0 && (
+            <div
+              style={{ maxWidth: '46ch', textAlign: 'left', background: '#FFF7E6', border: '1px solid #F5D9A0', borderRadius: 12, padding: '12px 14px' }}
+            >
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: '#6B4500', marginBottom: 6 }}>
+                {result.skipped!.length} not sent
+              </div>
+              <div style={{ fontSize: 12, color: '#6B4500', lineHeight: 1.55 }}>
+                {result.skipped!.slice(0, 6).map((sk) => (
+                  <div key={sk.email}>{sk.name || sk.email} — {sk.reason}</div>
+                ))}
+                {result.skipped!.length > 6 && <div>…and {result.skipped!.length - 6} more</div>}
+              </div>
+            </div>
+          )}
           <button
             onClick={onClose}
             style={{ marginTop: 6, height: 40, padding: '0 20px', borderRadius: 999, background: 'transparent', border: '1px solid rgba(20,8,31,.16)', color: INK, fontWeight: 600, fontSize: 13.5 }}
@@ -343,18 +369,17 @@ export default function EmailCustomersModal({
                     style={{ marginTop: 2 }}
                   />
                   <span>
-                    <strong style={{ color: INK }}>Send individually so names are filled in.</strong>{' '}
+                    <strong style={{ color: INK }}>Send individually so the details are filled in.</strong>{' '}
                     This message uses {usedPlaceholders.join(', ')}.
                     {personalise
-                      ? ' Each person gets their own copy — slower, and it uses more of the daily sending allowance.'
-                      : ' Without this, everyone shares one blind-copied message and those appear exactly as written.'}
+                      ? ' Each person gets their own copy with their own name, unit and dates — slower, and it uses more of the daily sending allowance. Anyone without an active contract is skipped rather than sent a half-filled email.'
+                      : ' Without this, everyone shares one blind-copied message, so these cannot be filled in and the send will be refused.'}
                     {unfillable.length > 0 && (
                       <>
                         {' '}
                         <span style={{ color: '#B45309' }}>
-                          {unfillable.join(', ')} {unfillable.length === 1 ? 'belongs' : 'belong'} to a contract, not a
-                          tenant, so {unfillable.length === 1 ? 'it' : 'they'} cannot be filled in either way — edit
-                          {unfillable.length === 1 ? ' it' : ' them'} out.
+                          {unfillable.join(', ')} {unfillable.length === 1 ? 'is' : 'are'} not something this dialog can
+                          fill — edit {unfillable.length === 1 ? 'it' : 'them'} out, or the send will be refused.
                         </span>
                       </>
                     )}
