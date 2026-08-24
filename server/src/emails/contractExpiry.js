@@ -15,10 +15,10 @@ export const CONTRACT_EXPIRY_SUBJECT = 'Your storage contract @contractNo expire
 export const CONTRACT_EXPIRY_HTML = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#EDE3CF;padding:32px 0;">
   <tr>
     <td align="center">
-      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:#FBF8F2;border-radius:18px;overflow:hidden;">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:#FFFFFF;border-radius:18px;overflow:hidden;">
 
         <tr>
-          <td style="padding:28px 40px;background:#FBF8F2;border-bottom:1px solid rgba(20,8,31,0.10);">
+          <td style="padding:28px 40px;background:#FFFFFF;border-bottom:1px solid rgba(20,8,31,0.10);">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
               <tr>
                 <td>
@@ -114,7 +114,7 @@ export const CONTRACT_EXPIRY_HTML = `<table role="presentation" width="100%" cel
                   </a>
                 </td>
                 <td style="width:12px;">&nbsp;</td>
-                <td style="border-radius:999px;border:1px solid rgba(20,8,31,0.16);" bgcolor="#FBF8F2">
+                <td style="border-radius:999px;border:1px solid rgba(20,8,31,0.16);" bgcolor="#FFFFFF">
                   <a href="@moveOutLink" style="display:block;padding:14px 26px;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:bold;color:#14081F;border-radius:999px;text-decoration:none;">
                     Schedule move-out
                   </a>
