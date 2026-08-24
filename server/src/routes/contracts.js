@@ -122,10 +122,12 @@ router.get('/', async (req, res) => {
       ? Contract.find(filter)
         .populate('customer', 'fullName email phone phones')
         .populate('unit', 'unitNumber floor')
+        .populate('units', 'unitNumber floor')
         .sort({ endDate: 1 }).limit(2000).lean()
       : Contract.find(filter)
         .populate('customer', 'fullName email phone phones')
         .populate('unit', 'unitNumber floor')
+        .populate('units', 'unitNumber floor')
         .sort(sort).skip(skip).limit(limit).lean(),
     Contract.countDocuments(filter),
   ]);
