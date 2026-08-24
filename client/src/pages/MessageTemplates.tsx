@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { Mail, MessageSquare, Plus, RotateCcw, Save, Trash2 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
-import { Button, Card, CardBody, CardHeader, PageHeader, Spinner, Textarea, Field, Input } from '../components/ui'
+import { Button, Card, CardBody, CardHeader, PageHeader, Spinner, Textarea, Field, Input, Select } from '../components/ui'
 
 type Template = {
   _id: string
@@ -23,6 +23,9 @@ type QuickReply = {
   whatsappBody: string
   sortOrder?: number
   kind?: string
+  // A quick reply can send a file as well as text.
+  mediaUrl?: string
+  mediaKind?: '' | 'image' | 'video' | 'audio' | 'document'
 }
 
 const UNCATEGORISED = 'Uncategorised'
@@ -96,7 +99,7 @@ export default function MessageTemplates() {
   })
 
   /* ---------- WhatsApp quick replies ---------- */
-  const [qrDrafts, setQrDrafts] = useState<Record<string, { label: string; category: string; whatsappBody: string; sortOrder: number }>>({})
+  const [qrDrafts, setQrDrafts] = useState<Record<string, { label: string; category: string; whatsappBody: string; sortOrder: number; mediaUrl: string; mediaKind: string }>>({})
   const [qrSelectedId, setQrSelectedId] = useState<string | null>(null)
   const [qrAdding, setQrAdding] = useState(false)
   const [qrLabel, setQrLabel] = useState('')
@@ -131,10 +134,12 @@ export default function MessageTemplates() {
       category: q.category || '',
       whatsappBody: q.whatsappBody || '',
       sortOrder: q.sortOrder ?? 0,
+      mediaUrl: q.mediaUrl || '',
+      mediaKind: q.mediaKind || '',
     }
   }
 
-  function setQrDraft(q: QuickReply, patch: Partial<{ label: string; category: string; whatsappBody: string; sortOrder: number }>) {
+  function setQrDraft(q: QuickReply, patch: Partial<{ label: string; category: string; whatsappBody: string; sortOrder: number; mediaUrl: string; mediaKind: string }>) {
     setQrDrafts(prev => ({ ...prev, [q._id]: { ...qrDraft(q), ...patch } }))
   }
 
@@ -162,8 +167,13 @@ export default function MessageTemplates() {
   })
 
   const qrUpdateMut = useMutation({
-    mutationFn: (v: { id: string; label: string; category: string; whatsappBody: string; sortOrder: number }) =>
-      api.put(`/message-templates/${v.id}`, { label: v.label, category: v.category, whatsappBody: v.whatsappBody, sortOrder: v.sortOrder }),
+    mutationFn: (v: { id: string; label: string; category: string; whatsappBody: string; sortOrder: number; mediaUrl: string; mediaKind: string }) =>
+      api.put(`/message-templates/${v.id}`, {
+        label: v.label, category: v.category, whatsappBody: v.whatsappBody, sortOrder: v.sortOrder,
+        // Clearing the kind clears the URL too, or a disabled field keeps a
+        // stale link that would be sent the next time a kind is chosen.
+        mediaKind: v.mediaKind, mediaUrl: v.mediaKind ? v.mediaUrl : '',
+      }),
     onSuccess: (_res, v) => {
       invalidateQuick()
       setQrDrafts(prev => { const next = { ...prev }; delete next[v.id]; return next })
@@ -333,9 +343,37 @@ export default function MessageTemplates() {
                       </Field>
                     </div>
                     <Field label="Message">
-                      <Textarea rows={10} value={draft.whatsappBody}
+                      <Textarea rows={8} value={draft.whatsappBody}
                         onChange={e => setQrDraft(q, { whatsappBody: e.target.value })} />
                     </Field>
+
+                    {/* A file is sent by URL, so WhatsApp fetches it itself.
+                        Nothing to upload, and no media id to keep alive. */}
+                    <div className="grid grid-cols-1 sm:grid-cols-[140px_1fr] gap-3">
+                      <Field label="Attach a file">
+                        <Select value={draft.mediaKind} onChange={e => setQrDraft(q, { mediaKind: e.target.value })}>
+                          <option value="">No file</option>
+                          <option value="video">Video</option>
+                          <option value="image">Image</option>
+                          <option value="document">Document</option>
+                          <option value="audio">Audio</option>
+                        </Select>
+                      </Field>
+                      <Field label="File URL (must be publicly reachable)">
+                        <Input
+                          value={draft.mediaUrl}
+                          disabled={!draft.mediaKind}
+                          onChange={e => setQrDraft(q, { mediaUrl: e.target.value })}
+                          placeholder="https://office.purplebox.ae/office-tour-wa.mp4"
+                        />
+                      </Field>
+                    </div>
+                    {draft.mediaKind && (
+                      <p className="text-xs text-muted-foreground">
+                        WhatsApp limits: 16 MB video and audio, 5 MB images, 100 MB documents. Over that, the
+                        message is rejected rather than shrunk. The message text above is sent as the caption.
+                      </p>
+                    )}
                     {error && <p className="text-xs text-destructive">{error}</p>}
                     {success && <p className="text-xs text-emerald-600 font-medium">{success}</p>}
                     <div className="flex items-center justify-between gap-2">

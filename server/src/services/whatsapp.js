@@ -160,14 +160,27 @@ export function whatsappMediaKind(mimeType) {
     return 'document';
 }
 
-export async function sendWhatsAppMedia({ to, mediaId, kind, caption, filename }) {
+/**
+ * Send a file, either by media id (something we uploaded) or by `link`.
+ *
+ * The link form has Meta fetch the file itself, which is what makes a canned
+ * reply like the facility tour practical: the video is already served by the
+ * app, so there is nothing to upload and no media id to keep alive — uploaded
+ * ids expire after 30 days and would quietly stop working.
+ *
+ * The URL must be publicly reachable and within Meta's size limits: 16 MB for
+ * video and audio, 5 MB for images, 100 MB for documents. Over that, Meta
+ * rejects the message rather than truncating it.
+ */
+export async function sendWhatsAppMedia({ to, mediaId, link, kind, caption, filename }) {
     if (!whatsappSendConfigured()) throw new Error('WhatsApp is not configured');
     const normalizedTo = normalizeRecipientPhone(to);
     if (!normalizedTo) throw new Error('Recipient phone number is required');
+    if (!mediaId && !link) throw new Error('Either an uploaded file or a link is required');
 
     // Only image, video and document accept a caption; audio and sticker do
     // not, and Meta rejects the whole message if one is sent.
-    const node = { id: mediaId };
+    const node = mediaId ? { id: mediaId } : { link };
     if (caption && ['image', 'video', 'document'].includes(kind)) node.caption = caption;
     if (kind === 'document' && filename) node.filename = filename;
 

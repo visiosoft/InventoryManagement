@@ -27,6 +27,9 @@ type MessageTemplate = {
   whatsappBody: string
   category?: string
   sortOrder?: number
+  // A quick reply can carry a file — the facility tour video, a price list.
+  mediaUrl?: string
+  mediaKind?: '' | 'image' | 'video' | 'audio' | 'document'
 }
 
 const MUTE_KEY = 'wa_inbox_muted'
@@ -947,6 +950,15 @@ export default function WhatsApp() {
     onError: (e) => setSendErr(apiError(e)),
   })
 
+  // Sending a quick reply goes through the server so it can attach the file,
+  // set it as the caption and record one message rather than two.
+  const sendQuickReply = useMutation({
+    mutationFn: (templateId: string) =>
+      api.post('/whatsapp/send-quick-reply', { to: selectedPhone, templateId }).then((r) => r.data),
+    onSuccess: () => { setSendErr(''); stickToBottom.current = true; onSent() },
+    onError: (e) => setSendErr(apiError(e)),
+  })
+
   function sendText(body: string) {
     const text = body.trim()
     if (!text) return
@@ -1520,7 +1532,18 @@ export default function WhatsApp() {
                         {items.map((t) => (
                           <div key={t._id} className="flex items-start gap-2 px-3 py-2.5">
                             <div className="min-w-0 flex-1">
-                              <div style={{ fontSize: 12, fontWeight: 600, color: '#4A1FA0' }}>{t.label}</div>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: '#4A1FA0' }}>
+                                {t.label}
+                                {t.mediaKind && (
+                                  <span
+                                    className="ml-1.5 inline-flex items-center gap-1 rounded-full px-1.5"
+                                    style={{ background: '#EDE5FF', fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase' }}
+                                    title="Sends a file — use Send, not Insert"
+                                  >
+                                    <Paperclip size={9} />{t.mediaKind}
+                                  </span>
+                                )}
+                              </div>
                               <button
                                 type="button"
                                 onClick={() => insertText(t.whatsappBody)}
@@ -1533,8 +1556,8 @@ export default function WhatsApp() {
                             </div>
                             <button
                               type="button"
-                              onClick={() => sendText(t.whatsappBody)}
-                              disabled={!selectedPhone || send.isPending}
+                              onClick={() => sendQuickReply.mutate(t._id)}
+                              disabled={!selectedPhone || send.isPending || sendQuickReply.isPending}
                               className="shrink-0 inline-flex items-center justify-center rounded-full cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                               style={{ width: 26, height: 26, background: '#5B2BC9', color: '#fff' }}
                               title="Send now"

@@ -61,11 +61,28 @@ router.get('/', async (req, res) => {
 
 // Update a template
 router.put('/:id', async (req, res) => {
-  const { subject, emailBody, whatsappBody, label, category, sortOrder } = req.body;
+  const { subject, emailBody, whatsappBody, label, category, sortOrder, mediaUrl, mediaKind, mediaFilename } = req.body;
   const update = { subject, emailBody, whatsappBody };
   if (label) update.label = label;
   if (category !== undefined) update.category = String(category);
   if (sortOrder !== undefined && Number.isFinite(Number(sortOrder))) update.sortOrder = Number(sortOrder);
+  // A quick reply's attachment. Only http(s) is accepted — Meta fetches this
+  // URL itself, so anything it cannot reach would fail at send time instead.
+  if (mediaKind !== undefined) {
+    const kind = String(mediaKind || '');
+    if (!['', 'image', 'video', 'audio', 'document'].includes(kind)) {
+      return res.status(400).json({ error: 'mediaKind must be image, video, audio, document or empty' });
+    }
+    update.mediaKind = kind;
+  }
+  if (mediaUrl !== undefined) {
+    const url = String(mediaUrl || '').trim();
+    if (url && !/^https?:\/\//i.test(url)) {
+      return res.status(400).json({ error: 'The file URL must start with http:// or https://' });
+    }
+    update.mediaUrl = url;
+  }
+  if (mediaFilename !== undefined) update.mediaFilename = String(mediaFilename || '');
   const template = await MessageTemplate.findByIdAndUpdate(
     req.params.id,
     update,

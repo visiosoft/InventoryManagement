@@ -1586,6 +1586,13 @@ const messageTemplateSchema = new Schema({
   // Only meaningful for quick replies, which the console groups by it.
   category: { type: String, default: '' },
   sortOrder: { type: Number, default: 0 },
+  // A quick reply can send a file as well as, or instead of, text — the
+  // facility tour video, a price list. Held as a public URL rather than an
+  // uploaded media id, because Meta expires uploaded ids after 30 days and a
+  // canned reply that stops working after a month is worse than none.
+  mediaUrl: { type: String, default: '' },
+  mediaKind: { type: String, enum: ['', 'image', 'video', 'audio', 'document'], default: '' },
+  mediaFilename: { type: String, default: '' },
 }, { timestamps: true });
 export const MessageTemplate = model('MessageTemplate', messageTemplateSchema);
 

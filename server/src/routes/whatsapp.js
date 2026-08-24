@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { mediaFromRaw } from './whatsappMedia.js';
-import { WhatsAppMessage, Lead, Customer, AiBotThread, WhatsAppLabel, WhatsAppChatLabel } from '../models/index.js';
+import { WhatsAppMessage, Lead, Customer, AiBotThread, WhatsAppLabel, WhatsAppChatLabel, MessageTemplate } from '../models/index.js';
 import { sendWhatsAppText, sendWhatsAppMedia, uploadWhatsAppMedia, whatsappMediaKind, whatsappSendConfigured, whatsappSendMissing } from '../services/whatsapp.js';
 import { pauseBotForHuman } from '../services/aiBot.js';
 import multer from 'multer';
@@ -300,6 +300,86 @@ router.post('/send', async (req, res) => {
     await pauseBotForHuman(phoneNormalized);
 
     res.json({ ok: true, result });
+});
+
+/**
+ * Send one quick reply — its file, its text, or both.
+ *
+ * Assembled on the server rather than the browser so the console does not need
+ * to know whether a given reply carries a file, and so the URL is resolved
+ * against what is actually stored rather than what the page happened to render.
+ */
+router.post('/send-quick-reply', async (req, res) => {
+    try {
+        if (!whatsappSendConfigured()) {
+            return res.status(400).json({ error: `WhatsApp not configured. Missing: ${whatsappSendMissing().join(', ')}` });
+        }
+        const to = String(req.body?.to || '').trim();
+        if (!to) return res.status(400).json({ error: 'to is required' });
+
+        const template = await MessageTemplate.findById(req.body?.templateId).lean();
+        if (!template) return res.status(404).json({ error: 'Quick reply not found' });
+
+        const phoneNormalized = String(to).replace(/\D/g, '');
+        const body = String(template.whatsappBody || '').trim();
+        const sent = [];
+
+        // The file goes first, with the text as its caption when both exist —
+        // one message rather than two, which is how a person would send it.
+        if (template.mediaUrl && template.mediaKind) {
+            const captionable = ['image', 'video', 'document'].includes(template.mediaKind);
+            const caption = captionable ? body : '';
+            const result = await sendWhatsAppMedia({
+                to,
+                link: template.mediaUrl,
+                kind: template.mediaKind,
+                caption,
+                filename: template.mediaFilename || undefined,
+            });
+            await WhatsAppMessage.create({
+                messageId: result?.messages?.[0]?.id || '',
+                phone: to,
+                phoneNormalized,
+                direction: 'outbound',
+                type: template.mediaKind,
+                text: caption,
+                status: 'sent',
+                occurredAt: new Date(),
+                sentByAi: false,
+                // Same shape the inbound webhook produces, so the thread renders
+                // it and the media proxy can serve it back.
+                raw: { [template.mediaKind]: { link: template.mediaUrl, caption, filename: template.mediaFilename || '' }, sendResult: result },
+            });
+            sent.push(template.mediaKind);
+            if (caption) sent.push('text');
+        }
+
+        // Text on its own, or alongside a file that cannot carry a caption.
+        const needsSeparateText = body && !sent.includes('text');
+        if (needsSeparateText) {
+            const result = await sendWhatsAppText({ to, body });
+            await WhatsAppMessage.create({
+                messageId: result?.messages?.[0]?.id || '',
+                phone: to,
+                phoneNormalized,
+                direction: 'outbound',
+                type: 'text',
+                text: body,
+                status: 'sent',
+                occurredAt: new Date(),
+                sentByAi: false,
+                raw: result,
+            });
+            sent.push('text');
+        }
+
+        if (!sent.length) return res.status(400).json({ error: 'This quick reply has neither text nor a file' });
+
+        await pauseBotForHuman(phoneNormalized);
+        res.json({ ok: true, sent });
+    } catch (e) {
+        res.status(400).json({ error: e.message });
+    }
 });
 
 // Send a file. Stored as an outbound message carrying the same media shape
