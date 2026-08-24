@@ -42,7 +42,7 @@ export function unsubscribeFooterHtml(kind, id) {
         '<p style="font-family:sans-serif;font-size:12px;color:#756E80;line-height:1.5;margin:0">',
         'You are receiving this because you are a PurpleBox Storage customer or enquired with us.',
         `<br><a href="${url}" style="color:#5B2BC9">Unsubscribe from marketing emails</a>`,
-        ' — you will still receive invoices and contract notices.',
+        ' You will still receive invoices and contract notices.',
         '</p>',
     ].join('');
 }

@@ -66,7 +66,7 @@ export const CONTRACT_EXPIRY_HTML = `<table role="presentation" width="100%" cel
                   <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                     <tr>
                       <td style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:bold;color:#2D1259;">
-                        Option 1 &mdash; Renew
+                        Option 1: Renew
                       </td>
                     </tr>
                     <tr>
@@ -81,7 +81,7 @@ export const CONTRACT_EXPIRY_HTML = `<table role="presentation" width="100%" cel
                   <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                     <tr>
                       <td style="font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:bold;color:#14081F;">
-                        Option 2 &mdash; Vacate
+                        Option 2: Vacate
                       </td>
                     </tr>
                     <tr>
@@ -124,7 +124,7 @@ export const CONTRACT_EXPIRY_HTML = `<table role="presentation" width="100%" cel
 
         <tr>
           <td style="padding:28px 40px 0;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#4A4357;">
-            Or reach us directly &mdash; reply to this email, call, or message us on WhatsApp:
+            Or reach us directly. Reply to this email, call, or message us on WhatsApp:
           </td>
         </tr>
         <tr>
@@ -170,10 +170,10 @@ export const CONTRACT_EXPIRY_TEXT = [
     '',
     'Please let us know how you would like to proceed:',
     '',
-    'Option 1 - Renew: keep your unit at the current monthly rate of AED @rate.',
+    'Option 1: Renew. Keep your unit at the current monthly rate of AED @rate.',
     '@renewLink',
     '',
-    'Option 2 - Vacate: clear the unit and return the key/access device by @endDate.',
+    'Option 2: Vacate. Clear the unit and return the key/access device by @endDate.',
     '@moveOutLink',
     '',
     'If we do not hear from you by @endDate, a late fee of @lateFee will apply from that date until the unit is renewed or vacated.',

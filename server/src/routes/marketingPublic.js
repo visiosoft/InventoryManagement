@@ -21,7 +21,7 @@ function page({ title, body, accent = '#5B2BC9' }) {
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${title} — PurpleBox Storage</title>
+<title>${title} | PurpleBox Storage</title>
 <style>
   body { margin:0; background:#FBF8F2; color:#14081F; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
   .wrap { max-width: 520px; margin: 12vh auto; padding: 0 20px; }
@@ -63,7 +63,7 @@ router.get('/unsubscribe/:kind/:id/:token', async (req, res) => {
         title: 'Unsubscribed',
         body: `<h1>You're unsubscribed</h1>
 <p>We won't send you any more offers or announcements.</p>
-<p>You will still receive <span class="accent">invoices, contract notices and anything else about your storage</span> — those are not marketing, and we cannot switch them off.</p>
+<p>You will still receive <span class="accent">invoices, contract notices and anything else about your storage</span>. Those are not marketing, and we cannot switch them off.</p>
 <form method="POST" action="/api/marketing/resubscribe/${kind}/${id}/${token}">
   <button type="submit">Actually, keep me subscribed</button>
 </form>`,

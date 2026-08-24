@@ -18,7 +18,7 @@ const router = Router();
 const INTENTS = {
     renewing: {
         title: 'Renewal confirmed',
-        heading: "Thank you — we'll keep your unit",
+        heading: "Thank you, we'll keep your unit",
         body: 'We have recorded that you would like to continue storing with us. A member of the team will be in touch to confirm the details and your next invoice.',
         accent: '#047857',
         other: 'not_renewing',
@@ -26,7 +26,7 @@ const INTENTS = {
     },
     not_renewing: {
         title: 'Move-out noted',
-        heading: "Thank you — we've noted you're moving out",
+        heading: "Thank you, we've noted you're moving out",
         body: 'We have recorded that you will be vacating your unit. A member of the team will contact you to arrange the move-out date and the return of your key or access device.',
         accent: '#5B2BC9',
         other: 'renewing',
@@ -37,7 +37,7 @@ const INTENTS = {
         // they are leaving.
         promo: {
             heading: 'Need a hand moving your things?',
-            body: 'We pack and move across Dubai — trained crews, padded trucks, and a fixed price agreed before anything is lifted.',
+            body: 'We pack and move across Dubai, with trained crews, padded trucks and a fixed price agreed before anything is lifted.',
             href: 'https://purplebox.ae/packing-moving.html',
             cta: 'See packing & moving',
         },
@@ -49,7 +49,7 @@ function page({ title, heading, body, accent, footer = '', promo = null }) {
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${title} — PurpleBox Storage</title>
+<title>${title} | PurpleBox Storage</title>
 <style>
   body { margin:0; background:#EDE3CF; color:#14081F;
          font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
