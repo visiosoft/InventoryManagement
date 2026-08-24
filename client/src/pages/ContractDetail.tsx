@@ -3304,9 +3304,17 @@ export default function ContractDetail() {
         open={!!templateEmail}
         onClose={() => { setTemplateEmail(null); setTemplateEmailMsg('') }}
         title={templateEmail?.label || 'Send email'}
+        className={
+          templateEmail && (templateEmail.isHtml || /<\s*(table|div|p|html|body)[\s>]/i.test(templateEmail.html))
+            // A designed email is 600px wide. Beside the form rather than
+            // inside it, so it can be read without dragging a scrollbar.
+            ? 'sm:max-w-6xl sm:rounded-xl border'
+            : 'sm:max-w-2xl sm:rounded-xl border'
+        }
       >
         {templateEmail && (
-          <div className="space-y-3">
+          <div className={(templateEmail.isHtml || /<\s*(table|div|p|html|body)[\s>]/i.test(templateEmail.html)) ? 'grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-5 items-start' : 'space-y-3'}>
+            <div className="space-y-3 min-w-0">
             <Field label="To">
               <Input value={templateEmail.to} autoFocus={!templateEmail.to}
                 placeholder="name@example.com"
@@ -3335,6 +3343,8 @@ export default function ContractDetail() {
                 server's isHtml flag: an API that predates that field would send
                 nothing, and the composer would fall back to showing raw markup
                 — which is exactly what it did. */}
+            </div>
+
             {(templateEmail.isHtml || /<\s*(table|div|p|html|body)[\s>]/i.test(templateEmail.html)) ? (
               <Field label={emailShowSource ? 'Message — HTML source' : 'Message — sent as designed'}>
                 {emailShowSource ? (
@@ -3345,7 +3355,7 @@ export default function ContractDetail() {
                     title="Email preview"
                     srcDoc={templateEmail.html}
                     sandbox=""
-                    style={{ width: '100%', height: 380, border: '1px solid rgba(20,8,31,.12)', borderRadius: 10, background: '#fff' }}
+                    style={{ width: '100%', height: '62vh', minHeight: 420, border: '1px solid rgba(20,8,31,.12)', borderRadius: 10, background: '#fff' }}
                   />
                 )}
                 <button
@@ -3363,6 +3373,7 @@ export default function ContractDetail() {
                   onChange={(e) => setTemplateEmail({ ...templateEmail, html: e.target.value })} />
               </Field>
             )}
+            <div className="space-y-3 min-w-0 lg:col-start-1">
             {templateEmail.unfilled.length > 0 && (
               /* A placeholder this contract cannot fill would otherwise go out
                  as a literal "@foo" in the tenant's email. */
@@ -3399,6 +3410,7 @@ export default function ContractDetail() {
                 }}>
                 {templateEmailBusy ? 'Sending…' : 'Send email'}
               </Button>
+            </div>
             </div>
           </div>
         )}
