@@ -10,6 +10,7 @@ type Config = {
   mode: 'draft' | 'auto'
   systemPrompt: string
   useAvailability: boolean
+  autoSummarise: boolean
   escalateTo: string
   handoverKeywords: string[]
   maxRepliesPerThreadPerDay: number
@@ -157,6 +158,20 @@ export default function AiAssistant() {
               <span className="block text-muted-foreground text-[13px]">
                 Reads the real free units for the dates the customer mentions, using the same
                 calculation as the booking screens. Off means it talks about sizes and prices only.
+              </span>
+            </span>
+          </label>
+
+          <label className="flex items-start gap-3 cursor-pointer pt-1">
+            <input type="checkbox" className="mt-1" checked={draft.autoSummarise !== false}
+              onChange={(e) => set({ autoSummarise: e.target.checked })} />
+            <span className="text-sm">
+              <span className="font-medium">Keep inbox summaries up to date</span>
+              <span className="block text-muted-foreground text-[13px]">
+                Every couple of hours, reads the conversations that moved in the last two days so
+                “Hot leads” in the inbox answers about today. It re-reads nothing that has not
+                changed, and never looks further back than two days. It only reads — no message is
+                ever sent, and nothing is written to a lead.
               </span>
             </span>
           </label>

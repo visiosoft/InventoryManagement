@@ -64,7 +64,8 @@ import crewAuthRoutes from './routes/crewAuth.js';
 import crewPortalRoutes from './routes/crewPortal.js';
 import { startBackupScheduler } from './services/backup.js';
 import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
-import { runAiBotTick } from './services/aiBot.js';
+import { runAiBotTick, getAiBotConfig } from './services/aiBot.js';
+import { summariseRecent } from './services/conversationSummary.js';
 import { runCampaignTick } from './services/campaignSender.js';
 import { inspectWhatsAppToken } from './services/whatsapp.js';
 import { runAutomationRules, getAutoSend } from './services/automationEngine.js';
@@ -308,6 +309,21 @@ async function start() {
   setTimeout(() => setInterval(() => {
     runAiBotTick().catch((e) => console.error('[AI bot]', e.message));
   }, AI_BOT_INTERVAL), 20_000);
+
+  // Keep the inbox summaries current, so "hot leads" answers about today
+  // rather than about whichever chats somebody happened to open. Only
+  // conversations that moved in the last two days, capped per run, and it
+  // re-reads nothing that has not changed. Reads only — nothing is sent.
+  const SUMMARY_INTERVAL = 2 * 60 * 60 * 1000;
+  const summaryTick = async () => {
+    const cfg = await getAiBotConfig();
+    if (cfg?.autoSummarise === false) return;
+    await summariseRecent({});
+  };
+  setTimeout(() => {
+    summaryTick().catch((e) => console.error('[Summaries]', e.message));
+    setInterval(() => summaryTick().catch((e) => console.error('[Summaries]', e.message)), SUMMARY_INTERVAL);
+  }, 45_000);
 }
 
 start().catch((err) => {

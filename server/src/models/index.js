@@ -1422,6 +1422,9 @@ const aiBotConfigSchema = new Schema({
   handoverKeywords: { type: [String], default: ['human', 'agent', 'manager', 'call me', 'speak to someone'] },
   maxRepliesPerThreadPerDay: { type: Number, default: 20 },
   humanPauseHours: { type: Number, default: 12 },
+  // Keep summaries current for conversations that moved in the last couple of
+  // days. Reads only — it sends nothing and writes nothing to a Lead.
+  autoSummarise: { type: Boolean, default: true },
 }, { timestamps: true });
 
 // One per conversation, holding the state machine and any pending draft.

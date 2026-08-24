@@ -577,6 +577,12 @@ function InboxAsk({ onOpenChat }: { onOpenChat: (phone: string) => void }) {
     retry: false,
   })
 
+  const qc = useQueryClient()
+  const catchUp = useMutation<{ considered: number; generated: number; skipped: number; failed: number }>({
+    mutationFn: () => api.post('/whatsapp/summarise-recent', { days: 2 }).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['wa-ask'] }),
+  })
+
   const ask = (text: string) => { setQ(text); setAsked(text) }
 
   return (
@@ -644,11 +650,34 @@ function InboxAsk({ onOpenChat }: { onOpenChat: (phone: string) => void }) {
               {/* "Hot" is answered from summaries already made — never by
                   summarising the whole inbox behind one click. Saying how many
                   were not looked at keeps a partial answer visibly partial. */}
+              {/* Rather than asking someone to open 262 chats one at a time,
+                  offer to read the ones that actually moved. Bounded on the
+                  server to the last two days and a fixed count per run. */}
               {!!data?.unread && (
-                <p style={{ color: '#B45309', fontSize: 11, marginTop: 2 }}>
-                  {data.unread} chats have never been summarised, so they are not in this answer.
-                  Open one and use “Summarise this conversation”.
-                </p>
+                <div style={{ marginTop: 4 }}>
+                  <p style={{ color: '#B45309', fontSize: 11 }}>
+                    {data.unread} chats have never been summarised, so they are not in this answer.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => catchUp.mutate()}
+                    disabled={catchUp.isPending}
+                    className="rounded-full px-2.5 py-1 mt-1 cursor-pointer disabled:opacity-50"
+                    style={{ fontSize: 11, fontWeight: 700, background: '#4A1FA0', color: '#fff', border: 'none' }}
+                  >
+                    {catchUp.isPending ? 'Reading…' : 'Read today & yesterday'}
+                  </button>
+                  {catchUp.data && (
+                    <p style={{ color: FAINT_INK, fontSize: 11, marginTop: 3 }}>
+                      Read {catchUp.data.generated} of {catchUp.data.considered} active chats
+                      {catchUp.data.skipped ? `, ${catchUp.data.skipped} already current` : ''}
+                      {catchUp.data.failed ? `, ${catchUp.data.failed} could not be read` : ''}.
+                    </p>
+                  )}
+                  {catchUp.isError && (
+                    <p style={{ color: '#B91C1C', fontSize: 11, marginTop: 3 }}>{apiError(catchUp.error)}</p>
+                  )}
+                </div>
               )}
 
               <div className="mt-2 space-y-1">

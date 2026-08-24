@@ -5,7 +5,7 @@ import { sendWhatsAppText, sendWhatsAppMedia, uploadWhatsAppMedia, whatsappMedia
 import { pauseBotForHuman } from '../services/aiBot.js';
 import multer from 'multer';
 import { createLeadFromWhatsAppPhone } from '../services/whatsappLeadSync.js';
-import { summariseConversation } from '../services/conversationSummary.js';
+import { summariseConversation, summariseRecent } from '../services/conversationSummary.js';
 import { askInbox } from '../services/inboxAsk.js';
 
 const router = Router();
@@ -243,6 +243,20 @@ router.get('/conversations', async (_req, res) => {
 // webhook sync, so this is the manual path for numbers that don't have one yet
 // (e.g. a thread we started outbound). Idempotent — returns the existing lead
 // rather than creating a duplicate.
+/**
+ * Read every conversation that moved in the last couple of days.
+ *
+ * Bounded by window and by count, so one click cannot become a large bill.
+ */
+router.post('/summarise-recent', async (req, res) => {
+    try {
+        const days = Math.min(Math.max(1, Number(req.body?.days) || 2), 14);
+        res.json(await summariseRecent({ days }));
+    } catch (e) {
+        res.status(500).json({ error: e.message || 'Could not summarise' });
+    }
+});
+
 /**
  * Ask a question of the whole inbox.
  *

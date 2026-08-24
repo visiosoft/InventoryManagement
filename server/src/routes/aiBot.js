@@ -11,6 +11,7 @@ const shape = (config) => ({
     mode: config.mode,
     systemPrompt: config.systemPrompt,
     useAvailability: config.useAvailability,
+    autoSummarise: config.autoSummarise !== false,
     escalateTo: config.escalateTo ? String(config.escalateTo) : '',
     handoverKeywords: config.handoverKeywords || [],
     maxRepliesPerThreadPerDay: config.maxRepliesPerThreadPerDay,
@@ -31,6 +32,7 @@ router.put('/config', requireAdmin, async (req, res) => {
     if (b.mode === 'draft' || b.mode === 'auto') config.mode = b.mode;
     if (b.systemPrompt !== undefined) config.systemPrompt = String(b.systemPrompt).slice(0, 8000);
     if (b.useAvailability !== undefined) config.useAvailability = Boolean(b.useAvailability);
+    if (b.autoSummarise !== undefined) config.autoSummarise = Boolean(b.autoSummarise);
     if (b.handoverKeywords !== undefined) {
         config.handoverKeywords = (Array.isArray(b.handoverKeywords) ? b.handoverKeywords : [])
             .map((k) => String(k).trim().toLowerCase()).filter(Boolean).slice(0, 30);

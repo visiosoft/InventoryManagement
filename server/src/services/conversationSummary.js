@@ -107,6 +107,69 @@ export function parseSummary(raw) {
   };
 }
 
+/** Only threads that moved in this window are worth spending on. */
+export const RECENT_DAYS = 2;
+/** A hard ceiling per run, so a busy day cannot turn into a large bill. */
+export const BATCH_LIMIT = 60;
+
+/**
+ * Summarise every thread that has moved recently and is not already current.
+ *
+ * Bounded twice over: only conversations with a message in the last couple of
+ * days, and never more than BATCH_LIMIT of them in one run. A quiet thread from
+ * three weeks ago is not worth paying to read, and nothing here re-reads a
+ * conversation that has not changed since it was last summarised.
+ *
+ * Reads and stores. Sends nothing, and writes nothing to a Lead.
+ */
+export async function summariseRecent({ days = RECENT_DAYS, limit = BATCH_LIMIT } = {}) {
+  if (!openaiConfigured()) return { configured: false };
+
+  const since = new Date(Date.now() - days * 86400000);
+
+  // Newest message per thread, most recently active first.
+  const threads = await WhatsAppMessage.aggregate([
+    { $match: { occurredAt: { $gte: since }, deletedAt: null } },
+    { $group: { _id: '$phoneNormalized', lastAt: { $max: '$occurredAt' } } },
+    { $sort: { lastAt: -1 } },
+  ]);
+
+  const existing = await ConversationSummary.find({ phoneNormalized: { $in: threads.map((t) => t._id) } })
+    .select('phoneNormalized lastMessageId')
+    .lean();
+  const byPhone = new Map(existing.map((s) => [s.phoneNormalized, s]));
+
+  let generated = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  for (const t of threads) {
+    if (generated >= limit) break;
+
+    // summariseConversation checks the cache key itself; this is only a cheap
+    // pre-filter so an unchanged thread costs no query at all.
+    const newest = await WhatsAppMessage.findOne({ phoneNormalized: t._id, deletedAt: null })
+      .sort({ occurredAt: -1 })
+      .select('messageId')
+      .lean();
+    const key = String(newest?.messageId || newest?._id || '');
+    if (byPhone.get(t._id)?.lastMessageId === key) { skipped += 1; continue; }
+
+    try {
+      const out = await summariseConversation(t._id);
+      if (out?.headline) generated += 1;
+      else failed += 1;
+    } catch {
+      // One unreadable thread must not stop the batch.
+      failed += 1;
+    }
+  }
+
+  const result = { configured: true, considered: threads.length, generated, skipped, failed, days, limit };
+  console.log(`[Summaries] window=${days}d considered=${threads.length} generated=${generated} skipped=${skipped} failed=${failed}`);
+  return result;
+}
+
 /**
  * Summarise a thread, reusing the stored one when nothing has been said since.
  *
