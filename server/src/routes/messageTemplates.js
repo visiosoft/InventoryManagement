@@ -61,8 +61,10 @@ router.get('/', async (req, res) => {
 
 // Update a template
 router.put('/:id', async (req, res) => {
-  const { subject, emailBody, whatsappBody, label, category, sortOrder, mediaUrl, mediaKind, mediaFilename } = req.body;
+  const { subject, emailBody, emailHtml, whatsappBody, label, category, sortOrder, mediaUrl, mediaKind, mediaFilename } = req.body;
   const update = { subject, emailBody, whatsappBody };
+  // The designed version, sent in preference to the text when present.
+  if (emailHtml !== undefined) update.emailHtml = String(emailHtml || '');
   if (label) update.label = label;
   if (category !== undefined) update.category = String(category);
   if (sortOrder !== undefined && Number.isFinite(Number(sortOrder))) update.sortOrder = Number(sortOrder);

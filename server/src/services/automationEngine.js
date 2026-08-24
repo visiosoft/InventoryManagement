@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { AutomationRule, AutomationLog, MessageTemplate, Payment, Contract } from '../models/index.js';
 import { sendWhatsAppText, whatsappSendConfigured } from './whatsapp.js';
 import { sendMail, mailConfigured } from './mail.js';
+import { renewLink, moveOutLink } from './renewalLink.js';
 
 // Master switch for the scheduled runs — OFF until it is turned on from the
 // Automation Rules page, so a fresh deploy can never blast the whole backlog
@@ -91,6 +92,7 @@ async function resolveMessages(step, templatesByName, event, vars) {
   return {
     whatsapp: interpolate(whatsappBody, vars),
     emailText: interpolate(emailBody, vars),
+    emailHtml: interpolate(step.emailHtml?.trim() || tpl?.emailHtml || '', vars),
     emailSubject: interpolate(emailSubject, vars),
   };
 }
@@ -124,7 +126,14 @@ async function dispatch({ rule, contract, eventKey, stepIdx, messages, dryRun, r
         await sendWhatsAppText({ to: phone, body: messages.whatsapp });
         await AutomationLog.create({ ...base, channel, message: messages.whatsapp, status: 'sent' });
       } else {
-        await sendMail({ to: email, subject: messages.emailSubject, text: messages.emailText });
+        // Send the designed version when there is one, keeping the text as the
+        // alternative part rather than replacing it.
+        await sendMail({
+          to: email,
+          subject: messages.emailSubject,
+          text: messages.emailText,
+          ...(messages.emailHtml ? { html: messages.emailHtml } : {}),
+        });
         await AutomationLog.create({ ...base, channel, message: messages.emailText, status: 'sent' });
       }
       results.sent++;
@@ -240,6 +249,11 @@ export async function runAutomationRules({ dryRun = false } = {}) {
         contractNo: contract.contractNo || '',
         endDate: fmtDate(contract.endDate),
         rate: contract.rate != null ? Number(contract.rate).toFixed(2) : '',
+        // One-click answers to "are you staying?", so the tenant can settle it
+        // without a phone call from us.
+        renewLink: renewLink(contract._id),
+        moveOutLink: moveOutLink(contract._id),
+        lateFee: process.env.LATE_FEE_AMOUNT || 'AED 100',
       };
 
       for (const rule of expiryRules) {

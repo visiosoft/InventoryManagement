@@ -34,6 +34,7 @@ import whatsappRoutes from './routes/whatsapp.js';
 import aiBotRoutes from './routes/aiBot.js';
 import campaignRoutes from './routes/campaigns.js';
 import marketingPublicRoutes from './routes/marketingPublic.js';
+import contractsPublicRoutes from './routes/contractsPublic.js';
 import workerRoutes from './routes/workers.js';
 import truckRoutes from './routes/trucks.js';
 import movingJobRoutes, { publicUploadRouter as movingJobPublicUpload, publicShareRouter as movingJobPublicShare } from './routes/movingJobs.js';
@@ -125,6 +126,9 @@ app.use('/api/contracts/zoho-webhook', (req, _res, next) => next());
 app.use('/api/integrations/whatsapp/webhook', (req, _res, next) => next());
 app.use('/api/units', requireAuth, unitRoutes);
 app.use('/api/customers', requireAuth, customerRoutes);
+// Before the authenticated mount below: a tenant clicking the renewal link in
+// their expiry email has no account, and Express matches in order.
+app.use('/api/contracts/public', contractsPublicRoutes);
 app.use(
   '/api/contracts',
   (req, res, next) => (req.path === '/zoho-webhook' ? next() : requireAuth(req, res, next)),

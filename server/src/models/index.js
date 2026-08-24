@@ -1576,6 +1576,11 @@ const messageTemplateSchema = new Schema({
   label: { type: String, required: true },
   subject: { type: String, default: '' },
   emailBody: { type: String, default: '' },
+  // The designed version. When present it is what actually goes out, with
+  // emailBody kept as the plain-text part for clients that will not render
+  // HTML — a reminder should not arrive blank because someone reads mail in a
+  // terminal.
+  emailHtml: { type: String, default: '' },
   whatsappBody: { type: String, default: '' },
   variables: [String],
   // 'automation' templates are the contract-driven ones the reminder engine
