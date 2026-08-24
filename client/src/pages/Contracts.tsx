@@ -58,7 +58,7 @@ const fieldBase: React.CSSProperties = {
   outline: 'none',
 }
 
-type SortCol = 'contract' | 'customer' | 'units' | 'amount' | 'start' | 'end' | 'daysleft' | 'status' | 'renewal'
+type SortCol = 'contract' | 'customer' | 'units' | 'amount' | 'owes' | 'start' | 'end' | 'daysleft' | 'status' | 'renewal'
 
 // Which server sort each column maps to. The list is paginated, so a
 // client-side sort would only reorder the page you happen to be on — these go
@@ -72,6 +72,12 @@ const SERVER_SORT: Partial<Record<SortCol, [string, string]>> = {
   end: ['end_asc', 'end_desc'],
   // Fewest days left first == soonest end date first.
   daysleft: ['end_asc', 'end_desc'],
+  // Largest debt first, since that is the one worth acting on. Resolved from
+  // Zoho on the server, which is why it is a server sort like the rest rather
+  // than a reshuffle of the visible page.
+  owes: ['owes_desc', 'owes_asc'],
+  // Ties broken by end date, so within one intent the soonest expiry leads.
+  renewal: ['renewal_asc', 'renewal_desc'],
 }
 
 function SortHead({ label, col, sort, onSort }: {
@@ -456,7 +462,7 @@ export default function Contracts() {
                   <SortHead label="Customer" col="customer" sort={sort} onSort={setSort} />
                   <SortHead label="Unit(s)" col="units" sort={sort} onSort={setSort} />
                   <SortHead label="Amount" col="amount" sort={sort} onSort={setSort} />
-                  <div style={headCell}>Owes</div>
+                  <SortHead label="Owes" col="owes" sort={sort} onSort={setSort} />
                   <SortHead label="Start" col="start" sort={sort} onSort={setSort} />
                   <SortHead label="End" col="end" sort={sort} onSort={setSort} />
                   <SortHead label="Days left" col="daysleft" sort={sort} onSort={setSort} />

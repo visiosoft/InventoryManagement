@@ -101,11 +101,30 @@ router.get('/', async (req, res) => {
   };
   const sort = sortMap[req.query.sort] || sortMap.newest;
 
+  // Owed money lives in Zoho, not Mongo, so it cannot be part of the database
+  // sort. Sorting by it means resolving the whole filtered set first and paging
+  // in memory — the alternative, reordering just the current page, would put the
+  // largest debtor at the top of page three and look like a bug.
+  const sortByOwed = req.query.sort === 'owes_desc' || req.query.sort === 'owes_asc';
+
+  // Renewal is sorted by how much attention it needs, not alphabetically.
+  // Alphabetical puts not_renewing first and undecided last, which buries the
+  // 117 contracts nobody has called yet under the handful already settled.
+  // Contracts predating the field count as undecided, matching the model default.
+  const RENEWAL_ORDER = { undecided: 0, not_renewing: 1, renewing: 2 };
+  const sortByRenewal = req.query.sort === 'renewal_asc' || req.query.sort === 'renewal_desc';
+  const inMemorySort = sortByOwed || sortByRenewal;
+
   const [contracts, total] = await Promise.all([
-    Contract.find(filter)
-      .populate('customer', 'fullName email phone phones')
-      .populate('unit', 'unitNumber floor')
-      .sort(sort).skip(skip).limit(limit).lean(),
+    inMemorySort
+      ? Contract.find(filter)
+        .populate('customer', 'fullName email phone phones')
+        .populate('unit', 'unitNumber floor')
+        .sort({ endDate: 1 }).limit(2000).lean()
+      : Contract.find(filter)
+        .populate('customer', 'fullName email phone phones')
+        .populate('unit', 'unitNumber floor')
+        .sort(sort).skip(skip).limit(limit).lean(),
     Contract.countDocuments(filter),
   ]);
 
@@ -170,6 +189,21 @@ router.get('/', async (req, res) => {
       const hit = r.customer ? byCustomer.get(String(r.customer._id)) : null;
       return hit ? { ...r, outstanding: hit.outstanding } : r;
     });
+  }
+
+  // Only now can the owed sort happen, because only now is the figure known.
+  // Both of these already carry a soonest-expiry-first order from the query, so
+  // ties inside a group stay in a useful sequence.
+  if (inMemorySort) {
+    if (sortByOwed) {
+      const dir = req.query.sort === 'owes_asc' ? 1 : -1;
+      data = [...data].sort((a, b) => dir * (Number(a.outstanding || 0) - Number(b.outstanding || 0)));
+    } else {
+      const dir = req.query.sort === 'renewal_desc' ? -1 : 1;
+      const rank = (c) => RENEWAL_ORDER[c.renewalIntent || 'undecided'] ?? 0;
+      data = [...data].sort((a, b) => dir * (rank(a) - rank(b)));
+    }
+    data = data.slice(skip, skip + limit);
   }
 
   res.json({ data, total, page, pages: Math.ceil(total / limit), limit });
