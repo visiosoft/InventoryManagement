@@ -108,7 +108,18 @@ router.delete('/:id', async (req, res) => {
     try {
         const rule = await AutomationRule.findById(req.params.id);
         if (!rule) return res.status(404).json({ error: 'Rule not found' });
-        if (!rule.custom) return res.status(400).json({ error: 'Cannot delete built-in rules' });
+        // A built-in rule can be removed if the business genuinely does not use
+        // that channel — overdue chasing, say, may happen somewhere else
+        // entirely. What must not happen is deleting one mid-flight, so it has
+        // to be switched off first.
+        if (rule.enabled) {
+            return res.status(400).json({ error: 'Switch this rule off before deleting it' });
+        }
+        // The seed only runs when there are no rules at all, so removing one
+        // is permanent — but deleting every rule would bring them all back.
+        if (!rule.custom && (await AutomationRule.countDocuments()) <= 1) {
+            return res.status(400).json({ error: 'This is the last rule; deleting it would restore the built-in set on the next restart' });
+        }
         await rule.deleteOne();
         res.json({ ok: true });
     } catch (e) {

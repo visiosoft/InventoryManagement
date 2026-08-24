@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# The uncompressed source tour video. The compressed office-tour-c.mp4 is what
+# ships; this one is 25 MB and over WhatsApp's 16 MB limit anyway.
+office-tour.mp4
