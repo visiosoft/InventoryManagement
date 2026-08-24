@@ -323,17 +323,27 @@ router.post('/send-email', requireAdmin, async (req, res) => {
   const skipped = [];
 
   if (personalise) {
-    // Each tenant's live contract supplies the unit, dates and rate. Without
-    // one there is nothing to fill from, so that person is skipped rather than
-    // sent a message full of raw placeholders.
-    const contracts = await Contract.find({
-      customer: { $in: recipients.map((c) => c._id) },
-      status: 'active',
-    }).populate('unit', 'unitNumber').populate('units', 'unitNumber').sort({ endDate: 1 }).lean();
+    // A tenant's contract supplies the unit, dates and rate. An active one is
+    // the obvious source, but insisting on it would make several templates
+    // unusable: "contract ended" goes to someone whose contract is *not*
+    // active, and a welcome email goes out while it is still pending. So the
+    // most relevant contract wins, and only a tenant with none at all is
+    // skipped.
+    const RELEVANCE = { active: 0, pending_signature: 1, draft: 2, ended: 3, cancelled: 4 };
+    const contracts = await Contract.find({ customer: { $in: recipients.map((c) => c._id) } })
+      .populate('unit', 'unitNumber').populate('units', 'unitNumber').lean();
 
     const byCustomer = new Map();
     for (const c of contracts) {
-      if (!byCustomer.has(String(c.customer))) byCustomer.set(String(c.customer), c);
+      const key = String(c.customer);
+      const held = byCustomer.get(key);
+      if (!held) { byCustomer.set(key, c); continue; }
+      // Prefer a live contract; between two of the same standing, the one
+      // running latest, since that is the one the tenant is thinking about.
+      const better = (RELEVANCE[c.status] ?? 9) - (RELEVANCE[held.status] ?? 9)
+        || (Boolean(held.archived) - Boolean(c.archived))
+        || (new Date(c.endDate || 0) - new Date(held.endDate || 0));
+      if (better < 0) byCustomer.set(key, c);
     }
 
     for (const customer of recipients) {
@@ -347,8 +357,8 @@ router.post('/send-email', requireAdmin, async (req, res) => {
           name: customer.fullName,
           email: customer.email,
           reason: contract
-            ? `nothing to fill ${leftover.join(', ')} from`
-            : 'no active contract, so the contract details could not be filled in',
+            ? `${leftover.join(', ')} had no value on contract ${contract.contractNo}`
+            : 'no contract on record, so the contract details could not be filled in',
         });
         continue;
       }
