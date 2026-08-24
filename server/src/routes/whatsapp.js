@@ -6,6 +6,7 @@ import { pauseBotForHuman } from '../services/aiBot.js';
 import multer from 'multer';
 import { createLeadFromWhatsAppPhone } from '../services/whatsappLeadSync.js';
 import { summariseConversation } from '../services/conversationSummary.js';
+import { askInbox } from '../services/inboxAsk.js';
 
 const router = Router();
 
@@ -242,6 +243,22 @@ router.get('/conversations', async (_req, res) => {
 // webhook sync, so this is the manual path for numbers that don't have one yet
 // (e.g. a thread we started outbound). Idempotent — returns the existing lead
 // rather than creating a duplicate.
+/**
+ * Ask a question of the whole inbox.
+ *
+ * Most questions are answered straight from the database and cost nothing;
+ * `usedModel` in the response says which. Read-only.
+ */
+router.get('/ask', async (req, res) => {
+    try {
+        const q = String(req.query.q || '').trim();
+        if (!q) return res.status(400).json({ error: 'Ask a question' });
+        res.json(await askInbox(q));
+    } catch (e) {
+        res.status(500).json({ error: e.message || 'Could not answer that' });
+    }
+});
+
 /**
  * A short read of one thread, for the strip above the chat.
  *

@@ -528,6 +528,169 @@ function LabelPicker({ convo, labels, onChanged }: {
 
 // One button that walks a chat through the pipeline: no lead yet → create one;
 // lead exists → convert it to a customer; already won → just link to the record.
+type AskRow = {
+  phoneNormalized: string
+  displayName: string
+  isCustomer: boolean
+  leadStatus: string
+  lastAt: string
+  lastDirection: 'inbound' | 'outbound'
+  preview: string
+  reason: string
+}
+
+type AskResult = {
+  intent?: string
+  rows: AskRow[]
+  total: number
+  unread?: number
+  days?: number
+  needle?: string
+  source?: string
+  usedModel?: boolean
+  unreadable?: string | null
+}
+
+/** The questions worth one tap, and the ones that cost nothing to answer. */
+const ASK_SUGGESTIONS = ['What did we miss?', 'Who went quiet?', 'Hot leads']
+
+/**
+ * Ask a question of the whole inbox.
+ *
+ * The per-chat summary only helps once you know which chat to open. This is
+ * the other half: which of two hundred threads needs you right now.
+ *
+ * Most of these are database questions, not language ones — "nobody replied to
+ * them" is a fact about the newest message — so the common phrasings are
+ * recognised on the server without any API call. The badge says which answers
+ * were free.
+ */
+function InboxAsk({ onOpenChat }: { onOpenChat: (phone: string) => void }) {
+  const [q, setQ] = useState('')
+  const [asked, setAsked] = useState('')
+
+  const { data, isFetching, error } = useQuery<AskResult>({
+    queryKey: ['wa-ask', asked],
+    queryFn: () => api.get('/whatsapp/ask', { params: { q: asked } }).then((r) => r.data),
+    enabled: Boolean(asked),
+    staleTime: 60_000,
+    retry: false,
+  })
+
+  const ask = (text: string) => { setQ(text); setAsked(text) }
+
+  return (
+    <div className="space-y-2">
+      <form
+        onSubmit={(e) => { e.preventDefault(); if (q.trim()) setAsked(q.trim()) }}
+        className="relative"
+      >
+        <Sparkles size={14} style={{ color: '#4A1FA0' }} className="absolute left-3 top-1/2 -translate-y-1/2" />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Ask: what did we miss?"
+          className="w-full pl-8 pr-8 py-2 text-[13px] focus:outline-none"
+          style={{ background: '#FFF7E6', border: '1px solid #F5DFB8', borderRadius: 10, color: INK }}
+        />
+        {asked && (
+          <button
+            type="button"
+            onClick={() => { setQ(''); setAsked('') }}
+            title="Clear"
+            className="absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer"
+            style={{ color: FAINT_INK }}
+          >
+            <X size={13} />
+          </button>
+        )}
+      </form>
+
+      {!asked && (
+        <div className="flex flex-wrap gap-1.5">
+          {ASK_SUGGESTIONS.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => ask(s)}
+              className="rounded-full px-2.5 py-1 cursor-pointer"
+              style={{ fontSize: 11, fontWeight: 600, background: '#F7F3FF', border: '1px solid #EDE5FF', color: '#4A1FA0' }}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {asked && (
+        <div style={{ fontSize: 12 }}>
+          {isFetching ? (
+            <p style={{ color: FAINT_INK }}>Looking…</p>
+          ) : error ? (
+            <p style={{ color: '#B91C1C' }}>{apiError(error)}</p>
+          ) : data?.unreadable ? (
+            <p style={{ color: FAINT_INK }}>{data.unreadable}</p>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 flex-wrap" style={{ color: FAINT_INK, fontSize: 11 }}>
+                <span style={{ fontWeight: 700, color: INK, fontSize: 12 }}>
+                  {data?.total ?? 0} {data?.total === 1 ? 'chat' : 'chats'}
+                </span>
+                {/* A question answered from the database should look free,
+                    because it was. */}
+                <span>{data?.usedModel ? 'read by the assistant' : 'answered from your data'}</span>
+              </div>
+
+              {/* "Hot" is answered from summaries already made — never by
+                  summarising the whole inbox behind one click. Saying how many
+                  were not looked at keeps a partial answer visibly partial. */}
+              {!!data?.unread && (
+                <p style={{ color: '#B45309', fontSize: 11, marginTop: 2 }}>
+                  {data.unread} chats have never been summarised, so they are not in this answer.
+                  Open one and use “Summarise this conversation”.
+                </p>
+              )}
+
+              <div className="mt-2 space-y-1">
+                {(data?.rows ?? []).map((r) => (
+                  <button
+                    key={r.phoneNormalized}
+                    type="button"
+                    onClick={() => onOpenChat(r.phoneNormalized)}
+                    className="w-full text-left rounded-lg px-2.5 py-2 cursor-pointer hover:opacity-80"
+                    style={{ background: '#fff', border: `1px solid ${LINE}` }}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate" style={{ fontWeight: 700, fontSize: 12.5, color: INK }}>{r.displayName}</span>
+                      {r.isCustomer && (
+                        <span className="shrink-0 rounded-full px-1.5" style={{ fontSize: 9.5, fontWeight: 700, background: '#DCFCE7', color: '#047857' }}>
+                          Customer
+                        </span>
+                      )}
+                    </div>
+                    <p className="truncate" style={{ fontSize: 11.5, color: MUTED_INK }}>{r.reason}</p>
+                    {r.preview && (
+                      <p className="truncate" style={{ fontSize: 11, color: FAINT_INK }}>{r.preview}</p>
+                    )}
+                  </button>
+                ))}
+                {data && data.rows.length === 0 && (
+                  <p style={{ color: FAINT_INK }}>Nothing matched that.</p>
+                )}
+                {data && data.total > data.rows.length && (
+                  <p style={{ color: FAINT_INK, fontSize: 11 }}>
+                    Showing {data.rows.length} of {data.total}.
+                  </p>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 type Digest = {
   configured?: boolean
   empty?: boolean
@@ -1406,6 +1569,8 @@ export default function WhatsApp() {
                 style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', borderRadius: 10, color: INK }}
               />
             </div>
+
+            <InboxAsk onOpenChat={(phone) => { setSelectedPhone(phone); setSidebarOpen(false) }} />
 
             {/* Click a label to narrow the list to the chats carrying it. */}
             {waLabels.length > 0 && (
