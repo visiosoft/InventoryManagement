@@ -1452,6 +1452,21 @@ const aiBotThreadSchema = new Schema({
 }, { timestamps: true });
 aiBotThreadSchema.index({ status: 1, updatedAt: -1 });
 
+/* A model's reading of one WhatsApp thread, cached against the newest message
+   in it so reopening a chat that has not moved costs nothing.
+
+   The lead temperature lives here rather than on Lead: it is an opinion, and
+   an opinion should not become a business record other code reads. */
+const conversationSummarySchema = new Schema({
+  phoneNormalized: { type: String, required: true, unique: true },
+  lastMessageId: { type: String, default: '' },
+  summary: { type: Schema.Types.Mixed, default: null },
+  model: { type: String, default: '' },
+  generatedAt: { type: Date, default: Date.now },
+}, { timestamps: true });
+
+export const ConversationSummary = model('ConversationSummary', conversationSummarySchema);
+
 export const AiBotConfig = model('AiBotConfig', aiBotConfigSchema);
 export const AiBotThread = model('AiBotThread', aiBotThreadSchema);
 

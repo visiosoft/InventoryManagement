@@ -5,6 +5,7 @@ import { sendWhatsAppText, sendWhatsAppMedia, uploadWhatsAppMedia, whatsappMedia
 import { pauseBotForHuman } from '../services/aiBot.js';
 import multer from 'multer';
 import { createLeadFromWhatsAppPhone } from '../services/whatsappLeadSync.js';
+import { summariseConversation } from '../services/conversationSummary.js';
 
 const router = Router();
 
@@ -241,6 +242,26 @@ router.get('/conversations', async (_req, res) => {
 // webhook sync, so this is the manual path for numbers that don't have one yet
 // (e.g. a thread we started outbound). Idempotent — returns the existing lead
 // rather than creating a duplicate.
+/**
+ * A short read of one thread, for the strip above the chat.
+ *
+ * GET returns the stored summary and generates one only if the conversation
+ * has moved since — so clicking through an inbox does not pay for the same
+ * summary again. `?force=1` regenerates on demand.
+ *
+ * Read-only: it writes nothing to the Lead and sends nothing.
+ */
+router.get('/conversations/:phoneNormalized/summary', async (req, res) => {
+    try {
+        const phoneNormalized = String(req.params.phoneNormalized || '').replace(/\D/g, '');
+        if (!phoneNormalized) return res.status(400).json({ error: 'A phone number is required' });
+        const out = await summariseConversation(phoneNormalized, { force: req.query.force === '1' });
+        res.json(out);
+    } catch (e) {
+        res.status(500).json({ error: e.message || 'Could not summarise this conversation' });
+    }
+});
+
 router.post('/conversations/:phoneNormalized/lead', async (req, res) => {
     const phoneNormalized = String(req.params.phoneNormalized || '').replace(/\D/g, '');
     if (!phoneNormalized) return res.status(400).json({ error: 'A phone number is required' });

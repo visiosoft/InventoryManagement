@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import {
   Send, MessageSquare, RefreshCw, UserPlus, UserCheck, Bell, BellOff, FileText,
   Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Info, Paperclip,
-  Bot, Tag, Check, ClipboardList,
+  Bot, Tag, Check, ClipboardList, Sparkles,
 } from 'lucide-react'
 import { api, whatsappApi, leadApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel } from '../lib/api'
 import { convDisplayName, formatListTime, Avatar } from '../lib/whatsappDisplay'
@@ -528,6 +528,127 @@ function LabelPicker({ convo, labels, onChanged }: {
 
 // One button that walks a chat through the pipeline: no lead yet → create one;
 // lead exists → convert it to a customer; already won → just link to the record.
+type Digest = {
+  configured?: boolean
+  empty?: boolean
+  error?: string
+  cached?: boolean
+  headline?: string
+  wants?: string
+  budget?: string | null
+  timing?: string | null
+  nextAction?: string
+  temperature?: 'hot' | 'warm' | 'cold'
+  reason?: string
+  openQuestions?: string[]
+  model?: string
+}
+
+const TEMP_TONE: Record<string, { bg: string; fg: string; label: string }> = {
+  hot: { bg: '#FEE2E2', fg: '#B91C1C', label: 'Hot' },
+  warm: { bg: '#FFF7E6', fg: '#B45309', label: 'Warm' },
+  cold: { bg: '#EEF2F7', fg: '#475569', label: 'Cold' },
+}
+
+/**
+ * The short version of a long thread, above the chat.
+ *
+ * Collapsed by default: a rep who already knows the conversation should not
+ * have a summary of it pushed in front of the messages. Opening it is what
+ * asks for one, so nothing is generated for chats nobody wondered about.
+ */
+function ConversationDigest({ phoneNormalized }: { phoneNormalized: string }) {
+  const [open, setOpen] = useState(false)
+
+  // Collapse when moving to another chat — a summary left open would read as
+  // belonging to the conversation now on screen.
+  useEffect(() => { setOpen(false) }, [phoneNormalized])
+
+  const { data, isFetching, refetch } = useQuery<Digest>({
+    queryKey: ['wa-summary', phoneNormalized],
+    queryFn: () => api.get(`/whatsapp/conversations/${phoneNormalized}/summary`).then((r) => r.data),
+    enabled: open,
+    staleTime: Infinity,
+    retry: false,
+  })
+
+  const tone = TEMP_TONE[data?.temperature ?? 'warm']
+
+  return (
+    <div className="shrink-0" style={{ borderBottom: `1px solid ${LINE}`, background: '#FBF8F2' }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-2 px-6 py-2 cursor-pointer"
+        style={{ fontSize: 12, fontWeight: 600, color: '#4A1FA0' }}
+      >
+        <Sparkles size={13} />
+        <span>{open ? 'Hide summary' : 'Summarise this conversation'}</span>
+        {open && data?.headline && (
+          <span className="rounded-full px-2 py-0.5 ml-1" style={{ background: tone.bg, color: tone.fg, fontSize: 10.5, fontWeight: 700 }}>
+            {tone.label}
+          </span>
+        )}
+        <ChevronDown
+          size={13}
+          style={{ marginLeft: 'auto', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}
+        />
+      </button>
+
+      {open && (
+        <div className="px-6 pb-3" style={{ fontSize: 12.5, color: MUTED_INK }}>
+          {isFetching ? (
+            <p style={{ color: FAINT_INK }}>Reading the conversation…</p>
+          ) : data?.configured === false ? (
+            <p style={{ color: FAINT_INK }}>
+              OpenAI is not configured. Add a key in Settings → Integrations.
+            </p>
+          ) : data?.empty ? (
+            <p style={{ color: FAINT_INK }}>Nothing has been said in this chat yet.</p>
+          ) : data?.error ? (
+            <p style={{ color: '#B91C1C' }}>{data.error}</p>
+          ) : data?.headline ? (
+            <div className="space-y-1.5">
+              <p style={{ fontWeight: 700, color: INK, fontSize: 13 }}>{data.headline}</p>
+              {data.wants && <p>{data.wants}</p>}
+
+              <div className="flex flex-wrap gap-x-5 gap-y-1" style={{ fontSize: 12 }}>
+                {/* Only shown when the customer actually said it — an empty
+                    budget displayed as a blank reads as "they have none". */}
+                {data.budget && <span><strong>Budget:</strong> {data.budget}</span>}
+                {data.timing && <span><strong>When:</strong> {data.timing}</span>}
+              </div>
+
+              {!!data.openQuestions?.length && (
+                <div>
+                  <p style={{ fontWeight: 600, color: INK }}>Still unanswered:</p>
+                  <ul className="list-disc pl-5">
+                    {data.openQuestions.map((q) => <li key={q}>{q}</li>)}
+                  </ul>
+                </div>
+              )}
+
+              <p style={{ color: INK }}><strong>Next:</strong> {data.nextAction}</p>
+              {data.reason && <p style={{ color: FAINT_INK, fontSize: 11.5 }}>{tone.label} — {data.reason}</p>}
+
+              <div className="flex items-center gap-3 pt-1" style={{ fontSize: 11, color: FAINT_INK }}>
+                <span>{data.cached ? 'Saved from earlier' : 'Just read'}{data.model ? ` · ${data.model}` : ''}</span>
+                <button
+                  type="button"
+                  onClick={() => api.get(`/whatsapp/conversations/${phoneNormalized}/summary?force=1`).then(() => refetch())}
+                  className="hover:underline cursor-pointer"
+                >
+                  Read again
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  )
+}
+
 type AssignableUser = { _id: string; name: string; role: string }
 
 /**
@@ -1461,6 +1582,8 @@ export default function WhatsApp() {
               <Zap size={13} /> <span className="hidden sm:inline">Quick replies</span>
             </button>
           </header>
+
+          {selectedConvo && <ConversationDigest phoneNormalized={selectedConvo.phoneNormalized} />}
 
           <div
             ref={scrollRef}
