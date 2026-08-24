@@ -417,7 +417,7 @@ export default function MessageTemplates() {
       ) : isLoading ? <Spinner /> : (
       <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-5">
         {/* Template list */}
-        <div className="space-y-1.5">
+        <div className="space-y-1.5" data-tour="templates-list">
           {templates.map(t => (
             <button key={t._id} onClick={() => selectTemplate(t)}
               className={`w-full text-left rounded-lg border px-4 py-3 transition-colors cursor-pointer ${selected?._id === t._id ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}>

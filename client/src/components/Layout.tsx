@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import WhatsAppBell from './WhatsAppBell'
-import { Bot, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Target, Calculator, ListTodo, NotebookPen, MessageCircle } from 'lucide-react'
+import { Bot, Compass, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Target, Calculator, ListTodo, NotebookPen, MessageCircle } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import GlobalSearch from './GlobalSearch'
@@ -72,6 +72,7 @@ const profileMenuGroups = [
     items: [
       { to: '/tasks', label: 'Tasks', icon: ListTodo, perm: undefined, adminOnly: true },
       { to: '/diary', label: 'Daily Diary', icon: NotebookPen, perm: undefined, adminOnly: false },
+      { to: '/walkthroughs', label: 'Walkthroughs', icon: Compass, perm: undefined, adminOnly: false },
       { to: '/users', label: 'Users', icon: UserCog, perm: undefined, adminOnly: true },
       { to: '/sales-team', label: 'Sales Team', icon: Target, perm: undefined, adminOnly: true },
       { to: '/backup', label: 'Backup', icon: DatabaseBackup, perm: undefined, adminOnly: true },

@@ -449,7 +449,7 @@ export default function Contracts() {
             <div style={{ overflowX: 'auto' }}>
               <div style={{ minWidth: 1200 }}>
                 {/* Header row */}
-                <div style={{ display: 'grid', gridTemplateColumns: GRID, padding: '0 40px', height: 48, borderBottom: `1px solid ${LINE}` }}>
+                <div data-tour="contracts-list" style={{ display: 'grid', gridTemplateColumns: GRID, padding: '0 40px', height: 48, borderBottom: `1px solid ${LINE}` }}>
                   <div style={{ ...headCell }}>
                     <input
                       type="checkbox"

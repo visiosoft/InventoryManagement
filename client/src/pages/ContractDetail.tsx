@@ -3045,6 +3045,7 @@ export default function ContractDetail() {
                     </div>
                   </div>
                   <button type="button"
+                    data-tour="contract-reminders-mute"
                     onClick={() => updateContract.mutate({ remindersMuted: !(c as any).remindersMuted })}
                     className={`h-8 px-4 rounded-full text-xs font-bold cursor-pointer transition-colors ${(c as any).remindersMuted ? 'bg-destructive/10 text-destructive' : 'bg-emerald-100 text-emerald-700'}`}>
                     {(c as any).remindersMuted ? 'Muted — click to enable' : 'Active — click to mute'}

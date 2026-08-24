@@ -307,7 +307,7 @@ export default function Settings() {
               </p>
             )}
           </div>
-          <div className="rounded-lg border px-4 py-3 space-y-2">
+          <div className="rounded-lg border px-4 py-3 space-y-2" data-tour="settings-integrations-email">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="font-medium">Gmail (Send Emails)</div>

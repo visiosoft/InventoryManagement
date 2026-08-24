@@ -34,6 +34,13 @@ const userSchema = new Schema(
     isActive: { type: Boolean, default: true },
     resetToken: { type: String, default: null },
     resetTokenExpiry: { type: Date, default: null },
+    // Guided walkthroughs. `enabled` defaults true so a new user gets them
+    // without anything being written for them first, which is what "on for any
+    // new user" has to mean. An id absent from `completed` means not yet seen.
+    walkthroughs: {
+      enabled: { type: Boolean, default: true },
+      completed: { type: [String], default: [] },
+    },
   },
   { timestamps: true }
 );

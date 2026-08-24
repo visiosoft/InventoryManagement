@@ -194,6 +194,7 @@ export default function AutomationRules() {
                 <div className="flex items-center gap-2">
                     <button type="button" disabled={runNow.isPending}
                         onClick={() => runNow.mutate(true)}
+                        data-tour="automation-preview-run"
                         className="h-9 px-4 rounded-lg border text-xs font-semibold hover:bg-muted cursor-pointer disabled:opacity-60">
                         Preview run
                     </button>
@@ -212,14 +213,17 @@ export default function AutomationRules() {
                             if (!channels.autoSend && !confirm('Turn on automatic sending? Due reminders will go out every 6 hours without further confirmation. Use "Preview run" first to see what would be sent.')) return
                             toggleAutoSend.mutate(!channels.autoSend)
                         }}
+                        data-tour="automation-autosend"
                         className={`h-7 px-3 rounded-full font-bold cursor-pointer transition-colors ${channels.autoSend ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
                         Automatic sending: {channels.autoSend ? 'ON' : 'OFF — click to enable'}
                     </button>
-                    <span className={channels.whatsapp ? 'text-emerald-600 font-medium' : 'text-amber-600 font-medium'}>
-                        WhatsApp: {channels.whatsapp ? 'ready' : 'not configured'}
-                    </span>
-                    <span className={channels.email ? 'text-emerald-600 font-medium' : 'text-amber-600 font-medium'}>
-                        Email: {channels.email ? 'ready' : 'not connected'}
+                    <span data-tour="automation-channels" className="flex items-center gap-4">
+                      <span className={channels.whatsapp ? 'text-emerald-600 font-medium' : 'text-amber-600 font-medium'}>
+                          WhatsApp: {channels.whatsapp ? 'ready' : 'not configured'}
+                      </span>
+                      <span className={channels.email ? 'text-emerald-600 font-medium' : 'text-amber-600 font-medium'}>
+                          Email: {channels.email ? 'ready' : 'not connected'}
+                      </span>
                     </span>
                     {!channels.email && (
                         <Link to="/settings" className="text-primary hover:underline">Connect Gmail in Settings →</Link>
@@ -381,7 +385,10 @@ function RuleCard({ rule, templates: _templates, onToggleEnabled, onToggleEmail,
     const Icon = ICON_MAP[rule.icon] || Bell
 
     return (
-        <div className="border rounded-xl p-5 bg-card">
+        <div
+            className="border rounded-xl p-5 bg-card"
+            data-tour={rule.triggerEvent === 'contract_expiry' ? 'automation-rule-expiry' : undefined}
+        >
             {/* Header — controls wrap below the title on narrow screens */}
             <div className="flex items-center gap-3.5 flex-wrap">
                 <div className="w-[38px] h-[38px] rounded-[10px] bg-primary/10 text-primary flex items-center justify-center shrink-0">
@@ -395,6 +402,7 @@ function RuleCard({ rule, templates: _templates, onToggleEnabled, onToggleEmail,
                 {/* Channel pills */}
                 <div className="flex items-center gap-2 flex-wrap">
                     <button
+                        data-tour={rule.triggerEvent === 'contract_expiry' ? 'automation-rule-email' : undefined}
                         onClick={onToggleEmail}
                         className={`flex items-center gap-1.5 text-xs font-medium rounded-full px-3 py-1.5 border transition-colors cursor-pointer ${rule.emailEnabled
                             ? 'bg-primary/10 text-primary border-primary/20'
