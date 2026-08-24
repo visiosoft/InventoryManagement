@@ -21,8 +21,10 @@ export const CONTRACT_EXPIRY_HTML = `<table role="presentation" width="100%" cel
           <td style="padding:28px 40px;background:#FBF8F2;border-bottom:1px solid rgba(20,8,31,0.10);">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
               <tr>
-                <td style="font-family:Georgia,'Times New Roman',serif;font-size:22px;font-weight:700;letter-spacing:-0.5px;color:#14081F;">
-                  PurpleBox<span style="color:#5B2BC9;">.</span>
+                <td>
+                  <img src="https://purplebox.ae/wp-content/uploads/2026/05/logo-1.png"
+                       alt="PurpleBox Storage" width="201" height="65"
+                       style="display:block;border:0;outline:none;text-decoration:none;height:auto;max-width:201px;">
                 </td>
               </tr>
             </table>

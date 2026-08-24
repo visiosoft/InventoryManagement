@@ -4,6 +4,7 @@ import { isValidObjectId, Types } from 'mongoose';
 import { stampSignature } from '../services/stampSignature.js';
 import { Contract, Customer, Unit, Payment, Document, Invoice, Quote, AgreementTemplate, nextContractNo, nextInvoiceNo, MessageTemplate } from '../models/index.js';
 import { zohoBooksConfigured, zohoOutstandingByCustomer } from '../services/zohoBooks.js';
+import { requireAdmin } from '../middleware/auth.js';
 import { syncUnitStatus } from '../utils/unitStatus.js';
 import { sendForSignature, downloadSignedPdf, zohoConfigured } from '../services/zoho.js';
 import { uploadFile } from '../services/drive.js';
@@ -1428,6 +1429,26 @@ router.put('/:id/notes/:idx/pin', async (req, res) => {
   contract.timeline[idx].pinned = Boolean(req.body?.pinned);
   await contract.save({ timestamps: false, versionKey: false });
   res.json(contract.timeline);
+});
+
+// Correct a timeline entry's wording.
+//
+// The timeline is otherwise append-only with a delete but no edit, so a record
+// written wrongly could only be removed, taking the fact that it happened with
+// it. Used to repair entries that logged a template's placeholders instead of
+// the text a tenant actually received.
+router.patch('/:id/notes/:idx', requireAdmin, async (req, res) => {
+  const contract = await Contract.findById(req.params.id);
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  const idx = Number(req.params.idx);
+  if (!Number.isInteger(idx) || idx < 0 || idx >= contract.timeline.length) {
+    return res.status(400).json({ error: 'Invalid note index' });
+  }
+  const text = String(req.body?.text || '').trim();
+  if (!text) return res.status(400).json({ error: 'Text is required' });
+  contract.timeline[idx].text = text;
+  await contract.save({ timestamps: false, versionKey: false });
+  res.json(contract.timeline[idx]);
 });
 
 // Delete a timeline note by index
