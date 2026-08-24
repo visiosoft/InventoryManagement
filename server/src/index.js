@@ -199,7 +199,11 @@ app.use('/api/whatsapp-debug', requireAuth, whatsappDiagnosticsRoutes);
 app.use('/api/whatsapp-media', requireAuth, whatsappMediaRoutes);
 app.use('/api/users', requireAuth, userRoutes);
 app.use('/api/backup', requireAuth, backupRoutes);
-app.use('/api/whatsapp', requireAuth, whatsappRoutes);
+// The Flow data endpoint is mounted above, before this, so it never gets here.
+// The exception is kept anyway: if that mount is ever moved below this line,
+// the flow would start returning 401 to Meta and the only visible symptom
+// would be "something went wrong" on a customer's phone.
+app.use('/api/whatsapp', (req, res, next) => (req.path.startsWith('/flow') ? next() : requireAuth(req, res, next)), whatsappRoutes);
 app.use('/api/ai-bot', requireAuth, aiBotRoutes);
 app.use('/api/marketing', marketingPublicRoutes);
 app.use('/api/campaigns', requireAuth, campaignRoutes);

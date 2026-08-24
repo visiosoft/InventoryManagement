@@ -42,6 +42,14 @@ async function saveClientInfo({ fields, photos, phone }) {
     const all = await Customer.find({}).select('fullName phone phones emergencyNumber accessPersons').lean();
     const hit = all.find((c) => [...(c.phones || []), c.phone].some((p) => suffix(p) === key));
     if (hit) customer = await Customer.findById(hit._id);
+  } else {
+    // No usable token, so there is no number to match on. Fall back to the
+    // name and emergency contact together: a retried submission — Meta resends
+    // on a timeout — would otherwise create a second customer every time.
+    customer = await Customer.findOne({
+      fullName: new RegExp(`^${fullName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
+      emergencyNumber: emergencyContact,
+    });
   }
 
   if (!customer) {
