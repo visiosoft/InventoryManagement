@@ -342,14 +342,21 @@ function drawTable(doc, tableNode) {
       if (cells[i].hasSig) {
         const textH = doc.heightOfString(cells[i].text || ' ', { width: colW - padding * 2 });
         const sigY = y + padding + (cells[i].text ? textH + 3 : 0);
-        const sigPng = sign ? dataUrlToPng(sign.signatureDataUrl) : null;
-        if (sigPng) {
+        const sigPng = sign?.offline ? null : (sign ? dataUrlToPng(sign.signatureDataUrl) : null);
+        if (sign?.offline) {
+          // Signed outside the system. Say so plainly rather than leaving a
+          // blank line that reads as a fault, and without writing the tenant's
+          // name in script, which would imply they signed here.
+          doc.font('Helvetica-Oblique').fontSize(9).fillColor('#444')
+            .text(sign.offlineNote || 'Signed on paper', x + padding, sigY + 4, { width: colW - padding * 2 });
+          doc.fillColor('#000');
+        } else if (sigPng) {
           try { doc.image(sigPng, x + padding, sigY, { fit: [Math.min(150, colW - padding * 2), 36] }); } catch { /* skip */ }
         } else if (sign?.signerName) {
           doc.font('Helvetica-Oblique').fontSize(16).fillColor('#1a1a5c')
             .text(sign.signerName, x + padding, sigY + 8, { width: colW - padding * 2 });
         }
-        if (sign?.signerName) {
+        if (sign?.signerName && !sign?.offline) {
           const dateStr = new Date(doc._pbSignedDate || Date.now()).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
           doc.font('Helvetica').fontSize(7.5).fillColor('#333')
             .text(`${sign.signerName} · signed ${dateStr}`, x + padding, y + rowH - 12, { width: colW - padding * 2, lineBreak: false });

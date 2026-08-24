@@ -5,6 +5,7 @@ import { stampSignature } from '../services/stampSignature.js';
 import { Contract, Customer, Unit, Payment, Document, Invoice, Quote, AgreementTemplate, nextContractNo, nextInvoiceNo, MessageTemplate } from '../models/index.js';
 import { zohoBooksConfigured, zohoOutstandingByCustomer } from '../services/zohoBooks.js';
 import { requireAdmin } from '../middleware/auth.js';
+import { renewLink, moveOutLink } from '../services/renewalLink.js';
 import { syncUnitStatus } from '../utils/unitStatus.js';
 import { sendForSignature, downloadSignedPdf, zohoConfigured } from '../services/zoho.js';
 import { uploadFile } from '../services/drive.js';
@@ -654,7 +655,7 @@ router.post('/:id/send-signature', async (req, res) => {
 
 // Marks the contract signed → active. Called by the Zoho webhook, or manually
 // ("simulate signed" in mock mode / paper signature).
-async function markSigned(contractId) {
+async function markSigned(contractId, recordedBy = '') {
   const contract = await populateAll(Contract.findById(contractId));
   if (!contract) throw new Error('Contract not found');
   if (!['pending_signature', 'draft'].includes(contract.status)) {
@@ -668,8 +669,16 @@ async function markSigned(contractId) {
   if (zohoConfigured() && contract.zohoRequestId && !contract.zohoRequestId.startsWith('MOCK-')) {
     pdfBuffer = await downloadSignedPdf(contract.zohoRequestId);
   }
+  const signedAt = new Date();
   if (!pdfBuffer) {
-    pdfBuffer = await buildContractPdf(contract, new Date());
+    // No e-signature exists on this path — it is the paper or in-person route.
+    // The archived copy says so, rather than carrying a blank signature line
+    // that looks like the signature went missing.
+    const on = signedAt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    pdfBuffer = await buildContractPdf(contract, signedAt, {
+      offline: true,
+      offlineNote: `Signed outside the system${recordedBy ? `, recorded by ${recordedBy}` : ''} on ${on}`,
+    });
   }
   const stored = await uploadFile({
     buffer: pdfBuffer,
@@ -687,6 +696,14 @@ async function markSigned(contractId) {
 
   contract.status = 'active';
   contract.signedDocUrl = stored.url;
+  // Recorded here too: the contract said signedDocUrl was set while signedAt
+  // stayed empty, so nothing in the data said when it had been signed.
+  if (!contract.signedAt) contract.signedAt = signedAt;
+  contract.timeline.push({
+    type: 'signed',
+    text: `Marked signed${recordedBy ? ` by ${recordedBy}` : ''}`,
+    author: recordedBy || 'system',
+  });
   await contract.save();
   const signedUnitIds = contract.units?.length ? contract.units.map((u) => u._id ?? u) : [contract.unit._id];
   await Promise.all(signedUnitIds.map((uid) => syncUnitStatus(uid)));
@@ -695,7 +712,7 @@ async function markSigned(contractId) {
 
 router.post('/:id/mark-signed', async (req, res) => {
   try {
-    res.json(await markSigned(req.params.id));
+    res.json(await markSigned(req.params.id, req.user?.name || req.user?.email || ''));
   } catch (err) {
     res.status(409).json({ error: err.message });
   }
@@ -1544,6 +1561,12 @@ async function contractTemplateVars(contract) {
       ? String(Math.ceil((new Date(contract.endDate).getTime() - now) / 86400000))
       : '',
     rate: String(round2(Number(contract.rate || 0))),
+    // The one-click answers, and the late fee. Absent here, so the expiry
+    // template's buttons went out as the literal words @renewLink and
+    // @moveOutLink.
+    renewLink: renewLink(contract._id),
+    moveOutLink: moveOutLink(contract._id),
+    lateFee: process.env.LATE_FEE_AMOUNT || 'AED 100',
     amountOverdue: String(round2(overdue.reduce((sum, p) => sum + Number(p.amount || 0), 0))),
     nextDueDate: nextDue ? fmt(nextDue.dueDate) : '',
     nextDueAmount: nextDue ? String(round2(Number(nextDue.amount || 0))) : '',
@@ -1562,10 +1585,16 @@ router.get('/:id/message-template/:templateId', async (req, res) => {
       to: contract.customer?.email || '',
       label: template.label || '',
       subject: interpolateVars(template.subject, vars),
-      html: interpolateVars(template.emailBody, vars),
+      // The designed version when the template has one. This was reading
+      // emailBody — the plain-text alternative — so a template with a full
+      // HTML design went out as a wall of unformatted text.
+      html: interpolateVars(template.emailHtml || template.emailBody, vars),
       whatsapp: interpolateVars(template.whatsappBody, vars),
       // Named so the composer can flag placeholders this contract cannot fill.
-      unfilled: findUnfilled([template.subject, template.emailBody].join(' '), vars),
+      unfilled: findUnfilled([template.subject, template.emailHtml || template.emailBody].join(' '), vars),
+      // So the composer can tell a designed email from a plain one, and not
+      // present raw HTML in a plain-text box.
+      isHtml: Boolean(template.emailHtml),
     });
   } catch (e) {
     res.status(500).json({ error: e.message });

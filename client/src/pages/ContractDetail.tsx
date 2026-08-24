@@ -896,7 +896,7 @@ export default function ContractDetail() {
   // Composer for a message template: prefilled from the server-merged
   // version, editable before it goes.
   const [templateEmail, setTemplateEmail] = useState<{
-    label: string; to: string; subject: string; html: string; unfilled: string[]
+    label: string; to: string; subject: string; html: string; unfilled: string[]; isHtml: boolean
   } | null>(null)
   const [templateEmailBusy, setTemplateEmailBusy] = useState(false)
   const [templateEmailMsg, setTemplateEmailMsg] = useState('')
@@ -2038,6 +2038,7 @@ export default function ContractDetail() {
                                     label: r.label || '', to: r.to || c.customer?.email || '',
                                     subject: r.subject || '', html: r.html || '',
                                     unfilled: r.unfilled || [],
+                                    isHtml: Boolean(r.isHtml),
                                   })
                                 } catch (e) {
                                   setTemplateEmailMsg(apiError(e))
@@ -3322,10 +3323,25 @@ export default function ContractDetail() {
             )}
             <Field label="Subject"><Input value={templateEmail.subject}
               onChange={(e) => setTemplateEmail({ ...templateEmail, subject: e.target.value })} /></Field>
-            <Field label="Message">
-              <Textarea rows={12} value={templateEmail.html}
-                onChange={(e) => setTemplateEmail({ ...templateEmail, html: e.target.value })} />
-            </Field>
+            {/* A designed template is shown as it will arrive. Dropping 8 KB of
+                table markup into a plain textarea invites someone to "tidy" it
+                and break the layout, and tells them nothing about how it
+                looks. Plain templates stay editable. */}
+            {templateEmail.isHtml ? (
+              <Field label="Message — sent as designed">
+                <iframe
+                  title="Email preview"
+                  srcDoc={templateEmail.html}
+                  sandbox=""
+                  style={{ width: '100%', height: 380, border: '1px solid rgba(20,8,31,.12)', borderRadius: 10, background: '#fff' }}
+                />
+              </Field>
+            ) : (
+              <Field label="Message">
+                <Textarea rows={12} value={templateEmail.html}
+                  onChange={(e) => setTemplateEmail({ ...templateEmail, html: e.target.value })} />
+              </Field>
+            )}
             {templateEmail.unfilled.length > 0 && (
               /* A placeholder this contract cannot fill would otherwise go out
                  as a literal "@foo" in the tenant's email. */

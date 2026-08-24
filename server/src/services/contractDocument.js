@@ -14,10 +14,16 @@ import { stampSignature } from './stampSignature.js';
  *   2. the default template designed in the app, placeholders resolved
  *   3. the legacy PDF-file template, then the generated fallback
  */
-export async function buildContractPdf(contract, signedDate) {
+/**
+ * The agreement document. `sign` is optional: without it the signature line is
+ * left blank, which is right for an unsigned copy. The manual "mark as signed"
+ * path passes an offline marker so the archived copy states that the signature
+ * is on paper rather than appearing to have lost one.
+ */
+export async function buildContractPdf(contract, signedDate, sign = null) {
   const renderRich = (content) => looksLikeHtml(content)
-    ? renderAgreementHtmlPdf({ html: content, contract, signedDate })
-    : renderAgreementTextPdf({ text: content, contract, signedDate });
+    ? renderAgreementHtmlPdf({ html: content, contract, signedDate, sign })
+    : renderAgreementTextPdf({ text: content, contract, signedDate, sign });
 
   const perContract = String(contract.agreementText || '').trim();
   if (perContract) return renderRich(perContract);
