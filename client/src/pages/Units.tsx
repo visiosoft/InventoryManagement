@@ -552,6 +552,7 @@ export default function Units() {
           <input
             value={phrase}
             onChange={(e) => setPhrase(e.target.value)}
+            data-tour="units-phrase"
             placeholder='e.g. "a small unit on F2 for 3 weeks from 1 Oct"'
             style={{ height: 40, borderRadius: 10, border: `1px solid ${LINE}`, background: PAGE, padding: '0 12px', fontSize: 13, color: INK, minWidth: 300, flex: '1 1 300px' }}
           />
@@ -628,7 +629,7 @@ export default function Units() {
 
       {/* ── Search card ────────────────────────────────────────────── */}
       {/* Tinted: a white panel on the white page card would have no edge. */}
-      <div style={{ background: PAGE, border: `1px solid ${LINE}`, borderRadius: 18, padding: '22px 24px' }}>
+      <div data-tour="units-search-card" style={{ background: PAGE, border: `1px solid ${LINE}`, borderRadius: 18, padding: '22px 24px' }}>
         <div className="flex flex-wrap" style={{ gap: 16, alignItems: 'end' }}>
           <Control label="Free from">
             <input type="date" value={availFrom} max={availTo || undefined}
@@ -675,7 +676,7 @@ export default function Units() {
             Find available units
           </button>
           <label className="flex items-center gap-2 cursor-pointer" style={{ fontSize: 12.5, color: SECONDARY, height: 40 }}>
-            <input type="checkbox" checked={onlyFree} onChange={(e) => setOnlyFree(e.target.checked)} className="h-4 w-4 rounded" />
+            <input type="checkbox" checked={onlyFree} onChange={(e) => setOnlyFree(e.target.checked)} data-tour="units-only-free" className="h-4 w-4 rounded" />
             Only free units
           </label>
         </div>
@@ -712,7 +713,7 @@ export default function Units() {
             </>
           )}
         </div>
-        <div style={{ background: TRACK, borderRadius: 999, padding: 4 }} className="flex items-center gap-1 self-start">
+        <div data-tour="units-view" style={{ background: TRACK, borderRadius: 999, padding: 4 }} className="flex items-center gap-1 self-start">
           {([['list', 'List', LayoutGrid], ['timeline', 'Timeline', CalendarRange], ['table', 'Table', Rows3]] as const).map(([v, label, Icon]) => (
             <button
               key={v}

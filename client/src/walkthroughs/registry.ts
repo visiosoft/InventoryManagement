@@ -88,6 +88,46 @@ export const WALKTHROUGHS: Walkthrough[] = [
     ],
   },
   {
+    id: 'search-units',
+    title: 'Find a free unit',
+    summary: 'Search by date window rather than by today’s status, and read the result honestly.',
+    // Not sales reps: the sidebar gives them the read-only Floor Map instead of
+    // this page, so sending them here would land them somewhere they cannot
+    // navigate back to.
+    roles: ['admin', 'staff', 'accounts'],
+    steps: [
+      {
+        title: 'Finding a unit that is actually free',
+        body: 'The thing worth knowing up front: this page answers "free between these two dates", not "free right now". A unit showing as occupied today can still be the right answer for a booking starting next month, and this page will tell you so.',
+      },
+      {
+        route: '/units',
+        target: 'units-phrase',
+        title: 'Describe it in plain English',
+        body: 'Type something like "a small unit on F2 for 3 weeks from 1 Oct" and it fills in the filters below. This is a pattern reader running in your browser — not a language model, nothing leaves the page. It shows you what it understood before applying it, and tells you when it could not read part of your phrase rather than quietly ignoring it.',
+      },
+      {
+        target: 'units-search-card',
+        title: 'Or set the window yourself',
+        body: 'Free from and Until are the two that matter — they define the window everything else is judged against. Floor, size, status and unit number narrow it down from there. Leave the dates empty and you are back to asking about today only.',
+      },
+      {
+        target: 'units-only-free',
+        title: 'Free, partly free, or taken',
+        body: 'A unit is not simply free or not. Across a window it can be free the whole time, free for part of it, or taken — and contracts, tenancies and even sent quotes all count against it, so a unit someone else has quoted will not look empty. Tick this to hide everything that is not free for the entire window.',
+      },
+      {
+        target: 'units-view',
+        title: 'Three ways to read the answer',
+        body: 'List is the quick scan. Timeline shows you where the gaps fall inside your window, which is what you want when a unit is only partly free. Table gives you sortable columns including price, tenant and check-out date.',
+      },
+      {
+        title: 'Then book it',
+        body: 'Once you have the unit, Book Unit is where the booking actually happens — there is a separate walkthrough for that. Replay either from Walkthroughs in your profile menu.',
+      },
+    ],
+  },
+  {
     id: 'contract-expiry-reminders',
     title: 'Set up contract expiry reminders',
     summary: 'Email tenants automatically before their contract ends, and let them answer in one click.',
