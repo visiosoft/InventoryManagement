@@ -62,6 +62,7 @@ import customerAuthRoutes from './routes/customerAuth.js';
 import customerPortalRoutes from './routes/customerPortal.js';
 import crewAuthRoutes from './routes/crewAuth.js';
 import crewPortalRoutes from './routes/crewPortal.js';
+import whatsappFlowRoutes from './routes/whatsappFlow.js';
 import { startBackupScheduler } from './services/backup.js';
 import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
 import { runAiBotTick, getAiBotConfig } from './services/aiBot.js';
@@ -84,6 +85,11 @@ if (process.env.CORS_HANDLED_BY_PROXY === 'true') {
 } else {
   app.use(cors({ origin: '*' }));
 }
+
+// WhatsApp Flow endpoint. Mounted ahead of the global parser with a larger
+// limit of its own — Meta calls it directly, so there is no JWT, and the
+// encrypted payload can exceed the 2mb the rest of the app allows.
+app.use('/api/whatsapp/flow', express.json({ limit: '20mb' }), whatsappFlowRoutes);
 
 app.use(
   express.json({
