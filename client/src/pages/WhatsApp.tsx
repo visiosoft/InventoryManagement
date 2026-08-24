@@ -4,10 +4,11 @@ import { Link } from 'react-router-dom'
 import {
   Send, MessageSquare, RefreshCw, UserPlus, UserCheck, Bell, BellOff, FileText,
   Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Info, Paperclip,
-  Bot, Tag, Check,
+  Bot, Tag, Check, ClipboardList,
 } from 'lucide-react'
 import { api, whatsappApi, leadApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel } from '../lib/api'
 import { convDisplayName, formatListTime, Avatar } from '../lib/whatsappDisplay'
+import { SlideOver, Field, Input, Textarea, Select } from '../components/ui'
 import { useSeen, markSeen as markSeenShared, unreadFrom } from '../lib/whatsappSeen'
 import { cn } from '../lib/utils'
 
@@ -527,6 +528,178 @@ function LabelPicker({ convo, labels, onChanged }: {
 
 // One button that walks a chat through the pipeline: no lead yet → create one;
 // lead exists → convert it to a customer; already won → just link to the record.
+type AssignableUser = { _id: string; name: string; role: string }
+
+/**
+ * Raise a task straight from a conversation.
+ *
+ * A tenant asking for cleaning, a repair, a callback — it arrives in the middle
+ * of a chat and is gone by the next message. This turns it into a task without
+ * leaving the page, and prefills what they actually said so it is not retyped
+ * from memory a day later.
+ */
+function TaskFromChat({ convo, lastInbound }: { convo: WhatsAppConversation; lastInbound: string }) {
+  const [open, setOpen] = useState(false)
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [dueDate, setDueDate] = useState('')
+  const [priority, setPriority] = useState('medium')
+  const [assignedTo, setAssignedTo] = useState('')
+  const [err, setErr] = useState('')
+  const [done, setDone] = useState(false)
+
+  const who = convDisplayName(convo)
+
+  const { data: assignableUsers } = useQuery<AssignableUser[]>({
+    queryKey: ['assignable-users'],
+    queryFn: () => api.get('/users/assignable').then((r) => r.data),
+    enabled: open,
+    staleTime: 5 * 60_000,
+  })
+
+  // Reopening starts clean, but carries their last message across again.
+  useEffect(() => {
+    if (!open) return
+    setTitle('')
+    setDescription(lastInbound ? `They asked:\n"${lastInbound}"` : '')
+    setDueDate('')
+    setPriority('medium')
+    setAssignedTo('')
+    setErr('')
+    setDone(false)
+  }, [open, lastInbound])
+
+  const createTask = useMutation({
+    mutationFn: () => api.post('/tasks', {
+      title: title.trim(),
+      description: description.trim(),
+      dueDate: dueDate || undefined,
+      priority,
+      assignedTo: assignedTo || undefined,
+      // Linked to the lead when there is one, so the task shows up against the
+      // same person rather than as a loose name.
+      ...(convo.lead?._id ? { leadId: convo.lead._id, leadType: 'storage' } : {}),
+      leadName: who,
+    }),
+    onSuccess: () => { setErr(''); setDone(true) },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="shrink-0 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 cursor-pointer"
+        style={{ fontSize: 12, fontWeight: 600, background: '#FFF7E6', border: '1px solid #F5DFB8', color: '#B45309' }}
+        title="Create a task from this chat"
+      >
+        <ClipboardList size={13} /> <span className="hidden sm:inline">Task</span>
+      </button>
+
+      <SlideOver
+        open={open}
+        onClose={() => setOpen(false)}
+        title="New task"
+        subtitle={`From the chat with ${who}`}
+        width="max-w-lg"
+      >
+        {done ? (
+          <div className="space-y-4">
+            <div className="rounded-lg px-3 py-3" style={{ background: '#DCFCE7', color: '#047857', fontSize: 13, fontWeight: 600 }}>
+              Task created for {who}.
+            </div>
+            <div className="flex gap-2">
+              <Link
+                to="/tasks"
+                className="rounded-full px-4 py-2 text-white cursor-pointer"
+                style={{ background: '#5B2BC9', fontSize: 13, fontWeight: 700 }}
+              >
+                Open Tasks
+              </Link>
+              <button
+                type="button"
+                onClick={() => setDone(false)}
+                className="rounded-full px-4 py-2 cursor-pointer"
+                style={{ border: '1px solid rgba(20,8,31,.16)', fontSize: 13, fontWeight: 700 }}
+              >
+                Add another
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <Field label="Title">
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. Clean unit F2-80 before Friday"
+                autoFocus
+              />
+            </Field>
+            <Field label="Description">
+              <Textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={4}
+                placeholder="What was asked for, and anything needed to do it"
+              />
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Assign to">
+                <Select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)}>
+                  <option value="">Myself</option>
+                  {(assignableUsers ?? []).map((u) => (
+                    <option key={u._id} value={u._id}>{u.name} ({u.role})</option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Priority">
+                <Select value={priority} onChange={(e) => setPriority(e.target.value)}>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </Select>
+              </Field>
+            </div>
+            <Field label="Due date">
+              <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+            </Field>
+
+            <p style={{ fontSize: 11.5, color: FAINT_INK }}>
+              {convo.lead?._id
+                ? `Linked to ${who}, so it shows against them in Tasks.`
+                : 'Not saved as a lead yet, so the task carries their name and number only.'}
+            </p>
+
+            {err && <p style={{ fontSize: 12, color: '#C0392B' }}>{err}</p>}
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="rounded-full px-4 py-2 cursor-pointer"
+                style={{ border: '1px solid rgba(20,8,31,.16)', fontSize: 13, fontWeight: 700 }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => createTask.mutate()}
+                disabled={!title.trim() || createTask.isPending}
+                className="rounded-full px-5 py-2 text-white cursor-pointer disabled:opacity-40"
+                style={{ background: '#5B2BC9', fontSize: 13, fontWeight: 700 }}
+              >
+                {createTask.isPending ? 'Creating…' : 'Create task'}
+              </button>
+            </div>
+          </div>
+        )}
+      </SlideOver>
+    </>
+  )
+}
+
 function LeadAction({ convo, onChanged }: { convo: WhatsAppConversation; onChanged: () => void }) {
   const [err, setErr] = useState('')
 
@@ -685,6 +858,14 @@ export default function WhatsApp() {
     refetchInterval: 10_000,
     enabled: true,
   })
+
+  // The customer's most recent message, used to prefill a task raised from this
+  // chat. Capped: a task description should not swallow an essay.
+  const lastInboundText = useMemo(() => {
+    const last = [...(messages ?? [])].reverse().find((m) => m.direction === 'inbound' && m.text?.trim())
+    const body = last?.text?.trim() ?? ''
+    return body.length > 500 ? `${body.slice(0, 500)}…` : body
+  }, [messages])
 
   // WhatsApp quick replies are their own kind of template, kept apart from
   // the contract ones the reminder engine sends — different audience,
@@ -1261,6 +1442,7 @@ export default function WhatsApp() {
                     qc.invalidateQueries({ queryKey: ['wa-labels'] })
                   }}
                 />
+                <TaskFromChat convo={selectedConvo} lastInbound={lastInboundText} />
                 <LeadAction convo={selectedConvo} onChanged={onSent} />
               </>
             ) : (
