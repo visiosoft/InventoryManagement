@@ -89,13 +89,19 @@ export default function AutomationRules() {
         queryFn: () => api.get('/automation-rules/logs').then(r => r.data),
     })
 
-    const { data: channels } = useQuery<{ whatsapp: boolean; email: boolean; autoSend: boolean }>({
+    const { data: channels } = useQuery<{ whatsapp: boolean; email: boolean; autoSend: boolean; whatsappAutomation: boolean }>({
         queryKey: ['automation-channels'],
         queryFn: () => api.get('/automation-rules/channels').then(r => r.data),
     })
 
     const toggleAutoSend = useMutation({
         mutationFn: (enabled: boolean) => api.put('/automation-rules/auto-send', { enabled }),
+        onSuccess: () => qc.invalidateQueries({ queryKey: ['automation-channels'] }),
+        onError: (e) => setError(apiError(e)),
+    })
+
+    const toggleWhatsAppAutomation = useMutation({
+        mutationFn: (enabled: boolean) => api.put('/automation-rules/whatsapp', { enabled }),
         onSuccess: () => qc.invalidateQueries({ queryKey: ['automation-channels'] }),
         onError: (e) => setError(apiError(e)),
     })
@@ -216,6 +222,19 @@ export default function AutomationRules() {
                         data-tour="automation-autosend"
                         className={`h-7 px-3 rounded-full font-bold cursor-pointer transition-colors ${channels.autoSend ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
                         Automatic sending: {channels.autoSend ? 'ON' : 'OFF — click to enable'}
+                    </button>
+                    {/* A rule can have WhatsApp switched on and still send
+                        nothing while this is off. Deliberate: the built-in rules
+                        ship with WhatsApp enabled, so turning a rule on for its
+                        email would otherwise turn on WhatsApp with it. */}
+                    <button type="button"
+                        onClick={() => {
+                            if (!channels.whatsappAutomation && !confirm('Allow automated WhatsApp? Rules with WhatsApp enabled will start messaging tenants on the next run. Email is unaffected either way.')) return
+                            toggleWhatsAppAutomation.mutate(!channels.whatsappAutomation)
+                        }}
+                        data-tour="automation-whatsapp-gate"
+                        className={`h-7 px-3 rounded-full font-bold cursor-pointer transition-colors ${channels.whatsappAutomation ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700'}`}>
+                        Automated WhatsApp: {channels.whatsappAutomation ? 'ON' : 'OFF'}
                     </button>
                     <span data-tour="automation-channels" className="flex items-center gap-4">
                       <span className={channels.whatsapp ? 'text-emerald-600 font-medium' : 'text-amber-600 font-medium'}>

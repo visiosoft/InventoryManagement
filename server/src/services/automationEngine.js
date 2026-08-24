@@ -27,6 +27,31 @@ export async function setAutoSend(value) {
   return !!value;
 }
 
+/**
+ * Global kill switch for automated WhatsApp.
+ *
+ * Separate from the per-rule toggles on purpose. The built-in rules ship with
+ * whatsappEnabled true, so enabling a rule to get its *email* also enables its
+ * WhatsApp — which is exactly how a run once went out on a channel nobody had
+ * asked for. This gate sits in front of all of them and defaults to OFF, so
+ * WhatsApp only sends once someone deliberately turns it on here.
+ *
+ * Email is unaffected.
+ */
+export async function getWhatsAppAutomation() {
+  const doc = await (await configCollection()).findOne({ _id: CONFIG_ID });
+  return doc?.whatsappAutomation === true;
+}
+
+export async function setWhatsAppAutomation(value) {
+  await (await configCollection()).updateOne(
+    { _id: CONFIG_ID },
+    { $set: { whatsappAutomation: !!value, updatedAt: new Date() } },
+    { upsert: true },
+  );
+  return !!value;
+}
+
 // Executes the rules configured on Settings → Automation Rules.
 // Per-contract behaviour comes from the contract's Reminders tab:
 // remindersMuted silences everything; a reminderOverrides entry pins one
@@ -97,7 +122,21 @@ async function resolveMessages(step, templatesByName, event, vars) {
   };
 }
 
-async function dispatch({ rule, contract, eventKey, stepIdx, messages, dryRun, results }) {
+/**
+ * Which channels a message may go out on.
+ *
+ * Pure and exported so the gate can be tested without a database or a live
+ * WhatsApp token — this is the function that decides whether a tenant gets
+ * messaged, so it should not only be verifiable by reading it.
+ */
+export function pickChannels({ rule, waAllowed, waConfigured, mailReady, phone, email }) {
+  const channels = [];
+  if (waAllowed && rule.whatsappEnabled && waConfigured && phone) channels.push('whatsapp');
+  if (rule.emailEnabled && mailReady && email) channels.push('email');
+  return channels;
+}
+
+async function dispatch({ rule, contract, eventKey, stepIdx, messages, dryRun, results, waAllowed }) {
   const customer = contract.customer;
   const phone = (customer.phones?.[0] || customer.phone || '').replace(/\s+/g, '');
   const email = customer.email || '';
@@ -110,9 +149,14 @@ async function dispatch({ rule, contract, eventKey, stepIdx, messages, dryRun, r
     event: eventKey,
   };
 
-  const channels = [];
-  if (rule.whatsappEnabled && whatsappSendConfigured() && phone) channels.push('whatsapp');
-  if (rule.emailEnabled && mailConfigured() && email) channels.push('email');
+  const channels = pickChannels({
+    rule,
+    waAllowed,
+    waConfigured: whatsappSendConfigured(),
+    mailReady: mailConfigured(),
+    phone,
+    email,
+  });
   if (!channels.length) { results.skipped++; return; }
 
   for (const channel of channels) {
@@ -149,6 +193,8 @@ async function dispatch({ rule, contract, eventKey, stepIdx, messages, dryRun, r
 }
 
 export async function runAutomationRules({ dryRun = false } = {}) {
+  // Read once per run rather than per contract.
+  const waAllowed = await getWhatsAppAutomation();
   const rules = await AutomationRule.find().lean();
   const templates = await MessageTemplate.find().lean();
   const templatesByName = new Map();
@@ -227,7 +273,7 @@ export async function runAutomationRules({ dryRun = false } = {}) {
           ? `payment_due:${target._id}:step${picked.idx}`
           : `payment_overdue:${contract._id}:step${picked.idx}`;
         const messages = await resolveMessages(picked.s, templatesByName, rule.triggerEvent, vars);
-        await dispatch({ rule, contract, eventKey, stepIdx: picked.idx, messages, dryRun, results });
+        await dispatch({ rule, contract, eventKey, stepIdx: picked.idx, messages, dryRun, results, waAllowed });
       }
     }
   }
@@ -266,7 +312,7 @@ export async function runAutomationRules({ dryRun = false } = {}) {
         if (!picked) continue;
         const eventKey = `contract_expiry:${contract._id}:step${picked.idx}`;
         const messages = await resolveMessages(picked.s, templatesByName, 'contract_expiry', vars);
-        await dispatch({ rule, contract, eventKey, stepIdx: picked.idx, messages, dryRun, results });
+        await dispatch({ rule, contract, eventKey, stepIdx: picked.idx, messages, dryRun, results, waAllowed });
       }
     }
   }

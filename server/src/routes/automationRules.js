@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { AutomationRule, AutomationLog } from '../models/index.js';
-import { runAutomationRules, getAutoSend, setAutoSend } from '../services/automationEngine.js';
+import { runAutomationRules, getAutoSend, setAutoSend, getWhatsAppAutomation, setWhatsAppAutomation } from '../services/automationEngine.js';
 import { whatsappSendConfigured } from '../services/whatsapp.js';
 import { mailConfigured } from '../services/mail.js';
 
@@ -90,6 +90,17 @@ router.put('/auto-send', async (req, res) => {
     }
 });
 
+// PUT /api/automation-rules/whatsapp — global gate for automated WhatsApp.
+// Also above /:id, for the same reason as auto-send.
+router.put('/whatsapp', async (req, res) => {
+    try {
+        const value = await setWhatsAppAutomation(!!req.body?.enabled);
+        res.json({ ok: true, whatsappAutomation: value });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // PUT /api/automation-rules/:id
 router.put('/:id', async (req, res) => {
     try {
@@ -171,7 +182,7 @@ router.get('/logs', async (req, res) => {
 // GET /api/automation-rules/channels — delivery channels + auto-send state
 router.get('/channels', async (_req, res) => {
     try {
-        res.json({ whatsapp: whatsappSendConfigured(), email: mailConfigured(), autoSend: await getAutoSend() });
+        res.json({ whatsapp: whatsappSendConfigured(), email: mailConfigured(), autoSend: await getAutoSend(), whatsappAutomation: await getWhatsAppAutomation() });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
