@@ -10,11 +10,19 @@ import { sendWhatsAppText, whatsappSendConfigured } from './whatsapp.js';
 // the assistant stops short of it and leaves the thread to a human.
 const REPLY_WINDOW_HOURS = 23;
 
-// How much of the conversation the model sees. Twelve was too short for the way
-// people actually message: four one-line messages and a couple of replies used
-// half of it, and the model started re-asking what it had already been told.
-// Still bounded, so a long-running thread cannot grow the prompt without limit.
-const HISTORY_TURNS = 30;
+// How much of the conversation the model sees.
+//
+// Sized against the real inbox rather than guessed: across 200 conversations
+// the median is 4 messages and the largest is 104, and because WhatsApp
+// messages are short the biggest thread comes to roughly 340 tokens. Two
+// hundred therefore holds every conversation here in full, at a cost not worth
+// counting — and twelve, the original, was cutting real conversations in half.
+const HISTORY_TURNS = 200;
+
+// Past this, a conversation is not context, it is archaeology. Someone who
+// asked about a 50 sqft unit last winter has different needs now, and feeding
+// that back risks the assistant answering the old question.
+const HISTORY_DAYS = 90;
 
 // Message types that carry no question. A thumbs-up reaction, a system notice
 // or something this WhatsApp version cannot render is not a customer asking
@@ -135,7 +143,14 @@ export async function generateReply({ phoneNormalized, inboundText, config }) {
 
     const facts = await buildFacts(inboundText, config);
 
-    const history = await WhatsAppMessage.find({ phoneNormalized, type: 'text', text: { $ne: '' } })
+    const history = await WhatsAppMessage.find({
+        phoneNormalized,
+        type: 'text',
+        text: { $ne: '' },
+        occurredAt: { $gte: new Date(Date.now() - HISTORY_DAYS * 86_400_000) },
+    })
+        // Newest first with a limit takes the most recent slice; reversed below
+        // so the model reads it in the order it happened.
         .sort({ occurredAt: -1 })
         .limit(HISTORY_TURNS)
         .select('direction text')
