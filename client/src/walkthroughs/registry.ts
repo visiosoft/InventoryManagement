@@ -30,6 +30,64 @@ export type Walkthrough = {
 
 export const WALKTHROUGHS: Walkthrough[] = [
   {
+    id: 'book-a-unit',
+    title: 'Book a unit',
+    summary: 'Take someone from an enquiry to a signed contract without leaving one page.',
+    // No roles: booking is a sales rep's core job, and an admin needs to know
+    // what a rep is looking at when they ask about it.
+    steps: [
+      {
+        title: 'Booking a unit, start to finish',
+        body: 'Booking runs as five steps on a single page — customer, units, quotation, contract, then invoice and payment. It saves as you go, so you can stop halfway and pick it up later from the same place. This shows you what each step wants from you.',
+      },
+      {
+        route: '/quotes',
+        target: 'booking-new',
+        title: 'Every booking starts here',
+        body: 'Book Unit lists every booking in progress along with the finished ones. New Booking starts a fresh one. To carry on with a half-finished booking, open it from the list instead — it reopens on the step you left it on.',
+      },
+      {
+        route: '/quotes/new',
+        target: 'booking-stepper',
+        title: 'The five steps',
+        body: 'This strip is the whole job. It fills in green behind you as each step is done, and you can click back to any step you have already finished. It will not let you skip ahead to one you have not reached.',
+      },
+      {
+        target: 'booking-step-customer',
+        title: '1. Customer',
+        body: 'Search for an existing tenant before creating one — duplicates here are what break the Zoho payment matching later, since that matches on email and phone. If the booking came from a lead, pick the lead and their details come across with it.',
+      },
+      {
+        target: 'booking-step-units',
+        title: '2. Units',
+        body: 'Pick the unit or units being rented. Only what is genuinely free for your dates is offered, and a booking can hold more than one unit. The size you choose here drives the price on the next step.',
+      },
+      {
+        target: 'booking-step-quote',
+        title: '3. Quotation',
+        body: 'Pricing, add-ons and any discount. A month is 28 days and the weekly figure is the monthly price divided by four, so the totals will not match a calendar month. A discount applies to the first four weeks only. You can send the quote to the customer from here.',
+      },
+      {
+        target: 'booking-step-contract',
+        title: '4. Contract',
+        body: 'Turns the accepted quote into a real contract. From here you can send it for signature, or capture a signature in person. Nothing is committed until this step — up to now it is only a quote.',
+      },
+      {
+        target: 'booking-step-invoice',
+        title: '5. Invoice and payment',
+        body: 'The first invoice always collects four weeks in advance. Raise it, mark it sent, record what the customer paid, and attach the receipt. This is also the step that unlocks approval.',
+      },
+      {
+        title: 'Then it goes for approval',
+        body: 'Send for Approval stays disabled until three things are true: the invoice is marked sent, a payment is recorded, and a receipt is uploaded. The page lists whichever are still missing. An admin then approves it, and only then does the booking become a live contract under Tenants.',
+      },
+      {
+        title: 'That is the whole flow',
+        body: 'Replay this any time from Walkthroughs in your profile menu. If a booking ever seems stuck, it is almost always one of the three approval conditions above.',
+      },
+    ],
+  },
+  {
     id: 'contract-expiry-reminders',
     title: 'Set up contract expiry reminders',
     summary: 'Email tenants automatically before their contract ends, and let them answer in one click.',

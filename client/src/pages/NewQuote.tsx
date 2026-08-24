@@ -1576,7 +1576,7 @@ export default function NewQuote() {
           </div>
 
           {/* Stepper */}
-          <div className="flex items-center mb-8 gap-1">
+          <div data-tour="booking-stepper" className="flex items-center mb-8 gap-1">
             {STEPS.map((s, i) => {
               const done = stepDone[i] && i !== step
               const active = i === step
@@ -1587,6 +1587,10 @@ export default function NewQuote() {
                   <button
                     type="button"
                     onClick={() => { if (clickable) setStep(i) }}
+                    // Always rendered, whichever step you are on, which is what
+                    // lets a walkthrough point at each stage of the booking
+                    // without having to drive the wizard itself.
+                    data-tour={`booking-step-${s.key}`}
                     className="flex flex-col sm:flex-row items-center gap-1.5 sm:gap-2 shrink-0"
                     style={{ cursor: clickable ? 'pointer' : 'default' }}
                   >
