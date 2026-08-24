@@ -10,9 +10,11 @@ import { sendWhatsAppText, whatsappSendConfigured } from './whatsapp.js';
 // the assistant stops short of it and leaves the thread to a human.
 const REPLY_WINDOW_HOURS = 23;
 
-// How much of the conversation the model sees. Enough for context, bounded so
-// a long-running thread cannot grow the prompt without limit.
-const HISTORY_TURNS = 12;
+// How much of the conversation the model sees. Twelve was too short for the way
+// people actually message: four one-line messages and a couple of replies used
+// half of it, and the model started re-asking what it had already been told.
+// Still bounded, so a long-running thread cannot grow the prompt without limit.
+const HISTORY_TURNS = 30;
 
 // Message types that carry no question. A thumbs-up reaction, a system notice
 // or something this WhatsApp version cannot render is not a customer asking
@@ -169,6 +171,8 @@ export async function generateReply({ phoneNormalized, inboundText, config }) {
         '- Never confirm a booking, hold a unit, agree a discount, or promise a refund.',
         '- For questions about an existing contract, invoice, payment or complaint, set needsHuman true.',
         '- If the customer asks for a person, set needsHuman true.',
+        '- Read the conversation above before replying. Never ask for something the customer has already told you, and never re-introduce yourself in a conversation that has already started.',
+        '- If your own last message already answered them and they have said nothing new, do not send a near-identical message again.',
         '- Keep the reply under 600 characters and write it as a WhatsApp message.',
         '',
         'Reply with JSON only: {"reply": string, "needsHuman": boolean, "reason": string}',
@@ -359,13 +363,32 @@ export const aiBotState = {
 
 async function handleThread(thread, config) {
     const now = new Date();
-
-    // Claim the message before doing anything slow. If this process dies during
-    // generation the message is already marked handled, so the customer gets
-    // silence rather than the same reply twice.
     const inboundText = thread.pendingText;
+
+    // Claim the message atomically. The previous read-then-write let two
+    // workers — a restarted instance overlapping itself, or a second
+    // deployment against the same database — both pass this point and both
+    // reply, which is how a customer received the same answer twice within
+    // seconds. The update only matches while handledMessageId is still what we
+    // read, so exactly one worker wins.
+    const claimed = await AiBotThread.findOneAndUpdate(
+        { _id: thread._id, handledMessageId: thread.handledMessageId },
+        { $set: { handledMessageId: thread.pendingMessageId } },
+        { new: true },
+    );
+    if (!claimed) { aiBotState.skipped += 1; return; }
     thread.handledMessageId = thread.pendingMessageId;
-    await thread.save();
+
+    // If our own message is the most recent thing in the thread, their question
+    // has already been answered. Without this, a backlog of four messages from
+    // one person produced four separate replies, each repeating the last.
+    const newest = await WhatsAppMessage.findOne({ phoneNormalized: thread.phoneNormalized })
+        .sort({ occurredAt: -1 }).select('direction occurredAt').lean();
+    if (newest && newest.direction === 'outbound'
+        && new Date(newest.occurredAt) >= new Date(thread.pendingAt || 0)) {
+        aiBotState.skipped += 1;
+        return;
+    }
 
     const { action, reason, notable } = decideAction({ thread, config, now });
 
