@@ -321,6 +321,10 @@ router.post('/send-email', requireAdmin, async (req, res) => {
   }
 
   const skipped = [];
+  // The subject each recipient actually received, and the contract it was
+  // filled from. Logging the template instead put "@contractNo" on a tenant's
+  // timeline, which reads as a bug to anyone looking at the record.
+  const sentPerCustomer = new Map();
 
   if (personalise) {
     // A tenant's contract supplies the unit, dates and rate. An active one is
@@ -372,6 +376,7 @@ router.post('/send-email', requireAdmin, async (req, res) => {
           context: { kind: 'bulk', label: 'Email customers', sentBy, customer: customer._id, contract: contract?._id || null },
         });
         okIds.push(customer._id);
+        sentPerCustomer.set(String(customer._id), { subject: filledSubject, contractId: contract?._id || null });
       } catch (err) {
         failed += 1;
         if (!firstError) firstError = err.message || 'Send failed';
@@ -396,17 +401,36 @@ router.post('/send-email', requireAdmin, async (req, res) => {
 
   if (okIds.length) {
     const at = new Date();
-    await Customer.updateMany(
-      { _id: { $in: okIds } },
-      { $push: { emailLog: { subject, at, sentBy } } },
-    );
-    // Also log on the tenant's live contracts so it shows up in the contract's
-    // Activity feed, which reads straight off contract.timeline. Active only —
-    // an ended contract shouldn't collect new correspondence.
-    await Contract.updateMany(
-      { customer: { $in: okIds }, status: 'active' },
-      { $push: { timeline: { at, text: `Email "${subject}" sent`, author: sentBy } } },
-    );
+
+    if (sentPerCustomer.size) {
+      // Personalised: each person got their own subject, and it is logged
+      // against the contract it was actually filled from rather than every
+      // active one they happen to hold.
+      for (const [customerId, sent] of sentPerCustomer) {
+        await Customer.updateOne(
+          { _id: customerId },
+          { $push: { emailLog: { subject: sent.subject, at, sentBy } } },
+        );
+        if (sent.contractId) {
+          await Contract.updateOne(
+            { _id: sent.contractId },
+            { $push: { timeline: { at, text: `Email "${sent.subject}" sent`, author: sentBy } } },
+          );
+        }
+      }
+    } else {
+      // Blind-copied: one subject for everyone, and it cannot contain a
+      // placeholder because that send is refused outright.
+      await Customer.updateMany(
+        { _id: { $in: okIds } },
+        { $push: { emailLog: { subject, at, sentBy } } },
+      );
+      // Active only: an ended contract should not collect new correspondence.
+      await Contract.updateMany(
+        { customer: { $in: okIds }, status: 'active' },
+        { $push: { timeline: { at, text: `Email "${subject}" sent`, author: sentBy } } },
+      );
+    }
   }
 
   if (!okIds.length) {

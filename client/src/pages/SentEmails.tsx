@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Mail, Search, AlertTriangle, Paperclip, Users } from 'lucide-react'
+import { Mail, Search, AlertTriangle, Paperclip, Users, ChevronDown } from 'lucide-react'
 import { api } from '../lib/api'
 import { Card, CardBody, PageHeader, Pagination, Spinner } from '../components/ui'
 
@@ -54,6 +54,9 @@ export default function SentEmails() {
   const [status, setStatus] = useState('')
   const [kind, setKind] = useState('')
   const [page, setPage] = useState(1)
+  // Which row is open. Bodies are left out of the list payload, so opening one
+  // fetches it — fifty email bodies would be megabytes nobody asked to read.
+  const [openId, setOpenId] = useState<string | null>(null)
 
   const { data, isLoading } = useQuery<Paged>({
     queryKey: ['sent-emails', search, status, kind, page],
@@ -64,6 +67,12 @@ export default function SentEmails() {
   })
 
   const rows = data?.data ?? []
+
+  const { data: openEmail } = useQuery<SentEmail & { html?: string; text?: string }>({
+    queryKey: ['sent-email', openId],
+    queryFn: () => api.get(`/sent-emails/${openId}`).then((r) => r.data),
+    enabled: Boolean(openId),
+  })
 
   return (
     <div className="max-w-6xl space-y-4">
@@ -81,7 +90,7 @@ export default function SentEmails() {
           <input
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-            placeholder="Search address, subject, or who sent it…"
+            placeholder="Search customer, address, subject, or who sent it…"
             style={{ background: 'transparent', color: INK, fontSize: 13, outline: 'none', border: 'none' }}
             className="ml-2 w-full placeholder:text-[#756E80]"
           />
@@ -142,8 +151,18 @@ export default function SentEmails() {
         <Card>
           <div className="divide-y" style={{ borderColor: LINE }}>
             {rows.map((r) => (
-              <div key={r._id} className="px-4 py-3">
+              <div key={r._id}>
+              <button
+                type="button"
+                onClick={() => setOpenId(openId === r._id ? null : r._id)}
+                className="w-full text-left px-4 py-3 cursor-pointer hover:bg-muted/40 transition-colors"
+              >
                 <div className="flex flex-wrap items-baseline gap-2">
+                  <ChevronDown
+                    size={13}
+                    className="shrink-0 transition-transform"
+                    style={{ color: MUTED, transform: openId === r._id ? 'rotate(180deg)' : undefined }}
+                  />
                   <span className="font-semibold text-[13.5px] flex-1 min-w-0 truncate" style={{ color: INK }}>
                     {r.subject || '(no subject)'}
                   </span>
@@ -202,6 +221,46 @@ export default function SentEmails() {
                 {r.status === 'failed' && r.error && (
                   <p className="mt-1.5" style={{ fontSize: 11.5, color: '#B91C1C' }}>{r.error}</p>
                 )}
+              </button>
+
+              {openId === r._id && (
+                <div className="px-4 pb-4" style={{ background: '#FBF8F2', borderTop: `1px solid ${LINE}` }}>
+                  {!openEmail ? (
+                    <p className="py-4 text-center" style={{ fontSize: 12, color: MUTED }}>Loading…</p>
+                  ) : (
+                    <>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 py-3" style={{ fontSize: 12, color: MUTED }}>
+                        <span><strong style={{ color: INK }}>To:</strong> {openEmail.to || '—'}</span>
+                        {openEmail.bcc && (
+                          <span className="min-w-0 truncate" title={openEmail.bcc}>
+                            <strong style={{ color: INK }}>Bcc:</strong> {openEmail.bcc}
+                          </span>
+                        )}
+                        <span><strong style={{ color: INK }}>Sent:</strong> {new Date(openEmail.at).toLocaleString()}</span>
+                      </div>
+                      {openEmail.html ? (
+                        // The message exactly as it was sent. Isolated in an
+                        // iframe so its own styles cannot leak into the page.
+                        <iframe
+                          title="Email body"
+                          srcDoc={openEmail.html}
+                          sandbox=""
+                          style={{ width: '100%', height: 460, border: `1px solid ${LINE}`, borderRadius: 10, background: '#fff' }}
+                        />
+                      ) : openEmail.text ? (
+                        <pre
+                          className="whitespace-pre-wrap"
+                          style={{ fontSize: 12.5, color: INK, background: '#fff', border: `1px solid ${LINE}`, borderRadius: 10, padding: 14, margin: 0 }}
+                        >{openEmail.text}</pre>
+                      ) : (
+                        <p className="py-3" style={{ fontSize: 12, color: MUTED }}>
+                          The body was not recorded for this one. Emails sent from now on keep a copy.
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
               </div>
             ))}
           </div>

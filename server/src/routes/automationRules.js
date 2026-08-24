@@ -77,6 +77,19 @@ router.get('/', async (_req, res) => {
     }
 });
 
+// Declared before /:id: Express matches in order, so PUT /auto-send was being
+// read as PUT /:id with id="auto-send", which failed to cast to an ObjectId.
+// That is why automatic sending could never be switched on from the page.
+// PUT /api/automation-rules/auto-send — master switch for the 6-hour scheduler
+router.put('/auto-send', async (req, res) => {
+    try {
+        const value = await setAutoSend(!!req.body?.enabled);
+        res.json({ ok: true, autoSend: value });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // PUT /api/automation-rules/:id
 router.put('/:id', async (req, res) => {
     try {
@@ -159,16 +172,6 @@ router.get('/logs', async (req, res) => {
 router.get('/channels', async (_req, res) => {
     try {
         res.json({ whatsapp: whatsappSendConfigured(), email: mailConfigured(), autoSend: await getAutoSend() });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-// PUT /api/automation-rules/auto-send — master switch for the 6-hour scheduler
-router.put('/auto-send', async (req, res) => {
-    try {
-        const value = await setAutoSend(!!req.body?.enabled);
-        res.json({ ok: true, autoSend: value });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

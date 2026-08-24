@@ -1283,6 +1283,11 @@ const sentEmailSchema = new Schema({
   status: { type: String, enum: ['sent', 'failed'], default: 'sent' },
   error: { type: String, default: '' },
   hasAttachments: { type: Boolean, default: false },
+  // What was actually sent, so a row can be opened and read. Capped, because a
+  // campaign stores one copy per recipient and each is personalised, so the
+  // bodies are not shared.
+  html: { type: String, default: '' },
+  text: { type: String, default: '' },
   // What this email was, so the list can be read without opening every row.
   kind: { type: String, default: 'other' },   // reminder | campaign | bulk | contract | invoice | quote | notice | lead | auth | other
   label: { type: String, default: '' },       // e.g. the rule or campaign name

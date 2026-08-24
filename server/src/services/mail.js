@@ -46,7 +46,11 @@ export function mailFromAddress() {
  * `context` is optional and additive: callers that pass it get a more useful
  * row, callers that do not are unaffected.
  */
-async function record({ to, bcc, subject, attachments, context = {}, status, error }) {
+// Enough to read the message back; far more than any real email, and short of
+// the 16 MB document limit even if something odd comes through.
+const BODY_CAP = 200_000;
+
+async function record({ to, bcc, subject, text, html, attachments, context = {}, status, error }) {
     try {
         const recipients = bcc ? String(bcc).split(',').filter((x) => x.trim()).length : 1;
         await SentEmail.create({
@@ -57,6 +61,8 @@ async function record({ to, bcc, subject, attachments, context = {}, status, err
             status,
             error: error ? String(error).slice(0, 500) : '',
             hasAttachments: Boolean(attachments?.length),
+            html: String(html || '').slice(0, BODY_CAP),
+            text: String(text || '').slice(0, BODY_CAP),
             kind: context.kind || 'other',
             label: context.label || '',
             customer: context.customer || null,
@@ -80,10 +86,10 @@ export async function sendMail({ to, subject, text, html, attachments, bcc, cont
                 from: process.env.SMTP_FROM || `PurpleBox <${process.env.SMTP_USER}>`,
                 to, subject, text, html, attachments, bcc,
             });
-        await record({ to, bcc, subject, attachments, context, status: 'sent' });
+        await record({ to, bcc, subject, text, html, attachments, context, status: 'sent' });
         return result;
     } catch (err) {
-        await record({ to, bcc, subject, attachments, context, status: 'failed', error: err?.message });
+        await record({ to, bcc, subject, text, html, attachments, context, status: 'failed', error: err?.message });
         throw err;
     }
 }

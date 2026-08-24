@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { requireAdmin } from '../middleware/auth.js';
-import { SentEmail } from '../models/index.js';
+import { SentEmail, Customer } from '../models/index.js';
 
 /**
  * Everything the system has emailed, from the one log sendMail() writes.
@@ -26,7 +26,15 @@ router.get('/', async (req, res) => {
         const re = new RegExp(escRegex(req.query.search), 'i');
         // Searched in the query, not after paging — filtering a fetched page
         // makes anything older than that page unfindable.
-        filter.$or = [{ to: re }, { bcc: re }, { subject: re }, { label: re }, { sentBy: re }];
+        const or = [{ to: re }, { bcc: re }, { subject: re }, { label: re }, { sentBy: re }];
+
+        // The customer is a reference, so their name is not on the row to match
+        // against. Resolve the ids first, which is what makes "find everything
+        // we sent this person" work at all.
+        const named = await Customer.find({ fullName: re }).select('_id').limit(500).lean();
+        if (named.length) or.push({ customer: { $in: named.map((c) => c._id) } });
+
+        filter.$or = or;
     }
 
     const page = Math.max(1, Number(req.query.page) || 1);
@@ -34,6 +42,9 @@ router.get('/', async (req, res) => {
 
     const [rows, total, failed] = await Promise.all([
         SentEmail.find(filter)
+            // Bodies are excluded here: fifty of them would make the list
+            // payload megabytes for content nobody has asked to read yet.
+            .select('-html -text')
             .sort({ at: -1 })
             .skip((page - 1) * limit)
             .limit(limit)
@@ -49,6 +60,16 @@ router.get('/', async (req, res) => {
     const kinds = await SentEmail.distinct('kind');
 
     res.json({ data: rows, total, failed, page, pages: Math.ceil(total / limit), limit, kinds: kinds.sort() });
+});
+
+// One email in full, fetched when a row is opened.
+router.get('/:id', async (req, res) => {
+    const row = await SentEmail.findById(req.params.id)
+        .populate('customer', 'fullName email')
+        .populate('contract', 'contractNo')
+        .lean();
+    if (!row) return res.status(404).json({ error: 'Email not found' });
+    res.json(row);
 });
 
 export default router;
