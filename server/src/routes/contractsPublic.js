@@ -31,10 +31,20 @@ const INTENTS = {
         accent: '#5B2BC9',
         other: 'renewing',
         otherLabel: 'Actually, I want to renew',
+        // Someone clearing a unit has to move its contents somewhere, and this
+        // is the one moment we know that for certain. Offered as help with the
+        // thing they now have to do, not as a pitch — they have just told us
+        // they are leaving.
+        promo: {
+            heading: 'Need a hand moving your things?',
+            body: 'We pack and move across Dubai — trained crews, padded trucks, and a fixed price agreed before anything is lifted.',
+            href: 'https://purplebox.ae/packing-moving.html',
+            cta: 'See packing & moving',
+        },
     },
 };
 
-function page({ title, heading, body, accent, footer = '' }) {
+function page({ title, heading, body, accent, footer = '', promo = null }) {
     return `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
@@ -54,6 +64,11 @@ function page({ title, heading, body, accent, footer = '' }) {
   button { background:none; border:1px solid rgba(20,8,31,.16); border-radius:999px;
            padding:11px 22px; font-size:14px; font-weight:700; color:#14081F; cursor:pointer; }
   .muted { font-size:12.5px; color:#756E80; margin-top:26px; }
+  .promo { margin-top:26px; padding:20px; background:#F7F3FF; border:1px solid #EDE5FF; border-radius:14px; }
+  .promo-h { font-size:15px; font-weight:700; color:#2D1259; margin:0 0 6px; }
+  .promo-b { font-size:13.5px; line-height:1.6; color:#4A4357; margin:0 0 14px; }
+  .promo-cta { display:inline-block; background:#5B2BC9; color:#fff; text-decoration:none;
+               border-radius:999px; padding:10px 20px; font-size:13.5px; font-weight:700; }
   a { color:#5B2BC9; }
 </style></head>
 <body><div class="wrap"><div class="card">
@@ -61,6 +76,11 @@ function page({ title, heading, body, accent, footer = '' }) {
   <h1>${heading}</h1>
   <p>${body}</p>
   ${footer}
+  ${promo ? `<div class="promo">
+    <p class="promo-h">${promo.heading}</p>
+    <p class="promo-b">${promo.body}</p>
+    <a class="promo-cta" href="${promo.href}">${promo.cta}</a>
+  </div>` : ''}
   <p class="muted">
     Questions? Call <a href="tel:+97143293924">04 329 3924</a> or message us on
     <a href="https://wa.me/971542249946">WhatsApp</a>.
@@ -109,6 +129,7 @@ router.get('/renewal/:contractId/:token', async (req, res) => {
         heading: cfg.heading,
         body: cfg.body,
         accent: cfg.accent,
+        promo: cfg.promo || null,
         footer: `<form method="GET" action="${otherHref}">
       <input type="hidden" name="intent" value="${cfg.other}">
       <button type="submit">${cfg.otherLabel}</button>
