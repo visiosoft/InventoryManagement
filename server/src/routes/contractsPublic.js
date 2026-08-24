@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { isValidObjectId } from 'mongoose';
-import { Contract } from '../models/index.js';
+import { Contract, Task, User, AiBotConfig } from '../models/index.js';
 import { verifyRenewalToken, renewalToken } from '../services/renewalLink.js';
 
 /**
@@ -21,8 +21,6 @@ const INTENTS = {
         heading: "Thank you, we'll keep your unit",
         body: 'We have recorded that you would like to continue storing with us. A member of the team will be in touch to confirm the details and your next invoice.',
         accent: '#047857',
-        other: 'not_renewing',
-        otherLabel: 'Actually, I want to move out',
     },
     not_renewing: {
         title: 'Move-out noted',
@@ -88,6 +86,75 @@ function page({ title, heading, body, accent, footer = '', promo = null }) {
 </div></div></body></html>`;
 }
 
+/**
+ * Raise a task so somebody actually acts on the tenant's answer.
+ *
+ * The move-out page tells the tenant a colleague will be in touch to arrange
+ * the date and the key; without a task that is an empty promise. A renewal
+ * needs the next invoice raising.
+ *
+ * Assigned to whoever receives hand-overs — the same person the WhatsApp
+ * assistant escalates to, so there is one place to change it rather than two
+ * that drift apart. Falls back to an admin if that is unset.
+ */
+async function raiseTask(contract, intent) {
+    const renewing = intent === 'renewing';
+
+    // Clicking twice, or a mail scanner prefetching the link, must not produce
+    // a second task. One open task per contract per decision is enough.
+    const already = await Task.findOne({
+        leadId: contract._id,
+        status: { $ne: 'done' },
+        title: new RegExp(`^${renewing ? 'Renewal confirmed' : 'Move-out confirmed'}`),
+    }).select('_id').lean();
+    if (already) return;
+
+    const config = await AiBotConfig.findOne().select('escalateTo').lean();
+    let assignee = config?.escalateTo
+        ? await User.findById(config.escalateTo).select('_id name email isActive').lean()
+        : null;
+    if (!assignee || assignee.isActive === false) {
+        assignee = await User.findOne({ role: 'admin', isActive: { $ne: false } })
+            .select('_id name email').sort({ createdAt: 1 }).lean();
+    }
+    if (!assignee) return;
+
+    const customer = await Contract.findById(contract._id).populate('customer', 'fullName phone email').lean();
+    const who = customer?.customer?.fullName || 'Tenant';
+    const ends = contract.endDate ? new Date(contract.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+
+    await Task.create({
+        title: `${renewing ? 'Renewal confirmed' : 'Move-out confirmed'} — ${who}`,
+        description: [
+            `${who} answered the expiry email: ${renewing ? 'renewing' : 'moving out'}.`,
+            '',
+            `Contract: ${contract.contractNo || ''}`,
+            ends ? `Ends: ${ends}` : '',
+            customer?.customer?.phone ? `Phone: ${customer.customer.phone}` : '',
+            customer?.customer?.email ? `Email: ${customer.customer.email}` : '',
+            '',
+            renewing
+                ? 'Confirm the new term and raise the next invoice.'
+                : 'Arrange the move-out date and the return of the key or access device.',
+        ].filter(Boolean).join('\n'),
+        assignedTo: assignee._id,
+        createdByName: 'Tenant (expiry email)',
+        leadId: contract._id,
+        leadType: 'contract',
+        leadName: who,
+        // A move-out has a date attached and a unit to free up; a renewal can
+        // wait a day.
+        priority: renewing ? 'medium' : 'high',
+        dueDate: contract.endDate || null,
+        assignmentHistory: [{
+            fromId: null, fromName: '',
+            toId: assignee._id, toName: assignee.name || assignee.email,
+            byId: null, byName: 'Tenant (expiry email)',
+            reason: 'Tenant answered the expiry email',
+        }],
+    });
+}
+
 router.get('/renewal/:contractId/:token', async (req, res) => {
     const { contractId, token } = req.params;
     const intent = String(req.query.intent || '');
@@ -112,6 +179,7 @@ router.get('/renewal/:contractId/:token', async (req, res) => {
     }
 
     const before = contract.renewalIntent || 'undecided';
+    const changed = before !== intent;
     contract.renewalIntent = intent;
     // Recorded on the timeline so it is clear the tenant said this themselves,
     // rather than a colleague setting it after a call.
@@ -121,19 +189,23 @@ router.get('/renewal/:contractId/:token', async (req, res) => {
     });
     await contract.save();
 
+    if (changed) await raiseTask(contract, intent);
+
     const cfg = INTENTS[intent];
-    // A one-click answer needs a one-click correction — people do misread.
-    const otherHref = `/api/contracts/public/renewal/${contractId}/${renewalToken(contractId)}?intent=${cfg.other}`;
     res.send(page({
         title: cfg.title,
         heading: cfg.heading,
         body: cfg.body,
         accent: cfg.accent,
         promo: cfg.promo || null,
-        footer: `<form method="GET" action="${otherHref}">
+        // Only the move-out page offers the opposite answer. Someone who has
+        // just chosen to stay does not need a button that undoes it.
+        footer: cfg.other
+            ? `<form method="GET" action="/api/contracts/public/renewal/${contractId}/${renewalToken(contractId)}?intent=${cfg.other}">
       <input type="hidden" name="intent" value="${cfg.other}">
       <button type="submit">${cfg.otherLabel}</button>
-    </form>`,
+    </form>`
+            : '',
     }));
 });
 
