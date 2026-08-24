@@ -19,11 +19,12 @@ const LINE = 'rgba(20,8,31,0.10)'
 const FIELD_LINE = 'rgba(20,8,31,0.14)'
 const CHIP_BG = '#F3F0EA'
 
-// checkbox | Contract | Customer | Unit(s) | Amount | Start | End | Status | Renewal | delete
-// Ten cells per row — checkbox, contract, customer, unit, amount, start, end,
-// status, renewal, delete — so ten tracks. The mockup declared nine, which
-// wrapped the delete button onto a line of its own.
-const GRID = '40px 1.2fr 1.5fr 0.85fr 0.95fr 0.95fr 0.95fr 0.85fr 0.85fr 0.85fr minmax(60px, auto)'
+// checkbox | Contract | Customer | Unit(s) | Amount | Owes | Start | End |
+// Days left | Status | Renewal | delete
+//
+// Twelve cells per row, so twelve tracks. Miscounting wraps the delete button
+// onto a line of its own, which is how the mockup's nine went wrong.
+const GRID = '40px 1.2fr 1.5fr 0.85fr 0.95fr 0.9fr 0.95fr 0.95fr 0.85fr 0.85fr 0.85fr minmax(60px, auto)'
 
 const STATUSES = ['draft', 'pending_signature', 'active', 'ended', 'cancelled']
 type PagedContracts = { data: Contract[]; total: number; page: number; pages: number; limit: number }
@@ -455,6 +456,7 @@ export default function Contracts() {
                   <SortHead label="Customer" col="customer" sort={sort} onSort={setSort} />
                   <SortHead label="Unit(s)" col="units" sort={sort} onSort={setSort} />
                   <SortHead label="Amount" col="amount" sort={sort} onSort={setSort} />
+                  <div style={headCell}>Owes</div>
                   <SortHead label="Start" col="start" sort={sort} onSort={setSort} />
                   <SortHead label="End" col="end" sort={sort} onSort={setSort} />
                   <SortHead label="Days left" col="daysleft" sort={sort} onSort={setSort} />
@@ -559,6 +561,22 @@ export default function Contracts() {
                             }${c.overdueCount ? ` · ${c.overdueCount} overdue` : ''}`}
                           >
                             {value ? formatMoney(value) : '—'}
+                          </div>
+
+                          {/* Outstanding in Zoho Books for this tenant. Blank
+                              means nothing owed, or that we could not match
+                              them on email or phone — the Tenants list says how
+                              many balances went unclaimed. */}
+                          <div style={{ fontSize: 13 }}>
+                            {Number(c.outstanding) > 0 ? (
+                              <span
+                                className="inline-flex rounded-full px-2 py-0.5 whitespace-nowrap"
+                                style={{ background: '#FEE2E2', color: '#B91C1C', fontSize: 11.5, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}
+                                title="Unpaid balance in Zoho Books"
+                              >
+                                {formatMoney(Number(c.outstanding))}
+                              </span>
+                            ) : <span style={{ color: SECOND }}>—</span>}
                           </div>
 
                           <div style={{ color: SECOND, fontSize: 13 }}>{formatDate(c.startDate)}</div>

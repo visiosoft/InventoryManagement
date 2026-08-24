@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { isValidObjectId, Types } from 'mongoose';
 import { stampSignature } from '../services/stampSignature.js';
 import { Contract, Customer, Unit, Payment, Document, Invoice, Quote, AgreementTemplate, nextContractNo, nextInvoiceNo, MessageTemplate } from '../models/index.js';
+import { zohoBooksConfigured, zohoOutstandingByCustomer } from '../services/zohoBooks.js';
 import { syncUnitStatus } from '../utils/unitStatus.js';
 import { sendForSignature, downloadSignedPdf, zohoConfigured } from '../services/zoho.js';
 import { uploadFile } from '../services/drive.js';
@@ -102,7 +103,7 @@ router.get('/', async (req, res) => {
 
   const [contracts, total] = await Promise.all([
     Contract.find(filter)
-      .populate('customer', 'fullName')
+      .populate('customer', 'fullName email phone phones')
       .populate('unit', 'unitNumber floor')
       .sort(sort).skip(skip).limit(limit).lean(),
     Contract.countDocuments(filter),
@@ -158,7 +159,20 @@ router.get('/', async (req, res) => {
     };
   });
 
-  res.json({ data: rows, total, page, pages: Math.ceil(total / limit), limit });
+  // What the tenant owes, from Zoho Books. Shown here as well as on the Tenants
+  // list because this is the screen the team actually works from — chasing a
+  // renewal without knowing there is money outstanding is the wrong call to make.
+  let data = rows;
+  if (zohoBooksConfigured() && rows.length) {
+    const customers = rows.map((r) => r.customer).filter(Boolean);
+    const { byCustomer } = await zohoOutstandingByCustomer(customers);
+    data = rows.map((r) => {
+      const hit = r.customer ? byCustomer.get(String(r.customer._id)) : null;
+      return hit ? { ...r, outstanding: hit.outstanding } : r;
+    });
+  }
+
+  res.json({ data, total, page, pages: Math.ceil(total / limit), limit });
 });
 
 // Latest notes across all contracts (for dashboard)

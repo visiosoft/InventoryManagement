@@ -452,6 +452,9 @@ export interface Contract {
   totalAmount?: number
   contractAmount?: number
   overdueCount?: number
+  // Unpaid balance in Zoho Books for this contract's tenant, attached by the
+  // contracts list when Zoho is connected.
+  outstanding?: number
   billingPeriod: 'weekly' | 'monthly'
   rate: number
   deposit: number
