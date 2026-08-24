@@ -899,6 +899,8 @@ export default function ContractDetail() {
     label: string; to: string; subject: string; html: string; unfilled: string[]; isHtml: boolean
   } | null>(null)
   const [templateEmailBusy, setTemplateEmailBusy] = useState(false)
+  // Preview by default; the source is there for anyone who needs it.
+  const [emailShowSource, setEmailShowSource] = useState(false)
   const [templateEmailMsg, setTemplateEmailMsg] = useState('')
   const [saveEmailToTenant, setSaveEmailToTenant] = useState(true)
   const [noticeBusy, setNoticeBusy] = useState('')
@@ -2040,6 +2042,7 @@ export default function ContractDetail() {
                                     unfilled: r.unfilled || [],
                                     isHtml: Boolean(r.isHtml),
                                   })
+                                  setEmailShowSource(false)
                                 } catch (e) {
                                   setTemplateEmailMsg(apiError(e))
                                 } finally { setTemplateEmailBusy(false) }
@@ -3325,16 +3328,34 @@ export default function ContractDetail() {
               onChange={(e) => setTemplateEmail({ ...templateEmail, subject: e.target.value })} /></Field>
             {/* A designed template is shown as it will arrive. Dropping 8 KB of
                 table markup into a plain textarea invites someone to "tidy" it
-                and break the layout, and tells them nothing about how it
-                looks. Plain templates stay editable. */}
-            {templateEmail.isHtml ? (
-              <Field label="Message — sent as designed">
-                <iframe
-                  title="Email preview"
-                  srcDoc={templateEmail.html}
-                  sandbox=""
-                  style={{ width: '100%', height: 380, border: '1px solid rgba(20,8,31,.12)', borderRadius: 10, background: '#fff' }}
-                />
+                and break the layout, while telling them nothing about how it
+                looks.
+
+                Whether it is HTML is decided from the content, not from the
+                server's isHtml flag: an API that predates that field would send
+                nothing, and the composer would fall back to showing raw markup
+                — which is exactly what it did. */}
+            {(templateEmail.isHtml || /<\s*(table|div|p|html|body)[\s>]/i.test(templateEmail.html)) ? (
+              <Field label={emailShowSource ? 'Message — HTML source' : 'Message — sent as designed'}>
+                {emailShowSource ? (
+                  <Textarea rows={12} value={templateEmail.html} className="font-mono text-[11.5px]"
+                    onChange={(e) => setTemplateEmail({ ...templateEmail, html: e.target.value })} />
+                ) : (
+                  <iframe
+                    title="Email preview"
+                    srcDoc={templateEmail.html}
+                    sandbox=""
+                    style={{ width: '100%', height: 380, border: '1px solid rgba(20,8,31,.12)', borderRadius: 10, background: '#fff' }}
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={() => setEmailShowSource((v) => !v)}
+                  className="mt-1.5 text-[11.5px] font-semibold cursor-pointer hover:underline"
+                  style={{ color: PURPLE }}
+                >
+                  {emailShowSource ? 'Back to preview' : 'Edit the HTML'}
+                </button>
               </Field>
             ) : (
               <Field label="Message">
