@@ -1609,9 +1609,9 @@ export default function WhatsApp() {
               }}
               title="Setup checklist"
             >
-              <span className="shrink-0 rounded-full" style={{ width: 7, height: 7, background: '#F5A524' }} aria-hidden />
-              <span className="hidden sm:inline">Test mode — recipient must be added in Meta dashboard</span>
-              <span className="sm:hidden">Test mode</span>
+              <span className="shrink-0 rounded-full" style={{ width: 7, height: 7, background: '#22c55e' }} aria-hidden />
+              <span className="hidden sm:inline">Live — anyone can be messaged</span>
+              <span className="sm:hidden">Live</span>
               <Info size={13} style={{ opacity: 0.7 }} />
             </button>
 
@@ -1630,7 +1630,7 @@ export default function WhatsApp() {
                 <p>2. In Meta Dashboard → WhatsApp → Configuration → Webhook, set the Callback URL to <code style={{ background: '#F7F3FF', padding: '1px 4px', borderRadius: 4 }}>https://api.purplebox.ae/api/integrations/whatsapp/webhook</code></p>
                 <p>3. Set the Verify Token there to the same string you entered in Settings.</p>
                 <p>4. Subscribe to the <strong>messages</strong> field under Webhook Fields.</p>
-                <p style={{ color: '#B45309' }}>On a Meta test number you can only message 5 pre-registered recipients. A verified business number has no such limit.</p>
+                <p style={{ color: MUTED_INK }}>This is a verified business number, so there is no recipient limit. A free-form reply is still only possible within 24 hours of the customer's last message; outside that, send an approved template.</p>
               </div>
             )}
           </div>
