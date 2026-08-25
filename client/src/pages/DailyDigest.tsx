@@ -50,12 +50,25 @@ const TONE: Record<string, { bg: string; fg: string; label: string }> = {
   cold: { bg: '#EEF2F7', fg: '#475569', label: 'Cold' },
 }
 
+/* Everything on this page is UAE time, whatever machine it is read on.
+   The day itself is defined in Dubai on the server, so showing its message
+   times in the viewer's own timezone would put them outside the day they
+   belong to — a 00:30 conversation displayed as the previous evening. */
+const TZ = 'Asia/Dubai'
+
 const clock = (iso: string) =>
-  new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: TZ })
 
 const longDate = (day: string) =>
-  new Date(`${day}T12:00:00Z`).toLocaleDateString(undefined, {
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+  // Noon UTC is safely inside the Dubai day either way, so the label never
+  // slips to the neighbouring date.
+  new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: TZ,
+  })
+
+const stamp = (iso: string) =>
+  new Date(iso).toLocaleString('en-GB', {
+    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: TZ,
   })
 
 function Stat({ label, value, tone }: { label: string; value: string | number; tone?: string }) {
@@ -201,7 +214,7 @@ export default function DailyDigest() {
           {build.isPending ? 'Reading…' : data?.built ? 'Read again' : 'Build this day'}
         </button>
         {data?.builtAt && (
-          <span style={{ fontSize: 11.5, color: FAINT }}>Read {new Date(data.builtAt).toLocaleString()}</span>
+          <span style={{ fontSize: 11.5, color: FAINT }}>Read {stamp(data.builtAt)} UAE</span>
         )}
         {build.isError && <span style={{ fontSize: 12, color: DANGER }}>{apiError(build.error)}</span>}
       </div>

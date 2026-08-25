@@ -3,11 +3,16 @@ import assert from 'node:assert/strict';
 import { dayKeyFor, dayRange, previousDay, localHour, orderChats, TZ_OFFSET_HOURS } from './dailyDigest.js';
 
 /* The day boundary. Every figure in the report is scoped by this, so if it is
-   wrong the whole page is quietly wrong rather than visibly broken. Dubai is
-   UTC+4 unless DIGEST_TZ_OFFSET_HOURS says otherwise. */
+   wrong the whole page is quietly wrong rather than visibly broken. It is
+   always UAE time — UTC+4, no daylight saving, nothing to configure. */
 
-test('the offset is Dubai unless told otherwise', () => {
+test('the timezone is the UAE, fixed, with nothing to configure', () => {
+  // Gulf Standard Time is UTC+4 all year — no daylight saving — so a fixed
+  // offset is exact, and a setting here would only be a way to get it wrong.
   assert.equal(TZ_OFFSET_HOURS, 4);
+  process.env.DIGEST_TZ_OFFSET_HOURS = '9';
+  assert.equal(TZ_OFFSET_HOURS, 4, 'an environment variable must not move the day boundary');
+  delete process.env.DIGEST_TZ_OFFSET_HOURS;
 });
 
 test('a day runs from local midnight to local midnight', () => {

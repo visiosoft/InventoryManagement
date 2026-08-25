@@ -19,14 +19,20 @@ import { replyGaps, summariseGaps, humanDuration, resolveNames } from './inboxAs
 import { summariseConversation } from './conversationSummary.js';
 
 /**
- * Whose day this is.
+ * Whose day this is: the UAE's, always.
  *
- * Dubai is UTC+4, and the server's own timezone is not something to depend on:
- * a host that believes it is in UTC would cut the day at 4am local, filing a
- * late-evening conversation under the following morning. So the boundary is
- * stated here rather than inherited.
+ * The server's own timezone is not something to depend on — a host that
+ * believes it is in UTC would cut the day at 4am Dubai, filing a late-evening
+ * conversation under the following morning. So the boundary is stated here
+ * rather than inherited, and it is not configurable: one business, one
+ * timezone, and no setting to get wrong.
+ *
+ * Gulf Standard Time is UTC+4 with no daylight saving, so a fixed offset is
+ * exact all year. That is why this can be arithmetic rather than a timezone
+ * database lookup.
  */
-export const TZ_OFFSET_HOURS = Number(process.env.DIGEST_TZ_OFFSET_HOURS ?? 4);
+export const TZ_OFFSET_HOURS = 4;
+export const TZ_NAME = 'Asia/Dubai';
 const HOUR_MS = 3600_000;
 const DAY_MS = 24 * HOUR_MS;
 
