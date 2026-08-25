@@ -15,7 +15,7 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>
   logout: () => void
   /** Returns true if the current user can access the given module key. */
-  hasPermission: (module: string) => boolean
+  hasPermission: (module: string | string[]) => boolean
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -39,10 +39,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }
 
-  function hasPermission(module: string): boolean {
+  /**
+   * An array means any one of them is enough.
+   *
+   * Needed where a screen was historically reached through another module's
+   * permission: giving it a name of its own must not take it away from people
+   * who already had it under the old one.
+   */
+  function hasPermission(module: string | string[]): boolean {
     if (!user) return false
+    // An admin with no explicit list gets everything; an admin with a list is
+    // held to it, which is why a 17-module admin can be missing a screen.
     if (user.role === 'admin' && !user.permissions?.length) return true
-    return user.permissions.includes(module)
+    const wanted = Array.isArray(module) ? module : [module]
+    return wanted.some((m) => user.permissions.includes(m))
   }
 
   return (

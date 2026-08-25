@@ -6,6 +6,10 @@ const ALL_MODULES = [
   'dashboard', 'units', 'moving_inventory', 'contracts', 'documents',
   'customers', 'quotes', 'invoices', 'vendors', 'expenses',
   'leads', 'purchases', 'payments',
+  // The WhatsApp console. Historically reached through 'leads', which is why
+  // the nav still accepts either — granting this must not be the only way in
+  // for someone who already had it.
+  'whatsapp',
   'reports_monthly', 'reports_units', 'reports_finances', 'reports_forecast', 'reports_contracts',
   'reports_vacancies', 'reports_overdue', 'reports_expiring',
   'settings',

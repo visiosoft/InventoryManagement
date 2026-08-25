@@ -29,7 +29,7 @@ const navGroups = [
       { to: '/my-performance', label: 'Reports', icon: BarChart3, perm: 'sales_board' },
       { to: '/account', label: 'Settings', icon: Settings, perm: 'sales_board' },
       { to: '/leads', label: 'Leads', icon: UserPlus, perm: 'leads' },
-      { to: '/whatsapp', label: 'WhatsApp', icon: MessageCircle, perm: 'leads' },
+      { to: '/whatsapp', label: 'WhatsApp', icon: MessageCircle, perm: ['whatsapp', 'leads'] },
     ],
   },
 ]
@@ -94,7 +94,7 @@ const reportItems = [
   { to: '/reports/income', label: 'Income Analysis', icon: TrendingUp, perm: 'reports_finances' },
 ]
 
-const navBottom: { to: string; label: string; icon: any; perm: string }[] = []
+const navBottom: { to: string; label: string; icon: any; perm: string | string[] }[] = []
 
 // Sales reps see one flat list matching the standalone mockup's nav order,
 // instead of the admin app's split Inventory/Sales/Moving groups.

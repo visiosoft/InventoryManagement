@@ -42,6 +42,7 @@ const MODULE_GROUPS = [
     label: 'Operations',
     modules: [
       { key: 'leads',     label: 'Leads' },
+      { key: 'whatsapp',  label: 'WhatsApp' },
       { key: 'purchases', label: 'Purchases' },
       { key: 'payments',  label: 'Payments' },
     ],
