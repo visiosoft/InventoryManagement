@@ -73,7 +73,7 @@ export const CONTRACT_EXPIRY_HTML = `<table role="presentation" width="100%" cel
                     </tr>
                     <tr>
                       <td style="padding-top:8px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.55;color:#4A4357;">
-                        Keep your unit and continue storing with us at the current monthly rate of <strong>AED @rate</strong>.
+                        Keep your unit and continue storing with us.
                       </td>
                     </tr>
                   </table>
@@ -172,7 +172,7 @@ export const CONTRACT_EXPIRY_TEXT = [
     '',
     'Please let us know how you would like to proceed:',
     '',
-    'Option 1: Renew. Keep your unit at the current monthly rate of AED @rate.',
+    'Option 1: Renew. Keep your unit and continue storing with us.',
     '@renewLink',
     '',
     'Option 2: Vacate. Clear the unit and return the key/access device by @endDate.',
