@@ -539,8 +539,18 @@ type AskRow = {
   reason: string
 }
 
+type AskStats = {
+  human: { count: number; medianMs: number; meanMs: number; p90Ms: number; slowestMs: number } | null
+  ai: { count: number; medianMs: number } | null
+  stillWaiting: number
+  threads: number
+  humanLabel: string | null
+  aiLabel: string | null
+}
+
 type AskResult = {
   intent?: string
+  stats?: AskStats
   rows: AskRow[]
   total: number
   unread?: number
@@ -551,8 +561,20 @@ type AskResult = {
   unreadable?: string | null
 }
 
+/** Durations as a person would say them, matching the server's wording. */
+function fmtMs(ms: number) {
+  const s = Math.round(ms / 1000)
+  if (s < 60) return `${s}s`
+  const m = Math.round(s / 60)
+  if (m < 60) return `${m}m`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h${m % 60 ? ` ${m % 60}m` : ''}`
+  const d = Math.floor(h / 24)
+  return `${d}d${h % 24 ? ` ${h % 24}h` : ''}`
+}
+
 /** The questions worth one tap, and the ones that cost nothing to answer. */
-const ASK_SUGGESTIONS = ['What did we miss?', 'Who went quiet?', 'Hot leads']
+const ASK_SUGGESTIONS = ['What did we miss?', 'Who went quiet?', 'Hot leads', 'Average reply time']
 
 /**
  * Ask a question of the whole inbox.
@@ -640,12 +662,55 @@ function InboxAsk({ onOpenChat }: { onOpenChat: (phone: string) => void }) {
             <>
               <div className="flex items-center gap-2 flex-wrap" style={{ color: FAINT_INK, fontSize: 11 }}>
                 <span style={{ fontWeight: 700, color: INK, fontSize: 12 }}>
-                  {data?.total ?? 0} {data?.total === 1 ? 'chat' : 'chats'}
+                  {data?.stats
+                    ? (data.stats.humanLabel ? `${data.stats.humanLabel} typical reply` : 'No replies to measure')
+                    : `${data?.total ?? 0} ${data?.total === 1 ? 'chat' : 'chats'}`}
                 </span>
                 {/* A question answered from the database should look free,
                     because it was. */}
                 <span>{data?.usedModel ? 'read by the assistant' : 'answered from your data'}</span>
               </div>
+
+              {/* Reply times are counted from the message timestamps, so the
+                  median is exact rather than a model's impression. Median
+                  leads because one message answered the next morning moves a
+                  mean and tells you nothing about a normal day. */}
+              {data?.stats && (
+                <div style={{ marginTop: 6, fontSize: 12, color: MUTED_INK }}>
+                  {data.stats.human ? (
+                    <>
+                      <p>
+                        <strong style={{ color: INK }}>{data.stats.humanLabel}</strong> is the median wait
+                        across {data.stats.human.count} {data.stats.human.count === 1 ? 'reply' : 'replies'}
+                        {data.days ? ` in the last ${data.days} days` : ''}.
+                      </p>
+                      <p style={{ fontSize: 11.5, color: FAINT_INK, marginTop: 2 }}>
+                        Average {fmtMs(data.stats.human.meanMs)} · 9 in 10 answered within{' '}
+                        {fmtMs(data.stats.human.p90Ms)} · slowest {fmtMs(data.stats.human.slowestMs)}
+                      </p>
+                      {/* Kept apart deliberately: the assistant answers in
+                          seconds, so folding it in would flatter the team and
+                          describe nobody. */}
+                      {data.stats.ai && (
+                        <p style={{ fontSize: 11.5, color: FAINT_INK, marginTop: 2 }}>
+                          The assistant answered {data.stats.ai.count} of these separately, median{' '}
+                          {data.stats.aiLabel}. Not counted above.
+                        </p>
+                      )}
+                      {!!data.stats.stillWaiting && (
+                        <p style={{ fontSize: 11.5, color: '#B45309', marginTop: 2 }}>
+                          {data.stats.stillWaiting} {data.stats.stillWaiting === 1 ? 'chat is' : 'chats are'} still
+                          waiting and answered nowhere in that figure.
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p style={{ color: FAINT_INK }}>
+                      No customer message has been answered yet in that period, so there is nothing to average.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* "Hot" is answered from summaries already made — never by
                   summarising the whole inbox behind one click. Saying how many

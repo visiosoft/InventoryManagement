@@ -23,7 +23,72 @@ import { WhatsAppMessage, ConversationSummary, Customer, Lead } from '../models/
 import { openaiConfigured, chatJson } from './openai.js';
 
 /** Every question this can answer. A model may only pick from these. */
-export const INTENTS = ['unanswered', 'quiet', 'hot', 'mentions', 'about'];
+export const INTENTS = ['unanswered', 'quiet', 'hot', 'mentions', 'about', 'stats'];
+
+/**
+ * How long a customer waited for an answer, thread by thread.
+ *
+ * Pairs the *first* message of a run with the reply that ended it. Someone who
+ * sends four messages in a row then gets one answer waited once, not four
+ * times; counting each would quietly quadruple the sample and drag the average
+ * toward zero.
+ *
+ * Assistant replies are marked rather than dropped. The bot answers in seconds,
+ * so mixing it with colleagues produces a number that flatters the team and
+ * describes nobody.
+ *
+ * Pure, and exported, because an average nobody can check is worse than no
+ * average at all.
+ */
+export function replyGaps(messages = []) {
+  const gaps = [];
+  let waitingSince = null;
+
+  for (const m of messages) {
+    if (m.deletedAt) continue;
+    if (m.direction === 'inbound') {
+      // Only the first of a run starts the clock.
+      if (waitingSince === null) waitingSince = new Date(m.occurredAt).getTime();
+      continue;
+    }
+    if (waitingSince !== null) {
+      const ms = new Date(m.occurredAt).getTime() - waitingSince;
+      // Clock skew and back-filled history can produce negatives; they are not
+      // fast replies and must not be averaged in as zero.
+      if (ms >= 0) gaps.push({ ms, byAi: Boolean(m.sentByAi) });
+      waitingSince = null;
+    }
+  }
+  return gaps;
+}
+
+/** Median matters more than mean here: one overnight gap moves a mean, not a median. */
+export function summariseGaps(gaps = []) {
+  if (!gaps.length) return null;
+  const ms = gaps.map((g) => g.ms).sort((a, b) => a - b);
+  const at = (q) => ms[Math.min(ms.length - 1, Math.floor(q * ms.length))];
+  return {
+    count: ms.length,
+    medianMs: ms.length % 2 ? ms[(ms.length - 1) / 2] : Math.round((ms[ms.length / 2 - 1] + ms[ms.length / 2]) / 2),
+    meanMs: Math.round(ms.reduce((s, v) => s + v, 0) / ms.length),
+    p90Ms: at(0.9),
+    fastestMs: ms[0],
+    slowestMs: ms[ms.length - 1],
+  };
+}
+
+/** "2d 3h", "1h 12m", "45s" — readable at a glance, no false precision. */
+export function humanDuration(ms) {
+  if (!Number.isFinite(ms)) return '—';
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h${m % 60 ? ` ${m % 60}m` : ''}`;
+  const d = Math.floor(h / 24);
+  return `${d}d${h % 24 ? ` ${h % 24}h` : ''}`;
+}
 
 export const DEFAULT_QUIET_DAYS = 3;
 const MAX_QUIET_DAYS = 120;
@@ -48,6 +113,19 @@ export function readQuestion(input) {
 
   const window = text.match(/(\d{1,3})\s*(day|week|month)/);
 
+  // How fast do we answer? Arithmetic on timestamps, so it never needs a model
+  // and never costs anything. Checked first because "no reply" phrasing below
+  // would otherwise capture it.
+  if (/\b(average|avg|mean|median|typical|how (fast|quick|long|soon))\b/.test(text)
+      && /\b(repl(y|ies)|response|respond|answer|turnaround|get back)\b/.test(text)) {
+    let days = 0;
+    if (window) {
+      const n = Number(window[1]);
+      days = window[2] === 'week' ? n * 7 : window[2] === 'month' ? n * 30 : n;
+    }
+    return { intent: 'stats', params: { days: Math.min(days, MAX_QUIET_DAYS) } };
+  }
+
   // A named period makes a question about staleness rather than about who is
   // owed an answer — "no reply in 10 days" is asking which threads went cold,
   // not which are unreplied right now. So the window is checked first.
@@ -63,8 +141,13 @@ export function readQuestion(input) {
     return { intent: 'quiet', params: { days: Math.min(Math.max(1, days), MAX_QUIET_DAYS) } };
   }
 
-  // "what did we miss", "who is waiting", "unanswered", "nobody replied"
-  if (/\b(miss(ed|ing)?|unanswered|unreplied|waiting|(nobody|no ?one|no-one)\s+(has\s+)?(repl|answer|respond)|no repl|not repl|never repl|need(s|ing)? (a )?repl|pending)/.test(text)) {
+  // "what did we miss", "who is waiting", "unanswered", "nobody replied",
+  // and the roundabout phrasings — "who has not had a reply", "never got an
+  // answer" — which are common enough to be worth answering for free rather
+  // than paying a model to recognise.
+  const negatedReply = /\b(not|never|yet to|n't)\b(?:\s+\w+){0,3}\s+(repl|answer|respond|heard|hear)/.test(text);
+  if (negatedReply
+    || /\b(miss(ed|ing)?|unanswered|unreplied|waiting|awaiting|(nobody|no ?one|no-one)\s+(has\s+)?(repl|answer|respond)|no repl|not repl|never repl|need(s|ing)? (a )?repl|pending)/.test(text)) {
     return { intent: 'unanswered', params: {} };
   }
 
@@ -91,6 +174,7 @@ const SYSTEM = [
   'hot = leads who seem ready to book.',
   'mentions = threads where someone mentioned a topic; put the topic in "text".',
   'about = questions about one named person or number; put the name or number in "text".',
+  'stats = how fast we reply, response times, turnaround. Put any period in "days".',
   'If the question fits none of these, still choose the closest and say why in "unreadable".',
 ].join('\n');
 
@@ -110,7 +194,11 @@ export function parseAsk(raw) {
   if ((raw.intent === 'mentions' || raw.intent === 'about') && !text) return null;
 
   const n = Number(raw.days);
-  const days = Number.isFinite(n) && n >= 1 ? Math.min(Math.round(n), MAX_QUIET_DAYS) : DEFAULT_QUIET_DAYS;
+  const days = Number.isFinite(n) && n >= 1
+    ? Math.min(Math.round(n), MAX_QUIET_DAYS)
+    // For stats, no stated period means all of it — not the three-day default
+    // that only makes sense for "gone quiet".
+    : (raw.intent === 'stats' ? 0 : DEFAULT_QUIET_DAYS);
 
   return {
     intent: raw.intent,
@@ -195,6 +283,50 @@ export async function runAsk({ intent, params = {} }) {
       reason,
     };
   };
+
+  if (intent === 'stats') {
+    const days = Number(params.days) || 0;
+    const since = days ? new Date(Date.now() - days * 86400000) : null;
+
+    const msgs = await WhatsAppMessage.find(since ? { occurredAt: { $gte: since } } : {})
+      .sort({ phoneNormalized: 1, occurredAt: 1 })
+      .select('phoneNormalized direction occurredAt sentByAi deletedAt')
+      .lean();
+
+    // Grouped by thread: a gap only means something within one conversation.
+    const byThread = new Map();
+    for (const m of msgs) {
+      if (!byThread.has(m.phoneNormalized)) byThread.set(m.phoneNormalized, []);
+      byThread.get(m.phoneNormalized).push(m);
+    }
+
+    const all = [];
+    for (const list of byThread.values()) all.push(...replyGaps(list));
+
+    const human = summariseGaps(all.filter((g) => !g.byAi));
+    const ai = summariseGaps(all.filter((g) => g.byAi));
+
+    // Named separately from the averages: a thread still waiting has no gap at
+    // all, so leaving it out of the sample without saying so would make the
+    // figures look better the more people we ignore.
+    const stillWaiting = threads.filter((t) => t.lastDirection === 'inbound').length;
+
+    return {
+      intent,
+      source: 'query',
+      days,
+      stats: {
+        human,
+        ai,
+        stillWaiting,
+        threads: byThread.size,
+        humanLabel: human ? humanDuration(human.medianMs) : null,
+        aiLabel: ai ? humanDuration(ai.medianMs) : null,
+      },
+      rows: [],
+      total: 0,
+    };
+  }
 
   if (intent === 'unanswered') {
     const rows = threads
