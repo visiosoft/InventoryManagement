@@ -6,9 +6,10 @@ import {
   Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Info, Paperclip,
   Bot, Tag, Check, ClipboardList, Sparkles,
 } from 'lucide-react'
-import { api, whatsappApi, leadApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel } from '../lib/api'
-import { convDisplayName, formatListTime, Avatar } from '../lib/whatsappDisplay'
-import { SlideOver, Field, Input, Textarea, Select } from '../components/ui'
+import { api, whatsappApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel } from '../lib/api'
+import { convDisplayName, formatListTime, isPlaceholderName, Avatar } from '../lib/whatsappDisplay'
+import { SlideOver, Modal, Field, Input, Textarea, Select } from '../components/ui'
+import { CustomerForm } from '../components/AddCustomerModal'
 import { useSeen, markSeen as markSeenShared, unreadFrom } from '../lib/whatsappSeen'
 import { cn } from '../lib/utils'
 
@@ -1091,11 +1092,29 @@ function LeadAction({ convo, onChanged }: { convo: WhatsAppConversation; onChang
     onError: (e) => { if ((e as Error).message !== 'cancelled') setErr(apiError(e)) },
   })
 
+  const [formOpen, setFormOpen] = useState(false)
+  const [result, setResult] = useState<{ created: boolean; filled?: string[]; customer: { _id: string; fullName: string } } | null>(null)
+
+  /**
+   * Saving used to convert straight through, which put the lead's generated
+   * name — "WhatsApp Contact 1368" — onto the customer record, where nobody
+   * went back to fix it. The form opens instead, prefilled with the number and
+   * with the name left blank when it is only a placeholder.
+   */
   const convert = useMutation({
-    mutationFn: () => leadApi.convertToCustomer(convo.lead!._id),
-    onSuccess: () => { setErr(''); onChanged() },
+    mutationFn: (body: Record<string, unknown>) =>
+      api.post(`/leads/${convo.lead!._id}/convert`, body).then((r) => r.data),
+    onSuccess: (d) => { setErr(''); setResult(d); onChanged() },
     onError: (e) => setErr(apiError(e)),
   })
+
+  const dialled = convo.phone || `+${convo.phoneNormalized}`
+  const leadName = convo.lead?.fullName
+  const initialCustomer = {
+    fullName: isPlaceholderName(leadName) ? '' : leadName,
+    phone: dialled,
+    phones: [dialled],
+  }
 
   const pill = 'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold cursor-pointer transition-colors disabled:opacity-60 disabled:cursor-not-allowed'
 
@@ -1127,13 +1146,60 @@ function LeadAction({ convo, onChanged }: { convo: WhatsAppConversation; onChang
             type="button"
             className={pill}
             style={{ background: '#5B2BC9', color: '#fff' }}
-            disabled={convert.isPending}
-            onClick={() => convert.mutate()}
+            onClick={() => { setResult(null); setErr(''); setFormOpen(true) }}
           >
-            <UserCheck size={13} /> {convert.isPending ? 'Saving…' : 'Save as customer'}
+            <UserCheck size={13} /> Save as customer
           </button>
         </>
       )}
+
+      <Modal
+        open={formOpen}
+        onClose={() => { setFormOpen(false); setResult(null) }}
+        title={result ? 'Saved' : 'New customer'}
+      >
+        {result ? (
+          <div className="space-y-4 text-sm">
+            <p>
+              {result.created
+                ? <>Created <strong>{result.customer.fullName}</strong>.</>
+                : <>This number already belonged to <strong>{result.customer.fullName}</strong>, so the lead was linked to them instead of creating a second record.</>}
+            </p>
+            {/* Never silently discard what was just typed. */}
+            {!result.created && !!result.filled?.length && (
+              <p className="text-muted-foreground text-xs">
+                Filled in the blanks on that record: {result.filled.join(', ')}. Details already
+                there were left as they were.
+              </p>
+            )}
+            <div className="flex justify-end gap-2">
+              <Link
+                to={`/customers/${result.customer._id}`}
+                className="rounded-full px-4 py-2 text-white cursor-pointer"
+                style={{ background: '#5B2BC9', fontSize: 13, fontWeight: 700 }}
+              >
+                Open customer
+              </Link>
+              <button
+                type="button"
+                onClick={() => { setFormOpen(false); setResult(null) }}
+                className="rounded-full px-4 py-2 cursor-pointer"
+                style={{ border: '1px solid rgba(20,8,31,.16)', fontSize: 13, fontWeight: 700 }}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        ) : (
+          <CustomerForm
+            initial={initialCustomer}
+            busy={convert.isPending}
+            error={err}
+            submitLabel="Save customer"
+            onSubmit={(body) => convert.mutate(body as Record<string, unknown>)}
+          />
+        )}
+      </Modal>
     </div>
   )
 }

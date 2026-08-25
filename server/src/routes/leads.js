@@ -240,18 +240,53 @@ router.post('/:id/convert', async (req, res) => {
         ],
     });
 
+    // Details typed on the conversion form, when there were any. A lead created
+    // from an inbound WhatsApp message is named "WhatsApp Contact 1368", and
+    // converting that straight through put the placeholder on the customer
+    // record, where it stayed.
+    const given = req.body && typeof req.body === 'object' ? req.body : {};
+    const FIELDS = [
+        'fullName', 'clientId', 'tenantType', 'email', 'nationality', 'company',
+        'address', 'emergencyNumber', 'emiratesId', 'eidExpiry', 'passportNumber',
+        'passportExpiry', 'notes', 'accessPersons',
+    ];
+    const supplied = {};
+    for (const f of FIELDS) {
+        const v = given[f];
+        if (v === undefined || v === null || v === '') continue;
+        if (Array.isArray(v) && !v.length) continue;
+        supplied[f] = v;
+    }
+    const suppliedPhones = Array.isArray(given.phones) ? given.phones.filter(Boolean) : [];
+
     if (existingCustomer) {
+        // Fill the blanks on the record that already exists rather than
+        // overwriting details somebody checked, and never discard what was just
+        // typed without saying where it went.
+        const filled = [];
+        for (const [k, v] of Object.entries(supplied)) {
+            const current = existingCustomer[k];
+            const empty = current === undefined || current === null || current === ''
+                || (Array.isArray(current) && !current.length);
+            if (empty) { existingCustomer[k] = v; filled.push(k); }
+        }
+        for (const p of suppliedPhones) {
+            if (!(existingCustomer.phones || []).includes(p)) existingCustomer.phones.push(p);
+        }
+        if (filled.length || suppliedPhones.length) await existingCustomer.save();
+
         lead.status = 'won';
         lead.timeline.push({ type: 'converted', text: 'Lead converted to existing customer.', user: req.user.id });
         await lead.save();
         return res.json({
             ok: true,
             created: false,
+            filled,
             customer: existingCustomer,
         });
     }
 
-    const customerPhones = Array.from(new Set(phoneCandidates));
+    const customerPhones = Array.from(new Set([...suppliedPhones, ...phoneCandidates]));
 
     const customer = await Customer.create({
         fullName: lead.fullName,
@@ -263,6 +298,9 @@ router.post('/:id/convert', async (req, res) => {
         address: '',
         emergencyNumber: '',
         tenantType: 'individual',
+        // Applied last so a typed name beats the lead's placeholder.
+        ...supplied,
+        ...(suppliedPhones.length ? { phone: suppliedPhones[0] } : {}),
     });
 
     lead.status = 'won';

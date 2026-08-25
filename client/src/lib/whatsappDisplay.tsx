@@ -15,6 +15,9 @@ function formatClock(iso: string) {
  *  "WhatsApp Contact 4797", which is not a name — the number is more useful,
  *  so it is filtered here too in case an older payload arrives without the
  *  resolved field. */
+/** A generated stand-in rather than a name somebody gave us. */
+export const isPlaceholderName = (n?: string) => !n || /^whatsapp\s*contact/i.test(n.trim())
+
 export function convDisplayName(c: {
   displayName?: string
   customer?: { fullName?: string } | null
@@ -22,7 +25,7 @@ export function convDisplayName(c: {
   phone?: string
   phoneNormalized: string
 }) {
-  const placeholder = (n?: string) => !n || /^whatsapp\s*contact/i.test(n.trim())
+  const placeholder = isPlaceholderName
   if (c.displayName && !placeholder(c.displayName)) return c.displayName
   if (c.customer?.fullName) return c.customer.fullName
   if (!placeholder(c.lead?.fullName)) return c.lead!.fullName!
