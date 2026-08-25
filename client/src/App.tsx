@@ -60,6 +60,7 @@ import UpcomingVacanciesReport from './pages/reports/UpcomingVacanciesReport'
 import OverduePaymentsReport from './pages/reports/OverduePaymentsReport'
 import ExpiringContractsReport from './pages/reports/ExpiringContractsReport'
 import IncomeAnalysis from './pages/reports/IncomeAnalysis'
+import DailyDigest from './pages/DailyDigest'
 import Settings from './pages/Settings'
 import MessageTemplates from './pages/MessageTemplates'
 import WhatsAppDebug from './pages/WhatsAppDebug'
@@ -216,6 +217,7 @@ export default function App() {
         <Route path="/reports/overdue" element={<PermGuard module="reports_overdue"><OverduePaymentsReport /></PermGuard>} />
         <Route path="/reports/expiring" element={<PermGuard module="reports_expiring"><ExpiringContractsReport /></PermGuard>} />
         <Route path="/reports/income" element={<PermGuard module="reports_finances"><IncomeAnalysis /></PermGuard>} />
+        <Route path="/reports/conversations" element={<PermGuard module="reports_conversations"><DailyDigest /></PermGuard>} />
         <Route path="/approvals" element={<AdminGuard><Approvals /></AdminGuard>} />
         <Route path="/users" element={<AdminGuard><UserManagement /></AdminGuard>} />
         <Route path="/sales-team" element={<AdminGuard><SalesTeam /></AdminGuard>} />

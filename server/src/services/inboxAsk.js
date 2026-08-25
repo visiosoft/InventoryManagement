@@ -234,7 +234,7 @@ async function newestPerThread() {
  * Matched on the last nine digits because numbers are stored inconsistently,
  * the same rule the conversations list and the Zoho matcher both use.
  */
-async function resolveNames(phones) {
+export async function resolveNames(phones) {
   const [customers, leads] = await Promise.all([
     Customer.find({}).select('fullName phone phones').lean(),
     Lead.find({ phoneNormalized: { $in: phones } }).select('fullName phoneNormalized status').lean(),

@@ -58,6 +58,7 @@ const MODULE_GROUPS = [
       { key: 'reports_vacancies', label: 'Upcoming Vacancies' },
       { key: 'reports_overdue',   label: 'Overdue Payments' },
       { key: 'reports_expiring',  label: 'Expiring Contracts' },
+      { key: 'reports_conversations', label: 'Daily Conversations' },
     ],
   },
   {

@@ -92,6 +92,7 @@ const reportItems = [
   { to: '/reports/overdue', label: 'Overdue Payments', icon: AlertTriangle, perm: 'reports_overdue' },
   { to: '/reports/expiring', label: 'Expiring Contracts', icon: Clock, perm: 'reports_expiring' },
   { to: '/reports/income', label: 'Income Analysis', icon: TrendingUp, perm: 'reports_finances' },
+  { to: '/reports/conversations', label: 'Daily Conversations', icon: MessageCircle, perm: 'reports_conversations' },
 ]
 
 const navBottom: { to: string; label: string; icon: any; perm: string | string[] }[] = []

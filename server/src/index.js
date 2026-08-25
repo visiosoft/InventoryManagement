@@ -67,6 +67,7 @@ import { startBackupScheduler } from './services/backup.js';
 import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
 import { runAiBotTick, getAiBotConfig } from './services/aiBot.js';
 import { summariseRecent } from './services/conversationSummary.js';
+import { ensureDigest, dayKeyFor, previousDay, localHour } from './services/dailyDigest.js';
 import { runCampaignTick } from './services/campaignSender.js';
 import { inspectWhatsAppToken } from './services/whatsapp.js';
 import { runAutomationRules, getAutoSend } from './services/automationEngine.js';
@@ -334,6 +335,20 @@ async function start() {
     summaryTick().catch((e) => console.error('[Summaries]', e.message));
     setInterval(() => summaryTick().catch((e) => console.error('[Summaries]', e.message)), SUMMARY_INTERVAL);
   }, 45_000);
+
+  // Yesterday's conversations, built once each morning. Same shape as the
+  // backup scheduler: a minute tick, a fixed local hour, and a stored row that
+  // makes it idempotent — a restart at 08:30 cannot produce a second digest,
+  // because the day is unique and ensureDigest returns the one already there.
+  const DIGEST_HOUR = Number(process.env.DIGEST_HOUR ?? 8);
+  setInterval(async () => {
+    try {
+      if (localHour() !== DIGEST_HOUR) return;
+      await ensureDigest(previousDay(dayKeyFor()));
+    } catch (e) {
+      console.error('[Digest]', e.message);
+    }
+  }, 60_000);
 }
 
 start().catch((err) => {

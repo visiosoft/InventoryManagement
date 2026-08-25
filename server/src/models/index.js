@@ -11,7 +11,7 @@ const ALL_MODULES = [
   // for someone who already had it.
   'whatsapp',
   'reports_monthly', 'reports_units', 'reports_finances', 'reports_forecast', 'reports_contracts',
-  'reports_vacancies', 'reports_overdue', 'reports_expiring',
+  'reports_vacancies', 'reports_overdue', 'reports_expiring', 'reports_conversations',
   'settings',
   // Moving business
   'moving_dashboard', 'moving_leads', 'moving_jobs', 'moving_workers',
@@ -1473,6 +1473,20 @@ const conversationSummarySchema = new Schema({
 }, { timestamps: true });
 
 export const ConversationSummary = model('ConversationSummary', conversationSummarySchema);
+
+/* One day's conversations, as read that morning.
+
+   Stored rather than recomputed per page load so the report stops changing: a
+   digest that reworded itself each time it was opened would not be a record of
+   the day, and two people discussing it would be reading different things. */
+const dailyDigestSchema = new Schema({
+  day: { type: String, required: true, unique: true },   // 'YYYY-MM-DD', local
+  builtAt: { type: Date, default: Date.now },
+  stats: { type: Schema.Types.Mixed, default: null },
+  chats: { type: [Schema.Types.Mixed], default: [] },
+}, { timestamps: true });
+
+export const DailyDigest = model('DailyDigest', dailyDigestSchema);
 
 export const AiBotConfig = model('AiBotConfig', aiBotConfigSchema);
 export const AiBotThread = model('AiBotThread', aiBotThreadSchema);

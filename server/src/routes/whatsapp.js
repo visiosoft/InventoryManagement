@@ -6,6 +6,8 @@ import { pauseBotForHuman } from '../services/aiBot.js';
 import multer from 'multer';
 import { createLeadFromWhatsAppPhone } from '../services/whatsappLeadSync.js';
 import { summariseConversation, summariseRecent } from '../services/conversationSummary.js';
+import { ensureDigest, dayKeyFor, previousDay } from '../services/dailyDigest.js';
+import { DailyDigest } from '../models/index.js';
 import { askInbox } from '../services/inboxAsk.js';
 
 const router = Router();
@@ -243,6 +245,47 @@ router.get('/conversations', async (_req, res) => {
 // webhook sync, so this is the manual path for numbers that don't have one yet
 // (e.g. a thread we started outbound). Idempotent — returns the existing lead
 // rather than creating a duplicate.
+/* ── Daily digest ─────────────────────────────────────────────────────────
+   One day's conversations as read that morning. Declared before /:phone routes
+   so "digest" is never taken for a phone number. */
+
+const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
+
+// Which days have been built, newest first.
+router.get('/digest/days', async (_req, res) => {
+    try {
+        const days = await DailyDigest.find().sort({ day: -1 }).select('day builtAt stats').limit(90).lean();
+        res.json({ days, today: dayKeyFor(), yesterday: previousDay(dayKeyFor()) });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.get('/digest/:day', async (req, res) => {
+    try {
+        const day = String(req.params.day || '');
+        if (!DAY_KEY.test(day)) return res.status(400).json({ error: 'Expected a day as YYYY-MM-DD' });
+        const stored = await DailyDigest.findOne({ day }).lean();
+        // Never built rather than nothing happened — the page says which.
+        if (!stored) return res.json({ day, built: false, stats: null, chats: [] });
+        res.json({ ...stored, built: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Build on demand, so today can be read before tomorrow morning.
+router.post('/digest/:day/build', async (req, res) => {
+    try {
+        const day = String(req.params.day || '');
+        if (!DAY_KEY.test(day)) return res.status(400).json({ error: 'Expected a day as YYYY-MM-DD' });
+        const out = await ensureDigest(day, { rebuild: req.query.rebuild === '1' });
+        res.json({ ...out, built: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 /**
  * Read every conversation that moved in the last couple of days.
  *
