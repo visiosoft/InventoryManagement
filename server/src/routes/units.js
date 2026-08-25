@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { leasedPrice } from '../services/rateRealisation.js';
 import { Unit, Contract } from '../models/index.js';
 import { siteScope } from '../utils/siteScope.js';
 
@@ -23,7 +24,11 @@ router.get('/pricing-matrix', async (req, res) => {
       Unit.find().sort({ floor: 1, unitNumber: 1 }).lean(),
       Contract.find({ status: { $in: ['active', 'pending_signature'] } })
         .populate('customer', 'fullName')
-        .select('contractNo customer unit units rate leasedPrice firstMonthDiscountPct status')
+        .populate('unit', 'price')
+        .populate('units', 'price')
+        // billingPeriod was missing, so the page could not tell a weekly rate
+        // from a monthly one and compared both against a monthly asking price.
+        .select('contractNo customer unit units rate leasedPrice firstMonthDiscountPct billingPeriod status')
         .lean(),
     ]);
 
@@ -38,8 +43,12 @@ router.get('/pricing-matrix', async (req, res) => {
             contractNo: c.contractNo,
             customerName: c.customer?.fullName || '',
             rate: c.rate ?? null,
-            leasedPrice: c.leasedPrice ?? null,
+            // Resolved on the server so the pricing screen and the rates
+            // report cannot drift apart, and so a weekly contract is compared
+            // as a month rather than as a week.
+            leasedPrice: leasedPrice(c),
             firstMonthDiscountPct: c.firstMonthDiscountPct ?? 0,
+            billingPeriod: c.billingPeriod ?? 'monthly',
             status: c.status,
           });
         }

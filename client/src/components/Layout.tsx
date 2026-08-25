@@ -85,6 +85,7 @@ const profileMenuItems = profileMenuGroups.flatMap((g) => g.items)
 const reportItems = [
   { to: '/reports/monthly', label: 'Monthly Payments', icon: CalendarClock, perm: 'reports_monthly' },
   { to: '/reports/units', label: 'Unit Revenue', icon: Building2, perm: 'reports_units' },
+  { to: '/reports/rates', label: 'Actual vs Leased', icon: Wallet, perm: 'reports_units' },
   { to: '/reports/finances', label: 'Finances', icon: Wallet, perm: 'reports_finances' },
   { to: '/reports/forecast', label: 'Forecast', icon: TrendingUp, perm: 'reports_forecast' },
   { to: '/reports/contracts', label: 'Contracts', icon: BarChart3, perm: 'reports_contracts' },

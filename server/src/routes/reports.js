@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { Unit, Contract, Payment, Expense } from '../models/index.js';
 import { siteScope } from '../utils/siteScope.js';
+import { realisationRow, totals, byFloor, monthlyRate } from '../services/rateRealisation.js';
 
 const router = Router();
 
@@ -462,6 +463,49 @@ router.get('/expenses-breakdown', async (req, res) => {
 });
 
 // ── NEW: Payment forecast for upcoming months from active contracts ─────────────
+// Actual (asking) price against what each unit is really leased for, for one
+// month. Same derivation as the pricing screen, so the two cannot disagree.
+router.get('/rates', async (req, res) => {
+  try {
+    const monthISO = /^\d{4}-\d{2}$/.test(String(req.query.month || ''))
+      ? String(req.query.month)
+      : new Date().toISOString().slice(0, 7);
+    const [y, m] = monthISO.split('-').map(Number);
+    const monthStart = new Date(Date.UTC(y, m - 1, 1));
+    const monthEnd = new Date(Date.UTC(y, m, 1));
+
+    const scope = await siteScope(req.query.site);
+    const cF = scope ? scope.contractFilter : {};
+
+    // Ended contracts still count for the months they actually ran.
+    const contracts = await Contract.find({ ...cF, status: { $in: ['active', 'pending_signature', 'ended'] } })
+      .populate('customer', 'fullName')
+      .populate('unit', 'unitNumber floor sizeSqf price')
+      .populate('units', 'unitNumber floor sizeSqf price')
+      .lean();
+
+    const running = contracts.filter((c) => {
+      const st = new Date(c.startDate);
+      const en = new Date(c.endDate);
+      return st < monthEnd && en > monthStart;
+    });
+
+    const rows = running.map(realisationRow)
+      // Biggest discount first: that is the list worth acting on.
+      .sort((a, b) => (b.discountPct ?? -Infinity) - (a.discountPct ?? -Infinity));
+
+    res.json({
+      month: monthISO,
+      label: monthStart.toLocaleString('en', { month: 'long', year: 'numeric', timeZone: 'UTC' }),
+      totals: totals(rows),
+      floors: byFloor(rows),
+      rows,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.get('/forecast', async (req, res) => {
   const months = Math.min(Number(req.query.months) || 6, 12);
   const now = new Date();
@@ -500,7 +544,9 @@ router.get('/forecast', async (req, res) => {
       const e = new Date(c.endDate);
       return s < me && e > ms;
     });
-    const expected = Math.round(active.reduce((s, c) => s + (Number(c.rate) || 0), 0) * 100) / 100;
+    // monthlyRate, not c.rate: a weekly contract stores a weekly figure, and
+    // summing that as a month understated it roughly fourfold.
+    const expected = Math.round(active.reduce((s, c) => s + monthlyRate(c), 0) * 100) / 100;
 
     // Actual for past/current months
     const hit = historicalAgg.find((a) => a._id.y === ms.getFullYear() && a._id.m === ms.getMonth() + 1);
