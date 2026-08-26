@@ -1181,7 +1181,9 @@ function LeadAction({ convo, onChanged }: { convo: WhatsAppConversation; onChang
           type="button"
           className={pill}
           style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', color: '#4A1FA0' }}
-          onClick={() => { setErr(''); setLeadForm({ fullName: '', email: '', owner: '', notes: '' }) }}
+          // Prefilled with their WhatsApp profile name: it is almost always
+          // right, and retyping a name we already have is busywork.
+          onClick={() => { setErr(''); setLeadForm({ fullName: convo.lead?.profileName || '', email: '', owner: '', notes: '' }) }}
         >
           <UserPlus size={13} /> Save as lead
         </button>

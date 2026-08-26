@@ -178,6 +178,14 @@ const leadSchema = new Schema(
     /* Extra facts that do not replace the status: what they want, how urgent,
        whether they have gone quiet. */
     tags: { type: [String], default: [] },
+    /* The name they have set on their own WhatsApp profile.
+     *
+     * Kept apart from fullName, which is what somebody here decided to call
+     * them. This is theirs, it can change whenever they change it, and it is
+     * only ever a fallback for display — but it beats "WhatsApp Contact 7057"
+     * for every chat nobody has got round to saving. */
+    whatsappProfileName: { type: String, default: '' },
+
     /* What makes Follow-Up Scheduled actionable rather than a note to self. */
     followUpAt: { type: Date, default: null },
     /* How precisely the date was meant. "Call them in March" is a real answer

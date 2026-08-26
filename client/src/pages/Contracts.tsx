@@ -219,7 +219,7 @@ export default function Contracts() {
   const canNext = page < totalPages
 
   return (
-    <div style={{ background: PAGE_BG, fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", color: INK }}>
+    <div style={{ background: PAGE_BG, fontFamily: "'Manrope', system-ui, sans-serif", color: INK }}>
       <style>{CSS}</style>
 
       <div style={{ maxWidth: 1360, margin: '0 auto' }}>

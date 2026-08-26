@@ -270,7 +270,7 @@ export default function PersonProfile() {
   const timeline = [...(lead?.timeline ?? [])].reverse()
 
   return (
-    <div style={{ background: PAGE, fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", color: INK }}>
+    <div style={{ background: PAGE, fontFamily: "'Manrope', system-ui, sans-serif", color: INK }}>
       <button
         onClick={() => navigate(-1)}
         className="inline-flex items-center justify-center cursor-pointer"

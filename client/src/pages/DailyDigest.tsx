@@ -189,7 +189,7 @@ export default function DailyDigest() {
   const s = data?.stats
 
   return (
-    <div className="space-y-4" style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }}>
+    <div className="space-y-4" style={{ fontFamily: "'Manrope', system-ui, sans-serif" }}>
       <PageHeader
         title="Daily conversations"
         subtitle="What was said with every client, ordered so the ones needing attention come first"

@@ -929,7 +929,7 @@ export default function Leads() {
     // page with p-3 sm:p-4, and 32px on top of a 1240px cap left most of a wide
     // screen empty.
     return (
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20, minHeight: '100vh', paddingBottom: 24, background: '#FBF8F2', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20, minHeight: '100vh', paddingBottom: 24, background: '#FBF8F2', fontFamily: "'Manrope', system-ui, sans-serif" }}>
             <div style={{ flex: 1, minWidth: 0 }}>
 
                 <div>

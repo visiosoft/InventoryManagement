@@ -270,7 +270,12 @@ export type WhatsAppMsg = {
 }
 
 /** ownerName is '' when nobody has been given the lead yet. */
-export type WhatsAppLeadRef = { _id: string; fullName: string; status: string; ownerName?: string }
+export type WhatsAppLeadRef = {
+  _id: string; fullName: string; status: string
+  ownerName?: string
+  /** The name they set on their own WhatsApp profile, if we have seen one. */
+  profileName?: string
+}
 
 /** A named tag a person puts on a conversation, as in the WhatsApp Business app. */
 export type WhatsAppLabel = {

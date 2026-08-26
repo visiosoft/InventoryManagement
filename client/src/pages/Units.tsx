@@ -13,7 +13,7 @@ import { Badge, Card, EmptyState, Spinner, Table, Td, Th, statusLabel, unitStatu
 import { compareUnitNumbers, formatDate, formatMoney } from '../lib/utils'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', serif", letterSpacing: '-0.02em' } as const
-const FONT = "'Plus Jakarta Sans', system-ui, sans-serif"
+const FONT = "'Manrope', system-ui, sans-serif"
 const PAGE = '#FBF8F2'
 const INK = '#14081F'
 const MUTED = '#756E80'

@@ -173,7 +173,7 @@ export default function RatesReport() {
     ]
 
   return (
-    <div style={{ background: PAPER, fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", color: INK }}>
+    <div style={{ background: PAPER, fontFamily: "'Manrope', system-ui, sans-serif", color: INK }}>
       <div style={{ maxWidth: 1280, margin: '0 auto' }}>
 
         <div className="flex justify-between items-end flex-wrap" style={{ gap: 20 }}>

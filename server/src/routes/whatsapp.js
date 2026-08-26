@@ -199,7 +199,7 @@ router.get('/conversations', async (_req, res) => {
                 localField: 'leadId',
                 foreignField: '_id',
                 as: 'lead',
-                pipeline: [{ $project: { fullName: 1, status: 1, owner: 1 } }],
+                pipeline: [{ $project: { fullName: 1, status: 1, owner: 1, whatsappProfileName: 1 } }],
             },
         },
     ]);
@@ -258,12 +258,14 @@ router.get('/conversations', async (_req, res) => {
                     fullName: lead.fullName,
                     status: lead.status,
                     ownerName: byOwner.get(String(lead.owner)) || '',
+                    profileName: lead.whatsappProfileName || '',
                 }
                 : null,
             customer: customer ? { _id: customer._id, fullName: customer.fullName } : null,
-            // What the inbox should show: a real name if we hold one,
-            // otherwise the number itself — never a placeholder.
-            displayName: customer?.fullName || leadName || (r.phone || r._id),
+            // What the inbox should show: a name somebody here decided on
+            // first, then the name they set on their own WhatsApp profile,
+            // and only then the number. Never the placeholder.
+            displayName: customer?.fullName || leadName || lead?.whatsappProfileName || (r.phone || r._id),
             labels: byLabels.get(r._id) || [],
             botStatus: bot?.status || '',
             botDraft: bot?.draftText || '',

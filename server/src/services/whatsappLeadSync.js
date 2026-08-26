@@ -195,6 +195,16 @@ export function extractMessagesFromPayload(payload) {
 
             const messages = Array.isArray(value?.messages) ? value.messages : [];
 
+            // Meta sends the sender's own profile name beside the messages,
+            // keyed by number. It is the only name we get for somebody nobody
+            // here has saved, and it was being thrown away.
+            const profileNames = new Map();
+            for (const c of Array.isArray(value?.contacts) ? value.contacts : []) {
+                const key = normalizeLeadPhone(c?.wa_id || '');
+                const name = String(c?.profile?.name || '').trim();
+                if (key && name) profileNames.set(key, name);
+            }
+
             for (const msg of [...messages, ...echoes]) {
                 const text = msg?.text?.body || '';
                 const messageId = msg?.id || '';
@@ -232,6 +242,8 @@ export function extractMessagesFromPayload(payload) {
                     targetMessageId: target,
                     status: outbound ? 'sent' : '',
                     occurredAt: Number.isNaN(ts.getTime()) ? new Date() : ts,
+                    // Only for inbound: on an echo the contact is us.
+                    profileName: outbound ? '' : (profileNames.get(phoneNormalized) || ''),
                     raw: msg,
                 });
             }
@@ -266,12 +278,13 @@ async function getDefaultOwnerId() {
     return admin?._id || null;
 }
 
-export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, status = 'new', timelineText, fullName, ownerId: ownerOverride }) {
+export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, status = 'new', timelineText, fullName, ownerId: ownerOverride, profileName = '' }) {
     const ownerId = ownerOverride || await getDefaultOwnerId();
     if (!ownerId) return null;
 
     const lead = await Lead.create({
         fullName: String(fullName || '').trim() || `WhatsApp Contact ${phoneNormalized.slice(-4)}`,
+        whatsappProfileName: String(profileName || '').trim(),
         email: '',
         phone: phone || phoneNormalized,
         phoneNormalized,
@@ -342,7 +355,12 @@ async function persistMessages(messages) {
                 phoneNormalized: msg.phoneNormalized,
                 status: 'new',
                 timelineText: 'Lead auto-created from inbound WhatsApp chat',
+                profileName: msg.profileName,
             });
+        } else if (lead && msg.profileName && lead.whatsappProfileName !== msg.profileName) {
+            // People rename themselves. Kept current, and never allowed to
+            // overwrite a name somebody here typed.
+            await Lead.updateOne({ _id: lead._id }, { $set: { whatsappProfileName: msg.profileName } });
         }
 
         await WhatsAppMessage.create({
