@@ -164,8 +164,9 @@ export default function RatesReport() {
       { label: 'Annual variance (12mo)', value: aed(Math.abs(annualVariance)), sub: annualVariance >= 0 ? 'Above asking, 12mo total' : 'Below asking, 12mo total', filled: true },
     ]
     : [
-      // A run rate, not a forecast — nothing here knows about future lettings.
-      { label: 'Annual run rate', value: aed((t?.leased ?? 0) * 12), sub: `${data?.label ?? ''} leased × 12 months` },
+      // Asking price × 12: what the space would earn a year at full occupancy
+      // and no discount. A ceiling to measure against, not a forecast.
+      { label: 'Annual run rate', value: aed((t?.actualAll ?? 0) * 12), sub: `${data?.label ?? ''} asking × 12 months` },
       { label: 'Monthly asking', value: aed(t?.actualAll ?? 0), sub: `Across all ${t?.units ?? 0} units` },
       { label: 'Monthly leased', value: aed(t?.leased ?? 0), sub: `${t?.leasedUnits ?? 0} of ${t?.units ?? 0} units under lease`, filled: true },
     ]
