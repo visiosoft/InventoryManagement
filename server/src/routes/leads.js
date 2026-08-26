@@ -77,6 +77,21 @@ router.get('/', async (req, res) => {
     if (req.query.owner) filter.owner = String(req.query.owner);
     if (isSalesRep(req)) filter.owner = req.user.id;
 
+    /* Leads nobody made.
+     *
+     * Every inbound WhatsApp conversation creates a Lead so the messages have
+     * something to hang off, named "WhatsApp Contact 7057". They are
+     * bookkeeping, and there are hundreds of them — enough to bury the leads
+     * somebody actually decided to work.
+     *
+     * So the list shows named leads by default. Nothing is deleted or hidden
+     * for good: ?includeUnsaved=1 returns them, and the WhatsApp contacts view
+     * on the same page has always listed them.
+     */
+    if (req.query.includeUnsaved !== '1') {
+        filter.fullName = { $not: /^whatsapp\s*contact/i };
+    }
+
     const from = parseDate(req.query.from);
     const to = parseDate(req.query.to);
     if (from || to) {
