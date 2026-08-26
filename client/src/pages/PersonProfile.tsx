@@ -445,6 +445,134 @@ export default function PersonProfile() {
             )}
           </Card>
 
+          {/* When we next deal with this person, kept beside who they are
+              rather than buried among the pipeline controls. Only ever shows
+              the date the stage in play is actually about. */}
+          {lead && (shownStage === 'follow_up_scheduled' || shownStage === 'site_visit_scheduled' || lead.followUpAt || lead.siteVisitAt) && (
+            <Card title="Follow-up">
+              <div className="flex flex-col" style={{ gap: 16 }}>
+                  {/* The pickers belong to the stage that is about following
+                      up; anywhere else they are a control nobody is looking for.
+
+                      A lead that already has a date keeps a line saying so even
+                      after it moves on, because the reminder is still live and
+                      hiding it outright left a task on somebody's board that
+                      could not be reached from here. */}
+                  {shownStage !== 'follow_up_scheduled' && lead.followUpAt && shownStage !== 'won' && shownStage !== 'lost' && (
+                    <div style={{ minWidth: 0 }}>
+                      <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Follow-up</span>
+                      <div className="flex items-center justify-between" style={{ gap: 8, padding: '9px 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff' }}>
+                        <span style={{ fontSize: 13, fontWeight: 600 }}>{formatDate(dueDay)}</span>
+                        <button
+                          type="button"
+                          onClick={() => patchLead.mutate({ followUpAt: null })}
+                          disabled={patchLead.isPending}
+                          className="cursor-pointer disabled:opacity-50"
+                          style={{ background: 'none', border: 'none', color: FAINT, fontSize: 12.5, fontWeight: 600 }}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* A viewing is a fixed appointment: one date, no week or
+                      month about it, and nobody arranges one for "some time in
+                      March". Setting it puts a task on the owner's board for
+                      that day. */}
+                  {shownStage === 'site_visit_scheduled' && (
+                    <div style={{ minWidth: 0 }}>
+                      <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Coming in on</span>
+                      <input
+                        type="date"
+                        value={lead.siteVisitAt ? String(lead.siteVisitAt).slice(0, 10) : ''}
+                        onChange={(e) => patchLead.mutate({ siteVisitAt: e.target.value || null })}
+                        style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK, boxSizing: 'border-box' }}
+                      />
+                      <p style={{ fontSize: 12.5, color: FAINT, marginTop: 6 }}>
+                        {!lead.siteVisitAt
+                          ? 'Pick the day and it goes on the board.'
+                          : lead.owner
+                            ? `Site visit on ${lead.owner.name}'s board for ${formatDate(String(lead.siteVisitAt).slice(0, 10))}.`
+                            : 'Assign this lead to somebody and the visit will be put on their board.'}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Still shown once the stage moves on, because the visit is
+                      booked and its task is live — the same reason the follow-up
+                      keeps a line of its own. */}
+                  {shownStage !== 'site_visit_scheduled' && lead.siteVisitAt && shownStage !== 'won' && shownStage !== 'lost' && (
+                    <div style={{ minWidth: 0 }}>
+                      <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Site visit</span>
+                      <div className="flex items-center justify-between" style={{ gap: 8, padding: '9px 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff' }}>
+                        <span style={{ fontSize: 13, fontWeight: 600 }}>{formatDate(String(lead.siteVisitAt).slice(0, 10))}</span>
+                        <button
+                          type="button"
+                          onClick={() => patchLead.mutate({ siteVisitAt: null })}
+                          disabled={patchLead.isPending}
+                          className="cursor-pointer disabled:opacity-50"
+                          style={{ background: 'none', border: 'none', color: FAINT, fontSize: 12.5, fontWeight: 600 }}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {shownStage === 'follow_up_scheduled' && (
+                    <div style={{ minWidth: 0 }}>
+                      <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Follow-up</span>
+
+                      {/* "Call them in March" is a real answer, and pinning it to
+                          an invented day in March fires early or late. The kind
+                          says how precisely the date was meant: a week is raised
+                          on its Monday, a month on its first. */}
+                      <div className="grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6, marginBottom: 10 }}>
+                        {FOLLOW_UP_KINDS.map((k) => {
+                          const on = (lead.followUpKind || 'date') === k.value
+                          return (
+                            <button
+                              key={k.value}
+                              type="button"
+                              onClick={() => patchLead.mutate({ followUpKind: k.value })}
+                              className="cursor-pointer"
+                              style={{
+                                height: 38, borderRadius: 10, fontSize: 12, fontWeight: 700, fontFamily: 'inherit',
+                                padding: '0 4px', minWidth: 0, whiteSpace: 'nowrap',
+                                border: `1.5px solid ${on ? PURPLE : LINE_STRONG}`,
+                                background: on ? PURPLE_50 : '#fff',
+                                color: on ? DEEP : INK_2,
+                              }}
+                            >
+                              {k.label}
+                            </button>
+                          )
+                        })}
+                      </div>
+
+                      <input
+                        type="date"
+                        value={lead.followUpAt ? String(lead.followUpAt).slice(0, 10) : ''}
+                        onChange={(e) => patchLead.mutate({ followUpAt: e.target.value || null })}
+                        style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK, boxSizing: 'border-box' }}
+                      />
+
+                      {/* Say exactly where the reminder lands, so a week or a
+                          month is never a guess about what the system will do. */}
+                      {lead.followUpAt && (
+                        <p style={{ fontSize: 12.5, color: FAINT, marginTop: 6 }}>
+                          {lead.owner
+                            ? `Task on ${lead.owner.name}'s board, due ${formatDate(dueDay)}.`
+                            : 'Assign this lead to somebody and a task will be raised for them.'}
+                        </p>
+                      )}
+                    </div>
+                  )}
+              </div>
+            </Card>
+          )}
+
           {lead?.notes && (
             <Card title="Notes">
               <p style={{ fontSize: 14, color: INK_2, whiteSpace: 'pre-wrap' }}>{lead.notes}</p>
@@ -567,125 +695,6 @@ export default function PersonProfile() {
                     })}
                   </div>
                 </div>
-
-                {/* The pickers belong to the stage that is about following
-                    up; anywhere else they are a control nobody is looking for.
-
-                    A lead that already has a date keeps a line saying so even
-                    after it moves on, because the reminder is still live and
-                    hiding it outright left a task on somebody's board that
-                    could not be reached from here. */}
-                {shownStage !== 'follow_up_scheduled' && lead.followUpAt && shownStage !== 'won' && shownStage !== 'lost' && (
-                  <div style={{ minWidth: 0 }}>
-                    <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Follow-up</span>
-                    <div className="flex items-center justify-between" style={{ gap: 8, padding: '9px 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff' }}>
-                      <span style={{ fontSize: 13, fontWeight: 600 }}>{formatDate(dueDay)}</span>
-                      <button
-                        type="button"
-                        onClick={() => patchLead.mutate({ followUpAt: null })}
-                        disabled={patchLead.isPending}
-                        className="cursor-pointer disabled:opacity-50"
-                        style={{ background: 'none', border: 'none', color: FAINT, fontSize: 12.5, fontWeight: 600 }}
-                      >
-                        Clear
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* A viewing is a fixed appointment: one date, no week or
-                    month about it, and nobody arranges one for "some time in
-                    March". Setting it puts a task on the owner's board for
-                    that day. */}
-                {shownStage === 'site_visit_scheduled' && (
-                  <div style={{ minWidth: 0 }}>
-                    <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Coming in on</span>
-                    <input
-                      type="date"
-                      value={lead.siteVisitAt ? String(lead.siteVisitAt).slice(0, 10) : ''}
-                      onChange={(e) => patchLead.mutate({ siteVisitAt: e.target.value || null })}
-                      style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK, boxSizing: 'border-box' }}
-                    />
-                    <p style={{ fontSize: 12.5, color: FAINT, marginTop: 6 }}>
-                      {!lead.siteVisitAt
-                        ? 'Pick the day and it goes on the board.'
-                        : lead.owner
-                          ? `Site visit on ${lead.owner.name}'s board for ${formatDate(String(lead.siteVisitAt).slice(0, 10))}.`
-                          : 'Assign this lead to somebody and the visit will be put on their board.'}
-                    </p>
-                  </div>
-                )}
-
-                {/* Still shown once the stage moves on, because the visit is
-                    booked and its task is live — the same reason the follow-up
-                    keeps a line of its own. */}
-                {shownStage !== 'site_visit_scheduled' && lead.siteVisitAt && shownStage !== 'won' && shownStage !== 'lost' && (
-                  <div style={{ minWidth: 0 }}>
-                    <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Site visit</span>
-                    <div className="flex items-center justify-between" style={{ gap: 8, padding: '9px 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff' }}>
-                      <span style={{ fontSize: 13, fontWeight: 600 }}>{formatDate(String(lead.siteVisitAt).slice(0, 10))}</span>
-                      <button
-                        type="button"
-                        onClick={() => patchLead.mutate({ siteVisitAt: null })}
-                        disabled={patchLead.isPending}
-                        className="cursor-pointer disabled:opacity-50"
-                        style={{ background: 'none', border: 'none', color: FAINT, fontSize: 12.5, fontWeight: 600 }}
-                      >
-                        Clear
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {shownStage === 'follow_up_scheduled' && (
-                  <div style={{ minWidth: 0 }}>
-                    <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Follow-up</span>
-
-                    {/* "Call them in March" is a real answer, and pinning it to
-                        an invented day in March fires early or late. The kind
-                        says how precisely the date was meant: a week is raised
-                        on its Monday, a month on its first. */}
-                    <div className="grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6, marginBottom: 10 }}>
-                      {FOLLOW_UP_KINDS.map((k) => {
-                        const on = (lead.followUpKind || 'date') === k.value
-                        return (
-                          <button
-                            key={k.value}
-                            type="button"
-                            onClick={() => patchLead.mutate({ followUpKind: k.value })}
-                            className="cursor-pointer"
-                            style={{
-                              height: 38, borderRadius: 10, fontSize: 12, fontWeight: 700, fontFamily: 'inherit',
-                              padding: '0 4px', minWidth: 0, whiteSpace: 'nowrap',
-                              border: `1.5px solid ${on ? PURPLE : LINE_STRONG}`,
-                              background: on ? PURPLE_50 : '#fff',
-                              color: on ? DEEP : INK_2,
-                            }}
-                          >
-                            {k.label}
-                          </button>
-                        )
-                      })}
-                    </div>
-
-                    <input
-                      type="date"
-                      value={lead.followUpAt ? String(lead.followUpAt).slice(0, 10) : ''}
-                      onChange={(e) => patchLead.mutate({ followUpAt: e.target.value || null })}
-                      style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK, boxSizing: 'border-box' }}
-                    />
-
-                    {/* Say exactly where the reminder lands, so a week or a
-                        month is never a guess about what the system will do. */}
-                    {lead.followUpAt && (
-                      <p style={{ fontSize: 12.5, color: FAINT, marginTop: 6 }}>
-                        {lead.owner
-                          ? `Task on ${lead.owner.name}'s board, due ${formatDate(dueDay)}.`
-                          : 'Assign this lead to somebody and a task will be raised for them.'}
-                      </p>
-                    )}
-                  </div>
-                )}
 
                 {/* Moving a stage is the moment somebody knows why. Asking
                     here — rather than leaving them to write it separately — is
