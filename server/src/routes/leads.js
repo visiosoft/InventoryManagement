@@ -92,7 +92,11 @@ router.get('/', async (req, res) => {
     if (req.query.source && ALLOWED_SOURCE.has(String(req.query.source))) {
         filter.source = String(req.query.source);
     }
-    if (req.query.owner) filter.owner = String(req.query.owner);
+    // 'unassigned' is a real answer to "whose is this?", and the workload rail
+    // asks it. Without this it fell through to matching an owner literally
+    // named unassigned, which is to say nothing at all.
+    if (req.query.owner === 'unassigned') filter.owner = null;
+    else if (req.query.owner) filter.owner = String(req.query.owner);
     if (isSalesRep(req)) filter.owner = req.user.id;
 
     /* Leads nobody made.
@@ -154,6 +158,53 @@ router.get('/', async (req, res) => {
  *
  * Reps see only their own, enforced here the same way the list is.
  */
+/**
+ * Counts for the whole set, not just the page being looked at.
+ *
+ * The tabs used to count the twenty-five rows on screen, so "New 3" meant
+ * three on this page rather than three leads. Same arithmetic drives the
+ * workload rail, which is only worth reading if it covers everybody.
+ *
+ * Scoped exactly as the list is — a rep's numbers are their own leads — and
+ * placeholder WhatsApp names are left out on the same terms, or the rail would
+ * report hundreds of contacts nobody has decided to work.
+ */
+router.get('/stats', async (req, res) => {
+    try {
+        const filter = {};
+        if (isSalesRep(req)) filter.owner = req.user.id;
+        if (req.query.includeUnsaved !== '1') filter.fullName = { $not: /^whatsapp\s*contact/i };
+
+        const [byStatus, byOwner, total] = await Promise.all([
+            Lead.aggregate([{ $match: filter }, { $group: { _id: '$status', n: { $sum: 1 } } }]),
+            Lead.aggregate([{ $match: filter }, { $group: { _id: '$owner', n: { $sum: 1 } } }]),
+            Lead.countDocuments(filter),
+        ]);
+
+        const ownerIds = byOwner.map((r) => r._id).filter(Boolean);
+        const users = ownerIds.length
+            ? await User.find({ _id: { $in: ownerIds } }).select('name email').lean()
+            : [];
+        const nameOf = new Map(users.map((u) => [String(u._id), u.name || u.email || 'Someone']));
+
+        res.json({
+            total,
+            byStatus: Object.fromEntries(byStatus.map((r) => [r._id || 'new', r.n])),
+            // A lead whose owner has since been deleted counts as unassigned:
+            // there is nobody to chase it, which is what the rail is asking.
+            unassigned: byOwner
+                .filter((r) => !r._id || !nameOf.has(String(r._id)))
+                .reduce((sum, r) => sum + r.n, 0),
+            byOwner: byOwner
+                .filter((r) => r._id && nameOf.has(String(r._id)))
+                .map((r) => ({ _id: String(r._id), name: nameOf.get(String(r._id)), count: r.n }))
+                .sort((a, b) => b.count - a.count),
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 /**
  * Raise the reminders that are due, now, rather than waiting for the morning.
  *
