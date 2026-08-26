@@ -133,13 +133,27 @@ router.put('/conversations/:phoneNormalized/labels', async (req, res) => {
 });
 
 router.get('/messages', async (req, res) => {
-    const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
     const phone = String(req.query.phone || '').trim();
     const q = {};
 
     if (phone) {
         q.phoneNormalized = phone.replace(/\D/g, '');
     }
+
+    /* One conversation comes back whole.
+     *
+     * The limit defaulted to 100 for both cases, so opening a chat with more
+     * than a hundred messages silently dropped its oldest ones. The history was
+     * in the database the whole time — it was simply never sent. A single
+     * thread is naturally bounded, so it gets a ceiling high enough not to bite
+     * rather than a page size.
+     *
+     * The whole-inbox feed keeps a small one: it drives unread counts and the
+     * ping, and does not need every message ever sent to do that.
+     */
+    const limit = phone
+        ? Math.min(Math.max(Number(req.query.limit) || 2000, 1), 5000)
+        : Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
 
     const messages = await WhatsAppMessage.find(q)
         .populate('lead', 'fullName phone status source')
