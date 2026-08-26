@@ -266,6 +266,9 @@ export default function PersonProfile() {
     ? `${lead.storageSizeValue} ${lead.storageSizeUnit || 'sqft'}${(lead.unitsNeeded ?? 1) > 1 ? ` · ${lead.unitsNeeded} units` : ''}`
     : ''
 
+  // The stage as chosen, not as stored: picking another one should take its
+  // fields away immediately, rather than after the change is saved.
+  const shownStage = pendingStage || lead?.status || ''
   const dueDay = reminderDay(lead?.followUpAt, lead?.followUpKind)
   const urgency = dueDay ? followUpUrgency(dueDay) : null
   // Newest first: what happened last is what somebody picking this up reads.
@@ -537,7 +540,7 @@ export default function PersonProfile() {
                     after it moves on, because the reminder is still live and
                     hiding it outright left a task on somebody's board that
                     could not be reached from here. */}
-                {lead.status !== 'follow_up_scheduled' && lead.followUpAt && lead.status !== 'won' && lead.status !== 'lost' && (
+                {shownStage !== 'follow_up_scheduled' && lead.followUpAt && shownStage !== 'won' && shownStage !== 'lost' && (
                   <div style={{ minWidth: 0 }}>
                     <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Follow-up</span>
                     <div className="flex items-center justify-between" style={{ gap: 8, padding: '9px 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff' }}>
@@ -555,7 +558,7 @@ export default function PersonProfile() {
                   </div>
                 )}
 
-                {lead.status === 'follow_up_scheduled' && (
+                {shownStage === 'follow_up_scheduled' && (
                   <div style={{ minWidth: 0 }}>
                     <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Follow-up</span>
 
