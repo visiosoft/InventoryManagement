@@ -134,6 +134,9 @@ const salesRepNavGroups = [
     title: 'Moving',
     items: [
       { key: 'moving-schedule', to: '/moving/schedule', label: 'Moving Schedule', icon: CalendarDays, perm: 'moving_schedule' },
+      // Gated on moving_jobs rather than sales_board, so it appears only for
+      // whoever is given it — accounts today, not every rep by default.
+      { key: 'moving-jobs', to: '/moving/jobs', label: 'Jobs List', icon: ClipboardList, perm: 'moving_jobs' },
       { key: 'moving-estimator', to: '/moving-estimator', label: 'Moving Estimator', icon: Calculator, perm: 'sales_board' },
     ],
   },
