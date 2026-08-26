@@ -145,6 +145,7 @@ export const leadStatusTone: Record<string, string> = {
   new: 'blue',
   contact_attempted: 'amber',
   contacted: 'purple',
+  site_visit_scheduled: 'blue',
   follow_up_scheduled: 'amber',
   quotation_sent: 'gray',
   won: 'green',
@@ -157,6 +158,7 @@ export const LEAD_STATUS_FLOW = [
   { value: 'new', label: 'New Lead', meaning: 'Profile created, no contact attempt recorded', next: 'Contact the lead' },
   { value: 'contact_attempted', label: 'Contact Attempted', meaning: 'Call or message sent, no conversation yet', next: 'Schedule another attempt' },
   { value: 'contacted', label: 'Contacted', meaning: 'Two-way communication has happened', next: 'Qualify motivation, requirements and timing' },
+  { value: 'site_visit_scheduled', label: 'Site Visit Scheduled', meaning: 'Coming in to see the place', next: 'Set the day they are coming' },
   { value: 'follow_up_scheduled', label: 'Follow-Up Scheduled', meaning: 'Interested, action needed later', next: 'Set the follow-up date' },
   { value: 'quotation_sent', label: 'Quotation Sent', meaning: 'Formal quotation issued', next: 'Follow up on the quotation' },
   { value: 'won', label: 'Customer / Won', meaning: 'Quotation accepted', next: 'Create the customer and begin onboarding' },
@@ -186,6 +188,7 @@ export const LEAD_TAGS = [
 const NAMED_STATUSES: Record<string, string> = {
   new: 'New Lead',
   contact_attempted: 'Contact Attempted',
+  site_visit_scheduled: 'Site Visit Scheduled',
   follow_up_scheduled: 'Follow-Up Scheduled',
   quotation_sent: 'Quotation Sent',
   won: 'Customer / Won',

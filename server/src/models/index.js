@@ -167,7 +167,7 @@ const leadSchema = new Schema(
       /* One primary status at a time — the CRM buckets.
          'won' and 'lost' keep their keys because the sales targets count them
          and renaming would silently zero everyone's figures. */
-      enum: ['new', 'contact_attempted', 'contacted', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost'],
+      enum: ['new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost'],
       default: 'new',
     },
     /* How warm they are, kept apart from the status.
@@ -190,6 +190,14 @@ const leadSchema = new Schema(
     /* The task standing for this follow-up. Held so that moving the date moves
        the task rather than leaving the old one behind and adding another. */
     followUpTaskId: { type: Schema.Types.ObjectId, ref: 'Task', default: null },
+    /* When they are coming to see the place.
+
+       Its own date rather than a reuse of followUpAt: a lead can be booked in
+       for Thursday and still be chased next month, and collapsing the two
+       would lose whichever was set second. Always an exact day — nobody
+       arranges a viewing for "some time in March". */
+    siteVisitAt: { type: Date, default: null },
+    siteVisitTaskId: { type: Schema.Types.ObjectId, ref: 'Task', default: null },
     source: {
       type: String,
       enum: ['manual', 'whatsapp', 'referral', 'walk_in', 'other'],
@@ -252,7 +260,7 @@ const whatsappLabelStateSchema = new Schema(
     labels: { type: [String], default: [] },
     mappedStatus: {
       type: String,
-      enum: ['', 'new', 'contact_attempted', 'contacted', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost'],
+      enum: ['', 'new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost'],
       default: '',
     },
     lastEventKey: { type: String, default: '' },

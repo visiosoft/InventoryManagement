@@ -832,6 +832,7 @@ const STORAGE_STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
   contacted: { bg: '#E0F2FE', fg: '#0369A1' },
   qualified: { bg: '#F3E8FF', fg: '#7C3AED' },
   contact_attempted: { bg: '#FEF3C7', fg: '#B45309' },
+  site_visit_scheduled: { bg: '#DBEAFE', fg: '#1D4ED8' },
   follow_up_scheduled: { bg: '#FFEDD5', fg: '#C2410C' },
   quotation_sent: { bg: '#F3E8FF', fg: '#7C3AED' },
   won: { bg: '#D1FAE5', fg: '#065F46' },

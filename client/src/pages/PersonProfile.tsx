@@ -72,6 +72,7 @@ type Lead = {
   followUpAt?: string | null
   followUpKind?: 'date' | 'week' | 'month'
   followUpNotifiedAt?: string | null
+  siteVisitAt?: string | null
   storageSizeValue?: number
   storageSizeUnit?: string
   unitsNeeded?: number
@@ -99,6 +100,7 @@ const STATUS_TONE: Record<string, { bg: string; fg: string }> = {
   new: { bg: PURPLE_50, fg: DEEP },
   contact_attempted: { bg: '#FEF3C7', fg: '#92400E' },
   contacted: { bg: PURPLE_100, fg: DEEP },
+  site_visit_scheduled: { bg: 'rgba(37,99,235,.08)', fg: '#2563EB' },
   follow_up_scheduled: { bg: 'rgba(217,119,6,.09)', fg: WARM },
   quotation_sent: { bg: CREAM_2, fg: INK_2 },
   won: { bg: 'rgba(22,163,74,.09)', fg: '#16A34A' },
@@ -548,6 +550,50 @@ export default function PersonProfile() {
                       <button
                         type="button"
                         onClick={() => patchLead.mutate({ followUpAt: null })}
+                        disabled={patchLead.isPending}
+                        className="cursor-pointer disabled:opacity-50"
+                        style={{ background: 'none', border: 'none', color: FAINT, fontSize: 12.5, fontWeight: 600 }}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* A viewing is a fixed appointment: one date, no week or
+                    month about it, and nobody arranges one for "some time in
+                    March". Setting it puts a task on the owner's board for
+                    that day. */}
+                {shownStage === 'site_visit_scheduled' && (
+                  <div style={{ minWidth: 0 }}>
+                    <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Coming in on</span>
+                    <input
+                      type="date"
+                      value={lead.siteVisitAt ? String(lead.siteVisitAt).slice(0, 10) : ''}
+                      onChange={(e) => patchLead.mutate({ siteVisitAt: e.target.value || null })}
+                      style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK, boxSizing: 'border-box' }}
+                    />
+                    <p style={{ fontSize: 12.5, color: FAINT, marginTop: 6 }}>
+                      {!lead.siteVisitAt
+                        ? 'Pick the day and it goes on the board.'
+                        : lead.owner
+                          ? `Site visit on ${lead.owner.name}'s board for ${formatDate(String(lead.siteVisitAt).slice(0, 10))}.`
+                          : 'Assign this lead to somebody and the visit will be put on their board.'}
+                    </p>
+                  </div>
+                )}
+
+                {/* Still shown once the stage moves on, because the visit is
+                    booked and its task is live — the same reason the follow-up
+                    keeps a line of its own. */}
+                {shownStage !== 'site_visit_scheduled' && lead.siteVisitAt && shownStage !== 'won' && shownStage !== 'lost' && (
+                  <div style={{ minWidth: 0 }}>
+                    <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Site visit</span>
+                    <div className="flex items-center justify-between" style={{ gap: 8, padding: '9px 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff' }}>
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{formatDate(String(lead.siteVisitAt).slice(0, 10))}</span>
+                      <button
+                        type="button"
+                        onClick={() => patchLead.mutate({ siteVisitAt: null })}
                         disabled={patchLead.isPending}
                         className="cursor-pointer disabled:opacity-50"
                         style={{ background: 'none', border: 'none', color: FAINT, fontSize: 12.5, fontWeight: 600 }}

@@ -110,6 +110,53 @@ function maxDay(a, b) {
 }
 
 /**
+ * The same arrangement for a site visit.
+ *
+ * A viewing is a fixed appointment, so there is no week or month about it and
+ * no reminder rule to apply — the task is simply due on the day they are
+ * coming.
+ */
+export async function syncSiteVisitTask(lead) {
+  const existing = lead.siteVisitTaskId ? await Task.findById(lead.siteVisitTaskId) : null;
+
+  if (!lead.siteVisitAt || !lead.owner || lead.status === 'won' || lead.status === 'lost') {
+    if (existing && existing.status === 'todo') await existing.deleteOne();
+    lead.siteVisitTaskId = null;
+    return null;
+  }
+
+  const name = lead.fullName || lead.phone || 'this lead';
+  const day = dayKeyFor(lead.siteVisitAt);
+  const fields = {
+    title: `Site visit — ${name}`,
+    description: `Coming to see the place on ${day}.${lead.notes ? ` Notes: ${String(lead.notes).slice(0, 1000)}` : ''}`,
+    assignedTo: lead.owner,
+    leadId: lead._id,
+    leadType: 'storage',
+    leadName: name,
+    dueDate: dayRange(day).from,
+    // Somebody is turning up in person: that outranks a call to make.
+    priority: 'high',
+    status: 'todo',
+    createdByName: 'Site visit',
+  };
+
+  // Somebody already picked the task up or finished it. Leave their work alone
+  // and let the next change start a fresh one.
+  if (existing && existing.status !== 'todo') {
+    lead.siteVisitTaskId = null;
+  } else if (existing) {
+    Object.assign(existing, fields);
+    await existing.save();
+    return existing;
+  }
+
+  const task = await Task.create(fields);
+  lead.siteVisitTaskId = task._id;
+  return task;
+}
+
+/**
  * Keep the lead's follow-up task in step with the follow-up itself.
  *
  * Called whenever the date or its kind changes, so the task exists from the

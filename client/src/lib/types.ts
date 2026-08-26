@@ -53,7 +53,7 @@ export interface Customer {
   createdAt?: string
 }
 
-export type LeadStatus = 'new' | 'contact_attempted' | 'contacted' | 'follow_up_scheduled' | 'quotation_sent' | 'won' | 'lost'
+export type LeadStatus = 'new' | 'contact_attempted' | 'contacted' | 'site_visit_scheduled' | 'follow_up_scheduled' | 'quotation_sent' | 'won' | 'lost'
 export type LeadTemperature = '' | 'hot' | 'warm' | 'cold'
 export type LeadSource = 'manual' | 'whatsapp' | 'referral' | 'walk_in' | 'other'
 export type DurationUnit = 'week' | 'month'
@@ -82,6 +82,7 @@ export interface Lead {
   tags?: string[]
   followUpAt?: string | null
   followUpKind?: 'date' | 'week' | 'month'
+  siteVisitAt?: string | null
   _id: string
   firstName?: string
   lastName?: string

@@ -7,6 +7,7 @@ const DEFAULT_STATUS_BY_LABEL = {
     'new customer': 'contacted',
     // A WhatsApp label saying follow-up is exactly the CRM's own bucket.
     followup: 'follow_up_scheduled',
+    'site visit': 'site_visit_scheduled',
     lost: 'lost',
     won: 'won',
 };
@@ -15,12 +16,15 @@ const LABEL_ALIASES = {
     leads: 'lead',
     follow_up: 'followup',
     'follow up': 'followup',
+    sitevisit: 'site visit',
+    site_visit: 'site visit',
+    visit: 'site visit',
     'new_customer': 'new customer',
 };
 
 const LABEL_PRIORITY = ['lost', 'won', 'followup', 'new customer', 'lead'];
 
-const ALLOWED_LEAD_STATUS = new Set(['new', 'contact_attempted', 'contacted', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost']);
+const ALLOWED_LEAD_STATUS = new Set(['new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost']);
 
 function readStatusMapFromEnv() {
     const raw = process.env.WHATSAPP_LABEL_STATUS_MAP;

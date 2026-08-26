@@ -1,12 +1,12 @@
 import { Router } from 'express';
 import mongoose from 'mongoose';
 import { Customer, Contract, Document, Lead, Task, User, WhatsAppMessage } from '../models/index.js';
-import { FOLLOW_UP_KINDS, runFollowUps, syncFollowUpTask } from '../services/followUps.js';
+import { FOLLOW_UP_KINDS, runFollowUps, syncFollowUpTask, syncSiteVisitTask } from '../services/followUps.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 
 const router = Router();
 
-const ALLOWED_STATUS = new Set(['new', 'contact_attempted', 'contacted', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost']);
+const ALLOWED_STATUS = new Set(['new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost']);
 const ALLOWED_TEMPERATURE = new Set(['', 'hot', 'warm', 'cold']);
 
 /* Tags add detail without replacing the status. Fixed rather than free text so
@@ -66,6 +66,7 @@ function cleanBody(body) {
         tags: Array.isArray(body.tags) ? [...new Set(body.tags.map(String).filter((t) => ALLOWED_TAGS.has(t)))] : [],
         followUpAt: body.followUpAt ? parseDate(body.followUpAt) : null,
         followUpKind: FOLLOW_UP_KINDS.includes(body.followUpKind) ? body.followUpKind : 'date',
+        siteVisitAt: body.siteVisitAt ? parseDate(body.siteVisitAt) : null,
     };
 }
 
@@ -410,12 +411,14 @@ router.put('/:id', async (req, res) => {
     }
     lead.followUpAt = body.followUpAt;
     lead.followUpKind = body.followUpKind;
+    lead.siteVisitAt = body.siteVisitAt;
     const userName = req.user.name || req.user.email || 'user';
     lead.timeline.push({ type: 'updated', text: `Lead updated by ${userName}`, user: req.user.id });
 
-    // The task stands for the follow-up from the moment it is scheduled, so
-    // the rep can see what is coming rather than being told on the day.
+    // Both tasks stand for their dates from the moment they are set, so the
+    // rep can see what is coming rather than being told on the day.
     await syncFollowUpTask(lead);
+    await syncSiteVisitTask(lead);
 
     await lead.save();
     res.json(await lead.populate('owner', 'name email'));
@@ -465,9 +468,10 @@ router.patch('/:id/status', async (req, res) => {
         }
     }
 
-    // Won or lost ends the chasing, so the standing follow-up task goes with
-    // it rather than sitting on somebody's board for a closed lead.
+    // Won or lost ends the chasing, so the standing tasks go with it rather
+    // than sitting on somebody's board for a closed lead.
     await syncFollowUpTask(lead);
+    await syncSiteVisitTask(lead);
 
     await lead.save();
 

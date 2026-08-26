@@ -13,7 +13,7 @@ const INK = '#14081F'
 const MUTED_COLOR = '#756E80'
 const PURPLE = '#5B2BC9'
 
-const LEAD_STATUSES: LeadStatus[] = ['new', 'contact_attempted', 'contacted', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost']
+const LEAD_STATUSES: LeadStatus[] = ['new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost']
 const LEAD_SOURCES: LeadSource[] = ['manual', 'whatsapp', 'referral', 'walk_in', 'other']
 
 // Quick one-click forward moves through the pipeline, plus a Lost/Reopen
@@ -25,6 +25,13 @@ const STATUS_TRANSITIONS: Record<LeadStatus, { label: string; value: LeadStatus 
     new: [{ label: 'Contact attempted', value: 'contact_attempted' }, { label: 'Mark Lost', value: 'lost' }],
     contact_attempted: [{ label: 'Got through', value: 'contacted' }, { label: 'Mark Lost', value: 'lost' }],
     contacted: [
+        { label: 'Book site visit', value: 'site_visit_scheduled' },
+        { label: 'Schedule follow-up', value: 'follow_up_scheduled' },
+        { label: 'Quotation sent', value: 'quotation_sent' },
+        { label: 'Mark Lost', value: 'lost' },
+    ],
+    // A viewing is followed up on, which is the whole point of arranging one.
+    site_visit_scheduled: [
         { label: 'Schedule follow-up', value: 'follow_up_scheduled' },
         { label: 'Quotation sent', value: 'quotation_sent' },
         { label: 'Mark Lost', value: 'lost' },
@@ -1112,6 +1119,7 @@ export default function Leads() {
         new: { bg: '#E8F9EE', fg: '#0F7A3D' },
         contacted: { bg: '#E0F2FE', fg: '#0369A1' },
         contact_attempted: { bg: '#FEF3C7', fg: '#B45309' },
+        site_visit_scheduled: { bg: '#DBEAFE', fg: '#1D4ED8' },
         follow_up_scheduled: { bg: '#FFEDD5', fg: '#C2410C' },
         quotation_sent: { bg: '#F3E8FF', fg: '#7C3AED' },
         won: { bg: '#D1FAE5', fg: '#065F46' },
