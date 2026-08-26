@@ -5,9 +5,8 @@ import { ChevronDown, ChevronLeft, ChevronRight, ExternalLink, MessageCircle, Ph
 import { api, apiError, leadApi } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { Lead, MovingLead, MovingLeadStatus } from '../lib/types'
-import { SlideOver, Spinner } from '../components/ui'
+import { Spinner } from '../components/ui'
 import { formatDate } from '../lib/utils'
-import { LeadDetailPanel } from './Leads'
 import {
   type TaskItem, type AssignableUser,
   KANBAN_COLUMNS, KanbanBoard, KanbanCard, KanbanColumn, TaskDetailModal, groupTasksByDue,
@@ -881,7 +880,6 @@ export default function SalesBoard() {
   const qc = useQueryClient()
   const [statusFilter, setStatusFilter] = useState('')
   const [showAllLeads, setShowAllLeads] = useState(false)
-  const [viewingLead, setViewingLead] = useState<Lead | null>(null)
 
   const { data: storagePage, isLoading: storageLoading } = useQuery({
     queryKey: ['my-leads-storage'],
@@ -928,7 +926,8 @@ export default function SalesBoard() {
       statusColor: STORAGE_STATUS_COLORS[l.status] || STORAGE_STATUS_COLORS.new,
       addedAt: l.leadDateTime,
       unseen: !l.ownerSeenAt,
-      onOpen: () => { markSeen(l); setViewingLead(l) },
+      href: `/leads/${l._id}`,
+      onOpen: () => markSeen(l),
       canConvert: l.status !== 'won' && l.status !== 'lost',
       convertLabel: 'Convert to Customer',
       convert: () => convertStorage.mutate(l._id),
@@ -1074,10 +1073,10 @@ export default function SalesBoard() {
                           style={{ display: 'inline-block', width: 7, height: 7, borderRadius: 999, background: PURPLE, marginRight: 8, verticalAlign: 'middle' }}
                         />
                       )}
-                      {r.onOpen ? (
-                        <button type="button" onClick={r.onOpen} style={{ fontSize: 14, fontWeight: 600, color: PURPLE, background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }} className="hover:opacity-80 transition-opacity">{r.name}</button>
+                      {r.href ? (
+                        <Link to={r.href} onClick={r.onOpen} style={{ fontSize: 14, fontWeight: 600, color: PURPLE }} className="hover:opacity-80 transition-opacity">{r.name}</Link>
                       ) : (
-                        <Link to={r.href!} style={{ fontSize: 14, fontWeight: 600, color: PURPLE }} className="hover:opacity-80 transition-opacity">{r.name}</Link>
+                        <button type="button" onClick={r.onOpen} style={{ fontSize: 14, fontWeight: 600, color: PURPLE, background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }} className="hover:opacity-80 transition-opacity">{r.name}</button>
                       )}
                     </td>
                     <td style={{ padding: '14px 16px', fontSize: 13, color: MUTED, fontVariantNumeric: 'tabular-nums' }}>{r.phone}</td>
@@ -1136,16 +1135,6 @@ export default function SalesBoard() {
       <UnitAvailabilityStrip />
 
       <GoalsSection />
-
-      <SlideOver
-        open={!isAccounts && !!viewingLead}
-        side="left"
-        title={viewingLead?.fullName || 'Lead details'}
-        subtitle={viewingLead?.phone}
-        onClose={() => { setViewingLead(null); qc.invalidateQueries({ queryKey: ['my-leads-storage'] }) }}
-      >
-        {viewingLead && <LeadDetailPanel lead={viewingLead} />}
-      </SlideOver>
     </div>
   )
 }

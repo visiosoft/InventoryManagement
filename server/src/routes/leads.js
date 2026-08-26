@@ -396,10 +396,18 @@ router.patch('/:id/status', async (req, res) => {
     if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
 
     lead.status = status;
-    lead.timeline.push({ type: 'status_changed', text: `Status changed to ${status}`, user: req.user.id });
 
+    // The note belongs to the change, not beside it. Two timeline rows for one
+    // action read as two things happening, and their order was decided by
+    // insertion rather than by what actually came first.
     const comment = String(req.body?.comment || '').trim();
-    if (comment) lead.timeline.push({ type: 'comment', text: comment, user: req.user.id });
+    lead.timeline.push({
+        type: 'status_changed',
+        text: comment
+            ? `Status changed to ${status} — ${comment.slice(0, 2000)}`
+            : `Status changed to ${status}`,
+        user: req.user.id,
+    });
 
     await lead.save();
 

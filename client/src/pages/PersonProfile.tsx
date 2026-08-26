@@ -84,6 +84,9 @@ export default function PersonProfile() {
   const [err, setErr] = useState('')
   const [tab, setTab] = useState<'activity' | 'status' | 'chat'>('activity')
   const [note, setNote] = useState('')
+  // A stage picked but not yet committed, and the note going with it.
+  const [pendingStage, setPendingStage] = useState('')
+  const [stageNote, setStageNote] = useState('')
 
   const { data, isLoading } = useQuery<Profile>({
     queryKey: ['person', id],
@@ -102,8 +105,9 @@ export default function PersonProfile() {
   const refresh = () => qc.invalidateQueries({ queryKey: ['person', id] })
 
   const setStatus = useMutation({
-    mutationFn: (status: string) => api.patch(`/leads/${data!.lead!._id}/status`, { status }),
-    onSuccess: () => { setErr(''); refresh() },
+    mutationFn: ({ status, comment }: { status: string; comment?: string }) =>
+      api.patch(`/leads/${data!.lead!._id}/status`, { status, comment }),
+    onSuccess: () => { setErr(''); setPendingStage(''); setStageNote(''); refresh() },
     onError: (e) => setErr(apiError(e)),
   })
 
@@ -347,18 +351,66 @@ export default function PersonProfile() {
                 <div>
                   <p style={{ fontSize: 11.5, color: FAINT, marginBottom: 4 }}>Stage</p>
                   <select
-                    value={lead.status}
-                    onChange={(e) => setStatus.mutate(e.target.value)}
+                    value={pendingStage || lead.status}
+                    onChange={(e) => {
+                      const next = e.target.value
+                      // Same stage again is not a change worth recording.
+                      if (next === lead.status) { setPendingStage(''); setStageNote(''); return }
+                      setPendingStage(next)
+                    }}
                     disabled={setStatus.isPending}
                     style={{ width: '100%', height: 38, borderRadius: 10, border: `1px solid ${LINE}`, background: '#fff', padding: '0 10px', fontSize: 13, color: INK }}
                   >
                     {LEAD_STATUS_FLOW.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                   </select>
-                  {/* What the stage means somebody should do next, so the
-                      status is an instruction rather than a label. */}
-                  <p style={{ fontSize: 11.5, color: FAINT, marginTop: 4 }}>
-                    {LEAD_STATUS_FLOW.find((s) => s.value === lead.status)?.next}
-                  </p>
+
+                  {/* Moving a stage is the moment somebody knows why. Asking
+                      here — rather than leaving them to write it separately —
+                      is the difference between a timeline that reads as an
+                      account and one that reads as a list of state changes.
+                      The note goes with the change in one request, so a stage
+                      cannot land without it. */}
+                  {pendingStage ? (
+                    <div style={{ marginTop: 8, borderRadius: 10, border: `1px solid ${LINE}`, background: '#FBF8F2', padding: 10 }}>
+                      <p style={{ fontSize: 11.5, color: FAINT, marginBottom: 6 }}>
+                        Moving to <b style={{ color: INK }}>{LEAD_STATUS_FLOW.find((s) => s.value === pendingStage)?.label}</b> — what happened?
+                      </p>
+                      <textarea
+                        value={stageNote}
+                        onChange={(e) => setStageNote(e.target.value)}
+                        rows={2}
+                        autoFocus
+                        placeholder={pendingStage === 'lost' ? 'Why did this one go? (worth recording)' : 'Optional — called, no answer…'}
+                        style={{ width: '100%', borderRadius: 8, border: `1px solid ${LINE}`, background: '#fff', padding: '8px 10px', fontSize: 13, color: INK, resize: 'vertical' }}
+                      />
+                      <div className="flex" style={{ gap: 6, marginTop: 6 }}>
+                        <button
+                          type="button"
+                          disabled={setStatus.isPending}
+                          onClick={() => setStatus.mutate({ status: pendingStage, comment: stageNote.trim() || undefined })}
+                          style={{ height: 32, borderRadius: 8, border: 'none', background: PURPLE, color: '#fff', fontSize: 12.5, fontWeight: 700, padding: '0 12px' }}
+                          className="cursor-pointer disabled:opacity-50"
+                        >
+                          {setStatus.isPending ? 'Saving…' : 'Save stage'}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={setStatus.isPending}
+                          onClick={() => { setPendingStage(''); setStageNote('') }}
+                          style={{ height: 32, borderRadius: 8, border: `1px solid ${LINE}`, background: '#fff', color: FAINT, fontSize: 12.5, fontWeight: 600, padding: '0 12px' }}
+                          className="cursor-pointer disabled:opacity-50"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    /* What the stage means somebody should do next, so the
+                       status is an instruction rather than a label. */
+                    <p style={{ fontSize: 11.5, color: FAINT, marginTop: 4 }}>
+                      {LEAD_STATUS_FLOW.find((s) => s.value === lead.status)?.next}
+                    </p>
+                  )}
                 </div>
 
                 {/* Temperature sits beside the stage, not inside it: a lead can
