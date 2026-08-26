@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { leasedPrice } from '../services/rateRealisation.js';
+import { contractLeased } from '../services/rateRealisation.js';
 import { Unit, Contract } from '../models/index.js';
 import { siteScope } from '../utils/siteScope.js';
 
@@ -46,7 +46,7 @@ router.get('/pricing-matrix', async (req, res) => {
             // Resolved on the server so the pricing screen and the rates
             // report cannot drift apart, and so a weekly contract is compared
             // as a month rather than as a week.
-            leasedPrice: leasedPrice(c),
+            leasedPrice: contractLeased(c),
             firstMonthDiscountPct: c.firstMonthDiscountPct ?? 0,
             billingPeriod: c.billingPeriod ?? 'monthly',
             status: c.status,
