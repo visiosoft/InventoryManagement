@@ -16,6 +16,29 @@ const PAGE = '#FBF8F2'
 const LINE = 'rgba(20,8,31,0.10)'
 const DISPLAY = { fontFamily: "'Bricolage Grotesque', serif", letterSpacing: '-0.02em' } as const
 
+const FOLLOW_UP_KINDS = [
+  { value: 'date' as const, label: 'On a date' },
+  { value: 'week' as const, label: 'That week' },
+  { value: 'month' as const, label: 'That month' },
+]
+
+/**
+ * The day the reminder will actually be raised — mirrors notifyDayFor on the
+ * server. Display only: the server decides, this just stops the choice being
+ * a guess about what will happen.
+ */
+function reminderDay(followUpAt?: string | null, kind: 'date' | 'week' | 'month' = 'date'): string {
+  if (!followUpAt) return ''
+  const day = String(followUpAt).slice(0, 10)
+  if (kind === 'month') return `${day.slice(0, 7)}-01`
+  if (kind !== 'week') return day
+  const midnight = new Date(`${day}T00:00:00.000Z`)
+  const weekday = midnight.getUTCDay()
+  // Sunday closes the week it belongs to rather than opening the next one.
+  const back = weekday === 0 ? 6 : weekday - 1
+  return new Date(midnight.getTime() - back * 86_400_000).toISOString().slice(0, 10)
+}
+
 type Owner = { _id: string; name: string; email: string }
 type Lead = {
   _id: string; fullName: string; email: string; phone: string; whatsappNo: string
@@ -24,6 +47,8 @@ type Lead = {
   temperature?: '' | 'hot' | 'warm' | 'cold'
   tags?: string[]
   followUpAt?: string | null
+  followUpKind?: 'date' | 'week' | 'month'
+  followUpNotifiedAt?: string | null
 }
 type Customer = {
   _id: string; fullName: string; email: string; phone: string; phones: string[]
@@ -440,15 +465,56 @@ export default function PersonProfile() {
                   </div>
                 </div>
 
-                {lead.status === 'follow_up_scheduled' && (
+                {/* Shown for any open lead, not only Follow-Up Scheduled: a
+                    date set while the lead was in that stage still fires after
+                    it moves on, and hiding the control left a live reminder
+                    nobody could see or change. */}
+                {lead.status !== 'won' && lead.status !== 'lost' && (
                   <div>
-                    <p style={{ fontSize: 11.5, color: FAINT, marginBottom: 4 }}>Follow up on</p>
+                    <p style={{ fontSize: 11.5, color: FAINT, marginBottom: 4 }}>Follow up</p>
+
+                    {/* "Call them in March" is a real answer, and pinning it to
+                        an invented day in March fires early or late. The kind
+                        says how precisely the date was meant: a week is raised
+                        on its Monday, a month on its first. */}
+                    <div className="flex" style={{ gap: 6, marginBottom: 6 }}>
+                      {FOLLOW_UP_KINDS.map((k) => {
+                        const on = (lead.followUpKind || 'date') === k.value
+                        return (
+                          <button
+                            key={k.value}
+                            type="button"
+                            onClick={() => patchLead.mutate({ followUpKind: k.value })}
+                            className="flex-1 cursor-pointer"
+                            style={{
+                              height: 32, borderRadius: 8, fontSize: 12, fontWeight: 600,
+                              border: `1px solid ${on ? PURPLE : LINE}`,
+                              background: on ? '#F3EDFF' : '#fff',
+                              color: on ? PURPLE : FAINT,
+                            }}
+                          >
+                            {k.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+
                     <input
                       type="date"
                       value={lead.followUpAt ? String(lead.followUpAt).slice(0, 10) : ''}
                       onChange={(e) => patchLead.mutate({ followUpAt: e.target.value || null })}
                       style={{ width: '100%', height: 38, borderRadius: 10, border: `1px solid ${LINE}`, background: '#fff', padding: '0 10px', fontSize: 13, color: INK }}
                     />
+
+                    {/* Say exactly when it will land, so a week or a month is
+                        never a guess about what the system will do. */}
+                    {lead.followUpAt && (
+                      <p style={{ fontSize: 11.5, color: FAINT, marginTop: 4 }}>
+                        {lead.followUpNotifiedAt
+                          ? `Reminder already raised ${formatDate(lead.followUpNotifiedAt)}. Change the date to schedule another.`
+                          : `A task lands on ${formatDate(reminderDay(lead.followUpAt, lead.followUpKind))} for ${lead.owner?.name || 'whoever owns this'}.`}
+                      </p>
+                    )}
                   </div>
                 )}
 

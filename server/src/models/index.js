@@ -180,6 +180,13 @@ const leadSchema = new Schema(
     tags: { type: [String], default: [] },
     /* What makes Follow-Up Scheduled actionable rather than a note to self. */
     followUpAt: { type: Date, default: null },
+    /* How precisely the date was meant. "Call them in March" is a real answer
+       from a client, and pinning it to an invented day in March either fires
+       too early or too late. A week fires on its Monday, a month on its 1st. */
+    followUpKind: { type: String, enum: ['date', 'week', 'month'], default: 'date' },
+    /* Stamped when the reminder went out, so it goes out once. Cleared
+       whenever the follow-up is moved, which makes the new date fire. */
+    followUpNotifiedAt: { type: Date, default: null },
     source: {
       type: String,
       enum: ['manual', 'whatsapp', 'referral', 'walk_in', 'other'],

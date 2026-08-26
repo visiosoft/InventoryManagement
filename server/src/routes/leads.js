@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import mongoose from 'mongoose';
-import { Customer, Contract, Document, Lead, User, WhatsAppMessage } from '../models/index.js';
+import { Customer, Contract, Document, Lead, Task, User, WhatsAppMessage } from '../models/index.js';
+import { FOLLOW_UP_KINDS, runFollowUps } from '../services/followUps.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 
 const router = Router();
@@ -64,6 +65,7 @@ function cleanBody(body) {
         // open tab should not fail the whole save.
         tags: Array.isArray(body.tags) ? [...new Set(body.tags.map(String).filter((t) => ALLOWED_TAGS.has(t)))] : [],
         followUpAt: body.followUpAt ? parseDate(body.followUpAt) : null,
+        followUpKind: FOLLOW_UP_KINDS.includes(body.followUpKind) ? body.followUpKind : 'date',
     };
 }
 
@@ -151,6 +153,22 @@ router.get('/', async (req, res) => {
  *
  * Reps see only their own, enforced here the same way the list is.
  */
+/**
+ * Raise the reminders that are due, now, rather than waiting for the morning.
+ *
+ * Admin only, and safe to press twice: each lead is stamped as it is reminded,
+ * so a second press finds nothing left to do. It creates tasks and sends
+ * nothing outward.
+ */
+router.post('/follow-ups/run', async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
+    try {
+        res.json(await runFollowUps());
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 router.get('/follow-ups', async (req, res) => {
     try {
         const days = Math.min(Math.max(Number(req.query.days) || 7, 0), 90);
@@ -379,7 +397,19 @@ router.put('/:id', async (req, res) => {
     lead.notes = body.notes;
     lead.temperature = body.temperature;
     lead.tags = body.tags;
+    // Moving a follow-up re-arms it. Without this a lead reminded once in
+    // August could be rescheduled for September and never chased again,
+    // because followUpNotifiedAt would still be stamped.
+    const sameDay = (a, b) => {
+        const x = a ? new Date(a).getTime() : 0;
+        const y = b ? new Date(b).getTime() : 0;
+        return x === y;
+    };
+    if (!sameDay(lead.followUpAt, body.followUpAt) || lead.followUpKind !== body.followUpKind) {
+        lead.followUpNotifiedAt = null;
+    }
     lead.followUpAt = body.followUpAt;
+    lead.followUpKind = body.followUpKind;
     const userName = req.user.name || req.user.email || 'user';
     lead.timeline.push({ type: 'updated', text: `Lead updated by ${userName}`, user: req.user.id });
 
@@ -408,6 +438,28 @@ router.patch('/:id/status', async (req, res) => {
             : `Status changed to ${status}`,
         user: req.user.id,
     });
+
+    // Nobody answered, so the next attempt gets a task rather than relying on
+    // somebody remembering. Only one open task per lead: moving through
+    // Contact Attempted three times should not leave three identical tasks.
+    if (status === 'contact_attempted' && lead.owner) {
+        const open = await Task.findOne({ leadId: lead._id, status: { $ne: 'done' } }).select('_id');
+        if (!open) {
+            const name = lead.fullName || lead.phone || 'this lead';
+            await Task.create({
+                title: `Try ${name} again`,
+                description: comment ? `No answer. ${comment.slice(0, 2000)}` : 'No answer on the last attempt.',
+                assignedTo: lead.owner,
+                leadId: lead._id,
+                leadType: 'storage',
+                leadName: name,
+                dueDate: new Date(),
+                priority: lead.temperature === 'hot' ? 'high' : 'medium',
+                status: 'todo',
+                createdByName: req.user.name || req.user.email || 'PurpleBox',
+            });
+        }
+    }
 
     await lead.save();
 

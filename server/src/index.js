@@ -64,6 +64,7 @@ import crewAuthRoutes from './routes/crewAuth.js';
 import crewPortalRoutes from './routes/crewPortal.js';
 import whatsappFlowRoutes from './routes/whatsappFlow.js';
 import { startBackupScheduler } from './services/backup.js';
+import { runFollowUps } from './services/followUps.js';
 import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
 import { runAiBotTick, getAiBotConfig } from './services/aiBot.js';
 import { summariseRecent } from './services/conversationSummary.js';
@@ -347,6 +348,24 @@ async function start() {
       await ensureDigest(previousDay(dayKeyFor()));
     } catch (e) {
       console.error('[Digest]', e.message);
+    }
+  }, 60_000);
+
+  // Follow-ups that have come due, raised as tasks on the owner's board.
+  // Same minute tick and fixed local hour; idempotent through each lead's
+  // followUpNotifiedAt rather than a stored row, so a restart at 07:30 cannot
+  // raise a second reminder for anybody.
+  //
+  // This creates tasks. It sends nothing — no WhatsApp, no email — and is the
+  // only scheduled job touching leads.
+  const FOLLOW_UP_HOUR = Number(process.env.FOLLOW_UP_HOUR ?? 7);
+  setInterval(async () => {
+    try {
+      if (localHour() !== FOLLOW_UP_HOUR) return;
+      const out = await runFollowUps();
+      if (out.raised.length) console.log(`[FollowUps] raised ${out.raised.length} reminder(s) for ${out.day}`);
+    } catch (e) {
+      console.error('[FollowUps]', e.message);
     }
   }, 60_000);
 }
