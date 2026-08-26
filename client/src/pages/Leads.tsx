@@ -669,6 +669,21 @@ export default function Leads() {
         onError: (e) => setError(apiError(e)),
     })
 
+    const bulkRemove = useMutation({
+        mutationFn: async () => {
+            // Sequential, like the bulk assign: one failure then stops the rest
+            // rather than half-deleting a selection nobody can now identify.
+            for (const id of selected) await leadApi.remove(id)
+        },
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['leads'] })
+            qc.invalidateQueries({ queryKey: ['lead-stats'] })
+            setSelected([])
+            setError('')
+        },
+        onError: (e) => setError(apiError(e)),
+    })
+
     const createLead = useMutation({
         mutationFn: (body: Record<string, unknown>) => leadApi.create(body as Partial<Lead>),
         onSuccess: () => {
@@ -1033,7 +1048,7 @@ export default function Leads() {
                 {selected.length > 0 && (
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', background: INK, color: '#fff', borderRadius: 14, padding: '12px 18px', marginBottom: 14 }}>
                         <span style={{ fontWeight: 600, fontSize: 14 }}>
-                            {selected.length} selected{bulkAssign.isPending ? ' · assigning…' : ''}
+                            {selected.length} selected{bulkAssign.isPending ? ' · assigning…' : ''}{bulkRemove.isPending ? ' · deleting…' : ''}
                         </span>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                             {isAdmin && (
@@ -1049,6 +1064,25 @@ export default function Leads() {
                                     ))}
                                 </select>
                             )}
+                            {/* Named and counted in the confirm, because a
+                                selection made three filters ago is easy to
+                                misremember and this cannot be undone. */}
+                            <button
+                                disabled={bulkRemove.isPending}
+                                onClick={() => {
+                                    const names = (leads || [])
+                                        .filter((l) => selected.includes(l._id))
+                                        .map((l) => l.fullName)
+                                    const shown = names.slice(0, 5).join(', ')
+                                    const rest = names.length > 5 ? ` and ${names.length - 5} more` : ''
+                                    if (confirm(`Delete ${selected.length} lead${selected.length > 1 ? 's' : ''}?\n\n${shown}${rest}\n\nThis cannot be undone.`)) {
+                                        bulkRemove.mutate()
+                                    }
+                                }}
+                                style={{ height: 38, padding: '0 16px', borderRadius: 999, border: '1px solid rgba(255,255,255,.25)', background: 'rgba(220,38,38,.22)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: bulkRemove.isPending ? 0.5 : 1 }}
+                            >
+                                {bulkRemove.isPending ? 'Deleting…' : 'Delete'}
+                            </button>
                             <button
                                 onClick={() => setSelected([])}
                                 style={{ height: 38, padding: '0 16px', borderRadius: 999, border: '1px solid rgba(255,255,255,.25)', background: 'transparent', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}

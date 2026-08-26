@@ -708,6 +708,13 @@ router.delete('/:id', async (req, res) => {
     if (isSalesRep(req)) return res.status(403).json({ error: 'Sales reps cannot delete leads' });
     const lead = await Lead.findByIdAndDelete(req.params.id);
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
+
+    // Its reminders go with it. A follow-up or site-visit task outliving the
+    // lead is somebody being told to chase a record that no longer exists —
+    // and there is nothing left to open from the task. Work already picked up
+    // is left alone: somebody is part-way through it and should say so.
+    await Task.deleteMany({ leadId: lead._id, leadType: 'storage', status: 'todo' });
+
     res.json({ ok: true });
 });
 
