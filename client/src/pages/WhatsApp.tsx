@@ -1082,14 +1082,28 @@ function TaskFromChat({ convo, lastInbound }: { convo: WhatsAppConversation; las
 function LeadAction({ convo, onChanged }: { convo: WhatsAppConversation; onChanged: () => void }) {
   const [err, setErr] = useState('')
 
-  const createLead = useMutation({
-    mutationFn: () => {
-      const name = window.prompt('Name for this lead', convo.phone || `+${convo.phoneNormalized}`)
-      if (name === null) return Promise.reject(new Error('cancelled'))
-      return whatsappApi.createLead(convo.phoneNormalized, name.trim() || undefined)
-    },
-    onSuccess: () => { setErr(''); onChanged() },
-    onError: (e) => { if ((e as Error).message !== 'cancelled') setErr(apiError(e)) },
+  /* Every chat already has a Lead behind it, carrying a generated name like
+     "WhatsApp Contact 7425". That is bookkeeping, not a lead anyone chose to
+     work — so it counts as no lead at all until somebody names it. */
+  const named = convo.lead && !isPlaceholderName(convo.lead.fullName) ? convo.lead : null
+  const [leadForm, setLeadForm] = useState<{ fullName: string; email: string; owner: string; notes: string } | null>(null)
+
+  const { data: assignable = [] } = useQuery<{ _id: string; name: string; role: string }[]>({
+    queryKey: ['assignable-users'],
+    queryFn: () => api.get('/users/assignable').then((r) => r.data),
+    enabled: leadForm !== null,
+    staleTime: 5 * 60_000,
+  })
+
+  const saveLead = useMutation({
+    mutationFn: () => whatsappApi.createLead(convo.phoneNormalized, {
+      fullName: leadForm!.fullName.trim(),
+      email: leadForm!.email.trim() || undefined,
+      owner: leadForm!.owner || undefined,
+      notes: leadForm!.notes.trim() || undefined,
+    }),
+    onSuccess: () => { setErr(''); setLeadForm(null); onChanged() },
+    onError: (e) => setErr(apiError(e)),
   })
 
   const [formOpen, setFormOpen] = useState(false)
@@ -1121,15 +1135,14 @@ function LeadAction({ convo, onChanged }: { convo: WhatsAppConversation; onChang
   return (
     <div className="flex items-center gap-2 flex-wrap justify-end">
       {err && <span className="text-xs text-red-600 max-w-[220px] truncate" title={err}>{err}</span>}
-      {!convo.lead ? (
+      {!named && !convo.customer ? (
         <button
           type="button"
           className={pill}
           style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', color: '#4A1FA0' }}
-          disabled={createLead.isPending}
-          onClick={() => createLead.mutate()}
+          onClick={() => { setErr(''); setLeadForm({ fullName: '', email: '', owner: '', notes: '' }) }}
         >
-          <UserPlus size={13} /> {createLead.isPending ? 'Creating…' : 'Create lead'}
+          <UserPlus size={13} /> Save as lead
         </button>
       ) : convo.customer ? (
         // Already a customer: open their profile rather than offering to make
@@ -1143,7 +1156,9 @@ function LeadAction({ convo, onChanged }: { convo: WhatsAppConversation; onChang
         </Link>
       ) : (
         <>
-          <span className="text-xs hidden sm:inline" style={{ color: FAINT_INK }}>Lead: {convo.lead.fullName}</span>
+          <Link to={`/leads/${named!._id}`} className="text-xs hidden sm:inline hover:underline" style={{ color: FAINT_INK }}>
+            Lead: {named!.fullName}
+          </Link>
           <button
             type="button"
             className={pill}
@@ -1154,6 +1169,63 @@ function LeadAction({ convo, onChanged }: { convo: WhatsAppConversation; onChang
           </button>
         </>
       )}
+
+      <Modal open={leadForm !== null} onClose={() => setLeadForm(null)} title="Save as lead">
+        {leadForm && (
+          <div className="space-y-3">
+            <Field label="Name">
+              <Input
+                autoFocus
+                value={leadForm.fullName}
+                onChange={(e) => setLeadForm({ ...leadForm, fullName: e.target.value })}
+                placeholder="Who is this?"
+              />
+            </Field>
+            {/* Read-only: the number is what the conversation is, and typing a
+                different one here would attach the lead to the wrong chat. */}
+            <Field label="Phone">
+              <Input value={convo.phone || `+${convo.phoneNormalized}`} readOnly style={{ background: '#F7F3FF' }} />
+            </Field>
+            <Field label="Email">
+              <Input
+                type="email"
+                value={leadForm.email}
+                onChange={(e) => setLeadForm({ ...leadForm, email: e.target.value })}
+                placeholder="Optional"
+              />
+            </Field>
+            <Field label="Assign to">
+              <Select value={leadForm.owner} onChange={(e) => setLeadForm({ ...leadForm, owner: e.target.value })}>
+                <option value="">Myself</option>
+                {assignable.map((u) => <option key={u._id} value={u._id}>{u.name} ({u.role})</option>)}
+              </Select>
+            </Field>
+            <Field label="Notes">
+              <Textarea
+                rows={3}
+                value={leadForm.notes}
+                onChange={(e) => setLeadForm({ ...leadForm, notes: e.target.value })}
+                placeholder="What they are after, sizes discussed, anything the rep should know"
+              />
+            </Field>
+            {err && <p className="text-xs text-destructive">{err}</p>}
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setLeadForm(null)}
+                className="rounded-full px-4 py-2 cursor-pointer"
+                style={{ border: '1px solid rgba(20,8,31,.16)', fontSize: 13, fontWeight: 700 }}>
+                Cancel
+              </button>
+              <button type="button"
+                onClick={() => saveLead.mutate()}
+                disabled={!leadForm.fullName.trim() || saveLead.isPending}
+                className="rounded-full px-5 py-2 text-white cursor-pointer disabled:opacity-40"
+                style={{ background: '#5B2BC9', fontSize: 13, fontWeight: 700 }}>
+                {saveLead.isPending ? 'Saving…' : 'Save lead'}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal
         open={formOpen}
@@ -1850,7 +1922,7 @@ export default function WhatsApp() {
                             Asking the lead marked 53 of 60 real customers as
                             leads, because converting is not the only way
                             somebody becomes one. */}
-                        {(c.customer || c.lead) && (
+                        {(c.customer || (c.lead && !isPlaceholderName(c.lead.fullName))) && (
                           <span
                             className="shrink-0 rounded-full px-1.5 py-0.5"
                             style={

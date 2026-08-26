@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { mediaFromRaw } from './whatsappMedia.js';
-import { WhatsAppMessage, Lead, Customer, AiBotThread, WhatsAppLabel, WhatsAppChatLabel, MessageTemplate } from '../models/index.js';
+import { WhatsAppMessage, Lead, Customer, User, AiBotThread, WhatsAppLabel, WhatsAppChatLabel, MessageTemplate } from '../models/index.js';
 import { sendWhatsAppText, sendWhatsAppMedia, uploadWhatsAppMedia, whatsappMediaKind, whatsappSendConfigured, whatsappSendMissing } from '../services/whatsapp.js';
 import { pauseBotForHuman } from '../services/aiBot.js';
 import multer from 'multer';
@@ -11,6 +11,10 @@ import { DailyDigest } from '../models/index.js';
 import { askInbox } from '../services/inboxAsk.js';
 
 const router = Router();
+
+/** A name the sync invented, not one a person gave us. */
+const isPlaceholderLeadName = (n) => !n || /^whatsapp\s*contact/i.test(String(n).trim());
+
 
 /**
  * The WhatsApp thread belonging to a customer, for the Chat tab on a contract.
@@ -216,9 +220,6 @@ router.get('/conversations', async (_req, res) => {
         }
     }
 
-    // Leads created from a chat get an auto-generated placeholder name. It is
-    // not a name, so it must never win over the number.
-    const isPlaceholderName = (n) => !n || /^whatsapp\s*contact/i.test(String(n).trim());
 
     // The AI assistant's state per thread — whether it has a suggestion waiting
     // and whether it has handed the conversation over.
@@ -235,7 +236,7 @@ router.get('/conversations', async (_req, res) => {
     res.json(rows.map((r) => {
         const lead = r.lead?.[0] || null;
         const customer = byPhone.get(suffix(r._id)) || null;
-        const leadName = isPlaceholderName(lead?.fullName) ? '' : lead.fullName;
+        const leadName = isPlaceholderLeadName(lead?.fullName) ? '' : lead.fullName;
         const bot = byThread.get(r._id) || null;
         return {
             phoneNormalized: r._id,
@@ -350,33 +351,76 @@ router.get('/conversations/:phoneNormalized/summary', async (req, res) => {
     }
 });
 
+/**
+ * Turn a chat into a real lead.
+ *
+ * Every inbound conversation already has a Lead behind it — the sync creates
+ * one so messages have something to hang off — but it carries a generated name
+ * like "WhatsApp Contact 7425" and belongs to nobody. That is bookkeeping, not
+ * a lead somebody decided to work.
+ *
+ * So this fills the placeholder in rather than refusing because a record
+ * exists. A lead that already has a real name is left alone.
+ */
 router.post('/conversations/:phoneNormalized/lead', async (req, res) => {
-    const phoneNormalized = String(req.params.phoneNormalized || '').replace(/\D/g, '');
-    if (!phoneNormalized) return res.status(400).json({ error: 'A phone number is required' });
+    try {
+        const phoneNormalized = String(req.params.phoneNormalized || '').replace(/\D/g, '');
+        if (!phoneNormalized) return res.status(400).json({ error: 'A phone number is required' });
 
-    const linked = await WhatsAppMessage.findOne({ phoneNormalized, lead: { $ne: null } })
-        .sort({ occurredAt: -1 })
-        .populate('lead', 'fullName status');
-    if (linked?.lead) return res.json({ action: 'exists', lead: linked.lead });
+        const fullName = String(req.body?.fullName || '').trim();
+        const email = String(req.body?.email || '').trim();
+        const ownerId = String(req.body?.owner || '').trim();
+        const notes = String(req.body?.notes || '').trim();
 
-    const existing = await Lead.findOne({ phoneNormalized }).select('fullName status');
-    if (existing) {
-        await WhatsAppMessage.updateMany({ phoneNormalized, lead: null }, { $set: { lead: existing._id } });
-        return res.json({ action: 'exists', lead: existing });
+        if (ownerId && !(await User.exists({ _id: ownerId }))) {
+            return res.status(400).json({ error: 'That person no longer exists' });
+        }
+
+        const existing = await Lead.findOne({ phoneNormalized });
+
+        if (existing) {
+            const generated = isPlaceholderLeadName(existing.fullName);
+            // A name somebody typed is never overwritten by this.
+            if (!generated && !ownerId && !email && !notes) {
+                return res.json({ action: 'exists', lead: { _id: existing._id, fullName: existing.fullName, status: existing.status } });
+            }
+            if (generated && fullName) existing.fullName = fullName;
+            if (email) existing.email = email;
+            if (ownerId) existing.owner = ownerId;
+            // Appended, never replaced: whatever was already noted about this
+            // person is part of the record.
+            if (notes) existing.notes = [existing.notes, notes].filter(Boolean).join('\n');
+            existing.timeline = existing.timeline || [];
+            existing.timeline.push({
+                type: 'note',
+                text: generated ? 'Saved as a lead from the WhatsApp inbox' : 'Updated from the WhatsApp inbox',
+                user: req.user.id,
+            });
+            await existing.save();
+            await WhatsAppMessage.updateMany({ phoneNormalized, lead: null }, { $set: { lead: existing._id } });
+            return res.json({ action: 'updated', lead: { _id: existing._id, fullName: existing.fullName, status: existing.status } });
+        }
+
+        const sample = await WhatsAppMessage.findOne({ phoneNormalized }).sort({ occurredAt: -1 }).select('phone');
+        const lead = await createLeadFromWhatsAppPhone({
+            phone: sample?.phone || phoneNormalized,
+            phoneNormalized,
+            fullName,
+            ownerId: ownerId || req.user.id,
+            timelineText: 'Lead created from the WhatsApp inbox',
+        });
+        if (!lead) return res.status(500).json({ error: 'Could not create the lead' });
+
+        if (email || notes) {
+            if (email) lead.email = email;
+            if (notes) lead.notes = notes;
+            await lead.save();
+        }
+        await WhatsAppMessage.updateMany({ phoneNormalized, lead: null }, { $set: { lead: lead._id } });
+        res.status(201).json({ action: 'created', lead: { _id: lead._id, fullName: lead.fullName, status: lead.status } });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     }
-
-    const sample = await WhatsAppMessage.findOne({ phoneNormalized }).sort({ occurredAt: -1 }).select('phone');
-    const lead = await createLeadFromWhatsAppPhone({
-        phone: sample?.phone || phoneNormalized,
-        phoneNormalized,
-        fullName: req.body?.fullName,
-        ownerId: req.user.id,
-        timelineText: 'Lead created from the WhatsApp inbox',
-    });
-    if (!lead) return res.status(500).json({ error: 'Could not create the lead' });
-
-    await WhatsAppMessage.updateMany({ phoneNormalized, lead: null }, { $set: { lead: lead._id } });
-    res.status(201).json({ action: 'created', lead: { _id: lead._id, fullName: lead.fullName, status: lead.status } });
 });
 
 router.post('/send', async (req, res) => {

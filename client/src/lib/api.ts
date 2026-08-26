@@ -318,9 +318,9 @@ export const whatsappApi = {
     api.put<{ ok: boolean; labels: string[] }>(
       `/whatsapp/conversations/${phoneNormalized}/labels`, { labelIds }
     ).then((r) => r.data),
-  createLead: (phoneNormalized: string, fullName?: string) =>
-    api.post<{ action: 'created' | 'exists'; lead: WhatsAppLeadRef }>(
-      `/whatsapp/conversations/${phoneNormalized}/lead`, { fullName }
+  createLead: (phoneNormalized: string, body: { fullName?: string; email?: string; owner?: string; notes?: string }) =>
+    api.post<{ action: 'created' | 'updated' | 'exists'; lead: WhatsAppLeadRef }>(
+      `/whatsapp/conversations/${phoneNormalized}/lead`, body,
     ).then((r) => r.data),
   connect: (body: WhatsAppCredentials) =>
     api.post<{ ok: boolean; configured: boolean; missing: string[]; displayPhoneNumber: string; verifiedName: string }>(
