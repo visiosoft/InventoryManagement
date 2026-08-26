@@ -1,7 +1,7 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Lock, Unlock, Check, Pencil, Plus, Upload } from 'lucide-react'
+import { Lock, Unlock, Check, Pencil, Plus } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { Site } from '../lib/site'
@@ -42,129 +42,6 @@ function derivedLeased(c: MatrixContract): number | null {
   if (c.leasedPrice != null) return c.leasedPrice
   if (c.rate == null) return null
   return Math.round(c.rate * (1 - (c.firstMonthDiscountPct || 0) / 100) * 100) / 100
-}
-
-/**
- * Bring a floor in from a spreadsheet.
- *
- * Preview first, always: a hundred and forty-five units written on a misread
- * column is not something anyone wants to undo by hand. The server skips
- * numbers that already exist, so a second run adds only what is missing rather
- * than duplicating a floor or repricing a unit somebody has since corrected.
- */
-type ImportPreview = {
-  summary: { total: number; priced: number; incomplete: number; monthlyTotal: number; bySize: { size: string; count: number }[] }
-  problems: { line: number; text: string; reason: string }[]
-  skipped: string[]
-  units: { unitNumber: string; sizeSqf: number | null; price: number | null; notes: string; incomplete: boolean }[]
-  created?: number
-}
-
-function ImportFloor({ onClose }: { onClose: () => void }) {
-  const qc = useQueryClient()
-  const [floor, setFloor] = useState('F3')
-  const [text, setText] = useState('')
-  const [done, setDone] = useState<{ created: number; skipped: string[] } | null>(null)
-
-  const run = useMutation<ImportPreview, unknown, boolean>({
-    mutationFn: (commit: boolean) => api.post('/units/bulk-import', { floor, text, commit }).then((r) => r.data),
-    onSuccess: (d, commit) => {
-      if (!commit) return
-      setDone({ created: d.created ?? 0, skipped: d.skipped })
-      qc.invalidateQueries({ queryKey: ['unit-pricing-matrix'] })
-      qc.invalidateQueries({ queryKey: ['units'] })
-    },
-  })
-
-  const preview = run.data && !done ? run.data : null
-
-  return (
-    <Modal open onClose={onClose} title={done ? 'Floor imported' : 'Import a floor'}>
-      {done ? (
-        <div className="space-y-4 text-sm">
-          <p>Created <strong>{done.created}</strong> unit{done.created === 1 ? '' : 's'} on {floor}.</p>
-          {!!done.skipped.length && (
-            <p className="text-muted-foreground text-xs">
-              {done.skipped.length} already existed and were left untouched: {done.skipped.slice(0, 8).join(', ')}
-              {done.skipped.length > 8 ? '…' : ''}
-            </p>
-          )}
-          <div className="flex justify-end"><Button onClick={onClose}>Done</Button></div>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          <Field label="Floor">
-            <Input value={floor} onChange={(e) => setFloor(e.target.value)} placeholder="F3" />
-          </Field>
-          <Field label="Paste the rows">
-            <Textarea
-              rows={8}
-              value={text}
-              onChange={(e) => { setText(e.target.value); run.reset() }}
-              placeholder="1&#9;77.7&#9;2.724&#9;2.560&#9;8.937&#9;8.399&#9;75 sq ft&#9;AED 1,300"
-              style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12 }}
-            />
-            <p className="text-[11px] text-muted-foreground mt-1">
-              Number, measured area, length and width in metres, then in feet, size band, price —
-              straight from the spreadsheet. The size band becomes the unit&rsquo;s size and the
-              measured area is kept in its notes.
-            </p>
-          </Field>
-
-          {run.isError && <p className="text-xs text-destructive">{apiError(run.error)}</p>}
-
-          {preview && (
-            <div className="rounded-lg border p-3 space-y-2 text-xs">
-              <p className="font-semibold text-sm">
-                {preview.summary.total} unit{preview.summary.total === 1 ? '' : 's'} would be created
-                {preview.summary.monthlyTotal ? ` · AED ${preview.summary.monthlyTotal.toLocaleString()} a month` : ''}
-              </p>
-              <p className="text-muted-foreground">
-                {preview.summary.bySize.map((b) => `${b.count} × ${b.size}`).join(' · ')}
-              </p>
-              {!!preview.summary.incomplete && (
-                <p className="text-amber-700">
-                  {preview.summary.incomplete} with no size or price — created so the space exists, to be priced later.
-                </p>
-              )}
-              {!!preview.skipped.length && (
-                <p className="text-amber-700">
-                  {preview.skipped.length} already exist and will be skipped: {preview.skipped.slice(0, 6).join(', ')}
-                  {preview.skipped.length > 6 ? '…' : ''}
-                </p>
-              )}
-              {preview.problems.map((p) => (
-                <p key={p.line} className="text-amber-700">Line {p.line}: {p.reason}</p>
-              ))}
-              <div className="max-h-40 overflow-y-auto rounded border divide-y">
-                {preview.units.slice(0, 200).map((u) => (
-                  <div key={u.unitNumber} className="flex justify-between px-2 py-1">
-                    <span className="font-medium">{u.unitNumber}</span>
-                    <span className="text-muted-foreground">
-                      {u.sizeSqf != null ? `${u.sizeSqf} sq ft` : 'no size'} · {u.price != null ? `AED ${u.price}` : 'no price'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={onClose}>Cancel</Button>
-            {!preview ? (
-              <Button disabled={!text.trim() || run.isPending} onClick={() => run.mutate(false)}>
-                {run.isPending ? 'Reading…' : 'Preview'}
-              </Button>
-            ) : (
-              <Button disabled={run.isPending || !preview.units.length} onClick={() => run.mutate(true)}>
-                {run.isPending ? 'Creating…' : `Create ${preview.units.length} units`}
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
-    </Modal>
-  )
 }
 
 /* ── Unit records ───────────────────────────────────────────────────────
@@ -408,7 +285,6 @@ export default function UnitPricing({ embedded = false }: { embedded?: boolean }
   const fullById = useMemo(() => new Map(fullUnits.map((u) => [u._id, u])), [fullUnits])
 
   const [adding, setAdding] = useState(false)
-  const [importing, setImporting] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -499,14 +375,9 @@ export default function UnitPricing({ embedded = false }: { embedded?: boolean }
           <p className="text-xs text-muted-foreground">
             Units are created and edited here. <span className="whitespace-nowrap">/units</span> is a read-only availability lookup.
           </p>
-          <div className="flex items-center gap-2">
-            <Button type="button" variant="outline" onClick={() => setImporting(true)} className="gap-1.5">
-              <Upload size={15} /> Import a floor
-            </Button>
-            <Button type="button" onClick={() => { setError(''); setAdding(true) }} className="gap-1.5">
-              <Plus size={15} /> Add unit
-            </Button>
-          </div>
+          <Button type="button" onClick={() => { setError(''); setAdding(true) }} className="gap-1.5">
+            <Plus size={15} /> Add unit
+          </Button>
         </div>
       )}
 
@@ -582,8 +453,6 @@ export default function UnitPricing({ embedded = false }: { embedded?: boolean }
           </div>
         )
       })}
-
-      {importing && <ImportFloor onClose={() => setImporting(false)} />}
 
       {/* Add unit */}
       <Modal open={adding} onClose={closeForms} title="Add unit">

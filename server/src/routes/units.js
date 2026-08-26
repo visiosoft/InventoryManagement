@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { leasedPrice } from '../services/rateRealisation.js';
-import { parseUnitRows, summariseImport } from '../services/unitImport.js';
 import { Unit, Contract } from '../models/index.js';
 import { siteScope } from '../utils/siteScope.js';
 
@@ -120,43 +119,6 @@ router.post('/', async (req, res) => {
 // always filled in; units that already have a (different) price are only
 // touched when an admin explicitly opts in via `override`. Must be
 // registered before PUT /:id, or Express would match "bulk-price" as an id.
-/* Bring a floor in from a spreadsheet.
-   Two modes: preview shows exactly what would be created and writes nothing;
-   commit creates them. Units already present are skipped by number rather than
-   overwritten, so running it twice cannot duplicate a floor or quietly reprice
-   a unit somebody has since corrected. */
-router.post('/bulk-import', async (req, res) => {
-  try {
-    const floor = String(req.body?.floor || '').trim();
-    const { units, problems } = parseUnitRows(req.body?.text || '', { floor });
-    if (!units.length) {
-      return res.status(400).json({ error: 'Nothing recognisable in that paste', problems });
-    }
-
-    const numbers = units.map((u) => u.unitNumber);
-    const existing = await Unit.find({ unitNumber: { $in: numbers } }).select('unitNumber').lean();
-    const already = new Set(existing.map((u) => u.unitNumber));
-    const fresh = units.filter((u) => !already.has(u.unitNumber));
-
-    const preview = {
-      floor,
-      summary: summariseImport(fresh),
-      problems,
-      skipped: [...already],
-      units: fresh,
-    };
-
-    if (req.body?.commit !== true) return res.json({ ...preview, committed: false });
-
-    // `incomplete` is a preview flag, not a stored field.
-    const created = await Unit.insertMany(fresh.map(({ incomplete, ...u }) => u), { ordered: false });
-    console.log(`[Units] imported ${created.length} onto ${floor || '(no floor)'}, ${already.size} already there`);
-    res.json({ ...preview, committed: true, created: created.length });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
 router.put('/bulk-price', async (req, res) => {
   const { floor, sizeSqf, price, override } = req.body;
   if (floor == null || sizeSqf == null || price == null) {
