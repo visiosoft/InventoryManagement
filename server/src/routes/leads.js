@@ -223,7 +223,10 @@ router.get('/:id/profile', async (req, res) => {
         const { id } = req.params;
         if (!mongoose.isValidObjectId(id)) return res.status(400).json({ error: 'Not a valid id' });
 
-        let lead = await Lead.findById(id).populate('owner', 'name email').lean();
+        let lead = await Lead.findById(id)
+            .populate('owner', 'name email')
+            .populate('timeline.user', 'name')
+            .lean();
         let customer = null;
 
         if (lead) {
@@ -246,7 +249,9 @@ router.get('/:id/profile', async (req, res) => {
             const tail = String(customer.phone || '').replace(/\D/g, '').slice(-9);
             if (tail) {
                 lead = await Lead.findOne({ phoneNormalized: { $regex: tail + '$' } })
-                    .populate('owner', 'name email').lean();
+                    .populate('owner', 'name email')
+                    .populate('timeline.user', 'name')
+                    .lean();
             }
         }
 
@@ -399,6 +404,30 @@ router.patch('/:id/status', async (req, res) => {
     await lead.save();
 
     res.json(await lead.populate('owner', 'name email'));
+});
+
+/**
+ * A note against the lead.
+ *
+ * Status changes already record themselves, and can carry a note with them.
+ * This is for everything in between: what was said, what was promised, why
+ * they went quiet — the running account of working somebody.
+ */
+router.post('/:id/notes', async (req, res) => {
+    try {
+        const text = String(req.body?.text || '').trim();
+        if (!text) return res.status(400).json({ error: 'A note needs some words' });
+
+        const lead = await Lead.findById(req.params.id);
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+
+        lead.timeline.push({ type: 'note', text: text.slice(0, 2000), user: req.user.id });
+        await lead.save();
+        res.status(201).json({ ok: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 router.post('/:id/convert', async (req, res) => {

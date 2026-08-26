@@ -34,8 +34,10 @@ type ContractRow = {
   _id: string; contractNo: string; status: string; startDate: string; endDate: string
   rate: number; unit: { unitNumber: string } | null; units: { unitNumber: string }[]
 }
+type TimelineEntry = { at: string; type: string; text: string; user?: { name: string } | null }
+
 type Profile = {
-  lead: Lead | null
+  lead: (Lead & { timeline?: TimelineEntry[] }) | null
   customer: Customer | null
   contracts: ContractRow[]
   documents: { _id: string; name: string; type: string; url: string; createdAt: string }[]
@@ -80,6 +82,8 @@ export default function PersonProfile() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const [err, setErr] = useState('')
+  const [tab, setTab] = useState<'activity' | 'status' | 'chat'>('activity')
+  const [note, setNote] = useState('')
 
   const { data, isLoading } = useQuery<Profile>({
     queryKey: ['person', id],
@@ -108,6 +112,12 @@ export default function PersonProfile() {
   const patchLead = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.put(`/leads/${data!.lead!._id}`, body),
     onSuccess: () => { setErr(''); refresh() },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  const addNote = useMutation({
+    mutationFn: () => api.post(`/leads/${data!.lead!._id}/notes`, { text: note.trim() }),
+    onSuccess: () => { setNote(''); setErr(''); refresh() },
     onError: (e) => setErr(apiError(e)),
   })
 
@@ -200,7 +210,101 @@ export default function PersonProfile() {
         {err && <p style={{ fontSize: 12, color: '#C0392B', marginTop: 10 }}>{err}</p>}
       </div>
 
-      <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, alignItems: 'start' }}>
+      {/* A lead is worked through three things: what has happened, where they
+          are, and the conversation itself. Contracts, documents and payments
+          belong to a customer, so they are not offered until there is one. */}
+      {!isCustomer && lead && (
+        <div className="flex" style={{ gap: 4, marginBottom: 16, borderBottom: `1px solid ${LINE}` }}>
+          {([['activity', 'Activity'], ['status', 'Lead status'], ['chat', 'Chat']] as const).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTab(id)}
+              className="cursor-pointer"
+              style={{
+                background: 'none', border: 'none', padding: '10px 16px', fontSize: 13.5,
+                fontWeight: tab === id ? 700 : 500,
+                color: tab === id ? INK : FAINT,
+                borderBottom: `2px solid ${tab === id ? PURPLE : 'transparent'}`,
+                marginBottom: -1,
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {!isCustomer && lead && tab === 'activity' && (
+        <div className="space-y-4" style={{ marginBottom: 16 }}>
+          <Card title="Add a note">
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              rows={3}
+              placeholder="What was said, what was promised, why they have gone quiet"
+              style={{ width: '100%', borderRadius: 10, border: `1px solid ${LINE}`, padding: 10, fontSize: 13, fontFamily: 'inherit', color: INK, outline: 'none' }}
+            />
+            <div className="flex justify-end" style={{ marginTop: 8 }}>
+              <button
+                type="button"
+                onClick={() => addNote.mutate()}
+                disabled={!note.trim() || addNote.isPending}
+                className="rounded-full px-4 py-2 text-white cursor-pointer disabled:opacity-40"
+                style={{ background: PURPLE, fontSize: 13, fontWeight: 700 }}
+              >
+                {addNote.isPending ? 'Saving…' : 'Add note'}
+              </button>
+            </div>
+          </Card>
+
+          <Card title="Timeline">
+            {!lead.timeline?.length ? (
+              <p style={{ fontSize: 13, color: FAINT }}>Nothing recorded yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {/* Newest first: what happened last is what somebody picking
+                    this up needs to read. */}
+                {[...lead.timeline].reverse().map((t, i) => (
+                  <div key={`${t.at}-${i}`} style={{ borderLeft: `2px solid ${t.type === 'status_changed' ? PURPLE : LINE}`, paddingLeft: 12 }}>
+                    <p style={{ fontSize: 11.5, color: FAINT }}>
+                      {formatDate(t.at)}{t.user?.name ? ` · ${t.user.name}` : ''}
+                      {t.type === 'status_changed' ? ' · stage change' : ''}
+                    </p>
+                    <p style={{ fontSize: 13, color: INK, marginTop: 2, whiteSpace: 'pre-wrap' }}>{t.text}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {!isCustomer && lead && tab === 'chat' && (
+        <div style={{ marginBottom: 16 }}>
+          <Card title="WhatsApp">
+            <p style={{ fontSize: 13, color: FAINT, marginBottom: 10 }}>
+              The conversation opens in the inbox, where you can reply and see attachments.
+            </p>
+            <Link
+              to={`/whatsapp?phone=${waNumber}`}
+              className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-white cursor-pointer"
+              style={{ background: PURPLE, fontSize: 13, fontWeight: 700 }}
+            >
+              <MessageCircle size={14} /> Open the conversation
+            </Link>
+          </Card>
+        </div>
+      )}
+
+      <div
+        className="grid"
+        style={{
+          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, alignItems: 'start',
+          // On a lead the details and ownership belong to the status tab.
+          display: !isCustomer && lead && tab !== 'status' ? 'none' : 'grid',
+        }}
+      >
         <div className="space-y-4">
           <Card title="Details">
             <Detail label="Phone" value={phone} />
@@ -331,14 +435,14 @@ export default function PersonProfile() {
         </div>
 
         <div className="space-y-4">
-          <Card
-            title={isCustomer ? `Contracts (${contracts.length})` : 'Contracts'}
+          {/* Contracts and documents belong to a customer. On a lead they are
+              two empty panels saying nothing, so they wait until there is one. */}
+          {isCustomer && <Card
+            title={`Contracts (${contracts.length})`}
             action={<Link to={bookHref} style={{ fontSize: 12, fontWeight: 700, color: PURPLE }}>Book unit →</Link>}
           >
             {contracts.length === 0 ? (
-              <p style={{ fontSize: 13, color: FAINT }}>
-                {isCustomer ? 'No contracts yet.' : 'Not a customer yet — booking a unit creates the record.'}
-              </p>
+              <p style={{ fontSize: 13, color: FAINT }}>No contracts yet.</p>
             ) : (
               <div className="space-y-2">
                 {contracts.map((c) => {
@@ -358,9 +462,9 @@ export default function PersonProfile() {
                 })}
               </div>
             )}
-          </Card>
+          </Card>}
 
-          <Card title={`Documents (${documents.length})`}>
+          {isCustomer && <Card title={`Documents (${documents.length})`}>
             {documents.length === 0 ? (
               <p style={{ fontSize: 13, color: FAINT }}>Nothing uploaded.</p>
             ) : (
@@ -374,7 +478,7 @@ export default function PersonProfile() {
                 ))}
               </div>
             )}
-          </Card>
+          </Card>}
 
           {lead?.notes && (
             <Card title="Notes">
