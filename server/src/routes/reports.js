@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { Unit, Contract, Payment, Expense } from '../models/index.js';
 import { siteScope } from '../utils/siteScope.js';
 import { unitRow, totals, byFloor, monthlyRate, monthlySeries, pickPerUnit } from '../services/rateRealisation.js';
+import { buildRatesWorkbook } from '../services/ratesWorkbook.js';
 
 const router = Router();
 
@@ -465,52 +466,72 @@ router.get('/expenses-breakdown', async (req, res) => {
 // ── NEW: Payment forecast for upcoming months from active contracts ─────────────
 // Actual (asking) price against what each unit is really leased for, for one
 // month. Same derivation as the pricing screen, so the two cannot disagree.
-router.get('/rates', async (req, res) => {
-  try {
-    const monthISO = /^\d{4}-\d{2}$/.test(String(req.query.month || ''))
-      ? String(req.query.month)
-      : new Date().toISOString().slice(0, 7);
-    const [y, m] = monthISO.split('-').map(Number);
-    const monthStart = new Date(Date.UTC(y, m - 1, 1));
-    const monthEnd = new Date(Date.UTC(y, m, 1));
+/**
+ * Build the report once, so the screen and the spreadsheet cannot disagree.
+ */
+async function buildRatesReport(query = {}) {
+  const monthISO = /^\d{4}-\d{2}$/.test(String(query.month || ''))
+    ? String(query.month)
+    : new Date().toISOString().slice(0, 7);
+  const [y, m] = monthISO.split('-').map(Number);
+  const monthStart = new Date(Date.UTC(y, m - 1, 1));
+  const monthEnd = new Date(Date.UTC(y, m, 1));
 
-    const scope = await siteScope(req.query.site);
+  const scope = await siteScope(query.site);
 
-    // Every unit, not only the let ones: an empty floor is the whole point of
-    // the report and a contract-driven query can never show it.
-    const [units, contracts] = await Promise.all([
-      Unit.find(scope ? scope.unitFilter : {}).lean(),
-      Contract.find({
-        ...(scope ? scope.contractFilter : {}),
-        status: { $in: ['active', 'pending_signature', 'ended'] },
-      })
-        .populate('customer', 'fullName')
-        .populate('unit', 'unitNumber floor sizeSqf price')
-        .populate('units', 'unitNumber floor sizeSqf price')
-        .lean(),
-    ]);
+  // Every unit, not only the let ones: an empty floor is the point of the
+  // report and a contract-driven query can never show it.
+  const [units, contracts] = await Promise.all([
+    Unit.find(scope ? scope.unitFilter : {}).lean(),
+    Contract.find({
+      ...(scope ? scope.contractFilter : {}),
+      status: { $in: ['active', 'pending_signature', 'ended'] },
+    })
+      .populate('customer', 'fullName')
+      .populate('unit', 'unitNumber floor sizeSqf price')
+      .populate('units', 'unitNumber floor sizeSqf price')
+      .lean(),
+  ]);
 
-    const running = contracts.filter((c) => {
-      const st = new Date(c.startDate);
-      const en = new Date(c.endDate);
-      return st < monthEnd && en > monthStart;
-    });
+  const running = contracts.filter((c) => {
+    const st = new Date(c.startDate);
+    const en = new Date(c.endDate);
+    return st < monthEnd && en > monthStart;
+  });
 
-    const byUnit = pickPerUnit(running);
-    const rows = units.map((u) => unitRow(u, byUnit.get(String(u._id)) || null));
+  const byUnit = pickPerUnit(running);
+  const rows = units.map((u) => unitRow(u, byUnit.get(String(u._id)) || null));
 
+  return {
+    month: monthISO,
+    label: monthStart.toLocaleString('en', { month: 'long', year: 'numeric', timeZone: 'UTC' }),
+    totals: totals(rows),
+    floors: byFloor(rows),
     // The trend, from the same figures rather than a separate query that could
     // disagree with the table below it.
-    const series = monthlySeries(units, contracts, { months: 12 });
+    series: monthlySeries(units, contracts, { months: 12 }),
+    rows,
+  };
+}
 
-    res.json({
-      month: monthISO,
-      label: monthStart.toLocaleString('en', { month: 'long', year: 'numeric', timeZone: 'UTC' }),
-      totals: totals(rows),
-      floors: byFloor(rows),
-      series,
-      rows,
-    });
+// Actual (asking) price against what each unit is really leased for.
+router.get('/rates', async (req, res) => {
+  try {
+    res.json(await buildRatesReport(req.query));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// The same report as a formatted workbook. Built here rather than in the
+// browser so the spreadsheet library never reaches the frontend bundle.
+router.get('/rates/export', async (req, res) => {
+  try {
+    const report = await buildRatesReport(req.query);
+    const buffer = await buildRatesWorkbook(report);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="purplebox-actual-vs-leased-${report.month}.xlsx"`);
+    res.send(Buffer.from(buffer));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

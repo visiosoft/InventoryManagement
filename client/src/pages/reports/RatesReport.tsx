@@ -48,32 +48,25 @@ function recentMonths() {
   return out
 }
 
-function downloadCsv(report: Report) {
-  const cell = (v: unknown) => {
-    const s = String(v ?? '')
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-  }
-  const lines = [['Floor', 'Unit', 'Size (sqf)', 'Status', 'Contract', 'Customer', 'Actual', 'Leased', 'Variance', 'Discount %'].join(',')]
-  for (const r of report.rows) {
-    lines.push([
-      r.floor, r.unitNumber, r.sizeSqf ?? '', r.occupied ? 'Leased' : 'Vacant',
-      r.contractNo, r.customer, r.priced ? r.actual : '', r.occupied ? r.leased : '',
-      r.variance ?? '', r.discountPct ?? '',
-    ].map(cell).join(','))
-  }
-  const t = report.totals
-  lines.push('', ['TOTAL', `${t.units} units`, '', `${t.leasedUnits} leased / ${t.vacantUnits} vacant`, '', '', t.actualAll, t.leased, t.variance, t.discountPct ?? ''].map(cell).join(','))
-  lines.push(['Asking price of vacant units', t.vacantValue].map(cell).join(','))
-  lines.push('', ['Month', 'Actual', 'Leased'].join(','))
-  for (const p of report.series) lines.push([p.monthISO, p.actual, p.leased].map(cell).join(','))
-
-  // The BOM matters: without it Excel reads accented names as mojibake.
-  const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' })
+/**
+ * Download the report as a formatted workbook.
+ *
+ * Built on the server: a CSV carries no design at all, and putting a
+ * spreadsheet library in the browser bundle to fix that would cost every page
+ * load. Fetched rather than linked because the endpoint needs the auth header,
+ * which a plain link cannot send.
+ */
+async function downloadWorkbook(month: string) {
+  const res = await api.get('/reports/rates/export', {
+    params: { month },
+    responseType: 'blob',
+  })
+  const url = URL.createObjectURL(res.data as Blob)
   const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = `purplebox-actual-vs-leased-${report.month}.csv`
+  a.href = url
+  a.download = `purplebox-actual-vs-leased-${month}.xlsx`
   a.click()
-  URL.revokeObjectURL(a.href)
+  URL.revokeObjectURL(url)
 }
 
 function MetricCard({ label, value, sub, filled }: { label: string; value: string; sub: string; filled?: boolean }) {
@@ -145,6 +138,7 @@ export default function RatesReport() {
   const [month, setMonth] = useState(months[0])
   const [leasedOnly, setLeasedOnly] = useState(false)
   const [annual, setAnnual] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   const { data, isLoading } = useQuery<Report>({
     queryKey: ['rates-report', month],
@@ -227,12 +221,12 @@ export default function RatesReport() {
 
             <button
               type="button"
-              onClick={() => data && downloadCsv(data)}
-              disabled={!data?.rows.length}
+              onClick={() => { setExporting(true); downloadWorkbook(month).finally(() => setExporting(false)) }}
+              disabled={!data?.rows.length || exporting}
               className="inline-flex items-center disabled:opacity-50"
               style={{ gap: 8, height: 46, padding: '0 20px', borderRadius: 999, border: 'none', background: PURPLE_600, color: '#fff', fontWeight: 600, fontSize: 14, cursor: 'pointer', boxShadow: '0 8px 24px rgba(91,43,201,.24)' }}
             >
-              <Download size={16} /> Export to Excel
+              <Download size={16} /> {exporting ? 'Preparing…' : 'Export to Excel'}
             </button>
           </div>
         </div>
