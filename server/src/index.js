@@ -1,4 +1,19 @@
 import 'dotenv/config';
+
+/* Dubai, before anything reads a clock.
+ *
+ * The host decides what `toLocaleDateString` and `getHours()` mean, and a
+ * production box set to UTC rendered every contract PDF, invoice and signature
+ * timestamp four hours behind the office. Setting it here — ahead of any other
+ * import, because Node caches the zone on first use — makes the server agree
+ * with the app and with the people reading it.
+ *
+ * The digest and follow-up services do their own fixed UTC+4 arithmetic and
+ * are unaffected. The backup scheduler's configured hour now means a Dubai
+ * hour, which is what it always read as.
+ */
+process.env.TZ = process.env.TZ || 'Asia/Dubai';
+
 import express from 'express';
 import cors from 'cors';
 

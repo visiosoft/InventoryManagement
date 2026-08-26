@@ -5,6 +5,8 @@
  * disagreed about what it meant, because each worked it out for itself.
  */
 
+import { dubaiToday } from './timezone'
+
 export type FollowUpKind = 'date' | 'week' | 'month'
 export type FollowUpTone = 'overdue' | 'today' | 'soon' | 'later'
 
@@ -32,10 +34,11 @@ export function reminderDay(followUpAt?: string | null, kind: FollowUpKind = 'da
  * Overdue and due-today are the two worth interrupting somebody over, so they
  * are the two that get a colour of their own.
  */
-export function followUpState(day: string): { tone: FollowUpTone; days: number } {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const at = new Date(`${day}T00:00:00`)
+export function followUpState(day: string, now: Date = new Date()): { tone: FollowUpTone; days: number } {
+  // Both sides as Dubai days: "overdue" has to mean overdue here, not on
+  // whatever clock the reader's laptop is keeping.
+  const today = new Date(`${dubaiToday(now)}T00:00:00.000Z`)
+  const at = new Date(`${day}T00:00:00.000Z`)
   if (Number.isNaN(at.getTime())) return { tone: 'later', days: 0 }
   const days = Math.round((at.getTime() - today.getTime()) / 86_400_000)
   if (days < 0) return { tone: 'overdue', days }

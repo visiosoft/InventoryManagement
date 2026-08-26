@@ -4,6 +4,11 @@ import { BrowserRouter } from 'react-router-dom'
 import { MutationCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import './index.css'
 import App from './App'
+import { useDubaiTime } from './lib/timezone'
+
+// Before the first render: every date on screen is Dubai time, whatever the
+// machine reading it is set to.
+useDubaiTime()
 import { AuthProvider } from './lib/auth'
 
 const queryClient = new QueryClient({

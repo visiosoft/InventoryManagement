@@ -478,7 +478,13 @@ export default function PersonProfile() {
                       {assignable.map((u) => <option key={u._id} value={u._id}>{u.name}</option>)}
                     </select>
                   ) : (
-                    <div style={{ fontSize: 14, fontWeight: 700 }}>{lead.owner?.name || 'Nobody'}</div>
+                    <>
+                      <div style={{ fontSize: 14, fontWeight: 700 }}>{lead.owner?.name || 'Nobody'}</div>
+                      {/* Reps work their own leads and do not hand them on, so
+                          say who can rather than leaving a name that looks
+                          editable and is not. */}
+                      <p style={{ fontSize: 12.5, color: FAINT, marginTop: 4 }}>An admin can move this to somebody else.</p>
+                    </>
                   )}
                 </div>
 

@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { CalendarPlus, CheckSquare, FileText, Mail, MessageCircle, MoreHorizontal, Plus, RefreshCw, Search, Upload, X } from 'lucide-react'
 import { api, apiError, leadApi, type LeadPage } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { fromDubaiDatetimeLocal, toDubaiDatetimeLocal } from '../lib/timezone'
 import type { Lead, LeadSource, LeadStatus } from '../lib/types'
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Textarea, leadStatusTone, statusLabel } from '../components/ui'
 import { formatDate, formatDateTime } from '../lib/utils'
@@ -24,20 +25,15 @@ type LeadStats = {
     byOwner: WorkloadRow[]
 }
 
-function toDatetimeLocal(input?: string) {
-    if (!input) return ''
-    const d = new Date(input)
-    if (Number.isNaN(d.getTime())) return ''
-    const tzOffset = d.getTimezoneOffset() * 60000
-    return new Date(d.getTime() - tzOffset).toISOString().slice(0, 16)
-}
+// datetime-local inputs carry no timezone and show exactly what they are
+// given, so they get Dubai time rather than the reader's.
+const toDatetimeLocal = (input?: string) => toDubaiDatetimeLocal(input)
 
 function fromDatetimeLocal(input: FormDataEntryValue | null) {
     if (!input) return undefined
-    const s = String(input)
-    if (!s) return undefined
-    const d = new Date(s)
-    return Number.isNaN(d.getTime()) ? undefined : d.toISOString()
+    // What was typed is a Dubai reading, so it is read back as one — otherwise
+    // a time entered here shifted by the reader's own offset on the way in.
+    return fromDubaiDatetimeLocal(String(input)) || undefined
 }
 
 function LeadForm({

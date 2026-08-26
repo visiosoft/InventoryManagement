@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import { APP_TIMEZONE } from './timezone'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -9,14 +10,16 @@ export function formatMoney(n: number) {
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+// Dubai, explicitly — the default is pinned in lib/timezone too, but these
+// two are read far more often than that file is.
 export function formatDate(d: string | Date | undefined | null) {
   if (!d) return '—'
-  return new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+  return new Date(d).toLocaleDateString(undefined, { timeZone: APP_TIMEZONE, day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 export function formatDateTime(d: string | Date | undefined | null) {
   if (!d) return '—'
-  return new Date(d).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return new Date(d).toLocaleString(undefined, { timeZone: APP_TIMEZONE, day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 /**
