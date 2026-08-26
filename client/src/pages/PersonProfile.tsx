@@ -162,8 +162,6 @@ export default function PersonProfile() {
   // A stage picked but not yet committed, and the note going with it.
   const [pendingStage, setPendingStage] = useState('')
   const [stageNote, setStageNote] = useState('')
-  // The size asked for, captured at the moment somebody actually speaks to them.
-  const [stageSize, setStageSize] = useState('')
   // Contact details, while they are being edited rather than read.
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({ fullName: '', phone: '', whatsappNo: '', email: '', source: 'manual' })
@@ -194,13 +192,9 @@ export default function PersonProfile() {
   const refresh = () => qc.invalidateQueries({ queryKey: ['person', id] })
 
   const setStatus = useMutation({
-    mutationFn: async ({ status, comment, size }: { status: string; comment?: string; size?: string }) => {
-      // The size first: if it fails — a duplicate phone, a stale field — the
-      // stage has not moved yet, so nothing is half-applied.
-      if (size) await api.put(`/leads/${data!.lead!._id}`, { storageSizeValue: Number(size), storageSizeUnit: 'sqft' })
-      return api.patch(`/leads/${data!.lead!._id}/status`, { status, comment })
-    },
-    onSuccess: () => { setErr(''); setPendingStage(''); setStageNote(''); setStageSize(''); refresh() },
+    mutationFn: ({ status, comment }: { status: string; comment?: string }) =>
+      api.patch(`/leads/${data!.lead!._id}/status`, { status, comment }),
+    onSuccess: () => { setErr(''); setPendingStage(''); setStageNote(''); refresh() },
     onError: (e) => setErr(apiError(e)),
   })
 
@@ -715,36 +709,11 @@ export default function PersonProfile() {
                       placeholder={pendingStage === 'lost' ? 'Why did this one go? (worth recording)' : 'Optional — called, no answer…'}
                       style={{ width: '100%', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', color: INK, resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
                     />
-                    {/* Contacted is the first point at which anybody has
-                        actually spoken to them, so it is the first point at
-                        which the size they want is knowable. Asking here beats
-                        hoping somebody fills it in later. */}
-                    {pendingStage === 'contacted' && sizes.length > 0 && (
-                      <div style={{ marginTop: 10 }}>
-                        <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>
-                          Size they need{lead.storageSizeValue ? ` — currently ${lead.storageSizeValue} ${lead.storageSizeUnit || 'sqft'}` : ''}
-                        </span>
-                        <select
-                          value={stageSize}
-                          onChange={(e) => setStageSize(e.target.value)}
-                          className="cursor-pointer"
-                          style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK }}
-                        >
-                          <option value="">Leave as it is</option>
-                          {sizes.map((b) => (
-                            <option key={b.sizeSqf} value={String(b.sizeSqf)}>
-                              {b.sizeSqf} sqft — {b.available} free of {b.total}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-
                     <div className="flex flex-wrap" style={{ gap: 8, marginTop: 10 }}>
                       <button
                         type="button"
                         disabled={setStatus.isPending}
-                        onClick={() => setStatus.mutate({ status: pendingStage, comment: stageNote.trim() || undefined, size: stageSize || undefined })}
+                        onClick={() => setStatus.mutate({ status: pendingStage, comment: stageNote.trim() || undefined })}
                         className="cursor-pointer disabled:opacity-50"
                         style={{ height: 38, padding: '0 18px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontSize: 13, fontWeight: 700, fontFamily: 'inherit' }}
                       >
@@ -753,7 +722,7 @@ export default function PersonProfile() {
                       <button
                         type="button"
                         disabled={setStatus.isPending}
-                        onClick={() => { setPendingStage(''); setStageNote(''); setStageSize('') }}
+                        onClick={() => { setPendingStage(''); setStageNote('') }}
                         className="cursor-pointer disabled:opacity-50"
                         style={{ height: 38, padding: '0 18px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: FAINT, fontSize: 13, fontWeight: 600, fontFamily: 'inherit' }}
                       >
