@@ -753,8 +753,23 @@ export default function Units() {
                 >
                   <span style={{ position: 'absolute', top: 16, right: 16, width: 10, height: 10, borderRadius: 999, background: s.dot }} />
                   <div style={{ ...HEADING, fontWeight: 700, fontSize: 18, paddingRight: 18 }}>{u.unitNumber}</div>
-                  <div style={{ fontSize: 13, color: MUTED, marginTop: 2 }}>
-                    {u.sizeSqf != null ? `${u.sizeSqf} sqft` : 'size not set'} · Floor {u.floor}
+                  {/* Price sits opposite the size, which is the figure it is
+                      set against — the two are read together when someone is
+                      matching a caller to a unit. */}
+                  <div className="flex items-baseline justify-between gap-2" style={{ marginTop: 2 }}>
+                    <span style={{ fontSize: 13, color: MUTED }}>
+                      {u.sizeSqf != null ? `${u.sizeSqf} sqft` : 'size not set'} · Floor {u.floor}
+                    </span>
+                    <span
+                      title={u.price != null ? 'Price for 4 weeks' : 'No price set for this unit'}
+                      style={{
+                        fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap',
+                        color: u.price != null ? INK : MUTED,
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {u.price != null ? formatMoney(u.price) : 'no price'}
+                    </span>
                   </div>
                   <div style={{ fontSize: 13, fontWeight: 600, color: s.text, marginTop: 12 }}>{a.line}</div>
                   <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>{a.detail}</div>
