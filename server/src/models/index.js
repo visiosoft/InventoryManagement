@@ -213,7 +213,7 @@ const leadSchema = new Schema(
     storageSizeUnit: { type: String, enum: ['sqft'], default: 'sqft' },
     durationValue: { type: Number, required: true, min: 1 },
     durationUnit: { type: String, enum: ['week', 'month'], required: true },
-    owner: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    owner: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     unitsNeeded: { type: Number, required: true, min: 1 },
     notes: { type: String, default: '' },
     labels: { type: [String], default: [] },

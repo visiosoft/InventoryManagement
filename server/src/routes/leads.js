@@ -416,12 +416,16 @@ router.put('/:id', async (req, res) => {
     if (!Number.isFinite(body.durationValue) || body.durationValue < 1) return res.status(400).json({ error: 'Invalid duration value' });
     if (!Number.isFinite(body.unitsNeeded) || body.unitsNeeded < 1) return res.status(400).json({ error: 'Invalid units needed' });
 
-    const ownerId = isSalesRep(req) ? req.user.id : (body.owner || req.user.id);
-    if (!(await validateOwner(ownerId))) return res.status(400).json({ error: 'Lead owner not found' });
+    // A rep only ever owns their own. For anybody else an empty owner is a
+    // choice — "Unassigned" — not a missing value to fill in with the caller,
+    // which is what it used to become: toggling a tag on a lead nobody owned
+    // quietly handed it to the admin doing the toggling.
+    const ownerId = isSalesRep(req) ? req.user.id : (body.owner || null);
+    if (ownerId && !(await validateOwner(ownerId))) return res.status(400).json({ error: 'Lead owner not found' });
 
     // Handing a lead to somebody makes it new to them, whatever its age, so
     // the highlight on their board comes back.
-    if (String(lead.owner) !== String(ownerId)) lead.ownerSeenAt = null;
+    if (String(lead.owner || '') !== String(ownerId || '')) lead.ownerSeenAt = null;
 
     const phoneNormalized = normalizePhone(body.phone);
     if (!phoneNormalized) return res.status(400).json({ error: 'Phone must contain at least one digit' });
