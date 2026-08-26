@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import mongoose from 'mongoose';
 import { Customer, Contract, Document, Lead, Task, User, WhatsAppMessage } from '../models/index.js';
-import { FOLLOW_UP_KINDS, runFollowUps } from '../services/followUps.js';
+import { FOLLOW_UP_KINDS, runFollowUps, syncFollowUpTask } from '../services/followUps.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 
 const router = Router();
@@ -413,6 +413,10 @@ router.put('/:id', async (req, res) => {
     const userName = req.user.name || req.user.email || 'user';
     lead.timeline.push({ type: 'updated', text: `Lead updated by ${userName}`, user: req.user.id });
 
+    // The task stands for the follow-up from the moment it is scheduled, so
+    // the rep can see what is coming rather than being told on the day.
+    await syncFollowUpTask(lead);
+
     await lead.save();
     res.json(await lead.populate('owner', 'name email'));
 });
@@ -460,6 +464,10 @@ router.patch('/:id/status', async (req, res) => {
             });
         }
     }
+
+    // Won or lost ends the chasing, so the standing follow-up task goes with
+    // it rather than sitting on somebody's board for a closed lead.
+    await syncFollowUpTask(lead);
 
     await lead.save();
 

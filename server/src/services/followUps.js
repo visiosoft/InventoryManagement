@@ -63,29 +63,93 @@ export function isDue(lead = {}, todayKey = dayKeyFor()) {
   return Boolean(day) && day <= todayKey;
 }
 
+/** What the follow-up is, in words, for whichever task carries it. */
+export function describeFollowUp(lead = {}) {
+  const kind = lead.followUpKind || 'date';
+  const day = notifyDayFor(lead.followUpAt, kind);
+  if (!day) return '';
+  const asked = lead.followUpAt ? dayKeyFor(lead.followUpAt) : day;
+
+  const when = kind === 'month' ? `some time in ${asked.slice(0, 7)} — raised on the 1st (${day})`
+    : kind === 'week' ? `during the week of ${day} — raised on the Monday`
+      : `on ${day}`;
+
+  const lines = [`Follow up ${when}.`];
+  if (lead.temperature) lines.push(`Temperature: ${lead.temperature}.`);
+  if (lead.status) lines.push(`Stage when scheduled: ${lead.status}.`);
+  const notes = String(lead.notes || '').trim();
+  if (notes) lines.push(`Notes: ${notes.slice(0, 1000)}`);
+  return lines.join('\n');
+}
+
 /** How the reminder describes itself on the board. */
 export function taskFor(lead = {}, todayKey = dayKeyFor()) {
   const name = lead.fullName || lead.phone || 'this lead';
-  const kind = lead.followUpKind || 'date';
-  const asked = notifyDayFor(lead.followUpAt, kind);
-  const when = kind === 'month' ? `this month (asked for ${asked.slice(0, 7)})`
-    : kind === 'week' ? `this week (week of ${asked})`
-      : `today (${asked})`;
 
   return {
     title: `Follow up with ${name}`,
-    description: `Scheduled follow-up falls due ${when}.`,
+    description: describeFollowUp(lead),
     assignedTo: lead.owner,
     leadId: lead._id,
     leadType: 'storage',
     leadName: name,
-    // Dated today rather than at the original date: a reminder raised late is
-    // still due now, and dating it in the past buries it under overdue work.
-    dueDate: dayRange(todayKey).from,
+    // The day it is meant to be acted on, or today if that has already passed:
+    // a task dated in the past buries itself under genuinely overdue work.
+    dueDate: dayRange(maxDay(notifyDayFor(lead.followUpAt, lead.followUpKind), todayKey)).from,
     priority: lead.temperature === 'hot' ? 'high' : 'medium',
     status: 'todo',
     createdByName: 'Follow-up reminder',
   };
+}
+
+/** The later of two 'YYYY-MM-DD' days — they sort lexically, so this is a max. */
+function maxDay(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  return a > b ? a : b;
+}
+
+/**
+ * Keep the lead's follow-up task in step with the follow-up itself.
+ *
+ * Called whenever the date or its kind changes, so the task exists from the
+ * moment somebody schedules it rather than appearing on the morning it falls
+ * due. Moving the date moves the same task; clearing the follow-up takes it
+ * away again, unless somebody has already worked it.
+ *
+ * `lead` is a Mongoose document — this sets followUpTaskId on it but leaves
+ * saving to the caller, so one save covers the whole edit.
+ */
+export async function syncFollowUpTask(lead) {
+  const existing = lead.followUpTaskId ? await Task.findById(lead.followUpTaskId) : null;
+
+  // Nothing to remind anybody about any more.
+  if (!lead.followUpAt || !lead.owner || lead.status === 'won' || lead.status === 'lost') {
+    if (existing && existing.status === 'todo') await existing.deleteOne();
+    lead.followUpTaskId = null;
+    return null;
+  }
+
+  const fields = taskFor(lead);
+
+  // Somebody already picked the task up or finished it. Leave their work
+  // alone and let the next change start a fresh one.
+  if (existing && existing.status !== 'todo') {
+    lead.followUpTaskId = null;
+  } else if (existing) {
+    existing.title = fields.title;
+    existing.description = fields.description;
+    existing.dueDate = fields.dueDate;
+    existing.priority = fields.priority;
+    existing.assignedTo = fields.assignedTo;
+    existing.leadName = fields.leadName;
+    await existing.save();
+    return existing;
+  }
+
+  const task = await Task.create(fields);
+  lead.followUpTaskId = task._id;
+  return task;
 }
 
 /**
@@ -97,12 +161,16 @@ export function taskFor(lead = {}, todayKey = dayKeyFor()) {
 export async function runFollowUps({ now = new Date() } = {}) {
   const todayKey = dayKeyFor(now);
 
+  // followUpTaskId null: a follow-up scheduled through the app already has its
+  // task from the moment it was set. This catches the ones that do not — leads
+  // scheduled before that existed, or whose task somebody deleted.
   const candidates = await Lead.find({
     followUpAt: { $ne: null },
     followUpNotifiedAt: null,
+    followUpTaskId: null,
     status: { $nin: ['won', 'lost'] },
     owner: { $ne: null },
-  }).select('fullName phone owner status temperature followUpAt followUpKind');
+  }).select('fullName phone owner status temperature notes followUpAt followUpKind');
 
   const due = candidates.filter((l) => isDue(l, todayKey));
   const raised = [];
@@ -110,13 +178,14 @@ export async function runFollowUps({ now = new Date() } = {}) {
   for (const lead of due) {
     try {
       const task = await Task.create(taskFor(lead, todayKey));
+      // Held so a later edit moves this task instead of adding another.
       // updateOne rather than save(): the timeline is deliberately not loaded
       // above — it can run to hundreds of entries and none of it is needed to
       // decide whether a reminder is due.
       await Lead.updateOne(
         { _id: lead._id },
         {
-          $set: { followUpNotifiedAt: now },
+          $set: { followUpNotifiedAt: now, followUpTaskId: task._id },
           $push: { timeline: { at: now, type: 'note', text: 'Follow-up reminder raised as a task.' } },
         }
       );

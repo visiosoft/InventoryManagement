@@ -187,6 +187,9 @@ const leadSchema = new Schema(
     /* Stamped when the reminder went out, so it goes out once. Cleared
        whenever the follow-up is moved, which makes the new date fire. */
     followUpNotifiedAt: { type: Date, default: null },
+    /* The task standing for this follow-up. Held so that moving the date moves
+       the task rather than leaving the old one behind and adding another. */
+    followUpTaskId: { type: Schema.Types.ObjectId, ref: 'Task', default: null },
     source: {
       type: String,
       enum: ['manual', 'whatsapp', 'referral', 'walk_in', 'other'],

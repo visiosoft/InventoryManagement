@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { notifyDayFor, isDue, taskFor, FOLLOW_UP_KINDS } from './followUps.js';
+import { notifyDayFor, isDue, taskFor, describeFollowUp, FOLLOW_UP_KINDS } from './followUps.js';
 
 // 2026-08-26 is a Wednesday. Dubai is UTC+4.
 const WED = '2026-08-26T09:00:00.000Z';
@@ -117,4 +117,39 @@ test('a late reminder is dated today, not buried in the past', () => {
   // Raised on 4 Sep for a follow-up asked for on 26 Aug: due now.
   const t = taskFor(lead(), '2026-09-04');
   assert.equal(t.dueDate.toISOString(), '2026-09-03T20:00:00.000Z');
+});
+
+test('a task scheduled ahead is dated for the day it is meant to be done', () => {
+  // Set on 20 Aug for 26 Aug: the task is due on the 26th, not on the 20th.
+  const t = taskFor(lead(), '2026-08-20');
+  assert.equal(t.dueDate.toISOString(), '2026-08-25T20:00:00.000Z');
+});
+
+test('the description says when, and carries the detail across', () => {
+  const d = describeFollowUp(lead({ notes: 'Wants two units in F3.', temperature: 'hot' }));
+  assert.match(d, /2026-08-26/);
+  assert.match(d, /Wants two units in F3\./);
+  assert.match(d, /hot/);
+});
+
+test('a weekly follow-up explains that it is raised on the Monday', () => {
+  const d = describeFollowUp(lead({ followUpKind: 'week' }));
+  assert.match(d, /week of 2026-08-24/);
+  assert.match(d, /Monday/);
+});
+
+test('a monthly follow-up explains that it is raised on the 1st', () => {
+  const d = describeFollowUp(lead({ followUpKind: 'month' }));
+  assert.match(d, /2026-08/);
+  assert.match(d, /1st/);
+});
+
+test('nothing scheduled describes nothing', () => {
+  assert.equal(describeFollowUp(lead({ followUpAt: null })), '');
+});
+
+test('a lead with no notes still gets a usable description', () => {
+  const d = describeFollowUp(lead({ notes: '', temperature: '' }));
+  assert.match(d, /Follow up on 2026-08-26/);
+  assert.ok(!d.includes('Notes:'));
 });

@@ -510,9 +510,9 @@ export default function PersonProfile() {
                         never a guess about what the system will do. */}
                     {lead.followUpAt && (
                       <p style={{ fontSize: 11.5, color: FAINT, marginTop: 4 }}>
-                        {lead.followUpNotifiedAt
-                          ? `Reminder already raised ${formatDate(lead.followUpNotifiedAt)}. Change the date to schedule another.`
-                          : `A task lands on ${formatDate(reminderDay(lead.followUpAt, lead.followUpKind))} for ${lead.owner?.name || 'whoever owns this'}.`}
+                        {lead.owner
+                          ? `Task on ${lead.owner.name}'s board, due ${formatDate(reminderDay(lead.followUpAt, lead.followUpKind))}.`
+                          : 'Assign this lead to somebody and a task will be raised for them.'}
                       </p>
                     )}
                   </div>
