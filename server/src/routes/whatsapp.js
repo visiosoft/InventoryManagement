@@ -400,7 +400,26 @@ router.post('/conversations/:phoneNormalized/lead', async (req, res) => {
             if (!generated && !ownerId && !email && !notes) {
                 return res.json({ action: 'exists', lead: { _id: existing._id, fullName: existing.fullName, status: existing.status } });
             }
-            if (generated && fullName) existing.fullName = fullName;
+            // Promoting a placeholder is when this becomes a lead somebody
+            // decided to work, so that is what "Added" should say. Until now
+            // it kept the moment WhatsApp first heard from them, which could
+            // be weeks earlier and made a brand new lead look stale.
+            //
+            // The original is not lost: it goes in the timeline, and the
+            // messages themselves are still dated.
+            if (generated && fullName) {
+                existing.fullName = fullName;
+                const firstHeard = existing.leadDateTime;
+                existing.leadDateTime = new Date();
+                if (firstHeard) {
+                    existing.timeline = existing.timeline || [];
+                    existing.timeline.push({
+                        type: 'note',
+                        text: `First message from this number: ${new Date(firstHeard).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`,
+                        user: req.user.id,
+                    });
+                }
+            }
             if (email) existing.email = email;
             // Saving a chat onto a rep makes it new to them.
             if (ownerId && String(existing.owner) !== ownerId) {
