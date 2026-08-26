@@ -106,7 +106,10 @@ const navBottom: { to: string; label: string; icon: any; perm: string | string[]
 // A rep's own board and their to-do list sit above the groups — they are
 // what the day starts on, not a category of work.
 const salesRepNavTop = [
-  { key: 'dashboard', to: '/my-leads', label: 'Dashboard', icon: LayoutDashboard, perm: 'sales_board' },
+  // Called "Dashboard" until a rep asked where Leads had gone. The page is
+  // their leads board — the same one the top menu calls My Leads — so naming
+  // it after the thing it shows is the whole fix.
+  { key: 'leads', to: '/my-leads', label: 'Leads', icon: UserPlus, perm: 'sales_board' },
   { key: 'tasks', to: '/tasks', label: 'Tasks', icon: ListTodo, perm: 'sales_board' },
 ]
 
