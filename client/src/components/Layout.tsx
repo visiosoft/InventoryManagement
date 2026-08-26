@@ -125,7 +125,10 @@ const salesRepNavGroups = [
   {
     title: 'Storage',
     items: [
-      { key: 'book-unit', to: '/quotes', label: 'Book Unit', icon: FileText, perm: 'sales_board' },
+      // Accounts is not given this: they handle billing after a booking rather
+      // than taking one. It is a role difference, not a permission one — the
+      // two roles deliberately carry the same modules.
+      { key: 'book-unit', to: '/quotes', label: 'Book Unit', icon: FileText, perm: 'sales_board', notFor: 'accounts' },
       { key: 'customers', to: '/contracts', label: 'Customers', icon: Users, perm: 'contracts' },
       { key: 'search-units', to: '/units', label: 'Search Units', icon: Box, perm: 'units' },
     ],
@@ -467,7 +470,9 @@ export default function Layout() {
               {salesRepNavTop.filter(({ perm }) => !perm || hasPermission(perm)).map(link)}
 
               {salesRepNavGroups.map((group) => {
-                const items = group.items.filter(({ perm }) => !perm || hasPermission(perm))
+                const items = group.items
+                  .filter(({ perm }) => !perm || hasPermission(perm))
+                  .filter((i) => !('notFor' in i && i.notFor === user?.role))
                 if (items.length === 0) return null
                 return (
                   <div key={group.title} className="pt-3">

@@ -6,7 +6,11 @@ function PermGuard({ module, orSalesRep, children }: { module: string; orSalesRe
   const { hasPermission, user } = useAuth()
   // Booking a unit is a rep's core job, but 'quotes' is not one of the
   // permissions reps are created with, so the role opens the door instead.
-  const allowed = hasPermission(module) || (orSalesRep && isSalesRepRole(user?.role))
+  // Accounts shares a rep's permissions but not this: they handle the money
+  // after a booking, they do not take one. Hiding the sidebar entry alone
+  // would leave the page a URL away.
+  const allowed = hasPermission(module)
+    || (orSalesRep && user?.role === 'sales_rep')
   return allowed ? <>{children}</> : <Navigate to="/" replace />
 }
 
