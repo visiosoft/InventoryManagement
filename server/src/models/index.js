@@ -173,6 +173,11 @@ const leadSchema = new Schema(
       default: 'manual',
     },
     leadDateTime: { type: Date, default: Date.now },
+    // When the owner first opened it. Null means it has landed on somebody who
+    // has not looked at it yet — which is what the rep's board highlights.
+    // Cleared whenever the lead is reassigned, because it is new to the person
+    // receiving it however old the record is.
+    ownerSeenAt: { type: Date, default: null },
     storageSizeValue: { type: Number, required: true, min: 0 },
     storageSizeUnit: { type: String, enum: ['sqft'], default: 'sqft' },
     durationValue: { type: Number, required: true, min: 1 },

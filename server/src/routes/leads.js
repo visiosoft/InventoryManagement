@@ -135,6 +135,26 @@ router.get('/', async (req, res) => {
  *
  * Accepts a lead id or a customer id: the caller usually knows only one.
  */
+/**
+ * The owner has looked at it.
+ *
+ * Only the person it belongs to can mark it seen — an admin opening a rep's
+ * lead should not clear the highlight the rep has not acted on yet.
+ */
+router.post('/:id/seen', async (req, res) => {
+    try {
+        const lead = await Lead.findById(req.params.id);
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (String(lead.owner) !== String(req.user.id)) return res.json({ ok: true, changed: false });
+        if (lead.ownerSeenAt) return res.json({ ok: true, changed: false });
+        lead.ownerSeenAt = new Date();
+        await lead.save();
+        res.json({ ok: true, changed: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 router.get('/:id/profile', async (req, res) => {
     try {
         const { id } = req.params;
@@ -258,6 +278,10 @@ router.put('/:id', async (req, res) => {
 
     const ownerId = isSalesRep(req) ? req.user.id : (body.owner || req.user.id);
     if (!(await validateOwner(ownerId))) return res.status(400).json({ error: 'Lead owner not found' });
+
+    // Handing a lead to somebody makes it new to them, whatever its age, so
+    // the highlight on their board comes back.
+    if (String(lead.owner) !== String(ownerId)) lead.ownerSeenAt = null;
 
     const phoneNormalized = normalizePhone(body.phone);
     if (!phoneNormalized) return res.status(400).json({ error: 'Phone must contain at least one digit' });

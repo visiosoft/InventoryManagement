@@ -74,6 +74,8 @@ export interface LeadTimelineEntry {
 }
 
 export interface Lead {
+  /** When the owner first opened it. Null means it has not been looked at yet. */
+  ownerSeenAt?: string | null
   _id: string
   firstName?: string
   lastName?: string

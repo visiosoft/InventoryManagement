@@ -386,7 +386,11 @@ router.post('/conversations/:phoneNormalized/lead', async (req, res) => {
             }
             if (generated && fullName) existing.fullName = fullName;
             if (email) existing.email = email;
-            if (ownerId) existing.owner = ownerId;
+            // Saving a chat onto a rep makes it new to them.
+            if (ownerId && String(existing.owner) !== ownerId) {
+                existing.owner = ownerId;
+                existing.ownerSeenAt = null;
+            }
             // Appended, never replaced: whatever was already noted about this
             // person is part of the record.
             if (notes) existing.notes = [existing.notes, notes].filter(Boolean).join('\n');

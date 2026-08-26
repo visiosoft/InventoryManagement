@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronLeft, ChevronRight, ExternalLink, MessageCircle, Phone, Plus, UserPlus } from 'lucide-react'
@@ -776,6 +776,8 @@ type Row = {
   status: string
   statusColor: { bg: string; fg: string }
   addedAt?: string
+  // Landed on this person and not yet opened by them.
+  unseen?: boolean
   href?: string
   onOpen?: () => void
   canConvert: boolean
@@ -828,6 +830,19 @@ export default function SalesBoard() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['my-leads-moving'] }),
   })
 
+  /* Opening a lead clears its highlight.
+   *
+   * Fire-and-forget, and the list is refreshed rather than the row patched:
+   * the server decides whether it counted (only the owner can mark their own
+   * lead seen), so guessing here would let the highlight disappear for an
+   * admin who merely looked. */
+  const markSeen = useCallback((l: Lead) => {
+    if (l.ownerSeenAt) return
+    api.post(`/leads/${l._id}/seen`)
+      .then(() => qc.invalidateQueries({ queryKey: ['my-leads-storage'] }))
+      .catch(() => {})
+  }, [qc])
+
   const rows: Row[] = useMemo(() => {
     const storageRows: Row[] = (storagePage?.data || []).map((l: Lead) => ({
       key: `s-${l._id}`,
@@ -838,7 +853,8 @@ export default function SalesBoard() {
       status: labelize(l.status),
       statusColor: STORAGE_STATUS_COLORS[l.status] || STORAGE_STATUS_COLORS.new,
       addedAt: l.leadDateTime,
-      onOpen: () => setViewingLead(l),
+      unseen: !l.ownerSeenAt,
+      onOpen: () => { markSeen(l); setViewingLead(l) },
       canConvert: l.status !== 'won' && l.status !== 'lost',
       convertLabel: 'Convert to Customer',
       convert: () => convertStorage.mutate(l._id),
@@ -859,8 +875,14 @@ export default function SalesBoard() {
       convert: () => convertMoving.mutate(l._id),
       converting: convertMoving.isPending,
     }))
-    return [...storageRows, ...movingRows].sort((a, b) => (b.addedAt || '').localeCompare(a.addedAt || ''))
-  }, [storagePage, movingLeads, convertStorage, convertMoving])
+    // Anything not yet opened sits at the top, newest first within each group.
+    // A rep should not have to hunt down the page for what has just been handed
+    // to them.
+    return [...storageRows, ...movingRows].sort((a, b) => {
+      if (Boolean(a.unseen) !== Boolean(b.unseen)) return a.unseen ? -1 : 1
+      return (b.addedAt || '').localeCompare(a.addedAt || '')
+    })
+  }, [storagePage, movingLeads, convertStorage, convertMoving, markSeen])
 
   const statuses = useMemo(() => [...new Set(rows.map((r) => r.status))].sort(), [rows])
   const filtered = statusFilter ? rows.filter((r) => r.status === statusFilter) : rows
@@ -872,6 +894,17 @@ export default function SalesBoard() {
 
   return (
     <div style={{ background: '#FDFCFA', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+      <style>{`
+        @keyframes lead-new {
+          0%, 100% { background: transparent; }
+          50% { background: #F3EDFF; }
+        }
+        /* Anyone who has asked not to see motion gets the left bar and the dot
+           instead, which carry the same information without the pulse. */
+        @media (prefers-reduced-motion: reduce) {
+          @keyframes lead-new { 0%, 100% { background: #F7F3FF; } }
+        }
+      `}</style>
       {/* Top bar */}
       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-7">
         <div>
@@ -942,8 +975,24 @@ export default function SalesBoard() {
               </thead>
               <tbody>
                 {filtered.map((r) => (
-                  <tr key={r.key} style={{ borderBottom: '1px solid rgba(20,8,31,0.04)' }} className="hover:bg-[#FAF8F5] transition-colors">
+                  <tr
+                    key={r.key}
+                    style={{
+                      borderBottom: '1px solid rgba(20,8,31,0.04)',
+                      // A soft pulse rather than a hard flash: it has to be
+                      // noticeable across a room without being unbearable to
+                      // sit in front of all day.
+                      ...(r.unseen ? { animation: 'lead-new 1.6s ease-in-out infinite', borderLeft: `3px solid ${PURPLE}` } : null),
+                    }}
+                    className="hover:bg-[#FAF8F5] transition-colors"
+                  >
                     <td style={{ padding: '14px 16px' }}>
+                      {r.unseen && (
+                        <span
+                          title="Assigned to you and not opened yet"
+                          style={{ display: 'inline-block', width: 7, height: 7, borderRadius: 999, background: PURPLE, marginRight: 8, verticalAlign: 'middle' }}
+                        />
+                      )}
                       {r.onOpen ? (
                         <button type="button" onClick={r.onOpen} style={{ fontSize: 14, fontWeight: 600, color: PURPLE, background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }} className="hover:opacity-80 transition-opacity">{r.name}</button>
                       ) : (
