@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { Unit, Contract, Payment, Expense } from '../models/index.js';
 import { siteScope } from '../utils/siteScope.js';
-import { unitRow, totals, byFloor, monthlyRate, monthlySeries, pickPerUnit } from '../services/rateRealisation.js';
+import { unitRow, totals, byFloor, monthlyRate, monthlySeries, pickPerUnit, CYCLES_PER_YEAR } from '../services/rateRealisation.js';
 import { buildRatesWorkbook } from '../services/ratesWorkbook.js';
 
 const router = Router();
@@ -505,6 +505,9 @@ async function buildRatesReport(query = {}) {
   return {
     month: monthISO,
     label: monthStart.toLocaleString('en', { month: 'long', year: 'numeric', timeZone: 'UTC' }),
+    // Sent rather than assumed by the page: charging is per four weeks, so a
+    // year is 13 cycles and the rule belongs with the other billing rules.
+    cyclesPerYear: CYCLES_PER_YEAR,
     totals: totals(rows),
     floors: byFloor(rows),
     // The trend, from the same figures rather than a separate query that could

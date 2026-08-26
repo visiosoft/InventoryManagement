@@ -11,6 +11,7 @@
  */
 
 import ExcelJS from 'exceljs';
+import { CYCLES_PER_YEAR } from './rateRealisation.js';
 
 /* The screen's tokens, as Excel wants them: ARGB, no hash. */
 const PURPLE_600 = 'FF5B2BC9';
@@ -43,7 +44,7 @@ export async function buildRatesWorkbook(report) {
 
   /* ── Sheet 1: the report ─────────────────────────────────────────────── */
   const ws = wb.addWorksheet('Actual vs leased', {
-    views: [{ state: 'frozen', ySplit: 8 }],
+    views: [{ state: 'frozen', ySplit: 10 }],
     pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
   });
 
@@ -69,11 +70,16 @@ export async function buildRatesWorkbook(report) {
   ws.addRow([]);
 
   // The headline figures, so the sheet stands on its own away from the screen.
+  // Annualised at 13 cycles, not 12 months: tenants are charged per four
+  // weeks, so a year holds 52 / 4 = 13 of them.
+  const cycles = report.cyclesPerYear ?? CYCLES_PER_YEAR;
   const summary = [
     ['Units', t.units, 'Occupancy', t.occupancyPct == null ? '—' : t.occupancyPct / 100],
-    ['Leased', t.leasedUnits, 'Monthly asking (all units)', t.actualAll],
-    ['Vacant', t.vacantUnits, 'Monthly leased', t.leased],
+    ['Leased', t.leasedUnits, 'Per cycle · asking (all units)', t.actualAll],
+    ['Vacant', t.vacantUnits, 'Per cycle · leased', t.leased],
     ['Unpriced', t.unpricedUnits, 'Asking price sitting empty', t.vacantValue],
+    ['', '', `Annual asking (× ${cycles} cycles)`, t.actualAll * cycles],
+    ['', '', `Annual leased (× ${cycles} cycles)`, t.leased * cycles],
   ];
   for (const [aLabel, aVal, bLabel, bVal] of summary) {
     const r = ws.addRow([aLabel, aVal, '', bLabel, bVal]);

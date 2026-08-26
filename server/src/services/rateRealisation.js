@@ -22,6 +22,19 @@
  * Pure — no database, no clock — so the money can be checked directly.
  */
 
+/**
+ * Billing cycles in a year.
+ *
+ * Every tenant is charged per four weeks, so a year holds 52 / 4 = 13 cycles,
+ * not 12. Annualising a cycle by twelve understates the year by a full month's
+ * income — on the August figures that is AED 335,200 of asking price missing
+ * from the run rate.
+ *
+ * The stored `rate` is one cycle. It is called "monthly" throughout the code
+ * because a cycle is roughly a month, but a year is never twelve of them.
+ */
+export const CYCLES_PER_YEAR = 13;
+
 const round2 = (n) => Math.round(n * 100) / 100;
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 

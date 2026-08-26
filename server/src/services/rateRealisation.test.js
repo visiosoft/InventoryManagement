@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { monthlyRate, contractLeased, unitRow, totals, byFloor, unitsOf, monthlySeries, pickPerUnit } from './rateRealisation.js';
+import { monthlyRate, contractLeased, unitRow, totals, byFloor, unitsOf, monthlySeries, pickPerUnit, CYCLES_PER_YEAR } from './rateRealisation.js';
 
 /* `rate` is the monthly price whatever the billing period — generateSchedule
    states it outright and divides by four to get the weekly payment. Treating a
@@ -213,4 +213,11 @@ test('a genuine gap in the middle is kept', () => {
   // Only leading absence is trimmed — a real quiet month still shows.
   const s = monthlySeries([U('u', 1000, '2020-01-01')], [], { months: 3, now: NOW });
   assert.equal(s.length, 3);
+});
+
+test('a year is thirteen four-week cycles, not twelve months', () => {
+  // Tenants are charged per four weeks: 52 / 4 = 13. Annualising by twelve
+  // drops a whole cycle of income — on August, AED 335,200 of asking price.
+  assert.equal(CYCLES_PER_YEAR, 13);
+  assert.equal(335200 * CYCLES_PER_YEAR, 4357600);
 });

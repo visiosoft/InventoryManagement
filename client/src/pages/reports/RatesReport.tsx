@@ -33,7 +33,7 @@ type Totals = {
 }
 type Floor = Totals & { floor: string; rows: Row[] }
 type Point = { monthISO: string; label: string; actual: number; leased: number; units: number; leasedUnits: number }
-type Report = { month: string; label: string; totals: Totals; floors: Floor[]; series: Point[]; rows: Row[] }
+type Report = { month: string; label: string; cyclesPerYear: number; totals: Totals; floors: Floor[]; series: Point[]; rows: Row[] }
 
 const aed = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 0 })
 const pct = (n: number | null) => (n == null ? '—' : `${n}%`)
@@ -147,24 +147,27 @@ export default function RatesReport() {
 
   const t = data?.totals
   const series = data?.series ?? []
+  // Charging is per four weeks, so a year is 52 / 4 = 13 cycles. The server
+  // sends the figure so the rule lives with the rest of the billing logic.
+  const cycles = data?.cyclesPerYear ?? 13
   const cards = annual
     ? [
-      // Annualised from the month, not summed from the trend. The trend only
+      // Annualised from the cycle, not summed from the trend. The trend only
       // goes back as far as the records do — three months at present — so
       // adding those up produced 765,700 and called it a year.
-      { label: 'Annual asking', value: aed((t?.actualAll ?? 0) * 12), sub: `${data?.label ?? ''} asking × 12 months` },
-      { label: 'Annual leased', value: aed((t?.leased ?? 0) * 12), sub: `${data?.label ?? ''} leased × 12 months` },
+      { label: 'Annual asking', value: aed((t?.actualAll ?? 0) * cycles), sub: `${data?.label ?? ''} asking × ${cycles} cycles` },
+      { label: 'Annual leased', value: aed((t?.leased ?? 0) * cycles), sub: `${data?.label ?? ''} leased × ${cycles} cycles` },
       {
         label: (t?.variance ?? 0) >= 0 ? 'Annual above asking' : 'Annual below asking',
-        value: aed(Math.abs(t?.variance ?? 0) * 12),
+        value: aed(Math.abs(t?.variance ?? 0) * cycles),
         sub: t?.discountPct != null ? `${t.discountPct}% on what is let, annualised` : 'Nothing let',
         filled: true,
       },
     ]
     : [
-      // Asking price × 12: what the space would earn a year at full occupancy
-      // and no discount. A ceiling to measure against, not a forecast.
-      { label: 'Annual run rate', value: aed((t?.actualAll ?? 0) * 12), sub: `${data?.label ?? ''} asking × 12 months` },
+      // What the space would earn in a year at full occupancy and no discount:
+      // a ceiling to measure against, not a forecast.
+      { label: 'Annual run rate', value: aed((t?.actualAll ?? 0) * cycles), sub: `${data?.label ?? ''} asking × ${cycles} four-week cycles` },
       { label: 'Monthly asking', value: aed(t?.actualAll ?? 0), sub: `Across all ${t?.units ?? 0} units` },
       { label: 'Monthly leased', value: aed(t?.leased ?? 0), sub: `${t?.leasedUnits ?? 0} of ${t?.units ?? 0} units under lease`, filled: true },
     ]
