@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import {
   Send, MessageSquare, RefreshCw, UserPlus, UserCheck, Bell, BellOff, FileText,
   Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Info, Paperclip,
-  Bot, Tag, Check, ClipboardList, Sparkles,
+  Bot, Tag, Check, ClipboardList, Sparkles, Trash2,
 } from 'lucide-react'
 import { api, whatsappApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel } from '../lib/api'
 import { convDisplayName, formatListTime, isPlaceholderName, Avatar } from '../lib/whatsappDisplay'
@@ -417,6 +417,7 @@ function LabelPicker({ convo, labels, onChanged }: {
   const [newName, setNewName] = useState('')
   const [colour, setColour] = useState(LABEL_COLOURS[6])
   const [err, setErr] = useState('')
+  const [confirming, setConfirming] = useState('')
   const boxRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -433,6 +434,14 @@ function LabelPicker({ convo, labels, onChanged }: {
   const setLabels = useMutation({
     mutationFn: (ids: string[]) => whatsappApi.setChatLabels(convo.phoneNormalized, ids),
     onSuccess: () => { setErr(''); onChanged() },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  // Deleting a label takes it off every chat carrying it, not just this one,
+  // so it asks first rather than going on a single click.
+  const remove = useMutation({
+    mutationFn: (id: string) => whatsappApi.deleteLabel(id),
+    onSuccess: () => { setErr(''); setConfirming(''); onChanged() },
     onError: (e) => setErr(apiError(e)),
   })
 
@@ -473,17 +482,49 @@ function LabelPicker({ convo, labels, onChanged }: {
             {labels.length === 0 ? (
               <p className="px-3 py-2.5" style={{ fontSize: 12, color: FAINT_INK }}>No labels yet. Make one below.</p>
             ) : labels.map((l) => (
-              <button
-                key={l._id}
-                type="button"
-                onClick={() => toggle(l._id)}
-                disabled={setLabels.isPending}
-                className="w-full flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-[#F7F3FF] disabled:opacity-60"
-              >
-                <span className="rounded-full shrink-0" style={{ width: 9, height: 9, background: l.color }} aria-hidden />
-                <span className="flex-1 text-left truncate" style={{ fontSize: 12.5, color: INK }}>{l.name}</span>
-                {on.has(l._id) && <Check size={13} style={{ color: '#4A1FA0' }} />}
-              </button>
+              <div key={l._id} className="group w-full flex items-center gap-2 px-3 py-2 hover:bg-[#F7F3FF]">
+                <button
+                  type="button"
+                  onClick={() => toggle(l._id)}
+                  disabled={setLabels.isPending}
+                  className="flex-1 min-w-0 flex items-center gap-2 cursor-pointer disabled:opacity-60"
+                >
+                  <span className="rounded-full shrink-0" style={{ width: 9, height: 9, background: l.color }} aria-hidden />
+                  <span className="flex-1 text-left truncate" style={{ fontSize: 12.5, color: INK }}>{l.name}</span>
+                  {on.has(l._id) && <Check size={13} style={{ color: '#4A1FA0' }} />}
+                </button>
+                {confirming === l._id ? (
+                  <span className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => remove.mutate(l._id)}
+                      disabled={remove.isPending}
+                      className="rounded px-1.5 py-0.5 cursor-pointer disabled:opacity-50"
+                      style={{ fontSize: 11, fontWeight: 700, background: '#FEE2E2', color: '#B91C1C' }}
+                    >
+                      {remove.isPending ? '…' : 'Delete'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirming('')}
+                      className="rounded px-1 py-0.5 cursor-pointer"
+                      style={{ fontSize: 11, color: FAINT_INK }}
+                    >
+                      No
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => { setErr(''); setConfirming(l._id) }}
+                    title={`Delete "${l.name}" from every chat`}
+                    aria-label={`Delete label ${l.name}`}
+                    className="shrink-0 rounded p-1 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-red-50 cursor-pointer transition-opacity"
+                  >
+                    <Trash2 size={12} style={{ color: '#B91C1C' }} />
+                  </button>
+                )}
+              </div>
             ))}
           </div>
 
@@ -1931,7 +1972,11 @@ export default function WhatsApp() {
                                 : { fontSize: 10, fontWeight: 700, background: '#F3EDFF', color: '#4A1FA0' }
                             }
                           >
-                            {c.customer ? 'Customer' : 'Lead'}
+                            {c.customer
+                              ? 'Customer'
+                              : c.lead?.ownerName
+                                ? `Lead (${c.lead.ownerName})`
+                                : 'Lead'}
                           </span>
                         )}
                         {isUnread && (
@@ -1970,11 +2015,19 @@ export default function WhatsApp() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="truncate" style={{ fontSize: 15, fontWeight: 700, color: INK }}>{convoTitle}</span>
-                    {selectedConvo.customer && (
+                    {selectedConvo.customer ? (
                       <span className="shrink-0 rounded-full px-2 py-0.5" style={{ fontSize: 10, fontWeight: 700, background: '#DCFCE7', color: '#047857' }}>
                         Customer
                       </span>
-                    )}
+                    ) : selectedConvo.lead && !isPlaceholderName(selectedConvo.lead.fullName) ? (
+                      <span
+                        className="shrink-0 rounded-full px-2 py-0.5"
+                        style={{ fontSize: 10, fontWeight: 700, background: '#F3EDFF', color: '#4A1FA0' }}
+                        title={selectedConvo.lead.ownerName ? `Assigned to ${selectedConvo.lead.ownerName}` : 'Not assigned to anybody yet'}
+                      >
+                        {selectedConvo.lead.ownerName ? `Lead (${selectedConvo.lead.ownerName})` : 'Lead — unassigned'}
+                      </span>
+                    ) : null}
                   </div>
                   <div className="truncate" style={{ fontSize: 12, color: FAINT_INK }}>+{selectedConvo.phoneNormalized}</div>
                 </div>

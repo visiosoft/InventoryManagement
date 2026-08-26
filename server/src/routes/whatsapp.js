@@ -199,7 +199,7 @@ router.get('/conversations', async (_req, res) => {
                 localField: 'leadId',
                 foreignField: '_id',
                 as: 'lead',
-                pipeline: [{ $project: { fullName: 1, status: 1 } }],
+                pipeline: [{ $project: { fullName: 1, status: 1, owner: 1 } }],
             },
         },
     ]);
@@ -228,6 +228,15 @@ router.get('/conversations', async (_req, res) => {
         .lean();
     const byThread = new Map(botThreads.map((t) => [t.phoneNormalized, t]));
 
+    // Who is working each lead. The inbox showed a bare "Lead" badge, which
+    // told you somebody had saved this person but not who is meant to answer
+    // them — so a thread with an owner looked exactly like an unclaimed one.
+    const ownerIds = [...new Set(rows.map((r) => r.lead?.[0]?.owner).filter(Boolean).map(String))];
+    const owners = ownerIds.length
+        ? await User.find({ _id: { $in: ownerIds } }).select('name email').lean()
+        : [];
+    const byOwner = new Map(owners.map((u) => [String(u._id), u.name || u.email || '']));
+
     const chatLabels = await WhatsAppChatLabel.find({ phoneNormalized: { $in: rows.map((r) => r._id) } })
         .populate('labels', 'name color sortOrder')
         .lean();
@@ -243,7 +252,14 @@ router.get('/conversations', async (_req, res) => {
             phone: r.phone,
             count: r.count,
             lastAt: r.lastAt,
-            lead: lead ? { _id: lead._id, fullName: lead.fullName, status: lead.status } : null,
+            lead: lead
+                ? {
+                    _id: lead._id,
+                    fullName: lead.fullName,
+                    status: lead.status,
+                    ownerName: byOwner.get(String(lead.owner)) || '',
+                }
+                : null,
             customer: customer ? { _id: customer._id, fullName: customer.fullName } : null,
             // What the inbox should show: a real name if we hold one,
             // otherwise the number itself — never a placeholder.
