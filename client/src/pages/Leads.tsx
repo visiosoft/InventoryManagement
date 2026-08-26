@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
-import { AlertTriangle, CalendarPlus, CheckSquare, FileText, Mail, MessageCircle, MoreHorizontal, Phone, Plus, RefreshCw, Search, Send, Upload, X } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { AlertTriangle, CalendarPlus, CheckSquare, ExternalLink, FileText, Mail, MessageCircle, MoreHorizontal, Phone, Plus, RefreshCw, Search, Send, Upload, X } from 'lucide-react'
 import { api, apiError, leadApi, type LeadPage } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { Lead, LeadComment, LeadSource, LeadStatus } from '../lib/types'
@@ -231,6 +231,13 @@ export function LeadDetailPanel({ lead }: { lead: Lead }) {
         onSuccess: invalidate,
     })
 
+    // Partial by design: PUT /leads/:id merges over the stored lead, so this
+    // touches the follow-up date and nothing else.
+    const setFollowUp = useMutation({
+        mutationFn: (followUpAt: string | null) => api.put(`/leads/${lead._id}`, { followUpAt }).then(r => r.data),
+        onSuccess: invalidate,
+    })
+
     const sendEmail = useMutation({
         mutationFn: () => api.post(`/leads/${lead._id}/send-email`, { subject: emailSubject, body: emailBody }),
         onSuccess: () => { invalidate(); setEmailOpen(false); setEmailSubject(''); setEmailBody(''); setEmailErr('') },
@@ -240,6 +247,8 @@ export function LeadDetailPanel({ lead }: { lead: Lead }) {
     const comments = detail?.comments || []
     const timeline = detail?.timeline || []
     const currentStatus = detail?.status || lead.status
+    const followUpRaw = detail?.followUpAt ?? lead.followUpAt
+    const followUpDate = followUpRaw ? String(followUpRaw).slice(0, 10) : ''
     const digits = (lead.whatsappNo || lead.phone || '').replace(/[^0-9]/g, '')
 
     return (
@@ -271,9 +280,14 @@ export function LeadDetailPanel({ lead }: { lead: Lead }) {
                         </a>
                     )}
                     {digits && (
-                        <a href={`https://wa.me/${digits}`} target="_blank" rel="noreferrer" title="WhatsApp" className="p-1.5 rounded-lg hover:bg-green-50 dark:hover:bg-green-950/30 transition-colors">
-                            <MessageCircle size={15} className="text-green-600" />
-                        </a>
+                        <>
+                            <Link to={`/whatsapp?phone=${digits}`} title="Open chat in PurpleBox" className="p-1.5 rounded-lg hover:bg-green-50 dark:hover:bg-green-950/30 transition-colors">
+                                <MessageCircle size={15} className="text-green-600" />
+                            </Link>
+                            <a href={`https://wa.me/${digits}`} target="_blank" rel="noreferrer" title="Open in WhatsApp" className="p-1.5 rounded-lg hover:bg-muted transition-colors">
+                                <ExternalLink size={14} className="text-muted-foreground" />
+                            </a>
+                        </>
                     )}
                     {lead.email && (
                         <button type="button" title="Send email" onClick={() => setEmailOpen((v) => !v)} className="p-1.5 rounded-lg hover:bg-muted transition-colors cursor-pointer">
@@ -297,6 +311,53 @@ export function LeadDetailPanel({ lead }: { lead: Lead }) {
                             {updateStatus.isPending ? 'Saving…' : t.label}
                         </button>
                     ))}
+                </div>
+            )}
+
+            {digits && (
+                <Link
+                    to={`/whatsapp?phone=${digits}`}
+                    className="flex items-center justify-center gap-2 h-9 rounded-xl bg-green-600/10 text-green-700 dark:text-green-500 text-sm font-semibold hover:bg-green-600/20 transition-colors cursor-pointer"
+                >
+                    <MessageCircle size={15} /> Open chat
+                </Link>
+            )}
+
+            {/* A lead is not really scheduled until there is a day attached to
+                it — without one it drops out of the follow-ups list and nobody
+                is ever reminded. So the date is asked for right where the
+                status is set. */}
+            {currentStatus === 'follow_up_scheduled' && (
+                <div className={`rounded-xl border p-3 ${followUpDate ? 'bg-muted/40' : 'border-amber-300 bg-amber-50 dark:bg-amber-950/20'}`}>
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <div>
+                            <div className="text-sm font-semibold">Follow up on</div>
+                            {!followUpDate && (
+                                <div className="text-xs text-amber-700 dark:text-amber-500 mt-0.5">
+                                    Pick a date, or nobody gets reminded.
+                                </div>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="date"
+                                value={followUpDate}
+                                disabled={setFollowUp.isPending}
+                                onChange={(e) => setFollowUp.mutate(e.target.value || null)}
+                                className="h-9 rounded-lg border bg-background px-3 text-sm disabled:opacity-50"
+                            />
+                            {followUpDate && (
+                                <button
+                                    type="button"
+                                    onClick={() => setFollowUp.mutate(null)}
+                                    disabled={setFollowUp.isPending}
+                                    className="text-xs text-muted-foreground hover:text-foreground cursor-pointer disabled:opacity-50"
+                                >
+                                    Clear
+                                </button>
+                            )}
+                        </div>
+                    </div>
                 </div>
             )}
 

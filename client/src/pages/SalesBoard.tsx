@@ -880,6 +880,7 @@ export default function SalesBoard() {
   const { user } = useAuth()
   const qc = useQueryClient()
   const [statusFilter, setStatusFilter] = useState('')
+  const [showAllLeads, setShowAllLeads] = useState(false)
   const [viewingLead, setViewingLead] = useState<Lead | null>(null)
 
   const { data: storagePage, isLoading: storageLoading } = useQuery({
@@ -959,6 +960,13 @@ export default function SalesBoard() {
 
   const statuses = useMemo(() => [...new Set(rows.map((r) => r.status))].sort(), [rows])
   const filtered = statusFilter ? rows.filter((r) => r.status === statusFilter) : rows
+
+  // Twenty is about a screen's worth to scroll — enough that a rep can see the
+  // whole of a normal day without the page running on for ever once the list
+  // grows into the hundreds.
+  const PAGE_SIZE = 20
+  const visible = showAllLeads ? filtered : filtered.slice(0, PAGE_SIZE)
+  const hidden = filtered.length - visible.length
   const isLoading = storageLoading || movingLoading
 
   // Accounts works invoices, not leads. The whole lead half of this board is
@@ -992,15 +1000,11 @@ export default function SalesBoard() {
 
       {/* A follow-up whose date has arrived outranks the to-do list: somebody
           committed to a day, and that day is now. */}
+      {/* What is due first, then the leads themselves. Tasks, availability and
+          goals are reference a rep glances at; the leads are the actual work,
+          and they were sitting under three panels of it. */}
       {!isAccounts && <FollowUps />}
 
-      {/* Tasks next — it's what a rep works off all day. Unit availability
-          and goals are reference material, so they sit below. */}
-      <WorkTabs />
-
-      <UnitAvailabilityStrip />
-
-      <GoalsSection />
       {!isAccounts && <QuickAddLead />}
 
       {!isAccounts && (
@@ -1051,7 +1055,7 @@ export default function SalesBoard() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((r) => (
+                {visible.map((r) => (
                   <tr
                     key={r.key}
                     style={{
@@ -1104,9 +1108,34 @@ export default function SalesBoard() {
             </table>
           </div>
         )}
+
+        {/* Say how much of the list this is. A table that silently stops at
+            twenty reads as "that is all of them". */}
+        {!isLoading && filtered.length > PAGE_SIZE && (
+          <div style={{ padding: '14px 22px', borderTop: '1px solid rgba(20,8,31,.08)', background: '#FAF8F5', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, color: MUTED }}>
+              Showing {visible.length} of {filtered.length} leads
+              {hidden > 0 ? ` — ${hidden} more` : ''}
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowAllLeads((v) => !v)}
+              style={{ height: 34, borderRadius: 10, background: 'white', border: '1px solid rgba(20,8,31,.14)', color: INK, fontSize: 13, fontWeight: 600, padding: '0 14px' }}
+              className="hover:bg-white/60 transition-colors cursor-pointer"
+            >
+              {showAllLeads ? 'Show fewer' : `Show all ${filtered.length}`}
+            </button>
+          </div>
+        )}
       </div>
         </>
       )}
+
+      <WorkTabs />
+
+      <UnitAvailabilityStrip />
+
+      <GoalsSection />
 
       <SlideOver
         open={!isAccounts && !!viewingLead}
