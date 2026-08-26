@@ -24,6 +24,11 @@ const LINE = 'rgba(20,8,31,0.10)'
 const TRACK = '#EDE3CF'
 const CARD_SHADOW = '0 1px 2px rgba(20,8,31,.06), 0 2px 8px rgba(20,8,31,.04)'
 
+/* Prices here are whole dirhams — 1,300 not 1,300.00. The decimals are noise on
+   a card being scanned, and every unit price is a round figure anyway. */
+const wholeAed = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 0 })
+
+
 const GREEN = '#22c55e'
 const AMBER = '#D98A1A'
 
@@ -753,26 +758,28 @@ export default function Units() {
                 >
                   <span style={{ position: 'absolute', top: 16, right: 16, width: 10, height: 10, borderRadius: 999, background: s.dot }} />
                   <div style={{ ...HEADING, fontWeight: 700, fontSize: 18, paddingRight: 18 }}>{u.unitNumber}</div>
-                  {/* Price sits opposite the size, which is the figure it is
-                      set against — the two are read together when someone is
-                      matching a caller to a unit. */}
-                  <div className="flex items-baseline justify-between gap-2" style={{ marginTop: 2 }}>
-                    <span style={{ fontSize: 13, color: MUTED }}>
-                      {u.sizeSqf != null ? `${u.sizeSqf} sqft` : 'size not set'} · Floor {u.floor}
-                    </span>
-                    <span
-                      title={u.price != null ? 'Price for 4 weeks' : 'No price set for this unit'}
-                      style={{
-                        fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap',
-                        color: u.price != null ? INK : MUTED,
-                        fontVariantNumeric: 'tabular-nums',
-                      }}
-                    >
-                      {u.price != null ? formatMoney(u.price) : 'no price'}
-                    </span>
+                  <div style={{ fontSize: 13, color: MUTED, marginTop: 2 }}>
+                    {u.sizeSqf != null ? `${u.sizeSqf} sqft` : 'size not set'} · Floor {u.floor}
                   </div>
                   <div style={{ fontSize: 13, fontWeight: 600, color: s.text, marginTop: 12 }}>{a.line}</div>
-                  <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>{a.detail}</div>
+                  <div style={{ fontSize: 12, color: MUTED, marginTop: 2, paddingRight: 66 }}>{a.detail}</div>
+
+                  {/* Bottom right, in the brand purple rather than the card's
+                      availability colour — the price is a different kind of
+                      fact from whether the unit is free, and reading as part of
+                      the green would make it look like part of the answer to
+                      "is it available". */}
+                  <span
+                    title={u.price != null ? 'Price for 4 weeks' : 'No price set for this unit'}
+                    style={{
+                      position: 'absolute', bottom: 14, right: 16,
+                      fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap',
+                      color: u.price != null ? PURPLE : MUTED,
+                      fontVariantNumeric: 'tabular-nums',
+                    }}
+                  >
+                    {u.price != null ? `AED ${wholeAed(u.price)}` : 'no price'}
+                  </span>
                   {(u.discountPct || u.shared) && (
                     <div className="flex flex-wrap gap-1.5" style={{ marginTop: 8 }}>
                       {u.discountPct ? <span style={{ fontSize: 10, fontWeight: 600, color: '#92400E', background: '#FEF3C7', borderRadius: 999, padding: '2px 8px' }}>{u.discountPct}% 1st 4wk</span> : null}
