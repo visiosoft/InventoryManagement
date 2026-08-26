@@ -174,15 +174,14 @@ export default function PersonProfile() {
     enabled: Boolean(id),
   })
 
-  // The sizes that exist, with how many of each are free — the same figures
-  // the board's availability strip shows, so a rep is never offered a size
-  // there is nothing left of without being told.
-  const { data: summary } = useQuery<{ bySize: { sizeSqf: number; available: number }[] }>({
-    queryKey: ['reports-summary-availability'],
-    queryFn: () => api.get('/reports/summary').then((r) => r.data),
+  // Straight from the units, so every size that exists is offered and the
+  // number is a number. The dashboard's summary was neither: seven hardcoded
+  // buckets, formatted as "25 sq ft", which read back as NaN.
+  const { data: sizes = [] } = useQuery<{ sizeSqf: number; total: number; available: number }[]>({
+    queryKey: ['unit-sizes'],
+    queryFn: () => api.get('/units/sizes').then((r) => r.data),
     staleTime: 5 * 60_000,
   })
-  const sizes = summary?.bySize ?? []
 
   // Only admins reassign. A rep seeing the dropdown would only meet a refusal.
   const { data: assignable = [] } = useQuery<Owner[]>({
@@ -516,6 +515,40 @@ export default function PersonProfile() {
 
                 {/* Temperature sits beside the stage, not inside it: a lead can
                     be Follow-Up Scheduled and hot, or Contacted and cold. */}
+                {/* A standing fact about the lead, not only something asked
+                    once on the way to Contacted. Sizes come from the units
+                    themselves, so every size that exists can be picked and
+                    each says how many are free. */}
+                <div>
+                  <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Size they need</span>
+                  <select
+                    value={lead.storageSizeValue ? String(lead.storageSizeValue) : ''}
+                    onChange={(e) => patchLead.mutate({
+                      storageSizeValue: e.target.value ? Number(e.target.value) : 0,
+                      storageSizeUnit: 'sqft',
+                    })}
+                    disabled={patchLead.isPending}
+                    className="cursor-pointer"
+                    style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: lead.storageSizeValue ? INK : FAINT, fontFamily: 'inherit' }}
+                  >
+                    <option value="">Not asked yet</option>
+                    {sizes.map((b) => (
+                      <option key={b.sizeSqf} value={String(b.sizeSqf)}>
+                        {b.sizeSqf} sqft — {b.available} free of {b.total}
+                      </option>
+                    ))}
+                    {/* A size somebody recorded before it existed as a unit
+                        still has to be selectable, or opening the lead would
+                        silently change it. */}
+                    {Boolean(lead.storageSizeValue) && !sizes.some((b) => b.sizeSqf === lead.storageSizeValue) && (
+                      <option value={String(lead.storageSizeValue)}>{lead.storageSizeValue} sqft</option>
+                    )}
+                  </select>
+                  {(lead.unitsNeeded ?? 1) > 1 && (
+                    <p style={{ fontSize: 12.5, color: FAINT, marginTop: 6 }}>{lead.unitsNeeded} units</p>
+                  )}
+                </div>
+
                 <div>
                   <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Temperature</span>
                   <div className="grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6 }}>
@@ -700,7 +733,7 @@ export default function PersonProfile() {
                           <option value="">Leave as it is</option>
                           {sizes.map((b) => (
                             <option key={b.sizeSqf} value={String(b.sizeSqf)}>
-                              {b.sizeSqf} sqft — {b.available} free
+                              {b.sizeSqf} sqft — {b.available} free of {b.total}
                             </option>
                           ))}
                         </select>

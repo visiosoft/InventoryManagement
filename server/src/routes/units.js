@@ -75,6 +75,35 @@ router.get('/pricing-matrix', async (req, res) => {
 // Who currently holds each unit. A unit can carry several active contracts
 // now that any unit may be shared, so this returns every one of them rather
 // than a single tenant. Declared before '/:id' so the literal path wins.
+/**
+ * Every unit size that actually exists, with how many are free.
+ *
+ * The lead pages used /reports/summary for this, which was wrong twice: its
+ * sizes are a hardcoded list of seven buckets, so the 40, 75, 85 and 110 sqft
+ * units could not be picked at all; and it formats the size as "25 sq ft" for
+ * display, so anything reading it back got NaN.
+ *
+ * Sizes here are numbers, and they come from the units themselves.
+ */
+router.get('/sizes', async (_req, res) => {
+    try {
+        const rows = await Unit.aggregate([
+            { $match: { sizeSqf: { $ne: null } } },
+            {
+                $group: {
+                    _id: '$sizeSqf',
+                    total: { $sum: 1 },
+                    available: { $sum: { $cond: [{ $eq: ['$status', 'available'] }, 1, 0] } },
+                },
+            },
+            { $sort: { _id: 1 } },
+        ]);
+        res.json(rows.map((r) => ({ sizeSqf: r._id, total: r.total, available: r.available })));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 router.get('/active-contracts', async (_req, res) => {
   const contracts = await Contract.find({ status: 'active', archived: { $ne: true } })
     .select('contractNo customer unit units endDate')
