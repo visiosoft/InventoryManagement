@@ -9,6 +9,9 @@ import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { Spinner, statusLabel, LEAD_STATUS_FLOW, LEAD_TEMPERATURES, LEAD_TAGS } from '../components/ui'
 import { formatDate } from '../lib/utils'
+import { FOLLOW_UP_TONE, followUpState, reminderDay } from '../lib/followUp'
+
+const LEAD_SOURCES = ['manual', 'whatsapp', 'referral', 'walk_in', 'other']
 
 const INK = '#14081F'
 const INK_2 = '#4A4357'
@@ -22,7 +25,6 @@ const CREAM_2 = '#EDE3CF'
 const PAGE = '#FBF8F2'
 const LINE = 'rgba(20,8,31,0.10)'
 const LINE_STRONG = 'rgba(20,8,31,0.16)'
-const HOT = '#DC2626'
 const WARM = '#D97706'
 const SHADOW_SM = '0 1px 2px rgba(20,8,31,.06), 0 2px 8px rgba(20,8,31,.04)'
 const SHADOW_MD = '0 8px 24px rgba(20,8,31,.08), 0 2px 6px rgba(20,8,31,.04)'
@@ -34,65 +36,17 @@ const FOLLOW_UP_KINDS = [
   { value: 'month' as const, label: 'That month' },
 ]
 
-/**
- * The day the reminder will actually be raised — mirrors notifyDayFor on the
- * server. Display only: the server decides, this just stops the choice being
- * a guess about what will happen.
- */
-function reminderDay(followUpAt?: string | null, kind: 'date' | 'week' | 'month' = 'date'): string {
-  if (!followUpAt) return ''
-  const day = String(followUpAt).slice(0, 10)
-  if (kind === 'month') return `${day.slice(0, 7)}-01`
-  if (kind !== 'week') return day
-  const midnight = new Date(`${day}T00:00:00.000Z`)
-  const weekday = midnight.getUTCDay()
-  // Sunday closes the week it belongs to rather than opening the next one.
-  const back = weekday === 0 ? 6 : weekday - 1
-  return new Date(midnight.getTime() - back * 86_400_000).toISOString().slice(0, 10)
-}
-
-type Urgency = {
-  color: string; bg: string; border: string
-  icon: typeof Clock
-  label: string
-}
-
-/**
- * How loudly the follow-up should announce itself.
- *
- * A bare date makes the reader do the arithmetic. Overdue and due-today are
- * the two states worth interrupting somebody over, so they are the two that
- * change colour.
- */
-function followUpUrgency(day: string): Urgency {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const at = new Date(`${day}T00:00:00`)
-  const days = Math.round((at.getTime() - today.getTime()) / 86_400_000)
+/** The banner's words and icon, from the shared state the list also uses. */
+function followUpUrgency(day: string) {
+  const { tone, days } = followUpState(day)
+  const tint = FOLLOW_UP_TONE[tone]
   const label = formatDate(day)
-
-  if (days < 0) {
-    return {
-      color: HOT, bg: 'rgba(220,38,38,.09)', border: 'rgba(220,38,38,.25)',
-      icon: AlertTriangle, label: `Overdue — follow up was due ${label}`,
-    }
-  }
-  if (days === 0) {
-    return {
-      color: WARM, bg: 'rgba(217,119,6,.09)', border: 'rgba(217,119,6,.25)',
-      icon: Clock, label: `Follow up today, ${label}`,
-    }
-  }
-  if (days <= 3) {
-    return {
-      color: WARM, bg: 'rgba(217,119,6,.09)', border: 'rgba(217,119,6,.25)',
-      icon: Clock, label: `Follow up on ${label} (in ${days} day${days === 1 ? '' : 's'})`,
-    }
-  }
-  return {
-    color: DEEP, bg: PURPLE_50, border: PURPLE_100,
-    icon: Calendar, label: `Follow up on ${label}`,
-  }
+  const icon = tone === 'overdue' ? AlertTriangle : tone === 'later' ? Calendar : Clock
+  const text = tone === 'overdue' ? `Overdue — follow up was due ${label}`
+    : tone === 'today' ? `Follow up today, ${label}`
+      : tone === 'soon' ? `Follow up on ${label} (in ${days} day${days === 1 ? '' : 's'})`
+        : `Follow up on ${label}`
+  return { ...tint, icon, label: text }
 }
 
 /** Icon and colour per kind of thing that happened. */
@@ -172,6 +126,22 @@ function Detail({ label, value }: { label: string; value?: string | null }) {
   )
 }
 
+function Field({ label, value, onChange, type = 'text' }: {
+  label: string; value: string; onChange: (v: string) => void; type?: string
+}) {
+  return (
+    <div>
+      <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>{label}</span>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK, boxSizing: 'border-box', outline: 'none' }}
+      />
+    </div>
+  )
+}
+
 /** "26 Aug 2026 · 09:12 · Sales" — when it happened, and who did it. */
 function eventMeta(t: TimelineEntry): string {
   const d = new Date(t.at)
@@ -190,6 +160,9 @@ export default function PersonProfile() {
   // A stage picked but not yet committed, and the note going with it.
   const [pendingStage, setPendingStage] = useState('')
   const [stageNote, setStageNote] = useState('')
+  // Contact details, while they are being edited rather than read.
+  const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState({ fullName: '', phone: '', whatsappNo: '', email: '', source: 'manual' })
 
   const { data, isLoading } = useQuery<Profile>({
     queryKey: ['person', id],
@@ -231,6 +204,27 @@ export default function PersonProfile() {
   const assign = useMutation({
     mutationFn: (owner: string) => api.put(`/leads/${data!.lead!._id}`, { owner }),
     onSuccess: () => { setErr(''); refresh() },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  // firstName and lastName travel with the full name so the three do not drift
+  // apart — the server keeps whichever it is not sent, and the rest of the app
+  // reads fullName.
+  const saveDetails = useMutation({
+    mutationFn: () => {
+      const name = form.fullName.trim()
+      const [firstName, ...rest] = name.split(/\s+/)
+      return api.put(`/leads/${data!.lead!._id}`, {
+        fullName: name,
+        firstName: firstName || '',
+        lastName: rest.join(' '),
+        phone: form.phone.trim(),
+        whatsappNo: form.whatsappNo.trim(),
+        email: form.email.trim(),
+        source: form.source,
+      })
+    },
+    onSuccess: () => { setErr(''); setEditing(false); refresh() },
     onError: (e) => setErr(apiError(e)),
   })
 
@@ -348,24 +342,93 @@ export default function PersonProfile() {
       <div className="flex flex-wrap items-start" style={{ gap: 20 }}>
 
         <div className="flex flex-col" style={{ flex: '1 1 340px', maxWidth: 380, gap: 20 }}>
-          <Card title="Contact details">
-            <div className="flex flex-col" style={{ gap: 14 }}>
-              <Detail label="Phone" value={phone} />
-              <Detail label="WhatsApp" value={lead?.whatsappNo || phone} />
-              <Detail label="Email" value={email} />
-              {customer && <>
-                <Detail label="Company" value={customer.company} />
-                <Detail label="Nationality" value={customer.nationality} />
-                <Detail label="Emergency contact" value={customer.emergencyNumber} />
-                <Detail label="Emirates ID" value={customer.emiratesId} />
-                <Detail label="ID expiry" value={customer.eidExpiry ? formatDate(customer.eidExpiry) : ''} />
-                <Detail label="Address" value={customer.address} />
-              </>}
-              {lead && <>
-                <Detail label="Source" value={lead.source} />
-                <Detail label="First seen" value={formatDate(lead.leadDateTime)} />
-              </>}
-            </div>
+          {/* Editable only on a lead. A customer's name and number live on the
+              customer record, and editing the lead behind them would change
+              nothing anybody can see. */}
+          <Card
+            title="Contact details"
+            action={lead && !isCustomer && !editing ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setForm({
+                    fullName: lead.fullName || '', phone: lead.phone || '',
+                    whatsappNo: lead.whatsappNo || '', email: lead.email || '',
+                    source: lead.source || 'manual',
+                  })
+                  setErr('')
+                  setEditing(true)
+                }}
+                className="inline-flex items-center gap-1.5 cursor-pointer"
+                style={{ background: 'none', border: 'none', color: PURPLE, fontSize: 13, fontWeight: 700 }}
+              >
+                <Pencil size={13} /> Edit
+              </button>
+            ) : undefined}
+          >
+            {editing && lead ? (
+              <div className="flex flex-col" style={{ gap: 12 }}>
+                <Field label="Name" value={form.fullName} onChange={(v) => setForm((f) => ({ ...f, fullName: v }))} />
+                <Field label="Phone" value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} />
+                <Field label="WhatsApp" value={form.whatsappNo} onChange={(v) => setForm((f) => ({ ...f, whatsappNo: v }))} />
+                <Field label="Email" value={form.email} onChange={(v) => setForm((f) => ({ ...f, email: v }))} type="email" />
+                <div>
+                  <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Source</span>
+                  <select
+                    value={form.source}
+                    onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))}
+                    className="cursor-pointer"
+                    style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK }}
+                  >
+                    {LEAD_SOURCES.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
+                  </select>
+                </div>
+                <div className="flex" style={{ gap: 8, marginTop: 2 }}>
+                  <button
+                    type="button"
+                    onClick={() => saveDetails.mutate()}
+                    disabled={!form.fullName.trim() || !form.phone.trim() || saveDetails.isPending}
+                    className="cursor-pointer disabled:opacity-50"
+                    style={{ height: 38, padding: '0 16px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontSize: 13, fontWeight: 700, fontFamily: 'inherit' }}
+                  >
+                    {saveDetails.isPending ? 'Saving…' : 'Save'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setEditing(false); setErr('') }}
+                    disabled={saveDetails.isPending}
+                    className="cursor-pointer disabled:opacity-50"
+                    style={{ height: 38, padding: '0 16px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: FAINT, fontSize: 13, fontWeight: 600, fontFamily: 'inherit' }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+                {/* Both are required by the server, so say it here rather than
+                    letting the save come back refused. */}
+                {(!form.fullName.trim() || !form.phone.trim()) && (
+                  <p style={{ fontSize: 12, color: FAINT }}>A name and a phone number are needed.</p>
+                )}
+                {err && <p style={{ fontSize: 12.5, color: '#C0392B' }}>{err}</p>}
+              </div>
+            ) : (
+              <div className="flex flex-col" style={{ gap: 14 }}>
+                <Detail label="Phone" value={phone} />
+                <Detail label="WhatsApp" value={lead?.whatsappNo || phone} />
+                <Detail label="Email" value={email} />
+                {customer && <>
+                  <Detail label="Company" value={customer.company} />
+                  <Detail label="Nationality" value={customer.nationality} />
+                  <Detail label="Emergency contact" value={customer.emergencyNumber} />
+                  <Detail label="Emirates ID" value={customer.emiratesId} />
+                  <Detail label="ID expiry" value={customer.eidExpiry ? formatDate(customer.eidExpiry) : ''} />
+                  <Detail label="Address" value={customer.address} />
+                </>}
+                {lead && <>
+                  <Detail label="Source" value={statusLabel(lead.source)} />
+                  <Detail label="First seen" value={formatDate(lead.leadDateTime)} />
+                </>}
+              </div>
+            )}
           </Card>
 
           {lead && (

@@ -81,6 +81,7 @@ export interface Lead {
   temperature?: LeadTemperature
   tags?: string[]
   followUpAt?: string | null
+  followUpKind?: 'date' | 'week' | 'month'
   _id: string
   firstName?: string
   lastName?: string

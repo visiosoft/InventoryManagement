@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
-import { ChevronDown, ChevronLeft, ChevronRight, ExternalLink, MessageCircle, Phone, Plus, UserPlus } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { ChevronDown, ChevronLeft, ChevronRight, ExternalLink, MessageCircle, Phone, Plus, Search, UserPlus } from 'lucide-react'
 import { api, apiError, leadApi } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { Lead, MovingLead, MovingLeadStatus } from '../lib/types'
 import { Spinner } from '../components/ui'
 import { formatDate } from '../lib/utils'
+import { FOLLOW_UP_TONE, followUpState, reminderDay } from '../lib/followUp'
 import {
   type TaskItem, type AssignableUser,
   KANBAN_COLUMNS, KanbanBoard, KanbanCard, KanbanColumn, TaskDetailModal, groupTasksByDue,
@@ -770,11 +771,18 @@ type Row = {
   key: string
   type: 'Storage Only' | 'Moving'
   name: string
+  initials: string
   phone: string
+  // Digits only, for the tel: and inbox links.
+  digits: string
   interested: string
   status: string
   statusColor: { bg: string; fg: string }
   addedAt?: string
+  // Storage leads carry these; a moving lead has neither.
+  temperature?: '' | 'hot' | 'warm' | 'cold'
+  followUpAt?: string | null
+  followUpKind?: 'date' | 'week' | 'month'
   // Landed on this person and not yet opened by them.
   unseen?: boolean
   href?: string
@@ -783,6 +791,30 @@ type Row = {
   convertLabel: string
   convert: () => void
   converting: boolean
+}
+
+/** Two letters to stand in for a face. */
+function initialsOf(name: string): string {
+  return name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?'
+}
+
+const TEMP_TONE: Record<string, { bg: string; fg: string }> = {
+  hot: { bg: 'rgba(220,38,38,.09)', fg: '#DC2626' },
+  warm: { bg: 'rgba(217,119,6,.09)', fg: '#D97706' },
+  cold: { bg: 'rgba(37,99,235,.08)', fg: '#2563EB' },
+}
+
+/** The short form the list shows: state first, date second. */
+function followUpLabel(row: Row): { text: string; color: string } | null {
+  const day = reminderDay(row.followUpAt, row.followUpKind)
+  if (!day) return null
+  const { tone, days } = followUpState(day)
+  const date = formatDate(day)
+  const text = tone === 'overdue' ? `Overdue · ${date}`
+    : tone === 'today' ? `Today · ${date}`
+      : tone === 'soon' ? `In ${days}d · ${date}`
+        : date
+  return { text, color: FOLLOW_UP_TONE[tone].color }
 }
 
 const STORAGE_STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
@@ -879,7 +911,10 @@ export default function SalesBoard() {
   const { user } = useAuth()
   const qc = useQueryClient()
   const [statusFilter, setStatusFilter] = useState('')
+  const navigate = useNavigate()
   const [showAllLeads, setShowAllLeads] = useState(false)
+  const [leadSearch, setLeadSearch] = useState('')
+  const [tempFilter, setTempFilter] = useState('')
 
   const { data: storagePage, isLoading: storageLoading } = useQuery({
     queryKey: ['my-leads-storage'],
@@ -920,7 +955,12 @@ export default function SalesBoard() {
       key: `s-${l._id}`,
       type: 'Storage Only',
       name: l.fullName,
+      initials: initialsOf(l.fullName),
       phone: l.phone,
+      digits: String(l.phoneNormalized || l.phone || '').replace(/\D/g, ''),
+      temperature: l.temperature,
+      followUpAt: l.followUpAt,
+      followUpKind: l.followUpKind,
       interested: l.storageSizeValue ? `${l.storageSizeValue} ${l.storageSizeUnit}` : '—',
       status: labelize(l.status),
       statusColor: STORAGE_STATUS_COLORS[l.status] || STORAGE_STATUS_COLORS.new,
@@ -937,7 +977,9 @@ export default function SalesBoard() {
       key: `m-${l._id}`,
       type: 'Moving',
       name: l.prospectName || l.customer?.fullName || '—',
+      initials: initialsOf(l.prospectName || l.customer?.fullName || ''),
       phone: l.prospectPhone || l.customer?.phone || '—',
+      digits: String(l.prospectPhone || l.customer?.phone || '').replace(/\D/g, ''),
       interested: l.estimatedVolumeCbm ? `${l.estimatedVolumeCbm} cbm` : '—',
       status: labelize(l.status),
       statusColor: MOVING_STATUS_COLORS[l.status] || MOVING_STATUS_COLORS.new,
@@ -958,7 +1000,18 @@ export default function SalesBoard() {
   }, [storagePage, movingLeads, convertStorage, convertMoving, markSeen])
 
   const statuses = useMemo(() => [...new Set(rows.map((r) => r.status))].sort(), [rows])
-  const filtered = statusFilter ? rows.filter((r) => r.status === statusFilter) : rows
+
+  // The three narrow together rather than replacing one another: a rep looking
+  // for a hot lead called Ahmed in Quotation Sent is asking one question.
+  const filtered = useMemo(() => {
+    const q = leadSearch.trim().toLowerCase()
+    return rows.filter((r) => {
+      if (statusFilter && r.status !== statusFilter) return false
+      if (tempFilter && r.temperature !== tempFilter) return false
+      if (q && !r.name.toLowerCase().includes(q) && !r.phone.includes(q)) return false
+      return true
+    })
+  }, [rows, statusFilter, tempFilter, leadSearch])
 
   // Twenty is about a screen's worth to scroll — enough that a rep can see the
   // whole of a normal day without the page running on for ever once the list
@@ -1008,107 +1061,185 @@ export default function SalesBoard() {
 
       {!isAccounts && (
         <>
-      {/* Status filter pills */}
-      <div className="flex gap-2 flex-wrap mb-5">
-        <button
-          onClick={() => setStatusFilter('')}
-          style={{ height: 36, borderRadius: 10, background: statusFilter === '' ? PURPLE : '#F3F0EA', color: statusFilter === '' ? 'white' : MUTED, fontSize: 13, fontWeight: 600, padding: '0 14px', border: 'none' }}
-          className="hover:opacity-90 transition-opacity whitespace-nowrap"
-        >
-          All ({rows.length})
-        </button>
-        {statuses.map((s) => {
-          const active = statusFilter === s
-          return (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              style={{ height: 36, borderRadius: 10, background: active ? PURPLE : '#F3F0EA', color: active ? 'white' : MUTED, fontSize: 13, fontWeight: 600, padding: '0 14px', border: 'none' }}
-              className="hover:opacity-90 transition-opacity whitespace-nowrap"
-            >
-              {s} ({rows.filter((r) => r.status === s).length})
-            </button>
-          )
-        })}
+      {/* Your leads */}
+      <div className="flex items-end justify-between flex-wrap" style={{ gap: 14, marginBottom: 22 }}>
+        <div>
+          <h1 style={{ fontFamily: "'Bricolage Grotesque', serif", fontWeight: 700, fontSize: 28, letterSpacing: '-0.02em', margin: 0, color: INK }}>Your leads</h1>
+          <p style={{ color: MUTED, fontSize: 14, margin: '4px 0 0' }}>
+            {filtered.length} {filtered.length === 1 ? 'lead' : 'leads'}
+            {filtered.length !== rows.length ? ` of ${rows.length}` : ''}
+          </p>
+        </div>
       </div>
 
-      {/* Recent leads table */}
-      <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, overflow: 'hidden' }}>
-        <div style={{ padding: '18px 22px', borderBottom: '1px solid rgba(20,8,31,.08)', fontWeight: 700, fontSize: 15, color: INK }}>Recent leads</div>
+      {/* Toolbar: name or number, then how warm, then where in the pipeline. */}
+      <div className="flex items-center flex-wrap" style={{ gap: 12, marginBottom: 18 }}>
+        <div className="flex items-center" style={{ gap: 8, background: 'white', border: '1px solid rgba(20,8,31,.16)', borderRadius: 999, padding: '0 14px', height: 42, flex: '1 1 260px', maxWidth: 340 }}>
+          <Search size={15} style={{ color: MUTED, flex: '0 0 auto' }} />
+          <input
+            value={leadSearch}
+            onChange={(e) => setLeadSearch(e.target.value)}
+            placeholder="Search by name or phone"
+            style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 14, width: '100%', fontFamily: 'inherit', color: INK }}
+          />
+        </div>
+
+        <div className="flex" style={{ gap: 6 }}>
+          {[{ v: '', label: 'All' }, { v: 'hot', label: 'Hot' }, { v: 'warm', label: 'Warm' }, { v: 'cold', label: 'Cold' }].map((o) => {
+            const on = tempFilter === o.v
+            const tone = o.v ? TEMP_TONE[o.v] : null
+            return (
+              <button
+                key={o.v || 'all'}
+                type="button"
+                onClick={() => setTempFilter(o.v)}
+                className="cursor-pointer whitespace-nowrap"
+                style={{
+                  height: 38, padding: '0 16px', borderRadius: 999, fontSize: 13, fontWeight: 600, fontFamily: 'inherit',
+                  background: on && tone ? tone.bg : 'white',
+                  color: on ? (tone ? tone.fg : INK) : MUTED,
+                  border: `1px solid ${on && tone ? tone.fg : 'rgba(20,8,31,.16)'}`,
+                }}
+              >
+                {o.label}
+              </button>
+            )
+          })}
+        </div>
+
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="cursor-pointer"
+          style={{ height: 42, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.16)', background: 'white', fontSize: 13, fontWeight: 600, color: MUTED, fontFamily: 'inherit' }}
+        >
+          <option value="">All stages</option>
+          {statuses.map((st) => <option key={st} value={st}>{st}</option>)}
+        </select>
+      </div>
+
+      {/* The list itself */}
+      <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.10)', borderRadius: 22, boxShadow: '0 1px 2px rgba(20,8,31,.06), 0 2px 8px rgba(20,8,31,.04)', overflow: 'hidden' }}>
         {isLoading ? (
           <div className="flex justify-center py-16"><Spinner /></div>
         ) : filtered.length === 0 ? (
           <div style={{ padding: '60px 20px', textAlign: 'center' }}>
             <UserPlus size={32} style={{ margin: '0 auto 12px', color: MUTED, opacity: 0.3 }} />
-            <div style={{ fontSize: 14, fontWeight: 600, color: INK, marginBottom: 4 }}>No leads assigned to you yet</div>
-            <div style={{ fontSize: 13, color: MUTED }}>New assignments will show up here.</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: INK, marginBottom: 4 }}>
+              {rows.length === 0 ? 'No leads assigned to you yet' : 'No leads match your filters.'}
+            </div>
+            <div style={{ fontSize: 13, color: MUTED }}>
+              {rows.length === 0 ? 'New assignments will show up here.' : 'Try a wider stage or temperature.'}
+            </div>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid rgba(20,8,31,0.06)' }}>
-                  {['Name', 'Phone', 'Interested Unit', 'Type', 'Date', 'Status', ''].map((h) => (
-                    <th key={h} style={{ padding: '12px 16px', fontSize: 12, fontWeight: 600, color: MUTED, textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {visible.map((r) => (
-                  <tr
-                    key={r.key}
-                    style={{
-                      borderBottom: '1px solid rgba(20,8,31,0.04)',
-                      // A soft pulse rather than a hard flash: it has to be
-                      // noticeable across a room without being unbearable to
-                      // sit in front of all day.
-                      ...(r.unseen ? { animation: 'lead-new 1.6s ease-in-out infinite', borderLeft: `3px solid ${PURPLE}` } : null),
-                    }}
-                    className="hover:bg-[#FAF8F5] transition-colors"
-                  >
-                    <td style={{ padding: '14px 16px' }}>
-                      {r.unseen && (
-                        <span
-                          title="Assigned to you and not opened yet"
-                          style={{ display: 'inline-block', width: 7, height: 7, borderRadius: 999, background: PURPLE, marginRight: 8, verticalAlign: 'middle' }}
-                        />
-                      )}
-                      {r.href ? (
-                        <Link to={r.href} onClick={r.onOpen} style={{ fontSize: 14, fontWeight: 600, color: PURPLE }} className="hover:opacity-80 transition-opacity">{r.name}</Link>
-                      ) : (
-                        <button type="button" onClick={r.onOpen} style={{ fontSize: 14, fontWeight: 600, color: PURPLE, background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }} className="hover:opacity-80 transition-opacity">{r.name}</button>
-                      )}
-                    </td>
-                    <td style={{ padding: '14px 16px', fontSize: 13, color: MUTED, fontVariantNumeric: 'tabular-nums' }}>{r.phone}</td>
-                    <td style={{ padding: '14px 16px', fontSize: 13, color: MUTED }}>{r.interested}</td>
-                    <td style={{ padding: '14px 16px', fontSize: 13, color: MUTED }}>{r.type}</td>
-                    <td style={{ padding: '14px 16px', fontSize: 13, color: MUTED }}>{r.addedAt ? formatDate(r.addedAt) : '—'}</td>
-                    <td style={{ padding: '14px 16px' }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 999, fontSize: 12, fontWeight: 700, background: r.statusColor.bg, color: r.statusColor.fg }}>
-                        {r.status}
-                      </span>
-                    </td>
-                    <td style={{ padding: '14px 16px', textAlign: 'right' }}>
-                      {r.canConvert && (
-                        <button
-                          type="button"
-                          disabled={r.converting}
-                          onClick={r.convert}
-                          style={{ height: 28, padding: '0 10px', borderRadius: 8, background: 'transparent', color: PURPLE, border: '1px solid #DDD0FF', fontWeight: 600, fontSize: 11.5, whiteSpace: 'nowrap' }}
-                          className="hover:bg-[#F7F3FF] transition-colors disabled:opacity-50 cursor-pointer"
-                        >
-                          {r.converting ? 'Converting…' : r.convertLabel}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          visible.map((r) => {
+            const follow = followUpLabel(r)
+            const temp = r.temperature ? TEMP_TONE[r.temperature] : null
+            return (
+              <div
+                key={r.key}
+                role="link"
+                tabIndex={0}
+                onClick={() => { r.onOpen?.(); if (r.href) navigate(r.href) }}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter' && e.key !== ' ') return
+                  e.preventDefault()
+                  r.onOpen?.()
+                  if (r.href) navigate(r.href)
+                }}
+                className="flex items-center hover:bg-[#FAF8F5] transition-colors"
+                style={{
+                  gap: 10, padding: '16px 20px', borderBottom: '1px solid rgba(20,8,31,.10)',
+                  cursor: 'pointer', minWidth: 0, color: INK, textDecoration: 'none',
+                  // A soft pulse rather than a hard flash: it has to be
+                  // noticeable across a room without being unbearable to sit in
+                  // front of all day.
+                  ...(r.unseen ? { animation: 'lead-new 1.6s ease-in-out infinite', borderLeft: `3px solid ${PURPLE}` } : null),
+                }}
+              >
+                <div style={{ width: 38, height: 38, borderRadius: 999, background: '#EDE5FF', color: '#4A1FA0', display: 'grid', placeItems: 'center', fontWeight: 700, fontSize: 13, flex: '0 0 auto' }}>
+                  {r.initials}
+                </div>
+
+                <div style={{ flex: '1 1 110px', minWidth: 0 }}>
+                  <div className="truncate" style={{ fontWeight: 700, fontSize: 14 }}>
+                    {r.unseen && (
+                      <span
+                        title="Assigned to you and not opened yet"
+                        style={{ display: 'inline-block', width: 7, height: 7, borderRadius: 999, background: PURPLE, marginRight: 7, verticalAlign: 'middle' }}
+                      />
+                    )}
+                    {r.name}
+                  </div>
+                  <div className="truncate" style={{ fontSize: 12.5, color: MUTED, marginTop: 2 }}>{r.phone}</div>
+                </div>
+
+                <div style={{ flex: '0 0 auto' }}>
+                  <span className="inline-flex whitespace-nowrap" style={{ padding: '5px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: r.statusColor.bg, color: r.statusColor.fg }}>
+                    {r.status}
+                  </span>
+                </div>
+
+                {temp && (
+                  <div style={{ flex: '0 0 auto' }}>
+                    <span className="inline-flex whitespace-nowrap" style={{ padding: '5px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: temp.bg, color: temp.fg }}>
+                      {String(r.temperature).charAt(0).toUpperCase() + String(r.temperature).slice(1)}
+                    </span>
+                  </div>
+                )}
+
+                <div className="truncate" style={{ flex: '1 1 90px', minWidth: 0, fontSize: 12.5, color: '#4A4357' }}>{r.interested}</div>
+
+                {/* The follow-up if there is one, otherwise when they arrived —
+                    the column is about when this lead next needs attention. */}
+                <div className="truncate" style={{ flex: '1 1 90px', minWidth: 0, fontSize: 12.5, fontWeight: 600, color: follow ? follow.color : MUTED }}>
+                  {follow ? follow.text : (r.addedAt ? formatDate(r.addedAt) : '—')}
+                </div>
+
+                {/* Inside a row that is itself a link, so each of these stops
+                    the click from also navigating. */}
+                <div className="flex" style={{ gap: 6, flex: '0 0 auto' }}>
+                  {r.digits && (
+                    <a
+                      href={`tel:+${r.digits}`}
+                      title="Call"
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ width: 30, height: 30, borderRadius: 999, background: '#F7F3FF', color: '#4A1FA0', display: 'grid', placeItems: 'center', flex: '0 0 auto' }}
+                    >
+                      <Phone size={13} />
+                    </a>
+                  )}
+                  {r.digits && r.type === 'Storage Only' && (
+                    <Link
+                      to={`/whatsapp?phone=${r.digits}`}
+                      title="Open the chat"
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ width: 30, height: 30, borderRadius: 999, background: '#F7F3FF', color: '#4A1FA0', display: 'grid', placeItems: 'center', flex: '0 0 auto' }}
+                    >
+                      <MessageCircle size={13} />
+                    </Link>
+                  )}
+                  {r.canConvert && (
+                    <button
+                      type="button"
+                      disabled={r.converting}
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); r.convert() }}
+                      style={{ height: 30, padding: '0 10px', borderRadius: 999, background: 'transparent', color: PURPLE, border: '1px solid #DDD0FF', fontWeight: 600, fontSize: 11.5, whiteSpace: 'nowrap' }}
+                      className="hover:bg-[#F7F3FF] transition-colors disabled:opacity-50 cursor-pointer"
+                    >
+                      {r.converting ? 'Converting…' : r.convertLabel}
+                    </button>
+                  )}
+                </div>
+
+                <ChevronRight size={16} style={{ color: MUTED, flex: '0 0 auto' }} />
+              </div>
+            )
+          })
         )}
 
-        {/* Say how much of the list this is. A table that silently stops at
+      {/* Say how much of the list this is. A table that silently stops at
             twenty reads as "that is all of them". */}
         {!isLoading && filtered.length > PAGE_SIZE && (
           <div style={{ padding: '14px 22px', borderTop: '1px solid rgba(20,8,31,.08)', background: '#FAF8F5', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
