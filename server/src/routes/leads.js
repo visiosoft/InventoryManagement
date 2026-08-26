@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { Customer, Lead, User, WhatsAppMessage } from '../models/index.js';
+import mongoose from 'mongoose';
+import { Customer, Contract, Document, Lead, User, WhatsAppMessage } from '../models/index.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 
 const router = Router();
@@ -106,6 +107,80 @@ router.get('/', async (req, res) => {
         Lead.countDocuments(filter),
     ]);
     res.json({ data: leads, total, page, pages: Math.ceil(total / limit), limit });
+});
+
+/**
+ * Everything about one person, in a single call.
+ *
+ * A lead and a customer are the same human at two stages, and until now only
+ * the lead half had a page — /customers/:id redirected to a contract, so a
+ * tenant had no record of their own to open. This assembles both halves plus
+ * whatever they have accumulated, so the page does not have to stitch five
+ * requests together and guess at the order.
+ *
+ * Accepts a lead id or a customer id: the caller usually knows only one.
+ */
+router.get('/:id/profile', async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!mongoose.isValidObjectId(id)) return res.status(400).json({ error: 'Not a valid id' });
+
+        let lead = await Lead.findById(id).populate('owner', 'name email').lean();
+        let customer = null;
+
+        if (lead) {
+            // The convert step does not store a link, so the customer is found
+            // the same way the rest of the app matches people: email or phone.
+            const email = String(lead.email || '').trim().toLowerCase();
+            const digits = String(lead.phoneNormalized || '').replace(/\D/g, '');
+            const tail = digits.length >= 9 ? digits.slice(-9) : '';
+            const candidates = await Customer.find(
+                email ? { $or: [{ email }, { phones: { $exists: true } }] } : {},
+            ).lean();
+            customer = candidates.find((c) => {
+                if (email && String(c.email || '').trim().toLowerCase() === email) return true;
+                if (!tail) return false;
+                return [...(c.phones || []), c.phone].some((p) => String(p || '').replace(/\D/g, '').slice(-9) === tail);
+            }) || null;
+        } else {
+            customer = await Customer.findById(id).lean();
+            if (!customer) return res.status(404).json({ error: 'Nobody found with that id' });
+            const tail = String(customer.phone || '').replace(/\D/g, '').slice(-9);
+            if (tail) {
+                lead = await Lead.findOne({ phoneNormalized: { $regex: tail + '$' } })
+                    .populate('owner', 'name email').lean();
+            }
+        }
+
+        if (isSalesRep(req) && lead && !ownsLead(req, lead)) {
+            return res.status(403).json({ error: 'Not your lead' });
+        }
+
+        const contracts = customer
+            ? await Contract.find({ customer: customer._id })
+                .populate('unit', 'unitNumber floor sizeSqf')
+                .populate('units', 'unitNumber floor sizeSqf')
+                .select('contractNo status startDate endDate rate billingPeriod unit units archived')
+                .sort({ startDate: -1 })
+                .lean()
+            : [];
+
+        const documents = customer
+            ? await Document.find({ customer: customer._id }).select('name type url createdAt').sort({ createdAt: -1 }).lean()
+            : [];
+
+        res.json({
+            lead,
+            customer,
+            contracts,
+            documents,
+            // Said plainly so the page can show the right actions rather than
+            // inferring the stage from which fields happen to be present.
+            stage: customer ? 'customer' : lead ? 'lead' : 'unknown',
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 router.get('/:id', async (req, res) => {

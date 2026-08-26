@@ -3,7 +3,6 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Loader2, Search, X } from 'lucide-react'
 import { api } from '../lib/api'
-import { tenantContractPath } from '../lib/tenantContract'
 
 type ContractHit = {
   _id: string
@@ -129,8 +128,10 @@ export default function GlobalSearch() {
       navigate(`/contracts/${row.id}`)
       return
     }
-    // Tenants have no page of their own — go to their contract instead
-    navigate(await tenantContractPath(row.id, row.title))
+    // They have a page of their own now, showing their details, contracts,
+    // documents and the chat — rather than dropping you into one contract and
+    // leaving you to guess whether there were others.
+    navigate(`/customers/${row.id}`)
   }
 
   function onKeyDown(e: React.KeyboardEvent) {

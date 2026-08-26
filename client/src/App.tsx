@@ -45,7 +45,7 @@ import Units from './pages/Units'
 import FloorMap from './pages/FloorMap'
 import Sites from './pages/Sites'
 import Customers from './pages/Customers'
-import CustomerContractRedirect from './pages/CustomerContractRedirect'
+import PersonProfile from './pages/PersonProfile'
 import Contracts from './pages/Contracts'
 import ContractDetail from './pages/ContractDetail'
 import Payments from './pages/Payments'
@@ -187,8 +187,10 @@ export default function App() {
         <Route path="/floor-map" element={<PermGuard module="units"><FloorMap /></PermGuard>} />
         <Route path="/sites" element={<PermGuard module="units"><Sites /></PermGuard>} />
         <Route path="/customers" element={<Customers />} />
-        <Route path="/customers/:id" element={<CustomerContractRedirect />} />
+        <Route path="/customers/:id" element={<PersonProfile />} />
+        <Route path="/people/:id" element={<PersonProfile />} />
         <Route path="/leads" element={<Leads />} />
+        <Route path="/leads/:id" element={<PersonProfile />} />
         <Route path="/my-leads" element={<PermGuard module="sales_board"><SalesBoard /></PermGuard>} />
         <Route path="/moving-estimator" element={<PermGuard module="sales_board"><MovingEstimator /></PermGuard>} />
         <Route path="/my-performance" element={<PermGuard module="sales_board"><MyPerformance /></PermGuard>} />
