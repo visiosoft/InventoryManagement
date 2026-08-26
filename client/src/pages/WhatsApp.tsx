@@ -1281,10 +1281,26 @@ export default function WhatsApp() {
   const selectedRef = useRef(selectedPhone)
   selectedRef.current = selectedPhone
 
+  /* Why these three carry their own refetch settings.
+   *
+   * React Query stops an interval while the tab is in the background, and this
+   * app turns refetchOnWindowFocus off globally. Together that meant a console
+   * left in another tab fetched nothing at all, and coming back to it still
+   * waited for the next tick — so messages that reached the database in about
+   * two seconds could sit unseen for as long as the tab was unfocused. That is
+   * the whole of "messages are coming late".
+   *
+   * So: keep polling while hidden, because the unread count and the ping are
+   * the point of leaving it open, and refetch the moment the tab is focused
+   * rather than waiting out the interval.
+   */
+  const LIVE = { refetchIntervalInBackground: true, refetchOnWindowFocus: true } as const
+
   const { data: conversations, isLoading: loadingConvos, refetch: refetchConvos } = useQuery<WhatsAppConversation[]>({
     queryKey: ['wa-conversations'],
     queryFn: () => whatsappApi.conversations(),
-    refetchInterval: 15_000,
+    refetchInterval: 10_000,
+    ...LIVE,
   })
 
   // Whole-inbox feed: drives unread counts, the blink and the ping. When no
@@ -1294,13 +1310,16 @@ export default function WhatsApp() {
     queryKey: ['wa-messages', null],
     queryFn: () => whatsappApi.messages(),
     refetchInterval: 10_000,
+    ...LIVE,
   })
 
   const { data: messages, isLoading: loadingMsgs } = useQuery<WaMsg[]>({
     queryKey: ['wa-messages', selectedPhone],
     queryFn: () => whatsappApi.messages(selectedPhone ?? undefined),
-    refetchInterval: 10_000,
+    // The open conversation is the one being watched, so it polls fastest.
+    refetchInterval: 5_000,
     enabled: true,
+    ...LIVE,
   })
 
   // The customer's most recent message, used to prefill a task raised from this

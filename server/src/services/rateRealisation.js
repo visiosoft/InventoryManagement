@@ -1,36 +1,39 @@
 /**
- * Actual price against leased price.
+ * Actual price against leased price, unit by unit.
  *
  * Every unit carries a pre-set monthly price — what the business asks for it.
  * A contract on that unit carries what the tenant actually agreed. The gap is
- * discount, and until now it could only be read unit by unit on the pricing
- * screen, never per month and never exported.
+ * discount, and an empty unit is the whole of its own asking price going
+ * unearned, which is why this counts units rather than contracts: a report
+ * built from contracts cannot show you a floor standing empty.
  *
- * Two things had gone wrong and are fixed here:
+ * Two things this gets right that cost real money to get wrong:
  *
- * 1. **Billing period.** A weekly contract stores a *weekly* rate, and a month
- *    in this business is four weeks. The pricing matrix compared that weekly
- *    figure straight against a monthly unit price — which is why a unit priced
- *    at 2,800 showed as leased for 583, an implausible 79% discount rather than
- *    a rate billed a different way.
+ * 1. **`rate` is already monthly.** `generateSchedule` says so plainly: "rate
+ *    is the MONTHLY price (4 weeks)… each weekly payment = rate / 4". A weekly
+ *    contract does not store a weekly rate, so multiplying by four to
+ *    "convert" it inflates that contract fourfold. Billing period changes how
+ *    often the tenant pays, not what the figure means.
  *
- * 2. **Two derivations for one number.** The contract page derives the leased
- *    price from the units' asking price; the matrix derived it from the rate.
- *    They disagreed. This is now the single rule both use.
+ * 2. **A unit let twice in one month is still one unit.** Counting rows rather
+ *    than distinct units made 165 units appear leased out of 156 that exist on
+ *    those floors.
  *
  * Pure — no database, no clock — so the money can be checked directly.
  */
 
-/** A month is four weeks here, not thirty days. */
-export const WEEKS_PER_MONTH = 4;
-
 const round2 = (n) => Math.round(n * 100) / 100;
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
-/** A contract's stored rate expressed as a month, whichever way it is billed. */
+/**
+ * A contract's monthly figure.
+ *
+ * Kept as a named function because the temptation to "convert for weekly
+ * billing" is exactly the bug above, and the reason not to belongs here rather
+ * than in a caller's head.
+ */
 export function monthlyRate(contract = {}) {
-  const rate = num(contract.rate);
-  return contract.billingPeriod === 'weekly' ? rate * WEEKS_PER_MONTH : rate;
+  return num(contract.rate);
 }
 
 /** Every unit a contract covers, tolerating the older single-unit shape. */
@@ -41,95 +44,100 @@ export function unitsOf(contract = {}) {
 }
 
 /**
- * The asking price: what these units are priced at together.
- * Zero means none of them carry a price, which is a different thing from free.
- */
-export function actualPrice(contract = {}) {
-  return round2(unitsOf(contract).reduce((s, u) => s + num(u?.price), 0));
-}
-
-/**
- * What the unit is actually let for, as a monthly figure.
+ * What a contract is worth per month, whichever field carries it.
  *
- * Order matters. An explicitly stored `leasedPrice` is somebody's decision and
- * wins outright — including a deliberate 0, which is why the check is against
- * null rather than falsiness. Otherwise the asking price is discounted, the
- * same derivation the contract page uses. Only when no unit carries a price
- * does the contract's own rate stand in, converted to a month first.
+ * A stored `leasedPrice` is somebody's decision and wins — except zero. The
+ * model treats 0 as deliberate, but no unit is let for nothing, and five
+ * contracts carry it on units asking two and a half thousand a month. Read
+ * literally those become 100% discounts and drag the whole report down, so a
+ * zero is treated as never set and the rate is used instead.
  */
-export function leasedPrice(contract = {}) {
-  if (contract.leasedPrice != null) return round2(num(contract.leasedPrice));
-
+export function contractLeased(contract = {}) {
+  const stored = contract.leasedPrice;
+  if (stored != null && num(stored) > 0) return round2(num(stored));
   const discount = 1 - num(contract.firstMonthDiscountPct) / 100;
-  const asking = actualPrice(contract);
-  if (asking > 0) return round2(asking * discount);
   return round2(monthlyRate(contract) * discount);
 }
 
-/** One contract's line: asked, let, and the gap. */
-export function realisationRow(contract = {}) {
-  const actual = actualPrice(contract);
-  const leased = leasedPrice(contract);
+/**
+ * One unit's line.
+ *
+ * A contract covering several units states one figure for all of them, so it
+ * is shared out in proportion to what each unit asks — the only split that
+ * leaves a cheap unit looking cheap. With no asking prices to weigh, it splits
+ * evenly, which is at least not misleading.
+ */
+export function unitRow(unit, contract) {
+  const actual = num(unit?.price);
+  const covered = contract ? unitsOf(contract) : [];
+  const totalAsking = covered.reduce((s, u) => s + num(u?.price), 0);
+
+  let leased = 0;
+  if (contract) {
+    const whole = contractLeased(contract);
+    leased = covered.length <= 1
+      ? whole
+      : round2(whole * (totalAsking > 0 ? actual / totalAsking : 1 / covered.length));
+  }
+
   const priced = actual > 0;
+  const occupied = Boolean(contract);
 
   return {
-    contractId: String(contract._id ?? ''),
-    contractNo: contract.contractNo ?? '',
-    customer: contract.customer?.fullName ?? contract.customerName ?? '',
-    units: unitsOf(contract).map((u) => u?.unitNumber).filter(Boolean),
-    unitCount: unitsOf(contract).length,
-    floor: unitsOf(contract)[0]?.floor ?? '',
-    sizeSqf: unitsOf(contract).reduce((s, u) => s + num(u?.sizeSqf), 0) || null,
-    billingPeriod: contract.billingPeriod ?? 'monthly',
-    // Kept so a weekly contract can still be read the way it is billed rather
-    // than only as the converted figure.
-    billedRate: round2(num(contract.rate)),
+    unitId: String(unit?._id ?? ''),
+    unitNumber: unit?.unitNumber ?? '',
+    floor: unit?.floor || 'No floor',
+    sizeSqf: unit?.sizeSqf ?? null,
     actual,
     leased,
-    variance: priced ? round2(leased - actual) : null,
-    // Positive means we let it for less than we ask.
-    discountPct: priced ? Math.round(((actual - leased) / actual) * 1000) / 10 : null,
+    occupied,
     priced,
-    startDate: contract.startDate ?? null,
-    status: contract.status ?? '',
+    contractNo: contract?.contractNo ?? '',
+    customer: contract?.customer?.fullName ?? '',
+    billingPeriod: contract?.billingPeriod ?? '',
+    sharedWith: covered.length > 1 ? covered.length : 0,
+    variance: occupied && priced ? round2(leased - actual) : null,
+    // Positive means let for less than we ask. Only meaningful once let.
+    discountPct: occupied && priced ? Math.round(((actual - leased) / actual) * 1000) / 10 : null,
   };
 }
 
-/**
- * Roll a set of lines up.
- *
- * Percentages are computed over priced units only. An unpriced unit would
- * otherwise read as a 100% discount and drag the whole figure down, so those
- * are counted and named instead.
- */
+/** Roll a set of unit rows up. */
 export function totals(rows = []) {
-  const pricedRows = rows.filter((r) => r.priced);
-  const actual = round2(pricedRows.reduce((s, r) => s + r.actual, 0));
-  const leased = round2(pricedRows.reduce((s, r) => s + r.leased, 0));
+  const let_ = rows.filter((r) => r.occupied);
+  const vacant = rows.filter((r) => !r.occupied);
+  const comparable = let_.filter((r) => r.priced);
+
+  const askingLet = round2(comparable.reduce((s, r) => s + r.actual, 0));
+  const leasedLet = round2(comparable.reduce((s, r) => s + r.leased, 0));
 
   return {
-    contracts: rows.length,
-    units: rows.reduce((s, r) => s + r.unitCount, 0),
-    actual,
-    // Every leased figure counts toward the money, priced or not; only the
-    // percentage is restricted to units we can compare.
-    leased: round2(rows.reduce((s, r) => s + r.leased, 0)),
-    leasedOnPriced: leased,
-    variance: round2(leased - actual),
-    discountPct: actual > 0 ? Math.round(((actual - leased) / actual) * 1000) / 10 : null,
-    unpriced: rows.length - pricedRows.length,
+    units: rows.length,
+    leasedUnits: let_.length,
+    vacantUnits: vacant.length,
+    occupancyPct: rows.length ? Math.round((let_.length / rows.length) * 1000) / 10 : null,
+    // The whole floor's asking price, let or not — what the space could earn.
+    actualAll: round2(rows.reduce((s, r) => s + r.actual, 0)),
+    // Asking price of the units actually let, which is what "leased" compares to.
+    actualLet: askingLet,
+    leased: round2(let_.reduce((s, r) => s + r.leased, 0)),
+    variance: round2(leasedLet - askingLet),
+    discountPct: askingLet > 0 ? Math.round(((askingLet - leasedLet) / askingLet) * 1000) / 10 : null,
+    // Asking price sitting empty — usually the larger number, and the one
+    // discounting arguments tend to forget.
+    vacantValue: round2(vacant.reduce((s, r) => s + r.actual, 0)),
+    unpricedUnits: rows.filter((r) => !r.priced).length,
   };
 }
 
-/** The same roll-up, per floor, in floor order. */
+/** The same roll-up per floor, in floor order. */
 export function byFloor(rows = []) {
   const map = new Map();
   for (const r of rows) {
-    const key = r.floor || 'No floor';
-    if (!map.has(key)) map.set(key, []);
-    map.get(key).push(r);
+    if (!map.has(r.floor)) map.set(r.floor, []);
+    map.get(r.floor).push(r);
   }
   return [...map.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
     .map(([floor, list]) => ({ floor, ...totals(list), rows: list }));
 }

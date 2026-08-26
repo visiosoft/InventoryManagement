@@ -12,41 +12,42 @@ const DANGER = '#C22A2A'
 const GREEN = '#1D8A46'
 
 type Row = {
-  contractId: string
-  contractNo: string
-  customer: string
-  units: string[]
-  unitCount: number
+  unitId: string
+  unitNumber: string
   floor: string
   sizeSqf: number | null
-  billingPeriod: 'weekly' | 'monthly'
-  billedRate: number
   actual: number
   leased: number
+  occupied: boolean
+  priced: boolean
+  contractNo: string
+  customer: string
+  billingPeriod: string
+  sharedWith: number
   variance: number | null
   discountPct: number | null
-  priced: boolean
-  status: string
 }
 
 type Totals = {
-  contracts: number
   units: number
-  actual: number
+  leasedUnits: number
+  vacantUnits: number
+  occupancyPct: number | null
+  actualAll: number
+  actualLet: number
   leased: number
-  leasedOnPriced: number
   variance: number
   discountPct: number | null
-  unpriced: number
+  vacantValue: number
+  unpricedUnits: number
 }
 
 type Floor = Totals & { floor: string; rows: Row[] }
 type Report = { month: string; label: string; totals: Totals; floors: Floor[]; rows: Row[] }
 
-const money = (n: number) => `AED ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-const pct = (n: number | null) => (n == null ? '—' : `${n > 0 ? '' : ''}${n}%`)
+const aed = (n: number) => `AED ${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+const pct = (n: number | null) => (n == null ? '—' : `${n}%`)
 
-/** The last 18 months, newest first. */
 function recentMonths() {
   const out: string[] = []
   const now = new Date()
@@ -60,55 +61,53 @@ function recentMonths() {
 /**
  * A spreadsheet of the report.
  *
- * CSV rather than a real .xlsx: Excel opens it natively, it needs no dependency,
- * and it matches the CSV export already on the forecast report. A BOM is
- * prepended so Excel reads the Arabic and accented names as UTF-8 rather than
- * as mojibake, which it does by default without one.
+ * CSV rather than a real .xlsx: Excel opens it natively and it needs no
+ * dependency. The BOM matters — without it Excel reads the accented and Arabic
+ * names as mojibake.
  */
 function downloadCsv(report: Report) {
   const cell = (v: unknown) => {
     const s = String(v ?? '')
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
   }
-  const header = [
-    'Floor', 'Units', 'Size (sqf)', 'Contract', 'Customer', 'Billing',
-    'Billed rate', 'Actual (monthly)', 'Leased (monthly)', 'Variance', 'Discount %', 'Status',
-  ]
-  const lines = [header.join(',')]
+  const lines = [[
+    'Floor', 'Unit', 'Size (sqf)', 'Status', 'Contract', 'Customer',
+    'Actual (monthly)', 'Leased (monthly)', 'Variance', 'Discount %',
+  ].join(',')]
 
   for (const r of report.rows) {
     lines.push([
-      r.floor || 'No floor',
-      r.units.join(' + '),
-      r.sizeSqf ?? '',
-      r.contractNo,
-      r.customer,
-      r.billingPeriod,
-      r.billedRate,
+      r.floor, r.unitNumber, r.sizeSqf ?? '',
+      r.occupied ? 'Leased' : 'Vacant',
+      r.contractNo, r.customer,
       r.priced ? r.actual : '',
-      r.leased,
-      r.variance ?? '',
-      r.discountPct ?? '',
-      r.status,
+      r.occupied ? r.leased : '',
+      r.variance ?? '', r.discountPct ?? '',
     ].map(cell).join(','))
   }
 
   const t = report.totals
   lines.push('')
-  lines.push(['TOTAL', t.units, '', `${t.contracts} contracts`, '', '', '', t.actual, t.leased, t.variance, t.discountPct ?? '', ''].map(cell).join(','))
-  if (t.unpriced) lines.push([`${t.unpriced} contract(s) on units with no price set — excluded from the percentage`].map(cell).join(','))
+  lines.push(['TOTAL', `${t.units} units`, '', `${t.leasedUnits} leased / ${t.vacantUnits} vacant`, '', '', t.actualAll, t.leased, t.variance, t.discountPct ?? ''].map(cell).join(','))
+  lines.push(['Asking price of vacant units', t.vacantValue].map(cell).join(','))
 
   const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' })
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
-  a.download = `purplebox-rates-${report.month}.csv`
+  a.download = `purplebox-actual-vs-leased-${report.month}.csv`
   a.click()
   URL.revokeObjectURL(a.href)
 }
 
-function Cell({ children, align = 'left', color }: { children: React.ReactNode; align?: 'left' | 'right'; color?: string }) {
+function Cell({ children, align = 'left', color, dim }: {
+  children: React.ReactNode; align?: 'left' | 'right'; color?: string; dim?: boolean
+}) {
   return (
-    <td style={{ padding: '10px 12px', fontSize: 13, textAlign: align, color: color ?? INK, fontVariantNumeric: 'tabular-nums', borderBottom: `1px solid ${LINE}` }}>
+    <td style={{
+      padding: '9px 12px', fontSize: 13, textAlign: align,
+      color: color ?? (dim ? FAINT : INK),
+      fontVariantNumeric: 'tabular-nums', borderBottom: `1px solid ${LINE}`,
+    }}>
       {children}
     </td>
   )
@@ -117,6 +116,7 @@ function Cell({ children, align = 'left', color }: { children: React.ReactNode; 
 export default function RatesReport() {
   const months = recentMonths()
   const [month, setMonth] = useState(months[0])
+  const [onlyLeased, setOnlyLeased] = useState(false)
 
   const { data, isLoading } = useQuery<Report>({
     queryKey: ['rates-report', month],
@@ -144,6 +144,10 @@ export default function RatesReport() {
             </option>
           ))}
         </select>
+        <label className="flex items-center gap-2 cursor-pointer" style={{ fontSize: 13, color: INK }}>
+          <input type="checkbox" checked={onlyLeased} onChange={(e) => setOnlyLeased(e.target.checked)} />
+          Leased only
+        </label>
         <button
           type="button"
           onClick={() => data && downloadCsv(data)}
@@ -160,79 +164,81 @@ export default function RatesReport() {
       ) : !data ? null : (
         <>
           <div className="flex flex-wrap gap-2.5">
-            <StatCard label="Contracts running" value={String(t?.contracts ?? 0)} />
-            <StatCard label="Units leased" value={String(t?.units ?? 0)} />
-            <StatCard label="Actual (asking)" value={money(t?.actual ?? 0)} />
-            <StatCard label="Leased" value={money(t?.leased ?? 0)} />
+            <StatCard label="Units" value={String(t?.units ?? 0)} sub={`${t?.leasedUnits ?? 0} leased · ${t?.vacantUnits ?? 0} vacant`} />
+            <StatCard label="Occupancy" value={pct(t?.occupancyPct ?? null)} />
+            <StatCard label="Actual (all units)" value={aed(t?.actualAll ?? 0)} sub={`${aed(t?.actualLet ?? 0)} of it let`} />
+            <StatCard label="Leased" value={aed(t?.leased ?? 0)} />
             <StatCard
               label={(t?.variance ?? 0) >= 0 ? 'Above asking' : 'Below asking'}
-              value={money(t?.variance ?? 0)}
+              value={aed(t?.variance ?? 0)}
               tone={(t?.variance ?? 0) >= 0 ? 'green' : 'red'}
-              sub={t?.discountPct != null ? `${t.discountPct}% discount overall` : undefined}
+              sub={t?.discountPct != null ? `${t.discountPct}% on what is let` : undefined}
             />
+            {/* Usually the bigger number, and the one a discounting argument
+                tends to leave out. */}
+            <StatCard label="Sitting empty" value={aed(t?.vacantValue ?? 0)} tone="amber" sub="asking price not earning" />
           </div>
 
-          {/* Named rather than folded in: an unpriced unit would read as a
-              100% discount and wreck the percentage. */}
-          {!!t?.unpriced && (
+          {!!t?.unpricedUnits && (
             <p style={{ fontSize: 11.5, color: '#B45309' }}>
-              {t.unpriced} contract{t.unpriced === 1 ? '' : 's'} on units with no price set — counted in the money, left out of the percentage.
+              {t.unpricedUnits} unit{t.unpricedUnits === 1 ? '' : 's'} with no price set — left out of the percentages.
             </p>
           )}
 
           <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 16, overflow: 'hidden' }}>
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', minWidth: 940, borderCollapse: 'collapse' }}>
+              <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: '#FBF8F2' }}>
-                    {['Unit(s)', 'Contract', 'Customer', 'Billing', 'Actual', 'Leased', 'Variance', 'Discount'].map((h, i) => (
-                      <th key={h} style={{ padding: '10px 12px', fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: FAINT, textAlign: i >= 4 ? 'right' : 'left', borderBottom: `1px solid ${LINE}` }}>
+                    {['Unit', 'Contract', 'Customer', 'Actual', 'Leased', 'Variance', 'Discount'].map((h, i) => (
+                      <th key={h} style={{ padding: '10px 12px', fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: FAINT, textAlign: i >= 3 ? 'right' : 'left', borderBottom: `1px solid ${LINE}` }}>
                         {h}
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {data.floors.map((f) => (
-                    <>
-                      <tr key={f.floor} style={{ background: '#F7F3FF' }}>
-                        <td colSpan={4} style={{ padding: '8px 12px', fontSize: 12, fontWeight: 700, color: '#4A1FA0' }}>
-                          {f.floor} · {f.units} units
-                        </td>
-                        <Cell align="right">{money(f.actual)}</Cell>
-                        <Cell align="right">{money(f.leased)}</Cell>
-                        <Cell align="right" color={f.variance >= 0 ? GREEN : DANGER}>{money(f.variance)}</Cell>
-                        <Cell align="right">{pct(f.discountPct)}</Cell>
-                      </tr>
-                      {f.rows.map((r) => (
-                        <tr key={r.contractId + r.units.join()}>
-                          <Cell>{r.units.join(' + ') || '—'}{r.sizeSqf ? <span style={{ color: FAINT, fontSize: 11 }}> · {r.sizeSqf} sqf</span> : null}</Cell>
-                          <Cell>{r.contractNo}</Cell>
-                          <Cell>{r.customer || '—'}</Cell>
-                          <Cell>
-                            {r.billingPeriod === 'weekly'
-                              ? <span title={`Billed AED ${r.billedRate} per week`} style={{ color: FAINT }}>weekly · {money(r.billedRate)}/wk</span>
-                              : <span style={{ color: FAINT }}>monthly</span>}
-                          </Cell>
-                          <Cell align="right">{r.priced ? money(r.actual) : <span style={{ color: FAINT }}>not priced</span>}</Cell>
-                          <Cell align="right">{money(r.leased)}</Cell>
-                          <Cell align="right" color={r.variance == null ? FAINT : r.variance >= 0 ? GREEN : DANGER}>
-                            {r.variance == null ? '—' : money(r.variance)}
-                          </Cell>
-                          <Cell align="right" color={r.discountPct == null ? FAINT : r.discountPct > 0 ? DANGER : GREEN}>
-                            {pct(r.discountPct)}
-                          </Cell>
+                  {data.floors.map((f) => {
+                    const rows = onlyLeased ? f.rows.filter((r) => r.occupied) : f.rows
+                    if (!rows.length) return null
+                    return (
+                      <>
+                        <tr key={f.floor} style={{ background: '#F7F3FF' }}>
+                          <td colSpan={3} style={{ padding: '8px 12px', fontSize: 12, fontWeight: 700, color: '#4A1FA0' }}>
+                            {f.floor} · {f.units} units · {f.leasedUnits} leased ({pct(f.occupancyPct)})
+                          </td>
+                          <Cell align="right">{aed(f.actualAll)}</Cell>
+                          <Cell align="right">{aed(f.leased)}</Cell>
+                          <Cell align="right" color={f.variance >= 0 ? GREEN : DANGER}>{aed(f.variance)}</Cell>
+                          <Cell align="right">{pct(f.discountPct)}</Cell>
                         </tr>
-                      ))}
-                    </>
-                  ))}
+                        {rows.map((r) => (
+                          <tr key={r.unitId} style={{ background: r.occupied ? undefined : '#FCFBF9' }}>
+                            <Cell>
+                              {r.unitNumber}
+                              {r.sizeSqf ? <span style={{ color: FAINT, fontSize: 11 }}> · {r.sizeSqf} sqf</span> : null}
+                              {r.sharedWith > 1 && <span style={{ color: FAINT, fontSize: 11 }}> · 1 of {r.sharedWith}</span>}
+                            </Cell>
+                            <Cell dim={!r.occupied}>{r.contractNo || 'vacant'}</Cell>
+                            <Cell dim={!r.occupied}>{r.customer || '—'}</Cell>
+                            <Cell align="right">{r.priced ? aed(r.actual) : <span style={{ color: FAINT }}>not priced</span>}</Cell>
+                            <Cell align="right" dim={!r.occupied}>{r.occupied ? aed(r.leased) : '—'}</Cell>
+                            <Cell align="right" color={r.variance == null ? FAINT : r.variance >= 0 ? GREEN : DANGER}>
+                              {r.variance == null ? '—' : aed(r.variance)}
+                            </Cell>
+                            <Cell align="right" color={r.discountPct == null ? FAINT : r.discountPct > 0 ? DANGER : GREEN}>
+                              {pct(r.discountPct)}
+                            </Cell>
+                          </tr>
+                        ))}
+                      </>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
             {data.rows.length === 0 && (
-              <p style={{ padding: 40, textAlign: 'center', fontSize: 13.5, color: FAINT }}>
-                No contracts were running in {data.label}.
-              </p>
+              <p style={{ padding: 40, textAlign: 'center', fontSize: 13.5, color: FAINT }}>No units to show.</p>
             )}
           </div>
         </>

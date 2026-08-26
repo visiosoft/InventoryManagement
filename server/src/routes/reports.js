@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { Unit, Contract, Payment, Expense } from '../models/index.js';
 import { siteScope } from '../utils/siteScope.js';
-import { realisationRow, totals, byFloor, monthlyRate } from '../services/rateRealisation.js';
+import { unitRow, totals, byFloor, monthlyRate } from '../services/rateRealisation.js';
 
 const router = Router();
 
@@ -475,14 +475,20 @@ router.get('/rates', async (req, res) => {
     const monthEnd = new Date(Date.UTC(y, m, 1));
 
     const scope = await siteScope(req.query.site);
-    const cF = scope ? scope.contractFilter : {};
 
-    // Ended contracts still count for the months they actually ran.
-    const contracts = await Contract.find({ ...cF, status: { $in: ['active', 'pending_signature', 'ended'] } })
-      .populate('customer', 'fullName')
-      .populate('unit', 'unitNumber floor sizeSqf price')
-      .populate('units', 'unitNumber floor sizeSqf price')
-      .lean();
+    // Every unit, not only the let ones: an empty floor is the whole point of
+    // the report and a contract-driven query can never show it.
+    const [units, contracts] = await Promise.all([
+      Unit.find(scope ? scope.unitFilter : {}).lean(),
+      Contract.find({
+        ...(scope ? scope.contractFilter : {}),
+        status: { $in: ['active', 'pending_signature', 'ended'] },
+      })
+        .populate('customer', 'fullName')
+        .populate('unit', 'unitNumber floor sizeSqf price')
+        .populate('units', 'unitNumber floor sizeSqf price')
+        .lean(),
+    ]);
 
     const running = contracts.filter((c) => {
       const st = new Date(c.startDate);
@@ -490,9 +496,19 @@ router.get('/rates', async (req, res) => {
       return st < monthEnd && en > monthStart;
     });
 
-    const rows = running.map(realisationRow)
-      // Biggest discount first: that is the list worth acting on.
-      .sort((a, b) => (b.discountPct ?? -Infinity) - (a.discountPct ?? -Infinity));
+    // One contract per unit. An active one beats an ended one that merely
+    // overlapped the month, so a unit re-let mid-month is not counted twice.
+    const rank = (c) => (c.status === 'active' ? 0 : c.status === 'pending_signature' ? 1 : 2);
+    const byUnit = new Map();
+    for (const c of running) {
+      const ids = [c.unit, ...(c.units || [])].filter(Boolean).map((u) => String(u._id ?? u));
+      for (const id of ids) {
+        const held = byUnit.get(id);
+        if (!held || rank(c) < rank(held)) byUnit.set(id, c);
+      }
+    }
+
+    const rows = units.map((u) => unitRow(u, byUnit.get(String(u._id)) || null));
 
     res.json({
       month: monthISO,
@@ -544,8 +560,9 @@ router.get('/forecast', async (req, res) => {
       const e = new Date(c.endDate);
       return s < me && e > ms;
     });
-    // monthlyRate, not c.rate: a weekly contract stores a weekly figure, and
-    // summing that as a month understated it roughly fourfold.
+    // rate is the monthly price whatever the billing period, so this is a
+    // straight sum. An earlier version multiplied weekly contracts by four,
+    // which quadrupled half the book.
     const expected = Math.round(active.reduce((s, c) => s + monthlyRate(c), 0) * 100) / 100;
 
     // Actual for past/current months

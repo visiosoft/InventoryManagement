@@ -1,110 +1,136 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { monthlyRate, actualPrice, leasedPrice, realisationRow, totals, byFloor, unitsOf } from './rateRealisation.js';
+import { monthlyRate, contractLeased, unitRow, totals, byFloor, unitsOf } from './rateRealisation.js';
 
-/* The billing period is the whole bug. A weekly rate read as a monthly one
-   makes a normal contract look like a 75% discount, which is what the pricing
-   screen has been showing. */
+/* `rate` is the monthly price whatever the billing period — generateSchedule
+   states it outright and divides by four to get the weekly payment. Treating a
+   weekly contract's rate as weekly and multiplying it up inflates that contract
+   fourfold, which is the mistake this test exists to prevent. */
 
-test('a weekly rate becomes four weeks of it', () => {
-  assert.equal(monthlyRate({ rate: 300, billingPeriod: 'weekly' }), 1200);
-});
-
-test('a monthly rate is left alone, and a missing period is treated as monthly', () => {
-  assert.equal(monthlyRate({ rate: 1200, billingPeriod: 'monthly' }), 1200);
-  // Guessing weekly on a record that simply lacks the field would quadruple it.
-  assert.equal(monthlyRate({ rate: 1200 }), 1200);
+test('a weekly contract stores a monthly rate, and it is left alone', () => {
+  assert.equal(monthlyRate({ rate: 4720, billingPeriod: 'weekly' }), 4720);
+  assert.equal(monthlyRate({ rate: 4720, billingPeriod: 'monthly' }), 4720);
 });
 
 test('an unusable rate is zero rather than NaN', () => {
   for (const c of [{}, { rate: null }, { rate: 'abc' }]) assert.equal(monthlyRate(c), 0);
 });
 
-/* The asking price. */
+/* What a contract is worth. */
 
-test('a contract covering several units is asked against all of them', () => {
-  const c = { units: [{ unitNumber: 'F1-1', price: 500 }, { unitNumber: 'F1-2', price: 700 }] };
-  assert.equal(actualPrice(c), 1200);
-  assert.equal(unitsOf(c).length, 2);
+test('a stored leased price wins over the rate', () => {
+  assert.equal(contractLeased({ leasedPrice: 2500, rate: 900 }), 2500);
 });
 
-test('the older single-unit shape still works', () => {
-  assert.equal(actualPrice({ unit: { unitNumber: 'F2-9', price: 450 } }), 450);
+// Five real contracts carry leasedPrice 0 on units asking thousands. Read
+// literally each is a 100% discount, which is not what happened.
+test('a zero leased price is treated as never set, not as let for nothing', () => {
+  assert.equal(contractLeased({ leasedPrice: 0, rate: 4720 }), 4720);
 });
 
-/* The leased price: one rule, used by the page and the report alike. */
-
-test('a stored leased price wins outright', () => {
-  assert.equal(leasedPrice({ leasedPrice: 2500, rate: 900, units: [{ price: 2800 }] }), 2500);
+test('with no stored price the rate is discounted', () => {
+  assert.equal(contractLeased({ rate: 1000, firstMonthDiscountPct: 10 }), 900);
 });
 
-// null means "derive it"; 0 is somebody deciding the unit is let for nothing.
-test('a deliberate zero is kept, not treated as unset', () => {
-  assert.equal(leasedPrice({ leasedPrice: 0, rate: 900, units: [{ price: 2800 }] }), 0);
+/* Unit rows. */
+
+const unit = (over) => ({ _id: 'u1', unitNumber: 'F1-1', floor: 'F1', sizeSqf: 150, price: 2700, ...over });
+
+test('a vacant unit still carries its asking price and no discount', () => {
+  const r = unitRow(unit(), null);
+  assert.equal(r.occupied, false);
+  assert.equal(r.actual, 2700);
+  assert.equal(r.leased, 0);
+  // Nothing was agreed, so there is no discount to report — 100% would be a lie.
+  assert.equal(r.discountPct, null);
+  assert.equal(r.variance, null);
 });
 
-test('otherwise the asking price is discounted, as the contract page does it', () => {
-  assert.equal(leasedPrice({ firstMonthDiscountPct: 10, units: [{ price: 2800 }] }), 2520);
+test('a let unit reports the gap against its asking price', () => {
+  const r = unitRow(unit(), { contractNo: 'PB-1', rate: 2160, units: [unit()] });
+  assert.equal(r.leased, 2160);
+  assert.equal(r.variance, -540);
+  assert.equal(r.discountPct, 20);
 });
 
-// The reported case: F1-18 asked 2,800 and shown as leased 583.60.
-test('a weekly contract on an unpriced unit is converted before comparison', () => {
-  const weekly = { rate: 583.6, billingPeriod: 'weekly', units: [{ unitNumber: 'F1-18', price: null }] };
-  assert.equal(leasedPrice(weekly), 2334.4);
-  // Read as monthly it would have been 583.60 — a 79% discount that never was.
-  assert.notEqual(leasedPrice(weekly), 583.6);
+test('the weekly case that was being inflated', () => {
+  // 4,720 a month against a unit asking 2,700: above asking, not four times it.
+  const r = unitRow(unit(), { rate: 4720, billingPeriod: 'weekly', leasedPrice: 0, units: [unit()] });
+  assert.equal(r.leased, 4720);
+  assert.equal(r.discountPct, -74.8);
 });
 
-test('a discount shows as a positive percentage and a negative variance', () => {
-  const row = realisationRow({ leasedPrice: 900, units: [{ unitNumber: 'A', price: 1200 }] });
-  assert.equal(row.variance, -300);
-  assert.equal(row.discountPct, 25);
+test('a contract over several units shares its figure by what each unit asks', () => {
+  const a = unit({ _id: 'a', unitNumber: 'A', price: 1000 });
+  const b = unit({ _id: 'b', unitNumber: 'B', price: 3000 });
+  const c = { rate: 2000, units: [a, b] };
+  // The cheap unit carries a quarter of it, not half.
+  assert.equal(unitRow(a, c).leased, 500);
+  assert.equal(unitRow(b, c).leased, 1500);
+  assert.equal(unitRow(a, c).leased + unitRow(b, c).leased, 2000);
+  assert.equal(unitRow(a, c).sharedWith, 2);
 });
 
-test('letting above the asking price shows as a negative discount', () => {
-  const row = realisationRow({ leasedPrice: 1500, units: [{ unitNumber: 'A', price: 1200 }] });
-  assert.equal(row.variance, 300);
-  assert.equal(row.discountPct, -25);
+test('with no asking prices to weigh, a shared contract splits evenly', () => {
+  const a = unit({ _id: 'a', price: null });
+  const b = unit({ _id: 'b', price: null });
+  assert.equal(unitRow(a, { rate: 1000, units: [a, b] }).leased, 500);
 });
 
 test('an unpriced unit reports no percentage rather than zero', () => {
-  const row = realisationRow({ leasedPrice: 900, units: [{ unitNumber: 'A', price: null }] });
-  assert.equal(row.priced, false);
-  assert.equal(row.discountPct, null);
-  assert.equal(row.variance, null);
-  assert.equal(row.leased, 900);
+  const r = unitRow(unit({ price: null }), { rate: 900, units: [unit({ price: null })] });
+  assert.equal(r.priced, false);
+  assert.equal(r.discountPct, null);
+  assert.equal(r.leased, 900);
 });
 
-/* Roll-ups. */
+/* Totals — where the unit count was going wrong. */
 
-const row = (over) => realisationRow({ units: [{ unitNumber: 'U', price: 1000, floor: 'F1' }], leasedPrice: 1000, ...over });
-
-test('a total is the sum, and the percentage covers only priced units', () => {
+test('vacant units count toward occupancy and the value left standing empty', () => {
   const t = totals([
-    row({ leasedPrice: 500 }),                                              // 50% off, priced
-    row({ leasedPrice: 900, units: [{ unitNumber: 'B', price: null }] }),   // unpriced
+    unitRow(unit({ _id: '1', price: 1000 }), { rate: 800, units: [unit({ price: 1000 })] }),
+    unitRow(unit({ _id: '2', price: 1000 }), null),
+    unitRow(unit({ _id: '3', price: 500 }), null),
   ]);
-  assert.equal(t.contracts, 2);
-  assert.equal(t.actual, 1000);
-  assert.equal(t.leased, 1400);        // every leased figure counts as money
-  assert.equal(t.leasedOnPriced, 500); // only the comparable one drives the %
-  assert.equal(t.discountPct, 50);
-  assert.equal(t.unpriced, 1);
+  assert.equal(t.units, 3);
+  assert.equal(t.leasedUnits, 1);
+  assert.equal(t.vacantUnits, 2);
+  assert.equal(t.occupancyPct, 33.3);
+  assert.equal(t.actualAll, 2500);     // the whole floor's asking price
+  assert.equal(t.actualLet, 1000);     // only what is let
+  assert.equal(t.leased, 800);
+  assert.equal(t.vacantValue, 1500);
+  // The discount is against what was let, not against the empty units too.
+  assert.equal(t.discountPct, 20);
 });
 
-test('nothing at all totals to zero with no percentage', () => {
+// The reported bug: 165 units leased across floors holding 156.
+test('a unit is counted once however many contracts touched it', () => {
+  const u = unit({ _id: 'same', unitNumber: 'F1-1' });
+  const t = totals([unitRow(u, { rate: 900, units: [u] })]);
+  assert.equal(t.units, 1);
+  assert.equal(t.leasedUnits, 1);
+});
+
+test('an empty floor totals to zero with no percentages', () => {
   const t = totals([]);
-  assert.equal(t.contracts, 0);
-  assert.equal(t.actual, 0);
+  assert.equal(t.units, 0);
+  assert.equal(t.occupancyPct, null);
   assert.equal(t.discountPct, null);
 });
 
-test('floors are grouped and ordered, and unplaced units named rather than dropped', () => {
-  const groups = byFloor([
-    row({ units: [{ unitNumber: 'B', price: 1000, floor: 'F2' }] }),
-    row({ units: [{ unitNumber: 'A', price: 1000, floor: 'F1' }] }),
-    row({ units: [{ unitNumber: 'C', price: 1000, floor: '' }] }),
-  ]);
-  assert.deepEqual(groups.map((g) => g.floor), ['F1', 'F2', 'No floor']);
-  assert.equal(groups.reduce((s, g) => s + g.contracts, 0), 3);
+test('floors sort naturally and keep every unit', () => {
+  const rows = [
+    unitRow(unit({ _id: '1', floor: 'F10' }), null),
+    unitRow(unit({ _id: '2', floor: 'F2' }), null),
+    unitRow(unit({ _id: '3', floor: 'F1' }), null),
+  ];
+  assert.deepEqual(byFloor(rows).map((f) => f.floor), ['F1', 'F2', 'F10']);
+  assert.equal(byFloor(rows).reduce((s, f) => s + f.units, 0), 3);
+});
+
+test('unitsOf tolerates both shapes', () => {
+  assert.equal(unitsOf({ units: [{}, {}] }).length, 2);
+  assert.equal(unitsOf({ unit: {} }).length, 1);
+  assert.equal(unitsOf({}).length, 0);
 });
