@@ -1136,17 +1136,18 @@ export default function Leads() {
                                             aria-label={`Select ${lead.fullName}`}
                                         />
 
-                                        {/* Name — opens the drawer, which is what this page is for:
-                                            deciding whose lead it is, not working it. */}
-                                        <div
-                                            onClick={() => setDrawerId(lead._id)}
-                                            style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', minWidth: 0, overflow: 'hidden' }}
+                                        {/* The name goes to the lead itself. View, beside the
+                                            other actions, opens the drawer instead — enough to
+                                            assign or move a stage without leaving the list. */}
+                                        <Link
+                                            to={`/leads/${lead._id}`}
+                                            style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, overflow: 'hidden', color: INK, textDecoration: 'none' }}
                                         >
                                             <span style={{ width: 34, height: 34, flex: '0 0 auto', borderRadius: 10, background: '#EDE5FF', color: '#4A1FA0', display: 'grid', placeItems: 'center', fontSize: 13, fontWeight: 700 }}>
                                                 {getInitials(lead.fullName)}
                                             </span>
                                             <span style={{ fontWeight: 600, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lead.fullName}</span>
-                                        </div>
+                                        </Link>
 
                                         <span style={{ fontSize: 13, color: '#4A4357', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden' }}>{lead.phone}</span>
 
@@ -1382,8 +1383,8 @@ export default function Leads() {
                             >Book unit</button>
                             <Link
                                 to={`/leads/${drawerLead._id}`}
-                                style={{ flex: 1, height: 46, borderRadius: 999, border: '1px solid rgba(20,8,31,.16)', background: '#fff', color: INK, fontWeight: 600, fontSize: 14, display: 'grid', placeItems: 'center' }}
-                            >Open lead</Link>
+                                style={{ flex: 1, height: 46, borderRadius: 999, border: '1px solid rgba(20,8,31,.16)', background: '#fff', color: INK, fontWeight: 600, fontSize: 14, display: 'grid', placeItems: 'center', textDecoration: 'none' }}
+                            >Open full lead</Link>
                         </div>
                     </div>
                 </>
