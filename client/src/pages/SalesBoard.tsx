@@ -804,6 +804,16 @@ const TEMP_TONE: Record<string, { bg: string; fg: string }> = {
   cold: { bg: 'rgba(37,99,235,.08)', fg: '#2563EB' },
 }
 
+/**
+ * One template for the header and every row, so the columns actually line up.
+ *
+ * Flex could not do this: a stage badge is as wide as its label, and a lead
+ * with no temperature had no badge at all, so everything after it slid left by
+ * a different amount on every row. A grid gives each column the same width
+ * whatever is in it, including nothing.
+ */
+const LEAD_GRID = '38px minmax(110px, 1.5fr) 132px 66px minmax(70px, 0.8fr) minmax(104px, 1fr) 176px 16px'
+
 /** The short form the list shows: state first, date second. */
 function followUpLabel(row: Row): { text: string; color: string } | null {
   const day = reminderDay(row.followUpAt, row.followUpKind)
@@ -1133,110 +1143,139 @@ export default function SalesBoard() {
             </div>
           </div>
         ) : (
-          visible.map((r) => {
-            const follow = followUpLabel(r)
-            const temp = r.temperature ? TEMP_TONE[r.temperature] : null
-            return (
+          /* Narrow screens scroll the list sideways rather than crushing the
+             columns back out of alignment. */
+          <div style={{ overflowX: 'auto' }}>
+            <div style={{ minWidth: 940 }}>
               <div
-                key={r.key}
-                role="link"
-                tabIndex={0}
-                onClick={() => { r.onOpen?.(); if (r.href) navigate(r.href) }}
-                onKeyDown={(e) => {
-                  if (e.key !== 'Enter' && e.key !== ' ') return
-                  e.preventDefault()
-                  r.onOpen?.()
-                  if (r.href) navigate(r.href)
-                }}
-                className="flex items-center hover:bg-[#FAF8F5] transition-colors"
+                className="grid items-center"
                 style={{
-                  gap: 10, padding: '16px 20px', borderBottom: '1px solid rgba(20,8,31,.10)',
-                  cursor: 'pointer', minWidth: 0, color: INK, textDecoration: 'none',
-                  // A soft pulse rather than a hard flash: it has to be
-                  // noticeable across a room without being unbearable to sit in
-                  // front of all day.
-                  ...(r.unseen ? { animation: 'lead-new 1.6s ease-in-out infinite', borderLeft: `3px solid ${PURPLE}` } : null),
+                  gridTemplateColumns: LEAD_GRID, gap: 10, padding: '12px 20px',
+                  borderBottom: '1px solid rgba(20,8,31,.10)', background: '#FBF8F2',
+                  fontSize: 11.5, fontWeight: 700, color: MUTED,
+                  textTransform: 'uppercase', letterSpacing: '0.05em',
                 }}
               >
-                <div style={{ width: 38, height: 38, borderRadius: 999, background: '#EDE5FF', color: '#4A1FA0', display: 'grid', placeItems: 'center', fontWeight: 700, fontSize: 13, flex: '0 0 auto' }}>
-                  {r.initials}
-                </div>
-
-                <div style={{ flex: '1 1 110px', minWidth: 0 }}>
-                  <div className="truncate" style={{ fontWeight: 700, fontSize: 14 }}>
-                    {r.unseen && (
-                      <span
-                        title="Assigned to you and not opened yet"
-                        style={{ display: 'inline-block', width: 7, height: 7, borderRadius: 999, background: PURPLE, marginRight: 7, verticalAlign: 'middle' }}
-                      />
-                    )}
-                    {r.name}
-                  </div>
-                  <div className="truncate" style={{ fontSize: 12.5, color: MUTED, marginTop: 2 }}>{r.phone}</div>
-                </div>
-
-                <div style={{ flex: '0 0 auto' }}>
-                  <span className="inline-flex whitespace-nowrap" style={{ padding: '5px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: r.statusColor.bg, color: r.statusColor.fg }}>
-                    {r.status}
-                  </span>
-                </div>
-
-                {temp && (
-                  <div style={{ flex: '0 0 auto' }}>
-                    <span className="inline-flex whitespace-nowrap" style={{ padding: '5px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: temp.bg, color: temp.fg }}>
-                      {String(r.temperature).charAt(0).toUpperCase() + String(r.temperature).slice(1)}
-                    </span>
-                  </div>
-                )}
-
-                <div className="truncate" style={{ flex: '1 1 90px', minWidth: 0, fontSize: 12.5, color: '#4A4357' }}>{r.interested}</div>
-
-                {/* The follow-up if there is one, otherwise when they arrived —
-                    the column is about when this lead next needs attention. */}
-                <div className="truncate" style={{ flex: '1 1 90px', minWidth: 0, fontSize: 12.5, fontWeight: 600, color: follow ? follow.color : MUTED }}>
-                  {follow ? follow.text : (r.addedAt ? formatDate(r.addedAt) : '—')}
-                </div>
-
-                {/* Inside a row that is itself a link, so each of these stops
-                    the click from also navigating. */}
-                <div className="flex" style={{ gap: 6, flex: '0 0 auto' }}>
-                  {r.digits && (
-                    <a
-                      href={`tel:+${r.digits}`}
-                      title="Call"
-                      onClick={(e) => e.stopPropagation()}
-                      style={{ width: 30, height: 30, borderRadius: 999, background: '#F7F3FF', color: '#4A1FA0', display: 'grid', placeItems: 'center', flex: '0 0 auto' }}
-                    >
-                      <Phone size={13} />
-                    </a>
-                  )}
-                  {r.digits && r.type === 'Storage Only' && (
-                    <Link
-                      to={`/whatsapp?phone=${r.digits}`}
-                      title="Open the chat"
-                      onClick={(e) => e.stopPropagation()}
-                      style={{ width: 30, height: 30, borderRadius: 999, background: '#F7F3FF', color: '#4A1FA0', display: 'grid', placeItems: 'center', flex: '0 0 auto' }}
-                    >
-                      <MessageCircle size={13} />
-                    </Link>
-                  )}
-                  {r.canConvert && (
-                    <button
-                      type="button"
-                      disabled={r.converting}
-                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); r.convert() }}
-                      style={{ height: 30, padding: '0 10px', borderRadius: 999, background: 'transparent', color: PURPLE, border: '1px solid #DDD0FF', fontWeight: 600, fontSize: 11.5, whiteSpace: 'nowrap' }}
-                      className="hover:bg-[#F7F3FF] transition-colors disabled:opacity-50 cursor-pointer"
-                    >
-                      {r.converting ? 'Converting…' : r.convertLabel}
-                    </button>
-                  )}
-                </div>
-
-                <ChevronRight size={16} style={{ color: MUTED, flex: '0 0 auto' }} />
+                <span />
+                <span>Name</span>
+                <span>Stage</span>
+                <span>Temp</span>
+                <span>Wants</span>
+                <span>Follow-up</span>
+                <span />
+                <span />
               </div>
-            )
-          })
+
+              {visible.map((r) => {
+                const follow = followUpLabel(r)
+                const temp = r.temperature ? TEMP_TONE[r.temperature] : null
+                return (
+                  <div
+                    key={r.key}
+                    role="link"
+                    tabIndex={0}
+                    onClick={() => { r.onOpen?.(); if (r.href) navigate(r.href) }}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter' && e.key !== ' ') return
+                      e.preventDefault()
+                      r.onOpen?.()
+                      if (r.href) navigate(r.href)
+                    }}
+                    className="grid items-center hover:bg-[#FAF8F5] transition-colors"
+                    style={{
+                      gridTemplateColumns: LEAD_GRID, gap: 10, padding: '16px 20px',
+                      borderBottom: '1px solid rgba(20,8,31,.10)',
+                      cursor: 'pointer', color: INK,
+                      // A soft pulse rather than a hard flash: it has to be
+                      // noticeable across a room without being unbearable to
+                      // sit in front of all day.
+                      ...(r.unseen ? { animation: 'lead-new 1.6s ease-in-out infinite', borderLeft: `3px solid ${PURPLE}` } : null),
+                    }}
+                  >
+                    <div style={{ width: 38, height: 38, borderRadius: 999, background: '#EDE5FF', color: '#4A1FA0', display: 'grid', placeItems: 'center', fontWeight: 700, fontSize: 13 }}>
+                      {r.initials}
+                    </div>
+
+                    <div style={{ minWidth: 0 }}>
+                      <div className="truncate" style={{ fontWeight: 700, fontSize: 14 }}>
+                        {r.unseen && (
+                          <span
+                            title="Assigned to you and not opened yet"
+                            style={{ display: 'inline-block', width: 7, height: 7, borderRadius: 999, background: PURPLE, marginRight: 7, verticalAlign: 'middle' }}
+                          />
+                        )}
+                        {r.name}
+                      </div>
+                      <div className="truncate" style={{ fontSize: 12.5, color: MUTED, marginTop: 2 }}>{r.phone}</div>
+                    </div>
+
+                    <div style={{ minWidth: 0 }}>
+                      <span className="inline-flex truncate" style={{ maxWidth: '100%', padding: '5px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: r.statusColor.bg, color: r.statusColor.fg }}>
+                        {r.status}
+                      </span>
+                    </div>
+
+                    {/* Rendered even when there is no temperature, so the
+                        columns after it do not move. */}
+                    <div style={{ minWidth: 0 }}>
+                      {temp && (
+                        <span className="inline-flex whitespace-nowrap" style={{ padding: '5px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: temp.bg, color: temp.fg }}>
+                          {String(r.temperature).charAt(0).toUpperCase() + String(r.temperature).slice(1)}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="truncate" style={{ minWidth: 0, fontSize: 12.5, color: '#4A4357' }}>{r.interested}</div>
+
+                    {/* The follow-up if there is one, otherwise when they
+                        arrived — the column is about when this lead next needs
+                        attention. */}
+                    <div className="truncate" style={{ minWidth: 0, fontSize: 12.5, fontWeight: 600, color: follow ? follow.color : MUTED }}>
+                      {follow ? follow.text : (r.addedAt ? formatDate(r.addedAt) : '—')}
+                    </div>
+
+                    {/* Inside a row that navigates on click, so each of these
+                        stops the click from also opening the lead. */}
+                    <div className="flex items-center justify-end" style={{ gap: 6, minWidth: 0 }}>
+                      {r.digits && (
+                        <a
+                          href={`tel:+${r.digits}`}
+                          title="Call"
+                          onClick={(e) => e.stopPropagation()}
+                          style={{ width: 30, height: 30, borderRadius: 999, background: '#F7F3FF', color: '#4A1FA0', display: 'grid', placeItems: 'center', flex: '0 0 auto' }}
+                        >
+                          <Phone size={13} />
+                        </a>
+                      )}
+                      {r.digits && r.type === 'Storage Only' && (
+                        <Link
+                          to={`/whatsapp?phone=${r.digits}`}
+                          title="Open the chat"
+                          onClick={(e) => e.stopPropagation()}
+                          style={{ width: 30, height: 30, borderRadius: 999, background: '#F7F3FF', color: '#4A1FA0', display: 'grid', placeItems: 'center', flex: '0 0 auto' }}
+                        >
+                          <MessageCircle size={13} />
+                        </Link>
+                      )}
+                      {r.canConvert && (
+                        <button
+                          type="button"
+                          disabled={r.converting}
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); r.convert() }}
+                          style={{ height: 30, padding: '0 10px', borderRadius: 999, background: 'transparent', color: PURPLE, border: '1px solid #DDD0FF', fontWeight: 600, fontSize: 11.5, whiteSpace: 'nowrap' }}
+                          className="hover:bg-[#F7F3FF] transition-colors disabled:opacity-50 cursor-pointer"
+                        >
+                          {r.converting ? 'Converting…' : r.convertLabel}
+                        </button>
+                      )}
+                    </div>
+
+                    <ChevronRight size={16} style={{ color: MUTED }} />
+                  </div>
+                )
+              })}
+            </div>
+          </div>
         )}
 
       {/* Say how much of the list this is. A table that silently stops at

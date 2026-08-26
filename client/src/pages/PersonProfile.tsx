@@ -431,9 +431,18 @@ export default function PersonProfile() {
             )}
           </Card>
 
+          {lead?.notes && (
+            <Card title="Notes">
+              <p style={{ fontSize: 14, color: INK_2, whiteSpace: 'pre-wrap' }}>{lead.notes}</p>
+            </Card>
+          )}
+        </div>
+
+        {/* ── The running account ─────────────────────────────────────────── */}
+        <div className="flex flex-col" style={{ flex: '2 1 480px', gap: 20 }}>
           {lead && (
             <Card title="Ownership & status">
-              <div className="flex flex-col" style={{ gap: 16 }}>
+              <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 16, alignItems: 'start' }}>
                 <div>
                   <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Assigned to</span>
                   {isAdmin ? (
@@ -598,7 +607,7 @@ export default function PersonProfile() {
                   </div>
                 )}
 
-                <div>
+                <div style={{ gridColumn: '1 / -1' }}>
                   <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Tags</span>
                   <div className="flex flex-wrap" style={{ gap: 6 }}>
                     {LEAD_TAGS.map((t) => {
@@ -631,15 +640,6 @@ export default function PersonProfile() {
             </Card>
           )}
 
-          {lead?.notes && (
-            <Card title="Notes">
-              <p style={{ fontSize: 14, color: INK_2, whiteSpace: 'pre-wrap' }}>{lead.notes}</p>
-            </Card>
-          )}
-        </div>
-
-        {/* ── The running account ─────────────────────────────────────────── */}
-        <div className="flex flex-col" style={{ flex: '2 1 480px', gap: 20 }}>
           {lead && (
             <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 22, boxShadow: SHADOW_SM, padding: '22px 26px' }}>
               <h3 style={{ ...DISPLAY, fontSize: 16, fontWeight: 700, margin: '0 0 14px' }}>Activity</h3>
