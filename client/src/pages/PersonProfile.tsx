@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Briefcase, FileText, MessageCircle, Phone, Mail, UserCheck, UserPlus } from 'lucide-react'
+import {
+  AlertTriangle, ArrowLeft, Calendar, Clock, FileText, Mail, MessageCircle, MessageSquare,
+  PackageCheck, Pencil, Phone, Repeat, UserCheck, UserPlus,
+} from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { Spinner, statusLabel, LEAD_STATUS_FLOW, LEAD_TEMPERATURES, LEAD_TAGS } from '../components/ui'
@@ -12,8 +15,17 @@ const INK_2 = '#4A4357'
 const FAINT = '#756E80'
 const PURPLE = '#5B2BC9'
 const DEEP = '#4A1FA0'
+const PURPLE_50 = '#F7F3FF'
+const PURPLE_100 = '#EDE5FF'
+const PURPLE_200 = '#DDD0FF'
+const CREAM_2 = '#EDE3CF'
 const PAGE = '#FBF8F2'
 const LINE = 'rgba(20,8,31,0.10)'
+const LINE_STRONG = 'rgba(20,8,31,0.16)'
+const HOT = '#DC2626'
+const WARM = '#D97706'
+const SHADOW_SM = '0 1px 2px rgba(20,8,31,.06), 0 2px 8px rgba(20,8,31,.04)'
+const SHADOW_MD = '0 8px 24px rgba(20,8,31,.08), 0 2px 6px rgba(20,8,31,.04)'
 const DISPLAY = { fontFamily: "'Bricolage Grotesque', serif", letterSpacing: '-0.02em' } as const
 
 const FOLLOW_UP_KINDS = [
@@ -39,6 +51,63 @@ function reminderDay(followUpAt?: string | null, kind: 'date' | 'week' | 'month'
   return new Date(midnight.getTime() - back * 86_400_000).toISOString().slice(0, 10)
 }
 
+type Urgency = {
+  color: string; bg: string; border: string
+  icon: typeof Clock
+  label: string
+}
+
+/**
+ * How loudly the follow-up should announce itself.
+ *
+ * A bare date makes the reader do the arithmetic. Overdue and due-today are
+ * the two states worth interrupting somebody over, so they are the two that
+ * change colour.
+ */
+function followUpUrgency(day: string): Urgency {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const at = new Date(`${day}T00:00:00`)
+  const days = Math.round((at.getTime() - today.getTime()) / 86_400_000)
+  const label = formatDate(day)
+
+  if (days < 0) {
+    return {
+      color: HOT, bg: 'rgba(220,38,38,.09)', border: 'rgba(220,38,38,.25)',
+      icon: AlertTriangle, label: `Overdue — follow up was due ${label}`,
+    }
+  }
+  if (days === 0) {
+    return {
+      color: WARM, bg: 'rgba(217,119,6,.09)', border: 'rgba(217,119,6,.25)',
+      icon: Clock, label: `Follow up today, ${label}`,
+    }
+  }
+  if (days <= 3) {
+    return {
+      color: WARM, bg: 'rgba(217,119,6,.09)', border: 'rgba(217,119,6,.25)',
+      icon: Clock, label: `Follow up on ${label} (in ${days} day${days === 1 ? '' : 's'})`,
+    }
+  }
+  return {
+    color: DEEP, bg: PURPLE_50, border: PURPLE_100,
+    icon: Calendar, label: `Follow up on ${label}`,
+  }
+}
+
+/** Icon and colour per kind of thing that happened. */
+const EVENT_STYLE: Record<string, { icon: typeof Pencil; bg: string; color: string }> = {
+  created: { icon: UserPlus, bg: PURPLE_50, color: DEEP },
+  // Both real types in production: a thread that created the lead by itself,
+  // and the messages on it.
+  whatsapp_created: { icon: UserPlus, bg: 'rgba(22,163,74,.09)', color: '#047857' },
+  whatsapp_message: { icon: MessageCircle, bg: 'rgba(22,163,74,.09)', color: '#047857' },
+  status_changed: { icon: Repeat, bg: PURPLE_50, color: DEEP },
+  note: { icon: MessageSquare, bg: 'rgba(217,119,6,.09)', color: WARM },
+  comment: { icon: MessageSquare, bg: 'rgba(217,119,6,.09)', color: WARM },
+  updated: { icon: Pencil, bg: CREAM_2, color: INK_2 },
+}
+
 type Owner = { _id: string; name: string; email: string }
 type Lead = {
   _id: string; fullName: string; email: string; phone: string; whatsappNo: string
@@ -49,6 +118,9 @@ type Lead = {
   followUpAt?: string | null
   followUpKind?: 'date' | 'week' | 'month'
   followUpNotifiedAt?: string | null
+  storageSizeValue?: number
+  storageSizeUnit?: string
+  unitsNeeded?: number
 }
 type Customer = {
   _id: string; fullName: string; email: string; phone: string; phones: string[]
@@ -70,20 +142,20 @@ type Profile = {
 }
 
 const STATUS_TONE: Record<string, { bg: string; fg: string }> = {
-  new: { bg: '#EDE5FF', fg: DEEP },
+  new: { bg: PURPLE_50, fg: DEEP },
   contact_attempted: { bg: '#FEF3C7', fg: '#92400E' },
-  contacted: { bg: '#E0F2FE', fg: '#075985' },
-  follow_up_scheduled: { bg: '#FFEDD5', fg: '#C2410C' },
-  quotation_sent: { bg: '#F3E8FF', fg: '#7C3AED' },
-  won: { bg: '#DCFCE7', fg: '#047857' },
-  lost: { bg: '#FEE2E2', fg: '#B91C1C' },
+  contacted: { bg: PURPLE_100, fg: DEEP },
+  follow_up_scheduled: { bg: 'rgba(217,119,6,.09)', fg: WARM },
+  quotation_sent: { bg: CREAM_2, fg: INK_2 },
+  won: { bg: 'rgba(22,163,74,.09)', fg: '#16A34A' },
+  lost: { bg: 'rgba(117,110,128,.09)', fg: FAINT },
 }
 
 function Card({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 16, padding: 20 }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
-        <h3 style={{ ...DISPLAY, fontSize: 15, fontWeight: 700, margin: 0 }}>{title}</h3>
+    <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 22, boxShadow: SHADOW_SM, padding: 22 }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
+        <h3 style={{ ...DISPLAY, fontSize: 16, fontWeight: 700, margin: 0 }}>{title}</h3>
         {action}
       </div>
       {children}
@@ -93,11 +165,18 @@ function Card({ title, action, children }: { title: string; action?: React.React
 
 function Detail({ label, value }: { label: string; value?: string | null }) {
   return (
-    <div className="flex justify-between gap-3" style={{ padding: '7px 0', borderBottom: `1px solid ${LINE}`, fontSize: 13 }}>
-      <span style={{ color: FAINT }}>{label}</span>
-      <span style={{ color: value ? INK : FAINT, textAlign: 'right', fontWeight: value ? 600 : 400 }}>{value || '—'}</span>
+    <div className="flex justify-between items-center gap-3">
+      <span style={{ fontSize: 13, color: FAINT }}>{label}</span>
+      <span style={{ fontSize: 14, fontWeight: 600, color: value ? INK : FAINT, textAlign: 'right' }}>{value || '—'}</span>
     </div>
   )
+}
+
+/** "26 Aug 2026 · 09:12 · Sales" — when it happened, and who did it. */
+function eventMeta(t: TimelineEntry): string {
+  const d = new Date(t.at)
+  const time = Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  return [formatDate(t.at), time, t.user?.name].filter(Boolean).join(' · ')
 }
 
 export default function PersonProfile() {
@@ -107,7 +186,6 @@ export default function PersonProfile() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const [err, setErr] = useState('')
-  const [tab, setTab] = useState<'activity' | 'status' | 'chat'>('activity')
   const [note, setNote] = useState('')
   // A stage picked but not yet committed, and the note going with it.
   const [pendingStage, setPendingStage] = useState('')
@@ -165,216 +243,154 @@ export default function PersonProfile() {
   const email = customer?.email || lead?.email || ''
   const waNumber = (lead?.phoneNormalized || phone).replace(/\D/g, '')
   const isCustomer = stage === 'customer'
+  const initials = name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '—'
 
   // Book Unit already accepts either, so the wizard opens with them filled in.
   const bookHref = isCustomer ? `/quotes/new?customer=${customer!._id}` : `/quotes/new?lead=${lead?._id ?? ''}`
 
+  const statusTone = isCustomer
+    ? { bg: 'rgba(22,163,74,.09)', fg: '#16A34A' }
+    : STATUS_TONE[lead?.status ?? 'new'] ?? { bg: PURPLE_50, fg: DEEP }
+  const temp = LEAD_TEMPERATURES.find((t) => t.value === lead?.temperature)
+  const pkg = lead?.storageSizeValue
+    ? `${lead.storageSizeValue} ${lead.storageSizeUnit || 'sqft'}${(lead.unitsNeeded ?? 1) > 1 ? ` · ${lead.unitsNeeded} units` : ''}`
+    : ''
+
+  const dueDay = reminderDay(lead?.followUpAt, lead?.followUpKind)
+  const urgency = dueDay ? followUpUrgency(dueDay) : null
+  // Newest first: what happened last is what somebody picking this up reads.
+  const timeline = [...(lead?.timeline ?? [])].reverse()
+
   return (
     <div style={{ background: PAGE, fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", color: INK }}>
-      <button onClick={() => navigate(-1)} className="inline-flex items-center gap-1.5 cursor-pointer" style={{ background: 'none', border: 'none', color: INK_2, fontSize: 13, marginBottom: 14 }}>
-        <ArrowLeft size={15} /> Back
+      <button
+        onClick={() => navigate(-1)}
+        className="inline-flex items-center justify-center cursor-pointer"
+        style={{ width: 34, height: 34, borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK_2, marginBottom: 16 }}
+        aria-label="Back"
+      >
+        <ArrowLeft size={16} />
       </button>
 
-      <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 20, padding: '24px 26px', marginBottom: 16 }}>
-        <div className="flex items-start justify-between flex-wrap" style={{ gap: 16 }}>
-          <div className="flex items-center" style={{ gap: 16 }}>
-            <div style={{ width: 56, height: 56, borderRadius: 999, background: '#EDE5FF', color: DEEP, display: 'grid', placeItems: 'center', fontWeight: 700, fontSize: 20 }}>
-              {name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '—'}
+      {/* ── Header card ───────────────────────────────────────────────────── */}
+      <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 22, boxShadow: SHADOW_SM, padding: '26px 28px', marginBottom: 20 }}>
+        <div className="flex items-start justify-between flex-wrap" style={{ gap: 20 }}>
+          <div className="flex items-start" style={{ gap: 16 }}>
+            <div style={{ width: 56, height: 56, borderRadius: 999, background: PURPLE_100, color: DEEP, display: 'grid', placeItems: 'center', fontWeight: 700, fontSize: 18, flex: '0 0 auto' }}>
+              {initials}
             </div>
             <div>
-              <h1 style={{ ...DISPLAY, fontSize: 26, fontWeight: 700, margin: 0 }}>{name}</h1>
-              <div className="flex items-center flex-wrap" style={{ gap: 8, marginTop: 6, fontSize: 13, color: FAINT }}>
-                <span className="rounded-full px-2.5 py-0.5" style={{
-                  background: isCustomer ? '#DCFCE7' : (STATUS_TONE[lead?.status ?? 'new']?.bg ?? '#EDE5FF'),
-                  color: isCustomer ? '#047857' : (STATUS_TONE[lead?.status ?? 'new']?.fg ?? DEEP),
-                  fontSize: 11, fontWeight: 700,
-                }}>
+              <h1 style={{ ...DISPLAY, fontSize: 24, fontWeight: 700, margin: 0 }}>{name}</h1>
+              <div className="flex items-center flex-wrap" style={{ gap: 8, marginTop: 8 }}>
+                <span className="inline-flex rounded-full" style={{ padding: '5px 12px', fontSize: 12, fontWeight: 700, background: statusTone.bg, color: statusTone.fg }}>
                   {isCustomer ? 'Customer' : statusLabel(lead?.status ?? 'new')}
                 </span>
-                {lead?.temperature && (() => {
-                  const t = LEAD_TEMPERATURES.find((x) => x.value === lead.temperature)
-                  return t ? (
-                    <span className="rounded-full px-2.5 py-0.5" style={{ background: t.bg, color: t.fg, fontSize: 11, fontWeight: 700 }}>
-                      {t.label}
-                    </span>
-                  ) : null
-                })()}
-                {phone && <a href={`tel:${phone}`} className="inline-flex items-center gap-1" style={{ color: INK_2 }}><Phone size={12} /> {phone}</a>}
-                {email && <a href={`mailto:${email}`} className="inline-flex items-center gap-1" style={{ color: INK_2 }}><Mail size={12} /> {email}</a>}
+                {temp && (
+                  <span className="inline-flex rounded-full" style={{ padding: '5px 12px', fontSize: 12, fontWeight: 700, background: temp.bg, color: temp.fg }}>
+                    {temp.label}
+                  </span>
+                )}
+                {pkg && (
+                  <span className="inline-flex rounded-full" style={{ padding: '5px 12px', fontSize: 12, fontWeight: 600, background: PURPLE_50, color: DEEP }}>
+                    {pkg}
+                  </span>
+                )}
               </div>
+              {phone && (
+                <div className="flex items-center" style={{ gap: 6, marginTop: 10, color: INK_2, fontSize: 14, fontWeight: 500 }}>
+                  <Phone size={14} style={{ color: FAINT }} />
+                  <span>{phone}</span>
+                </div>
+              )}
+              {email && (
+                <div className="flex items-center" style={{ gap: 6, marginTop: 4, color: INK_2, fontSize: 14, fontWeight: 500 }}>
+                  <Mail size={14} style={{ color: FAINT }} />
+                  <a href={`mailto:${email}`} style={{ color: INK_2 }}>{email}</a>
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="flex items-center flex-wrap" style={{ gap: 8 }}>
+          <div className="flex flex-wrap" style={{ gap: 10 }}>
+            {phone && (
+              <a href={`tel:${phone}`} className="inline-flex items-center" style={{ gap: 8, height: 44, padding: '0 18px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontWeight: 600, fontSize: 14 }}>
+                <Phone size={16} /> Call
+              </a>
+            )}
+            {/* Our own inbox, not wa.me: the thread we already hold, with its
+                history, rather than the phone's copy of it. */}
             {waNumber && (
-              <Link to={`/whatsapp?phone=${waNumber}`} className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 cursor-pointer"
-                style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', color: DEEP, fontSize: 13, fontWeight: 700 }}>
-                <MessageCircle size={14} /> Chat
+              <Link to={`/whatsapp?phone=${waNumber}`} className="inline-flex items-center cursor-pointer" style={{ gap: 8, height: 44, padding: '0 18px', borderRadius: 999, border: `1px solid ${PURPLE_200}`, background: PURPLE_50, color: DEEP, fontWeight: 600, fontSize: 14 }}>
+                <MessageCircle size={16} /> Chat
               </Link>
             )}
             {/* Available at both stages: the wizard creates the customer when a
                 lead is booked, which is the point at which they become one. */}
-            <Link to={bookHref} className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-white cursor-pointer"
-              style={{ background: PURPLE, fontSize: 13, fontWeight: 700 }}>
-              <Briefcase size={14} /> Book unit
+            <Link to={bookHref} className="inline-flex items-center cursor-pointer" style={{ gap: 8, height: 44, padding: '0 20px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontWeight: 700, fontSize: 14, boxShadow: SHADOW_MD, whiteSpace: 'nowrap' }}>
+              <PackageCheck size={16} /> Book unit
             </Link>
           </div>
         </div>
 
-        {!!lead?.tags?.length && (
-          <div className="flex flex-wrap" style={{ gap: 6, marginTop: 12 }}>
-            {lead.tags.map((t) => (
-              <span key={t} className="rounded-full px-2.5 py-1" style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', color: DEEP, fontSize: 11, fontWeight: 600 }}>
-                {LEAD_TAGS.find((x) => x.value === t)?.label ?? t}
-              </span>
-            ))}
+        {/* The one time-critical fact, said in words rather than left as a date
+            for the reader to work out. */}
+        {urgency && (
+          <div className="flex items-center" style={{ gap: 10, marginTop: 18, padding: '14px 18px', borderRadius: 16, background: urgency.bg, border: `1px solid ${urgency.border}` }}>
+            <urgency.icon size={17} style={{ color: urgency.color, flex: '0 0 auto' }} />
+            <span style={{ fontWeight: 600, fontSize: 14, color: urgency.color }}>{urgency.label}</span>
           </div>
         )}
-        {lead?.followUpAt && (
-          <p style={{ fontSize: 12, color: '#C2410C', marginTop: 10, fontWeight: 600 }}>
-            Follow up on {formatDate(lead.followUpAt)}
-          </p>
-        )}
 
-        {err && <p style={{ fontSize: 12, color: '#C0392B', marginTop: 10 }}>{err}</p>}
+        {err && <p style={{ fontSize: 12.5, color: '#C0392B', marginTop: 12 }}>{err}</p>}
       </div>
 
-      {/* A lead is worked through three things: what has happened, where they
-          are, and the conversation itself. Contracts, documents and payments
-          belong to a customer, so they are not offered until there is one. */}
-      {!isCustomer && lead && (
-        <div className="flex" style={{ gap: 4, marginBottom: 16, borderBottom: `1px solid ${LINE}` }}>
-          {([['activity', 'Activity'], ['status', 'Lead status'], ['chat', 'Chat']] as const).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setTab(id)}
-              className="cursor-pointer"
-              style={{
-                background: 'none', border: 'none', padding: '10px 16px', fontSize: 13.5,
-                fontWeight: tab === id ? 700 : 500,
-                color: tab === id ? INK : FAINT,
-                borderBottom: `2px solid ${tab === id ? PURPLE : 'transparent'}`,
-                marginBottom: -1,
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* ── Body: details and ownership beside the running account ────────── */}
+      <div className="flex flex-wrap items-start" style={{ gap: 20 }}>
 
-      {!isCustomer && lead && tab === 'activity' && (
-        <div className="space-y-4" style={{ marginBottom: 16 }}>
-          <Card title="Add a note">
-            <textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              rows={3}
-              placeholder="What was said, what was promised, why they have gone quiet"
-              style={{ width: '100%', borderRadius: 10, border: `1px solid ${LINE}`, padding: 10, fontSize: 13, fontFamily: 'inherit', color: INK, outline: 'none' }}
-            />
-            <div className="flex justify-end" style={{ marginTop: 8 }}>
-              <button
-                type="button"
-                onClick={() => addNote.mutate()}
-                disabled={!note.trim() || addNote.isPending}
-                className="rounded-full px-4 py-2 text-white cursor-pointer disabled:opacity-40"
-                style={{ background: PURPLE, fontSize: 13, fontWeight: 700 }}
-              >
-                {addNote.isPending ? 'Saving…' : 'Add note'}
-              </button>
+        <div className="flex flex-col" style={{ flex: '1 1 340px', maxWidth: 380, gap: 20 }}>
+          <Card title="Contact details">
+            <div className="flex flex-col" style={{ gap: 14 }}>
+              <Detail label="Phone" value={phone} />
+              <Detail label="WhatsApp" value={lead?.whatsappNo || phone} />
+              <Detail label="Email" value={email} />
+              {customer && <>
+                <Detail label="Company" value={customer.company} />
+                <Detail label="Nationality" value={customer.nationality} />
+                <Detail label="Emergency contact" value={customer.emergencyNumber} />
+                <Detail label="Emirates ID" value={customer.emiratesId} />
+                <Detail label="ID expiry" value={customer.eidExpiry ? formatDate(customer.eidExpiry) : ''} />
+                <Detail label="Address" value={customer.address} />
+              </>}
+              {lead && <>
+                <Detail label="Source" value={lead.source} />
+                <Detail label="First seen" value={formatDate(lead.leadDateTime)} />
+              </>}
             </div>
           </Card>
 
-          <Card title="Timeline">
-            {!lead.timeline?.length ? (
-              <p style={{ fontSize: 13, color: FAINT }}>Nothing recorded yet.</p>
-            ) : (
-              <div className="space-y-3">
-                {/* Newest first: what happened last is what somebody picking
-                    this up needs to read. */}
-                {[...lead.timeline].reverse().map((t, i) => (
-                  <div key={`${t.at}-${i}`} style={{ borderLeft: `2px solid ${t.type === 'status_changed' ? PURPLE : LINE}`, paddingLeft: 12 }}>
-                    <p style={{ fontSize: 11.5, color: FAINT }}>
-                      {formatDate(t.at)}{t.user?.name ? ` · ${t.user.name}` : ''}
-                      {t.type === 'status_changed' ? ' · stage change' : ''}
-                    </p>
-                    <p style={{ fontSize: 13, color: INK, marginTop: 2, whiteSpace: 'pre-wrap' }}>{t.text}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-        </div>
-      )}
-
-      {!isCustomer && lead && tab === 'chat' && (
-        <div style={{ marginBottom: 16 }}>
-          <Card title="WhatsApp">
-            <p style={{ fontSize: 13, color: FAINT, marginBottom: 10 }}>
-              The conversation opens in the inbox, where you can reply and see attachments.
-            </p>
-            <Link
-              to={`/whatsapp?phone=${waNumber}`}
-              className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-white cursor-pointer"
-              style={{ background: PURPLE, fontSize: 13, fontWeight: 700 }}
-            >
-              <MessageCircle size={14} /> Open the conversation
-            </Link>
-          </Card>
-        </div>
-      )}
-
-      <div
-        className="grid"
-        style={{
-          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, alignItems: 'start',
-          // On a lead the details and ownership belong to the status tab.
-          display: !isCustomer && lead && tab !== 'status' ? 'none' : 'grid',
-        }}
-      >
-        <div className="space-y-4">
-          <Card title="Details">
-            <Detail label="Phone" value={phone} />
-            <Detail label="WhatsApp" value={lead?.whatsappNo || phone} />
-            <Detail label="Email" value={email} />
-            {customer && <>
-              <Detail label="Company" value={customer.company} />
-              <Detail label="Nationality" value={customer.nationality} />
-              <Detail label="Emergency contact" value={customer.emergencyNumber} />
-              <Detail label="Emirates ID" value={customer.emiratesId} />
-              <Detail label="ID expiry" value={customer.eidExpiry ? formatDate(customer.eidExpiry) : ''} />
-              <Detail label="Address" value={customer.address} />
-            </>}
-            {lead && !customer && <>
-              <Detail label="Source" value={lead.source} />
-              <Detail label="First seen" value={formatDate(lead.leadDateTime)} />
-            </>}
-          </Card>
-
           {lead && (
-            <Card title="Ownership">
-              <div className="space-y-3">
+            <Card title="Ownership & status">
+              <div className="flex flex-col" style={{ gap: 16 }}>
                 <div>
-                  <p style={{ fontSize: 11.5, color: FAINT, marginBottom: 4 }}>Assigned to</p>
+                  <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Assigned to</span>
                   {isAdmin ? (
                     <select
                       value={lead.owner?._id ?? ''}
                       onChange={(e) => assign.mutate(e.target.value)}
                       disabled={assign.isPending}
-                      style={{ width: '100%', height: 38, borderRadius: 10, border: `1px solid ${LINE}`, background: '#fff', padding: '0 10px', fontSize: 13, color: INK }}
+                      className="cursor-pointer"
+                      style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: INK, fontFamily: 'inherit' }}
                     >
                       <option value="">Nobody</option>
                       {assignable.map((u) => <option key={u._id} value={u._id}>{u.name}</option>)}
                     </select>
                   ) : (
-                    <p style={{ fontSize: 13, fontWeight: 600 }}>{lead.owner?.name || 'Nobody'}</p>
+                    <div style={{ fontSize: 14, fontWeight: 700 }}>{lead.owner?.name || 'Nobody'}</div>
                   )}
                 </div>
 
                 <div>
-                  <p style={{ fontSize: 11.5, color: FAINT, marginBottom: 4 }}>Stage</p>
+                  <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Stage</span>
                   <select
                     value={pendingStage || lead.status}
                     onChange={(e) => {
@@ -384,7 +400,8 @@ export default function PersonProfile() {
                       setPendingStage(next)
                     }}
                     disabled={setStatus.isPending}
-                    style={{ width: '100%', height: 38, borderRadius: 10, border: `1px solid ${LINE}`, background: '#fff', padding: '0 10px', fontSize: 13, color: INK }}
+                    className="cursor-pointer"
+                    style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: INK, fontFamily: 'inherit' }}
                   >
                     {LEAD_STATUS_FLOW.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                   </select>
@@ -396,8 +413,8 @@ export default function PersonProfile() {
                       The note goes with the change in one request, so a stage
                       cannot land without it. */}
                   {pendingStage ? (
-                    <div style={{ marginTop: 8, borderRadius: 10, border: `1px solid ${LINE}`, background: '#FBF8F2', padding: 10 }}>
-                      <p style={{ fontSize: 11.5, color: FAINT, marginBottom: 6 }}>
+                    <div style={{ marginTop: 10, borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: PAGE, padding: 12 }}>
+                      <p style={{ fontSize: 12.5, color: FAINT, marginBottom: 8 }}>
                         Moving to <b style={{ color: INK }}>{LEAD_STATUS_FLOW.find((s) => s.value === pendingStage)?.label}</b> — what happened?
                       </p>
                       <textarea
@@ -406,15 +423,15 @@ export default function PersonProfile() {
                         rows={2}
                         autoFocus
                         placeholder={pendingStage === 'lost' ? 'Why did this one go? (worth recording)' : 'Optional — called, no answer…'}
-                        style={{ width: '100%', borderRadius: 8, border: `1px solid ${LINE}`, background: '#fff', padding: '8px 10px', fontSize: 13, color: INK, resize: 'vertical' }}
+                        style={{ width: '100%', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', color: INK, resize: 'vertical', boxSizing: 'border-box' }}
                       />
-                      <div className="flex" style={{ gap: 6, marginTop: 6 }}>
+                      <div className="flex" style={{ gap: 8, marginTop: 8 }}>
                         <button
                           type="button"
                           disabled={setStatus.isPending}
                           onClick={() => setStatus.mutate({ status: pendingStage, comment: stageNote.trim() || undefined })}
-                          style={{ height: 32, borderRadius: 8, border: 'none', background: PURPLE, color: '#fff', fontSize: 12.5, fontWeight: 700, padding: '0 12px' }}
                           className="cursor-pointer disabled:opacity-50"
+                          style={{ height: 36, padding: '0 16px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontSize: 13, fontWeight: 700, fontFamily: 'inherit' }}
                         >
                           {setStatus.isPending ? 'Saving…' : 'Save stage'}
                         </button>
@@ -422,8 +439,8 @@ export default function PersonProfile() {
                           type="button"
                           disabled={setStatus.isPending}
                           onClick={() => { setPendingStage(''); setStageNote('') }}
-                          style={{ height: 32, borderRadius: 8, border: `1px solid ${LINE}`, background: '#fff', color: FAINT, fontSize: 12.5, fontWeight: 600, padding: '0 12px' }}
                           className="cursor-pointer disabled:opacity-50"
+                          style={{ height: 36, padding: '0 16px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: FAINT, fontSize: 13, fontWeight: 600, fontFamily: 'inherit' }}
                         >
                           Cancel
                         </button>
@@ -432,7 +449,7 @@ export default function PersonProfile() {
                   ) : (
                     /* What the stage means somebody should do next, so the
                        status is an instruction rather than a label. */
-                    <p style={{ fontSize: 11.5, color: FAINT, marginTop: 4 }}>
+                    <p style={{ fontSize: 12.5, color: FAINT, marginTop: 6 }}>
                       {LEAD_STATUS_FLOW.find((s) => s.value === lead.status)?.next}
                     </p>
                   )}
@@ -441,8 +458,8 @@ export default function PersonProfile() {
                 {/* Temperature sits beside the stage, not inside it: a lead can
                     be Follow-Up Scheduled and hot, or Contacted and cold. */}
                 <div>
-                  <p style={{ fontSize: 11.5, color: FAINT, marginBottom: 4 }}>Temperature</p>
-                  <div className="flex" style={{ gap: 6 }}>
+                  <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Temperature</span>
+                  <div className="grid" style={{ gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
                     {LEAD_TEMPERATURES.map((t) => {
                       const on = lead.temperature === t.value
                       return (
@@ -452,8 +469,8 @@ export default function PersonProfile() {
                           onClick={() => patchLead.mutate({ temperature: on ? '' : t.value })}
                           className="cursor-pointer"
                           style={{
-                            flex: 1, height: 32, borderRadius: 999, fontSize: 12, fontWeight: 700,
-                            border: `1px solid ${on ? t.fg : LINE}`,
+                            height: 40, borderRadius: 10, fontSize: 13, fontWeight: 700, fontFamily: 'inherit',
+                            border: `1.5px solid ${on ? t.fg : LINE_STRONG}`,
                             background: on ? t.bg : '#fff',
                             color: on ? t.fg : FAINT,
                           }}
@@ -471,13 +488,13 @@ export default function PersonProfile() {
                     nobody could see or change. */}
                 {lead.status !== 'won' && lead.status !== 'lost' && (
                   <div>
-                    <p style={{ fontSize: 11.5, color: FAINT, marginBottom: 4 }}>Follow up</p>
+                    <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Follow-up</span>
 
                     {/* "Call them in March" is a real answer, and pinning it to
                         an invented day in March fires early or late. The kind
                         says how precisely the date was meant: a week is raised
                         on its Monday, a month on its first. */}
-                    <div className="flex" style={{ gap: 6, marginBottom: 6 }}>
+                    <div className="grid" style={{ gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
                       {FOLLOW_UP_KINDS.map((k) => {
                         const on = (lead.followUpKind || 'date') === k.value
                         return (
@@ -485,12 +502,12 @@ export default function PersonProfile() {
                             key={k.value}
                             type="button"
                             onClick={() => patchLead.mutate({ followUpKind: k.value })}
-                            className="flex-1 cursor-pointer"
+                            className="cursor-pointer"
                             style={{
-                              height: 32, borderRadius: 8, fontSize: 12, fontWeight: 600,
-                              border: `1px solid ${on ? PURPLE : LINE}`,
-                              background: on ? '#F3EDFF' : '#fff',
-                              color: on ? PURPLE : FAINT,
+                              height: 38, borderRadius: 10, fontSize: 12.5, fontWeight: 700, fontFamily: 'inherit',
+                              border: `1.5px solid ${on ? PURPLE : LINE_STRONG}`,
+                              background: on ? PURPLE_50 : '#fff',
+                              color: on ? DEEP : INK_2,
                             }}
                           >
                             {k.label}
@@ -503,15 +520,15 @@ export default function PersonProfile() {
                       type="date"
                       value={lead.followUpAt ? String(lead.followUpAt).slice(0, 10) : ''}
                       onChange={(e) => patchLead.mutate({ followUpAt: e.target.value || null })}
-                      style={{ width: '100%', height: 38, borderRadius: 10, border: `1px solid ${LINE}`, background: '#fff', padding: '0 10px', fontSize: 13, color: INK }}
+                      style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK, boxSizing: 'border-box' }}
                     />
 
-                    {/* Say exactly when it will land, so a week or a month is
-                        never a guess about what the system will do. */}
+                    {/* Say exactly where the reminder lands, so a week or a
+                        month is never a guess about what the system will do. */}
                     {lead.followUpAt && (
-                      <p style={{ fontSize: 11.5, color: FAINT, marginTop: 4 }}>
+                      <p style={{ fontSize: 12.5, color: FAINT, marginTop: 6 }}>
                         {lead.owner
-                          ? `Task on ${lead.owner.name}'s board, due ${formatDate(reminderDay(lead.followUpAt, lead.followUpKind))}.`
+                          ? `Task on ${lead.owner.name}'s board, due ${formatDate(dueDay)}.`
                           : 'Assign this lead to somebody and a task will be raised for them.'}
                       </p>
                     )}
@@ -519,7 +536,7 @@ export default function PersonProfile() {
                 )}
 
                 <div>
-                  <p style={{ fontSize: 11.5, color: FAINT, marginBottom: 6 }}>Tags</p>
+                  <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Tags</span>
                   <div className="flex flex-wrap" style={{ gap: 6 }}>
                     {LEAD_TAGS.map((t) => {
                       const on = (lead.tags ?? []).includes(t.value)
@@ -535,9 +552,9 @@ export default function PersonProfile() {
                           }}
                           className="cursor-pointer"
                           style={{
-                            borderRadius: 999, padding: '4px 10px', fontSize: 11.5, fontWeight: 600,
-                            border: `1px solid ${on ? PURPLE : LINE}`,
-                            background: on ? '#EDE5FF' : '#fff',
+                            borderRadius: 999, padding: '5px 12px', fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
+                            border: `1px solid ${on ? PURPLE : LINE_STRONG}`,
+                            background: on ? PURPLE_100 : '#fff',
                             color: on ? DEEP : FAINT,
                           }}
                         >
@@ -550,57 +567,114 @@ export default function PersonProfile() {
               </div>
             </Card>
           )}
-        </div>
-
-        <div className="space-y-4">
-          {/* Contracts and documents belong to a customer. On a lead they are
-              two empty panels saying nothing, so they wait until there is one. */}
-          {isCustomer && <Card
-            title={`Contracts (${contracts.length})`}
-            action={<Link to={bookHref} style={{ fontSize: 12, fontWeight: 700, color: PURPLE }}>Book unit →</Link>}
-          >
-            {contracts.length === 0 ? (
-              <p style={{ fontSize: 13, color: FAINT }}>No contracts yet.</p>
-            ) : (
-              <div className="space-y-2">
-                {contracts.map((c) => {
-                  const units = (c.units?.length ? c.units : c.unit ? [c.unit] : []).map((u) => u?.unitNumber).filter(Boolean)
-                  return (
-                    <Link key={c._id} to={`/contracts/${c._id}`} className="flex items-center justify-between gap-3"
-                      style={{ padding: '10px 12px', border: `1px solid ${LINE}`, borderRadius: 12, fontSize: 13, color: INK }}>
-                      <span>
-                        <span style={{ fontWeight: 700, color: PURPLE }}>{c.contractNo}</span>
-                        <span style={{ color: FAINT }}> · {units.join(', ') || 'no unit'}</span>
-                      </span>
-                      <span style={{ color: FAINT, fontSize: 12 }}>
-                        {statusLabel(c.status)} · {formatDate(c.startDate)}
-                      </span>
-                    </Link>
-                  )
-                })}
-              </div>
-            )}
-          </Card>}
-
-          {isCustomer && <Card title={`Documents (${documents.length})`}>
-            {documents.length === 0 ? (
-              <p style={{ fontSize: 13, color: FAINT }}>Nothing uploaded.</p>
-            ) : (
-              <div className="space-y-1.5">
-                {documents.map((d) => (
-                  <a key={d._id} href={d.url} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-2"
-                    style={{ fontSize: 13, padding: '6px 0', borderBottom: `1px solid ${LINE}` }}>
-                    <span className="inline-flex items-center gap-1.5"><FileText size={13} style={{ color: FAINT }} /> {d.name}</span>
-                    <span style={{ color: FAINT, fontSize: 11.5 }}>{statusLabel(d.type)}</span>
-                  </a>
-                ))}
-              </div>
-            )}
-          </Card>}
 
           {lead?.notes && (
             <Card title="Notes">
-              <p style={{ fontSize: 13, color: INK_2, whiteSpace: 'pre-wrap' }}>{lead.notes}</p>
+              <p style={{ fontSize: 14, color: INK_2, whiteSpace: 'pre-wrap' }}>{lead.notes}</p>
+            </Card>
+          )}
+        </div>
+
+        {/* ── The running account ─────────────────────────────────────────── */}
+        <div className="flex flex-col" style={{ flex: '2 1 480px', gap: 20 }}>
+          {lead && (
+            <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 22, boxShadow: SHADOW_SM, padding: '22px 26px' }}>
+              <h3 style={{ ...DISPLAY, fontSize: 16, fontWeight: 700, margin: '0 0 14px' }}>Activity</h3>
+
+              <textarea
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="What was said, what was promised, why they have gone quiet"
+                style={{ width: '100%', minHeight: 76, padding: '12px 14px', borderRadius: 16, border: `1px solid ${LINE_STRONG}`, fontFamily: 'inherit', fontSize: 14, color: INK, resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
+              />
+              <div className="flex justify-end" style={{ marginTop: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => addNote.mutate()}
+                  disabled={!note.trim() || addNote.isPending}
+                  className="cursor-pointer disabled:cursor-default"
+                  style={{
+                    height: 40, padding: '0 20px', borderRadius: 999, border: 'none', fontWeight: 700, fontSize: 14,
+                    fontFamily: 'inherit', color: '#fff',
+                    background: !note.trim() || addNote.isPending ? PURPLE_200 : PURPLE,
+                  }}
+                >
+                  {addNote.isPending ? 'Saving…' : 'Add note'}
+                </button>
+              </div>
+
+              <div style={{ height: 1, background: LINE, margin: '22px 0' }} />
+
+              {timeline.length === 0 ? (
+                <p style={{ fontSize: 14, color: FAINT }}>Nothing recorded yet.</p>
+              ) : (
+                <div className="flex flex-col">
+                  {timeline.map((t, i) => {
+                    const style = EVENT_STYLE[t.type] ?? EVENT_STYLE.updated
+                    const Icon = style.icon
+                    return (
+                      <div key={`${t.at}-${i}`} className="flex" style={{ gap: 14, padding: '14px 0', borderBottom: `1px solid ${LINE}` }}>
+                        <div style={{ width: 34, height: 34, borderRadius: 999, background: style.bg, color: style.color, display: 'grid', placeItems: 'center', flex: '0 0 auto' }}>
+                          <Icon size={15} />
+                        </div>
+                        <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: INK, whiteSpace: 'pre-wrap' }}>{t.text}</div>
+                          <div style={{ fontSize: 12.5, color: FAINT, marginTop: 3 }}>{eventMeta(t)}</div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Contracts and documents belong to a customer. On a lead they are
+              two empty panels saying nothing, so they wait until there is one. */}
+          {isCustomer && (
+            <Card
+              title={`Contracts (${contracts.length})`}
+              action={<Link to={bookHref} style={{ fontSize: 13, fontWeight: 700, color: PURPLE }}>Book unit →</Link>}
+            >
+              {contracts.length === 0 ? (
+                <p style={{ fontSize: 14, color: FAINT }}>No contracts yet.</p>
+              ) : (
+                <div className="flex flex-col" style={{ gap: 8 }}>
+                  {contracts.map((c) => {
+                    const units = (c.units?.length ? c.units : c.unit ? [c.unit] : []).map((u) => u?.unitNumber).filter(Boolean)
+                    return (
+                      <Link key={c._id} to={`/contracts/${c._id}`} className="flex items-center justify-between gap-3"
+                        style={{ padding: '12px 14px', border: `1px solid ${LINE}`, borderRadius: 12, fontSize: 14, color: INK }}>
+                        <span>
+                          <span style={{ fontWeight: 700, color: PURPLE }}>{c.contractNo}</span>
+                          <span style={{ color: FAINT }}> · {units.join(', ') || 'no unit'}</span>
+                        </span>
+                        <span style={{ color: FAINT, fontSize: 12.5 }}>
+                          {statusLabel(c.status)} · {formatDate(c.startDate)}
+                        </span>
+                      </Link>
+                    )
+                  })}
+                </div>
+              )}
+            </Card>
+          )}
+
+          {isCustomer && (
+            <Card title={`Documents (${documents.length})`}>
+              {documents.length === 0 ? (
+                <p style={{ fontSize: 14, color: FAINT }}>Nothing uploaded.</p>
+              ) : (
+                <div className="flex flex-col">
+                  {documents.map((d) => (
+                    <a key={d._id} href={d.url} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-2"
+                      style={{ fontSize: 14, padding: '8px 0', borderBottom: `1px solid ${LINE}` }}>
+                      <span className="inline-flex items-center gap-1.5"><FileText size={14} style={{ color: FAINT }} /> {d.name}</span>
+                      <span style={{ color: FAINT, fontSize: 12 }}>{statusLabel(d.type)}</span>
+                    </a>
+                  ))}
+                </div>
+              )}
             </Card>
           )}
         </div>
@@ -609,10 +683,10 @@ export default function PersonProfile() {
       {/* Said rather than left implicit: which half of the record exists tells
           you what stage the person is at, and both halves rarely exist at once
           early on. */}
-      <p style={{ fontSize: 11.5, color: FAINT, marginTop: 16 }}>
+      <p className="inline-flex items-center" style={{ gap: 6, fontSize: 12.5, color: FAINT, marginTop: 20 }}>
         {isCustomer
-          ? <><UserCheck size={11} style={{ display: 'inline' }} /> Customer record{lead ? ' · still linked to the original lead' : ''}</>
-          : <><UserPlus size={11} style={{ display: 'inline' }} /> Lead only — no customer record yet</>}
+          ? <><UserCheck size={13} /> Customer record{lead ? ' · still linked to the original lead' : ''}</>
+          : <><UserPlus size={13} /> Lead only — no customer record yet</>}
       </p>
     </div>
   )
