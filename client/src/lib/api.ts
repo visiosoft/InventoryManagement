@@ -286,6 +286,9 @@ export type WhatsAppConversation = {
   count: number
   lastAt: string
   lead: WhatsAppLeadRef | null
+  // Resolved on the server by the last nine digits of the number. Whether
+  // someone is a customer is a fact about this, not about a lead's status.
+  customer: { _id: string; fullName: string } | null
   labels: WhatsAppLabel[]
   // AI assistant state for this thread: '' when it has never looked at it.
   botStatus?: '' | 'bot' | 'escalated' | 'paused'

@@ -1131,13 +1131,15 @@ function LeadAction({ convo, onChanged }: { convo: WhatsAppConversation; onChang
         >
           <UserPlus size={13} /> {createLead.isPending ? 'Creating…' : 'Create lead'}
         </button>
-      ) : convo.lead.status === 'won' ? (
+      ) : convo.customer ? (
+        // Already a customer: open their profile rather than offering to make
+        // them one again.
         <Link
-          to={`/leads?q=${encodeURIComponent(convo.lead.fullName)}`}
+          to={`/customers/${convo.customer._id}`}
           className="inline-flex items-center gap-1.5 text-xs font-semibold hover:underline"
           style={{ color: '#047857' }}
         >
-          <UserCheck size={13} /> {convo.lead.fullName}
+          <UserCheck size={13} /> {convo.customer.fullName}
         </Link>
       ) : (
         <>
@@ -1480,7 +1482,7 @@ export default function WhatsApp() {
   const selectedConvo: WhatsAppConversation | null =
     realConvo ??
     (selectedPhone && selectedPhone === adhocPhone
-      ? { phoneNormalized: selectedPhone, phone: `+${selectedPhone}`, count: 0, lastAt: new Date().toISOString(), lead: null, labels: [] }
+      ? { phoneNormalized: selectedPhone, phone: `+${selectedPhone}`, count: 0, lastAt: new Date().toISOString(), lead: null, customer: null, labels: [] }
       : null)
 
   const convoTitle = selectedConvo
@@ -1843,16 +1845,21 @@ export default function WhatsApp() {
                             Reply ready
                           </span>
                         ) : null}
-                        {c.lead && (
+                        {/* Customer is decided by whether a customer record
+                            exists for this number, not by a lead's status.
+                            Asking the lead marked 53 of 60 real customers as
+                            leads, because converting is not the only way
+                            somebody becomes one. */}
+                        {(c.customer || c.lead) && (
                           <span
                             className="shrink-0 rounded-full px-1.5 py-0.5"
                             style={
-                              c.lead.status === 'won'
+                              c.customer
                                 ? { fontSize: 10, fontWeight: 700, background: '#DCFCE7', color: '#047857' }
                                 : { fontSize: 10, fontWeight: 700, background: '#F3EDFF', color: '#4A1FA0' }
                             }
                           >
-                            {c.lead.status === 'won' ? 'Customer' : 'Lead'}
+                            {c.customer ? 'Customer' : 'Lead'}
                           </span>
                         )}
                         {isUnread && (
@@ -1891,7 +1898,7 @@ export default function WhatsApp() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="truncate" style={{ fontSize: 15, fontWeight: 700, color: INK }}>{convoTitle}</span>
-                    {selectedConvo.lead?.status === 'won' && (
+                    {selectedConvo.customer && (
                       <span className="shrink-0 rounded-full px-2 py-0.5" style={{ fontSize: 10, fontWeight: 700, background: '#DCFCE7', color: '#047857' }}>
                         Customer
                       </span>
