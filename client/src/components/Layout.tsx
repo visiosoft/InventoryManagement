@@ -137,6 +137,7 @@ const salesRepNavGroups = [
       // Gated on moving_jobs rather than sales_board, so it appears only for
       // whoever is given it — accounts today, not every rep by default.
       { key: 'moving-jobs', to: '/moving/jobs', label: 'Jobs List', icon: ClipboardList, perm: 'moving_jobs' },
+      { key: 'moving-invoices', to: '/moving/invoices', label: 'Invoices', icon: ReceiptText, perm: 'moving_invoices' },
       { key: 'moving-estimator', to: '/moving-estimator', label: 'Moving Estimator', icon: Calculator, perm: 'sales_board' },
     ],
   },
