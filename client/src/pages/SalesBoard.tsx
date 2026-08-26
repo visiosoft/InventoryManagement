@@ -805,6 +805,77 @@ const MOVING_STATUS_COLORS: Record<MovingLeadStatus, { bg: string; fg: string }>
   lost: { bg: '#FEE2E2', fg: '#991B1B' },
 }
 
+type FollowUpLead = {
+  _id: string; fullName: string; phone: string; status: string
+  temperature?: string; followUpAt: string; owner?: { name: string } | null
+}
+
+/**
+ * Leads whose follow-up date has arrived.
+ *
+ * Overdue and today are shown apart rather than as one sorted list: a
+ * follow-up missed three days ago and one due this afternoon call for
+ * different reactions, and ordering alone does not say which is which.
+ */
+function FollowUps() {
+  const { data } = useQuery<{ overdue: FollowUpLead[]; today: FollowUpLead[]; upcoming: FollowUpLead[] }>({
+    queryKey: ['lead-follow-ups'],
+    queryFn: () => api.get('/leads/follow-ups', { params: { days: 7 } }).then((r) => r.data),
+  })
+
+  const overdue = data?.overdue ?? []
+  const today = data?.today ?? []
+  const upcoming = data?.upcoming ?? []
+  // Nothing due is worth saying nothing about — an empty card every day just
+  // becomes furniture.
+  if (!overdue.length && !today.length && !upcoming.length) return null
+
+  const Row = ({ l, tone }: { l: FollowUpLead; tone: string }) => (
+    <Link
+      key={l._id}
+      to={`/leads/${l._id}`}
+      className="flex items-center justify-between gap-3 hover:opacity-80 transition-opacity"
+      style={{ padding: '8px 10px', border: '1px solid rgba(20,8,31,0.08)', borderLeft: `3px solid ${tone}`, borderRadius: 10, fontSize: 13 }}
+    >
+      <span style={{ fontWeight: 600, color: INK }}>{l.fullName}</span>
+      <span style={{ color: MUTED, fontSize: 11.5 }}>{new Date(l.followUpAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Dubai' })}</span>
+    </Link>
+  )
+
+  return (
+    <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 16, marginBottom: 16 }}>
+      <div className="flex items-center gap-2 mb-3">
+        <div style={{ fontWeight: 700, fontSize: 15, color: INK }}>Follow-ups due</div>
+        {!!overdue.length && (
+          <span className="rounded-full px-2 py-0.5" style={{ background: '#FEE2E2', color: '#B91C1C', fontSize: 11, fontWeight: 700 }}>
+            {overdue.length} overdue
+          </span>
+        )}
+      </div>
+      <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+        {!!overdue.length && (
+          <div>
+            <p style={{ fontSize: 11.5, fontWeight: 700, color: '#B91C1C', marginBottom: 6 }}>Overdue</p>
+            <div className="space-y-1.5">{overdue.map((l) => <Row key={l._id} l={l} tone="#C0392B" />)}</div>
+          </div>
+        )}
+        {!!today.length && (
+          <div>
+            <p style={{ fontSize: 11.5, fontWeight: 700, color: '#C2410C', marginBottom: 6 }}>Today</p>
+            <div className="space-y-1.5">{today.map((l) => <Row key={l._id} l={l} tone="#C2410C" />)}</div>
+          </div>
+        )}
+        {!!upcoming.length && (
+          <div>
+            <p style={{ fontSize: 11.5, fontWeight: 700, color: MUTED, marginBottom: 6 }}>Next 7 days</p>
+            <div className="space-y-1.5">{upcoming.map((l) => <Row key={l._id} l={l} tone="#E5E3DE" />)}</div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function SalesBoard() {
   const { user } = useAuth()
   const qc = useQueryClient()
@@ -919,7 +990,11 @@ export default function SalesBoard() {
         </div>
       </div>
 
-      {/* Tasks first — it's what a rep works off all day. Unit availability
+      {/* A follow-up whose date has arrived outranks the to-do list: somebody
+          committed to a day, and that day is now. */}
+      {!isAccounts && <FollowUps />}
+
+      {/* Tasks next — it's what a rep works off all day. Unit availability
           and goals are reference material, so they sit below. */}
       <WorkTabs />
 

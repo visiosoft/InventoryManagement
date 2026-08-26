@@ -140,6 +140,55 @@ router.get('/', async (req, res) => {
 });
 
 /**
+ * Leads with a follow-up date that has arrived.
+ *
+ * Capturing the date was only half of it — a date nothing surfaces is a note
+ * to self. This is what makes Follow-Up Scheduled an instruction.
+ *
+ * Split into overdue and today rather than returned as one list: a follow-up
+ * missed three days ago and one due this afternoon need different reactions,
+ * and sorting alone does not say which is which.
+ *
+ * Reps see only their own, enforced here the same way the list is.
+ */
+router.get('/follow-ups', async (req, res) => {
+    try {
+        const days = Math.min(Math.max(Number(req.query.days) || 7, 0), 90);
+
+        // Dubai, like the rest of the app's day boundaries.
+        const TZ_OFFSET_MS = 4 * 3600_000;
+        const localNow = new Date(Date.now() + TZ_OFFSET_MS);
+        const startOfToday = new Date(Date.UTC(localNow.getUTCFullYear(), localNow.getUTCMonth(), localNow.getUTCDate()) - TZ_OFFSET_MS);
+        const endOfToday = new Date(startOfToday.getTime() + 86400000);
+        const horizon = new Date(endOfToday.getTime() + days * 86400000);
+
+        const filter = {
+            followUpAt: { $ne: null, $lt: horizon },
+            // A closed lead's follow-up date is history, not a task.
+            status: { $nin: ['won', 'lost'] },
+        };
+        if (isSalesRep(req)) filter.owner = req.user.id;
+        else if (req.query.owner) filter.owner = String(req.query.owner);
+
+        const leads = await Lead.find(filter)
+            .select('fullName phone status temperature tags followUpAt owner ownerSeenAt')
+            .populate('owner', 'name email')
+            .sort({ followUpAt: 1 })
+            .lean();
+
+        const at = (l) => new Date(l.followUpAt).getTime();
+        res.json({
+            overdue: leads.filter((l) => at(l) < startOfToday.getTime()),
+            today: leads.filter((l) => at(l) >= startOfToday.getTime() && at(l) < endOfToday.getTime()),
+            upcoming: leads.filter((l) => at(l) >= endOfToday.getTime()),
+            days,
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
  * The owner has looked at it.
  *
  * Only the person it belongs to can mark it seen — an admin opening a rep's
