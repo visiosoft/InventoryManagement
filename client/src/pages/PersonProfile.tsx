@@ -160,6 +160,8 @@ export default function PersonProfile() {
   // A stage picked but not yet committed, and the note going with it.
   const [pendingStage, setPendingStage] = useState('')
   const [stageNote, setStageNote] = useState('')
+  // The size asked for, captured at the moment somebody actually speaks to them.
+  const [stageSize, setStageSize] = useState('')
   // Contact details, while they are being edited rather than read.
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({ fullName: '', phone: '', whatsappNo: '', email: '', source: 'manual' })
@@ -169,6 +171,16 @@ export default function PersonProfile() {
     queryFn: () => api.get(`/leads/${id}/profile`).then((r) => r.data),
     enabled: Boolean(id),
   })
+
+  // The sizes that exist, with how many of each are free — the same figures
+  // the board's availability strip shows, so a rep is never offered a size
+  // there is nothing left of without being told.
+  const { data: summary } = useQuery<{ bySize: { sizeSqf: number; available: number }[] }>({
+    queryKey: ['reports-summary-availability'],
+    queryFn: () => api.get('/reports/summary').then((r) => r.data),
+    staleTime: 5 * 60_000,
+  })
+  const sizes = summary?.bySize ?? []
 
   // Only admins reassign. A rep seeing the dropdown would only meet a refusal.
   const { data: assignable = [] } = useQuery<Owner[]>({
@@ -181,9 +193,13 @@ export default function PersonProfile() {
   const refresh = () => qc.invalidateQueries({ queryKey: ['person', id] })
 
   const setStatus = useMutation({
-    mutationFn: ({ status, comment }: { status: string; comment?: string }) =>
-      api.patch(`/leads/${data!.lead!._id}/status`, { status, comment }),
-    onSuccess: () => { setErr(''); setPendingStage(''); setStageNote(''); refresh() },
+    mutationFn: async ({ status, comment, size }: { status: string; comment?: string; size?: string }) => {
+      // The size first: if it fails — a duplicate phone, a stale field — the
+      // stage has not moved yet, so nothing is half-applied.
+      if (size) await api.put(`/leads/${data!.lead!._id}`, { storageSizeValue: Number(size), storageSizeUnit: 'sqft' })
+      return api.patch(`/leads/${data!.lead!._id}/status`, { status, comment })
+    },
+    onSuccess: () => { setErr(''); setPendingStage(''); setStageNote(''); setStageSize(''); refresh() },
     onError: (e) => setErr(apiError(e)),
   })
 
@@ -442,7 +458,7 @@ export default function PersonProfile() {
         <div className="flex flex-col" style={{ flex: '2 1 480px', gap: 20 }}>
           {lead && (
             <Card title="Ownership & status">
-              <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 16, alignItems: 'start' }}>
+              <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 16, alignItems: 'start' }}>
                 <div>
                   <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Assigned to</span>
                   {isAdmin ? (
@@ -478,60 +494,20 @@ export default function PersonProfile() {
                     {LEAD_STATUS_FLOW.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                   </select>
 
-                  {/* Moving a stage is the moment somebody knows why. Asking
-                      here — rather than leaving them to write it separately —
-                      is the difference between a timeline that reads as an
-                      account and one that reads as a list of state changes.
-                      The note goes with the change in one request, so a stage
-                      cannot land without it. */}
-                  {pendingStage ? (
-                    <div style={{ marginTop: 10, borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: PAGE, padding: 12 }}>
-                      <p style={{ fontSize: 12.5, color: FAINT, marginBottom: 8 }}>
-                        Moving to <b style={{ color: INK }}>{LEAD_STATUS_FLOW.find((s) => s.value === pendingStage)?.label}</b> — what happened?
-                      </p>
-                      <textarea
-                        value={stageNote}
-                        onChange={(e) => setStageNote(e.target.value)}
-                        rows={2}
-                        autoFocus
-                        placeholder={pendingStage === 'lost' ? 'Why did this one go? (worth recording)' : 'Optional — called, no answer…'}
-                        style={{ width: '100%', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', color: INK, resize: 'vertical', boxSizing: 'border-box' }}
-                      />
-                      <div className="flex" style={{ gap: 8, marginTop: 8 }}>
-                        <button
-                          type="button"
-                          disabled={setStatus.isPending}
-                          onClick={() => setStatus.mutate({ status: pendingStage, comment: stageNote.trim() || undefined })}
-                          className="cursor-pointer disabled:opacity-50"
-                          style={{ height: 36, padding: '0 16px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontSize: 13, fontWeight: 700, fontFamily: 'inherit' }}
-                        >
-                          {setStatus.isPending ? 'Saving…' : 'Save stage'}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={setStatus.isPending}
-                          onClick={() => { setPendingStage(''); setStageNote('') }}
-                          className="cursor-pointer disabled:opacity-50"
-                          style={{ height: 36, padding: '0 16px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: FAINT, fontSize: 13, fontWeight: 600, fontFamily: 'inherit' }}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    /* What the stage means somebody should do next, so the
-                       status is an instruction rather than a label. */
-                    <p style={{ fontSize: 12.5, color: FAINT, marginTop: 6 }}>
-                      {LEAD_STATUS_FLOW.find((s) => s.value === lead.status)?.next}
-                    </p>
-                  )}
+                  {/* What the stage means somebody should do next, so the
+                      status is an instruction rather than a label. */}
+                  <p style={{ fontSize: 12.5, color: FAINT, marginTop: 6 }}>
+                    {pendingStage
+                      ? 'Unsaved — see below.'
+                      : LEAD_STATUS_FLOW.find((s) => s.value === lead.status)?.next}
+                  </p>
                 </div>
 
                 {/* Temperature sits beside the stage, not inside it: a lead can
                     be Follow-Up Scheduled and hot, or Contacted and cold. */}
                 <div>
                   <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Temperature</span>
-                  <div className="grid" style={{ gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                  <div className="grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6 }}>
                     {LEAD_TEMPERATURES.map((t) => {
                       const on = lead.temperature === t.value
                       return (
@@ -554,19 +530,40 @@ export default function PersonProfile() {
                   </div>
                 </div>
 
-                {/* Shown for any open lead, not only Follow-Up Scheduled: a
-                    date set while the lead was in that stage still fires after
-                    it moves on, and hiding the control left a live reminder
-                    nobody could see or change. */}
-                {lead.status !== 'won' && lead.status !== 'lost' && (
-                  <div>
+                {/* The pickers belong to the stage that is about following
+                    up; anywhere else they are a control nobody is looking for.
+
+                    A lead that already has a date keeps a line saying so even
+                    after it moves on, because the reminder is still live and
+                    hiding it outright left a task on somebody's board that
+                    could not be reached from here. */}
+                {lead.status !== 'follow_up_scheduled' && lead.followUpAt && lead.status !== 'won' && lead.status !== 'lost' && (
+                  <div style={{ minWidth: 0 }}>
+                    <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Follow-up</span>
+                    <div className="flex items-center justify-between" style={{ gap: 8, padding: '9px 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff' }}>
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{formatDate(dueDay)}</span>
+                      <button
+                        type="button"
+                        onClick={() => patchLead.mutate({ followUpAt: null })}
+                        disabled={patchLead.isPending}
+                        className="cursor-pointer disabled:opacity-50"
+                        style={{ background: 'none', border: 'none', color: FAINT, fontSize: 12.5, fontWeight: 600 }}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {lead.status === 'follow_up_scheduled' && (
+                  <div style={{ minWidth: 0 }}>
                     <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Follow-up</span>
 
                     {/* "Call them in March" is a real answer, and pinning it to
                         an invented day in March fires early or late. The kind
                         says how precisely the date was meant: a week is raised
                         on its Monday, a month on its first. */}
-                    <div className="grid" style={{ gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
+                    <div className="grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6, marginBottom: 10 }}>
                       {FOLLOW_UP_KINDS.map((k) => {
                         const on = (lead.followUpKind || 'date') === k.value
                         return (
@@ -576,7 +573,8 @@ export default function PersonProfile() {
                             onClick={() => patchLead.mutate({ followUpKind: k.value })}
                             className="cursor-pointer"
                             style={{
-                              height: 38, borderRadius: 10, fontSize: 12.5, fontWeight: 700, fontFamily: 'inherit',
+                              height: 38, borderRadius: 10, fontSize: 12, fontWeight: 700, fontFamily: 'inherit',
+                              padding: '0 4px', minWidth: 0, whiteSpace: 'nowrap',
                               border: `1.5px solid ${on ? PURPLE : LINE_STRONG}`,
                               background: on ? PURPLE_50 : '#fff',
                               color: on ? DEEP : INK_2,
@@ -604,6 +602,76 @@ export default function PersonProfile() {
                           : 'Assign this lead to somebody and a task will be raised for them.'}
                       </p>
                     )}
+                  </div>
+                )}
+
+                {/* Moving a stage is the moment somebody knows why. Asking
+                    here — rather than leaving them to write it separately — is
+                    the difference between a timeline that reads as an account
+                    and one that reads as a list of state changes. The note
+                    goes with the change in one request, so a stage cannot land
+                    without it.
+
+                    Full width rather than inside the Stage cell: squeezed into
+                    a quarter of the card it was a textarea three words wide. */}
+                {pendingStage && (
+                  <div style={{ gridColumn: '1 / -1', borderRadius: 12, border: `1px solid ${PURPLE_200}`, background: PURPLE_50, padding: 14 }}>
+                    <p style={{ fontSize: 13, color: INK_2, marginBottom: 8 }}>
+                      Moving to <b style={{ color: INK }}>{LEAD_STATUS_FLOW.find((s) => s.value === pendingStage)?.label}</b> — what happened?
+                    </p>
+                    <textarea
+                      value={stageNote}
+                      onChange={(e) => setStageNote(e.target.value)}
+                      rows={2}
+                      autoFocus
+                      placeholder={pendingStage === 'lost' ? 'Why did this one go? (worth recording)' : 'Optional — called, no answer…'}
+                      style={{ width: '100%', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', color: INK, resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
+                    />
+                    {/* Contacted is the first point at which anybody has
+                        actually spoken to them, so it is the first point at
+                        which the size they want is knowable. Asking here beats
+                        hoping somebody fills it in later. */}
+                    {pendingStage === 'contacted' && sizes.length > 0 && (
+                      <div style={{ marginTop: 10 }}>
+                        <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>
+                          Size they need{lead.storageSizeValue ? ` — currently ${lead.storageSizeValue} ${lead.storageSizeUnit || 'sqft'}` : ''}
+                        </span>
+                        <select
+                          value={stageSize}
+                          onChange={(e) => setStageSize(e.target.value)}
+                          className="cursor-pointer"
+                          style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK }}
+                        >
+                          <option value="">Leave as it is</option>
+                          {sizes.map((b) => (
+                            <option key={b.sizeSqf} value={String(b.sizeSqf)}>
+                              {b.sizeSqf} sqft — {b.available} free
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap" style={{ gap: 8, marginTop: 10 }}>
+                      <button
+                        type="button"
+                        disabled={setStatus.isPending}
+                        onClick={() => setStatus.mutate({ status: pendingStage, comment: stageNote.trim() || undefined, size: stageSize || undefined })}
+                        className="cursor-pointer disabled:opacity-50"
+                        style={{ height: 38, padding: '0 18px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontSize: 13, fontWeight: 700, fontFamily: 'inherit' }}
+                      >
+                        {setStatus.isPending ? 'Saving…' : 'Save stage'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={setStatus.isPending}
+                        onClick={() => { setPendingStage(''); setStageNote(''); setStageSize('') }}
+                        className="cursor-pointer disabled:opacity-50"
+                        style={{ height: 38, padding: '0 18px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: FAINT, fontSize: 13, fontWeight: 600, fontFamily: 'inherit' }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
                 )}
 
