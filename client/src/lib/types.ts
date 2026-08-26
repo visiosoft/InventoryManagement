@@ -53,7 +53,8 @@ export interface Customer {
   createdAt?: string
 }
 
-export type LeadStatus = 'new' | 'contacted' | 'qualified' | 'proposal_sent' | 'won' | 'lost'
+export type LeadStatus = 'new' | 'contact_attempted' | 'contacted' | 'follow_up_scheduled' | 'quotation_sent' | 'won' | 'lost'
+export type LeadTemperature = '' | 'hot' | 'warm' | 'cold'
 export type LeadSource = 'manual' | 'whatsapp' | 'referral' | 'walk_in' | 'other'
 export type DurationUnit = 'week' | 'month'
 
@@ -76,6 +77,10 @@ export interface LeadTimelineEntry {
 export interface Lead {
   /** When the owner first opened it. Null means it has not been looked at yet. */
   ownerSeenAt?: string | null
+  /** How warm they are — kept apart from the status, which says where they are. */
+  temperature?: LeadTemperature
+  tags?: string[]
+  followUpAt?: string | null
   _id: string
   firstName?: string
   lastName?: string

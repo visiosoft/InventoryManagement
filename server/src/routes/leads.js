@@ -5,7 +5,17 @@ import { mailConfigured, sendMail } from '../services/mail.js';
 
 const router = Router();
 
-const ALLOWED_STATUS = new Set(['new', 'contacted', 'qualified', 'proposal_sent', 'won', 'lost']);
+const ALLOWED_STATUS = new Set(['new', 'contact_attempted', 'contacted', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost']);
+const ALLOWED_TEMPERATURE = new Set(['', 'hot', 'warm', 'cold']);
+
+/* Tags add detail without replacing the status. Fixed rather than free text so
+   they stay countable — a board filtered by "Business Storage" is only useful
+   if everyone spells it the same way. */
+const ALLOWED_TAGS = new Set([
+    'storage_lead', 'moving_lead', 'storage_and_moving',
+    'personal_storage', 'business_storage',
+    'urgent', 'site_visit_required', 'price_sensitive', 'unresponsive',
+]);
 const ALLOWED_SOURCE = new Set(['manual', 'whatsapp', 'referral', 'walk_in', 'other']);
 const ALLOWED_DURATION_UNIT = new Set(['week', 'month']);
 
@@ -49,6 +59,11 @@ function cleanBody(body) {
         owner: String(body.owner || ''),
         unitsNeeded: Number(body.unitsNeeded),
         notes: String(body.notes || '').trim(),
+        temperature: String(body.temperature || '').trim(),
+        // Unknown tags are dropped rather than rejected: a stale option in an
+        // open tab should not fail the whole save.
+        tags: Array.isArray(body.tags) ? [...new Set(body.tags.map(String).filter((t) => ALLOWED_TAGS.has(t)))] : [],
+        followUpAt: body.followUpAt ? parseDate(body.followUpAt) : null,
     };
 }
 
@@ -125,17 +140,6 @@ router.get('/', async (req, res) => {
 });
 
 /**
- * Everything about one person, in a single call.
- *
- * A lead and a customer are the same human at two stages, and until now only
- * the lead half had a page — /customers/:id redirected to a contract, so a
- * tenant had no record of their own to open. This assembles both halves plus
- * whatever they have accumulated, so the page does not have to stitch five
- * requests together and guess at the order.
- *
- * Accepts a lead id or a customer id: the caller usually knows only one.
- */
-/**
  * The owner has looked at it.
  *
  * Only the person it belongs to can mark it seen — an admin opening a rep's
@@ -155,6 +159,16 @@ router.post('/:id/seen', async (req, res) => {
     }
 });
 
+/**
+ * Everything about one person, in a single call.
+ *
+ * A lead and a customer are the same human at two stages, and until now only
+ * the lead half had a page — /customers/:id redirected to a contract, so a
+ * tenant had no record of their own to open. This assembles both halves plus
+ * whatever they have accumulated.
+ *
+ * Accepts a lead id or a customer id: the caller usually knows only one.
+ */
 router.get('/:id/profile', async (req, res) => {
     try {
         const { id } = req.params;
@@ -234,6 +248,7 @@ router.post('/', async (req, res) => {
     if (!ALLOWED_STATUS.has(body.status)) return res.status(400).json({ error: 'Invalid lead status' });
     if (!ALLOWED_SOURCE.has(body.source)) return res.status(400).json({ error: 'Invalid lead source' });
     if (!ALLOWED_DURATION_UNIT.has(body.durationUnit)) return res.status(400).json({ error: 'Invalid duration unit' });
+    if (!ALLOWED_TEMPERATURE.has(body.temperature)) return res.status(400).json({ error: 'Invalid temperature' });
     if (!Number.isFinite(body.storageSizeValue) || body.storageSizeValue < 0) return res.status(400).json({ error: 'Invalid storage size' });
     if (!Number.isFinite(body.durationValue) || body.durationValue < 1) return res.status(400).json({ error: 'Invalid duration value' });
     if (!Number.isFinite(body.unitsNeeded) || body.unitsNeeded < 1) return res.status(400).json({ error: 'Invalid units needed' });
@@ -272,6 +287,7 @@ router.put('/:id', async (req, res) => {
     if (!ALLOWED_STATUS.has(body.status)) return res.status(400).json({ error: 'Invalid lead status' });
     if (!ALLOWED_SOURCE.has(body.source)) return res.status(400).json({ error: 'Invalid lead source' });
     if (!ALLOWED_DURATION_UNIT.has(body.durationUnit)) return res.status(400).json({ error: 'Invalid duration unit' });
+    if (!ALLOWED_TEMPERATURE.has(body.temperature)) return res.status(400).json({ error: 'Invalid temperature' });
     if (!Number.isFinite(body.storageSizeValue) || body.storageSizeValue < 0) return res.status(400).json({ error: 'Invalid storage size' });
     if (!Number.isFinite(body.durationValue) || body.durationValue < 1) return res.status(400).json({ error: 'Invalid duration value' });
     if (!Number.isFinite(body.unitsNeeded) || body.unitsNeeded < 1) return res.status(400).json({ error: 'Invalid units needed' });
@@ -307,6 +323,9 @@ router.put('/:id', async (req, res) => {
     lead.owner = ownerId;
     lead.unitsNeeded = body.unitsNeeded;
     lead.notes = body.notes;
+    lead.temperature = body.temperature;
+    lead.tags = body.tags;
+    lead.followUpAt = body.followUpAt;
     const userName = req.user.name || req.user.email || 'user';
     lead.timeline.push({ type: 'updated', text: `Lead updated by ${userName}`, user: req.user.id });
 

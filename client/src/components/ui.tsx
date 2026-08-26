@@ -143,14 +143,57 @@ export const paymentStatusTone: Record<string, string> = {
 
 export const leadStatusTone: Record<string, string> = {
   new: 'blue',
-  contacted: 'amber',
-  qualified: 'purple',
-  proposal_sent: 'gray',
+  contact_attempted: 'amber',
+  contacted: 'purple',
+  follow_up_scheduled: 'amber',
+  quotation_sent: 'gray',
   won: 'green',
   lost: 'red',
 }
 
+/* The CRM buckets, in the order a lead moves through them. One primary status
+   at a time — temperature and tags carry everything else. */
+export const LEAD_STATUS_FLOW = [
+  { value: 'new', label: 'New Lead', meaning: 'Profile created, no contact attempt recorded', next: 'Contact the lead' },
+  { value: 'contact_attempted', label: 'Contact Attempted', meaning: 'Call or message sent, no conversation yet', next: 'Schedule another attempt' },
+  { value: 'contacted', label: 'Contacted', meaning: 'Two-way communication has happened', next: 'Qualify motivation, requirements and timing' },
+  { value: 'follow_up_scheduled', label: 'Follow-Up Scheduled', meaning: 'Interested, action needed later', next: 'Set the follow-up date' },
+  { value: 'quotation_sent', label: 'Quotation Sent', meaning: 'Formal quotation issued', next: 'Follow up on the quotation' },
+  { value: 'won', label: 'Customer / Won', meaning: 'Quotation accepted', next: 'Create the customer and begin onboarding' },
+  { value: 'lost', label: 'Dead Lead / Lost', meaning: 'Not moving forward', next: 'Record a reason and close it' },
+] as const
+
+export const LEAD_TEMPERATURES = [
+  { value: 'hot', label: 'Hot', bg: '#FEE2E2', fg: '#B91C1C' },
+  { value: 'warm', label: 'Warm', bg: '#FFF7E6', fg: '#B45309' },
+  { value: 'cold', label: 'Cold', bg: '#EEF2F7', fg: '#475569' },
+] as const
+
+export const LEAD_TAGS = [
+  { value: 'storage_lead', label: 'Storage Lead' },
+  { value: 'moving_lead', label: 'Moving Lead' },
+  { value: 'storage_and_moving', label: 'Storage + Moving' },
+  { value: 'personal_storage', label: 'Personal Storage' },
+  { value: 'business_storage', label: 'Business Storage' },
+  { value: 'urgent', label: 'Urgent Requirement' },
+  { value: 'site_visit_required', label: 'Site Visit Required' },
+  { value: 'price_sensitive', label: 'Price Sensitive' },
+  { value: 'unresponsive', label: 'Unresponsive' },
+] as const
+
+/* A few statuses read badly when de-underscored — "New" alone does not say
+   what it is, and "Won" hides that it means a customer now exists. */
+const NAMED_STATUSES: Record<string, string> = {
+  new: 'New Lead',
+  contact_attempted: 'Contact Attempted',
+  follow_up_scheduled: 'Follow-Up Scheduled',
+  quotation_sent: 'Quotation Sent',
+  won: 'Customer / Won',
+  lost: 'Dead Lead / Lost',
+}
+
 export function statusLabel(s: string) {
+  if (NAMED_STATUSES[s]) return NAMED_STATUSES[s]
   return s.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
 }
 

@@ -800,7 +800,10 @@ export default function Quotations() {
 
   const { data: leads } = useQuery<{ _id: string; fullName: string; phone?: string }[]>({
     queryKey: ['leads-for-quotes'],
-    queryFn: () => api.get('/leads', { params: { status: 'qualified', limit: 200 } }).then((r) => r.data.data),
+    // 'qualified' no longer exists — the CRM buckets replaced it, and this
+    // query silently returned nothing until it was pointed at the bucket that
+    // now means the same thing: somebody we have actually spoken to.
+    queryFn: () => api.get('/leads', { params: { status: 'contacted', limit: 200 } }).then((r) => r.data.data),
   })
 
   const createQuote = useMutation({

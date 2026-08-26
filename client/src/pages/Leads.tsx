@@ -13,17 +13,24 @@ const INK = '#14081F'
 const MUTED_COLOR = '#756E80'
 const PURPLE = '#5B2BC9'
 
-const LEAD_STATUSES: LeadStatus[] = ['new', 'contacted', 'qualified', 'proposal_sent', 'won', 'lost']
+const LEAD_STATUSES: LeadStatus[] = ['new', 'contact_attempted', 'contacted', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost']
 const LEAD_SOURCES: LeadSource[] = ['manual', 'whatsapp', 'referral', 'walk_in', 'other']
 
 // Quick one-click forward moves through the pipeline, plus a Lost/Reopen
 // escape hatch — mirrors the transition-button pattern already used for
 // moving leads instead of burying status changes in the Edit form.
 const STATUS_TRANSITIONS: Record<LeadStatus, { label: string; value: LeadStatus }[]> = {
-    new: [{ label: 'Mark Contacted', value: 'contacted' }, { label: 'Mark Lost', value: 'lost' }],
-    contacted: [{ label: 'Mark Qualified', value: 'qualified' }, { label: 'Mark Lost', value: 'lost' }],
-    qualified: [{ label: 'Send Proposal', value: 'proposal_sent' }, { label: 'Mark Lost', value: 'lost' }],
-    proposal_sent: [{ label: 'Mark Won', value: 'won' }, { label: 'Mark Lost', value: 'lost' }],
+    // Each step offers the action the CRM says comes next, plus the way out.
+    // Reaching somebody is two steps now: trying and actually speaking.
+    new: [{ label: 'Contact attempted', value: 'contact_attempted' }, { label: 'Mark Lost', value: 'lost' }],
+    contact_attempted: [{ label: 'Got through', value: 'contacted' }, { label: 'Mark Lost', value: 'lost' }],
+    contacted: [
+        { label: 'Schedule follow-up', value: 'follow_up_scheduled' },
+        { label: 'Quotation sent', value: 'quotation_sent' },
+        { label: 'Mark Lost', value: 'lost' },
+    ],
+    follow_up_scheduled: [{ label: 'Quotation sent', value: 'quotation_sent' }, { label: 'Mark Lost', value: 'lost' }],
+    quotation_sent: [{ label: 'Mark Won', value: 'won' }, { label: 'Mark Lost', value: 'lost' }],
     won: [],
     lost: [{ label: 'Reopen', value: 'new' }],
 }
@@ -1043,8 +1050,9 @@ export default function Leads() {
     const statusColors: Record<string, { bg: string; fg: string }> = {
         new: { bg: '#E8F9EE', fg: '#0F7A3D' },
         contacted: { bg: '#E0F2FE', fg: '#0369A1' },
-        qualified: { bg: '#F3E8FF', fg: '#7C3AED' },
-        proposal_sent: { bg: '#FEF3C7', fg: '#B45309' },
+        contact_attempted: { bg: '#FEF3C7', fg: '#B45309' },
+        follow_up_scheduled: { bg: '#FFEDD5', fg: '#C2410C' },
+        quotation_sent: { bg: '#F3E8FF', fg: '#7C3AED' },
         won: { bg: '#D1FAE5', fg: '#065F46' },
         lost: { bg: '#FEE2E2', fg: '#991B1B' },
     }

@@ -4,8 +4,9 @@ import { noteInboundForBot, pauseBotForHuman } from './aiBot.js';
 
 const DEFAULT_STATUS_BY_LABEL = {
     lead: 'new',
-    'new customer': 'qualified',
-    followup: 'contacted',
+    'new customer': 'contacted',
+    // A WhatsApp label saying follow-up is exactly the CRM's own bucket.
+    followup: 'follow_up_scheduled',
     lost: 'lost',
     won: 'won',
 };
@@ -19,7 +20,7 @@ const LABEL_ALIASES = {
 
 const LABEL_PRIORITY = ['lost', 'won', 'followup', 'new customer', 'lead'];
 
-const ALLOWED_LEAD_STATUS = new Set(['new', 'contacted', 'qualified', 'proposal_sent', 'won', 'lost']);
+const ALLOWED_LEAD_STATUS = new Set(['new', 'contact_attempted', 'contacted', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost']);
 
 function readStatusMapFromEnv() {
     const raw = process.env.WHATSAPP_LABEL_STATUS_MAP;

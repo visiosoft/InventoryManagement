@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Briefcase, FileText, MessageCircle, Phone, Mail, UserCheck, UserPlus } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
-import { Spinner, statusLabel } from '../components/ui'
+import { Spinner, statusLabel, LEAD_STATUS_FLOW, LEAD_TEMPERATURES, LEAD_TAGS } from '../components/ui'
 import { formatDate } from '../lib/utils'
 
 const INK = '#14081F'
@@ -21,6 +21,9 @@ type Lead = {
   _id: string; fullName: string; email: string; phone: string; whatsappNo: string
   phoneNormalized: string; status: string; owner: Owner | null; notes: string
   leadDateTime: string; source: string
+  temperature?: '' | 'hot' | 'warm' | 'cold'
+  tags?: string[]
+  followUpAt?: string | null
 }
 type Customer = {
   _id: string; fullName: string; email: string; phone: string; phones: string[]
@@ -39,13 +42,12 @@ type Profile = {
   stage: 'lead' | 'customer' | 'unknown'
 }
 
-const LEAD_STATUSES = ['new', 'contacted', 'qualified', 'proposal_sent', 'won', 'lost']
-
 const STATUS_TONE: Record<string, { bg: string; fg: string }> = {
   new: { bg: '#EDE5FF', fg: DEEP },
-  contacted: { bg: '#FFF7E6', fg: '#B45309' },
-  qualified: { bg: '#E0F2FE', fg: '#075985' },
-  proposal_sent: { bg: '#FEF3C7', fg: '#92400E' },
+  contact_attempted: { bg: '#FEF3C7', fg: '#92400E' },
+  contacted: { bg: '#E0F2FE', fg: '#075985' },
+  follow_up_scheduled: { bg: '#FFEDD5', fg: '#C2410C' },
+  quotation_sent: { bg: '#F3E8FF', fg: '#7C3AED' },
   won: { bg: '#DCFCE7', fg: '#047857' },
   lost: { bg: '#FEE2E2', fg: '#B91C1C' },
 }
@@ -101,6 +103,14 @@ export default function PersonProfile() {
     onError: (e) => setErr(apiError(e)),
   })
 
+  // Temperature, tags and the follow-up date all go through the same update,
+  // so one edit cannot half-apply.
+  const patchLead = useMutation({
+    mutationFn: (body: Record<string, unknown>) => api.put(`/leads/${data!.lead!._id}`, body),
+    onSuccess: () => { setErr(''); refresh() },
+    onError: (e) => setErr(apiError(e)),
+  })
+
   const assign = useMutation({
     mutationFn: (owner: string) => api.put(`/leads/${data!.lead!._id}`, { owner }),
     onSuccess: () => { setErr(''); refresh() },
@@ -142,6 +152,14 @@ export default function PersonProfile() {
                 }}>
                   {isCustomer ? 'Customer' : statusLabel(lead?.status ?? 'new')}
                 </span>
+                {lead?.temperature && (() => {
+                  const t = LEAD_TEMPERATURES.find((x) => x.value === lead.temperature)
+                  return t ? (
+                    <span className="rounded-full px-2.5 py-0.5" style={{ background: t.bg, color: t.fg, fontSize: 11, fontWeight: 700 }}>
+                      {t.label}
+                    </span>
+                  ) : null
+                })()}
                 {phone && <a href={`tel:${phone}`} className="inline-flex items-center gap-1" style={{ color: INK_2 }}><Phone size={12} /> {phone}</a>}
                 {email && <a href={`mailto:${email}`} className="inline-flex items-center gap-1" style={{ color: INK_2 }}><Mail size={12} /> {email}</a>}
               </div>
@@ -163,6 +181,21 @@ export default function PersonProfile() {
             </Link>
           </div>
         </div>
+
+        {!!lead?.tags?.length && (
+          <div className="flex flex-wrap" style={{ gap: 6, marginTop: 12 }}>
+            {lead.tags.map((t) => (
+              <span key={t} className="rounded-full px-2.5 py-1" style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', color: DEEP, fontSize: 11, fontWeight: 600 }}>
+                {LEAD_TAGS.find((x) => x.value === t)?.label ?? t}
+              </span>
+            ))}
+          </div>
+        )}
+        {lead?.followUpAt && (
+          <p style={{ fontSize: 12, color: '#C2410C', marginTop: 10, fontWeight: 600 }}>
+            Follow up on {formatDate(lead.followUpAt)}
+          </p>
+        )}
 
         {err && <p style={{ fontSize: 12, color: '#C0392B', marginTop: 10 }}>{err}</p>}
       </div>
@@ -215,8 +248,82 @@ export default function PersonProfile() {
                     disabled={setStatus.isPending}
                     style={{ width: '100%', height: 38, borderRadius: 10, border: `1px solid ${LINE}`, background: '#fff', padding: '0 10px', fontSize: 13, color: INK }}
                   >
-                    {LEAD_STATUSES.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
+                    {LEAD_STATUS_FLOW.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                   </select>
+                  {/* What the stage means somebody should do next, so the
+                      status is an instruction rather than a label. */}
+                  <p style={{ fontSize: 11.5, color: FAINT, marginTop: 4 }}>
+                    {LEAD_STATUS_FLOW.find((s) => s.value === lead.status)?.next}
+                  </p>
+                </div>
+
+                {/* Temperature sits beside the stage, not inside it: a lead can
+                    be Follow-Up Scheduled and hot, or Contacted and cold. */}
+                <div>
+                  <p style={{ fontSize: 11.5, color: FAINT, marginBottom: 4 }}>Temperature</p>
+                  <div className="flex" style={{ gap: 6 }}>
+                    {LEAD_TEMPERATURES.map((t) => {
+                      const on = lead.temperature === t.value
+                      return (
+                        <button
+                          key={t.value}
+                          type="button"
+                          onClick={() => patchLead.mutate({ temperature: on ? '' : t.value })}
+                          className="cursor-pointer"
+                          style={{
+                            flex: 1, height: 32, borderRadius: 999, fontSize: 12, fontWeight: 700,
+                            border: `1px solid ${on ? t.fg : LINE}`,
+                            background: on ? t.bg : '#fff',
+                            color: on ? t.fg : FAINT,
+                          }}
+                        >
+                          {t.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {lead.status === 'follow_up_scheduled' && (
+                  <div>
+                    <p style={{ fontSize: 11.5, color: FAINT, marginBottom: 4 }}>Follow up on</p>
+                    <input
+                      type="date"
+                      value={lead.followUpAt ? String(lead.followUpAt).slice(0, 10) : ''}
+                      onChange={(e) => patchLead.mutate({ followUpAt: e.target.value || null })}
+                      style={{ width: '100%', height: 38, borderRadius: 10, border: `1px solid ${LINE}`, background: '#fff', padding: '0 10px', fontSize: 13, color: INK }}
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <p style={{ fontSize: 11.5, color: FAINT, marginBottom: 6 }}>Tags</p>
+                  <div className="flex flex-wrap" style={{ gap: 6 }}>
+                    {LEAD_TAGS.map((t) => {
+                      const on = (lead.tags ?? []).includes(t.value)
+                      return (
+                        <button
+                          key={t.value}
+                          type="button"
+                          onClick={() => {
+                            const next = on
+                              ? (lead.tags ?? []).filter((x) => x !== t.value)
+                              : [...(lead.tags ?? []), t.value]
+                            patchLead.mutate({ tags: next })
+                          }}
+                          className="cursor-pointer"
+                          style={{
+                            borderRadius: 999, padding: '4px 10px', fontSize: 11.5, fontWeight: 600,
+                            border: `1px solid ${on ? PURPLE : LINE}`,
+                            background: on ? '#EDE5FF' : '#fff',
+                            color: on ? DEEP : FAINT,
+                          }}
+                        >
+                          {t.label}
+                        </button>
+                      )
+                    })}
+                  </div>
                 </div>
               </div>
             </Card>

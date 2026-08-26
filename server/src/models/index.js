@@ -164,9 +164,22 @@ const leadSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ['new', 'contacted', 'qualified', 'proposal_sent', 'won', 'lost'],
+      /* One primary status at a time — the CRM buckets.
+         'won' and 'lost' keep their keys because the sales targets count them
+         and renaming would silently zero everyone's figures. */
+      enum: ['new', 'contact_attempted', 'contacted', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost'],
       default: 'new',
     },
+    /* How warm they are, kept apart from the status.
+       A lead can be Follow-Up Scheduled and hot, or Contacted and cold — one
+       says where they are in the process, the other how likely they are to
+       buy, and collapsing them loses whichever you did not pick. */
+    temperature: { type: String, enum: ['', 'hot', 'warm', 'cold'], default: '' },
+    /* Extra facts that do not replace the status: what they want, how urgent,
+       whether they have gone quiet. */
+    tags: { type: [String], default: [] },
+    /* What makes Follow-Up Scheduled actionable rather than a note to self. */
+    followUpAt: { type: Date, default: null },
     source: {
       type: String,
       enum: ['manual', 'whatsapp', 'referral', 'walk_in', 'other'],
@@ -229,7 +242,7 @@ const whatsappLabelStateSchema = new Schema(
     labels: { type: [String], default: [] },
     mappedStatus: {
       type: String,
-      enum: ['', 'new', 'contacted', 'qualified', 'proposal_sent', 'won', 'lost'],
+      enum: ['', 'new', 'contact_attempted', 'contacted', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost'],
       default: '',
     },
     lastEventKey: { type: String, default: '' },
