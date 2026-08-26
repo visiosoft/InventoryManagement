@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { Unit, Contract, Payment, Expense } from '../models/index.js';
 import { siteScope } from '../utils/siteScope.js';
-import { unitRow, totals, byFloor, monthlyRate } from '../services/rateRealisation.js';
+import { unitRow, totals, byFloor, monthlyRate, monthlySeries, pickPerUnit } from '../services/rateRealisation.js';
 
 const router = Router();
 
@@ -496,25 +496,19 @@ router.get('/rates', async (req, res) => {
       return st < monthEnd && en > monthStart;
     });
 
-    // One contract per unit. An active one beats an ended one that merely
-    // overlapped the month, so a unit re-let mid-month is not counted twice.
-    const rank = (c) => (c.status === 'active' ? 0 : c.status === 'pending_signature' ? 1 : 2);
-    const byUnit = new Map();
-    for (const c of running) {
-      const ids = [c.unit, ...(c.units || [])].filter(Boolean).map((u) => String(u._id ?? u));
-      for (const id of ids) {
-        const held = byUnit.get(id);
-        if (!held || rank(c) < rank(held)) byUnit.set(id, c);
-      }
-    }
-
+    const byUnit = pickPerUnit(running);
     const rows = units.map((u) => unitRow(u, byUnit.get(String(u._id)) || null));
+
+    // The trend, from the same figures rather than a separate query that could
+    // disagree with the table below it.
+    const series = monthlySeries(units, contracts, { months: 12 });
 
     res.json({
       month: monthISO,
       label: monthStart.toLocaleString('en', { month: 'long', year: 'numeric', timeZone: 'UTC' }),
       totals: totals(rows),
       floors: byFloor(rows),
+      series,
       rows,
     });
   } catch (e) {

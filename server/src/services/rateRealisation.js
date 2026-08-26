@@ -141,3 +141,64 @@ export function byFloor(rows = []) {
     .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
     .map(([floor, list]) => ({ floor, ...totals(list), rows: list }));
 }
+
+/**
+ * The trailing months, each as one point on the trend.
+ *
+ * A caveat worth stating rather than burying: unit prices are not versioned, so
+ * "actual" uses today's asking price for every month shown. Only units that
+ * existed by the end of a month are counted, which stops a floor added this
+ * week from appearing to have been earning all year — but a price *changed*
+ * last month is applied backwards. The leased figure has no such problem: it
+ * comes from the contracts that actually ran.
+ */
+export function monthlySeries(units = [], contracts = [], { months = 12, now = new Date() } = {}) {
+  const out = [];
+
+  for (let i = months - 1; i >= 0; i--) {
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    const monthEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i + 1, 1));
+
+    const existed = units.filter((u) => !u.createdAt || new Date(u.createdAt) < monthEnd);
+    const running = contracts.filter((c) => new Date(c.startDate) < monthEnd && new Date(c.endDate) > monthStart);
+
+    const held = pickPerUnit(running);
+    const rows = existed.map((u) => unitRow(u, held.get(String(u._id)) || null));
+    const t = totals(rows);
+
+    out.push({
+      monthISO: monthStart.toISOString().slice(0, 7),
+      label: monthStart.toLocaleString('en', { month: 'short', timeZone: 'UTC' }),
+      actual: t.actualAll,
+      leased: t.leased,
+      units: t.units,
+      leasedUnits: t.leasedUnits,
+    });
+  }
+
+  // Months before any unit existed are not months of zero income, they are
+  // months with no records — the unit list only goes back to mid-2026. Drawing
+  // them as empty bars would read as a collapse in revenue that never happened.
+  const firstReal = out.findIndex((m) => m.units > 0);
+  return firstReal <= 0 ? out : out.slice(firstReal);
+}
+
+/**
+ * One contract per unit.
+ *
+ * An active contract beats an ended one that merely overlapped the month, so a
+ * unit re-let mid-month is counted once rather than twice — which is what made
+ * 165 units appear leased across floors holding 156.
+ */
+export function pickPerUnit(contracts = []) {
+  const rank = (c) => (c.status === 'active' ? 0 : c.status === 'pending_signature' ? 1 : 2);
+  const map = new Map();
+  for (const c of contracts) {
+    for (const u of unitsOf(c)) {
+      const id = String(u?._id ?? u);
+      const held = map.get(id);
+      if (!held || rank(c) < rank(held)) map.set(id, c);
+    }
+  }
+  return map;
+}
