@@ -150,8 +150,11 @@ function LeadForm({
             </div>
 
             <div className="grid grid-cols-3 gap-3">
+                {/* Blank rather than 25: a prefilled number gets saved as
+                    though somebody chose it, and 25 is how every lead in the
+                    system ended up claiming to want a 25 sqft unit. */}
                 <Field label="Storage size (sqft)">
-                    <Input name="storageSizeValue" type="number" min={0} step="1" defaultValue={initial?.storageSizeValue ?? 25} required />
+                    <Input name="storageSizeValue" type="number" min={0} step="1" defaultValue={initial?.storageSizeValue || ''} placeholder="Not asked yet" />
                 </Field>
                 <Field label="Duration needed">
                     <div className="flex gap-2">

@@ -278,7 +278,8 @@ export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, stat
         status,
         source: 'whatsapp',
         leadDateTime: new Date(),
-        storageSizeValue: 25,
+        // Left unset: nobody has asked them what size they need yet.
+        storageSizeValue: 0,
         storageSizeUnit: 'sqft',
         durationValue: 1,
         durationUnit: 'month',
@@ -503,7 +504,8 @@ export async function processWhatsAppWebhookPayload(payload) {
             status: mappedStatus,
             source: 'whatsapp',
             leadDateTime: new Date(),
-            storageSizeValue: 25,
+            // Left unset: nobody has asked them what size they need yet.
+        storageSizeValue: 0,
             storageSizeUnit: 'sqft',
             durationValue: 1,
             durationUnit: 'month',
@@ -600,7 +602,8 @@ export async function runWhatsAppLabelReconciliation() {
                         status: state.mappedStatus,
                         source: 'whatsapp',
                         leadDateTime: new Date(),
-                        storageSizeValue: 25,
+                        // Left unset: nobody has asked them what size they need yet.
+        storageSizeValue: 0,
                         storageSizeUnit: 'sqft',
                         durationValue: 1,
                         durationUnit: 'month',

@@ -53,9 +53,11 @@ function cleanBody(body) {
         status: String(body.status || 'new').trim(),
         source: String(body.source || 'manual').trim(),
         leadDateTime: body.leadDateTime,
-        storageSizeValue: Number(body.storageSizeValue),
+        // Absent means not asked yet, not invalid — the size is set once
+        // somebody has actually spoken to them.
+        storageSizeValue: Number(body.storageSizeValue) || 0,
         storageSizeUnit: String(body.storageSizeUnit || 'sqft').trim(),
-        durationValue: Number(body.durationValue),
+        durationValue: Number(body.durationValue) || 1,
         durationUnit: String(body.durationUnit || '').trim(),
         owner: String(body.owner || ''),
         unitsNeeded: Number(body.unitsNeeded),

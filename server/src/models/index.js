@@ -209,10 +209,13 @@ const leadSchema = new Schema(
     // Cleared whenever the lead is reassigned, because it is new to the person
     // receiving it however old the record is.
     ownerSeenAt: { type: Date, default: null },
-    storageSizeValue: { type: Number, required: true, min: 0 },
+    /* 0 means "not asked yet" rather than a unit of no size. It is set when
+       somebody actually speaks to the lead, at the Contacted stage — before
+       that a number here is a guess wearing the clothes of a requirement. */
+    storageSizeValue: { type: Number, default: 0, min: 0 },
     storageSizeUnit: { type: String, enum: ['sqft'], default: 'sqft' },
-    durationValue: { type: Number, required: true, min: 1 },
-    durationUnit: { type: String, enum: ['week', 'month'], required: true },
+    durationValue: { type: Number, default: 1, min: 1 },
+    durationUnit: { type: String, enum: ['week', 'month'], default: 'month' },
     owner: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     unitsNeeded: { type: Number, required: true, min: 1 },
     notes: { type: String, default: '' },

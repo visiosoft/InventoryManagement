@@ -37,7 +37,8 @@ export async function runGoogleContactsSync() {
           status: 'new',
           source: 'google_contacts',
           leadDateTime: new Date(),
-          storageSizeValue: 25,
+          // Left unset: nobody has asked them what size they need yet.
+        storageSizeValue: 0,
           storageSizeUnit: 'sqft',
           durationValue: 1,
           durationUnit: 'month',
