@@ -147,15 +147,19 @@ export default function RatesReport() {
 
   const t = data?.totals
   const series = data?.series ?? []
-  const annualActual = series.reduce((s, p) => s + p.actual, 0)
-  const annualLeased = series.reduce((s, p) => s + p.leased, 0)
-  const annualVariance = annualLeased - annualActual
-
   const cards = annual
     ? [
-      { label: 'Annual asking (12mo)', value: aed(annualActual), sub: 'Sum of the twelve months shown' },
-      { label: 'Annual leased (12mo)', value: aed(annualLeased), sub: 'What those contracts were worth' },
-      { label: 'Annual variance (12mo)', value: aed(Math.abs(annualVariance)), sub: annualVariance >= 0 ? 'Above asking, 12mo total' : 'Below asking, 12mo total', filled: true },
+      // Annualised from the month, not summed from the trend. The trend only
+      // goes back as far as the records do — three months at present — so
+      // adding those up produced 765,700 and called it a year.
+      { label: 'Annual asking', value: aed((t?.actualAll ?? 0) * 12), sub: `${data?.label ?? ''} asking × 12 months` },
+      { label: 'Annual leased', value: aed((t?.leased ?? 0) * 12), sub: `${data?.label ?? ''} leased × 12 months` },
+      {
+        label: (t?.variance ?? 0) >= 0 ? 'Annual above asking' : 'Annual below asking',
+        value: aed(Math.abs(t?.variance ?? 0) * 12),
+        sub: t?.discountPct != null ? `${t.discountPct}% on what is let, annualised` : 'Nothing let',
+        filled: true,
+      },
     ]
     : [
       // Asking price × 12: what the space would earn a year at full occupancy
