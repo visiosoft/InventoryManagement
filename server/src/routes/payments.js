@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { requireAdmin } from '../middleware/auth.js';
 import mongoose from 'mongoose';
 import { Payment, Contract, Customer, Unit, Invoice, nextInvoiceNo } from '../models/index.js';
 import { renderReceiptPdf } from '../services/receiptPdf.js';
@@ -400,7 +401,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // Bulk delete all payments for a given invoice (and optionally the invoice itself)
-router.delete('/bulk', async (req, res) => {
+router.delete('/bulk', requireAdmin, async (req, res) => {
   const { paymentIds, deleteInvoice, invoiceId } = req.body;
   if (!Array.isArray(paymentIds) || paymentIds.length === 0)
     return res.status(400).json({ error: 'paymentIds array is required' });
@@ -411,7 +412,7 @@ router.delete('/bulk', async (req, res) => {
   res.json({ ok: true, deleted: paymentIds.length });
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAdmin, async (req, res) => {
   const payment = await Payment.findByIdAndDelete(req.params.id);
   if (!payment) return res.status(404).json({ error: 'Payment not found' });
   res.json({ ok: true });

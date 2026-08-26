@@ -1176,7 +1176,7 @@ router.post('/:id/extend', async (req, res) => {
   }
 });
 
-router.post('/bulk-delete', async (req, res) => {
+router.post('/bulk-delete', requireAdmin, async (req, res) => {
   const ids = Array.isArray(req.body?.ids)
     ? req.body.ids.map((id) => String(id || '').trim()).filter(Boolean)
     : [];
@@ -1206,7 +1206,7 @@ router.post('/bulk-delete', async (req, res) => {
 
 // Delete a contract and all its payments / documents.
 // Active contracts cannot be deleted — end or cancel them first.
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAdmin, async (req, res) => {
   const contract = await Contract.findById(req.params.id);
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
 

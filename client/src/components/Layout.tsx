@@ -488,11 +488,12 @@ export default function Layout() {
         ))}
 
         {showStorageNav && navGroups.map((group) => {
-          // Reps get 'units' for the read-only Floor Map, not the editable
-          // unit list that permission also happens to gate.
+          // Search Units used to be hidden from reps, on the reasoning that the
+          // 'units' permission also gated the editable unit list. It no longer
+          // does — units are created and priced on Settings → Unit Pricing —
+          // and a rep who cannot look up what is free cannot do their job.
           const visibleItems = group.items
             .filter(({ perm }) => !perm || hasPermission(perm))
-            .filter(({ to }) => !(to === '/units' && isSalesRepRole(user?.role)))
           if (visibleItems.length === 0) return null
           return (
             <div key={group.title || visibleItems[0]?.to} className="pt-3">

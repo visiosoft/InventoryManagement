@@ -410,8 +410,11 @@ export default function Contracts() {
           </div>
         ) : (
           <>
-            {/* Select-all lives here now that there is no header row to hold it. */}
-            <label className="flex items-center gap-2" style={{ fontSize: 12.5, color: MUTED_COLOR, marginBottom: 10, cursor: 'pointer', width: 'fit-content' }}>
+            {/* Select-all lives here now that there is no header row to hold it.
+                Hidden for anyone who cannot act on a selection: deleting
+                contracts is admin-only on the server, and offering the tick
+                boxes to a rep only leads them to a refusal. */}
+            {isAdmin && <label className="flex items-center gap-2" style={{ fontSize: 12.5, color: MUTED_COLOR, marginBottom: 10, cursor: 'pointer', width: 'fit-content' }}>
               <input
                 type="checkbox"
                 checked={allVisibleSelected}
@@ -422,7 +425,7 @@ export default function Contracts() {
               {selectedContractIds.length > 0 && (
                 <span style={{ fontWeight: 700, color: SECOND }}>· {selectedContractIds.length} selected</span>
               )}
-            </label>
+            </label>}
 
             <div data-tour="contracts-list" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {groups.map((g) => (
@@ -476,14 +479,16 @@ export default function Contracts() {
                           padding: '16px 20px',
                         }}
                       >
-                        <input
-                          type="checkbox"
-                          checked={selectedContractIds.includes(c._id)}
-                          onChange={() => toggleContractSelection(c._id)}
-                          onClick={(e) => e.stopPropagation()}
-                          aria-label={`Select contract ${c.contractNo}`}
-                          style={{ flex: '0 0 auto', cursor: 'pointer' }}
-                        />
+                        {isAdmin && (
+                          <input
+                            type="checkbox"
+                            checked={selectedContractIds.includes(c._id)}
+                            onChange={() => toggleContractSelection(c._id)}
+                            onClick={(e) => e.stopPropagation()}
+                            aria-label={`Select contract ${c.contractNo}`}
+                            style={{ flex: '0 0 auto', cursor: 'pointer' }}
+                          />
+                        )}
 
                         <div
                           title={c.customer?.fullName}
@@ -598,6 +603,7 @@ export default function Contracts() {
                               Unarchive
                             </button>
                           )}
+                          {isAdmin && (
                           <button
                             onClick={(e) => { e.stopPropagation(); setDeleteTarget(c); setDeleteError('') }}
                             className="ctr-del"
@@ -618,6 +624,7 @@ export default function Contracts() {
                           >
                             <Trash2 size={16} />
                           </button>
+                          )}
                         </div>
                       </div>
                     )

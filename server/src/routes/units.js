@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { requireAdmin } from '../middleware/auth.js';
 import { contractLeased } from '../services/rateRealisation.js';
 import { Unit, Contract } from '../models/index.js';
 import { siteScope } from '../utils/siteScope.js';
@@ -173,7 +174,7 @@ router.put('/:id', async (req, res) => {
   res.json(unit);
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAdmin, async (req, res) => {
   const hasContracts = await Contract.exists({ unit: req.params.id, status: { $in: ['active', 'pending_signature', 'draft'] } });
   if (hasContracts) return res.status(409).json({ error: 'Unit has open contracts' });
   await Unit.findByIdAndDelete(req.params.id);

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { requireAdmin } from '../middleware/auth.js';
 import crypto from 'crypto';
 import multer from 'multer';
 import { Customer, Invoice, Payment, Contract, nextInvoiceNo } from '../models/index.js';
@@ -201,7 +202,7 @@ function matchCustomer(csvName, customers) {
 }
 
 // Rollback all invoices + customers created by a specific import batch
-router.delete('/import/rollback/:batch', async (req, res) => {
+router.delete('/import/rollback/:batch', requireAdmin, async (req, res) => {
     const batch = req.params.batch;
     const invoices = await Invoice.find({ importBatch: batch }).select('_id');
     const invoiceIds = invoices.map(i => i._id);
@@ -218,7 +219,7 @@ router.get('/import/batches', async (req, res) => {
 
 // One-time cleanup: delete stub customers (source=import_csv OR recently created with no contracts/units)
 // and their linked invoices, created within the last N hours
-router.delete('/import/cleanup-stubs', async (req, res) => {
+router.delete('/import/cleanup-stubs', requireAdmin, async (req, res) => {
     const hours = Math.min(72, Math.max(1, parseInt(req.query.hours) || 24));
     const since = new Date(Date.now() - hours * 60 * 60 * 1000);
 
@@ -494,7 +495,7 @@ router.patch('/:id/status', async (req, res) => {
     res.json(invoice);
 });
 
-router.post('/bulk-delete', async (req, res) => {
+router.post('/bulk-delete', requireAdmin, async (req, res) => {
     const ids = Array.isArray(req.body?.ids)
         ? req.body.ids.map((id) => String(id || '').trim()).filter(Boolean)
         : [];
@@ -516,7 +517,7 @@ router.post('/bulk-delete', async (req, res) => {
     res.json({ ok: true, deleted: foundIds.length, requested: uniqueIds.length });
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAdmin, async (req, res) => {
     const invoice = await Invoice.findByIdAndDelete(req.params.id);
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
 
