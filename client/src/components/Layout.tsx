@@ -118,19 +118,19 @@ const salesRepNavGroups = [
     title: 'Sales',
     items: [
       { key: 'whatsapp', to: '/whatsapp', label: 'WhatsApp', icon: MessageCircle, perm: 'sales_board' },
-      { key: 'diary', to: '/diary', label: 'Daily Diary', icon: NotebookPen, perm: 'sales_board' },
-      { key: 'reports', to: '/my-performance', label: 'Reports', icon: BarChart3, perm: 'sales_board' },
     ],
   },
   {
+    // The order a booking actually happens in: find something free, book it,
+    // and only then does anybody become a customer. It used to run backwards.
     title: 'Storage',
     items: [
+      { key: 'search-units', to: '/units', label: 'Search Units', icon: Box, perm: 'units' },
       // Accounts is not given this: they handle billing after a booking rather
       // than taking one. It is a role difference, not a permission one — the
       // two roles deliberately carry the same modules.
       { key: 'book-unit', to: '/quotes', label: 'Book Unit', icon: FileText, perm: 'sales_board', notFor: 'accounts' },
       { key: 'customers', to: '/contracts', label: 'Customers', icon: Users, perm: 'contracts' },
-      { key: 'search-units', to: '/units', label: 'Search Units', icon: Box, perm: 'units' },
     ],
   },
   {
