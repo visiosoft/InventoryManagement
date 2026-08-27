@@ -363,7 +363,18 @@ router.get('/:id', async (req, res) => {
       ? Quote.findById(contract.quote).select('total').lean()
       : null,
     Invoice.find({ orderNumber: contract.contractNo, status: 'paid' }).distinct('_id'),
-    Document.find({ contract: contract._id }).sort({ createdAt: -1 }).lean(),
+    /* The contract's own files, plus the tenant's.
+     *
+     * An Emirates ID belongs to a person, not to one contract, and the booking
+     * wizard attaches it to the customer — so 105 documents across 65
+     * contracts existed and could not be seen from the page that asks for
+     * them. Uploading again was the only apparent fix, which is how the same
+     * passport ends up on file three times. */
+    Document.find(
+      contract.customer
+        ? { $or: [{ contract: contract._id }, { customer: contract.customer._id || contract.customer }] }
+        : { contract: contract._id },
+    ).sort({ createdAt: -1 }).lean(),
     Invoice.find({ orderNumber: contract.contractNo })
       .select('invoiceNo status dueDate invoiceDate total paymentMade items subject createdAt paymentHistory attachments')
       .sort({ dueDate: 1 })

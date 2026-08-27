@@ -986,13 +986,25 @@ export default function NewQuote() {
   }, [customerDocsData])
 
   const handleDocUpload = async (files: FileList | null, docType: string) => {
-    if (!files || !customerId) return
+    if (!files?.length) return
+    // Without a customer there is nothing to attach the file to, and this used
+    // to return in silence: the picker closed, nothing uploaded, and no reason
+    // given. Say which step is missing instead.
+    if (!customerId) {
+      setErr('Pick the customer first — a document has to belong to somebody.')
+      return
+    }
+    setErr('')
     setUploadingDoc(true)
     try {
       for (const file of Array.from(files)) {
         const fd = new FormData()
         fd.append('file', file)
         fd.append('customer', customerId)
+        // Tied to the contract too, once there is one. Before that the
+        // customer is the only thing it can belong to — which is fine, since
+        // the contract page now shows the tenant's own files as well.
+        if (contractId) fd.append('contract', contractId)
         fd.append('type', docType)
         fd.append('name', file.name)
         const { data } = await api.post('/documents', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
