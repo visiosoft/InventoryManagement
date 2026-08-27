@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pickChannels } from './automationEngine.js';
+import { pickChannels, templateFor } from './automationEngine.js';
 
 // The rule as the built-in Contract Expiry rule actually ships: WhatsApp on,
 // email off. Turning this rule on to get its email is what once put messages
@@ -70,4 +70,58 @@ test('both channels only when the gate, the rule and the account all agree', () 
     pickChannels({ ...ready, rule: BOTH_ON, waAllowed: true }),
     ['whatsapp', 'email'],
   );
+});
+
+/* ── the approved template ──────────────────────────────────────────────────
+   Meta matches parameters by position, so the order of whatsappTemplateVars is
+   the order of {{1}}, {{2}} … Getting it wrong sends a customer somebody
+   else's contract number, which is why it is checked here rather than trusted. */
+
+const EXPIRY_STEP = {
+  whatsappTemplate: 'contract_expiry_notification',
+  whatsappTemplateVars: ['name', 'contractNo', 'unit', 'endDate'],
+};
+const VARS = {
+  name: 'Zulfiqar khan',
+  contractNo: 'PB-2026-0346',
+  unit: 'Testing Unit - Zul',
+  endDate: '31 Aug 2026',
+  rate: '450.00',
+};
+
+test('a step with no template sends free text, as before', () => {
+  assert.deepEqual(templateFor({}, VARS), {});
+  assert.deepEqual(templateFor({ whatsappTemplate: '   ' }, VARS), {});
+});
+
+test('the variables fill the placeholders in the order they are named', () => {
+  const out = templateFor(EXPIRY_STEP, VARS);
+  assert.equal(out.whatsappTemplate, 'contract_expiry_notification');
+  assert.deepEqual(out.whatsappTemplateVars, [
+    'Zulfiqar khan', 'PB-2026-0346', 'Testing Unit - Zul', '31 Aug 2026',
+  ]);
+});
+
+test('language defaults to en rather than to nothing', () => {
+  assert.equal(templateFor(EXPIRY_STEP, VARS).whatsappTemplateLang, 'en');
+  assert.equal(templateFor({ ...EXPIRY_STEP, whatsappTemplateLang: 'ar' }, VARS).whatsappTemplateLang, 'ar');
+  assert.equal(templateFor({ ...EXPIRY_STEP, whatsappTemplateLang: '  ' }, VARS).whatsappTemplateLang, 'en');
+});
+
+test('a variable with nothing behind it sends empty, never its own name', () => {
+  const out = templateFor({ ...EXPIRY_STEP, whatsappTemplateVars: ['name', 'missing'] }, VARS);
+  assert.deepEqual(out.whatsappTemplateVars, ['Zulfiqar khan', '']);
+});
+
+test('a template with no variables is still a template', () => {
+  const out = templateFor({ whatsappTemplate: 'plain_notice' }, VARS);
+  assert.equal(out.whatsappTemplate, 'plain_notice');
+  assert.deepEqual(out.whatsappTemplateVars, []);
+});
+
+test('every placeholder in the approved body has a variable behind it', () => {
+  // Hello {{1}}, your contract *{{2}}* ({{3}}) expires on {{4}}.
+  assert.equal(EXPIRY_STEP.whatsappTemplateVars.length, 4);
+  const filled = templateFor(EXPIRY_STEP, VARS).whatsappTemplateVars;
+  assert.equal(filled.filter(Boolean).length, 4, 'a placeholder would have gone out blank');
 });

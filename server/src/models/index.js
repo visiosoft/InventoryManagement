@@ -1729,6 +1729,19 @@ const automationStepSchema = new Schema({
   emailSubject: { type: String, default: '' },
   emailBody: { type: String, default: '' },
   whatsappBody: { type: String, default: '' },
+  /* An approved template, for the reminders that cannot be free text.
+   *
+   * WhatsApp only allows free text within 24 hours of the customer's last
+   * message. A tenant whose contract is expiring is by definition somebody who
+   * has not written recently, which is why all 21 attempts so far were
+   * rejected rather than delivered.
+   *
+   * whatsappTemplateVars names which of the reminder's own variables fill
+   * {{1}}, {{2}} … in order, so the mapping is readable rather than positional
+   * guesswork buried in the sender. */
+  whatsappTemplate: { type: String, default: '' },
+  whatsappTemplateLang: { type: String, default: 'en' },
+  whatsappTemplateVars: { type: [String], default: [] },
   immediate: { type: Boolean, default: false },
 }, { _id: false });
 

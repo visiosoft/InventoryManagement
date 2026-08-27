@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { AutomationRule, AutomationLog, MessageTemplate, Payment, Contract } from '../models/index.js';
-import { sendWhatsAppText, whatsappSendConfigured } from './whatsapp.js';
+import { sendWhatsAppText, sendWhatsAppTemplate, whatsappSendConfigured } from './whatsapp.js';
 import { sendMail, mailConfigured } from './mail.js';
 import { renewLink, moveOutLink } from './renewalLink.js';
 
@@ -119,6 +119,25 @@ async function resolveMessages(step, templatesByName, event, vars) {
     emailText: interpolate(emailBody, vars),
     emailHtml: interpolate(step.emailHtml?.trim() || tpl?.emailHtml || '', vars),
     emailSubject: interpolate(emailSubject, vars),
+    ...templateFor(step, vars),
+  };
+}
+
+/**
+ * The approved template a step names, with its {{1}}, {{2}} … filled in.
+ *
+ * Meta matches parameters by position, so the order of whatsappTemplateVars is
+ * the order of the placeholders. A named variable with nothing behind it sends
+ * an empty string rather than the literal name: a reminder reading "Hello
+ * {{1}}" to a customer is worse than one reading "Hello".
+ */
+export function templateFor(step, vars) {
+  const name = String(step.whatsappTemplate || '').trim();
+  if (!name) return {};
+  return {
+    whatsappTemplate: name,
+    whatsappTemplateLang: String(step.whatsappTemplateLang || 'en').trim() || 'en',
+    whatsappTemplateVars: (step.whatsappTemplateVars || []).map((k) => String(vars[k] ?? '')),
   };
 }
 
@@ -167,7 +186,19 @@ async function dispatch({ rule, contract, eventKey, stepIdx, messages, dryRun, r
     }
     try {
       if (channel === 'whatsapp') {
-        await sendWhatsAppText({ to: phone, body: messages.whatsapp });
+        // A template when the step names one, free text otherwise. Free text
+        // only reaches somebody who wrote to us in the last 24 hours, which a
+        // tenant whose contract is expiring almost never has.
+        if (messages.whatsappTemplate) {
+          await sendWhatsAppTemplate({
+            to: phone,
+            name: messages.whatsappTemplate,
+            language: messages.whatsappTemplateLang || 'en',
+            variables: messages.whatsappTemplateVars,
+          });
+        } else {
+          await sendWhatsAppText({ to: phone, body: messages.whatsapp });
+        }
         await AutomationLog.create({ ...base, channel, message: messages.whatsapp, status: 'sent' });
       } else {
         // Send the designed version when there is one, keeping the text as the

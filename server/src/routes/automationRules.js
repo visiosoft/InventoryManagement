@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { AutomationRule, AutomationLog } from '../models/index.js';
 import { runAutomationRules, getAutoSend, setAutoSend, getWhatsAppAutomation, setWhatsAppAutomation } from '../services/automationEngine.js';
-import { whatsappSendConfigured } from '../services/whatsapp.js';
+import { sendWhatsAppTemplate, whatsappSendConfigured } from '../services/whatsapp.js';
 import { mailConfigured } from '../services/mail.js';
 
 const router = Router();
@@ -195,6 +195,49 @@ router.get('/channels', async (_req, res) => {
 // only `dry`, which meant a caller asking for `dryRun` got a live send instead,
 // silently. The aliases below cost nothing and remove that trap.
 const PREVIEW_KEYS = ['dry', 'dryRun', 'dry_run', 'preview'];
+
+/**
+ * Send one approved template to one number, now.
+ *
+ * The point is to prove a template works before anything is switched on for
+ * everybody. Twenty-one contract-expiry reminders were rejected rather than
+ * delivered, and nobody found out until somebody went looking — so the way to
+ * turn this on is to send it to yourself first.
+ *
+ * It ignores the automation switches deliberately: this is a person pressing a
+ * button, not a scheduler, and it goes exactly where they typed.
+ */
+router.post('/test-template', async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
+
+    const to = String(req.body?.to || '').trim();
+    const name = String(req.body?.name || '').trim();
+    if (!to) return res.status(400).json({ error: 'Which number should it go to?' });
+    if (!name) return res.status(400).json({ error: 'Which template?' });
+    if (!whatsappSendConfigured()) return res.status(400).json({ error: 'WhatsApp is not configured' });
+
+    const variables = Array.isArray(req.body?.variables) ? req.body.variables.map((v) => String(v ?? '')) : [];
+
+    try {
+        const result = await sendWhatsAppTemplate({
+            to,
+            name,
+            language: String(req.body?.language || 'en').trim() || 'en',
+            variables,
+        });
+        await AutomationLog.create({
+            ruleName: 'Test send', channel: 'whatsapp', event: `test:${name}:${Date.now()}`,
+            message: `${name}(${variables.join(', ')})`, status: 'sent',
+        });
+        res.json({ ok: true, to, name, variables, result });
+    } catch (e) {
+        await AutomationLog.create({
+            ruleName: 'Test send', channel: 'whatsapp', event: `test:${name}:${Date.now()}`,
+            message: `${name}(${variables.join(', ')})`, status: 'failed', error: e.message,
+        });
+        res.status(502).json({ error: e.message });
+    }
+});
 
 router.post('/run', async (req, res) => {
     try {
