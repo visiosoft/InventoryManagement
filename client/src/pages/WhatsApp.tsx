@@ -1987,7 +1987,20 @@ export default function WhatsApp() {
                 <Avatar seed={selectedConvo.phoneNormalized} label={convoTitle} size={38} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="truncate" style={{ fontSize: 15, fontWeight: 700, color: INK }}>{convoTitle}</span>
+                    {selectedConvo.customer || selectedConvo.lead ? (
+                      <Link
+                        to={selectedConvo.customer
+                          ? `/customers/${selectedConvo.customer._id}`
+                          : `/leads/${selectedConvo.lead!._id}`}
+                        title="Open their profile — the name is edited there"
+                        className="truncate hover:underline"
+                        style={{ fontSize: 15, fontWeight: 700, color: INK }}
+                      >
+                        {convoTitle}
+                      </Link>
+                    ) : (
+                      <span className="truncate" style={{ fontSize: 15, fontWeight: 700, color: INK }}>{convoTitle}</span>
+                    )}
                     {selectedConvo.customer ? (
                       <span className="shrink-0 rounded-full px-2 py-0.5" style={{ fontSize: 10, fontWeight: 700, background: '#DCFCE7', color: '#047857' }}>
                         Customer
