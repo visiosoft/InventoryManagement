@@ -524,6 +524,24 @@ const quoteAddOnSchema = new Schema(
   { _id: false }
 );
 
+/* What every storage quotation says, unless somebody changes it.
+ *
+ * Kept here rather than typed into each quote: eight clauses retyped by hand
+ * is eight chances to leave one out, and the one most often left out is the
+ * one that matters in an argument. A quote takes a copy when it is created,
+ * so editing this never rewrites what a customer has already been sent.
+ */
+export const DEFAULT_QUOTE_TERMS = [
+  'Storage rental is charged in advance for each 28-day period.',
+  'Items stored are at the customer\'s own risk; insurance is the customer\'s responsibility.',
+  'No illegal, hazardous, flammable, or perishable goods are allowed.',
+  'Customer is responsible for packing, locking, and securing stored items.',
+  'Late payment may result in restricted access or additional charges.',
+  'Short Term Storage LLC is not liable for loss or damage unless caused by proven negligence.',
+  'Acceptance of this quotation confirms agreement to these terms.',
+  'You are requested to securely provide your card details through Stripe for automatic payment of invoices on the due dates. This ensures timely payments and helps prevent applicable late-payment charges. Card details are securely processed and stored by Stripe.',
+].join('\n');
+
 const quoteSchema = new Schema(
   {
     quoteNo: { type: String, required: true, unique: true },
@@ -552,6 +570,10 @@ const quoteSchema = new Schema(
     shareToken: { type: String, default: null },
     contract: { type: Schema.Types.ObjectId, ref: 'Contract' },
     flowStep: { type: Number, default: 0, min: 0, max: 5 },
+    /* The terms as they stood when this quote was made. A copy, not a
+       reference, so a change to the defaults cannot alter a quotation somebody
+       has already accepted. One clause per line. */
+    termsAndConditions: { type: String, default: () => DEFAULT_QUOTE_TERMS },
     flowStepsDone: { type: [Boolean], default: [false, false, false, false, false, false] },
     assignedTo: { type: Schema.Types.ObjectId, ref: 'User' },
     timeline: [

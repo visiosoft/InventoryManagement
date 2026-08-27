@@ -157,6 +157,13 @@ function normalizeBody(body, { holdAdvance = true } = {}) {
         adjustment,
         total,
         notes: String(body.notes || ''),
+        /* Undefined leaves the schema default in place on a new quote and the
+           stored copy in place on an existing one — only an explicit value
+           changes them, so a save that does not mention terms never quietly
+           blanks the ones a customer was sent. */
+        ...(body.termsAndConditions !== undefined
+            ? { termsAndConditions: String(body.termsAndConditions || '') }
+            : {}),
         status: String(body.status || 'draft'),
     };
 }

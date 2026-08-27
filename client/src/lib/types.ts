@@ -182,6 +182,8 @@ export interface Quote {
   adjustment: number
   total: number
   notes?: string
+  /** One clause per line; the server fills the standard set on a new quote. */
+  termsAndConditions?: string
   status: QuoteStatus
   contract?: { _id: string; contractNo: string; status?: string; approvalStatus?: string } | string
   flowStep?: number

@@ -189,6 +189,10 @@ export default function NewQuote() {
   const removedDepositRef = useRef('')
   const [holdAdvance, setHoldAdvance] = useState(true)
   const [notes, setNotes] = useState('')
+  /* Empty until a quote is loaded or saved: the server fills in the standard
+     terms, so sending '' from here would blank them. */
+  const [terms, setTerms] = useState('')
+  const [termsOpen, setTermsOpen] = useState(false)
   const [unitRows, setUnitRows] = useState<UnitRow[]>([])
   const [addOnRows, setAddOnRows] = useState<AddOnRow[]>([])
   const [adjustment, setAdjustment] = useState(0)
@@ -304,6 +308,7 @@ export default function NewQuote() {
     // Server default is true; only an explicit false (removed) should turn it off
     setHoldAdvance((q as { holdAdvance?: boolean }).holdAdvance !== false)
     setNotes(q.notes || '')
+    setTerms(q.termsAndConditions || '')
     setAdjustment(q.adjustment || 0)
     const units = (q.units || []).map((u) => ({
       unitId: typeof u.unit === 'object' ? u.unit._id : u.unit,
@@ -577,6 +582,9 @@ export default function NewQuote() {
       billingPeriod: 'monthly',
       expiryDate,
       notes,
+      // Only when it has been loaded or edited — undefined leaves the standard
+      // terms alone rather than replacing them with nothing.
+      ...(terms ? { termsAndConditions: terms } : {}),
       deposit: Number(deposit) || 0,
       holdAdvance,
       adjustment,
@@ -1459,6 +1467,38 @@ export default function NewQuote() {
                     <Field label="Notes">
                       <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes…" />
                     </Field>
+
+                    {/* Every quotation carries the standard terms. Folded away
+                        because they are the same eight lines nearly every time
+                        — but editable, because "nearly" is the whole reason
+                        they are on the quote and not only in a PDF template. */}
+                    <div className="rounded-xl border" style={{ borderColor: 'rgba(20,8,31,0.10)' }}>
+                      <button
+                        type="button"
+                        onClick={() => setTermsOpen((v) => !v)}
+                        className="w-full flex items-center justify-between px-3.5 py-2.5 text-left cursor-pointer"
+                      >
+                        <span className="text-sm font-semibold">Terms &amp; Conditions</span>
+                        <span className="text-xs" style={{ color: MUTED }}>
+                          {termsOpen ? 'Hide' : (terms ? `${terms.split('\n').filter(Boolean).length} clauses` : 'Standard terms')}
+                        </span>
+                      </button>
+                      {termsOpen && (
+                        <div className="px-3.5 pb-3.5 space-y-2">
+                          <Textarea
+                            rows={9}
+                            value={terms}
+                            onChange={(e) => setTerms(e.target.value)}
+                            placeholder="One clause per line…"
+                            className="font-mono text-xs"
+                          />
+                          <p className="text-xs" style={{ color: MUTED }}>
+                            One clause per line — each becomes a bullet on the quotation.
+                            {!terms && ' The standard terms are added when the quote is saved.'}
+                          </p>
+                        </div>
+                      )}
+                    </div>
 
                     <div className="p-4 rounded-xl border" style={{ borderColor: `${PURPLE}30`, background: `${PURPLE}05` }}>
                       <InfoRow label={`Units (${unitRows.length})`} value={`${formatMoney(unitsTotal)} AED`} />

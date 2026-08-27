@@ -289,6 +289,31 @@ export function renderQuotePdf({ quote }) {
          y = doc.y + 12;
       }
 
+      // ── TERMS & CONDITIONS ────────────────────────────────────────────────
+      // A quotation that does not carry its terms is a price with nothing
+      // behind it, so these are printed rather than referred to.
+      const terms = String(quote.termsAndConditions || '')
+         .split('\n').map((t) => t.trim()).filter(Boolean);
+      if (terms.length) {
+         // Start a page rather than run the terms off the bottom of this one:
+         // half a clause is worse than a clean page break.
+         const needed = 26 + terms.length * 22;
+         if (y + needed > PH - 60) { doc.addPage(); y = M; }
+
+         doc.moveTo(M, y).lineTo(PW - M, y).strokeColor(BORDER).lineWidth(0.5).stroke();
+         y += 12;
+         doc.font('Helvetica-Bold').fontSize(9).fillColor(GRAY).text('Terms & Conditions', M, y);
+         y += 14;
+
+         for (const line of terms) {
+            doc.font('Helvetica').fontSize(7.5).fillColor(DARK)
+               .text('\u2022', M, y, { width: 10 })
+               .text(line, M + 10, y, { width: PW - 2 * M - 10 });
+            y = doc.y + 4;
+         }
+         y += 8;
+      }
+
       // ── PAGE FOOTER ───────────────────────────────────────────────────────
       doc.moveTo(M, PH - 35).lineTo(PW - M, PH - 35).strokeColor(BORDER).lineWidth(0.5).stroke();
       doc.font('Helvetica').fontSize(8).fillColor(LGRAY)
