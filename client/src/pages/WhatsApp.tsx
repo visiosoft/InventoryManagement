@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import {
   Send, MessageSquare, RefreshCw, UserPlus, UserCheck, Bell, BellOff, FileText,
   Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Info, Paperclip,
-  Bot, Tag, Check, ClipboardList, Sparkles, Trash2,
+  Bot, Tag, Check, ClipboardList, Sparkles, Trash2, ExternalLink,
 } from 'lucide-react'
 import { api, whatsappApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel } from '../lib/api'
 import { convDisplayName, formatListTime, isPlaceholderName, Avatar } from '../lib/whatsappDisplay'
@@ -2033,6 +2033,22 @@ export default function WhatsApp() {
                   </div>
                   <div className="truncate" style={{ fontSize: 12, color: FAINT_INK }}>+{selectedConvo.phoneNormalized}</div>
                 </div>
+
+                {/* Straight through to the real WhatsApp, in a new tab. This
+                    console holds the history and is where a reply gets
+                    recorded, but a voice note or an attachment happens in the
+                    app itself and there was no way to get there. */}
+                <a
+                  href={`https://wa.me/${selectedConvo.phoneNormalized}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Open this chat in WhatsApp, in a new tab"
+                  className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold shrink-0"
+                  style={{ background: 'rgba(22,163,74,.09)', border: '1px solid rgba(22,163,74,.28)', color: '#047857' }}
+                >
+                  <MessageSquare size={13} /> WhatsApp <ExternalLink size={11} style={{ opacity: 0.7 }} />
+                </a>
+
                 <LabelPicker
                   convo={selectedConvo}
                   labels={waLabels}
