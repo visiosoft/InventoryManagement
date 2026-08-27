@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
@@ -126,7 +126,16 @@ export default function NewQuote() {
   // already known, e.g. from the contract page's "Add contract".
   const customerParam = searchParams.get('customer')
 
-  const [step, setStep] = useState(0)
+  const [step, setStepRaw] = useState(0)
+  /* Clamped, because the wizard used to have five steps and quotes created
+     then still carry flowStep 4 or 5. Restoring one of those landed on a step
+     that no longer exists: a blank card reading "Step 5 of 4". */
+  const setStep = useCallback((next: number | ((s: number) => number)) => {
+    setStepRaw((s) => {
+      const wanted = typeof next === 'function' ? next(s) : next
+      return Math.max(0, Math.min(STEPS.length - 1, wanted))
+    })
+  }, [])
   const [err, setErr] = useState('')
   const [showCustomerModal, setShowCustomerModal] = useState(false)
 
@@ -344,11 +353,10 @@ export default function NewQuote() {
   useEffect(() => {
     if (stepAutoSetRef.current || !contract) return
     stepAutoSetRef.current = true
-    if (contract.status === 'active') setStep(5)
-    else if (paidTotal > 0) setStep(5)
-    else if (flowData?.invoices?.length) setStep(4)
-    else setStep(3)
-  }, [contract, paidTotal, flowData])
+    // A contract exists, so the booking is done: Contract is the last step and
+    // where the work now is — assigning what still has to happen.
+    setStep(3)
+  }, [contract, setStep])
 
   // Load contract options (authorized persons etc.) whenever the contract data arrives
   const optionsHydratedRef = useRef('')
@@ -2040,7 +2048,7 @@ export default function NewQuote() {
             <div className="flex items-center justify-between mt-8 pt-5" style={{ borderTop: '1px solid rgba(20,8,31,0.06)' }}>
               <div>
                 {step > 0 ? (
-                  <button type="button" onClick={() => setStep((s) => s - 1)} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium hover:bg-gray-50" style={{ color: MUTED }}>
+                  <button type="button" onClick={() => setStep((s: number) => s - 1)} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium hover:bg-gray-50" style={{ color: MUTED }}>
                     <ChevronLeft size={16} /> Back
                   </button>
                 ) : (
@@ -2107,7 +2115,7 @@ export default function NewQuote() {
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => setStep((s) => s + 1)}
+                      onClick={() => setStep((s: number) => s + 1)}
                       disabled={step === 3 && !contractId}
                       className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90"
                       style={{ background: PURPLE }}
