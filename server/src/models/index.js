@@ -143,6 +143,34 @@ const leadCommentSchema = new Schema({
   createdAt: { type: Date, default: Date.now },
 });
 
+/* How somebody was reached, and what came back.
+ *
+ * Every other channel enum here is whatsapp/email, because everything else is
+ * something the system sends. These are things a person did, so a phone call
+ * and a voice note are first-class — a call was previously unrecordable except
+ * as free text in a note.
+ */
+export const ATTEMPT_CHANNELS = ['call', 'whatsapp', 'voice_note', 'email', 'sms', 'walk_in', 'other'];
+export const ATTEMPT_OUTCOMES = ['no_answer', 'no_reply', 'reached', 'call_back', 'not_interested', 'wrong_number'];
+
+/* One attempt to reach a lead.
+ *
+ * Kept in its own array rather than in the timeline: pushTimeline caps that at
+ * 200 entries, so a long-running chase would silently lose its own history.
+ *
+ * `no` is stored rather than derived from the index, so that removing an entry
+ * one day cannot renumber everything after it. Attempts are a record of what
+ * happened — they are appended and not edited.
+ */
+const leadAttemptSchema = new Schema({
+  no: { type: Number, required: true },
+  at: { type: Date, default: Date.now },
+  channel: { type: String, enum: ATTEMPT_CHANNELS, default: 'call' },
+  outcome: { type: String, enum: ATTEMPT_OUTCOMES, required: true },
+  note: { type: String, default: '' },
+  user: { type: Schema.Types.ObjectId, ref: 'User' },
+}, { _id: false });
+
 const leadSchema = new Schema(
   {
     firstName: { type: String, default: '' },
@@ -206,6 +234,15 @@ const leadSchema = new Schema(
        arranges a viewing for "some time in March". */
     siteVisitAt: { type: Date, default: null },
     siteVisitTaskId: { type: Schema.Types.ObjectId, ref: 'Task', default: null },
+
+    /* Every attempt made to reach them, oldest first. "Attempt 2 of 3" is this
+       length against the plan's step count — counted, never marked, so it
+       cannot disagree with what actually happened. */
+    attempts: { type: [leadAttemptSchema], default: [] },
+    /* Stamped when the last step of the plan was used and they still had not
+       answered. What the "close this or give it one more" prompt reads off;
+       cleared when somebody decides either way. */
+    sequenceExhaustedAt: { type: Date, default: null },
     source: {
       type: String,
       enum: ['manual', 'whatsapp', 'referral', 'walk_in', 'other'],
@@ -1302,6 +1339,27 @@ const reminderStageSchema = new Schema({
   message: { type: String, default: '' },
   channel: { type: String, enum: ['both', 'whatsapp', 'email'], default: 'both' },
 }, { _id: false });
+
+/* One step of the chase: how long to wait, and how to try next time.
+ *
+ * Deliberately the same shape as reminderStageSchema below — both are an
+ * ordered ladder with a gap and a channel, and the two should read alike. */
+const followUpStepSchema = new Schema({
+  label: { type: String, default: '' },
+  // Days after the previous attempt, so a step reads the same wherever it sits
+  // in the list and reordering does not silently change the dates.
+  afterDays: { type: Number, default: 2, min: 0 },
+  channel: { type: String, enum: ATTEMPT_CHANNELS, default: 'call' },
+}, { _id: false });
+
+/* The default chase everybody follows. A singleton, like the reminder config:
+   one plan, edited in Settings, seeded on first read. */
+const followUpPlanSchema = new Schema({
+  key: { type: String, default: 'default', unique: true },
+  steps: { type: [followUpStepSchema], default: [] },
+}, { timestamps: true });
+
+export const FollowUpPlan = model('FollowUpPlan', followUpPlanSchema);
 
 const reminderConfigSchema = new Schema({
   enabled: { type: Boolean, default: true },

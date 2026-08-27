@@ -82,6 +82,29 @@ export function describeFollowUp(lead = {}) {
   return lines.join('\n');
 }
 
+/**
+ * The task that stands in for "this chase is over — decide".
+ *
+ * Deliberately not a chase of its own: there is no date to work towards, only
+ * a judgement nobody has made yet.
+ */
+export function exhaustedTaskFor(lead = {}) {
+  const name = lead.fullName || lead.phone || 'this lead';
+  const made = (lead.attempts || []).length;
+  return {
+    title: `Decide on ${name}`,
+    description: `${made} attempt${made === 1 ? '' : 's'} made and no response. Close it as lost, or give it one more.`,
+    assignedTo: lead.owner,
+    leadId: lead._id,
+    leadType: 'storage',
+    leadName: name,
+    dueDate: dayRange(dayKeyFor()).from,
+    priority: lead.temperature === 'hot' ? 'high' : 'medium',
+    status: 'todo',
+    createdByName: 'Follow-up sequence',
+  };
+}
+
 /** How the reminder describes itself on the board. */
 export function taskFor(lead = {}, todayKey = dayKeyFor()) {
   const name = lead.fullName || lead.phone || 'this lead';
@@ -170,14 +193,20 @@ export async function syncSiteVisitTask(lead) {
 export async function syncFollowUpTask(lead) {
   const existing = lead.followUpTaskId ? await Task.findById(lead.followUpTaskId) : null;
 
+  const closed = lead.status === 'won' || lead.status === 'lost';
+
   // Nothing to remind anybody about any more.
-  if (!lead.followUpAt || !lead.owner || lead.status === 'won' || lead.status === 'lost') {
+  if ((!lead.followUpAt && !lead.sequenceExhaustedAt) || !lead.owner || closed) {
     if (existing && existing.status === 'todo') await existing.deleteOne();
     lead.followUpTaskId = null;
     return null;
   }
 
-  const fields = taskFor(lead);
+  // The chase ran out and they never answered. The decision has to reach the
+  // board: clearing the task here would leave the prompt visible only to
+  // somebody who happened to open the lead, which is how a lead goes quiet in
+  // the first place.
+  const fields = lead.followUpAt ? taskFor(lead) : exhaustedTaskFor(lead);
 
   // Somebody already picked the task up or finished it. Leave their work
   // alone and let the next change start a fresh one.

@@ -781,6 +781,8 @@ type Row = {
   addedAt?: string
   // Storage leads carry these; a moving lead has neither.
   temperature?: '' | 'hot' | 'warm' | 'cold'
+  // How many attempts have been made to reach them.
+  attempts?: number
   followUpAt?: string | null
   followUpKind?: 'date' | 'week' | 'month'
   // Landed on this person and not yet opened by them.
@@ -900,6 +902,7 @@ export default function SalesBoard() {
       phone: l.phone,
       digits: String(l.phoneNormalized || l.phone || '').replace(/\D/g, ''),
       temperature: l.temperature,
+      attempts: (l.attempts || []).length,
       followUpAt: l.followUpAt,
       followUpKind: l.followUpKind,
       interested: l.storageSizeValue ? `${l.storageSizeValue} ${l.storageSizeUnit}` : '—',
@@ -1158,8 +1161,15 @@ export default function SalesBoard() {
                     {/* The follow-up if there is one, otherwise when they
                         arrived — the column is about when this lead next needs
                         attention. */}
-                    <div className="truncate" style={{ minWidth: 0, fontSize: 12.5, fontWeight: 600, color: follow ? follow.color : MUTED }}>
-                      {follow ? follow.text : (r.addedAt ? formatDate(r.addedAt) : '—')}
+                    <div style={{ minWidth: 0 }}>
+                      <div className="truncate" style={{ fontSize: 12.5, fontWeight: 600, color: follow ? follow.color : MUTED }}>
+                        {follow ? follow.text : (r.addedAt ? formatDate(r.addedAt) : '—')}
+                      </div>
+                      {Boolean(r.attempts) && (
+                        <div className="truncate" style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>
+                          {r.attempts} attempt{r.attempts === 1 ? '' : 's'}
+                        </div>
+                      )}
                     </div>
 
                     {/* Inside a row that navigates on click, so each of these

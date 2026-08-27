@@ -3,13 +3,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   AlertTriangle, ArrowLeft, Calendar, Clock, FileText, Mail, MessageCircle, MessageSquare,
-  PackageCheck, Pencil, Phone, Repeat, UserCheck, UserPlus,
+  PackageCheck, Pencil, Phone, Plus, Repeat, UserCheck, UserPlus,
 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { Spinner, statusLabel, LEAD_STATUS_FLOW, LEAD_TEMPERATURES, LEAD_TAGS } from '../components/ui'
 import { formatDate } from '../lib/utils'
 import { FOLLOW_UP_TONE, followUpState, reminderDay } from '../lib/followUp'
+import { dubaiToday } from '../lib/timezone'
+import {
+  CHANNELS, OUTCOMES, channelOf, outcomeOf, sequenceState, suggestedNextDate,
+  type Attempt, type AttemptChannel, type AttemptOutcome, type FollowUpPlan,
+} from '../lib/attempts'
 
 const LEAD_SOURCES = ['manual', 'whatsapp', 'referral', 'walk_in', 'other']
 
@@ -73,6 +78,8 @@ type Lead = {
   followUpKind?: 'date' | 'week' | 'month'
   followUpNotifiedAt?: string | null
   siteVisitAt?: string | null
+  attempts?: Attempt[]
+  sequenceExhaustedAt?: string | null
   storageSizeValue?: number
   storageSizeUnit?: string
   unitsNeeded?: number
@@ -162,6 +169,11 @@ export default function PersonProfile() {
   // A stage picked but not yet committed, and the note going with it.
   const [pendingStage, setPendingStage] = useState('')
   const [stageNote, setStageNote] = useState('')
+  // The attempt being logged, if one is.
+  const [logging, setLogging] = useState(false)
+  const [attempt, setAttempt] = useState<{ channel: AttemptChannel; outcome: AttemptOutcome; note: string; nextAt: string }>(
+    { channel: 'call', outcome: 'no_answer', note: '', nextAt: '' },
+  )
   // Contact details, while they are being edited rather than read.
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({ fullName: '', phone: '', whatsappNo: '', email: '', source: 'manual' })
@@ -175,6 +187,13 @@ export default function PersonProfile() {
   // Straight from the units, so every size that exists is offered and the
   // number is a number. The dashboard's summary was neither: seven hardcoded
   // buckets, formatted as "25 sq ft", which read back as NaN.
+  // The chase everybody follows — what the next date is prefilled from.
+  const { data: plan } = useQuery<FollowUpPlan>({
+    queryKey: ['follow-up-plan'],
+    queryFn: () => api.get('/leads/follow-up-plan').then((r) => r.data),
+    staleTime: 10 * 60_000,
+  })
+
   const { data: sizes = [] } = useQuery<{ sizeSqf: number; total: number; available: number }[]>({
     queryKey: ['unit-sizes'],
     queryFn: () => api.get('/units/sizes').then((r) => r.data),
@@ -203,6 +222,26 @@ export default function PersonProfile() {
   const patchLead = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.put(`/leads/${data!.lead!._id}`, body),
     onSuccess: () => { setErr(''); refresh() },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  const logAttempt = useMutation({
+    mutationFn: () => api.post(`/leads/${data!.lead!._id}/attempts`, {
+      channel: attempt.channel,
+      outcome: attempt.outcome,
+      note: attempt.note.trim(),
+      nextAt: attempt.nextAt || undefined,
+    }),
+    onSuccess: (res) => {
+      setErr('')
+      setLogging(false)
+      setAttempt({ channel: 'call', outcome: 'no_answer', note: '', nextAt: '' })
+      // The server suggests where this leaves the lead; the rep confirms it in
+      // the stage panel rather than having it moved under them.
+      const suggest = res?.data?.suggestStatus
+      if (suggest && suggest !== data?.lead?.status) setPendingStage(suggest)
+      refresh()
+    },
     onError: (e) => setErr(apiError(e)),
   })
 
@@ -268,6 +307,9 @@ export default function PersonProfile() {
   const urgency = dueDay ? followUpUrgency(dueDay) : null
   // Newest first: what happened last is what somebody picking this up reads.
   const timeline = [...(lead?.timeline ?? [])].reverse()
+
+  const attempts = lead?.attempts ?? []
+  const seq = sequenceState(attempts, plan, Boolean(lead?.sequenceExhaustedAt))
 
   return (
     <div style={{ background: PAGE, fontFamily: "'Manrope', system-ui, sans-serif", color: INK }}>
@@ -448,9 +490,235 @@ export default function PersonProfile() {
           {/* When we next deal with this person, kept beside who they are
               rather than buried among the pipeline controls. Only ever shows
               the date the stage in play is actually about. */}
-          {lead && (shownStage === 'follow_up_scheduled' || shownStage === 'site_visit_scheduled' || lead.followUpAt || lead.siteVisitAt) && (
-            <Card title="Follow-up">
+          {lead && (attempts.length > 0 || (shownStage !== 'won' && shownStage !== 'lost')) && (
+            <Card
+              title="Follow-up"
+              action={!logging && shownStage !== 'won' && shownStage !== 'lost' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setErr('')
+                    setAttempt({
+                      channel: seq.nextStep?.channel ?? 'call',
+                      outcome: 'no_answer',
+                      note: '',
+                      nextAt: suggestedNextDate(plan, attempts.length + 1, dubaiToday()),
+                    })
+                    setLogging(true)
+                  }}
+                  className="inline-flex items-center gap-1.5 cursor-pointer"
+                  style={{ background: 'none', border: 'none', color: PURPLE, fontSize: 13, fontWeight: 700 }}
+                >
+                  <Plus size={13} /> Log an attempt
+                </button>
+              ) : undefined}
+            >
               <div className="flex flex-col" style={{ gap: 16 }}>
+
+                {/* Where the chase has got to, in one line. The number is
+                    counted from the attempts, so it cannot disagree with them. */}
+                {shownStage !== 'won' && shownStage !== 'lost' && (
+                  <div className="flex items-baseline justify-between" style={{ gap: 8 }}>
+                    <span style={{ fontSize: 14, fontWeight: 700 }}>
+                      {seq.exhausted ? `All ${seq.total} attempts made` : seq.label}
+                    </span>
+                    {lead.followUpAt && !seq.exhausted && (
+                      <span style={{ fontSize: 12.5, color: FAINT }}>next {formatDate(dueDay)}</span>
+                    )}
+                  </div>
+                )}
+
+                {/* The plan is spent and they never answered. Nothing is closed
+                    here: a lead that went quiet and one that was on holiday
+                    look identical from this side, so a person decides. */}
+                {seq.exhausted && (
+                  <div style={{ borderRadius: 12, border: '1px solid rgba(220,38,38,.25)', background: 'rgba(220,38,38,.09)', padding: 14 }}>
+                    <p style={{ fontSize: 13.5, fontWeight: 600, color: '#DC2626' }}>
+                      {seq.total} attempts, no response{attempts.length ? ` since ${formatDate(attempts[attempts.length - 1].at)}` : ''}.
+                    </p>
+                    <div className="flex flex-wrap" style={{ gap: 8, marginTop: 10 }}>
+                      <button
+                        type="button"
+                        onClick={() => { setErr(''); setPendingStage('lost') }}
+                        className="cursor-pointer"
+                        style={{ height: 34, padding: '0 14px', borderRadius: 999, border: 'none', background: '#DC2626', color: '#fff', fontSize: 12.5, fontWeight: 700, fontFamily: 'inherit' }}
+                      >
+                        Close as Lost
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setErr('')
+                          setAttempt({ channel: 'call', outcome: 'no_answer', note: '', nextAt: '' })
+                          setLogging(true)
+                        }}
+                        className="cursor-pointer"
+                        style={{ height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit' }}
+                      >
+                        Give it one more
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Logging what was actually done. The next date comes from the
+                    plan and stays editable — a rep who knows they are away
+                    next week should be able to say so. */}
+                {logging && (
+                  <div style={{ borderRadius: 12, border: `1px solid ${PURPLE_200}`, background: PURPLE_50, padding: 14 }}>
+                    <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>How did you try?</span>
+                    <div className="flex flex-wrap" style={{ gap: 6, marginBottom: 12 }}>
+                      {CHANNELS.map((c) => {
+                        const on = attempt.channel === c.value
+                        const Icon = c.icon
+                        return (
+                          <button
+                            key={c.value}
+                            type="button"
+                            onClick={() => setAttempt((a) => ({ ...a, channel: c.value }))}
+                            className="inline-flex items-center gap-1.5 cursor-pointer"
+                            style={{
+                              height: 32, padding: '0 10px', borderRadius: 999, fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
+                              border: `1px solid ${on ? PURPLE : LINE_STRONG}`,
+                              background: on ? '#fff' : 'transparent',
+                              color: on ? DEEP : FAINT,
+                            }}
+                          >
+                            <Icon size={12} /> {c.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+
+                    <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>What happened?</span>
+                    <div className="flex flex-wrap" style={{ gap: 6, marginBottom: 12 }}>
+                      {OUTCOMES.map((o) => {
+                        const on = attempt.outcome === o.value
+                        return (
+                          <button
+                            key={o.value}
+                            type="button"
+                            onClick={() => setAttempt((a) => ({ ...a, outcome: o.value }))}
+                            className="cursor-pointer"
+                            style={{
+                              height: 32, padding: '0 10px', borderRadius: 999, fontSize: 12, fontWeight: 700, fontFamily: 'inherit',
+                              border: `1px solid ${on ? o.fg : LINE_STRONG}`,
+                              background: on ? o.bg : 'transparent',
+                              color: on ? o.fg : FAINT,
+                            }}
+                          >
+                            {o.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+
+                    <textarea
+                      value={attempt.note}
+                      onChange={(e) => setAttempt((a) => ({ ...a, note: e.target.value }))}
+                      rows={2}
+                      placeholder="Left a voice note about the 35 sqft…"
+                      style={{ width: '100%', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', color: INK, resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
+                    />
+
+                    {/* Only when the chase continues: there is nothing to book
+                        for somebody you have just spoken to or written off. */}
+                    {!outcomeOf(attempt.outcome).ends && (
+                      <div style={{ marginTop: 10 }}>
+                        <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Next attempt on</span>
+                        <input
+                          type="date"
+                          value={attempt.nextAt}
+                          onChange={(e) => setAttempt((a) => ({ ...a, nextAt: e.target.value }))}
+                          style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK, boxSizing: 'border-box' }}
+                        />
+                        {!attempt.nextAt && (
+                          <p style={{ fontSize: 12.5, color: FAINT, marginTop: 6 }}>
+                            Leave it blank and the chase ends here, for somebody to decide on.
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap" style={{ gap: 8, marginTop: 12 }}>
+                      <button
+                        type="button"
+                        disabled={logAttempt.isPending}
+                        onClick={() => logAttempt.mutate()}
+                        className="cursor-pointer disabled:opacity-50"
+                        style={{ height: 38, padding: '0 18px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontSize: 13, fontWeight: 700, fontFamily: 'inherit' }}
+                      >
+                        {logAttempt.isPending ? 'Saving…' : 'Save attempt'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={logAttempt.isPending}
+                        onClick={() => setLogging(false)}
+                        className="cursor-pointer disabled:opacity-50"
+                        style={{ height: 38, padding: '0 18px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: FAINT, fontSize: 13, fontWeight: 600, fontFamily: 'inherit' }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* What was actually tried, oldest first — the chase reads
+                    downwards the way it happened. */}
+                {attempts.length > 0 && (
+                  <div className="flex flex-col">
+                    {attempts.map((a, i) => {
+                      const ch = channelOf(a.channel)
+                      const oc = outcomeOf(a.outcome)
+                      const Icon = ch.icon
+                      const last = i === attempts.length - 1
+                      return (
+                        <div key={`${a.no}-${a.at}`} className="flex" style={{ gap: 12 }}>
+                          {/* The rail: a numbered dot, and a line down to the
+                              next attempt so the sequence reads as one thing. */}
+                          <div className="flex flex-col items-center" style={{ width: 28 }}>
+                            <div style={{ width: 26, height: 26, borderRadius: 999, background: PURPLE_100, color: DEEP, display: 'grid', placeItems: 'center', fontSize: 11.5, fontWeight: 700, flex: '0 0 auto' }}>
+                              {a.no}
+                            </div>
+                            {!last && <div style={{ width: 2, flex: 1, background: LINE, minHeight: 12 }} />}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0, paddingBottom: last ? 0 : 14 }}>
+                            <div className="flex items-center flex-wrap" style={{ gap: 6 }}>
+                              <span className="inline-flex items-center" style={{ gap: 4, fontSize: 13, fontWeight: 600 }}>
+                                <Icon size={12} style={{ color: FAINT }} /> {ch.label}
+                              </span>
+                              <span className="inline-flex rounded-full" style={{ padding: '2px 8px', fontSize: 11, fontWeight: 700, background: oc.bg, color: oc.fg }}>
+                                {oc.label}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: 12, color: FAINT, marginTop: 2 }}>
+                              {formatDate(a.at)}{a.user?.name ? ` · ${a.user.name}` : ''}
+                            </div>
+                            {a.note && (
+                              <p style={{ fontSize: 13, color: INK_2, marginTop: 4, whiteSpace: 'pre-wrap' }}>{a.note}</p>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* What is still planned, so the rest of the chase is not a
+                    surprise. Greyed — these have not happened. */}
+                {!seq.exhausted && seq.nextStep && shownStage !== 'won' && shownStage !== 'lost'
+                  && (plan?.steps ?? []).slice(attempts.length).map((st, i) => (
+                  <div key={`${st.label}-${i}`} className="flex items-center" style={{ gap: 12, opacity: 0.55 }}>
+                    <div style={{ width: 26, height: 26, borderRadius: 999, border: `1px dashed ${LINE_STRONG}`, color: FAINT, display: 'grid', placeItems: 'center', fontSize: 11.5, fontWeight: 700, flex: '0 0 auto' }}>
+                      {attempts.length + i + 1}
+                    </div>
+                    <span style={{ fontSize: 12.5, color: FAINT }}>
+                      {st.label || channelOf(st.channel).label}
+                      {i === 0 ? '' : ` · +${st.afterDays}d`} · {channelOf(st.channel).label}
+                    </span>
+                  </div>
+                ))}
+
                   {/* The pickers belong to the stage that is about following
                       up; anywhere else they are a control nobody is looking for.
 

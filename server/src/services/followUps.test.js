@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { notifyDayFor, isDue, taskFor, describeFollowUp, FOLLOW_UP_KINDS } from './followUps.js';
+import { notifyDayFor, isDue, taskFor, describeFollowUp, exhaustedTaskFor, FOLLOW_UP_KINDS } from './followUps.js';
 
 // 2026-08-26 is a Wednesday. Dubai is UTC+4.
 const WED = '2026-08-26T09:00:00.000Z';
@@ -152,4 +152,22 @@ test('a lead with no notes still gets a usable description', () => {
   const d = describeFollowUp(lead({ notes: '', temperature: '' }));
   assert.match(d, /Follow up on 2026-08-26/);
   assert.ok(!d.includes('Notes:'));
+});
+
+test('a spent chase asks somebody to decide, not to chase again', () => {
+  const t = exhaustedTaskFor(lead({ attempts: [{ no: 1 }, { no: 2 }, { no: 3 }] }));
+  assert.match(t.title, /^Decide on Kaoba$/);
+  assert.match(t.description, /3 attempts made and no response/);
+  assert.match(t.description, /give it one more/);
+  assert.equal(t.assignedTo, 'u1');
+  assert.equal(t.status, 'todo');
+});
+
+test('the decision task counts one attempt in the singular', () => {
+  const t = exhaustedTaskFor(lead({ attempts: [{ no: 1 }] }));
+  assert.match(t.description, /1 attempt made/);
+});
+
+test('a hot lead is still worth deciding on first', () => {
+  assert.equal(exhaustedTaskFor(lead({ temperature: 'hot', attempts: [] })).priority, 'high');
 });

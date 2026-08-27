@@ -2,6 +2,8 @@ import { Router } from 'express';
 import mongoose from 'mongoose';
 import { Customer, Contract, Document, Lead, Task, User, WhatsAppMessage } from '../models/index.js';
 import { FOLLOW_UP_KINDS, runFollowUps, syncFollowUpTask, syncSiteVisitTask } from '../services/followUps.js';
+import { applyOutcome, getFollowUpPlan, nextDateFor, sequenceState } from '../services/followUpSequence.js';
+import { ATTEMPT_CHANNELS, ATTEMPT_OUTCOMES } from '../models/index.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 
 const router = Router();
@@ -214,6 +216,36 @@ router.get('/stats', async (req, res) => {
  * so a second press finds nothing left to do. It creates tasks and sends
  * nothing outward.
  */
+/** The chase everybody follows. Read by anyone — the lead page prefills from it. */
+router.get('/follow-up-plan', async (_req, res) => {
+    try {
+        res.json(await getFollowUpPlan());
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.put('/follow-up-plan', async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
+    try {
+        const steps = Array.isArray(req.body?.steps) ? req.body.steps : [];
+        if (steps.length > 12) return res.status(400).json({ error: 'Twelve steps is already more chasing than anybody does' });
+
+        const clean = steps.map((st) => ({
+            label: String(st?.label || '').trim().slice(0, 60),
+            afterDays: Math.max(0, Math.min(365, Number(st?.afterDays) || 0)),
+            channel: ATTEMPT_CHANNELS.includes(st?.channel) ? st.channel : 'call',
+        }));
+
+        const plan = await getFollowUpPlan();
+        plan.steps = clean;
+        await plan.save();
+        res.json(plan);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 router.post('/follow-ups/run', async (req, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
     try {
@@ -503,25 +535,16 @@ router.patch('/:id/status', async (req, res) => {
         user: req.user.id,
     });
 
-    // Nobody answered, so the next attempt gets a task rather than relying on
-    // somebody remembering. Only one open task per lead: moving through
-    // Contact Attempted three times should not leave three identical tasks.
-    if (status === 'contact_attempted' && lead.owner) {
-        const open = await Task.findOne({ leadId: lead._id, status: { $ne: 'done' } }).select('_id');
-        if (!open) {
-            const name = lead.fullName || lead.phone || 'this lead';
-            await Task.create({
-                title: `Try ${name} again`,
-                description: comment ? `No answer. ${comment.slice(0, 2000)}` : 'No answer on the last attempt.',
-                assignedTo: lead.owner,
-                leadId: lead._id,
-                leadType: 'storage',
-                leadName: name,
-                dueDate: new Date(),
-                priority: lead.temperature === 'hot' ? 'high' : 'medium',
-                status: 'todo',
-                createdByName: req.user.name || req.user.email || 'PurpleBox',
-            });
+    // Moving to Contact Attempted by hand raises the first chase, but only
+    // when nothing is already scheduled and no attempt has been logged —
+    // otherwise the sequence owns this and would be duplicated here.
+    if (status === 'contact_attempted' && lead.owner && !lead.followUpAt && !(lead.attempts || []).length) {
+        const plan = await getFollowUpPlan();
+        const day = nextDateFor(plan, 0);
+        if (day) {
+            lead.followUpAt = new Date(`${day}T00:00:00.000Z`);
+            lead.followUpKind = 'date';
+            lead.followUpNotifiedAt = null;
         }
     }
 
@@ -554,6 +577,55 @@ router.post('/:id/notes', async (req, res) => {
         lead.timeline.push({ type: 'note', text: text.slice(0, 2000), user: req.user.id });
         await lead.save();
         res.status(201).json({ ok: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * Record one attempt to reach this lead, and book the next.
+ *
+ * The single write behind the whole sequence. It records what was done, then
+ * asks the plan when to look again and puts that on the owner's board through
+ * the follow-up task machinery that already exists.
+ *
+ * It sends nothing. The rep has already called or messaged; this is where they
+ * say so.
+ */
+router.post('/:id/attempts', async (req, res) => {
+    try {
+        const outcome = String(req.body?.outcome || '');
+        if (!ATTEMPT_OUTCOMES.includes(outcome)) return res.status(400).json({ error: 'Say how the attempt went' });
+
+        const channel = ATTEMPT_CHANNELS.includes(req.body?.channel) ? req.body.channel : 'call';
+
+        const lead = await Lead.findById(req.params.id);
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+
+        const plan = await getFollowUpPlan();
+        const { attempt, exhausted, suggestStatus } = applyOutcome(lead, plan, {
+            channel,
+            outcome,
+            note: req.body?.note,
+            nextAt: req.body?.nextAt,
+            userId: req.user.id,
+        });
+
+        // A lead being chased is a lead somebody has tried to reach, so the
+        // stage catches up by itself rather than waiting to be set by hand.
+        if (lead.status === 'new') lead.status = 'contact_attempted';
+
+        await syncFollowUpTask(lead);
+        await lead.save();
+
+        res.status(201).json({
+            attempt,
+            exhausted,
+            suggestStatus,
+            sequence: sequenceState(lead, plan),
+            followUpAt: lead.followUpAt,
+        });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

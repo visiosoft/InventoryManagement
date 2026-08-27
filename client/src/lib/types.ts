@@ -83,6 +83,8 @@ export interface Lead {
   followUpAt?: string | null
   followUpKind?: 'date' | 'week' | 'month'
   siteVisitAt?: string | null
+  attempts?: { no: number; at: string; channel: string; outcome: string; note?: string }[]
+  sequenceExhaustedAt?: string | null
   _id: string
   firstName?: string
   lastName?: string
