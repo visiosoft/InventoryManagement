@@ -3,8 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
   Send, MessageSquare, RefreshCw, UserPlus, UserCheck, Bell, BellOff, FileText,
-  Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Info, Paperclip,
-  Bot, Tag, Check, ClipboardList, Sparkles, Trash2, ExternalLink,
+  Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Paperclip,
+  Bot, Tag, Check, ClipboardList, Sparkles, Trash2,
 } from 'lucide-react'
 import { api, whatsappApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel } from '../lib/api'
 import { convDisplayName, formatListTime, isPlaceholderName, Avatar } from '../lib/whatsappDisplay'
@@ -466,11 +466,12 @@ function LabelPicker({ convo, labels, onChanged }: {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold cursor-pointer"
-        style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', color: '#4A1FA0' }}
+        className="inline-flex items-center justify-center gap-1 rounded-full cursor-pointer shrink-0"
+        style={{ minWidth: 32, height: 32, padding: on.size > 0 ? '0 9px' : 0, background: '#F7F3FF', border: '1px solid #EDE5FF', color: '#4A1FA0' }}
         title="Label this chat"
+        aria-label="Label this chat"
       >
-        <Tag size={13} /> Labels{on.size > 0 ? ` (${on.size})` : ''}
+        <Tag size={14} />{on.size > 0 ? <span style={{ fontSize: 11, fontWeight: 700 }}>{on.size}</span> : null}
       </button>
 
       {open && (
@@ -677,19 +678,15 @@ function InboxAsk({ onOpenChat }: { onOpenChat: (phone: string) => void }) {
       </form>
 
       {!asked && (
-        <div className="flex flex-wrap gap-1.5">
-          {ASK_SUGGESTIONS.map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => ask(s)}
-              className="rounded-full px-2.5 py-1 cursor-pointer"
-              style={{ fontSize: 11, fontWeight: 600, background: '#F7F3FF', border: '1px solid #EDE5FF', color: '#4A1FA0' }}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
+        <select
+          value=""
+          onChange={(e) => { if (e.target.value) ask(e.target.value) }}
+          className="w-full cursor-pointer"
+          style={{ height: 30, borderRadius: 999, border: '1px solid #EDE5FF', background: '#F7F3FF', color: '#4A1FA0', fontSize: 11.5, fontWeight: 600, padding: '0 10px', fontFamily: 'inherit' }}
+        >
+          <option value="">Suggested questions…</option>
+          {ASK_SUGGESTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
       )}
 
       {asked && (
@@ -1010,11 +1007,12 @@ function TaskFromChat({ convo, lastInbound }: { convo: WhatsAppConversation; las
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="shrink-0 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 cursor-pointer"
-        style={{ fontSize: 12, fontWeight: 600, background: '#FFF7E6', border: '1px solid #F5DFB8', color: '#B45309' }}
+        className="shrink-0 inline-flex items-center justify-center rounded-full cursor-pointer"
+        style={{ width: 32, height: 32, background: '#FFF7E6', border: '1px solid #F5DFB8', color: '#B45309' }}
         title="Create a task from this chat"
+        aria-label="Create a task from this chat"
       >
-        <ClipboardList size={13} /> <span className="hidden sm:inline">Task</span>
+        <ClipboardList size={14} />
       </button>
 
       <SlideOver
@@ -1192,16 +1190,15 @@ function LeadAction({ convo, onChanged }: { convo: WhatsAppConversation; onChang
         // them one again.
         <Link
           to={`/customers/${convo.customer._id}`}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold hover:underline"
-          style={{ color: '#047857' }}
+          title={`Open ${convo.customer.fullName}`}
+          aria-label={`Open ${convo.customer.fullName}`}
+          className="inline-flex items-center justify-center rounded-full shrink-0"
+          style={{ width: 32, height: 32, background: 'rgba(22,163,74,.09)', border: '1px solid rgba(22,163,74,.28)', color: '#047857' }}
         >
-          <UserCheck size={13} /> {convo.customer.fullName}
+          <UserCheck size={14} />
         </Link>
       ) : (
         <>
-          <Link to={`/leads/${named!._id}`} className="text-xs hidden sm:inline hover:underline" style={{ color: FAINT_INK }}>
-            Lead: {named!.fullName}
-          </Link>
           <button
             type="button"
             className={pill}
@@ -1754,91 +1751,6 @@ export default function WhatsApp() {
     >
       <style>{CSS}</style>
 
-      {/* ── 1. Top bar ─────────────────────────────────────────────── */}
-      <div
-        className="shrink-0 flex items-center justify-between gap-3 px-4"
-        style={{ height: 60, background: '#1A0B33', color: '#fff' }}
-      >
-        <div className="flex items-center gap-2.5 min-w-0">
-          <button
-            type="button"
-            className="wa-mobile-only items-center justify-center h-8 w-8 rounded-lg cursor-pointer"
-            style={{ background: 'rgba(255,255,255,.08)', border: '1px solid rgba(255,255,255,.14)', color: '#fff' }}
-            aria-label="Show chats"
-            onClick={() => setSidebarOpen((v) => !v)}
-          >
-            <Menu size={16} />
-          </button>
-          <div
-            className="shrink-0 flex items-center justify-center"
-            style={{ width: 30, height: 30, borderRadius: 9, background: '#5B2BC9' }}
-            aria-hidden
-          >
-            <MessageSquare size={16} color="#fff" />
-          </div>
-          <div className="min-w-0 leading-tight">
-            <div style={{ fontFamily: "'Bricolage Grotesque', serif", fontWeight: 700, fontSize: 17, letterSpacing: '-0.02em' }}>
-              PurpleBox
-            </div>
-            <div className="text-[11px] truncate" style={{ color: '#A78BFA' }}>
-              WhatsApp Console{totalUnread > 0 ? ` · ${totalUnread} unread` : ''}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <IconButton title={muted ? 'Notification sound is off' : 'Notification sound is on'} tone="dark" onClick={toggleMute}>
-            {muted ? <BellOff size={15} /> : <Bell size={15} />}
-          </IconButton>
-          <IconButton
-            title="Refresh"
-            tone="dark"
-            onClick={() => { refetchConvos(); qc.invalidateQueries({ queryKey: ['wa-messages'] }) }}
-          >
-            <RefreshCw size={15} />
-          </IconButton>
-
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setSetupOpen((v) => !v)}
-              className="flex items-center gap-2 px-3 py-1.5 cursor-pointer"
-              style={{
-                background: 'rgba(255,255,255,.08)',
-                border: '1px solid rgba(255,255,255,.14)',
-                borderRadius: 999,
-                fontSize: 12,
-              }}
-              title="Setup checklist"
-            >
-              <span className="shrink-0 rounded-full" style={{ width: 7, height: 7, background: '#22c55e' }} aria-hidden />
-              <span className="hidden sm:inline">Live — anyone can be messaged</span>
-              <span className="sm:hidden">Live</span>
-              <Info size={13} style={{ opacity: 0.7 }} />
-            </button>
-
-            {setupOpen && (
-              <div
-                className="absolute right-0 top-full mt-2 w-[340px] max-w-[85vw] rounded-xl p-3.5 text-xs z-50 space-y-2"
-                style={{ background: '#fff', color: MUTED_INK, border: `1px solid ${LINE}`, boxShadow: '0 12px 34px rgba(20,8,31,.2)' }}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-bold" style={{ color: INK, fontSize: 13 }}>Setup checklist</span>
-                  <button type="button" className="cursor-pointer" onClick={() => setSetupOpen(false)} aria-label="Close">
-                    <X size={14} />
-                  </button>
-                </div>
-                <p>1. Enter your phone number ID, access token, verify token and app secret under <strong>Settings → Integrations</strong>.</p>
-                <p>2. In Meta Dashboard → WhatsApp → Configuration → Webhook, set the Callback URL to <code style={{ background: '#F7F3FF', padding: '1px 4px', borderRadius: 4 }}>https://api.purplebox.ae/api/integrations/whatsapp/webhook</code></p>
-                <p>3. Set the Verify Token there to the same string you entered in Settings.</p>
-                <p>4. Subscribe to the <strong>messages</strong> field under Webhook Fields.</p>
-                <p style={{ color: MUTED_INK }}>This is a verified business number, so there is no recipient limit. A free-form reply is still only possible within 24 hours of the customer's last message; outside that, send an approved template.</p>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
       {/* ── columns ────────────────────────────────────────────────── */}
       <div
         className="relative flex flex-1 min-h-0"
@@ -1851,9 +1763,58 @@ export default function WhatsApp() {
           style={{ flex: `0 0 ${CHAT_PANEL_W}px`, width: CHAT_PANEL_W, background: '#fff', borderRight: `1px solid ${LINE}`, fontFamily: CHAT_PANEL_FONT }}
         >
           <div className="shrink-0 px-4 pt-4 pb-3 space-y-3">
+            {/* The console had a dark bar of its own above all this, carrying
+                the PurpleBox name a second time — the page is already titled
+                WhatsApp Inbox — and sixty pixels of height on a screen that is
+                nothing but two scrolling lists. What was actually useful in it
+                lives here, beside the list it belongs to. */}
             <div className="flex items-center justify-between gap-2">
-              <h2 style={{ fontFamily: "'Bricolage Grotesque', serif", fontWeight: 700, fontSize: 19, color: INK }}>Chats</h2>
-              <IconButton title="New chat" onClick={startNewChat}><Plus size={15} /></IconButton>
+              <h2 className="min-w-0 truncate" style={{ fontFamily: "'Bricolage Grotesque', serif", fontWeight: 700, fontSize: 19, color: INK }}>
+                Chats{totalUnread > 0 ? <span style={{ fontSize: 12, fontWeight: 700, color: '#4A1FA0', marginLeft: 6 }}>{totalUnread} unread</span> : null}
+              </h2>
+              <div className="flex items-center shrink-0" style={{ gap: 4 }}>
+                <IconButton title={muted ? 'Notification sound is off' : 'Notification sound is on'} onClick={toggleMute}>
+                  {muted ? <BellOff size={15} /> : <Bell size={15} />}
+                </IconButton>
+                <IconButton
+                  title="Refresh"
+                  onClick={() => { refetchConvos(); qc.invalidateQueries({ queryKey: ['wa-messages'] }) }}
+                >
+                  <RefreshCw size={15} />
+                </IconButton>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setSetupOpen((v) => !v)}
+                    className="inline-flex items-center justify-center rounded-full cursor-pointer"
+                    style={{ width: 30, height: 30, background: '#F7F3FF', border: '1px solid #EDE5FF' }}
+                    title="Connected — anyone can be messaged. Open the setup checklist."
+                    aria-label="Connection status and setup checklist"
+                  >
+                    <span className="rounded-full" style={{ width: 8, height: 8, background: '#22c55e' }} aria-hidden />
+                  </button>
+
+                  {setupOpen && (
+                    <div
+                      className="absolute right-0 top-full mt-2 w-[340px] max-w-[85vw] rounded-xl p-3.5 text-xs z-50 space-y-2"
+                      style={{ background: '#fff', color: MUTED_INK, border: `1px solid ${LINE}`, boxShadow: '0 12px 34px rgba(20,8,31,.2)' }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold" style={{ color: INK, fontSize: 13 }}>Setup checklist</span>
+                        <button type="button" className="cursor-pointer" onClick={() => setSetupOpen(false)} aria-label="Close">
+                          <X size={14} />
+                        </button>
+                      </div>
+                      <p>1. Enter your phone number ID, access token, verify token and app secret under <strong>Settings → Integrations</strong>.</p>
+                      <p>2. In Meta Dashboard → WhatsApp → Configuration → Webhook, set the Callback URL to <code style={{ background: '#F7F3FF', padding: '1px 4px', borderRadius: 4 }}>https://api.purplebox.ae/api/integrations/whatsapp/webhook</code></p>
+                      <p>3. Set the Verify Token there to the same string you entered in Settings.</p>
+                      <p>4. Subscribe to the <strong>messages</strong> field under Webhook Fields.</p>
+                      <p style={{ color: MUTED_INK }}>This is a verified business number, so there is no recipient limit. A free-form reply is still only possible within 24 hours of the customer's last message; outside that, send an approved template.</p>
+                    </div>
+                  )}
+                </div>
+                <IconButton title="New chat" onClick={startNewChat}><Plus size={15} /></IconButton>
+              </div>
             </div>
             <div className="relative">
               <Search size={14} style={{ color: FAINT_INK }} className="absolute left-3 top-1/2 -translate-y-1/2" />
@@ -2011,6 +1972,16 @@ export default function WhatsApp() {
             className="shrink-0 flex items-center gap-3 px-4"
             style={{ height: 64, background: '#fff', borderBottom: `1px solid ${LINE}` }}
           >
+            <button
+              type="button"
+              className="wa-mobile-only items-center justify-center h-8 w-8 rounded-lg cursor-pointer shrink-0"
+              style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', color: '#4A1FA0' }}
+              aria-label="Show chats"
+              onClick={() => setSidebarOpen((v) => !v)}
+            >
+              <Menu size={16} />
+            </button>
+
             {selectedConvo ? (
               <>
                 <Avatar seed={selectedConvo.phoneNormalized} label={convoTitle} size={38} />
@@ -2043,22 +2014,25 @@ export default function WhatsApp() {
                   target="_blank"
                   rel="noreferrer"
                   title="Open this chat in WhatsApp, in a new tab"
-                  className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold shrink-0"
-                  style={{ background: 'rgba(22,163,74,.09)', border: '1px solid rgba(22,163,74,.28)', color: '#047857' }}
+                  aria-label="Open this chat in WhatsApp"
+                  className="inline-flex items-center justify-center rounded-full shrink-0"
+                  style={{ width: 32, height: 32, background: 'rgba(22,163,74,.09)', border: '1px solid rgba(22,163,74,.28)', color: '#047857' }}
                 >
-                  <MessageSquare size={13} /> WhatsApp <ExternalLink size={11} style={{ opacity: 0.7 }} />
+                  <MessageSquare size={14} />
                 </a>
 
-                <LabelPicker
-                  convo={selectedConvo}
-                  labels={waLabels}
-                  onChanged={() => {
-                    refetchConvos()
-                    qc.invalidateQueries({ queryKey: ['wa-labels'] })
-                  }}
-                />
-                <TaskFromChat convo={selectedConvo} lastInbound={lastInboundText} />
-                <LeadAction convo={selectedConvo} onChanged={onSent} />
+                <div className="flex items-center shrink-0" style={{ gap: 6 }}>
+                  <LabelPicker
+                    convo={selectedConvo}
+                    labels={waLabels}
+                    onChanged={() => {
+                      refetchConvos()
+                      qc.invalidateQueries({ queryKey: ['wa-labels'] })
+                    }}
+                  />
+                  <TaskFromChat convo={selectedConvo} lastInbound={lastInboundText} />
+                  <LeadAction convo={selectedConvo} onChanged={onSent} />
+                </div>
               </>
             ) : (
               <div className="min-w-0 flex-1">
@@ -2069,11 +2043,12 @@ export default function WhatsApp() {
             <button
               type="button"
               onClick={() => setQrOpen((v) => !v)}
-              className="shrink-0 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 cursor-pointer"
-              style={{ fontSize: 12, fontWeight: 600, background: '#F7F3FF', border: '1px solid #EDE5FF', color: '#4A1FA0' }}
+              className="shrink-0 inline-flex items-center justify-center rounded-full cursor-pointer"
+              style={{ width: 32, height: 32, background: '#F7F3FF', border: '1px solid #EDE5FF', color: '#4A1FA0' }}
               title="Quick replies"
+              aria-label="Quick replies"
             >
-              <Zap size={13} /> <span className="hidden sm:inline">Quick replies</span>
+              <Zap size={14} />
             </button>
           </header>
 
