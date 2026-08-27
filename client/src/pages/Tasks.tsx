@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { api } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { PageHeader, Card, CardBody, Button, Field, Input, Select, Textarea, SlideOver, Spinner } from '../components/ui'
+import { RenewalsCard } from './SalesBoard'
 import { formatDate } from '../lib/utils'
 import {
   type TaskItem, type AssignableUser,
@@ -270,6 +271,8 @@ export default function Tasks({ embedded = false }: { embedded?: boolean } = {})
   const { user } = useAuth()
   const qc = useQueryClient()
   const isAdmin = user?.role === 'admin' || user?.role === 'staff'
+  // Accounts chase invoices, not renewals — that queue belongs to sales.
+  const isAccounts = user?.role === 'accounts'
   const [view, setView] = useState<ViewMode>('kanban')
   const [assigneeFilter, setAssigneeFilter] = useState('')
   const [leadTypeFilter, setLeadTypeFilter] = useState('')
@@ -439,6 +442,19 @@ export default function Tasks({ embedded = false }: { embedded?: boolean } = {})
           assignableUsers={assignableUsers}
           onDeleted={() => setSelectedTask(null)}
         />
+      )}
+
+      {/* Renewals sit with the tasks now rather than beside the leads. A
+          contract coming up is work to do this week, which is what this page
+          is; on the leads board it was a second list competing with the leads
+          for the same attention.
+
+          Not for accounts: they chase invoices, not renewals — that queue
+          belongs to sales, and it was hidden from them before this moved. */}
+      {!embedded && !isAccounts && (
+        <div style={{ marginTop: 24 }}>
+          <RenewalsCard />
+        </div>
       )}
     </div>
   )

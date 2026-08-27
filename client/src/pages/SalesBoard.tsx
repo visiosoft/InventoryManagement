@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { ChevronDown, ChevronLeft, ChevronRight, ExternalLink, MessageCircle, Phone, Plus, Search, UserPlus } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, MessageCircle, Phone, Plus, Search, UserPlus } from 'lucide-react'
 import { api, apiError, leadApi } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { Lead, MovingLead, MovingLeadStatus } from '../lib/types'
@@ -9,10 +9,9 @@ import { Spinner } from '../components/ui'
 import WaitingStrip from '../components/WaitingStrip'
 import { formatDate } from '../lib/utils'
 import { FOLLOW_UP_TONE, followUpState, reminderDay } from '../lib/followUp'
-import {
-  type TaskItem, type AssignableUser,
-  KANBAN_COLUMNS, KanbanBoard, KanbanCard, KanbanColumn, TaskDetailModal, groupTasksByDue,
-} from './tasks/shared'
+// Re-exported rather than used here: the task board moved to the Tasks page,
+// but other pages import these through this module.
+import { type TaskItem, type AssignableUser, groupTasksByDue } from './tasks/shared'
 export type { TaskItem, AssignableUser }
 export { groupTasksByDue }
 
@@ -327,131 +326,6 @@ function RenewalDetail({ contract, onChanged, onBack }: { contract: ExpiringCont
 }
 
 
-function TasksCard() {
-  const qc = useQueryClient()
-  const [showAdd, setShowAdd] = useState(false)
-  const [title, setTitle] = useState('')
-  const [dueDate, setDueDate] = useState('')
-  const [priority, setPriority] = useState('medium')
-  const [assignedTo, setAssignedTo] = useState('')
-  const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null)
-
-  const { data: tasks = [], isLoading } = useQuery<TaskItem[]>({
-    queryKey: ['my-tasks-all'],
-    queryFn: () => api.get('/tasks', { params: { status: 'todo,in_progress,done' } }).then((r) => r.data),
-  })
-  const { data: assignableUsers = [] } = useQuery<AssignableUser[]>({
-    queryKey: ['assignable-users'],
-    queryFn: () => api.get('/users/assignable').then((r) => r.data),
-    enabled: showAdd || !!selectedTask,
-  })
-
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['my-tasks-all'] })
-
-  const createTask = useMutation({
-    mutationFn: () => api.post('/tasks', { title, dueDate: dueDate || undefined, priority, assignedTo: assignedTo || undefined }),
-    onSuccess: () => { invalidate(); setTitle(''); setDueDate(''); setPriority('medium'); setAssignedTo(''); setShowAdd(false) },
-  })
-  const updateTask = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) => api.patch(`/tasks/${id}`, body),
-    onSuccess: invalidate,
-  })
-
-  return (
-    <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 16, display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div className="flex items-center justify-between mb-3">
-        <div style={{ fontWeight: 700, fontSize: 15, color: INK }}>Follow-ups & Tasks</div>
-        <button
-          onClick={() => setShowAdd((v) => !v)}
-          style={{ height: 30, padding: '0 10px', borderRadius: 8, background: PURPLE, color: 'white', fontSize: 12, fontWeight: 600, border: 'none' }}
-          className="flex items-center gap-1.5 hover:opacity-90 transition-opacity cursor-pointer"
-        >
-          <Plus size={12} /> Add
-        </button>
-      </div>
-
-      {showAdd && (
-        <div className="flex flex-col gap-2 mb-3">
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Task description"
-            style={{ height: 34, padding: '0 10px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 12.5 }}
-          />
-          <div className="flex gap-2 flex-wrap">
-            <input
-              type="date"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-              style={{ flex: 1, minWidth: 120, height: 34, padding: '0 10px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 12.5 }}
-            />
-            <select
-              value={priority}
-              onChange={(e) => setPriority(e.target.value)}
-              style={{ height: 34, padding: '0 8px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 12.5 }}
-            >
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-            </select>
-            <select
-              value={assignedTo}
-              onChange={(e) => setAssignedTo(e.target.value)}
-              style={{ height: 34, padding: '0 8px', borderRadius: 8, border: '1px solid rgba(20,8,31,.16)', fontSize: 12.5, minWidth: 110 }}
-            >
-              <option value="">Assign to me</option>
-              {assignableUsers.map((u) => (
-                <option key={u._id} value={u._id}>{u.name}</option>
-              ))}
-            </select>
-            <button
-              type="button"
-              disabled={!title.trim() || createTask.isPending}
-              onClick={() => createTask.mutate()}
-              style={{ height: 34, padding: '0 14px', borderRadius: 8, background: PURPLE, color: 'white', fontSize: 12, fontWeight: 600, border: 'none' }}
-              className="disabled:opacity-50 cursor-pointer shrink-0"
-            >
-              {createTask.isPending ? '…' : 'Save'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {isLoading ? (
-        <Spinner />
-      ) : tasks.length === 0 ? (
-        <p className="text-sm text-muted-foreground py-4 text-center">No tasks yet.</p>
-      ) : (
-        <KanbanBoard tasks={tasks} onMove={(id, status) => updateTask.mutate({ id, body: { status } })}>
-          <div className="grid grid-cols-3 gap-2.5" style={{ flex: 1, minHeight: 0 }}>
-            {KANBAN_COLUMNS.map((col) => {
-              const items = tasks.filter((t) => t.status === col.status)
-              return (
-                <KanbanColumn key={col.status} col={col} count={items.length}>
-                  {items.map((t) => (
-                    <KanbanCard key={t._id} task={t} onOpen={setSelectedTask}
-                      onToggleDone={(task) => updateTask.mutate({ id: task._id, body: { status: task.status === 'done' ? 'todo' : 'done' } })} />
-                  ))}
-                </KanbanColumn>
-              )
-            })}
-          </div>
-        </KanbanBoard>
-      )}
-
-      {selectedTask && (
-        <TaskDetailModal
-          task={tasks.find((t) => t._id === selectedTask._id) ?? selectedTask}
-          onClose={() => setSelectedTask(null)}
-          onStatusChange={(status) => updateTask.mutate({ id: selectedTask._id, body: { status } })}
-          assignableUsers={assignableUsers}
-          onDeleted={() => setSelectedTask(null)}
-        />
-      )}
-    </div>
-  )
-}
-
 type GoalsData = {
   targets: { weekly: { units: number; moving: number }; monthly: { units: number; moving: number } }
   actual: { weekly: { units: number; moving: number }; monthly: { units: number; moving: number } }
@@ -614,7 +488,7 @@ function openFollowUpsFor(qc: QueryClient, id: string) {
 // Master–detail: the list stays put on the left while the right pane carries
 // the work (status, notes, follow-ups, history), so opening one renewal no
 // longer shoves every other row down the page.
-function RenewalsCard() {
+export function RenewalsCard() {
   const qc = useQueryClient()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showDetailOnMobile, setShowDetailOnMobile] = useState(false)
@@ -679,91 +553,6 @@ function RenewalsCard() {
           </div>
         </div>
       )}
-    </div>
-  )
-}
-
-// Tasks and renewals used to sit side by side, which squeezed both. Tabbed
-// instead, tasks first since that's the daily driver — the counts stay
-// visible on the inactive tab so nothing gets forgotten.
-function WorkTabs() {
-  const [tab, setTab] = useState<'tasks' | 'renewals'>('tasks')
-  const { user } = useAuth()
-  // Accounts chase invoices, not renewals — that queue belongs to sales.
-  const isAccounts = user?.role === 'accounts'
-
-  const { data: integrations } = useQuery<{ zohoBooks?: { configured: boolean; newInvoiceUrl?: string } }>({
-    queryKey: ['integration-status'],
-    queryFn: () => api.get('/integrations/status').then((r) => r.data),
-    enabled: isAccounts,
-    staleTime: 10 * 60_000,
-  })
-  const zohoNewInvoiceUrl = integrations?.zohoBooks?.newInvoiceUrl
-
-  // Same query keys the cards below use, so react-query serves these from
-  // cache rather than issuing extra requests.
-  const { data: tasks = [] } = useQuery<TaskItem[]>({
-    queryKey: ['my-tasks-all'],
-    queryFn: () => api.get('/tasks', { params: { status: 'todo,in_progress,done' } }).then((r) => r.data),
-  })
-  const { data: contracts = [] } = useQuery<ExpiringContract[]>({
-    queryKey: ['expiring-contracts'],
-    queryFn: () => api.get('/contracts/expiring-soon', { params: { days: 7 } }).then((r) => r.data),
-    enabled: !isAccounts,
-  })
-
-  const TABS = [
-    { key: 'tasks' as const, label: 'Follow-ups & Tasks', count: tasks.filter((t) => t.status !== 'done').length },
-    ...(isAccounts ? [] : [{ key: 'renewals' as const, label: 'Renewals — 7 days', count: contracts.length }]),
-  ]
-
-  return (
-    <div className="mb-5">
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-      <div className="flex gap-1 rounded-full p-1 w-fit" style={{ background: '#F6F0E4' }}>
-        {TABS.map((t) => {
-          const active = tab === t.key
-          return (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setTab(t.key)}
-              className="flex items-center gap-2 px-4 py-1.5 rounded-full text-[13px] font-semibold cursor-pointer transition-colors"
-              style={active
-                ? { background: 'white', color: INK, boxShadow: '0 1px 2px rgba(20,8,31,.10)' }
-                : { background: 'transparent', color: MUTED }}
-            >
-              {t.label}
-              {t.count > 0 && (
-                <span style={{
-                  fontSize: 10.5, fontWeight: 700, borderRadius: 999, padding: '1px 7px',
-                  background: active ? PURPLE : 'rgba(20,8,31,.08)',
-                  color: active ? 'white' : MUTED,
-                }}>
-                  {t.count}
-                </span>
-              )}
-            </button>
-          )
-        })}
-      </div>
-
-      {isAccounts && (
-        <a
-          href={zohoNewInvoiceUrl || undefined}
-          target="_blank"
-          rel="noopener noreferrer"
-          title={zohoNewInvoiceUrl
-            ? 'Opens Zoho Books to raise a new invoice'
-            : 'Zoho Books is not connected'}
-          className={`inline-flex items-center gap-1.5 h-9 px-4 rounded-full text-[13px] font-bold text-white ${zohoNewInvoiceUrl ? 'cursor-pointer hover:opacity-90' : 'opacity-50 pointer-events-none'}`}
-          style={{ background: PURPLE, textDecoration: 'none' }}
-        >
-          <ExternalLink size={14} /> Create invoice in Zoho Books
-        </a>
-      )}
-      </div>
-      {tab === 'tasks' || isAccounts ? <TasksCard /> : <RenewalsCard />}
     </div>
   )
 }
@@ -1245,8 +1034,6 @@ export default function SalesBoard() {
       </div>
         </>
       )}
-
-      <WorkTabs />
 
       <UnitAvailabilityStrip />
 
