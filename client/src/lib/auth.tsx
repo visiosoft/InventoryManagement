@@ -18,6 +18,18 @@ interface AuthContextValue {
   hasPermission: (module: string | string[]) => boolean
 }
 
+/**
+ * What a role always has, whatever its permission list says. Mirrors
+ * ROLE_FLOOR in server/src/routes/users.js — the server is what enforces it,
+ * this is so the nav does not wait for the next login to agree.
+ *
+ * A rep who cannot look up which units are free cannot do their job, so
+ * Search Units is not a privilege to grant.
+ */
+const ROLE_FLOOR: Record<string, string[]> = {
+  sales_rep: ['sales_board', 'units'],
+}
+
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -52,7 +64,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // held to it, which is why a 17-module admin can be missing a screen.
     if (user.role === 'admin' && !user.permissions?.length) return true
     const wanted = Array.isArray(module) ? module : [module]
-    return wanted.some((m) => user.permissions.includes(m))
+    if (wanted.some((m) => user.permissions.includes(m))) return true
+    // Some things a role cannot work without, whatever its stored list says.
+    // Checked here as well as on the server because permissions are baked into
+    // the token at login: without this, granting one meant telling the person
+    // to log out and back in before they could see it.
+    const floor = ROLE_FLOOR[user.role] ?? []
+    return wanted.some((m) => floor.includes(m))
   }
 
   return (

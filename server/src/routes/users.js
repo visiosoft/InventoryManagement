@@ -14,6 +14,27 @@ const normalizeRole = (role) => (VALID_ROLES.includes(role) ? role : 'staff');
 // unit map, tenant directory, and moving schedule for sales conversations.
 const SALES_REP_DEFAULT_PERMISSIONS = ['sales_board', 'units', 'customers', 'contracts', 'moving_schedule'];
 
+/**
+ * What a role always has, whatever the permission list says.
+ *
+ * The defaults above only apply when the list is empty, so an admin saving the
+ * user form with a box unticked took the module away — and a rep who cannot
+ * look up which units are free cannot do their job at all. Searching units is
+ * not a privilege to grant, it is the job.
+ *
+ * Enforced on save so the stored record is always right, and mirrored in the
+ * client so it does not wait for the next login to take effect.
+ */
+const ROLE_FLOOR = {
+    sales_rep: ['sales_board', 'units'],
+};
+
+/** The list somebody chose, plus whatever their role cannot be without. */
+function withRoleFloor(role, permissions) {
+    const floor = ROLE_FLOOR[role] || [];
+    return [...new Set([...(permissions || []), ...floor])];
+}
+
 // ── List all users (admin only) ───────────────────────────────────────────────
 router.get('/', requireAdmin, async (_req, res) => {
   const users = await User.find().select('-passwordHash').sort({ createdAt: -1 });
@@ -57,7 +78,10 @@ router.post('/', requireAdmin, async (req, res) => {
     passwordHash,
     role: normalizedRole,
     // Sales reps default to their own board when no explicit permissions are given.
-    permissions: cleanPermissions.length === 0 && SALES_REP_ROLES.includes(normalizedRole) ? SALES_REP_DEFAULT_PERMISSIONS : cleanPermissions,
+    permissions: withRoleFloor(
+        normalizedRole,
+        cleanPermissions.length === 0 && SALES_REP_ROLES.includes(normalizedRole) ? SALES_REP_DEFAULT_PERMISSIONS : cleanPermissions,
+    ),
     isActive: true,
   });
   res.status(201).json({ id: user._id, name: user.name, email: user.email, role: user.role, permissions: user.permissions, isActive: user.isActive });
@@ -88,6 +112,9 @@ router.put('/:id', requireAdmin, async (req, res) => {
   if (role !== undefined) user.role = normalizeRole(role);
   if (Array.isArray(permissions)) user.permissions = permissions.filter(p => ALL_MODULES.includes(p));
   else if (SALES_REP_ROLES.includes(role) && user.permissions.length === 0) user.permissions = SALES_REP_DEFAULT_PERMISSIONS;
+  // Whatever was chosen, the role's floor goes back on — including when the
+  // role itself has just changed.
+  user.permissions = withRoleFloor(user.role, user.permissions);
   if (isActive !== undefined) user.isActive = Boolean(isActive);
 
   await user.save();
