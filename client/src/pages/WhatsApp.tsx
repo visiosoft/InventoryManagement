@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
   Send, MessageSquare, RefreshCw, UserPlus, UserCheck, Bell, BellOff, FileText,
-  Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Paperclip,
+  Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Paperclip, Pencil,
   Bot, Tag, Check, ClipboardList, Sparkles, Trash2,
 } from 'lucide-react'
 import { api, whatsappApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel } from '../lib/api'
@@ -1385,6 +1385,9 @@ export default function WhatsApp() {
   const [qrOpen, setQrOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [setupOpen, setSetupOpen] = useState(false)
+  // Renaming the person this thread belongs to, without leaving the console.
+  const [renaming, setRenaming] = useState(false)
+  const [nameDraft, setNameDraft] = useState('')
   const [catOpen, setCatOpen] = useState<Record<string, boolean>>({ templates: true })
   const [custom, setCustom] = useState('')
   // Numbers typed via "New chat" have no conversation record yet.
@@ -1600,6 +1603,33 @@ export default function WhatsApp() {
   const convoTitle = selectedConvo
     ? convDisplayName(selectedConvo)
     : 'All messages'
+
+  /**
+   * Correct the name from here.
+   *
+   * A customer saved as "Lead" was only fixable by leaving for their profile
+   * and coming back, which is a lot of walking for one field — and the sort of
+   * errand nobody runs, so the wrong name stays.
+   *
+   * It writes to whichever record the badge is claiming: the customer if there
+   * is one, otherwise the lead. Both merge over what is stored, so sending the
+   * name alone leaves everything else untouched.
+   */
+  const renameParty = useMutation({
+    mutationFn: (fullName: string) => {
+      const customerId = selectedConvo?.customer?._id
+      const leadId = selectedConvo?.lead?._id
+      if (customerId) return api.put(`/customers/${customerId}`, { fullName })
+      if (leadId) return api.put(`/leads/${leadId}`, { fullName })
+      throw new Error('Save them as a lead first, then the name can be changed')
+    },
+    onSuccess: () => {
+      setRenaming(false)
+      refetchConvos()
+      qc.invalidateQueries({ queryKey: ['customers'] })
+      qc.invalidateQueries({ queryKey: ['leads'] })
+    },
+  })
 
   /* Auto-scroll: follow the newest message, unless the reader has scrolled up
      into history — then leave their position alone. */
@@ -1987,19 +2017,77 @@ export default function WhatsApp() {
                 <Avatar seed={selectedConvo.phoneNormalized} label={convoTitle} size={38} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 min-w-0">
-                    {selectedConvo.customer || selectedConvo.lead ? (
-                      <Link
-                        to={selectedConvo.customer
-                          ? `/customers/${selectedConvo.customer._id}`
-                          : `/leads/${selectedConvo.lead!._id}`}
-                        title="Open their profile — the name is edited there"
-                        className="truncate hover:underline"
-                        style={{ fontSize: 15, fontWeight: 700, color: INK }}
+                    {renaming ? (
+                      <form
+                        className="flex items-center gap-1.5 min-w-0"
+                        onSubmit={(e) => { e.preventDefault(); if (nameDraft.trim()) renameParty.mutate(nameDraft.trim()) }}
                       >
-                        {convoTitle}
-                      </Link>
+                        <input
+                          autoFocus
+                          value={nameDraft}
+                          onChange={(e) => setNameDraft(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Escape') setRenaming(false) }}
+                          placeholder="Their name"
+                          className="min-w-0"
+                          style={{ width: 190, height: 30, borderRadius: 8, border: `1px solid ${LINE}`, padding: '0 9px', fontSize: 14, fontWeight: 600, color: INK, outline: 'none' }}
+                        />
+                        <button
+                          type="submit"
+                          disabled={!nameDraft.trim() || renameParty.isPending}
+                          className="rounded-full px-2.5 py-1 cursor-pointer disabled:opacity-40 shrink-0"
+                          style={{ fontSize: 11, fontWeight: 700, background: '#5B2BC9', color: '#fff', border: 'none' }}
+                        >
+                          {renameParty.isPending ? '…' : 'Save'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setRenaming(false)}
+                          className="cursor-pointer shrink-0"
+                          style={{ fontSize: 11, color: FAINT_INK, background: 'none', border: 'none' }}
+                        >
+                          Cancel
+                        </button>
+                        {/* A refused save has to say so — the lead route turns
+                            a duplicate number away, and silence would read as
+                            success. */}
+                        {renameParty.isError && (
+                          <span className="truncate" style={{ fontSize: 11, color: '#B91C1C' }}>
+                            {apiError(renameParty.error)}
+                          </span>
+                        )}
+                      </form>
                     ) : (
-                      <span className="truncate" style={{ fontSize: 15, fontWeight: 700, color: INK }}>{convoTitle}</span>
+                      <>
+                        {selectedConvo.customer || selectedConvo.lead ? (
+                          <Link
+                            to={selectedConvo.customer
+                              ? `/customers/${selectedConvo.customer._id}`
+                              : `/leads/${selectedConvo.lead!._id}`}
+                            title="Open their profile"
+                            className="truncate hover:underline"
+                            style={{ fontSize: 15, fontWeight: 700, color: INK }}
+                          >
+                            {convoTitle}
+                          </Link>
+                        ) : (
+                          <span className="truncate" style={{ fontSize: 15, fontWeight: 700, color: INK }}>{convoTitle}</span>
+                        )}
+                        {(selectedConvo.customer || selectedConvo.lead) && (
+                          <button
+                            type="button"
+                            title="Change this name"
+                            aria-label="Change this name"
+                            onClick={() => {
+                              setNameDraft(selectedConvo.customer?.fullName || selectedConvo.lead?.fullName || '')
+                              setRenaming(true)
+                            }}
+                            className="shrink-0 cursor-pointer"
+                            style={{ background: 'none', border: 'none', color: FAINT_INK, padding: 2, lineHeight: 0 }}
+                          >
+                            <Pencil size={12} />
+                          </button>
+                        )}
+                      </>
                     )}
                     {selectedConvo.customer ? (
                       <span className="shrink-0 rounded-full px-2 py-0.5" style={{ fontSize: 10, fontWeight: 700, background: '#DCFCE7', color: '#047857' }}>
