@@ -1793,6 +1793,18 @@ const messageTemplateSchema = new Schema({
   // terminal.
   emailHtml: { type: String, default: '' },
   whatsappBody: { type: String, default: '' },
+  /* The name Meta approved this under, if it has one.
+   *
+   * WhatsApp only allows free text within 24 hours of the customer's last
+   * message, so a reminder to somebody who has not written must go as an
+   * approved template or it is rejected outright — which is what happened to
+   * all 21 contract-expiry reminders before this existed.
+   *
+   * whatsappTemplateVars names which variables fill {{1}}, {{2}} … in order.
+   * Kept beside the wording it belongs to, so there is one place to look. */
+  whatsappTemplate: { type: String, default: '' },
+  whatsappTemplateLang: { type: String, default: 'en' },
+  whatsappTemplateVars: { type: [String], default: [] },
   variables: [String],
   // 'automation' templates are the contract-driven ones the reminder engine
   // and the contract page send. 'quick_reply' are the canned replies staff

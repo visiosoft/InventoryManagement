@@ -61,8 +61,23 @@ router.get('/', async (req, res) => {
 
 // Update a template
 router.put('/:id', async (req, res) => {
-  const { subject, emailBody, emailHtml, whatsappBody, label, category, sortOrder, mediaUrl, mediaKind, mediaFilename } = req.body;
+  const { subject, emailBody, emailHtml, whatsappBody, label, category, sortOrder, mediaUrl, mediaKind, mediaFilename,
+    whatsappTemplate, whatsappTemplateLang, whatsappTemplateVars } = req.body;
   const update = { subject, emailBody, whatsappBody };
+
+  /* The Meta-approved name, if this template has one.
+   *
+   * Trimmed and stripped of a leading @ on each variable, because the rest of
+   * the app writes them that way and a mapping of "@name" would look up a
+   * variable that does not exist and send an empty placeholder. */
+  if (whatsappTemplate !== undefined) update.whatsappTemplate = String(whatsappTemplate || '').trim();
+  if (whatsappTemplateLang !== undefined) update.whatsappTemplateLang = String(whatsappTemplateLang || 'en').trim() || 'en';
+  if (whatsappTemplateVars !== undefined) {
+    const raw = Array.isArray(whatsappTemplateVars)
+      ? whatsappTemplateVars
+      : String(whatsappTemplateVars || '').split(',');
+    update.whatsappTemplateVars = raw.map((v) => String(v).trim().replace(/^@/, '')).filter(Boolean);
+  }
   // The designed version, sent in preference to the text when present.
   if (emailHtml !== undefined) update.emailHtml = String(emailHtml || '');
   if (label) update.label = label;

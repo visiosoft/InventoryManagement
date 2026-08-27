@@ -12,6 +12,11 @@ type Template = {
   subject: string
   emailBody: string
   whatsappBody: string
+  /* The name Meta approved this under, if it has one. Without it a reminder
+     can only reach somebody who wrote to us in the last 24 hours. */
+  whatsappTemplate?: string
+  whatsappTemplateLang?: string
+  whatsappTemplateVars?: string[]
   variables: string[]
 }
 
@@ -47,6 +52,9 @@ export default function MessageTemplates() {
   const [subject, setSubject] = useState('')
   const [emailBody, setEmailBody] = useState('')
   const [whatsappBody, setWhatsappBody] = useState('')
+  const [waTemplate, setWaTemplate] = useState('')
+  const [waLang, setWaLang] = useState('en')
+  const [waVars, setWaVars] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [creating, setCreating] = useState(false)
@@ -61,7 +69,7 @@ export default function MessageTemplates() {
   const DEFAULT_KEYS = ['welcome', 'contract_signed', 'payment_received', 'payment_reminder', 'contract_expiring', 'contract_ended']
 
   const updateMut = useMutation({
-    mutationFn: (body: { subject: string; emailBody: string; whatsappBody: string }) =>
+    mutationFn: (body: Record<string, unknown>) =>
       api.put(`/message-templates/${selected!._id}`, body),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['message-templates'], exact: true }); setSuccess('Saved!'); setError(''); setTimeout(() => setSuccess(''), 2000) },
     onError: (e) => setError(apiError(e)),
@@ -93,6 +101,8 @@ export default function MessageTemplates() {
       qc.invalidateQueries({ queryKey: ['message-templates'], exact: true })
       const t = res.data as Template
       setSubject(t.subject); setEmailBody(t.emailBody); setWhatsappBody(t.whatsappBody)
+      setWaTemplate(t.whatsappTemplate || ''); setWaLang(t.whatsappTemplateLang || 'en')
+      setWaVars((t.whatsappTemplateVars || []).join(', '))
       setSuccess('Reset to default'); setTimeout(() => setSuccess(''), 2000)
     },
     onError: (e) => setError(apiError(e)),
@@ -479,7 +489,12 @@ export default function MessageTemplates() {
                       <RotateCcw size={13} /> Reset
                     </Button>
                   )}
-                  <Button size="sm" onClick={() => updateMut.mutate({ subject, emailBody, whatsappBody })} disabled={updateMut.isPending}>
+                  <Button size="sm" onClick={() => updateMut.mutate({
+                    subject, emailBody, whatsappBody,
+                    whatsappTemplate: waTemplate.trim(),
+                    whatsappTemplateLang: waLang.trim() || 'en',
+                    whatsappTemplateVars: waVars,
+                  })} disabled={updateMut.isPending}>
                     <Save size={13} /> {updateMut.isPending ? 'Saving…' : 'Save'}
                   </Button>
                 </div>
@@ -522,10 +537,42 @@ export default function MessageTemplates() {
                 </div>
               ) : (
                 <div className="space-y-3">
+                  {/* Named first, because whether this is set decides whether
+                      the message below is ever sent. */}
+                  <div className="rounded-lg border p-3" style={{ background: '#F7F3FF', borderColor: '#DDD0FF' }}>
+                    <div className="text-xs font-semibold" style={{ color: '#4A1FA0' }}>Approved template</div>
+                    <p className="text-[11px] mt-0.5 mb-2 text-muted-foreground">
+                      WhatsApp only allows free text within 24 hours of the customer's last message. A reminder
+                      to somebody who has not written needs the name Meta approved, or it is rejected rather than
+                      delivered.
+                    </p>
+                    <Input
+                      value={waTemplate}
+                      onChange={e => setWaTemplate(e.target.value)}
+                      placeholder="contract_expiry_notification"
+                    />
+                    <div className="grid grid-cols-3 gap-2 mt-2">
+                      <Input value={waLang} onChange={e => setWaLang(e.target.value)} placeholder="en" />
+                      <div className="col-span-2">
+                        <Input
+                          value={waVars}
+                          onChange={e => setWaVars(e.target.value)}
+                          placeholder="name, contractNo, unit, endDate"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-[11px] mt-1.5 text-muted-foreground">
+                      Language, then the variables filling <code>{'{{1}}'}</code>, <code>{'{{2}}'}</code> … <b>in that order</b>.
+                    </p>
+                  </div>
+
                   <Field label="WhatsApp Message">
                     <Textarea value={whatsappBody} onChange={e => setWhatsappBody(e.target.value)} rows={10} className="font-mono text-sm" placeholder="WhatsApp message..." />
                   </Field>
-                  <p className="text-xs text-muted-foreground">Use *text* for bold in WhatsApp.</p>
+                  <p className="text-xs text-muted-foreground">
+                    Use *text* for bold in WhatsApp.
+                    {waTemplate.trim() && ' While an approved template is set, this wording is not what goes out — it is kept for the log and as the fallback inside the 24-hour window.'}
+                  </p>
                 </div>
               )}
 

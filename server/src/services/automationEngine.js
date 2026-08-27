@@ -119,7 +119,7 @@ async function resolveMessages(step, templatesByName, event, vars) {
     emailText: interpolate(emailBody, vars),
     emailHtml: interpolate(step.emailHtml?.trim() || tpl?.emailHtml || '', vars),
     emailSubject: interpolate(emailSubject, vars),
-    ...templateFor(step, vars),
+    ...templateFor(step, tpl, vars),
   };
 }
 
@@ -131,13 +131,18 @@ async function resolveMessages(step, templatesByName, event, vars) {
  * an empty string rather than the literal name: a reminder reading "Hello
  * {{1}}" to a customer is worse than one reading "Hello".
  */
-export function templateFor(step, vars) {
-  const name = String(step.whatsappTemplate || '').trim();
-  if (!name) return {};
+export function templateFor(step, tpl, vars) {
+  // The step wins when it names one, so a single reminder can differ; the
+  // template it was built from is the default, which is where it is edited.
+  const source = String(step.whatsappTemplate || '').trim()
+    ? step
+    : (String(tpl?.whatsappTemplate || '').trim() ? tpl : null);
+  if (!source) return {};
+
   return {
-    whatsappTemplate: name,
-    whatsappTemplateLang: String(step.whatsappTemplateLang || 'en').trim() || 'en',
-    whatsappTemplateVars: (step.whatsappTemplateVars || []).map((k) => String(vars[k] ?? '')),
+    whatsappTemplate: String(source.whatsappTemplate).trim(),
+    whatsappTemplateLang: String(source.whatsappTemplateLang || 'en').trim() || 'en',
+    whatsappTemplateVars: (source.whatsappTemplateVars || []).map((k) => String(vars[k] ?? '')),
   };
 }
 
