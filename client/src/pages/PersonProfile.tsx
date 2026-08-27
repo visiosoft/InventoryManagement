@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   AlertTriangle, ArrowLeft, Calendar, Clock, FileText, Mail, MessageCircle, MessageSquare,
-  PackageCheck, Pencil, Phone, Plus, Repeat, UserCheck, UserPlus,
+  ExternalLink, PackageCheck, Pencil, Phone, Plus, Repeat, UserCheck, UserPlus,
 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -367,12 +367,31 @@ export default function PersonProfile() {
                 <Phone size={16} /> Call
               </a>
             )}
-            {/* Our own inbox, not wa.me: the thread we already hold, with its
-                history, rather than the phone's copy of it. */}
+            {/* Two different places, so both are offered rather than one
+                standing in for the other: our inbox has the history and is
+                where a reply gets recorded; wa.me is their actual WhatsApp,
+                which is what you want for a voice note or an attachment. */}
             {waNumber && (
-              <Link to={`/whatsapp?phone=${waNumber}`} className="inline-flex items-center cursor-pointer" style={{ gap: 8, height: 44, padding: '0 18px', borderRadius: 999, border: `1px solid ${PURPLE_200}`, background: PURPLE_50, color: DEEP, fontWeight: 600, fontSize: 14 }}>
+              <Link
+                to={`/whatsapp?phone=${waNumber}`}
+                title="Open the conversation in PurpleBox"
+                className="inline-flex items-center cursor-pointer"
+                style={{ gap: 8, height: 44, padding: '0 18px', borderRadius: 999, border: `1px solid ${PURPLE_200}`, background: PURPLE_50, color: DEEP, fontWeight: 600, fontSize: 14 }}
+              >
                 <MessageCircle size={16} /> Chat
               </Link>
+            )}
+            {waNumber && (
+              <a
+                href={`https://wa.me/${waNumber}`}
+                target="_blank"
+                rel="noreferrer"
+                title="Open WhatsApp in a new tab"
+                className="inline-flex items-center"
+                style={{ gap: 8, height: 44, padding: '0 18px', borderRadius: 999, border: '1px solid rgba(22,163,74,.28)', background: 'rgba(22,163,74,.09)', color: '#047857', fontWeight: 600, fontSize: 14 }}
+              >
+                <MessageCircle size={16} /> WhatsApp <ExternalLink size={13} style={{ opacity: 0.7 }} />
+              </a>
             )}
             {/* Available at both stages: the wizard creates the customer when a
                 lead is booked, which is the point at which they become one. */}
