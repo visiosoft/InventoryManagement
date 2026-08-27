@@ -150,9 +150,30 @@ router.get('/', async (req, res) => {
         if (to) filter.leadDateTime.$lte = to;
     }
 
-    if (req.query.search) {
-        const re = new RegExp(escRegex(String(req.query.search)), 'i');
-        filter.$or = [{ fullName: re }, { firstName: re }, { lastName: re }, { email: re }, { phone: re }, { whatsappNo: re }, { notes: re }];
+    /* Search the way people actually type.
+     *
+     * The term was used raw, so a single space either side of a pasted number
+     * found nothing — and a number copied out of WhatsApp brings one. Worse,
+     * none of the ways a UAE number is normally written matched at all:
+     * +971502612729, 971 50 261 2729 and 0502612729 all failed against a
+     * stored 971502612729.
+     *
+     * So: trim it, and when it looks like a number, match the last nine digits
+     * against phoneNormalized — the same rule the rest of the app uses to
+     * decide two numbers are the same person.
+     */
+    const term = String(req.query.search || '').trim();
+    if (term) {
+        const re = new RegExp(escRegex(term), 'i');
+        const or = [{ fullName: re }, { firstName: re }, { lastName: re }, { email: re }, { phone: re }, { whatsappNo: re }, { notes: re }];
+
+        const digits = term.replace(/\D/g, '');
+        if (digits.length >= 6) {
+            const tail = digits.slice(-9);
+            or.push({ phoneNormalized: new RegExp(`${escRegex(tail)}$`) });
+        }
+
+        filter.$or = or;
     }
 
     const page = Math.max(1, Number(req.query.page) || 1);

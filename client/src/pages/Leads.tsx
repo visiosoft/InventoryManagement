@@ -629,7 +629,7 @@ export default function Leads() {
 
     const queryParams = useMemo(
         () => ({
-            search: search || undefined,
+            search: search.trim() || undefined,
             status: status || undefined,
             source: source || undefined,
             owner: owner || undefined,
@@ -644,7 +644,7 @@ export default function Leads() {
     )
 
     // Back to page 1 whenever a filter changes
-    useEffect(() => { setPage(1) }, [search, status, source, owner, from, to, limit])
+    useEffect(() => { setPage(1) }, [search, status, source, owner, chase, attemptBy, from, to, limit])
 
     const { data: leadsPage, isLoading } = useQuery<LeadPage>({
         queryKey: ['leads', queryParams],
@@ -890,7 +890,7 @@ export default function Leads() {
         return `${Math.floor(days / 30)}mo ago`
     }
 
-    const isFiltered = !!(search || status || source || owner || chase || attemptBy || from || to)
+    const isFiltered = !!(search.trim() || status || source || owner || chase || attemptBy || from || to)
 
     const totalLeads = stats?.total ?? leadsPage?.total ?? 0
     const newCount = stats?.byStatus?.new ?? 0
