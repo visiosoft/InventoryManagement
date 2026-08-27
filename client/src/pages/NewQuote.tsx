@@ -2,11 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  Plus, ChevronRight, ChevronLeft, Check, User, Box, FileText, Briefcase, Receipt as ReceiptIcon,
-  ShieldCheck, Search, Trash2, CalendarRange, Loader2, CheckCircle2, Send, Mail, Download,
-  Upload, X, Eye, ExternalLink, ClipboardList,
-} from 'lucide-react'
-import { api, apiError, invoiceApi, quoteApi, type AvailableUnit } from '../lib/api'
+  Plus, ChevronRight, ChevronLeft, Check, User, Box, FileText, Briefcase, Receipt as ShieldCheck, Search, Trash2, CalendarRange, Loader2, CheckCircle2, Send, Mail, Download,
+  Upload, X, Eye, } from 'lucide-react'
+import { api, apiError, quoteApi, type AvailableUnit } from '../lib/api'
 import type { AccessPerson, Customer, Invoice, Lead, Quote } from '../lib/types'
 import { useAuth } from '../lib/auth'
 import { Button, Field, Input, Select, Textarea, Modal, Spinner } from '../components/ui'
@@ -18,7 +16,6 @@ const STEPS = [
   { key: 'units', label: 'Units', icon: Box },
   { key: 'quote', label: 'Quotation', icon: FileText },
   { key: 'contract', label: 'Contract', icon: Briefcase },
-  { key: 'invoice', label: 'Invoice & Payment', icon: ReceiptIcon },
 ] as const
 
 const INK = '#14081F'
@@ -105,755 +102,16 @@ function DoneBanner({ text }: { text: string }) {
   )
 }
 
-type EditItem = { sortOrder: number; itemDetails: string; quantity: number; rate: number; discountPct: number; amount: number }
 
-function itemAmount(it: { quantity: number; rate: number; discountPct: number }) {
-  const gross = it.quantity * it.rate
-  return Math.round((gross - (gross * (it.discountPct || 0)) / 100) * 100) / 100
-}
 
-const dfmt = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 
 // Editable line-item table shared by the "edit invoice" and "add invoice" panels.
-function ItemEditor({ items, onChange }: { items: EditItem[]; onChange: (items: EditItem[]) => void }) {
-  function update(idx: number, field: keyof EditItem, value: string | number) {
-    onChange(items.map((it, i) => {
-      if (i !== idx) return it
-      const next = { ...it, [field]: value }
-      next.amount = itemAmount(next)
-      return next
-    }))
-  }
-  return (
-    <div className="space-y-2">
-      {items.map((it, idx) => (
-        <div key={idx} className="rounded-xl border p-2.5" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
-          <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 items-end">
-            <Field label="Description" className="sm:col-span-2">
-              <Input value={it.itemDetails} onChange={(e) => update(idx, 'itemDetails', e.target.value)} className="h-8 text-xs" />
-            </Field>
-            <Field label="Wks">
-              <Input type="number" min={0} value={it.quantity || ''} placeholder="0" onChange={(e) => update(idx, 'quantity', Number(e.target.value) || 0)} className="h-8 text-xs" />
-            </Field>
-            <Field label="Rate">
-              <Input type="number" value={it.rate || ''} placeholder="0" onChange={(e) => update(idx, 'rate', Number(e.target.value) || 0)} className="h-8 text-xs" />
-            </Field>
-            <Field label="Disc 4 weeks %">
-              <Input type="number" min={0} max={100} value={it.discountPct || ''} onChange={(e) => update(idx, 'discountPct', Number(e.target.value))} className="h-8 text-xs" placeholder="0" />
-            </Field>
-            <div className="flex items-center justify-between pb-1.5">
-              <span className="text-xs font-bold" style={{ color: INK }}>{formatMoney(it.amount)}</span>
-              <button type="button" onClick={() => onChange(items.filter((_, i) => i !== idx))} className="text-red-500 hover:text-red-600 ml-1">
-                <Trash2 size={13} />
-              </button>
-            </div>
-          </div>
-        </div>
-      ))}
-      <button
-        type="button"
-        onClick={() => onChange([...items, { sortOrder: items.length, itemDetails: '', quantity: 1, rate: 0, discountPct: 0, amount: 0 }])}
-        className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium"
-        style={{ background: `${PURPLE}10`, color: PURPLE }}
-      >
-        <Plus size={12} /> Add line
-      </button>
-    </div>
-  )
-}
-
-/** GET /customers/:id/zoho-invoices — invoices found in Zoho Books for this
- *  tenant, matched on email/phone only. Names legitimately differ between the
- *  two systems, so a name match is deliberately not attempted. */
-type ZohoInvoice = {
-  id: string; number: string; date: string; dueDate: string
-  total: number; balance: number; status: string; currency: string; customerName: string
-}
-type ZohoMatch = { id: string; name: string; email: string; phone: string; matchedBy: 'email' | 'phone' }
-type ZohoInvoicesResponse = {
-  configured: boolean
-  matchedContacts: ZohoMatch[]
-  invoices: ZohoInvoice[]
-  totals: { count: number; total: number; balance: number }
-  newInvoiceUrl?: string
-}
-
-// Invoice step: show the tenant's Zoho Books invoices (where invoices are now
-// raised), plus any invoices still held locally in PurpleBox.
 export interface InvoiceStepHandle {
   isEditing: boolean
   isSaving: boolean
   isSyncing: boolean
   saveEdit: () => void
   saveAndSync: () => void
-}
-
-function InvoiceStep({ contract, invoices, customerId, customerName, customerPhone, customerEmail, onChanged, handleRef }: {
-  contract: { _id: string; contractNo: string; startDate: string; endDate: string; rate: number }
-  invoices: Invoice[]
-  customerId: string
-  customerName: string
-  customerPhone: string
-  customerEmail: string
-  onChanged: () => void
-  handleRef?: React.MutableRefObject<InvoiceStepHandle | null>
-}) {
-  const navigate = useNavigate()
-  const [editId, setEditId] = useState('')
-  const [editItems, setEditItems] = useState<EditItem[]>([])
-  const [editDue, setEditDue] = useState('')
-  const [adding, setAdding] = useState(false)
-  const [newItems, setNewItems] = useState<EditItem[]>([])
-  const [newDue, setNewDue] = useState('')
-  const [err, setErr] = useState('')
-  const [emailModal, setEmailModal] = useState<{ invoiceId: string; to: string; subject: string; body: string; pdfUrl: string } | null>(null)
-  const [emailSending, setEmailSending] = useState(false)
-  const [emailSent, setEmailSent] = useState('')
-
-  // Invoices are raised by the accounts team in Zoho Books, so booking hands
-  // them a task carrying the contract and its numbers rather than trying to
-  // create the invoice here.
-  const [taskOpen, setTaskOpen] = useState(false)
-  const [taskAssignee, setTaskAssignee] = useState('')
-  const [taskPriority, setTaskPriority] = useState<'low' | 'medium' | 'high'>('high')
-  const [taskDue, setTaskDue] = useState(new Date().toISOString().slice(0, 10))
-  const [taskNote, setTaskNote] = useState('')
-  const [taskDone, setTaskDone] = useState<{ id: string; to: string } | null>(null)
-
-  // /users is admin-only; /users/assignable is readable by every role, which
-  // matters because sales reps do the booking.
-  const users = useQuery<{ _id: string; name: string; email: string; role: string }[]>({
-    queryKey: ['assignable-users'],
-    queryFn: () => api.get('/users/assignable').then((r) => r.data),
-    enabled: taskOpen,
-  })
-
-  const taskSummary = [
-    `Contract: ${contract.contractNo}`,
-    `Tenant: ${customerName}`,
-    customerPhone ? `Phone: ${customerPhone}` : '',
-    customerEmail ? `Email: ${customerEmail}` : '',
-    `Period: ${dfmt(new Date(contract.startDate))} – ${dfmt(new Date(contract.endDate))}`,
-    `Monthly rate: ${formatMoney(contract.rate)} AED`,
-  ].filter(Boolean).join('\n')
-
-  const createAccountsTask = useMutation({
-    mutationFn: () => api.post('/tasks', {
-      title: `Raise invoice in Zoho Books — ${contract.contractNo}`,
-      description: [taskSummary, taskNote.trim() ? `\nNotes: ${taskNote.trim()}` : ''].join('\n'),
-      assignedTo: taskAssignee,
-      priority: taskPriority,
-      dueDate: taskDue || null,
-      leadType: 'contract',
-      leadId: contract._id,
-      leadName: contract.contractNo,
-    }).then((r) => r.data),
-    onSuccess: (t) => {
-      const to = users.data?.find((u) => u._id === taskAssignee)
-      setTaskDone({ id: t._id, to: to?.name || to?.email || 'the assignee' })
-      setTaskOpen(false)
-      setTaskNote('')
-      setErr('')
-    },
-    onError: (e) => setErr(apiError(e)),
-  })
-
-  useEffect(() => { setErr('') }, [invoices.length])
-
-  const sorted = [...invoices].sort((a, b) => new Date(a.dueDate || 0).getTime() - new Date(b.dueDate || 0).getTime())
-
-  // Auto-expand first editable invoice
-  const autoEditRef = useRef(false)
-  useEffect(() => {
-    if (autoEditRef.current) return
-    const editable = sorted.find((inv) => Number(inv.paymentMade || 0) === 0 && inv.status !== 'paid')
-    if (editable) { startEdit(editable); autoEditRef.current = true }
-  }, [sorted.length])
-
-  const editingInvRef = useRef<Invoice | null>(null)
-
-  const save = useMutation({
-    mutationFn: (inv: Invoice) => invoiceApi.update(inv._id, {
-      customer: customerId,
-      dueDate: editDue || inv.dueDate,
-      orderNumber: contract.contractNo,
-      subject: inv.subject,
-      items: editItems.map((it, i) => ({ ...it, sortOrder: i })),
-    }),
-    onSuccess: () => { setEditId(''); editingInvRef.current = null; onChanged(); setErr('') },
-    onError: (e) => setErr(apiError(e)),
-  })
-
-  const saveAndSync = useMutation({
-    mutationFn: async (inv: Invoice) => {
-      await invoiceApi.update(inv._id, {
-        customer: customerId,
-        dueDate: editDue || inv.dueDate,
-        orderNumber: contract.contractNo,
-        subject: inv.subject,
-        items: editItems.map((it, i) => ({ ...it, sortOrder: i })),
-      })
-    },
-    onSuccess: () => { setEditId(''); editingInvRef.current = null; onChanged(); setErr('') },
-    onError: (e) => setErr(apiError(e)),
-  })
-
-  useEffect(() => {
-    if (handleRef) {
-      handleRef.current = {
-        isEditing: Boolean(editId),
-        isSaving: save.isPending || saveAndSync.isPending,
-        isSyncing: saveAndSync.isPending,
-        saveEdit: () => { if (editingInvRef.current) save.mutate(editingInvRef.current) },
-        saveAndSync: () => { if (editingInvRef.current) saveAndSync.mutate(editingInvRef.current) },
-      }
-    }
-  })
-
-  const create = useMutation({
-    mutationFn: () => invoiceApi.create({
-      customer: customerId,
-      invoiceDate: new Date().toISOString().slice(0, 10),
-      dueDate: newDue,
-      orderNumber: contract.contractNo,
-      terms: 'Due on receipt',
-      subject: `Storage Rent · ${contract.contractNo}`,
-      items: newItems.map((it, i) => ({ ...it, sortOrder: i })),
-      status: 'draft',
-    }),
-    onSuccess: () => { setAdding(false); setNewItems([]); onChanged(); setErr('') },
-    onError: (e) => setErr(apiError(e)),
-  })
-
-  function startEdit(inv: Invoice) {
-    setEditId(inv._id)
-    editingInvRef.current = inv
-    setEditDue(inv.dueDate ? new Date(inv.dueDate).toISOString().slice(0, 10) : '')
-    setEditItems((inv.items || []).map((it, i) => ({
-      sortOrder: i, itemDetails: it.itemDetails, quantity: it.quantity, rate: it.rate,
-      discountPct: it.discountPct || 0, amount: it.amount,
-    })))
-  }
-
-  // ── Zoho Books ─────────────────────────────────────────────────────────
-  // Invoices are raised in Zoho Books — it is the accounting source of truth,
-  // so this step only reads them. Matching is on email/phone only: the two
-  // systems hold different names for the same person, so a name match is
-  // deliberately not attempted.
-  const zoho = useQuery<ZohoInvoicesResponse>({
-    queryKey: ['customer-zoho-invoices', customerId],
-    queryFn: () => api.get(`/customers/${customerId}/zoho-invoices`).then((r) => r.data),
-    enabled: Boolean(customerId),
-    retry: false,
-    staleTime: 5 * 60_000,
-  })
-
-  // Opening a Zoho invoice needs the auth header, so a plain <a href> won't do
-  // — fetch it as a blob and hand the browser an object URL instead.
-  const [openingZohoPdf, setOpeningZohoPdf] = useState('')
-  const [zohoPdfError, setZohoPdfError] = useState('')
-  async function openZohoInvoicePdf(invoiceId: string) {
-    if (!customerId) return
-    setZohoPdfError('')
-    setOpeningZohoPdf(invoiceId)
-    try {
-      const r = await api.get(`/customers/${customerId}/zoho-invoices/${invoiceId}/pdf`, { responseType: 'blob' })
-      const url = window.URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }))
-      window.open(url, '_blank', 'noopener')
-      // Revoke late: revoking immediately can race the new tab's load.
-      setTimeout(() => window.URL.revokeObjectURL(url), 60_000)
-    } catch {
-      setZohoPdfError('Could not open that invoice PDF from Zoho Books.')
-    } finally {
-      setOpeningZohoPdf('')
-    }
-  }
-
-  // Several Zoho contacts can share a phone number without being the same legal
-  // entity — a company and its owner, say. When more than one matched, name who
-  // each invoice was billed to so a mixed list reads as mixed.
-  const multipleZohoContacts = (zoho.data?.matchedContacts?.length ?? 0) > 1
-  const zohoCols = multipleZohoContacts
-    ? '120px 95px 95px 90px 1fr 90px 90px'
-    : '120px 95px 95px 1fr 90px 90px'
-  const zohoStatus = (zoho.error as { response?: { status?: number } } | null)?.response?.status
-  const zohoErrorMsg = (zoho.error as { response?: { data?: { error?: string } } } | null)?.response?.data?.error
-
-  function startAddBlank() {
-    setNewItems([{ sortOrder: 0, itemDetails: '', quantity: 1, rate: 0, discountPct: 0, amount: 0 }])
-    setNewDue(new Date().toISOString().slice(0, 10))
-    setAdding(true)
-  }
-
-  const newTotal = newItems.reduce((s, it) => s + it.amount, 0)
-  const editTotal = editItems.reduce((s, it) => s + it.amount, 0)
-
-  return (
-    <div className="space-y-4">
-      {/* ── Zoho Books — invoices are raised there, not here ── */}
-      <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
-        <div className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-2" style={{ background: CHIP_BG }}>
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Zoho Books invoices</p>
-            <p className="text-[11px]" style={{ color: MUTED }}>Matched to this tenant by email or phone number, not by name</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => { setTaskOpen((v) => !v); setTaskDone(null) }}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white hover:opacity-90 cursor-pointer"
-            style={{ background: PURPLE }}
-            title="Assign the accounts team a task to raise this invoice in Zoho Books"
-          >
-            <ClipboardList size={13} /> Create task for accounts
-          </button>
-        </div>
-
-        {taskDone && (
-          <div className="px-4 py-3 flex flex-wrap items-center gap-2 text-xs border-b"
-            style={{ background: '#ECFDF5', borderColor: 'rgba(20,8,31,0.08)', color: '#047857' }}>
-            <CheckCircle2 size={14} />
-            <span>Task assigned to <strong>{taskDone.to}</strong>.</span>
-            <button type="button" onClick={() => navigate('/tasks')}
-              className="underline font-semibold cursor-pointer" style={{ color: '#047857' }}>
-              Open tasks
-            </button>
-          </div>
-        )}
-
-        {taskOpen && (
-          <div className="px-4 py-3 border-b space-y-3" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
-            {/* What accounts will receive — shown so the sender can see the
-                contract details are actually attached, not just promised. */}
-            <div className="rounded-lg px-3 py-2 text-[11.5px] whitespace-pre-wrap"
-              style={{ background: CHIP_BG, color: MUTED }}>
-              <span className="font-bold" style={{ color: PURPLE }}>Raise invoice in Zoho Books — {contract.contractNo}</span>
-              {'\n'}{taskSummary}
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <label className="text-[11px] font-semibold" style={{ color: MUTED }}>
-                Assign to
-                <select value={taskAssignee} onChange={(e) => setTaskAssignee(e.target.value)}
-                  className="mt-1 w-full h-9 rounded-lg border px-2 text-xs"
-                  style={{ borderColor: 'rgba(20,8,31,0.14)', color: INK }}>
-                  <option value="">{users.isLoading ? 'Loading people…' : 'Choose a person'}</option>
-                  {(users.data || []).map((u) => (
-                    <option key={u._id} value={u._id}>{u.name || u.email} ({u.role.replace('_', ' ')})</option>
-                  ))}
-                </select>
-              </label>
-              <label className="text-[11px] font-semibold" style={{ color: MUTED }}>
-                Priority
-                <select value={taskPriority} onChange={(e) => setTaskPriority(e.target.value as 'low' | 'medium' | 'high')}
-                  className="mt-1 w-full h-9 rounded-lg border px-2 text-xs"
-                  style={{ borderColor: 'rgba(20,8,31,0.14)', color: INK }}>
-                  <option value="high">High</option>
-                  <option value="medium">Medium</option>
-                  <option value="low">Low</option>
-                </select>
-              </label>
-              <label className="text-[11px] font-semibold" style={{ color: MUTED }}>
-                Due
-                <input type="date" value={taskDue} onChange={(e) => setTaskDue(e.target.value)}
-                  className="mt-1 w-full h-9 rounded-lg border px-2 text-xs"
-                  style={{ borderColor: 'rgba(20,8,31,0.14)', color: INK }} />
-              </label>
-            </div>
-
-            <textarea rows={2} value={taskNote} onChange={(e) => setTaskNote(e.target.value)}
-              placeholder="Anything else accounts should know (optional)"
-              className="w-full rounded-lg border px-3 py-2 text-xs"
-              style={{ borderColor: 'rgba(20,8,31,0.14)', color: INK }} />
-
-            <div className="flex items-center gap-2">
-              <button type="button"
-                disabled={!taskAssignee || createAccountsTask.isPending}
-                onClick={() => createAccountsTask.mutate()}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90 cursor-pointer"
-                style={{ background: PURPLE }}>
-                {createAccountsTask.isPending ? 'Creating…' : 'Create task'}
-              </button>
-              <button type="button" onClick={() => setTaskOpen(false)}
-                className="px-3 py-2 rounded-xl text-xs font-semibold border cursor-pointer"
-                style={{ borderColor: 'rgba(20,8,31,0.14)', color: MUTED }}>
-                Cancel
-              </button>
-              {!taskAssignee && (
-                <span className="text-[11px]" style={{ color: MUTED }}>Pick who should do it</span>
-              )}
-            </div>
-          </div>
-        )}
-
-        <div className="px-4 py-3">
-          {zoho.isLoading ? (
-            <p className="text-xs flex items-center gap-1.5" style={{ color: MUTED }}>
-              <Loader2 size={13} className="animate-spin" /> Looking up Zoho Books…
-            </p>
-          ) : zoho.isError ? (
-            <p className="text-xs" style={{ color: MUTED }}>
-              {zohoStatus === 501
-                ? 'Zoho Books is not connected — add its credentials in Settings to see invoices here.'
-                : zohoStatus === 404
-                  ? 'This lookup is not available on the API yet — the server needs to be redeployed.'
-                  : `Could not reach Zoho Books${zohoStatus ? ` (HTTP ${zohoStatus})` : ''}: ${zohoErrorMsg || 'no error message returned'}`}
-            </p>
-          ) : !zoho.data?.matchedContacts?.length ? (
-            <p className="text-xs" style={{ color: MUTED }}>
-              No Zoho Books contact matches this tenant&apos;s email or phone number
-              {customerEmail || customerPhone ? '' : ' — this tenant has neither on file'}.
-            </p>
-          ) : (
-            <>
-              {/* Which Zoho contact(s) matched, and how. The names differ by
-                  design, so show what was matched instead of hiding it. */}
-              <div className="flex flex-wrap items-center gap-1.5 pb-3">
-                {zoho.data.matchedContacts.map((m) => (
-                  <span key={m.id} className="text-[10px] rounded-full px-2 py-0.5 border"
-                    style={{ borderColor: 'rgba(20,8,31,0.16)', color: MUTED }}
-                    title={`Matched by ${m.matchedBy}: ${m.matchedBy === 'email' ? m.email : m.phone}`}>
-                    {m.name || '(unnamed)'} · matched by {m.matchedBy}
-                  </span>
-                ))}
-                {multipleZohoContacts && (
-                  <span className="text-[10px] font-semibold" style={{ color: '#92400E' }}>
-                    {zoho.data.matchedContacts.length} Zoho contacts share these details — invoices from all of them are shown
-                  </span>
-                )}
-              </div>
-
-              {zoho.data.invoices.length === 0 ? (
-                <p className="text-xs" style={{ color: MUTED }}>This contact has no invoices in Zoho Books yet.</p>
-              ) : (
-                <>
-                  {zohoPdfError && <p className="text-[11px] pb-2" style={{ color: '#B91C1C' }}>{zohoPdfError}</p>}
-                  <div className="overflow-x-auto">
-                    <div style={{ minWidth: multipleZohoContacts ? 720 : 560 }}>
-                      <div className="grid gap-3 pb-2 text-[11px] font-bold uppercase tracking-wider"
-                        style={{ gridTemplateColumns: zohoCols, color: MUTED, borderBottom: '1px solid rgba(20,8,31,0.12)' }}>
-                        <span>Invoice</span><span>Date</span><span>Due</span><span>Status</span>
-                        {multipleZohoContacts && <span>Billed to</span>}
-                        <span className="text-right">Total</span><span className="text-right">Balance</span>
-                      </div>
-                      {zoho.data.invoices.map((inv) => (
-                        <div key={inv.id} className="grid gap-3 items-center py-2 text-[12px]"
-                          style={{ gridTemplateColumns: zohoCols, borderBottom: '1px solid rgba(20,8,31,0.06)' }}>
-                          <button type="button"
-                            onClick={() => openZohoInvoicePdf(inv.id)}
-                            disabled={openingZohoPdf === inv.id}
-                            className="font-bold text-left hover:underline cursor-pointer disabled:opacity-60"
-                            style={{ color: PURPLE }}
-                            title="Open this invoice's PDF from Zoho Books">
-                            {openingZohoPdf === inv.id ? 'Opening…' : (inv.number || '—')}
-                          </button>
-                          <span style={{ color: MUTED }}>{inv.date ? dfmt(new Date(inv.date)) : '—'}</span>
-                          <span style={{ color: MUTED }}>{inv.dueDate ? dfmt(new Date(inv.dueDate)) : '—'}</span>
-                          <span>
-                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize whitespace-nowrap"
-                              style={
-                                inv.status === 'paid' ? { background: '#D1FAE5', color: GREEN }
-                                  : inv.status === 'overdue' ? { background: '#FEE2E2', color: '#B91C1C' }
-                                    : { background: CHIP_BG, color: MUTED }
-                              }>
-                              {inv.status || 'unknown'}
-                            </span>
-                          </span>
-                          {multipleZohoContacts && (
-                            <span className="truncate" style={{ color: MUTED }} title={inv.customerName}>
-                              {inv.customerName || '—'}
-                            </span>
-                          )}
-                          <span className="text-right" style={{ color: INK }}>{inv.currency || 'AED'} {formatMoney(inv.total)}</span>
-                          <span className="text-right font-bold" style={{ color: inv.balance > 0 ? '#DC2626' : GREEN }}>
-                            {formatMoney(inv.balance)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center justify-end gap-x-5 gap-y-1 pt-3 text-[12px]" style={{ color: INK }}>
-                    <span style={{ color: MUTED }}>{zoho.data.totals.count} invoice{zoho.data.totals.count === 1 ? '' : 's'}</span>
-                    <span>Total <strong>{formatMoney(zoho.data.totals.total)}</strong></span>
-                    <span>Outstanding <strong style={{ color: zoho.data.totals.balance > 0 ? '#DC2626' : GREEN }}>
-                      {formatMoney(zoho.data.totals.balance)}</strong></span>
-                  </div>
-                  <p className="text-[11px] pt-2" style={{ color: MUTED }}>
-                    Click an invoice number to open its PDF. These are the tenant&apos;s Zoho Books invoices across all their
-                    contracts, not only this one — Zoho is the source of truth, so edit them there.
-                  </p>
-                </>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-      {/* Invoices raised inside PurpleBox — kept for one-offs and older records */}
-      {sorted.length > 0 && (
-        <p className="text-xs font-bold uppercase tracking-wider pt-1" style={{ color: MUTED }}>PurpleBox invoices</p>
-      )}
-      {sorted.map((inv) => {
-        const isEditing = editId === inv._id
-        const canEdit = Number(inv.paymentMade || 0) === 0 && inv.status !== 'paid'
-        return (
-          <div key={inv._id} className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(20,8,31,0.08)' }}>
-            {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3" style={{ background: CHIP_BG }}>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-bold" style={{ color: INK }}>{inv.invoiceNo}</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold" style={{
-                  background: inv.status === 'paid' ? '#D1FAE5' : inv.status === 'draft' ? '#fff' : '#DBEAFE',
-                  color: inv.status === 'paid' ? GREEN : inv.status === 'draft' ? MUTED : '#1D4ED8',
-                }}>{inv.status}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                {inv.zohoBooksSyncId && (
-                  <a
-                    href={`https://books.zoho.com/app/908459713#/invoices/${inv.zohoBooksSyncId}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-[10px] px-2 py-0.5 rounded-full font-semibold hover:opacity-80"
-                    style={{ background: '#D1FAE5', color: GREEN }}
-                    title={inv.zohoBooksSyncedAt ? `Synced ${new Date(inv.zohoBooksSyncedAt).toLocaleDateString()}` : 'Synced to Zoho'}
-                  >
-                    Zoho ↗
-                  </a>
-                )}
-                <span className="text-sm font-bold" style={{ color: PURPLE }}>{formatMoney(inv.total)} AED</span>
-              </div>
-            </div>
-
-            {/* Body */}
-            <div className="px-4 py-3">
-              {isEditing ? (
-                <div className="space-y-3">
-                  <ItemEditor items={editItems} onChange={setEditItems} />
-                  <div className="flex items-center justify-between">
-                    <Field label="Due date">
-                      <Input type="date" value={editDue} onChange={(e) => setEditDue(e.target.value)} className="h-8 text-xs w-40" />
-                    </Field>
-                    <span className="text-sm font-bold" style={{ color: INK }}>Total {formatMoney(editTotal)} AED</span>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  {(inv.items || []).map((it, i) => (
-                    <InfoRow key={i} label={it.itemDetails} value={`${formatMoney(it.amount)} AED`} />
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Action bar — hidden while editing */}
-            {!isEditing && (
-              <div className="flex items-center gap-px border-t" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
-                {canEdit && (
-                  <>
-                    <button type="button" onClick={() => startEdit(inv)} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors" style={{ color: PURPLE }}>
-                      <FileText size={13} /> Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (!confirm(`Delete ${inv.invoiceNo}?`)) return
-                        try {
-                          await api.delete(`/invoices/${inv._id}`)
-                          onChanged()
-                        } catch (e: any) { setErr(apiError(e)) }
-                      }}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors text-red-500"
-                    >
-                      <Trash2 size={13} /> Delete
-                    </button>
-                  </>
-                )}
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      const shareRes = await api.post(`/invoices/${inv._id}/share`)
-                      const pdfUrl = shareRes.data.url
-                      const phone = customerPhone.replace(/\D/g, '').replace(/^00/, '')
-                      const msg = `Hello ${customerName},\n\nHere is your invoice ${inv.invoiceNo} for ${formatMoney(inv.total)} AED.\n\nView: ${pdfUrl}\n\nThank you — PurpleBox`
-                      window.open(phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
-                    } catch (e: any) { setErr(apiError(e)) }
-                  }}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors"
-                  style={{ color: '#25D366' }}
-                >
-                  <Send size={13} /> WhatsApp
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      const shareRes = await api.post(`/invoices/${inv._id}/share`)
-                      const pdfUrl = shareRes.data.url
-                      setEmailModal({
-                        invoiceId: inv._id,
-                        to: customerEmail,
-                        subject: `Invoice ${inv.invoiceNo} — PurpleBox`,
-                        body: [
-                          `Hello ${customerName},`,
-                          ``,
-                          `Please find your invoice ${inv.invoiceNo} for ${formatMoney(inv.total)} AED.`,
-                          ``,
-                          `Thank you,`,
-                          `PurpleBox`,
-                        ].join('\n'),
-                        pdfUrl,
-                      })
-                    } catch (e: any) { setErr(apiError(e)) }
-                  }}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors"
-                  style={{ color: '#3B82F6' }}
-                >
-                  <Mail size={13} /> Email
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const res = await api.get(`/invoices/${inv._id}/pdf`, { responseType: 'blob' })
-                    const url = URL.createObjectURL(res.data)
-                    window.open(url, '_blank')
-                  }}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors"
-                  style={{ color: MUTED }}
-                >
-                  <Download size={13} /> PDF
-                </button>
-                {inv.zohoBooksSyncId ? (
-                  <a
-                    href={`https://books.zoho.com/app/908459713#/invoices/${inv.zohoBooksSyncId}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors"
-                    style={{ color: '#047857' }}
-                  >
-                    <ExternalLink size={13} /> Open in Zoho
-                  </a>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        await api.post(`/invoices/${inv._id}/sync-zoho-books`)
-                        onChanged()
-                      } catch (e: any) { setErr(apiError(e)) }
-                    }}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors"
-                    style={{ color: '#047857' }}
-                  >
-                    <Upload size={13} /> Sync Zoho
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        )
-      })}
-
-      {/* Add invoice */}
-      {adding ? (
-        <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: `${PURPLE}30`, background: `${PURPLE}05` }}>
-          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>New invoice</p>
-          <ItemEditor items={newItems} onChange={setNewItems} />
-          <div className="flex items-center justify-between">
-            <Field label="Due date">
-              <Input type="date" value={newDue} onChange={(e) => setNewDue(e.target.value)} className="h-8 text-xs w-40" />
-            </Field>
-            <span className="text-sm font-bold" style={{ color: INK }}>Total {formatMoney(newTotal)} AED</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={() => create.mutate()} disabled={create.isPending || !newItems.length} className="px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60" style={{ background: PURPLE }}>
-              {create.isPending ? 'Creating…' : 'Create Invoice'}
-            </button>
-            <button type="button" onClick={() => setAdding(false)} className="text-xs font-medium hover:underline" style={{ color: MUTED }}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={startAddBlank} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold border hover:bg-gray-50" style={{ color: INK, borderColor: 'rgba(20,8,31,0.15)' }}>
-            <Plus size={14} /> Custom invoice
-          </button>
-        </div>
-      )}
-
-      {err && <p className="text-sm px-3 py-2 rounded-lg" style={{ color: '#b91c1c', background: '#fef2f2' }}>{err}</p>}
-      {emailSent && <DoneBanner text={emailSent} />}
-
-      {/* Email compose modal */}
-      <Modal open={!!emailModal} onClose={() => setEmailModal(null)} title="Send Invoice Email" wide>
-        {emailModal && (
-          <div className="space-y-4">
-            <Field label="To">
-              <Input
-                type="email"
-                value={emailModal.to}
-                onChange={(e) => setEmailModal({ ...emailModal, to: e.target.value })}
-                placeholder="customer@email.com"
-              />
-            </Field>
-            <Field label="Subject">
-              <Input
-                value={emailModal.subject}
-                onChange={(e) => setEmailModal({ ...emailModal, subject: e.target.value })}
-              />
-            </Field>
-            <Field label="Body">
-              <Textarea
-                value={emailModal.body}
-                onChange={(e) => setEmailModal({ ...emailModal, body: e.target.value })}
-                rows={8}
-              />
-            </Field>
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: CHIP_BG }}>
-              <FileText size={14} style={{ color: PURPLE }} />
-              <span className="text-xs flex-1" style={{ color: INK }}>Invoice PDF will be attached automatically</span>
-            </div>
-            <div className="flex justify-end gap-2 pt-2 border-t" style={{ borderColor: 'rgba(20,8,31,0.06)' }}>
-              <button
-                type="button"
-                onClick={() => setEmailModal(null)}
-                disabled={emailSending}
-                className="px-4 py-2 rounded-xl text-sm font-semibold border hover:opacity-80 transition-opacity disabled:opacity-50"
-                style={{ color: INK, borderColor: 'rgba(20,8,31,0.15)' }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={emailSending || !emailModal.to}
-                onClick={async () => {
-                  setEmailSending(true)
-                  try {
-                    const toAddr = emailModal.to
-                    await api.post(`/invoices/${emailModal.invoiceId}/send-email`, {
-                      to: toAddr,
-                      subject: emailModal.subject,
-                      body: emailModal.body,
-                    })
-                    setEmailModal(null)
-                    setEmailSent(`Email sent to ${toAddr}`)
-                    setErr('')
-                  } catch (e: any) {
-                    setErr(apiError(e))
-                  } finally {
-                    setEmailSending(false)
-                  }
-                }}
-                className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-50"
-                style={{ background: PURPLE }}
-              >
-                {emailSending ? <><Loader2 size={14} className="animate-spin" /> Sending…</> : <><Send size={14} /> Send Email</>}
-              </button>
-            </div>
-          </div>
-        )}
-      </Modal>
-    </div>
-  )
 }
 
 export default function NewQuote() {
@@ -876,7 +134,6 @@ export default function NewQuote() {
   const [quoteId, setQuoteId] = useState('')
   const [quoteNo, setQuoteNo] = useState('')
   const [showShareBar, setShowShareBar] = useState(false)
-  const invoiceHandleRef = useRef<InvoiceStepHandle | null>(null)
   const [quoteEmailModal, setQuoteEmailModal] = useState<{ to: string; subject: string; body: string; quoteUrl: string } | null>(null)
   const [quoteEmailSending, setQuoteEmailSending] = useState(false)
   const [quoteEmailSent, setQuoteEmailSent] = useState('')
@@ -1539,6 +796,43 @@ export default function NewQuote() {
     setAuthorizedPersons((prev) => prev.filter((_, i) => i !== idx))
   }
 
+  // Handing the booking on: what still needs doing, and who is doing it.
+  // /users is admin-only; /users/assignable is readable by every role, which
+  // matters because sales reps do the booking.
+  const { data: assignableUsers = [] } = useQuery<{ _id: string; name: string }[]>({
+    queryKey: ['assignable-users'],
+    queryFn: () => api.get('/users/assignable').then((r) => r.data),
+    staleTime: 5 * 60_000,
+  })
+  const [taskTitle, setTaskTitle] = useState('')
+  const [taskOwner, setTaskOwner] = useState('')
+  const [taskDue, setTaskDue] = useState('')
+  const [taskMsg, setTaskMsg] = useState('')
+
+  const createTask = useMutation({
+    mutationFn: () => api.post('/tasks', {
+      title: taskTitle.trim(),
+      assignedTo: taskOwner,
+      dueDate: taskDue || undefined,
+      // Tied to the contract, so the task opens the booking it came from
+      // rather than being a sentence with no context a week later.
+      leadId: contractId,
+      leadType: 'contract',
+      leadName: contract?.contractNo || '',
+      description: [
+        contract?.contractNo ? `Contract: ${contract.contractNo}` : '',
+        customerName ? `Tenant: ${customerName}` : '',
+      ].filter(Boolean).join('\n'),
+      priority: 'medium',
+    }),
+    onSuccess: () => {
+      setTaskMsg(`Assigned to ${assignableUsers.find(u => u._id === taskOwner)?.name || 'them'}`)
+      setTaskTitle(''); setTaskDue('')
+      setTimeout(() => setTaskMsg(''), 3000)
+    },
+    onError: (e) => setTaskMsg(apiError(e)),
+  })
+
   const sendForApproval = useMutation({
     mutationFn: () => api.post(`/contracts/${contractId}/send-for-approval`),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['flow-contract'] }); setErr('') },
@@ -1551,7 +845,6 @@ export default function NewQuote() {
     unitRows.length > 0,
     Boolean(quoteId),
     Boolean(contractId),
-    Boolean(invoice),
     paidTotal > 0,
   ]
 
@@ -2644,52 +1937,55 @@ export default function NewQuote() {
               </div>
             )}
 
-            {/* ── Step 5: Invoice ── */}
-            {step === 4 && (
-              <div className="space-y-5">
-                <SectionTitle title="Invoices" subtitle="Invoices are raised in Zoho Books — this shows what is already billed to this tenant" />
 
-                {!contract ? (
-                  <div className="text-sm text-center py-8 rounded-xl" style={{ background: CHIP_BG, color: MUTED }}>
-                    Create the contract first, then raise its invoice in Zoho Books.
-                  </div>
-                ) : (
-                  <InvoiceStep
-                    contract={contract}
-                    invoices={flowData?.invoices || []}
-                    customerId={customerId}
-                    customerName={customerName}
-                    customerPhone={customerPhone}
-                    customerEmail={customerEmail}
-                    onChanged={() => qc.invalidateQueries({ queryKey: ['flow-contract'] })}
-                    handleRef={invoiceHandleRef}
+            {/* Once the contract exists the booking is done here, and what
+                is left — raise the invoice in Zoho, chase the deposit, hand
+                over a key — belongs to somebody by name rather than to
+                whoever remembers. */}
+            {step === STEPS.length - 1 && contractId && (
+              <div className="mt-6 rounded-xl p-4" style={{ background: '#F7F3FF', border: '1px solid #DDD0FF' }}>
+                <div className="text-sm font-bold" style={{ color: '#4A1FA0' }}>What happens next?</div>
+                <p className="text-xs mt-0.5 mb-3" style={{ color: MUTED }}>
+                  Assign anything still to do on {contract?.contractNo || 'this contract'} — it lands on their board.
+                </p>
+
+                <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto_auto]">
+                  <input
+                    value={taskTitle}
+                    onChange={(e) => setTaskTitle(e.target.value)}
+                    placeholder="Raise the invoice in Zoho Books"
+                    className="h-10 px-3 rounded-lg text-sm bg-white"
+                    style={{ border: '1px solid rgba(20,8,31,0.14)' }}
                   />
-                )}
+                  <select
+                    value={taskOwner}
+                    onChange={(e) => setTaskOwner(e.target.value)}
+                    className="h-10 px-3 rounded-lg text-sm bg-white cursor-pointer"
+                    style={{ border: '1px solid rgba(20,8,31,0.14)' }}
+                  >
+                    <option value="">Assign to…</option>
+                    {assignableUsers.map((u) => <option key={u._id} value={u._id}>{u.name}</option>)}
+                  </select>
+                  <input
+                    type="date"
+                    value={taskDue}
+                    onChange={(e) => setTaskDue(e.target.value)}
+                    className="h-10 px-3 rounded-lg text-sm bg-white"
+                    style={{ border: '1px solid rgba(20,8,31,0.14)' }}
+                  />
+                  <button
+                    type="button"
+                    disabled={!taskTitle.trim() || !taskOwner || createTask.isPending}
+                    onClick={() => createTask.mutate()}
+                    className="h-10 px-4 rounded-lg text-sm font-bold text-white disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer hover:opacity-90"
+                    style={{ background: PURPLE }}
+                  >
+                    {createTask.isPending ? 'Adding…' : 'Add task'}
+                  </button>
+                </div>
 
-                {/* Approval status */}
-                {approvalStatus === 'pending' && (
-                  <div className="flex items-center gap-3 p-4 rounded-xl" style={{ background: '#EDE9FE' }}>
-                    <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: `${PURPLE}20` }}>
-                      <ShieldCheck size={18} style={{ color: PURPLE }} />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold" style={{ color: INK }}>Sent for admin approval</p>
-                      <p className="text-xs" style={{ color: MUTED }}>Waiting for an admin to review and approve this booking.</p>
-                    </div>
-                  </div>
-                )}
-                {approvalStatus === 'approved' && (
-                  <div className="flex flex-col items-center py-8 gap-3">
-                    <div style={{ width: 64, height: 64, borderRadius: 20, background: '#D1FAE5', display: 'grid', placeItems: 'center' }}>
-                      <CheckCircle2 size={32} style={{ color: GREEN }} />
-                    </div>
-                    <p className="text-sm font-bold" style={{ color: GREEN }}>Approved — contract is ready for activation</p>
-                  </div>
-                )}
-                {approvalStatus === 'rejected' && (
-                  <div className="p-3 rounded-xl text-sm" style={{ background: '#FEE2E2', color: '#B91C1C' }}>
-                    Rejected{contract?.approvalNote ? `: ${contract.approvalNote}` : ''}
-                  </div>
+                {taskMsg && (
+                  <p className="text-xs mt-2" style={{ color: taskMsg.startsWith('Assigned') ? GREEN : '#b91c1c' }}>{taskMsg}</p>
                 )}
               </div>
             )}
