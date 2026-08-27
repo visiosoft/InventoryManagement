@@ -23,6 +23,10 @@ type LeadStats = {
     byStatus: Record<string, number>
     unassigned: number
     byOwner: WorkloadRow[]
+    chase?: { none: number; active: number; exhausted: number }
+    /* Who has logged an attempt, counted one lead per person rather than one
+       per attempt — the question is who is working leads, not who clicks most. */
+    byChaser?: WorkloadRow[]
 }
 
 // datetime-local inputs carry no timezone and show exactly what they are
@@ -526,6 +530,9 @@ export default function Leads() {
     const [status, setStatus] = useState('')
     const [source, setSource] = useState('')
     const [owner, setOwner] = useState('')
+    // Where the chase has got to, and who did it.
+    const [chase, setChase] = useState('')
+    const [attemptBy, setAttemptBy] = useState('')
     const [from, setFrom] = useState('')
     const [to, setTo] = useState('')
 
@@ -626,12 +633,14 @@ export default function Leads() {
             status: status || undefined,
             source: source || undefined,
             owner: owner || undefined,
+            chase: chase || undefined,
+            attemptBy: attemptBy || undefined,
             from: from || undefined,
             to: to || undefined,
             page,
             limit,
         }),
-        [search, status, source, owner, from, to, page, limit]
+        [search, status, source, owner, chase, attemptBy, from, to, page, limit]
     )
 
     // Back to page 1 whenever a filter changes
@@ -881,7 +890,7 @@ export default function Leads() {
         return `${Math.floor(days / 30)}mo ago`
     }
 
-    const isFiltered = !!(search || status || source || owner || from || to)
+    const isFiltered = !!(search || status || source || owner || chase || attemptBy || from || to)
 
     const totalLeads = stats?.total ?? leadsPage?.total ?? 0
     const newCount = stats?.byStatus?.new ?? 0
@@ -923,7 +932,7 @@ export default function Leads() {
         other: { bg: '#F6F0E4', fg: '#4A4357' },
     }
 
-    const GRID = '36px minmax(200px,1.4fr) 150px 116px 170px 180px 108px 172px'
+    const GRID = '36px minmax(190px,1.3fr) 145px 112px 164px 172px 128px 104px 168px'
 
     // No outer padding or width cap here: the app layout already gutters every
     // page with p-3 sm:p-4, and 32px on top of a 1240px cap left most of a wide
@@ -1028,13 +1037,42 @@ export default function Leads() {
                         <option value="">All sources</option>
                         {LEAD_SOURCES.map(s => <option key={s} value={s}>{statusLabel(s)}</option>)}
                     </select>
+                    {/* Where the chasing has got to. "Nobody has tried" is the
+                        one worth looking at first — those are the leads that
+                        rot without anybody noticing. */}
+                    <select
+                        value={chase}
+                        onChange={(e) => setChase(e.target.value)}
+                        style={{ height: 44, minWidth: 170, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK, cursor: 'pointer' }}
+                    >
+                        <option value="">Any chase state</option>
+                        <option value="none">Nobody has tried{stats?.chase ? ` (${stats.chase.none})` : ''}</option>
+                        <option value="active">Being chased{stats?.chase ? ` (${stats.chase.active})` : ''}</option>
+                        <option value="exhausted">Needs a decision{stats?.chase ? ` (${stats.chase.exhausted})` : ''}</option>
+                    </select>
+
+                    {/* Who did the chasing, which is not who owns it: leads get
+                        reassigned, and the record of the work stays put. */}
+                    {(stats?.byChaser?.length ?? 0) > 0 && (
+                        <select
+                            value={attemptBy}
+                            onChange={(e) => setAttemptBy(e.target.value)}
+                            style={{ height: 44, minWidth: 160, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK, cursor: 'pointer' }}
+                        >
+                            <option value="">Chased by anyone</option>
+                            {(stats?.byChaser ?? []).map((c) => (
+                                <option key={c._id} value={c._id}>{c.name} ({c.count})</option>
+                            ))}
+                        </select>
+                    )}
+
                     <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
                         style={{ height: 44, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK }} />
                     <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
                         style={{ height: 44, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK }} />
                     {isFiltered && (
                         <button
-                            onClick={() => { setSearch(''); setStatus(''); setSource(''); setOwner(''); setFrom(''); setTo('') }}
+                            onClick={() => { setSearch(''); setStatus(''); setSource(''); setOwner(''); setChase(''); setAttemptBy(''); setFrom(''); setTo('') }}
                             style={{ height: 44, padding: '0 16px', borderRadius: 999, border: '1px dashed rgba(20,8,31,.20)', background: 'transparent', fontSize: 13, fontWeight: 600, color: MUTED_COLOR, cursor: 'pointer' }}
                         >
                             Clear
@@ -1108,7 +1146,7 @@ export default function Leads() {
                                     style={{ width: 16, height: 16, cursor: 'pointer' }}
                                     aria-label="Select every lead on this page"
                                 />
-                                {['Name', 'Phone', 'Source', 'Assigned to', 'Status', 'Added'].map((h) => (
+                                {['Name', 'Phone', 'Source', 'Assigned to', 'Status', 'Chase', 'Added'].map((h) => (
                                     <span key={h} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase' as const, color: MUTED_COLOR, whiteSpace: 'nowrap' }}>{h}</span>
                                 ))}
                                 <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase' as const, color: MUTED_COLOR, textAlign: 'right', whiteSpace: 'nowrap' }}>Actions</span>
@@ -1178,6 +1216,35 @@ export default function Leads() {
                                         <span style={{ display: 'inline-flex', alignItems: 'center', background: sc.bg, color: sc.fg, borderRadius: 999, padding: '6px 12px', fontSize: 12, fontWeight: 600, width: 'fit-content' }}>
                                             {statusLabel(lead.status)}
                                         </span>
+
+                                        {/* How far the chase has got, without opening the
+                                            lead. "Not tried" is the state worth spotting from
+                                            across a list. */}
+                                        <div style={{ minWidth: 0 }}>{(() => {
+                                            const made = lead.attempts?.length ?? 0
+                                            const last = made ? lead.attempts![made - 1] : null
+                                            if (lead.sequenceExhaustedAt) {
+                                                return (
+                                                    <>
+                                                        <div style={{ fontSize: 12.5, fontWeight: 700, color: '#DC2626', whiteSpace: 'nowrap' }}>Needs a decision</div>
+                                                        <div style={{ fontSize: 12, color: MUTED_COLOR, whiteSpace: 'nowrap' }}>{made} attempt{made === 1 ? '' : 's'}</div>
+                                                    </>
+                                                )
+                                            }
+                                            if (!made) {
+                                                return <div style={{ fontSize: 12.5, color: '#B58A3A', fontWeight: 600, whiteSpace: 'nowrap' }}>Not tried</div>
+                                            }
+                                            return (
+                                                <>
+                                                    <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                                        {made} attempt{made === 1 ? '' : 's'}
+                                                    </div>
+                                                    <div className="truncate" style={{ fontSize: 12, color: MUTED_COLOR }}>
+                                                        {formatDate(last!.at)}{last!.user?.name ? ` · ${last!.user.name}` : ''}
+                                                    </div>
+                                                </>
+                                            )
+                                        })()}</div>
 
                                         <div style={{ minWidth: 0 }}>
                                             <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>{timeAgo(lead.leadDateTime)}</div>

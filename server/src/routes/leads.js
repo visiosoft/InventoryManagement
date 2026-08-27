@@ -88,8 +88,32 @@ function ownsLead(req, lead) {
     return String(lead.owner?._id || lead.owner) === String(req.user.id);
 }
 
+/**
+ * Narrow a lead query by where its chase has got to.
+ *
+ *   none       nobody has tried yet — the ones that quietly rot
+ *   active     being chased, with the next attempt booked
+ *   exhausted  every attempt used and no answer; waiting on a decision
+ *
+ * `by` is who actually logged an attempt, which is deliberately not the same
+ * question as who owns the lead: ownership gets reassigned, and the record of
+ * who did the work stays where it happened.
+ */
+function applyChaseFilter(filter, { chase, attemptBy }) {
+    if (chase === 'none') filter.attempts = { $size: 0 };
+    else if (chase === 'active') {
+        filter['attempts.0'] = { $exists: true };
+        filter.followUpAt = { $ne: null };
+        filter.sequenceExhaustedAt = null;
+    } else if (chase === 'exhausted') filter.sequenceExhaustedAt = { $ne: null };
+
+    if (attemptBy) filter['attempts.user'] = attemptBy;
+    return filter;
+}
+
 router.get('/', async (req, res) => {
     const filter = {};
+    applyChaseFilter(filter, { chase: String(req.query.chase || ''), attemptBy: req.query.attemptBy ? String(req.query.attemptBy) : '' });
     if (req.query.status && ALLOWED_STATUS.has(String(req.query.status))) {
         filter.status = String(req.query.status);
     }
@@ -140,6 +164,8 @@ router.get('/', async (req, res) => {
         Lead.find(filter)
             .select('-timeline -comments')
             .populate('owner', 'name email')
+            // Who did the chasing, not just who it belongs to.
+            .populate('attempts.user', 'name')
             .sort({ leadDateTime: -1, createdAt: -1 })
             .skip(skip)
             .limit(limit)
@@ -179,13 +205,29 @@ router.get('/stats', async (req, res) => {
         if (isSalesRep(req)) filter.owner = req.user.id;
         if (req.query.includeUnsaved !== '1') filter.fullName = { $not: /^whatsapp\s*contact/i };
 
-        const [byStatus, byOwner, total] = await Promise.all([
+        // Where the chasing has got to, over everybody rather than the page in
+        // view. "Nobody has tried" is the number worth knowing first.
+        const open = { ...filter, status: { $nin: ['won', 'lost'] } };
+
+        const [byStatus, byOwner, total, chaseNone, chaseActive, chaseExhausted, byChaser] = await Promise.all([
             Lead.aggregate([{ $match: filter }, { $group: { _id: '$status', n: { $sum: 1 } } }]),
             Lead.aggregate([{ $match: filter }, { $group: { _id: '$owner', n: { $sum: 1 } } }]),
             Lead.countDocuments(filter),
+            Lead.countDocuments({ ...open, attempts: { $size: 0 } }),
+            Lead.countDocuments({ ...open, 'attempts.0': { $exists: true }, followUpAt: { $ne: null }, sequenceExhaustedAt: null }),
+            Lead.countDocuments({ ...open, sequenceExhaustedAt: { $ne: null } }),
+            // Who has actually done the chasing. One lead counts once per
+            // person who worked it, not once per attempt — the question is who
+            // is working leads, not who clicks most.
+            Lead.aggregate([
+                { $match: filter },
+                { $unwind: '$attempts' },
+                { $group: { _id: { lead: '$_id', user: '$attempts.user' } } },
+                { $group: { _id: '$_id.user', n: { $sum: 1 } } },
+            ]),
         ]);
 
-        const ownerIds = byOwner.map((r) => r._id).filter(Boolean);
+        const ownerIds = [...byOwner.map((r) => r._id), ...byChaser.map((r) => r._id)].filter(Boolean);
         const users = ownerIds.length
             ? await User.find({ _id: { $in: ownerIds } }).select('name email').lean()
             : [];
@@ -200,6 +242,11 @@ router.get('/stats', async (req, res) => {
                 .filter((r) => !r._id || !nameOf.has(String(r._id)))
                 .reduce((sum, r) => sum + r.n, 0),
             byOwner: byOwner
+                .filter((r) => r._id && nameOf.has(String(r._id)))
+                .map((r) => ({ _id: String(r._id), name: nameOf.get(String(r._id)), count: r.n }))
+                .sort((a, b) => b.count - a.count),
+            chase: { none: chaseNone, active: chaseActive, exhausted: chaseExhausted },
+            byChaser: byChaser
                 .filter((r) => r._id && nameOf.has(String(r._id)))
                 .map((r) => ({ _id: String(r._id), name: nameOf.get(String(r._id)), count: r.n }))
                 .sort((a, b) => b.count - a.count),
