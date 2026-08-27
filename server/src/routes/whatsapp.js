@@ -178,6 +178,13 @@ router.get('/messages', async (req, res) => {
 });
 
 router.get('/conversations', async (_req, res) => {
+    // Numbers are stored inconsistently (+971 …, 0…, 971…), so people are
+    // matched on the last 9 digits — the same rule the Zoho matcher uses.
+    const suffix = (v) => {
+        const d = String(v || '').replace(/\D/g, '');
+        return d.length >= 9 ? d.slice(-9) : '';
+    };
+
     const rows = await WhatsAppMessage.aggregate([
         { $sort: { occurredAt: -1 } },
         {
@@ -186,31 +193,39 @@ router.get('/conversations', async (_req, res) => {
                 lastAt: { $max: '$occurredAt' },
                 count: { $sum: 1 },
                 phone: { $first: '$phone' },
-                // Newest linked lead on the thread — drives the inbox's
-                // create-lead vs. save-as-customer button without a second call.
-                leadId: { $first: '$lead' },
             },
         },
         { $sort: { lastAt: -1 } },
         { $limit: 200 },
-        {
-            $lookup: {
-                from: 'leads',
-                localField: 'leadId',
-                foreignField: '_id',
-                as: 'lead',
-                pipeline: [{ $project: { fullName: 1, status: 1, owner: 1, whatsappProfileName: 1 } }],
-            },
-        },
     ]);
 
-    // Resolve a real name where we have one. Customers are matched on the
-    // last 9 digits because numbers are stored inconsistently (+971 …, 0…,
-    // 971…), the same rule the Zoho matcher uses.
-    const suffix = (v) => {
-        const d = String(v || '').replace(/\D/g, '');
-        return d.length >= 9 ? d.slice(-9) : '';
-    };
+    /* Which lead a thread belongs to, decided by the number.
+     *
+     * This used to read the lead id denormalised onto the newest message,
+     * which is only as good as whatever wrote it. A lead deleted and made
+     * again left every message pointing at an id that no longer resolves, so
+     * a chat with a perfectly good lead — right name, right owner — showed as
+     * a bare number with no badge.
+     *
+     * The number is the fact. Matched on the last nine digits, the same rule
+     * used for customers just below and everywhere else people are matched.
+     */
+    const leads = await Lead.find({})
+        .select('fullName status owner whatsappProfileName phone phoneNormalized')
+        .lean();
+    const byLeadPhone = new Map();
+    for (const l of leads) {
+        for (const candidate of [l.phoneNormalized, l.phone]) {
+            const k = suffix(candidate);
+            // A named lead wins over a placeholder for the same number.
+            if (!k) continue;
+            const held = byLeadPhone.get(k);
+            if (!held || (isPlaceholderLeadName(held.fullName) && !isPlaceholderLeadName(l.fullName))) {
+                byLeadPhone.set(k, l);
+            }
+        }
+    }
+
     const customers = await Customer.find({}).select('fullName phone phones').lean();
     const byPhone = new Map();
     for (const c of customers) {
@@ -231,7 +246,9 @@ router.get('/conversations', async (_req, res) => {
     // Who is working each lead. The inbox showed a bare "Lead" badge, which
     // told you somebody had saved this person but not who is meant to answer
     // them — so a thread with an owner looked exactly like an unclaimed one.
-    const ownerIds = [...new Set(rows.map((r) => r.lead?.[0]?.owner).filter(Boolean).map(String))];
+    const ownerIds = [...new Set(
+        rows.map((r) => byLeadPhone.get(suffix(r._id))?.owner).filter(Boolean).map(String),
+    )];
     const owners = ownerIds.length
         ? await User.find({ _id: { $in: ownerIds } }).select('name email').lean()
         : [];
@@ -243,7 +260,7 @@ router.get('/conversations', async (_req, res) => {
     const byLabels = new Map(chatLabels.map((c) => [c.phoneNormalized, c.labels || []]));
 
     res.json(rows.map((r) => {
-        const lead = r.lead?.[0] || null;
+        const lead = byLeadPhone.get(suffix(r._id)) || null;
         const customer = byPhone.get(suffix(r._id)) || null;
         const leadName = isPlaceholderLeadName(lead?.fullName) ? '' : lead.fullName;
         const bot = byThread.get(r._id) || null;

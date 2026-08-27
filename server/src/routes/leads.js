@@ -861,6 +861,11 @@ router.delete('/:id', async (req, res) => {
     // is left alone: somebody is part-way through it and should say so.
     await Task.deleteMany({ leadId: lead._id, leadType: 'storage', status: 'todo' });
 
+    // The conversation stays; its pointer to this lead does not. Left behind,
+    // it names a record that no longer resolves, and the next lead made for
+    // the same number inherits a thread that quietly refuses to recognise it.
+    await WhatsAppMessage.updateMany({ lead: lead._id }, { $set: { lead: null } });
+
     res.json({ ok: true });
 });
 
