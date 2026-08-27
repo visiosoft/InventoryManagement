@@ -105,18 +105,19 @@ const navBottom: { to: string; label: string; icon: any; perm: string | string[]
 // both lit up as active.
 // A rep's own board and their to-do list sit above the groups — they are
 // what the day starts on, not a category of work.
-const salesRepNavTop = [
-  // Called "Dashboard" until a rep asked where Leads had gone. The page is
-  // their leads board — the same one the top menu calls My Leads — so naming
-  // it after the thing it shows is the whole fix.
-  { key: 'leads', to: '/my-leads', label: 'Leads', icon: UserPlus, perm: 'sales_board' },
-  { key: 'tasks', to: '/tasks', label: 'Tasks', icon: ListTodo, perm: 'sales_board' },
-]
+// Nothing above the first heading: leads, the tasks they raise and the
+// conversations they arrive in are one job, so they sit together under Sales.
+const salesRepNavTop: { key: string; to: string; label: string; icon: typeof UserPlus; perm?: string }[] = []
 
 const salesRepNavGroups = [
   {
     title: 'Sales',
     items: [
+      // Called "Dashboard" until a rep asked where Leads had gone. The page is
+      // their leads board — the same one the top menu calls My Leads — so
+      // naming it after the thing it shows is the whole fix.
+      { key: 'leads', to: '/my-leads', label: 'Leads', icon: UserPlus, perm: 'sales_board' },
+      { key: 'tasks', to: '/tasks', label: 'Tasks', icon: ListTodo, perm: 'sales_board' },
       { key: 'whatsapp', to: '/whatsapp', label: 'WhatsApp', icon: MessageCircle, perm: 'sales_board' },
     ],
   },
