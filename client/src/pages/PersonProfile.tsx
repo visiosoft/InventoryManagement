@@ -176,7 +176,10 @@ export default function PersonProfile() {
   )
   // Contact details, while they are being edited rather than read.
   const [editing, setEditing] = useState(false)
-  const [form, setForm] = useState({ fullName: '', phone: '', whatsappNo: '', email: '', source: 'manual' })
+  const [form, setForm] = useState({
+    fullName: '', phone: '', whatsappNo: '', email: '', source: 'manual',
+    company: '', nationality: '', emergencyNumber: '', emiratesId: '', address: '',
+  })
 
   const { data, isLoading } = useQuery<Profile>({
     queryKey: ['person', id],
@@ -210,19 +213,55 @@ export default function PersonProfile() {
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['person', id] })
 
+  /**
+   * Put a change on screen before the server has heard about it.
+   *
+   * Every one of these used to wait for the save and then for a refetch before
+   * anything moved — two round trips to watch a tag turn purple. The click is
+   * the decision; the request is bookkeeping, and bookkeeping is not something
+   * anybody should sit and watch. If it fails, the previous state goes back
+   * exactly as it was and the error says why.
+   */
+  const showNow = async (next: Partial<Lead>) => {
+    await qc.cancelQueries({ queryKey: ['person', id] })
+    const previous = qc.getQueryData<Profile>(['person', id])
+    if (previous?.lead) {
+      qc.setQueryData<Profile>(['person', id], { ...previous, lead: { ...previous.lead, ...next } })
+    }
+    return { previous }
+  }
+
+  const putBack = (e: unknown, ctx?: { previous?: Profile }) => {
+    if (ctx?.previous) qc.setQueryData(['person', id], ctx.previous)
+    setErr(apiError(e))
+  }
+
   const setStatus = useMutation({
     mutationFn: ({ status, comment }: { status: string; comment?: string }) =>
       api.patch(`/leads/${data!.lead!._id}/status`, { status, comment }),
-    onSuccess: () => { setErr(''); setPendingStage(''); setStageNote(''); refresh() },
-    onError: (e) => setErr(apiError(e)),
+    onMutate: async (vars) => {
+      setErr(''); setPendingStage(''); setStageNote('')
+      return showNow({ status: vars.status })
+    },
+    onError: (e, _vars, ctx) => putBack(e, ctx),
+    onSettled: () => refresh(),
   })
 
   // Temperature, tags and the follow-up date all go through the same update,
   // so one edit cannot half-apply.
   const patchLead = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.put(`/leads/${data!.lead!._id}`, body),
-    onSuccess: () => { setErr(''); refresh() },
-    onError: (e) => setErr(apiError(e)),
+    onMutate: async (body: Record<string, unknown>) => {
+      setErr('')
+      // owner arrives as an id but is rendered as a record, so it is swapped
+      // for the matching person rather than merged in raw.
+      const { owner, ...rest } = body as { owner?: string }
+      const next: Partial<Lead> = { ...(rest as Partial<Lead>) }
+      if (owner !== undefined) next.owner = assignable.find((u) => u._id === owner) ?? null
+      return showNow(next)
+    },
+    onError: (e, _body, ctx) => putBack(e, ctx),
+    onSettled: () => refresh(),
   })
 
   const logAttempt = useMutation({
@@ -251,19 +290,38 @@ export default function PersonProfile() {
     onError: (e) => setErr(apiError(e)),
   })
 
-  const assign = useMutation({
-    mutationFn: (owner: string) => api.put(`/leads/${data!.lead!._id}`, { owner }),
-    onSuccess: () => { setErr(''); refresh() },
-    onError: (e) => setErr(apiError(e)),
-  })
+  // Reassigning is the same write, so it takes the same instant path.
+  const assign = { mutate: (owner: string) => patchLead.mutate({ owner }), isPending: patchLead.isPending }
 
-  // firstName and lastName travel with the full name so the three do not drift
-  // apart — the server keeps whichever it is not sent, and the rest of the app
-  // reads fullName.
+  /**
+   * Save to whichever record the page is actually showing.
+   *
+   * The header prefers the customer's name over the lead's, so editing the
+   * lead behind a customer changed nothing anybody could see — which is why
+   * this used to be offered on leads only. It writes to the customer once
+   * there is one, and both stay editable in the one place people look.
+   *
+   * firstName and lastName travel with the full name so the three do not
+   * drift apart; the server keeps whichever it is not sent.
+   */
   const saveDetails = useMutation({
     mutationFn: () => {
       const name = form.fullName.trim()
       const [firstName, ...rest] = name.split(/\s+/)
+
+      if (data?.customer) {
+        return api.put(`/customers/${data.customer._id}`, {
+          fullName: name,
+          phone: form.phone.trim(),
+          email: form.email.trim(),
+          company: form.company.trim(),
+          nationality: form.nationality.trim(),
+          emergencyNumber: form.emergencyNumber.trim(),
+          emiratesId: form.emiratesId.trim(),
+          address: form.address.trim(),
+        })
+      }
+
       return api.put(`/leads/${data!.lead!._id}`, {
         fullName: name,
         firstName: firstName || '',
@@ -274,7 +332,13 @@ export default function PersonProfile() {
         source: form.source,
       })
     },
-    onSuccess: () => { setErr(''); setEditing(false); refresh() },
+    onSuccess: () => {
+      setErr('')
+      setEditing(false)
+      refresh()
+      // The customers list shows the same name, so it should not keep the old one.
+      qc.invalidateQueries({ queryKey: ['customers'] })
+    },
     onError: (e) => setErr(apiError(e)),
   })
 
@@ -422,14 +486,21 @@ export default function PersonProfile() {
               nothing anybody can see. */}
           <Card
             title="Contact details"
-            action={lead && !isCustomer && !editing ? (
+            action={(lead || customer) && !editing ? (
               <button
                 type="button"
                 onClick={() => {
                   setForm({
-                    fullName: lead.fullName || '', phone: lead.phone || '',
-                    whatsappNo: lead.whatsappNo || '', email: lead.email || '',
-                    source: lead.source || 'manual',
+                    fullName: name === 'Unnamed' ? '' : name,
+                    phone: phone || '',
+                    whatsappNo: lead?.whatsappNo || '',
+                    email: email || '',
+                    source: lead?.source || 'manual',
+                    company: customer?.company || '',
+                    nationality: customer?.nationality || '',
+                    emergencyNumber: customer?.emergencyNumber || '',
+                    emiratesId: customer?.emiratesId || '',
+                    address: customer?.address || '',
                   })
                   setErr('')
                   setEditing(true)
@@ -441,13 +512,25 @@ export default function PersonProfile() {
               </button>
             ) : undefined}
           >
-            {editing && lead ? (
+            {editing ? (
               <div className="flex flex-col" style={{ gap: 12 }}>
                 <Field label="Name" value={form.fullName} onChange={(v) => setForm((f) => ({ ...f, fullName: v }))} />
                 <Field label="Phone" value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} />
-                <Field label="WhatsApp" value={form.whatsappNo} onChange={(v) => setForm((f) => ({ ...f, whatsappNo: v }))} />
+                {!isCustomer && (
+                  <Field label="WhatsApp" value={form.whatsappNo} onChange={(v) => setForm((f) => ({ ...f, whatsappNo: v }))} />
+                )}
                 <Field label="Email" value={form.email} onChange={(v) => setForm((f) => ({ ...f, email: v }))} type="email" />
-                <div>
+
+                {/* Only a customer has these — a lead is a name and a number. */}
+                {customer && <>
+                  <Field label="Company" value={form.company} onChange={(v) => setForm((f) => ({ ...f, company: v }))} />
+                  <Field label="Nationality" value={form.nationality} onChange={(v) => setForm((f) => ({ ...f, nationality: v }))} />
+                  <Field label="Emergency contact" value={form.emergencyNumber} onChange={(v) => setForm((f) => ({ ...f, emergencyNumber: v }))} />
+                  <Field label="Emirates ID" value={form.emiratesId} onChange={(v) => setForm((f) => ({ ...f, emiratesId: v }))} />
+                  <Field label="Address" value={form.address} onChange={(v) => setForm((f) => ({ ...f, address: v }))} />
+                </>}
+
+                {lead && !isCustomer && <div>
                   <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Source</span>
                   <select
                     value={form.source}
@@ -457,7 +540,7 @@ export default function PersonProfile() {
                   >
                     {LEAD_SOURCES.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
                   </select>
-                </div>
+                </div>}
                 <div className="flex" style={{ gap: 8, marginTop: 2 }}>
                   <button
                     type="button"
@@ -753,7 +836,6 @@ export default function PersonProfile() {
                         <button
                           type="button"
                           onClick={() => patchLead.mutate({ followUpAt: null })}
-                          disabled={patchLead.isPending}
                           className="cursor-pointer disabled:opacity-50"
                           style={{ background: 'none', border: 'none', color: FAINT, fontSize: 12.5, fontWeight: 600 }}
                         >
@@ -797,7 +879,6 @@ export default function PersonProfile() {
                         <button
                           type="button"
                           onClick={() => patchLead.mutate({ siteVisitAt: null })}
-                          disabled={patchLead.isPending}
                           className="cursor-pointer disabled:opacity-50"
                           style={{ background: 'none', border: 'none', color: FAINT, fontSize: 12.5, fontWeight: 600 }}
                         >
@@ -878,7 +959,6 @@ export default function PersonProfile() {
                     <select
                       value={lead.owner?._id ?? ''}
                       onChange={(e) => assign.mutate(e.target.value)}
-                      disabled={assign.isPending}
                       className="cursor-pointer"
                       style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: INK, fontFamily: 'inherit' }}
                     >
@@ -906,7 +986,6 @@ export default function PersonProfile() {
                       if (next === lead.status) { setPendingStage(''); setStageNote(''); return }
                       setPendingStage(next)
                     }}
-                    disabled={setStatus.isPending}
                     className="cursor-pointer"
                     style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: INK, fontFamily: 'inherit' }}
                   >
@@ -936,7 +1015,6 @@ export default function PersonProfile() {
                       storageSizeValue: e.target.value ? Number(e.target.value) : 0,
                       storageSizeUnit: 'sqft',
                     })}
-                    disabled={patchLead.isPending}
                     className="cursor-pointer"
                     style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: lead.storageSizeValue ? INK : FAINT, fontFamily: 'inherit' }}
                   >
