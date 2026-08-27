@@ -1007,20 +1007,22 @@ export default function SalesBoard() {
 
       {!isAccounts && (
         <>
-      {/* Your leads */}
-      <div className="flex items-end justify-between flex-wrap" style={{ gap: 14, marginBottom: 22 }}>
-        <div>
+      {/* The heading and the controls that narrow it, on one line: they are
+          one thought, and apart they cost two full rows before any lead. The
+          toolbar wraps under the title on a narrow screen rather than
+          squeezing the pills. */}
+      <div className="flex items-end justify-between flex-wrap" style={{ gap: 14, marginBottom: 18 }}>
+        <div className="shrink-0">
           <h1 style={{ fontFamily: "'Bricolage Grotesque', serif", fontWeight: 700, fontSize: 28, letterSpacing: '-0.02em', margin: 0, color: INK }}>Your leads</h1>
           <p style={{ color: MUTED, fontSize: 14, margin: '4px 0 0' }}>
             {filtered.length} {filtered.length === 1 ? 'lead' : 'leads'}
             {filtered.length !== rows.length ? ` of ${rows.length}` : ''}
           </p>
         </div>
-      </div>
 
-      {/* Toolbar: name or number, then how warm, then where in the pipeline. */}
-      <div className="flex items-center flex-wrap" style={{ gap: 12, marginBottom: 18 }}>
-        <div className="flex items-center" style={{ gap: 8, background: 'white', border: '1px solid rgba(20,8,31,.16)', borderRadius: 999, padding: '0 14px', height: 42, flex: '1 1 260px', maxWidth: 340 }}>
+        {/* Name or number, then how warm, then where in the pipeline. */}
+        <div className="flex items-center flex-wrap" style={{ gap: 10 }}>
+          <div className="flex items-center" style={{ gap: 8, background: 'white', border: '1px solid rgba(20,8,31,.16)', borderRadius: 999, padding: '0 14px', height: 42, width: 230 }}>
           <Search size={15} style={{ color: MUTED, flex: '0 0 auto' }} />
           <input
             value={leadSearch}
@@ -1061,11 +1063,12 @@ export default function SalesBoard() {
         >
           <option value="">All stages</option>
           {statuses.map((st) => <option key={st} value={st}>{st}</option>)}
-        </select>
+          </select>
+        </div>
       </div>
 
       {/* The list itself */}
-      <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.10)', borderRadius: 22, boxShadow: '0 1px 2px rgba(20,8,31,.06), 0 2px 8px rgba(20,8,31,.04)', overflow: 'hidden' }}>
+      <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.10)', borderRadius: 22, boxShadow: '0 1px 2px rgba(20,8,31,.06), 0 2px 8px rgba(20,8,31,.04)', overflow: 'hidden', marginBottom: 28 }}>
         {isLoading ? (
           <div className="flex justify-center py-16"><Spinner /></div>
         ) : filtered.length === 0 ? (
