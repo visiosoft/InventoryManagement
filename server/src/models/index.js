@@ -254,6 +254,18 @@ const leadSchema = new Schema(
     // Cleared whenever the lead is reassigned, because it is new to the person
     // receiving it however old the record is.
     ownerSeenAt: { type: Date, default: null },
+
+    /* When somebody was put on this lead.
+     *
+     * The response clock runs from here, so it is set only where a person
+     * chooses an owner — never by the WhatsApp sync, which gives every inbound
+     * chat a default owner and would otherwise start thirty-five clocks a day
+     * nobody asked for. */
+    assignedAt: { type: Date, default: null },
+    /* The first thing the rep did about it: an attempt logged, or the stage
+       moved. Written once and never moved, so a later action cannot make the
+       response look slower than it was. */
+    firstResponseAt: { type: Date, default: null },
     /* 0 means "not asked yet" rather than a unit of no size. It is set when
        somebody actually speaks to the lead, at the Contacted stage — before
        that a number here is a guess wearing the clothes of a requirement. */
@@ -1357,6 +1369,9 @@ const followUpStepSchema = new Schema({
 const followUpPlanSchema = new Schema({
   key: { type: String, default: 'default', unique: true },
   steps: { type: [followUpStepSchema], default: [] },
+  /* How long a newly assigned lead may sit before it is called out. Lives
+     here because this document is already "how we work a lead". */
+  responseSlaMinutes: { type: Number, default: 2, min: 1, max: 240 },
 }, { timestamps: true });
 
 export const FollowUpPlan = model('FollowUpPlan', followUpPlanSchema);

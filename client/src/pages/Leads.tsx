@@ -5,6 +5,7 @@ import { CalendarPlus, CheckSquare, FileText, Mail, MessageCircle, MoreHorizonta
 import { api, apiError, leadApi, type LeadPage } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { fromDubaiDatetimeLocal, toDubaiDatetimeLocal } from '../lib/timezone'
+import WaitingStrip from '../components/WaitingStrip'
 import type { Lead, LeadSource, LeadStatus } from '../lib/types'
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Textarea, leadStatusTone, statusLabel } from '../components/ui'
 import { formatDate, formatDateTime } from '../lib/utils'
@@ -1316,10 +1317,15 @@ export default function Leads() {
             {isAdmin && (
                 <aside style={{ width: 296, flex: '0 0 296px', borderLeft: '1px solid rgba(20,8,31,.10)', background: '#fff', padding: '24px 22px', position: 'sticky', top: 0, alignSelf: 'flex-start', maxHeight: '100vh', overflowY: 'auto' }}>
                     <div style={{ ...HEADING, fontWeight: 700, fontSize: 17, marginBottom: 4 }}>Team workload</div>
-                    <div style={{ fontSize: 13, color: MUTED_COLOR, marginBottom: 20 }}>Active leads by rep · click to filter</div>
+                    <div style={{ fontSize: 13, color: MUTED_COLOR, marginBottom: 16 }}>Active leads by rep · click to filter</div>
 
-                    {/* Unassigned first and in amber: a lead nobody owns is the
-                        one thing on this page that needs doing. */}
+                    {/* Above Unassigned, which is the other thing on this rail
+                        that needs doing — but a lead already on somebody's desk
+                        and still untouched needs doing sooner. */}
+                    <WaitingStrip compact />
+
+                    {/* Unassigned in amber: a lead nobody owns is the other
+                        thing on this page that needs doing. */}
                     <div
                         onClick={() => setOwner(owner === 'unassigned' ? '' : 'unassigned')}
                         style={{ borderRadius: 14, padding: 14, marginBottom: 16, cursor: 'pointer', border: `1px solid ${owner === 'unassigned' ? '#B58A3A' : 'rgba(20,8,31,.10)'}`, background: '#FBEEDA' }}

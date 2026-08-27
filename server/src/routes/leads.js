@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { Customer, Contract, Document, Lead, Task, User, WhatsAppMessage } from '../models/index.js';
 import { FOLLOW_UP_KINDS, runFollowUps, syncFollowUpTask, syncSiteVisitTask } from '../services/followUps.js';
 import { applyOutcome, getFollowUpPlan, nextDateFor, sequenceState } from '../services/followUpSequence.js';
+import { summarise } from '../services/speedToLead.js';
 import { ATTEMPT_CHANNELS, ATTEMPT_OUTCOMES } from '../models/index.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 
@@ -307,8 +308,40 @@ router.put('/follow-up-plan', async (req, res) => {
 
         const plan = await getFollowUpPlan();
         plan.steps = clean;
+        if (req.body?.responseSlaMinutes !== undefined) {
+            plan.responseSlaMinutes = Math.max(1, Math.min(240, Number(req.body.responseSlaMinutes) || 2));
+        }
         await plan.save();
         res.json(plan);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * Leads assigned to somebody and still untouched past the window.
+ *
+ * Computed on the way out rather than swept up by a job: there is nothing to
+ * remember between requests, so there is nothing to get out of step. Reps see
+ * their own, admins see everybody — the same scoping as the list and the
+ * counts.
+ */
+router.get('/waiting', async (req, res) => {
+    try {
+        const filter = {
+            assignedAt: { $ne: null },
+            firstResponseAt: null,
+            owner: { $ne: null },
+            status: { $nin: ['won', 'lost'] },
+        };
+        if (isSalesRep(req)) filter.owner = req.user.id;
+
+        const [leads, plan] = await Promise.all([
+            Lead.find(filter).select('fullName phone owner assignedAt firstResponseAt status').populate('owner', 'name').lean(),
+            getFollowUpPlan(),
+        ]);
+
+        res.json(summarise(leads, new Date(), plan?.responseSlaMinutes));
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -526,8 +559,14 @@ router.put('/:id', async (req, res) => {
     if (ownerId && !(await validateOwner(ownerId))) return res.status(400).json({ error: 'Lead owner not found' });
 
     // Handing a lead to somebody makes it new to them, whatever its age, so
-    // the highlight on their board comes back.
-    if (String(lead.owner || '') !== String(ownerId || '')) lead.ownerSeenAt = null;
+    // the highlight on their board comes back — and starts their clock. A lead
+    // moved to a second person gets a fresh two minutes: it is their window,
+    // not a continuation of somebody else's.
+    if (String(lead.owner || '') !== String(ownerId || '')) {
+        lead.ownerSeenAt = null;
+        lead.assignedAt = ownerId ? new Date() : null;
+        lead.firstResponseAt = null;
+    }
 
     const phoneNormalized = normalizePhone(body.phone);
     if (!phoneNormalized) return res.status(400).json({ error: 'Phone must contain at least one digit' });
@@ -594,6 +633,11 @@ router.patch('/:id/status', async (req, res) => {
     // The note belongs to the change, not beside it. Two timeline rows for one
     // action read as two things happening, and their order was decided by
     // insertion rather than by what actually came first.
+    // Moving the stage is what somebody does after trying to reach them, so
+    // it answers the clock. Written once and never moved: a later action must
+    // not make the first response look slower than it was.
+    if (!lead.firstResponseAt) lead.firstResponseAt = new Date();
+
     const comment = String(req.body?.comment || '').trim();
     lead.timeline.push({
         type: 'status_changed',
@@ -683,6 +727,7 @@ router.post('/:id/attempts', async (req, res) => {
         // A lead being chased is a lead somebody has tried to reach, so the
         // stage catches up by itself rather than waiting to be set by hand.
         if (lead.status === 'new') lead.status = 'contact_attempted';
+        if (!lead.firstResponseAt) lead.firstResponseAt = new Date();
 
         await syncFollowUpTask(lead);
         await lead.save();

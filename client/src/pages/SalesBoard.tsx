@@ -6,6 +6,7 @@ import { api, apiError, leadApi } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { Lead, MovingLead, MovingLeadStatus } from '../lib/types'
 import { Spinner } from '../components/ui'
+import WaitingStrip from '../components/WaitingStrip'
 import { formatDate } from '../lib/utils'
 import { FOLLOW_UP_TONE, followUpState, reminderDay } from '../lib/followUp'
 import {
@@ -993,6 +994,10 @@ export default function SalesBoard() {
           )}
         </div>
       </div>
+
+      {/* A lead handed over and still untouched outranks everything else on
+          this page, so it sits above everything else on this page. */}
+      {!isAccounts && <WaitingStrip />}
 
       {/* No separate follow-ups card: a follow-up now raises a task the moment
           it is scheduled, so it already appears under Follow-ups & Tasks. Two

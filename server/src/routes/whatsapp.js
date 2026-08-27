@@ -440,10 +440,14 @@ router.post('/conversations/:phoneNormalized/lead', async (req, res) => {
                 }
             }
             if (email) existing.email = email;
-            // Saving a chat onto a rep makes it new to them.
+            // Saving a chat onto a rep makes it new to them, and starts their
+            // clock — this is somebody choosing an owner, which is exactly what
+            // the response window is measured from.
             if (ownerId && String(existing.owner) !== ownerId) {
                 existing.owner = ownerId;
                 existing.ownerSeenAt = null;
+                existing.assignedAt = new Date();
+                existing.firstResponseAt = null;
             }
             // Appended, never replaced: whatever was already noted about this
             // person is part of the record.

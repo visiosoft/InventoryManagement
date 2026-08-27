@@ -7,6 +7,7 @@ import {
   Bot, Tag, Check, ClipboardList, Sparkles, Trash2,
 } from 'lucide-react'
 import { api, whatsappApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel } from '../lib/api'
+import { playPing, primePing } from '../lib/ping'
 import { convDisplayName, formatListTime, isPlaceholderName, Avatar } from '../lib/whatsappDisplay'
 import { SlideOver, Modal, Field, Input, Textarea, Select } from '../components/ui'
 import { CustomerForm } from '../components/AddCustomerModal'
@@ -36,7 +37,6 @@ type MessageTemplate = {
 
 const MUTE_KEY = 'wa_inbox_muted'
 const BLINK_MS = 4000
-const PING_SRC = '/whatsappaduio.mp3'
 
 const INK = '#14081F'
 const MUTED_INK = '#4A4357'
@@ -234,65 +234,6 @@ function Attachment({ messageId, media }: { messageId: string; media: WaMedia })
       {caption}
     </div>
   )
-}
-
-/* ── notification sound ───────────────────────────────────────────────────
-   A real asset (public/whatsappaduio.mp3) played through one shared
-   HTMLAudioElement. Browsers refuse playback before a user gesture, so the
-   element is primed with a muted play/pause on the first interaction, and
-   every failure is swallowed — audio must never break the inbox. */
-let pingEl: HTMLAudioElement | null = null
-let pingPrimed = false
-
-function getPingElement(): HTMLAudioElement | null {
-  if (typeof Audio === 'undefined') return null
-  if (!pingEl) {
-    try {
-      pingEl = new Audio(PING_SRC)
-      pingEl.preload = 'auto'
-    } catch {
-      return null
-    }
-  }
-  return pingEl
-}
-
-/** Muted play/pause on a gesture so later programmatic plays are allowed. */
-function primePing() {
-  if (pingPrimed) return
-  const el = getPingElement()
-  if (!el) return
-  pingPrimed = true
-  try {
-    el.muted = true
-    const p = el.play()
-    const settle = () => { try { el.pause(); el.currentTime = 0 } catch { /* ignore */ } el.muted = false }
-    if (p && typeof p.then === 'function') p.then(settle, () => { el.muted = false })
-    else settle()
-  } catch {
-    el.muted = false
-  }
-}
-
-/* Two rings a moment apart are heard as one stuttering ring, because the
-   second restarts the clip from the top rather than queueing behind it. The
-   caller already announces a conversation once; this is the floor under it. */
-const PING_GAP_MS = 2000
-let lastPingAt = 0
-
-function playPing() {
-  const el = getPingElement()
-  if (!el) return
-  const now = Date.now()
-  if (now - lastPingAt < PING_GAP_MS) return
-  lastPingAt = now
-  try {
-    el.currentTime = 0 // otherwise a second message plays from the finished end
-    const p = el.play()
-    if (p && typeof p.catch === 'function') p.catch(() => { /* blocked — never mind */ })
-  } catch {
-    /* audio is a nicety — never let it break the inbox */
-  }
 }
 
 /* ── small presentational helpers ─────────────────────────────────────── */
