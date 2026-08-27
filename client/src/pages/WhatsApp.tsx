@@ -274,9 +274,18 @@ function primePing() {
   }
 }
 
+/* Two rings a moment apart are heard as one stuttering ring, because the
+   second restarts the clip from the top rather than queueing behind it. The
+   caller already announces a conversation once; this is the floor under it. */
+const PING_GAP_MS = 2000
+let lastPingAt = 0
+
 function playPing() {
   const el = getPingElement()
   if (!el) return
+  const now = Date.now()
+  if (now - lastPingAt < PING_GAP_MS) return
+  lastPingAt = now
   try {
     el.currentTime = 0 // otherwise a second message plays from the finished end
     const p = el.play()
@@ -1491,6 +1500,17 @@ export default function WhatsApp() {
      introduces an id we have not seen before, and whose direction is inbound,
      counts as new — outbound messages (including our own sends) never ping. */
   const seenIds = useRef<Set<string> | null>(null)
+
+  /* Which conversations have already announced themselves.
+   *
+   * The sound used to fire on every poll that carried anything inbound, so
+   * somebody sending five messages in a row rang five times — and a busy hour
+   * was a metronome. It is announcing a person, not a message: one ring when
+   * a chat has something new, then silence from that chat until it has been
+   * read. Opening it clears the mark, so their next message is heard again.
+   */
+  const announced = useRef<Set<string>>(new Set())
+
   useEffect(() => {
     if (!allMessages) return
     if (seenIds.current === null) {
@@ -1500,16 +1520,35 @@ export default function WhatsApp() {
     const fresh = allMessages.filter((m) => !seenIds.current!.has(m._id))
     if (fresh.length === 0) return
     for (const m of fresh) seenIds.current!.add(m._id)
-    const inbound = fresh.filter((m) => m.direction === 'inbound')
+
+    // Nothing from the chat already on screen: it is being read as it arrives,
+    // and a sound for a message you are watching land is just noise.
+    const inbound = fresh.filter((m) => m.direction === 'inbound' && m.phoneNormalized !== selectedRef.current)
     if (inbound.length === 0) return
-    if (!mutedRef.current) playPing()
+
+    const unannounced = [...new Set(inbound.map((m) => m.phoneNormalized))]
+      .filter((phone) => !announced.current.has(phone))
+
+    if (unannounced.length > 0) {
+      for (const phone of unannounced) announced.current.add(phone)
+      // One ring, however many chats woke up at once — a second one a
+      // millisecond later says nothing the first did not.
+      if (!mutedRef.current) playPing()
+    }
+
     const until = Date.now() + BLINK_MS
     setBlinking((prev) => {
       const next = { ...prev }
-      for (const m of inbound) if (m.phoneNormalized !== selectedRef.current) next[m.phoneNormalized] = until
+      for (const m of inbound) next[m.phoneNormalized] = until
       return next
     })
   }, [allMessages])
+
+  /* Reading a chat lets it speak again. Without this the first message from
+     somebody would be the only one they ever get a sound for. */
+  useEffect(() => {
+    if (selectedPhone) announced.current.delete(selectedPhone)
+  }, [selectedPhone])
 
   // Retire blink markers once their window has elapsed.
   useEffect(() => {
