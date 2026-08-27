@@ -332,9 +332,9 @@ export default function Units() {
      bookings that overlap the window — never from Unit.status, which only
      describes today and would hide exactly the cases this page exists for. */
   const availOf = useMemo(() => {
-    return (u: Unit): { state: AvailState; line: string; detail: string } => {
+    return (u: Unit): { state: AvailState; line: string; detail: string; freeFrom: string | null } => {
       if (u.status === 'maintenance') {
-        return { state: 'maintenance', line: 'Maintenance', detail: u.notes?.trim() || 'Out of service' }
+        return { state: 'maintenance', line: 'Maintenance', detail: u.notes?.trim() || 'Out of service', freeFrom: null }
       }
       const bookings = bookedInWindow.get(u._id)?.bookings ?? []
       // Clip every overlapping booking to the window, then merge the ones that
@@ -346,7 +346,7 @@ export default function Units() {
         .sort((a, b) => a.s.localeCompare(b.s))
 
       if (!spans.length) {
-        return { state: 'free', line: 'Free entire window', detail: `${shortDate(winFrom)} – ${shortDate(winTo)}` }
+        return { state: 'free', line: 'Free entire window', detail: `${shortDate(winFrom)} – ${shortDate(winTo)}`, freeFrom: null }
       }
 
       const merged: { s: string; e: string }[] = []
@@ -368,6 +368,7 @@ export default function Units() {
         const until = dayOnly(lead?.endDate) || dayOnly((activeByUnit[u._id] ?? [])[0]?.endDate)
         return {
           state: 'taken',
+          freeFrom: null,
           line: 'Occupied entire window',
           detail: who && until ? `${who} · until ${shortDate(until)}`
             : who ? who
@@ -379,6 +380,8 @@ export default function Units() {
       if (merged[0].s > winFrom) {
         return {
           state: 'partial',
+          // Free now, so nothing to wait for.
+          freeFrom: null,
           line: `Free until ${shortDate(addDays(merged[0].s, -1))}`,
           detail: merged.length > 1
             ? `Then occupied across ${merged.length} periods`
@@ -387,6 +390,7 @@ export default function Units() {
       }
       return {
         state: 'partial',
+        freeFrom: addDays(merged[0].e, 1),
         line: `Free from ${shortDate(addDays(merged[0].e, 1))}`,
         detail: merged.length > 1
           ? 'Occupied at the start, and again later in the window'
@@ -416,8 +420,26 @@ export default function Units() {
   // cards can show the whole picture. What can be sold sorts first.
   const shown = useMemo(() => {
     const list = onlyFree ? freeUnits : filtered
-    return [...list].sort((a, b) =>
-      STATE_RANK[availOf(a).state] - STATE_RANK[availOf(b).state] || compareUnitNumbers(a, b))
+    return [...list].sort((a, b) => {
+      const av = availOf(a)
+      const bv = availOf(b)
+      const byState = STATE_RANK[av.state] - STATE_RANK[bv.state]
+      if (byState) return byState
+
+      // Within a group, the one coming free soonest first: the question this
+      // list answers is "what can I sell, and when", and unit numbers answer
+      // neither. Units already free have no date and keep their own order
+      // below the ones that do.
+      if (av.freeFrom && bv.freeFrom) {
+        // ISO dates, so comparing them as text is comparing them as dates.
+        const byDate = av.freeFrom.localeCompare(bv.freeFrom)
+        if (byDate) return byDate
+      } else if (Boolean(av.freeFrom) !== Boolean(bv.freeFrom)) {
+        return av.freeFrom ? -1 : 1
+      }
+
+      return compareUnitNumbers(a, b)
+    })
   }, [onlyFree, freeUnits, filtered, availOf])
 
   // Sorted view for the table.

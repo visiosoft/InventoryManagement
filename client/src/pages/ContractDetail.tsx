@@ -899,6 +899,9 @@ export default function ContractDetail() {
     label: string; to: string; subject: string; html: string; unfilled: string[]; isHtml: boolean
   } | null>(null)
   const [templateEmailBusy, setTemplateEmailBusy] = useState(false)
+  const [waTemplateId, setWaTemplateId] = useState('')
+  const [waBusy, setWaBusy] = useState(false)
+  const [waMsg, setWaMsg] = useState('')
   // Preview by default; the source is there for anyone who needs it.
   const [emailShowSource, setEmailShowSource] = useState(false)
   const [templateEmailMsg, setTemplateEmailMsg] = useState('')
@@ -946,7 +949,7 @@ export default function ContractDetail() {
 
   // Settings → Message Templates: subject + email/WhatsApp bodies with
   // @placeholders, the same ones the automation rules send.
-  const { data: messageTemplates = [] } = useQuery<{ _id: string; label: string; key: string }[]>({
+  const { data: messageTemplates = [] } = useQuery<{ _id: string; label: string; key: string; whatsappTemplate?: string }[]>({
     queryKey: ['message-templates'],
     queryFn: () => api.get('/message-templates').then((r) => r.data ?? []),
     enabled: activeTab === 'overview',
@@ -2007,6 +2010,58 @@ export default function ContractDetail() {
                         "reach the tenant" actions. Picks a notice template and
                         opens the existing composer, which merges this
                         contract's details in. */}
+                    {/* The same reminders the engine sends on a schedule,
+                        aimed at one tenant by somebody who decided to. While
+                        the scheduled version is off, this is how a renewal
+                        notice actually goes out — and it fills the template
+                        from this contract, so nobody retypes a contract number
+                        into a message and gets it wrong. */}
+                    {(() => {
+                      const waTemplates = messageTemplates.filter((t) => (t.whatsappTemplate || '').trim())
+                      if (waTemplates.length === 0) return null
+                      const phone = c.customer?.phone
+                      return (
+                        <div style={BOX} className="p-3.5 space-y-2.5">
+                          <div style={{ ...SECTION_LABEL, color: '#047857' }}>Send WhatsApp</div>
+                          <div className="flex items-center gap-2.5">
+                            <Select value={waTemplateId} onChange={(e) => { setWaTemplateId(e.target.value); setWaMsg('') }} className="flex-1">
+                              <option value="">Choose a template…</option>
+                              {waTemplates.map((t) => (
+                                <option key={t._id} value={t._id}>{t.label}</option>
+                              ))}
+                            </Select>
+                            <button
+                              type="button"
+                              disabled={!waTemplateId || !phone || waBusy}
+                              onClick={async () => {
+                                const chosen = waTemplates.find((t) => t._id === waTemplateId)
+                                if (!chosen) return
+                                if (!confirm(`Send "${chosen.label}" to ${c.customer?.fullName} on ${phone}?`)) return
+                                setWaBusy(true); setWaMsg('')
+                                try {
+                                  await api.post(`/contracts/${id}/whatsapp-template`, { templateId: waTemplateId })
+                                  setWaMsg(`Sent to ${phone}`)
+                                  qc.invalidateQueries({ queryKey: ['contract', id] })
+                                } catch (e) {
+                                  setWaMsg(apiError(e))
+                                } finally { setWaBusy(false) }
+                              }}
+                              className="h-10 px-4 rounded-lg text-sm font-bold text-white whitespace-nowrap cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90"
+                              style={{ background: '#047857' }}
+                            >
+                              {waBusy ? 'Sending…' : 'Send now'}
+                            </button>
+                          </div>
+                          <p className="text-[11.5px] text-muted-foreground">
+                            {phone
+                              ? <>Sends to {phone} · an approved template, filled from this contract</>
+                              : <>This tenant has no phone number.</>}
+                          </p>
+                          {waMsg && <p className="text-[11.5px]" style={{ color: waMsg.startsWith('Sent') ? '#047857' : '#B91C1C' }}>{waMsg}</p>}
+                        </div>
+                      )
+                    })()}
+
                     <div style={BOX} className="p-3.5 space-y-2.5">
                       <div style={{ ...SECTION_LABEL, color: PURPLE }}>Send email</div>
                       {messageTemplates.length === 0 ? (

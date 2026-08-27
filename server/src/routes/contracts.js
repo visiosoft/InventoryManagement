@@ -10,6 +10,8 @@ import { syncUnitStatus } from '../utils/unitStatus.js';
 import { sendForSignature, downloadSignedPdf, zohoConfigured } from '../services/zoho.js';
 import { uploadFile } from '../services/drive.js';
 import { mergeAgreementText, renderAgreementTextPdf, renderAgreementHtmlPdf, looksLikeHtml } from '../services/agreementText.js';
+import { sendWhatsAppTemplate, whatsappSendConfigured } from '../services/whatsapp.js';
+import { AutomationLog } from '../models/index.js';
 import { buildContractPdf } from '../services/contractDocument.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { siteScope } from '../utils/siteScope.js';
@@ -1699,6 +1701,82 @@ router.get('/:id/pdf', async (req, res) => {
 });
 
 // Send contract PDF via email
+/**
+ * Send one approved WhatsApp template to this contract's tenant, now.
+ *
+ * The same thing the reminder engine sends on a schedule, aimed at one person
+ * by somebody who decided to. That is the point: the scheduled version is off
+ * until it is trusted, and until then this is how a renewal notice actually
+ * goes out — with a human choosing the moment.
+ *
+ * It fills the template from the contract, so nobody retypes a contract number
+ * into a message and gets it wrong.
+ */
+router.post('/:id/whatsapp-template', async (req, res) => {
+  try {
+    const contract = await populateAll(Contract.findById(req.params.id));
+    if (!contract) return res.status(404).json({ error: 'Contract not found' });
+    if (!whatsappSendConfigured()) return res.status(400).json({ error: 'WhatsApp is not configured' });
+
+    const phone = contract.customer?.phone || contract.customer?.phones?.[0];
+    if (!phone) return res.status(400).json({ error: 'This tenant has no phone number' });
+
+    const tpl = await MessageTemplate.findById(req.body?.templateId).lean();
+    if (!tpl) return res.status(404).json({ error: 'Template not found' });
+    if (!String(tpl.whatsappTemplate || '').trim()) {
+      return res.status(400).json({ error: `"${tpl.label}" has no approved WhatsApp template. Add one in Settings → Message Templates.` });
+    }
+
+    // The same names the reminder engine uses, so a template written for the
+    // scheduled version works here unchanged.
+    const units = (contract.units?.length ? contract.units : contract.unit ? [contract.unit] : [])
+      .map((u) => u?.unitNumber).filter(Boolean);
+    const fmt = (d) => (d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '');
+    const vars = {
+      name: contract.customer?.fullName || '',
+      contractNo: contract.contractNo || '',
+      unit: units.join(', '),
+      endDate: fmt(contract.endDate),
+      startDate: fmt(contract.startDate),
+      dueDate: fmt(contract.endDate),
+      rate: contract.rate != null ? Number(contract.rate).toFixed(2) : '',
+      renewLink: renewLink(contract._id),
+      moveOutLink: moveOutLink(contract._id),
+    };
+
+    const variables = (tpl.whatsappTemplateVars || []).map((k) => String(vars[k] ?? ''));
+    const name = String(tpl.whatsappTemplate).trim();
+
+    await sendWhatsAppTemplate({
+      to: phone,
+      name,
+      language: String(tpl.whatsappTemplateLang || 'en').trim() || 'en',
+      variables,
+    });
+
+    // Everything sent to a tenant belongs on the activity feed, the same as
+    // the email above.
+    await Contract.findByIdAndUpdate(contract._id, {
+      $push: {
+        timeline: {
+          at: new Date(),
+          text: `WhatsApp "${tpl.label}" sent to ${phone}`,
+          author: req.user?.name || req.user?.email || '',
+        },
+      },
+    });
+    await AutomationLog.create({
+      ruleName: 'Sent by hand', channel: 'whatsapp', contract: contract._id,
+      customer: contract.customer?._id, event: `manual:${name}:${contract._id}:${Date.now()}`,
+      message: `${name}(${variables.join(', ')})`, status: 'sent',
+    });
+
+    res.json({ ok: true, to: phone, template: name, variables });
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
 router.post('/:id/send-email', async (req, res) => {
   const contract = await populateAll(Contract.findById(req.params.id));
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
