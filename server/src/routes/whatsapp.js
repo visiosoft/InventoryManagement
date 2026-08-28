@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { mediaFromRaw } from './whatsappMedia.js';
 import { WhatsAppMessage, Lead, Customer, User, AiBotThread, WhatsAppLabel, WhatsAppChatLabel, MessageTemplate } from '../models/index.js';
-import { sendWhatsAppText, sendWhatsAppMedia, uploadWhatsAppMedia, whatsappMediaKind, whatsappSendConfigured, whatsappSendMissing } from '../services/whatsapp.js';
+import { sendWhatsAppText, sendWhatsAppMedia, sendWhatsAppLocation, uploadWhatsAppMedia, whatsappMediaKind, whatsappSendConfigured, whatsappSendMissing } from '../services/whatsapp.js';
 import { pauseBotForHuman } from '../services/aiBot.js';
 import multer from 'multer';
 import { createLeadFromWhatsAppPhone } from '../services/whatsappLeadSync.js';
@@ -539,9 +539,42 @@ router.post('/send-quick-reply', async (req, res) => {
         const body = String(template.whatsappBody || '').trim();
         const sent = [];
 
+        // A location quick reply sends WhatsApp's native pin — the point of it
+        // over a Maps link is that tapping it lands only on our coordinates,
+        // not a search page listing every storage place nearby.
+        if (template.mediaKind === 'location') {
+            if (!Number.isFinite(template.locationLat) || !Number.isFinite(template.locationLng)) {
+                return res.status(400).json({ error: 'This quick reply is set to send a location but has no coordinates saved yet — add them under Settings → Message Templates.' });
+            }
+            const result = await sendWhatsAppLocation({
+                to,
+                latitude: template.locationLat,
+                longitude: template.locationLng,
+                name: template.locationName || undefined,
+                address: template.locationAddress || undefined,
+            });
+            const summary = ['📍', template.locationName, template.locationAddress].filter(Boolean).join(' — ');
+            await WhatsAppMessage.create({
+                messageId: result?.messages?.[0]?.id || '',
+                phone: to,
+                phoneNormalized,
+                direction: 'outbound',
+                type: 'location',
+                text: summary || '📍 Location shared',
+                status: 'sent',
+                occurredAt: new Date(),
+                sentByAi: false,
+                raw: {
+                    location: { latitude: template.locationLat, longitude: template.locationLng, name: template.locationName, address: template.locationAddress },
+                    sendResult: result,
+                },
+            });
+            sent.push('location');
+        }
+
         // The file goes first, with the text as its caption when both exist —
         // one message rather than two, which is how a person would send it.
-        if (template.mediaUrl && template.mediaKind) {
+        if (!sent.length && template.mediaUrl && template.mediaKind) {
             const captionable = ['image', 'video', 'document'].includes(template.mediaKind);
             const caption = captionable ? body : '';
             const result = await sendWhatsAppMedia({

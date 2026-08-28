@@ -1860,8 +1860,15 @@ const messageTemplateSchema = new Schema({
   // uploaded media id, because Meta expires uploaded ids after 30 days and a
   // canned reply that stops working after a month is worse than none.
   mediaUrl: { type: String, default: '' },
-  mediaKind: { type: String, enum: ['', 'image', 'video', 'audio', 'document'], default: '' },
+  mediaKind: { type: String, enum: ['', 'image', 'video', 'audio', 'document', 'location'], default: '' },
   mediaFilename: { type: String, default: '' },
+  // A 'location' quick reply sends WhatsApp's native pin instead of a file —
+  // tapping it opens directly on these coordinates, rather than a Google Maps
+  // search that surfaces every storage place nearby.
+  locationLat: { type: Number, default: null, min: -90, max: 90 },
+  locationLng: { type: Number, default: null, min: -180, max: 180 },
+  locationName: { type: String, default: '' },
+  locationAddress: { type: String, default: '' },
 }, { timestamps: true });
 export const MessageTemplate = model('MessageTemplate', messageTemplateSchema);
 

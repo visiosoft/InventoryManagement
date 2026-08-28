@@ -62,7 +62,8 @@ router.get('/', async (req, res) => {
 // Update a template
 router.put('/:id', async (req, res) => {
   const { subject, emailBody, emailHtml, whatsappBody, label, category, sortOrder, mediaUrl, mediaKind, mediaFilename,
-    whatsappTemplate, whatsappTemplateLang, whatsappTemplateVars } = req.body;
+    whatsappTemplate, whatsappTemplateLang, whatsappTemplateVars,
+    locationLat, locationLng, locationName, locationAddress } = req.body;
   const update = { subject, emailBody, whatsappBody };
 
   /* The Meta-approved name, if this template has one.
@@ -87,8 +88,8 @@ router.put('/:id', async (req, res) => {
   // URL itself, so anything it cannot reach would fail at send time instead.
   if (mediaKind !== undefined) {
     const kind = String(mediaKind || '');
-    if (!['', 'image', 'video', 'audio', 'document'].includes(kind)) {
-      return res.status(400).json({ error: 'mediaKind must be image, video, audio, document or empty' });
+    if (!['', 'image', 'video', 'audio', 'document', 'location'].includes(kind)) {
+      return res.status(400).json({ error: 'mediaKind must be image, video, audio, document, location or empty' });
     }
     update.mediaKind = kind;
   }
@@ -100,6 +101,27 @@ router.put('/:id', async (req, res) => {
     update.mediaUrl = url;
   }
   if (mediaFilename !== undefined) update.mediaFilename = String(mediaFilename || '');
+
+  /* A 'location' quick reply carries coordinates instead of a file URL — see
+   * the model comment for why that beats a Maps link. Validated as real
+   * latitude/longitude here rather than trusted, since a bad pin only shows
+   * up when a customer taps it in the field. */
+  if (locationLat !== undefined) {
+    const lat = locationLat === '' || locationLat === null ? null : Number(locationLat);
+    if (lat !== null && (!Number.isFinite(lat) || lat < -90 || lat > 90)) {
+      return res.status(400).json({ error: 'Latitude must be a number between -90 and 90' });
+    }
+    update.locationLat = lat;
+  }
+  if (locationLng !== undefined) {
+    const lng = locationLng === '' || locationLng === null ? null : Number(locationLng);
+    if (lng !== null && (!Number.isFinite(lng) || lng < -180 || lng > 180)) {
+      return res.status(400).json({ error: 'Longitude must be a number between -180 and 180' });
+    }
+    update.locationLng = lng;
+  }
+  if (locationName !== undefined) update.locationName = String(locationName || '').trim();
+  if (locationAddress !== undefined) update.locationAddress = String(locationAddress || '').trim();
   const template = await MessageTemplate.findByIdAndUpdate(
     req.params.id,
     update,

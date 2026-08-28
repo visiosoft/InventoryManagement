@@ -28,9 +28,20 @@ type QuickReply = {
   whatsappBody: string
   sortOrder?: number
   kind?: string
-  // A quick reply can send a file as well as text.
+  // A quick reply can send a file as well as text, or WhatsApp's native
+  // location pin instead of either.
   mediaUrl?: string
-  mediaKind?: '' | 'image' | 'video' | 'audio' | 'document'
+  mediaKind?: '' | 'image' | 'video' | 'audio' | 'document' | 'location'
+  locationLat?: number | null
+  locationLng?: number | null
+  locationName?: string
+  locationAddress?: string
+}
+
+type QrDraft = {
+  label: string; category: string; whatsappBody: string; sortOrder: number
+  mediaUrl: string; mediaKind: string
+  locationLat: string; locationLng: string; locationName: string; locationAddress: string
 }
 
 const UNCATEGORISED = 'Uncategorised'
@@ -109,7 +120,7 @@ export default function MessageTemplates() {
   })
 
   /* ---------- WhatsApp quick replies ---------- */
-  const [qrDrafts, setQrDrafts] = useState<Record<string, { label: string; category: string; whatsappBody: string; sortOrder: number; mediaUrl: string; mediaKind: string }>>({})
+  const [qrDrafts, setQrDrafts] = useState<Record<string, QrDraft>>({})
   const [qrSelectedId, setQrSelectedId] = useState<string | null>(null)
   const [qrAdding, setQrAdding] = useState(false)
   const [qrLabel, setQrLabel] = useState('')
@@ -138,7 +149,7 @@ export default function MessageTemplates() {
       a[0] === UNCATEGORISED ? 1 : b[0] === UNCATEGORISED ? -1 : a[0].localeCompare(b[0]))
   })()
 
-  function qrDraft(q: QuickReply) {
+  function qrDraft(q: QuickReply): QrDraft {
     return qrDrafts[q._id] ?? {
       label: q.label,
       category: q.category || '',
@@ -146,10 +157,14 @@ export default function MessageTemplates() {
       sortOrder: q.sortOrder ?? 0,
       mediaUrl: q.mediaUrl || '',
       mediaKind: q.mediaKind || '',
+      locationLat: q.locationLat != null ? String(q.locationLat) : '',
+      locationLng: q.locationLng != null ? String(q.locationLng) : '',
+      locationName: q.locationName || '',
+      locationAddress: q.locationAddress || '',
     }
   }
 
-  function setQrDraft(q: QuickReply, patch: Partial<{ label: string; category: string; whatsappBody: string; sortOrder: number; mediaUrl: string; mediaKind: string }>) {
+  function setQrDraft(q: QuickReply, patch: Partial<QrDraft>) {
     setQrDrafts(prev => ({ ...prev, [q._id]: { ...qrDraft(q), ...patch } }))
   }
 
@@ -177,12 +192,17 @@ export default function MessageTemplates() {
   })
 
   const qrUpdateMut = useMutation({
-    mutationFn: (v: { id: string; label: string; category: string; whatsappBody: string; sortOrder: number; mediaUrl: string; mediaKind: string }) =>
+    mutationFn: (v: QrDraft & { id: string }) =>
       api.put(`/message-templates/${v.id}`, {
         label: v.label, category: v.category, whatsappBody: v.whatsappBody, sortOrder: v.sortOrder,
-        // Clearing the kind clears the URL too, or a disabled field keeps a
-        // stale link that would be sent the next time a kind is chosen.
-        mediaKind: v.mediaKind, mediaUrl: v.mediaKind ? v.mediaUrl : '',
+        // Clearing the kind clears its fields too, or a disabled field keeps a
+        // stale value that would be sent the next time a kind is chosen.
+        mediaKind: v.mediaKind,
+        mediaUrl: v.mediaKind && v.mediaKind !== 'location' ? v.mediaUrl : '',
+        locationLat: v.mediaKind === 'location' && v.locationLat !== '' ? v.locationLat : null,
+        locationLng: v.mediaKind === 'location' && v.locationLng !== '' ? v.locationLng : null,
+        locationName: v.mediaKind === 'location' ? v.locationName : '',
+        locationAddress: v.mediaKind === 'location' ? v.locationAddress : '',
       }),
     onSuccess: (_res, v) => {
       invalidateQuick()
@@ -336,6 +356,12 @@ export default function MessageTemplates() {
                 || draft.category !== (q.category || '')
                 || draft.whatsappBody !== (q.whatsappBody || '')
                 || draft.sortOrder !== (q.sortOrder ?? 0)
+                || draft.mediaKind !== (q.mediaKind || '')
+                || draft.mediaUrl !== (q.mediaUrl || '')
+                || draft.locationLat !== (q.locationLat != null ? String(q.locationLat) : '')
+                || draft.locationLng !== (q.locationLng != null ? String(q.locationLng) : '')
+                || draft.locationName !== (q.locationName || '')
+                || draft.locationAddress !== (q.locationAddress || '')
               return (
                 <Card>
                   <CardHeader title={q.label} subtitle={`Key: ${q.key}`} />
@@ -358,27 +384,66 @@ export default function MessageTemplates() {
                     </Field>
 
                     {/* A file is sent by URL, so WhatsApp fetches it itself.
-                        Nothing to upload, and no media id to keep alive. */}
+                        Nothing to upload, and no media id to keep alive. A
+                        location sends WhatsApp's own pin instead — tapping it
+                        opens directly on these coordinates, not a Maps search
+                        that also lists every storage place nearby. */}
                     <div className="grid grid-cols-1 sm:grid-cols-[140px_1fr] gap-3">
-                      <Field label="Attach a file">
+                      <Field label="Attachment">
                         <Select value={draft.mediaKind} onChange={e => setQrDraft(q, { mediaKind: e.target.value })}>
-                          <option value="">No file</option>
+                          <option value="">None</option>
                           <option value="video">Video</option>
                           <option value="image">Image</option>
                           <option value="document">Document</option>
                           <option value="audio">Audio</option>
+                          <option value="location">Location pin</option>
                         </Select>
                       </Field>
-                      <Field label="File URL (must be publicly reachable)">
-                        <Input
-                          value={draft.mediaUrl}
-                          disabled={!draft.mediaKind}
-                          onChange={e => setQrDraft(q, { mediaUrl: e.target.value })}
-                          placeholder="https://office.purplebox.ae/office-tour-wa.mp4"
-                        />
-                      </Field>
+                      {draft.mediaKind === 'location' ? (
+                        <Field label="Coordinates (from Google Maps: right-click the pin → copy)">
+                          <div className="flex gap-2">
+                            <Input
+                              value={draft.locationLat}
+                              onChange={e => setQrDraft(q, { locationLat: e.target.value })}
+                              placeholder="Latitude, e.g. 25.1234"
+                            />
+                            <Input
+                              value={draft.locationLng}
+                              onChange={e => setQrDraft(q, { locationLng: e.target.value })}
+                              placeholder="Longitude, e.g. 55.1234"
+                            />
+                          </div>
+                        </Field>
+                      ) : (
+                        <Field label="File URL (must be publicly reachable)">
+                          <Input
+                            value={draft.mediaUrl}
+                            disabled={!draft.mediaKind}
+                            onChange={e => setQrDraft(q, { mediaUrl: e.target.value })}
+                            placeholder="https://office.purplebox.ae/office-tour-wa.mp4"
+                          />
+                        </Field>
+                      )}
                     </div>
-                    {draft.mediaKind && (
+                    {draft.mediaKind === 'location' && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <Field label="Location name">
+                          <Input
+                            value={draft.locationName}
+                            onChange={e => setQrDraft(q, { locationName: e.target.value })}
+                            placeholder="PurpleBox Storage"
+                          />
+                        </Field>
+                        <Field label="Address shown under the pin">
+                          <Input
+                            value={draft.locationAddress}
+                            onChange={e => setQrDraft(q, { locationAddress: e.target.value })}
+                            placeholder="Warehouse 12, Al Quoz Industrial Area 3, Dubai"
+                          />
+                        </Field>
+                      </div>
+                    )}
+                    {draft.mediaKind && draft.mediaKind !== 'location' && (
                       <p className="text-xs text-muted-foreground">
                         WhatsApp limits: 16 MB video and audio, 5 MB images, 100 MB documents. Over that, the
                         message is rejected rather than shrunk. The message text above is sent as the caption.

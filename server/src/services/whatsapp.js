@@ -197,6 +197,39 @@ export async function sendWhatsAppMedia({ to, mediaId, link, kind, caption, file
     return json;
 }
 
+/**
+ * Send WhatsApp's native location pin.
+ *
+ * This is the point of it over a Google Maps link: tapping a Maps search
+ * result drops the customer into a page that also lists every storage place
+ * nearby, while a native location message opens the map app pinned on exactly
+ * these coordinates and nothing else.
+ */
+export async function sendWhatsAppLocation({ to, latitude, longitude, name, address }) {
+    if (!whatsappSendConfigured()) throw new Error('WhatsApp is not configured');
+    const normalizedTo = normalizeRecipientPhone(to);
+    if (!normalizedTo) throw new Error('Recipient phone number is required');
+    const lat = Number(latitude);
+    const lng = Number(longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error('A valid latitude and longitude are required');
+
+    const location = { latitude: lat, longitude: lng };
+    if (name) location.name = String(name);
+    if (address) location.address = String(address);
+
+    const r = await fetch(`https://graph.facebook.com/v20.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ messaging_product: 'whatsapp', to: normalizedTo, type: 'location', location }),
+    });
+    const json = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(json?.error?.message || `Send failed (HTTP ${r.status})`);
+    return json;
+}
+
 // Approved templates change rarely and the composer asks on every render.
 let templateCache = { at: 0, data: null };
 

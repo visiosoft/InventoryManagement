@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import {
   Send, MessageSquare, RefreshCw, UserPlus, UserCheck, Bell, BellOff, FileText,
   Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Paperclip, Pencil,
-  Bot, Tag, Check, ClipboardList, Sparkles, Trash2,
+  Bot, Tag, Check, ClipboardList, Sparkles, Trash2, MapPin,
 } from 'lucide-react'
 import { api, whatsappApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel } from '../lib/api'
 import { playPing, primePing } from '../lib/ping'
@@ -30,9 +30,10 @@ type MessageTemplate = {
   whatsappBody: string
   category?: string
   sortOrder?: number
-  // A quick reply can carry a file — the facility tour video, a price list.
+  // A quick reply can carry a file — the facility tour video, a price list —
+  // or send WhatsApp's native location pin instead.
   mediaUrl?: string
-  mediaKind?: '' | 'image' | 'video' | 'audio' | 'document'
+  mediaKind?: '' | 'image' | 'video' | 'audio' | 'document' | 'location'
 }
 
 const MUTE_KEY = 'wa_inbox_muted'
@@ -2393,9 +2394,9 @@ export default function WhatsApp() {
                                   <span
                                     className="ml-1.5 inline-flex items-center gap-1 rounded-full px-1.5"
                                     style={{ background: '#EDE5FF', fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase' }}
-                                    title="Sends a file — use Send, not Insert"
+                                    title={t.mediaKind === 'location' ? 'Sends our location pin — use Send, not Insert' : 'Sends a file — use Send, not Insert'}
                                   >
-                                    <Paperclip size={9} />{t.mediaKind}
+                                    {t.mediaKind === 'location' ? <MapPin size={9} /> : <Paperclip size={9} />}{t.mediaKind}
                                   </span>
                                 )}
                               </div>
