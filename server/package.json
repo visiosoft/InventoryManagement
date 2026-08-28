@@ -31,7 +31,8 @@
     "pdf-lib": "^1.17.1",
     "pdfkit": "^0.19.1",
     "resend": "^6.18.1",
-    "stripe": "^22.5.0"
+    "stripe": "^22.5.0",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@napi-rs/canvas": "^1.0.0",

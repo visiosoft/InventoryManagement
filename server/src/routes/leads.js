@@ -607,6 +607,7 @@ router.put('/:id', async (req, res) => {
     };
     if (!sameDay(lead.followUpAt, body.followUpAt) || lead.followUpKind !== body.followUpKind) {
         lead.followUpNotifiedAt = null;
+        lead.followUpPushedAt = null;
     }
     lead.followUpAt = body.followUpAt;
     lead.followUpKind = body.followUpKind;

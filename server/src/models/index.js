@@ -229,6 +229,10 @@ const leadSchema = new Schema(
     /* Stamped when the reminder went out, so it goes out once. Cleared
        whenever the follow-up is moved, which makes the new date fire. */
     followUpNotifiedAt: { type: Date, default: null },
+    /* Stamped when the push actually fired, which is a different moment from
+       the task being raised — one happens at the time somebody chose, the
+       other the morning the day starts. */
+    followUpPushedAt: { type: Date, default: null },
     /* The task standing for this follow-up. Held so that moving the date moves
        the task rather than leaving the old one behind and adding another. */
     followUpTaskId: { type: Schema.Types.ObjectId, ref: 'Task', default: null },
@@ -1921,6 +1925,28 @@ const taskSchema = new Schema(
 );
 taskSchema.index({ assignedTo: 1, status: 1, dueDate: 1 });
 export const Task = model('Task', taskSchema);
+
+/* One browser that has agreed to be interrupted.
+ *
+ * A person has as many of these as they have browsers, and each is only good
+ * until that browser decides otherwise — endpoints expire, users clear site
+ * data, phones get replaced. So a dead one is deleted on the first refusal
+ * rather than retried: a subscription nobody can reach is not worth keeping.
+ */
+const pushSubscriptionSchema = new Schema({
+  user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  // Unique per browser, and the address the push actually goes to.
+  endpoint: { type: String, required: true, unique: true },
+  keys: {
+    p256dh: { type: String, default: '' },
+    auth: { type: String, default: '' },
+  },
+  userAgent: { type: String, default: '' },
+  lastUsedAt: { type: Date, default: null },
+}, { timestamps: true });
+pushSubscriptionSchema.index({ user: 1 });
+
+export const PushSubscription = model('PushSubscription', pushSubscriptionSchema);
 
 // Admin-set weekly/monthly targets for a sales rep — "actual" progress is
 // computed on read from Lead/MovingLead status, not stored here.

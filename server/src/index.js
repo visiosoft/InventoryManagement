@@ -66,6 +66,7 @@ import productRoutes from './routes/products.js';
 import backupRoutes from './routes/backup.js';
 import reminderConfigRoutes from './routes/reminderConfig.js';
 import messageTemplateRoutes from './routes/messageTemplates.js';
+import pushRoutes from './routes/push.js';
 import agreementTemplateRoutes from './routes/agreementTemplate.js';
 import automationRuleRoutes from './routes/automationRules.js';
 import taskRoutes from './routes/tasks.js';
@@ -79,7 +80,7 @@ import crewAuthRoutes from './routes/crewAuth.js';
 import crewPortalRoutes from './routes/crewPortal.js';
 import whatsappFlowRoutes from './routes/whatsappFlow.js';
 import { startBackupScheduler } from './services/backup.js';
-import { runFollowUps } from './services/followUps.js';
+import { runFollowUps, pushDueFollowUps } from './services/followUps.js';
 import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
 import { runAiBotTick, getAiBotConfig } from './services/aiBot.js';
 import { summariseRecent } from './services/conversationSummary.js';
@@ -228,6 +229,7 @@ app.use('/api/sent-emails', requireAuth, sentEmailRoutes);
 app.use('/api/walkthroughs', requireAuth, walkthroughRoutes);
 app.use('/api/reminder-config', requireAuth, reminderConfigRoutes);
 app.use('/api/message-templates', requireAuth, messageTemplateRoutes);
+app.use('/api/push', requireAuth, pushRoutes);
 app.use('/api/agreement-template', requireAuth, agreementTemplateRoutes);
 app.use('/api/automation-rules', requireAuth, automationRuleRoutes);
 app.use('/api/tasks', requireAuth, taskRoutes);
@@ -373,6 +375,20 @@ async function start() {
   //
   // This creates tasks. It sends nothing — no WhatsApp, no email — and is the
   // only scheduled job touching leads.
+  /* The reminder itself, at the minute somebody chose.
+   *
+   * A minute tick rather than the daily one: a follow-up set for 16:00 is no
+   * use arriving at 07:00 the next morning. Idempotent through
+   * followUpPushedAt, so the same lead is not pushed on every tick. */
+  setInterval(async () => {
+    try {
+      const out = await pushDueFollowUps();
+      if (out.pushed) console.log(`[Push] ${out.pushed} follow-up reminder(s) sent`);
+    } catch (e) {
+      console.error('[Push]', e.message);
+    }
+  }, 60_000);
+
   const FOLLOW_UP_HOUR = Number(process.env.FOLLOW_UP_HOUR ?? 7);
   setInterval(async () => {
     try {

@@ -13,6 +13,7 @@
  */
 
 import { Lead, Task } from '../models/index.js';
+import { pushConfigured, pushToUser } from './push.js';
 import { dayKeyFor, dayRange } from './dailyDigest.js';
 
 export const FOLLOW_UP_KINDS = ['date', 'week', 'month'];
@@ -280,4 +281,47 @@ export async function runFollowUps({ now = new Date() } = {}) {
   }
 
   return { day: todayKey, considered: candidates.length, due: due.length, raised };
+}
+
+
+/**
+ * Push the follow-ups whose moment has arrived.
+ *
+ * Separate from runFollowUps, which raises the task the night before a day
+ * begins. This is the reminder itself: it fires at the time somebody chose,
+ * to a browser that does not have to be open.
+ *
+ * Idempotent through followUpPushedAt, so the minute tick that finds a due
+ * follow-up at 16:00:30 does not find it again at 16:01:30.
+ */
+export async function pushDueFollowUps({ now = new Date() } = {}) {
+  if (!pushConfigured()) return { due: 0, pushed: 0 };
+
+  const due = await Lead.find({
+    followUpAt: { $ne: null, $lte: now },
+    followUpPushedAt: null,
+    owner: { $ne: null },
+    status: { $nin: ['won', 'lost'] },
+  }).select('fullName phone owner followUpAt followUpNote').limit(200);
+
+  let pushed = 0;
+  for (const lead of due) {
+    const name = lead.fullName || lead.phone || 'a lead';
+    try {
+      const out = await pushToUser(lead.owner, {
+        title: `Follow up with ${name}`,
+        body: lead.followUpNote || 'The follow-up you scheduled is due now.',
+        url: `/leads/${lead._id}`,
+        tag: `followup-${lead._id}`,
+      });
+      if (out.sent) pushed += 1;
+    } catch (e) {
+      console.error('[FollowUps] push failed for', String(lead._id), '::', e.message);
+    }
+    // Stamped whether or not a browser was reachable: the moment has passed
+    // either way, and re-pushing it tomorrow helps nobody.
+    await Lead.updateOne({ _id: lead._id }, { $set: { followUpPushedAt: now } });
+  }
+
+  return { due: due.length, pushed };
 }

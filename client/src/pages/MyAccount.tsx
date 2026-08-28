@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, KeyRound, Target, User } from 'lucide-react'
+import { Bell, BellOff, Check, KeyRound, Target, User } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { PageHeader, Card, CardHeader, Field, Input, Button, Spinner } from '../components/ui'
+import { disablePush, enablePush, pushPermission, pushSubscribed, pushSupported } from '../lib/push'
 import { isSalesRepRole } from '../lib/roles'
 
 interface TargetsResponse {
@@ -122,6 +123,91 @@ function TargetsCard() {
   )
 }
 
+/**
+ * Notifications, per browser.
+ *
+ * A subscription belongs to a device rather than to a person: the office
+ * desktop and a phone each need turning on, and clearing site data on either
+ * revokes that one without telling anybody. So this always says what *this*
+ * browser is doing, never what the account is set to.
+ */
+function NotificationsCard() {
+  const [state, setState] = useState<'checking' | 'on' | 'off' | 'blocked' | 'unsupported'>('checking')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  const refresh = useCallback(async () => {
+    if (!pushSupported()) { setState('unsupported'); return }
+    if (pushPermission() === 'denied') { setState('blocked'); return }
+    setState(await pushSubscribed() ? 'on' : 'off')
+  }, [])
+
+  useEffect(() => { refresh() }, [refresh])
+
+  async function toggle() {
+    setBusy(true); setMsg('')
+    try {
+      if (state === 'on') { await disablePush(); setMsg('Notifications turned off for this browser') }
+      else { await enablePush(); setMsg('Notifications are on for this browser') }
+      await refresh()
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : apiError(e))
+    } finally { setBusy(false) }
+  }
+
+  async function test() {
+    setBusy(true); setMsg('')
+    try {
+      await api.post('/push/test')
+      setMsg('Sent — it should appear in a moment')
+    } catch (e) { setMsg(apiError(e)) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <Card>
+      <CardHeader title="Notifications" />
+      <div className="px-4 pb-4 space-y-3">
+        <p className="text-sm text-muted-foreground">
+          A follow-up reaches you when it falls due, even with PurpleBox closed.
+          This is per browser — turn it on wherever you want to be told.
+        </p>
+
+        {state === 'unsupported' && (
+          <p className="text-sm text-muted-foreground">This browser cannot show notifications.</p>
+        )}
+
+        {state === 'blocked' && (
+          <p className="text-sm text-destructive">
+            Notifications are blocked for this site. Allow them in your browser's site settings, then reload.
+          </p>
+        )}
+
+        {(state === 'on' || state === 'off') && (
+          <div className="flex items-center gap-2">
+            <Button onClick={toggle} disabled={busy}>
+              {state === 'on' ? <BellOff size={13} /> : <Bell size={13} />}
+              {busy ? 'Working…' : state === 'on' ? 'Turn off' : 'Turn on for this browser'}
+            </Button>
+            {state === 'on' && (
+              <button
+                type="button"
+                onClick={test}
+                disabled={busy}
+                className="text-sm text-primary hover:underline cursor-pointer disabled:opacity-50"
+              >
+                Send a test
+              </button>
+            )}
+          </div>
+        )}
+
+        {msg && <p className="text-sm text-muted-foreground">{msg}</p>}
+      </div>
+    </Card>
+  )
+}
+
 export default function MyAccount() {
   const { user } = useAuth()
   const [current, setCurrent] = useState('')
@@ -149,6 +235,8 @@ export default function MyAccount() {
       <PageHeader title="Settings" subtitle="Your account" />
 
       {isSalesRepRole(user?.role) && <TargetsCard />}
+
+      <NotificationsCard />
 
       <Card>
         <CardHeader title="My account" />
