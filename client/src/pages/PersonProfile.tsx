@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
@@ -8,7 +8,7 @@ import {
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { Spinner, statusLabel, LEAD_STATUS_FLOW, LEAD_TEMPERATURES, LEAD_TAGS } from '../components/ui'
-import { formatDate } from '../lib/utils'
+import { formatDate, formatDateTime } from '../lib/utils'
 import { FOLLOW_UP_TONE, followUpState, reminderDay } from '../lib/followUp'
 import { dubaiToday } from '../lib/timezone'
 import {
@@ -35,11 +35,16 @@ const SHADOW_SM = '0 1px 2px rgba(20,8,31,.06), 0 2px 8px rgba(20,8,31,.04)'
 const SHADOW_MD = '0 8px 24px rgba(20,8,31,.08), 0 2px 6px rgba(20,8,31,.04)'
 const DISPLAY = { fontFamily: "'Bricolage Grotesque', serif", letterSpacing: '-0.02em' } as const
 
-const FOLLOW_UP_KINDS = [
-  { value: 'date' as const, label: 'On a date' },
-  { value: 'week' as const, label: 'That week' },
-  { value: 'month' as const, label: 'That month' },
-]
+/* The gaps people actually reach for. A follow-up is an instant now rather
+   than a granularity — "that week" was always a guess about which day. */
+const FOLLOW_UP_PRESETS = [1, 3, 7, 14, 30, 60, 90]
+
+/** N days from today, at the chosen time, as an instant the server can store. */
+function inDays(days: number, time: string): string {
+  const base = new Date(`${dubaiToday()}T00:00:00.000Z`)
+  base.setUTCDate(base.getUTCDate() + days)
+  return `${base.toISOString().slice(0, 10)}T${time || '09:00'}:00.000Z`
+}
 
 /** The banner's words and icon, from the shared state the list also uses. */
 function followUpUrgency(day: string) {
@@ -77,6 +82,7 @@ type Lead = {
   followUpAt?: string | null
   followUpKind?: 'date' | 'week' | 'month'
   followUpNotifiedAt?: string | null
+  followUpNote?: string
   siteVisitAt?: string | null
   attempts?: Attempt[]
   sequenceExhaustedAt?: string | null
@@ -168,6 +174,10 @@ export default function PersonProfile() {
   const [note, setNote] = useState('')
   // A stage picked but not yet committed, and the note going with it.
   const [pendingStage, setPendingStage] = useState('')
+  // The follow-up being set: which preset, at what time, and what it is for.
+  const [presetDays, setPresetDays] = useState(0)
+  const [followUpTime, setFollowUpTime] = useState('09:00')
+  const [followUpNote, setFollowUpNote] = useState('')
   const [stageNote, setStageNote] = useState('')
   // The attempt being logged, if one is.
   const [logging, setLogging] = useState(false)
@@ -204,6 +214,15 @@ export default function PersonProfile() {
   })
 
   // Only admins reassign. A rep seeing the dropdown would only meet a refusal.
+  const hydrated = useRef('')
+  useEffect(() => {
+    const l = data?.lead
+    if (!l || hydrated.current === l._id) return
+    hydrated.current = l._id
+    setFollowUpNote(l.followUpNote || '')
+    if (l.followUpAt) setFollowUpTime(String(l.followUpAt).slice(11, 16) || '09:00')
+  }, [data?.lead])
+
   const { data: assignable = [] } = useQuery<Owner[]>({
     queryKey: ['assignable-users'],
     queryFn: () => api.get('/users/assignable').then((r) => r.data),
@@ -890,49 +909,76 @@ export default function PersonProfile() {
 
                   {shownStage === 'follow_up_scheduled' && (
                     <div style={{ minWidth: 0 }}>
-                      <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Follow-up</span>
+                      <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Remind me in</span>
 
-                      {/* "Call them in March" is a real answer, and pinning it to
-                          an invented day in March fires early or late. The kind
-                          says how precisely the date was meant: a week is raised
-                          on its Monday, a month on its first. */}
-                      <div className="grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6, marginBottom: 10 }}>
-                        {FOLLOW_UP_KINDS.map((k) => {
-                          const on = (lead.followUpKind || 'date') === k.value
-                          return (
-                            <button
-                              key={k.value}
-                              type="button"
-                              onClick={() => patchLead.mutate({ followUpKind: k.value })}
-                              className="cursor-pointer"
-                              style={{
-                                height: 38, borderRadius: 10, fontSize: 12, fontWeight: 700, fontFamily: 'inherit',
-                                padding: '0 4px', minWidth: 0, whiteSpace: 'nowrap',
-                                border: `1.5px solid ${on ? PURPLE : LINE_STRONG}`,
-                                background: on ? PURPLE_50 : '#fff',
-                                color: on ? DEEP : INK_2,
-                              }}
-                            >
-                              {k.label}
-                            </button>
-                          )
-                        })}
+                      {/* The gaps people actually use, so the common case is one
+                          click rather than counting days on a calendar. Custom
+                          is there for the rest, because "when they get back from
+                          Eid" is not a number of days. */}
+                      <select
+                        value={FOLLOW_UP_PRESETS.some((d) => d === presetDays) ? String(presetDays) : 'custom'}
+                        onChange={(e) => {
+                          if (e.target.value === 'custom') { setPresetDays(0); return }
+                          const days = Number(e.target.value)
+                          setPresetDays(days)
+                          patchLead.mutate({ followUpAt: inDays(days, followUpTime) })
+                        }}
+                        className="cursor-pointer"
+                        style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK }}
+                      >
+                        {FOLLOW_UP_PRESETS.map((d) => (
+                          <option key={d} value={d}>{d === 1 ? '1 day' : `${d} days`}</option>
+                        ))}
+                        <option value="custom">Pick a date…</option>
+                      </select>
+
+                      <div className="grid" style={{ gridTemplateColumns: '1.4fr 1fr', gap: 8, marginTop: 8 }}>
+                        <input
+                          type="date"
+                          value={lead.followUpAt ? String(lead.followUpAt).slice(0, 10) : ''}
+                          min={dubaiToday()}
+                          onChange={(e) => {
+                            if (!e.target.value) { patchLead.mutate({ followUpAt: null }); return }
+                            setPresetDays(0)
+                            patchLead.mutate({ followUpAt: `${e.target.value}T${followUpTime}:00.000Z` })
+                          }}
+                          style={{ width: '100%', height: 40, padding: '0 10px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK, boxSizing: 'border-box' }}
+                        />
+                        {/* A time, because "call at 4" is a different
+                            instruction from "call sometime on Thursday". */}
+                        <input
+                          type="time"
+                          value={followUpTime}
+                          onChange={(e) => {
+                            const t = e.target.value || '09:00'
+                            setFollowUpTime(t)
+                            if (lead.followUpAt) {
+                              patchLead.mutate({ followUpAt: `${String(lead.followUpAt).slice(0, 10)}T${t}:00.000Z` })
+                            }
+                          }}
+                          style={{ width: '100%', height: 40, padding: '0 10px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK, boxSizing: 'border-box' }}
+                        />
                       </div>
 
-                      <input
-                        type="date"
-                        value={lead.followUpAt ? String(lead.followUpAt).slice(0, 10) : ''}
-                        onChange={(e) => patchLead.mutate({ followUpAt: e.target.value || null })}
-                        style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK, boxSizing: 'border-box' }}
+                      {/* What it is for. A date on its own tells whoever reads
+                          it to ring somebody and nothing about why, which is
+                          the half that matters three weeks later. */}
+                      <textarea
+                        value={followUpNote}
+                        onChange={(e) => setFollowUpNote(e.target.value)}
+                        onBlur={() => {
+                          if (followUpNote !== (lead.followUpNote || '')) patchLead.mutate({ followUpNote })
+                        }}
+                        rows={2}
+                        placeholder="What is this follow-up about?"
+                        style={{ width: '100%', marginTop: 8, borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', padding: '9px 11px', fontSize: 13.5, fontFamily: 'inherit', color: INK, resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
                       />
 
-                      {/* Say exactly where the reminder lands, so a week or a
-                          month is never a guess about what the system will do. */}
                       {lead.followUpAt && (
                         <p style={{ fontSize: 12.5, color: FAINT, marginTop: 6 }}>
                           {lead.owner
-                            ? `Task on ${lead.owner.name}'s board, due ${formatDate(dueDay)}.`
-                            : 'Assign this lead to somebody and a task will be raised for them.'}
+                            ? `On ${lead.owner.name}'s board for ${formatDateTime(lead.followUpAt)}.`
+                            : 'Assign this lead to somebody and it will land on their board.'}
                         </p>
                       )}
                     </div>

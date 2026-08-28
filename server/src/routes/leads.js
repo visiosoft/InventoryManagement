@@ -71,6 +71,7 @@ function cleanBody(body) {
         tags: Array.isArray(body.tags) ? [...new Set(body.tags.map(String).filter((t) => ALLOWED_TAGS.has(t)))] : [],
         followUpAt: body.followUpAt ? parseDate(body.followUpAt) : null,
         followUpKind: FOLLOW_UP_KINDS.includes(body.followUpKind) ? body.followUpKind : 'date',
+        followUpNote: String(body.followUpNote || '').slice(0, 500),
         siteVisitAt: body.siteVisitAt ? parseDate(body.siteVisitAt) : null,
     };
 }
@@ -594,6 +595,8 @@ router.put('/:id', async (req, res) => {
     lead.notes = body.notes;
     lead.temperature = body.temperature;
     lead.tags = body.tags;
+    const before = { followUpAt: lead.followUpAt };
+
     // Moving a follow-up re-arms it. Without this a lead reminded once in
     // August could be rescheduled for September and never chased again,
     // because followUpNotifiedAt would still be stamped.
@@ -607,6 +610,23 @@ router.put('/:id', async (req, res) => {
     }
     lead.followUpAt = body.followUpAt;
     lead.followUpKind = body.followUpKind;
+    lead.followUpNote = body.followUpNote;
+
+    /* A copy on the profile.
+     *
+     * The date itself moves whenever it is rescheduled, so on its own it can
+     * never answer "what did we agree, and when did we agree it". A timeline
+     * entry is the record that stays put. */
+    if (body.followUpAt && !sameDay(before.followUpAt, body.followUpAt)) {
+        const when = new Date(body.followUpAt).toLocaleString('en-GB', {
+            day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+        });
+        lead.timeline.push({
+            type: 'note',
+            text: `Follow-up set for ${when}${body.followUpNote ? ` — ${body.followUpNote}` : ''}`,
+            user: req.user.id,
+        });
+    }
     lead.siteVisitAt = body.siteVisitAt;
     const userName = req.user.name || req.user.email || 'user';
     lead.timeline.push({ type: 'updated', text: `Lead updated by ${userName}`, user: req.user.id });

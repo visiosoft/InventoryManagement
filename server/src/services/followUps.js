@@ -75,6 +75,14 @@ export function describeFollowUp(lead = {}) {
       : `on ${day}`;
 
   const lines = [`Follow up ${when}.`];
+  // The time, when somebody set one — "call at 4" is a different instruction
+  // from "call sometime on Thursday".
+  if (lead.followUpAt) {
+    const t = new Date(lead.followUpAt);
+    const hh = t.getHours(); const mm = t.getMinutes();
+    if (hh || mm) lines.push(`At ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}.`);
+  }
+  if (lead.followUpNote) lines.push(`About: ${String(lead.followUpNote).slice(0, 500)}`);
   if (lead.temperature) lines.push(`Temperature: ${lead.temperature}.`);
   if (lead.status) lines.push(`Stage when scheduled: ${lead.status}.`);
   const notes = String(lead.notes || '').trim();

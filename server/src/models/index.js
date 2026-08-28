@@ -219,7 +219,13 @@ const leadSchema = new Schema(
     /* How precisely the date was meant. "Call them in March" is a real answer
        from a client, and pinning it to an invented day in March either fires
        too early or too late. A week fires on its Monday, a month on its 1st. */
+    /* Kept for the leads scheduled before follow-ups carried a time. Nothing
+       sets it any more — a follow-up is now an instant, not a granularity. */
     followUpKind: { type: String, enum: ['date', 'week', 'month'], default: 'date' },
+    /* What the follow-up is actually for. A date on its own tells the person
+       reading it to ring somebody and nothing about why, which is the half
+       that matters when it surfaces three weeks later. */
+    followUpNote: { type: String, default: '' },
     /* Stamped when the reminder went out, so it goes out once. Cleared
        whenever the follow-up is moved, which makes the new date fire. */
     followUpNotifiedAt: { type: Date, default: null },
