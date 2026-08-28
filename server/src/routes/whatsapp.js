@@ -177,6 +177,28 @@ router.get('/messages', async (req, res) => {
     }));
 });
 
+/**
+ * Delete one of our own messages from this console.
+ *
+ * Meta's Cloud API has no unsend endpoint — a business-sent WhatsApp message
+ * cannot be recalled from the customer's phone, only a person's own WhatsApp
+ * app can do that. This removes it from our record: the bubble collapses to
+ * "This message was deleted", same as when a customer revokes one of theirs.
+ * Restricted to outbound messages, so a colleague can correct a mistake of
+ * their own without anyone being able to erase what a customer actually said.
+ */
+router.delete('/messages/:id', async (req, res) => {
+    const message = await WhatsAppMessage.findById(req.params.id);
+    if (!message) return res.status(404).json({ error: 'Message not found' });
+    if (message.direction !== 'outbound') {
+        return res.status(400).json({ error: 'Only messages we sent can be deleted here' });
+    }
+    if (message.deletedAt) return res.json(message);
+    message.deletedAt = new Date();
+    await message.save();
+    res.json(message);
+});
+
 router.get('/conversations', async (_req, res) => {
     // Numbers are stored inconsistently (+971 …, 0…, 971…), so people are
     // matched on the last 9 digits — the same rule the Zoho matcher uses.

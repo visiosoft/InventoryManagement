@@ -267,8 +267,40 @@ function IconButton({
 
 function MessageBubble({ msg }: { msg: WaMsg }) {
   const out = msg.direction === 'outbound'
+  const qc = useQueryClient()
+  const [hovered, setHovered] = useState(false)
+
+  // Meta has no unsend endpoint — this only removes it from our own record,
+  // never from the customer's phone. Restricted to our own messages so a
+  // colleague can correct a mistake without anyone erasing what a customer
+  // actually said.
+  const deleteMsg = useMutation({
+    mutationFn: () => whatsappApi.deleteMessage(msg._id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['wa-messages'] }),
+  })
+
   return (
-    <div className={cn('flex', out ? 'justify-end' : 'justify-start')}>
+    <div
+      className={cn('flex items-center gap-1.5', out ? 'justify-end' : 'justify-start')}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {out && !msg.deletedAt && hovered && (
+        <button
+          type="button"
+          title="Delete for us (this does not remove it from their WhatsApp)"
+          aria-label="Delete this message"
+          disabled={deleteMsg.isPending}
+          onClick={() => {
+            if (!confirm('Delete this message from our side?\n\nWhatsApp gives businesses no way to unsend a message — the customer will still have it on their phone. This only removes it from our own record.')) return
+            deleteMsg.mutate()
+          }}
+          className="shrink-0 inline-flex items-center justify-center rounded-full cursor-pointer disabled:opacity-40"
+          style={{ width: 22, height: 22, background: '#FEE2E2', color: '#B91C1C' }}
+        >
+          <Trash2 size={11} />
+        </button>
+      )}
       <div
         className="max-w-[75%] rounded-2xl px-3.5 py-2 text-sm"
         style={

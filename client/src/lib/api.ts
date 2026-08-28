@@ -314,6 +314,9 @@ export const whatsappApi = {
   messages: (phone?: string) =>
     api.get<WhatsAppMsg[]>('/whatsapp/messages', { params: phone ? { phone } : {} }).then((r) => r.data),
   send: (to: string, body: string) => api.post<{ ok: boolean }>('/whatsapp/send', { to, body }).then((r) => r.data),
+  // Removes it from our own record — Meta has no unsend endpoint, so this
+  // cannot pull a message back off the customer's phone.
+  deleteMessage: (id: string) => api.delete<WhatsAppMsg>(`/whatsapp/messages/${id}`).then((r) => r.data),
   labels: () => api.get<WhatsAppLabel[]>('/whatsapp/labels').then((r) => r.data),
   createLabel: (body: { name: string; color: string }) =>
     api.post<WhatsAppLabel>('/whatsapp/labels', body).then((r) => r.data),
