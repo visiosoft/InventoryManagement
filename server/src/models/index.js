@@ -279,7 +279,16 @@ const leadSchema = new Schema(
     /* 0 means "not asked yet" rather than a unit of no size. It is set when
        somebody actually speaks to the lead, at the Contacted stage — before
        that a number here is a guess wearing the clothes of a requirement. */
-    storageSizeValue: { type: Number, default: 0, min: 0 },
+    /* Three answers, not two.
+     *
+     *   0   nobody has asked them yet
+     *  -1   asked, and they do not know yet
+     *   n   they want n sqft
+     *
+     * "Not asked" and "not decided" look the same on a form and mean opposite
+     * things to whoever picks the lead up: one is work nobody has done, the
+     * other is work done that produced an honest maybe. */
+    storageSizeValue: { type: Number, default: 0, min: -1 },
     storageSizeUnit: { type: String, enum: ['sqft'], default: 'sqft' },
     durationValue: { type: Number, default: 1, min: 1 },
     durationUnit: { type: String, enum: ['week', 'month'], default: 'month' },

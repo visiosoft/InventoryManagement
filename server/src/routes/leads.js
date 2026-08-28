@@ -509,7 +509,7 @@ router.post('/', async (req, res) => {
     if (!ALLOWED_SOURCE.has(body.source)) return res.status(400).json({ error: 'Invalid lead source' });
     if (!ALLOWED_DURATION_UNIT.has(body.durationUnit)) return res.status(400).json({ error: 'Invalid duration unit' });
     if (!ALLOWED_TEMPERATURE.has(body.temperature)) return res.status(400).json({ error: 'Invalid temperature' });
-    if (!Number.isFinite(body.storageSizeValue) || body.storageSizeValue < 0) return res.status(400).json({ error: 'Invalid storage size' });
+    if (!Number.isFinite(body.storageSizeValue) || body.storageSizeValue < -1) return res.status(400).json({ error: 'Invalid storage size' });
     if (!Number.isFinite(body.durationValue) || body.durationValue < 1) return res.status(400).json({ error: 'Invalid duration value' });
     if (!Number.isFinite(body.unitsNeeded) || body.unitsNeeded < 1) return res.status(400).json({ error: 'Invalid units needed' });
 
@@ -548,7 +548,7 @@ router.put('/:id', async (req, res) => {
     if (!ALLOWED_SOURCE.has(body.source)) return res.status(400).json({ error: 'Invalid lead source' });
     if (!ALLOWED_DURATION_UNIT.has(body.durationUnit)) return res.status(400).json({ error: 'Invalid duration unit' });
     if (!ALLOWED_TEMPERATURE.has(body.temperature)) return res.status(400).json({ error: 'Invalid temperature' });
-    if (!Number.isFinite(body.storageSizeValue) || body.storageSizeValue < 0) return res.status(400).json({ error: 'Invalid storage size' });
+    if (!Number.isFinite(body.storageSizeValue) || body.storageSizeValue < -1) return res.status(400).json({ error: 'Invalid storage size' });
     if (!Number.isFinite(body.durationValue) || body.durationValue < 1) return res.status(400).json({ error: 'Invalid duration value' });
     if (!Number.isFinite(body.unitsNeeded) || body.unitsNeeded < 1) return res.status(400).json({ error: 'Invalid units needed' });
 

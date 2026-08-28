@@ -695,7 +695,9 @@ export default function SalesBoard() {
       attempts: (l.attempts || []).length,
       followUpAt: l.followUpAt,
       followUpKind: l.followUpKind,
-      interested: l.storageSizeValue ? `${l.storageSizeValue} ${l.storageSizeUnit}` : '—',
+      interested: (l.storageSizeValue ?? 0) > 0
+        ? `${l.storageSizeValue} ${l.storageSizeUnit}`
+        : l.storageSizeValue === -1 ? 'Undecided' : '—',
       status: labelize(l.status),
       statusColor: STORAGE_STATUS_COLORS[l.status] || STORAGE_STATUS_COLORS.new,
       addedAt: l.leadDateTime,

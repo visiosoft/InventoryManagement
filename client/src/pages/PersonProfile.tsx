@@ -379,9 +379,11 @@ export default function PersonProfile() {
     ? { bg: 'rgba(22,163,74,.09)', fg: '#16A34A' }
     : STATUS_TONE[lead?.status ?? 'new'] ?? { bg: PURPLE_50, fg: DEEP }
   const temp = LEAD_TEMPERATURES.find((t) => t.value === lead?.temperature)
-  const pkg = lead?.storageSizeValue
-    ? `${lead.storageSizeValue} ${lead.storageSizeUnit || 'sqft'}${(lead.unitsNeeded ?? 1) > 1 ? ` · ${lead.unitsNeeded} units` : ''}`
-    : ''
+  const pkg = (lead?.storageSizeValue ?? 0) > 0
+    ? `${lead!.storageSizeValue} ${lead!.storageSizeUnit || 'sqft'}${(lead!.unitsNeeded ?? 1) > 1 ? ` · ${lead!.unitsNeeded} units` : ''}`
+    : lead?.storageSizeValue === -1
+      ? 'Size undecided'
+      : ''
 
   // The stage as chosen, not as stored: picking another one should take its
   // fields away immediately, rather than after the change is saved.
@@ -1065,6 +1067,10 @@ export default function PersonProfile() {
                     style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontWeight: 600, color: lead.storageSizeValue ? INK : FAINT, fontFamily: 'inherit' }}
                   >
                     <option value="">Not asked yet</option>
+                    {/* Asked, and they genuinely do not know — which is a
+                        different thing from nobody having asked, and the one
+                        that tells the next person not to ask again. */}
+                    <option value="-1">Not decided yet</option>
                     {sizes.map((b) => (
                       <option key={b.sizeSqf} value={String(b.sizeSqf)}>
                         {b.sizeSqf} sqft — {b.available} free of {b.total}
@@ -1073,7 +1079,7 @@ export default function PersonProfile() {
                     {/* A size somebody recorded before it existed as a unit
                         still has to be selectable, or opening the lead would
                         silently change it. */}
-                    {Boolean(lead.storageSizeValue) && !sizes.some((b) => b.sizeSqf === lead.storageSizeValue) && (
+                    {(lead.storageSizeValue ?? 0) > 0 && !sizes.some((b) => b.sizeSqf === lead.storageSizeValue) && (
                       <option value={String(lead.storageSizeValue)}>{lead.storageSizeValue} sqft</option>
                     )}
                   </select>
