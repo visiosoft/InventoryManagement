@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { AlertTriangle, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Download, FileText, FilePlus, Mail, MessageSquare, PenLine, Pin, Plus, ShieldCheck, Trash2, Upload, X, XCircle } from 'lucide-react'
+import { AlertTriangle, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Download, FileText, Mail, MessageSquare, PenLine, Pin, ShieldCheck, Trash2, Upload, X, XCircle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { AppDocument, Contract, Invoice, Payment, Unit, UnitLine } from '../lib/types'
@@ -34,201 +34,11 @@ const OTHER_DOC_TITLES: { label: string; type: AppDocument['type'] }[] = [
   { label: 'Other', type: 'other' },
 ]
 
-// ── Custom invoice generator modal ────────────────────────────────────────────
 type ContractDetailData = {
   contract: Contract
   payments: Payment[]
   documents: AppDocument[]
   invoices?: Invoice[]
-}
-
-function GenerateInvoiceModal({ contract, payments, overrideStart, overrideEnd, blank, onDone }: {
-  contract: Contract; payments: Payment[]
-  overrideStart?: string; overrideEnd?: string
-  /** Start with no line items — for a custom invoice rather than a period one */
-  blank?: boolean
-  onDone: () => void
-}) {
-  const weeklyRate = Math.round((Number(contract.rate || 0) / 4) * 100) / 100
-  const unitNo = contract.unit?.unitNumber || (contract.units?.[0]?.unitNumber) || '—'
-
-  const toISO = (d: Date) => d.toISOString().slice(0, 10)
-  const today = new Date(); today.setHours(0, 0, 0, 0)
-
-  const latestDueDate = payments.length > 0
-    ? new Date(Math.max(...payments.map(p => new Date(p.dueDate).getTime())))
-    : null
-  const contractStart = new Date(contract.startDate)
-  // Use contract start if the latest payment predates it (e.g. from a previous term)
-  const nextStart = latestDueDate && latestDueDate >= contractStart
-    ? new Date(latestDueDate.getTime() + 7 * 86400000)
-    : contractStart
-  const contractEnd = contract.endDate ? new Date(contract.endDate) : null
-  const nextEnd28 = new Date(nextStart); nextEnd28.setDate(nextEnd28.getDate() + 28)
-  const smartEnd = (() => {
-    if (today > nextStart) return today
-    if (contractEnd && contractEnd < nextEnd28) return contractEnd
-    return nextEnd28
-  })()
-
-  const defaultStart = overrideStart ?? toISO(nextStart)
-  const defaultEnd = overrideEnd ?? toISO(smartEnd)
-
-  type LineItem = { id: number; description: string; qty: number; rate: number; amount: number; discountPct: number }
-  const emptyItem = (): LineItem => ({ id: Date.now(), description: '', qty: 1, rate: 0, amount: 0, discountPct: 0 })
-
-  const [startDate, setStartDate] = useState(defaultStart)
-  const [endDate, setEndDate] = useState(defaultEnd)
-  const [dueDate, setDueDate] = useState(toISO(today))
-
-  // Determine if first invoice — if so, include advance payment line
-  const isFirstInvoice = payments.length === 0
-
-  const buildDefaultItems = (): LineItem[] => {
-    if (blank) return [{ id: 1, description: '', qty: 1, rate: 0, amount: 0, discountPct: 0 }]
-    const monthlyAmount = Math.round(4 * weeklyRate * 100) / 100
-    const items: LineItem[] = [{ id: 1, description: `Storage Rent · Unit ${unitNo}`, qty: 1, rate: monthlyAmount, amount: monthlyAmount, discountPct: 0 }]
-    if (isFirstInvoice && contractEnd) {
-      const advStart = new Date(contractEnd); advStart.setDate(advStart.getDate() - 28)
-      const advEnd = new Date(contractEnd); advEnd.setDate(advEnd.getDate() - 1)
-      const fmt = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-      items.push({ id: 2, description: `Advance Rent ${fmt(advStart)} – ${fmt(advEnd)} · Unit ${unitNo}`, qty: 1, rate: monthlyAmount, amount: monthlyAmount, discountPct: 0 })
-    }
-    return items
-  }
-
-  const [lineItems, setLineItems] = useState<LineItem[]>(buildDefaultItems())
-  const [includeVat, setIncludeVat] = useState(false)
-  const [notes, setNotes] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState('')
-
-  function updateLine(idx: number, field: keyof LineItem, val: string) {
-    setLineItems(prev => prev.map((it, i) => {
-      if (i !== idx) return it
-      const updated = { ...it, [field]: field === 'description' ? val : Number(val) }
-      if (field === 'amount' || field === 'discountPct') { updated.qty = 1; updated.rate = updated.amount }
-      return updated
-    }))
-  }
-
-  function addLine() {
-    setLineItems(prev => [...prev, emptyItem()])
-  }
-
-  function removeLine(idx: number) {
-    setLineItems(prev => prev.filter((_, i) => i !== idx))
-  }
-
-  const subtotal = Math.round(lineItems.reduce((s, it) => s + it.amount, 0) * 100) / 100
-  const totalDiscount = Math.round(lineItems.reduce((s, it) => s + it.amount * (it.discountPct / 100), 0) * 100) / 100
-  const afterDiscount = Math.round((subtotal - totalDiscount) * 100) / 100
-  const vatAmount = includeVat ? Math.round(afterDiscount * 0.05 * 100) / 100 : 0
-  const total = Math.round((afterDiscount + vatAmount) * 100) / 100
-
-  async function submit(e: FormEvent) {
-    e.preventDefault()
-    if (lineItems.filter(it => it.description && it.amount > 0).length === 0) {
-      setErr('Add at least one line item'); return
-    }
-    setBusy(true); setErr('')
-    try {
-      const validItems = lineItems.filter(it => it.description.trim() && it.amount > 0)
-      await api.post(`/contracts/${contract._id}/generate-custom-invoice`, {
-        startDate, endDate, dueDate, notes,
-        // Send the lines as entered — the server bills these verbatim
-        items: validItems.map(it => ({
-          description: it.description.trim(), quantity: it.qty, rate: it.rate, amount: it.amount,
-        })),
-      })
-      onDone()
-    } catch (e) { setErr(apiError(e)) }
-    finally { setBusy(false) }
-  }
-
-  return (
-    <form onSubmit={submit} className="space-y-5">
-      {/* Dates */}
-      <div className="grid grid-cols-3 gap-3">
-        <Field label="Period Start">
-          <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-        </Field>
-        <Field label="Period End">
-          <Input type="date" value={endDate} min={startDate} onChange={(e) => setEndDate(e.target.value)} />
-        </Field>
-        <Field label="Due Date">
-          <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-        </Field>
-      </div>
-
-      {/* Line items */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-semibold">Line Items</span>
-          <button type="button" onClick={addLine} className="text-xs text-primary hover:underline cursor-pointer font-medium flex items-center gap-1">
-            <Plus size={11} /> Add row
-          </button>
-        </div>
-        <div className="rounded-lg border overflow-hidden">
-          <div className="grid grid-cols-[1fr_100px_70px_32px] gap-2 px-3 py-2 bg-muted/50 text-xs font-medium text-muted-foreground">
-            <span>Description</span><span className="text-right">Amount</span><span className="text-center">Disc %</span><span />
-          </div>
-          <div className="divide-y">
-            {lineItems.map((it, i) => (
-              <div key={it.id} className="grid grid-cols-[1fr_100px_70px_32px] gap-2 px-3 py-2 items-center">
-                <Input value={it.description} onChange={(e) => updateLine(i, 'description', e.target.value)} placeholder="Service" className="text-sm" />
-                <Input type="number" min={0} step="1" value={it.amount} onChange={(e) => updateLine(i, 'amount', e.target.value)} className="text-sm text-right" />
-                <Input type="number" min={0} max={100} step="1" value={it.discountPct} onChange={(e) => updateLine(i, 'discountPct', e.target.value)} className="text-sm text-center" />
-                {lineItems.length > 1 ? (
-                  <button type="button" onClick={() => removeLine(i)} className="text-muted-foreground hover:text-destructive cursor-pointer"><X size={14} /></button>
-                ) : <span />}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Notes */}
-      <Field label="Notes (optional)">
-        <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any notes..." rows={2} />
-      </Field>
-
-      {/* Invoice Summary */}
-      <div className="rounded-xl border bg-muted/30 p-4 space-y-2">
-        <p className="text-sm font-bold">Invoice Summary</p>
-        <div className="space-y-1 text-sm">
-          {lineItems.filter(it => it.amount > 0).map((it, i) => (
-            <div key={i} className="flex justify-between gap-2">
-              <span className="truncate text-muted-foreground">{it.description || `Item ${i + 1}`}</span>
-              <span className="shrink-0">{formatMoney(it.amount)}{it.discountPct > 0 ? <span className="text-destructive text-xs ml-1">-{it.discountPct}%</span> : ''}</span>
-            </div>
-          ))}
-        </div>
-        <div className="border-t pt-2 space-y-1 text-sm">
-          <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{formatMoney(subtotal)}</span></div>
-          {totalDiscount > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Line discounts</span><span className="text-destructive">-{formatMoney(totalDiscount)}</span></div>}
-          <div className="flex justify-between items-center">
-            <label className="text-muted-foreground flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={includeVat} onChange={(e) => setIncludeVat(e.target.checked)} className="accent-primary" />
-              VAT (5%)
-            </label>
-            <span>{includeVat ? formatMoney(vatAmount) : '—'}</span>
-          </div>
-          <div className="flex justify-between font-bold text-base border-t pt-1 mt-1">
-            <span>Total</span><span>{formatMoney(total)} AED</span>
-          </div>
-        </div>
-      </div>
-
-      {err && <p className="text-xs text-destructive">{err}</p>}
-
-      <div className="flex justify-end gap-2 pt-2">
-        <Button type="submit" disabled={busy} className="px-6">
-          {busy ? 'Creating…' : 'Create Invoice'}
-        </Button>
-      </div>
-    </form>
-  )
 }
 
 // ── Signature canvas (draw mode) ───────────────────────────────────────────────
@@ -886,10 +696,6 @@ export default function ContractDetail() {
   const [signingLink, setSigningLink] = useState('')
   const [signingLinkExpiry, setSigningLinkExpiry] = useState('')
   const [linkCopied, setLinkCopied] = useState(false)
-  const [showInvoiceModal, setShowInvoiceModal] = useState(false)
-  const [invoiceOverride, setInvoiceOverride] = useState<{ start: string; end: string } | null>(null)
-  // Custom invoices open with no prefilled lines; period invoices keep theirs
-  const [invoiceBlank, setInvoiceBlank] = useState(false)
   const [editModal, setEditModal] = useState(false)
   const [noticeOpen, setNoticeOpen] = useState<{ id: string; name: string } | null>(null)
   const [emailTemplateId, setEmailTemplateId] = useState('')
@@ -1229,12 +1035,6 @@ export default function ContractDetail() {
     onError: (e) => setError(apiError(e)),
   })
 
-
-  const deleteInvoice = useMutation({
-    mutationFn: (invoiceId: string) => api.delete(`/invoices/${invoiceId}`),
-    onSuccess: () => { invalidate(); qc.invalidateQueries({ queryKey: ['invoices'] }); setError('') },
-    onError: (e) => setError(apiError(e)),
-  })
 
   const addPayment = useMutation({
     mutationFn: (body: object) => api.post('/payments', body),
@@ -2643,86 +2443,8 @@ export default function ContractDetail() {
           {/* PAYMENTS */}
           {activeTab === 'payments' && (
             <div className="space-y-4">
-            <Card>
-              <CardHeader title="Invoices"
-                action={
-                  <div className="flex items-center gap-2">
-                    {/* Invoices are raised in Zoho Books — it is the accounting
-                        source of truth. The local composer stays reachable
-                        because this contract's payment schedule and reminders
-                        are driven by local invoice records, not Zoho ones. */}
-                    <Button size="sm" variant="outline"
-                      onClick={() => {
-                        const url = zohoInvoices.data?.newInvoiceUrl
-                        if (url) window.open(url, '_blank', 'noopener')
-                        else setShowInvoiceModal(true)
-                      }}
-                      title={zohoInvoices.data?.newInvoiceUrl
-                        ? 'Opens Zoho Books to raise the invoice there'
-                        : 'Zoho Books unavailable — opens the local invoice form'}>
-                      <FilePlus size={13} /> Create Invoice
-                    </Button>
-                    <button type="button"
-                      onClick={() => setShowInvoiceModal(true)}
-                      className="text-[12px] underline cursor-pointer"
-                      style={{ color: MUTED }}
-                      title="Create an invoice inside PurpleBox — this is what drives the payment schedule and reminders below">
-                      Local invoice
-                    </button>
-                  </div>
-                }
-              />
-              {/* Invoice list */}
-              {invoiceGroups.length === 0 ? (
-                <CardBody><p className="text-sm text-muted-foreground text-center py-6">No invoices yet. Click <strong>Create Invoice</strong> to generate one.</p></CardBody>
-              ) : (
-                <div className="divide-y">
-                  {invoiceGroups.map((g, i) => {
-                    const isPaid = g.status === 'paid'
-                    const balance = g.total - g.paidTotal
-                    return (
-                      <div key={g.invoiceId} className="mx-4 my-3 rounded-xl border cursor-pointer hover:shadow-md transition-shadow"
-                        onClick={() => navigate(`/invoices/${g.invoiceId}`)}>
-                        <div className="flex items-center justify-between gap-3 px-4 py-4">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ${isPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-primary/10 text-primary'}`}>
-                              {isPaid ? '✓' : i + 1}
-                            </span>
-                            <div className="min-w-0">
-                              <p className="text-base font-bold text-primary">{g.invoiceRef.invoiceNo}</p>
-                              <p className="text-sm text-muted-foreground">{g.periodLabel}</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3 shrink-0">
-                            <div className="text-right">
-                              <p className="text-base font-bold">{formatMoney(g.total)} AED</p>
-                              <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full inline-block mt-1 ${isPaid ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400'
-                                : 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400'
-                                }`}>
-                                {isPaid ? 'Paid' : `Pending · ${formatMoney(balance)}`}
-                              </span>
-                            </div>
-                            <button type="button" title="Delete"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                if (confirm(`Delete invoice ${g.invoiceRef.invoiceNo}?`)) deleteInvoice.mutate(g.invoiceId)
-                              }}
-                              disabled={deleteInvoice.isPending}
-                              className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer disabled:opacity-50">
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </Card>
-
-            {/* Zoho Books — everything billed to this person in the accounting
-                system, matched on email/phone. Read-only: Zoho is the source of
-                truth for these, so nothing here edits them. */}
+            {/* Zoho Books is now the only invoice record — local invoicing on
+                a contract was retired, so this tab shows nothing else. */}
             <Card>
               <CardHeader
                 title="Zoho Books invoices"
@@ -3561,29 +3283,6 @@ export default function ContractDetail() {
           onClose={() => setSigningInPerson(false)}
         />
       </Modal>
-
-      {/* Create Invoice — right panel */}
-      {showInvoiceModal && (
-        <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/20" onClick={() => { setShowInvoiceModal(false); setInvoiceOverride(null) }} />
-          <div className="absolute right-0 top-0 h-full w-full max-w-lg bg-card shadow-xl overflow-y-auto animate-in slide-in-from-right border-l">
-            <div className="sticky top-0 bg-card border-b px-5 py-4 flex items-center justify-between z-10">
-              <h2 className="text-base font-bold">{invoiceOverride ? 'Generate invoice for remaining weeks' : 'Create Invoice'}</h2>
-              <button onClick={() => { setShowInvoiceModal(false); setInvoiceOverride(null) }} className="text-muted-foreground hover:text-foreground cursor-pointer"><X size={18} /></button>
-            </div>
-            <div className="p-5">
-              <GenerateInvoiceModal
-                contract={c}
-                payments={payments}
-                overrideStart={invoiceOverride?.start}
-                overrideEnd={invoiceOverride?.end}
-                blank={invoiceBlank}
-                onDone={() => { setShowInvoiceModal(false); setInvoiceOverride(null); setInvoiceBlank(false); invalidate(); qc.invalidateQueries({ queryKey: ['invoices'] }) }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
 
       <Modal open={!!signingLink} onClose={() => { setSigningLink(''); setLinkCopied(false) }} title="Signing link ready">
         <div className="space-y-4">
