@@ -310,7 +310,26 @@ export type WhatsAppCredentials = {
 }
 
 export const whatsappApi = {
-  conversations: () => api.get<WhatsAppConversation[]>('/whatsapp/conversations').then((r) => r.data),
+  /**
+   * The conversation list.
+   *
+   * `q` is searched server-side across every thread — the sidebar only holds a
+   * window of the most recent, so filtering in the browser could never reach an
+   * older chat. `phone` keeps the open conversation in the response even when
+   * it sorts below that window.
+   */
+  conversations: (opts: { q?: string; phone?: string; limit?: number } = {}) =>
+    api.get<WhatsAppConversation[]>('/whatsapp/conversations', {
+      params: {
+        ...(opts.q ? { q: opts.q } : {}),
+        ...(opts.phone ? { phone: opts.phone } : {}),
+        ...(opts.limit ? { limit: opts.limit } : {}),
+      },
+    }).then((r) => ({
+      list: r.data,
+      total: Number(r.headers['x-total-conversations']) || r.data.length,
+      matched: Number(r.headers['x-matched-conversations']) || r.data.length,
+    })),
   messages: (phone?: string) =>
     api.get<WhatsAppMsg[]>('/whatsapp/messages', { params: phone ? { phone } : {} }).then((r) => r.data),
   send: (to: string, body: string) => api.post<{ ok: boolean }>('/whatsapp/send', { to, body }).then((r) => r.data),

@@ -33,8 +33,11 @@ export default function WhatsAppBell() {
   }, [open])
 
   const { data: conversations } = useQuery<WhatsAppConversation[]>({
-    queryKey: ['wa-conversations'],
-    queryFn: () => whatsappApi.conversations(),
+    // Its own cache entry: the console stores a paged result under this
+    // prefix, and sharing a key would hand the bell the wrong shape. Still
+    // prefix-matched, so invalidating 'wa-conversations' refreshes both.
+    queryKey: ['wa-conversations', 'bell'],
+    queryFn: () => whatsappApi.conversations().then((r) => r.list),
     // Slower than the console's own polling: this runs on every page, and a
     // message showing up half a minute later in the bell is no loss.
     refetchInterval: 30_000,

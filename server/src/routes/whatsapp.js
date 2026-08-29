@@ -200,13 +200,31 @@ router.delete('/messages/:id', async (req, res) => {
     res.json(message);
 });
 
-router.get('/conversations', async (_req, res) => {
+/**
+ * The conversation list.
+ *
+ * Every thread is grouped first and only trimmed at the end, because the list
+ * used to be cut to the 200 most recent inside the database — which quietly
+ * put every older conversation out of reach. There was nothing wrong with the
+ * messages; the sidebar simply stopped listing them, and the search box only
+ * ever filtered what had already been sent, so searching could not reach them
+ * either. Both are why staff reported "losing" old chats.
+ *
+ * `q` searches every conversation by number and by the name on the lead or
+ * customer behind it. `phone` guarantees the open chat is in the response even
+ * when it falls outside the window, so opening one from a lead always works.
+ */
+router.get('/conversations', async (req, res) => {
     // Numbers are stored inconsistently (+971 …, 0…, 971…), so people are
     // matched on the last 9 digits — the same rule the Zoho matcher uses.
     const suffix = (v) => {
         const d = String(v || '').replace(/\D/g, '');
         return d.length >= 9 ? d.slice(-9) : '';
     };
+
+    const q = String(req.query.q || '').trim().toLowerCase();
+    const keepPhone = String(req.query.phone || '').replace(/\D/g, '');
+    const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 2000);
 
     const rows = await WhatsAppMessage.aggregate([
         { $sort: { occurredAt: -1 } },
@@ -219,7 +237,9 @@ router.get('/conversations', async (_req, res) => {
             },
         },
         { $sort: { lastAt: -1 } },
-        { $limit: 200 },
+        // A ceiling well above any real inbox, so one runaway import cannot
+        // turn this into an unbounded read.
+        { $limit: 5000 },
     ]);
 
     /* Which lead a thread belongs to, decided by the number.
@@ -259,9 +279,40 @@ router.get('/conversations', async (_req, res) => {
     }
 
 
+    /* Search covers every thread, not just the ones that would have been
+       returned — the whole point is to reach a conversation that has fallen
+       past the window. Matched on the number and on whatever name the sidebar
+       would show for it, which is what people actually type. */
+    const nameFor = (id) => {
+        const lead = byLeadPhone.get(suffix(id));
+        const customer = byPhone.get(suffix(id));
+        const leadName = isPlaceholderLeadName(lead?.fullName) ? '' : (lead?.fullName || '');
+        return (customer?.fullName || leadName || lead?.whatsappProfileName || '').toLowerCase();
+    };
+
+    let visible = rows;
+    if (q) {
+        const digits = q.replace(/\D/g, '');
+        visible = rows.filter((r) => (
+            nameFor(r._id).includes(q)
+            || (digits && r._id.includes(digits))
+            || String(r.phone || '').toLowerCase().includes(q)
+        ));
+    }
+
+    const total = visible.length;
+    visible = visible.slice(0, limit);
+
+    // The chat someone has open must be in the response even if it sorts below
+    // the window, or opening an old thread from a lead shows a stranger.
+    if (keepPhone && !visible.some((r) => r._id === keepPhone)) {
+        const pinned = rows.find((r) => r._id === keepPhone);
+        if (pinned) visible = [pinned, ...visible];
+    }
+
     // The AI assistant's state per thread — whether it has a suggestion waiting
     // and whether it has handed the conversation over.
-    const botThreads = await AiBotThread.find({ phoneNormalized: { $in: rows.map((r) => r._id) } })
+    const botThreads = await AiBotThread.find({ phoneNormalized: { $in: visible.map((r) => r._id) } })
         .select('phoneNormalized status draftText escalationReason')
         .lean();
     const byThread = new Map(botThreads.map((t) => [t.phoneNormalized, t]));
@@ -270,19 +321,24 @@ router.get('/conversations', async (_req, res) => {
     // told you somebody had saved this person but not who is meant to answer
     // them — so a thread with an owner looked exactly like an unclaimed one.
     const ownerIds = [...new Set(
-        rows.map((r) => byLeadPhone.get(suffix(r._id))?.owner).filter(Boolean).map(String),
+        visible.map((r) => byLeadPhone.get(suffix(r._id))?.owner).filter(Boolean).map(String),
     )];
     const owners = ownerIds.length
         ? await User.find({ _id: { $in: ownerIds } }).select('name email').lean()
         : [];
     const byOwner = new Map(owners.map((u) => [String(u._id), u.name || u.email || '']));
 
-    const chatLabels = await WhatsAppChatLabel.find({ phoneNormalized: { $in: rows.map((r) => r._id) } })
+    const chatLabels = await WhatsAppChatLabel.find({ phoneNormalized: { $in: visible.map((r) => r._id) } })
         .populate('labels', 'name color sortOrder')
         .lean();
     const byLabels = new Map(chatLabels.map((c) => [c.phoneNormalized, c.labels || []]));
 
-    res.json(rows.map((r) => {
+    // How many exist beyond what is being returned, so the page can offer to
+    // show more rather than pretending this is all there is.
+    res.setHeader('X-Total-Conversations', String(rows.length));
+    res.setHeader('X-Matched-Conversations', String(total));
+
+    res.json(visible.map((r) => {
         const lead = byLeadPhone.get(suffix(r._id)) || null;
         const customer = byPhone.get(suffix(r._id)) || null;
         const leadName = isPlaceholderLeadName(lead?.fullName) ? '' : lead.fullName;

@@ -1397,12 +1397,33 @@ export default function WhatsApp() {
    */
   const LIVE = { refetchIntervalInBackground: true, refetchOnWindowFocus: true } as const
 
-  const { data: conversations, isLoading: loadingConvos, refetch: refetchConvos } = useQuery<WhatsAppConversation[]>({
-    queryKey: ['wa-conversations'],
-    queryFn: () => whatsappApi.conversations(),
+  /* How many threads to ask for. Raised by "Show older chats" rather than
+     fetching everything up front, so a busy inbox stays quick to open. */
+  const [convoLimit, setConvoLimit] = useState(200)
+
+  /* The search runs on the server, so it reaches conversations that are not in
+     the list yet. Debounced so typing does not fire a request per keystroke. */
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedSearch(search.trim()), 250)
+    return () => window.clearTimeout(t)
+  }, [search])
+
+  const { data: convoPage, isLoading: loadingConvos, refetch: refetchConvos } = useQuery({
+    queryKey: ['wa-conversations', debouncedSearch, selectedPhone, convoLimit],
+    queryFn: () => whatsappApi.conversations({
+      q: debouncedSearch,
+      phone: selectedPhone ?? undefined,
+      limit: convoLimit,
+    }),
     refetchInterval: 10_000,
+    placeholderData: (prev) => prev,
     ...LIVE,
   })
+
+  const conversations = convoPage?.list
+  const convoTotal = convoPage?.total ?? 0
+  const convoMatched = convoPage?.matched ?? 0
 
   // Whole-inbox feed: drives unread counts, the blink and the ping. When no
   // conversation is selected this shares its cache entry with the chat query
@@ -1594,16 +1615,12 @@ export default function WhatsApp() {
     [conversations]
   )
 
+  /* Only the label filter is applied here — the text search already ran on the
+     server, against every conversation rather than just the loaded ones. */
   const filteredConvos = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    let list = convoList
-    if (labelFilter) list = list.filter((c) => (c.labels || []).some((l) => l._id === labelFilter))
-    if (!q) return list
-    return list.filter((c) => {
-      const name = (convDisplayName(c) ?? '').toLowerCase()
-      return name.includes(q) || c.phoneNormalized.includes(q) || (c.phone ?? '').toLowerCase().includes(q)
-    })
-  }, [convoList, search, labelFilter])
+    if (!labelFilter) return convoList
+    return convoList.filter((c) => (c.labels || []).some((l) => l._id === labelFilter))
+  }, [convoList, labelFilter])
 
   const realConvo = convoList.find((c) => c.phoneNormalized === selectedPhone) ?? null
   // A number typed into "New chat" behaves like an empty conversation so the
@@ -2023,6 +2040,32 @@ export default function WhatsApp() {
                   </button>
                 )
               })
+            )}
+
+            {/* The list holds a window, not everything. Saying so — and
+                offering the rest — beats an older chat simply not being
+                there, which reads as lost rather than unlisted. */}
+            {!loadingConvos && convoMatched > convoList.length && (
+              <div className="px-3 py-3">
+                <button
+                  type="button"
+                  onClick={() => setConvoLimit((n) => n + 300)}
+                  className="w-full rounded-lg py-2 cursor-pointer"
+                  style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', color: '#4A1FA0', fontSize: 12.5, fontWeight: 700 }}
+                >
+                  Show older chats
+                </button>
+                <p className="text-center mt-1.5" style={{ fontSize: 11, color: FAINT_INK }}>
+                  Showing {convoList.length} of {convoMatched}
+                  {debouncedSearch ? ' matching' : ''} · {convoTotal} in total
+                </p>
+              </div>
+            )}
+
+            {!loadingConvos && debouncedSearch && filteredConvos.length > 0 && convoMatched <= convoList.length && (
+              <p className="px-4 py-2.5 text-center" style={{ fontSize: 11, color: FAINT_INK }}>
+                {convoMatched} of {convoTotal} chats match “{debouncedSearch}”
+              </p>
             )}
           </div>
         </aside>
