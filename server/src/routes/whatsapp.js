@@ -160,8 +160,13 @@ router.get('/messages', async (req, res) => {
         ? Math.min(Math.max(Number(req.query.limit) || 2000, 1), 5000)
         : Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
 
+    /* No populate on `lead` here.
+     *
+     * It resolved a lead onto every message and nothing ever read it — the
+     * console decides which lead a thread belongs to by phone number, not by
+     * the id stored on a message, precisely because that id goes stale. It
+     * cost an extra round trip on the endpoint polled hardest in the app. */
     const messages = await WhatsAppMessage.find(q)
-        .populate('lead', 'fullName phone status source')
         .sort({ occurredAt: -1, createdAt: -1 })
         .limit(limit)
         .lean();
@@ -226,36 +231,44 @@ router.get('/conversations', async (req, res) => {
     const keepPhone = String(req.query.phone || '').replace(/\D/g, '');
     const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 2000);
 
-    const rows = await WhatsAppMessage.aggregate([
-        { $sort: { occurredAt: -1 } },
-        {
-            $group: {
-                _id: '$phoneNormalized',
-                lastAt: { $max: '$occurredAt' },
-                count: { $sum: 1 },
-                phone: { $first: '$phone' },
+    /* These three do not depend on each other, so they go together.
+     *
+     * Every query here costs a round trip to Atlas whatever it asks for —
+     * counting 331 customers takes about as long as counting nothing. Run one
+     * after another the six trips this route makes added up to roughly 900 ms;
+     * issued in two waves it is nearer 200. Same queries, same results, only
+     * the waiting is shared. This endpoint is polled every ten seconds by
+     * every open console, so it is the one worth doing this to. */
+    const [rows, leads, customers] = await Promise.all([
+        WhatsAppMessage.aggregate([
+            { $sort: { occurredAt: -1 } },
+            {
+                $group: {
+                    _id: '$phoneNormalized',
+                    lastAt: { $max: '$occurredAt' },
+                    count: { $sum: 1 },
+                    phone: { $first: '$phone' },
+                },
             },
-        },
-        { $sort: { lastAt: -1 } },
-        // A ceiling well above any real inbox, so one runaway import cannot
-        // turn this into an unbounded read.
-        { $limit: 5000 },
+            { $sort: { lastAt: -1 } },
+            // A ceiling well above any real inbox, so one runaway import cannot
+            // turn this into an unbounded read.
+            { $limit: 5000 },
+        ]),
+        /* Which lead a thread belongs to, decided by the number.
+         *
+         * This used to read the lead id denormalised onto the newest message,
+         * which is only as good as whatever wrote it. A lead deleted and made
+         * again left every message pointing at an id that no longer resolves,
+         * so a chat with a perfectly good lead — right name, right owner —
+         * showed as a bare number with no badge.
+         *
+         * The number is the fact. Matched on the last nine digits, the same
+         * rule used for customers and everywhere else people are matched. */
+        Lead.find({}).select('fullName status owner whatsappProfileName phone phoneNormalized').lean(),
+        Customer.find({}).select('fullName phone phones').lean(),
     ]);
 
-    /* Which lead a thread belongs to, decided by the number.
-     *
-     * This used to read the lead id denormalised onto the newest message,
-     * which is only as good as whatever wrote it. A lead deleted and made
-     * again left every message pointing at an id that no longer resolves, so
-     * a chat with a perfectly good lead — right name, right owner — showed as
-     * a bare number with no badge.
-     *
-     * The number is the fact. Matched on the last nine digits, the same rule
-     * used for customers just below and everywhere else people are matched.
-     */
-    const leads = await Lead.find({})
-        .select('fullName status owner whatsappProfileName phone phoneNormalized')
-        .lean();
     const byLeadPhone = new Map();
     for (const l of leads) {
         for (const candidate of [l.phoneNormalized, l.phone]) {
@@ -269,7 +282,6 @@ router.get('/conversations', async (req, res) => {
         }
     }
 
-    const customers = await Customer.find({}).select('fullName phone phones').lean();
     const byPhone = new Map();
     for (const c of customers) {
         for (const p of [...(c.phones || []), c.phone]) {
@@ -310,27 +322,27 @@ router.get('/conversations', async (req, res) => {
         if (pinned) visible = [pinned, ...visible];
     }
 
-    // The AI assistant's state per thread — whether it has a suggestion waiting
-    // and whether it has handed the conversation over.
-    const botThreads = await AiBotThread.find({ phoneNormalized: { $in: visible.map((r) => r._id) } })
-        .select('phoneNormalized status draftText escalationReason')
-        .lean();
-    const byThread = new Map(botThreads.map((t) => [t.phoneNormalized, t]));
-
     // Who is working each lead. The inbox showed a bare "Lead" badge, which
     // told you somebody had saved this person but not who is meant to answer
     // them — so a thread with an owner looked exactly like an unclaimed one.
     const ownerIds = [...new Set(
         visible.map((r) => byLeadPhone.get(suffix(r._id))?.owner).filter(Boolean).map(String),
     )];
-    const owners = ownerIds.length
-        ? await User.find({ _id: { $in: ownerIds } }).select('name email').lean()
-        : [];
-    const byOwner = new Map(owners.map((u) => [String(u._id), u.name || u.email || '']));
+    const phones = visible.map((r) => r._id);
 
-    const chatLabels = await WhatsAppChatLabel.find({ phoneNormalized: { $in: visible.map((r) => r._id) } })
-        .populate('labels', 'name color sortOrder')
-        .lean();
+    // The second wave: these three need `visible`, but not each other.
+    const [botThreads, owners, chatLabels] = await Promise.all([
+        // The AI assistant's state per thread — whether it has a suggestion
+        // waiting and whether it has handed the conversation over.
+        AiBotThread.find({ phoneNormalized: { $in: phones } })
+            .select('phoneNormalized status draftText escalationReason').lean(),
+        ownerIds.length ? User.find({ _id: { $in: ownerIds } }).select('name email').lean() : [],
+        WhatsAppChatLabel.find({ phoneNormalized: { $in: phones } })
+            .populate('labels', 'name color sortOrder').lean(),
+    ]);
+
+    const byThread = new Map(botThreads.map((t) => [t.phoneNormalized, t]));
+    const byOwner = new Map(owners.map((u) => [String(u._id), u.name || u.email || '']));
     const byLabels = new Map(chatLabels.map((c) => [c.phoneNormalized, c.labels || []]));
 
     // How many exist beyond what is being returned, so the page can offer to

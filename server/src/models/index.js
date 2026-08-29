@@ -378,6 +378,11 @@ const whatsappMessageSchema = new Schema(
 
 whatsappMessageSchema.index({ phoneNormalized: 1, occurredAt: -1 });
 whatsappMessageSchema.index({ messageId: 1 }, { unique: true, sparse: true });
+/* The whole-inbox feed and the conversation grouping both sort the entire
+   collection by time with no filter to narrow it first, which had no index to
+   lean on and so sorted in memory. Cheap at four thousand messages, and the
+   thing that quietly stops scaling as the archive grows. */
+whatsappMessageSchema.index({ occurredAt: -1 });
 
 const contractSchema = new Schema(
   {

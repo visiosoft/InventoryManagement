@@ -266,7 +266,6 @@ export type WhatsAppMsg = {
   editedAt?: string | null
   deletedAt?: string | null
   reaction?: string
-  lead?: { _id: string; fullName: string; phone: string; status: string; source: string }
 }
 
 /** ownerName is '' when nobody has been given the lead yet. */
