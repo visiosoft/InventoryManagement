@@ -541,6 +541,19 @@ router.put('/:id', async (req, res) => {
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
     if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
 
+    /* The standing note is the admin's, not the rep's.
+     *
+     * Checked against what was actually sent rather than the merged body,
+     * because the merge fills `notes` in from the stored lead — so every
+     * ordinary edit a rep makes carries the existing note along with it and
+     * would be refused if this looked at the merge. Only an attempt to change
+     * it counts. Reps have the timeline for their own running commentary. */
+    if (req.user?.role !== 'admin'
+        && req.body.notes !== undefined
+        && String(req.body.notes) !== String(lead.notes || '')) {
+        return res.status(403).json({ error: 'Only an admin can change the notes on a lead' });
+    }
+
     const body = cleanBody({ ...lead.toObject(), ...req.body });
     if (!body.firstName && !body.fullName) return res.status(400).json({ error: 'First name is required' });
     if (!body.phone) return res.status(400).json({ error: 'Phone is required' });

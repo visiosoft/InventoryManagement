@@ -993,27 +993,39 @@ export default function PersonProfile() {
             </Card>
           )}
 
-          {/* Always shown once there is a lead, not only when a note already
-              exists — read-only text meant there was no way to write the first
-              one, so the card people needed was the one that never appeared.
-              Saved on blur, the same as the follow-up note above. */}
-          {lead && (
+          {/* Admins write this one; everybody else reads it.
+              The server refuses the change either way — hiding a text box is
+              not a permission — but showing a rep a field they cannot save
+              would only waste their typing. Reps have the timeline below for
+              their own running commentary.
+
+              Shown to an admin even when empty, since a card that appears only
+              once a note exists leaves no way to write the first one. Hidden
+              from everyone else when empty, because an empty box they cannot
+              fill in is just clutter. */}
+          {lead && (isAdmin || lead.notes) && (
             <Card title="Notes">
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                onBlur={() => { if (notes !== (lead.notes || '')) patchLead.mutate({ notes }) }}
-                rows={4}
-                placeholder="Anything worth knowing about this person — what they are storing, what was agreed, who referred them."
-                style={{
-                  width: '100%', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff',
-                  padding: '9px 11px', fontSize: 14, fontFamily: 'inherit', color: INK,
-                  resize: 'vertical', boxSizing: 'border-box', outline: 'none', lineHeight: 1.5,
-                }}
-              />
-              <p style={{ fontSize: 12, color: FAINT, marginTop: 6 }}>
-                Saved when you click away.
-              </p>
+              {isAdmin ? (
+                <>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    onBlur={() => { if (notes !== (lead.notes || '')) patchLead.mutate({ notes }) }}
+                    rows={4}
+                    placeholder="Anything worth knowing about this person — what they are storing, what was agreed, who referred them."
+                    style={{
+                      width: '100%', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff',
+                      padding: '9px 11px', fontSize: 14, fontFamily: 'inherit', color: INK,
+                      resize: 'vertical', boxSizing: 'border-box', outline: 'none', lineHeight: 1.5,
+                    }}
+                  />
+                  <p style={{ fontSize: 12, color: FAINT, marginTop: 6 }}>
+                    Saved when you click away. Clearing the box removes the note.
+                  </p>
+                </>
+              ) : (
+                <p style={{ fontSize: 14, color: INK_2, whiteSpace: 'pre-wrap' }}>{lead.notes}</p>
+              )}
             </Card>
           )}
         </div>
