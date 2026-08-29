@@ -24,8 +24,18 @@ const DEFAULT_QUICK_REPLIES = [
     whatsappBody: 'Could you tell us what you are planning to store and for how long? We will recommend the right unit size and share the price.' },
   { key: 'qr_availability', label: 'Checking availability', category: 'Availability check', sortOrder: 40,
     whatsappBody: 'Let me check availability for those dates and come back to you shortly.' },
+  /* Sends WhatsApp's own pin, then the address as text.
+   *
+   * Deliberately not a Google Maps link: that opens a search page listing
+   * every storage place nearby, which is a poor way to hand a customer to a
+   * competitor. The pin opens on our door and nothing else. */
   { key: 'qr_location', label: 'Location', category: 'Location & directions', sortOrder: 50,
-    whatsappBody: 'Our address is: [add your address here]. Let us know when you would like to visit.' },
+    whatsappBody: 'Our address is: ABA Avenue – Unit 12, 12th St, Al Quoz 2, Dubai. Let us know when you would like to visit.',
+    mediaKind: 'location',
+    locationLat: 25.1236443,
+    locationLng: 55.2439481,
+    locationName: 'PurpleBox Storage',
+    locationAddress: 'ABA Avenue – Unit 12, 12th St, Al Quoz 2, Dubai' },
   { key: 'qr_booking', label: 'Booking confirmed', category: 'Booking confirmation', sortOrder: 60,
     whatsappBody: 'Your booking is confirmed. We will send the agreement shortly — please review and sign it, and let us know if anything needs changing.' },
   { key: 'qr_followup', label: 'Following up', category: 'Follow-up / no reply', sortOrder: 70,
