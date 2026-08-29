@@ -3,6 +3,7 @@ import { mediaFromRaw } from './whatsappMedia.js';
 import { WhatsAppMessage, Lead, Customer, User, AiBotThread, WhatsAppLabel, WhatsAppChatLabel, MessageTemplate } from '../models/index.js';
 import { sendWhatsAppText, sendWhatsAppMedia, sendWhatsAppLocation, uploadWhatsAppMedia, whatsappMediaKind, whatsappSendConfigured, whatsappSendMissing } from '../services/whatsapp.js';
 import { pauseBotForHuman } from '../services/aiBot.js';
+import { needsRemux, webmToOggOpus } from '../services/audioRemux.js';
 import multer from 'multer';
 import { createLeadFromWhatsAppPhone } from '../services/whatsappLeadSync.js';
 import { summariseConversation, summariseRecent } from '../services/conversationSummary.js';
@@ -669,13 +670,23 @@ router.post('/send-media', upload.single('file'), async (req, res) => {
         const caption = String(req.body?.caption || '').trim();
         const kind = whatsappMediaKind(req.file.mimetype);
 
-        const mediaId = await uploadWhatsAppMedia({
-            buffer: req.file.buffer,
-            mimeType: req.file.mimetype,
-            filename: req.file.originalname,
-        });
+        let buffer = req.file.buffer;
+        let mimeType = req.file.mimetype;
+        let filename = req.file.originalname;
+
+        /* A voice note recorded in the browser arrives as WebM/Opus, which Meta
+         * refuses — it takes Ogg/Opus, holding the very same encoded frames.
+         * Repackaging is done here rather than in the browser so every caller
+         * gets it, and so a picked-up .webm file is handled too. */
+        if (kind === 'audio' && needsRemux(mimeType)) {
+            buffer = webmToOggOpus(buffer);
+            mimeType = 'audio/ogg';
+            filename = filename.replace(/\.[^.]+$/, '') + '.ogg';
+        }
+
+        const mediaId = await uploadWhatsAppMedia({ buffer, mimeType, filename });
         const result = await sendWhatsAppMedia({
-            to, mediaId, kind, caption, filename: req.file.originalname,
+            to, mediaId, kind, caption, filename,
         });
 
         await WhatsAppMessage.create({
@@ -689,7 +700,7 @@ router.post('/send-media', upload.single('file'), async (req, res) => {
             occurredAt: new Date(),
             // Mirror the inbound webhook shape so mediaFromRaw finds it and the
             // same proxy serves it back into the thread.
-            raw: { [kind]: { id: mediaId, mime_type: req.file.mimetype, filename: req.file.originalname, caption }, sendResult: result },
+            raw: { [kind]: { id: mediaId, mime_type: mimeType, filename, caption }, sendResult: result },
         });
 
         await pauseBotForHuman(String(to).replace(/\D/g, ''));

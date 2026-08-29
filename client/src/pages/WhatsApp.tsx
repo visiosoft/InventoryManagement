@@ -4,8 +4,9 @@ import { Link } from 'react-router-dom'
 import {
   Send, MessageSquare, RefreshCw, UserPlus, UserCheck, Bell, BellOff, FileText,
   Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Paperclip, Pencil,
-  Bot, Tag, Check, ClipboardList, Sparkles, Trash2, MapPin,
+  Bot, Tag, Check, ClipboardList, Sparkles, Trash2, MapPin, Mic, Square,
 } from 'lucide-react'
+import { useVoiceRecorder, recordingSupported, formatDuration } from '../lib/voiceRecorder'
 import { api, whatsappApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel } from '../lib/api'
 import { playPing, primePing } from '../lib/ping'
 import { convDisplayName, formatListTime, isPlaceholderName, Avatar } from '../lib/whatsappDisplay'
@@ -1712,6 +1713,25 @@ export default function WhatsApp() {
     return () => URL.revokeObjectURL(url)
   }, [pending])
 
+  /* A recorded voice note becomes an ordinary pending attachment, so it goes
+     out through the same path as a picked file — and can be listened back to
+     before it is sent, which is the whole reason not to send on release. */
+  const voice = useVoiceRecorder()
+  const [voicePreview, setVoicePreview] = useState('')
+  const isVoicePending = Boolean(pending?.type.startsWith('audio/'))
+
+  useEffect(() => {
+    if (!pending || !pending.type.startsWith('audio/')) { setVoicePreview(''); return }
+    const url = URL.createObjectURL(pending)
+    setVoicePreview(url)
+    return () => URL.revokeObjectURL(url)
+  }, [pending])
+
+  async function stopRecording() {
+    const file = await voice.stop()
+    if (file) { setPending(file); setSendErr('') }
+  }
+
   const sendMedia = useMutation({
     mutationFn: async (payload: { to: string; file: File; caption: string }) => {
       const form = new FormData()
@@ -2283,6 +2303,54 @@ export default function WhatsApp() {
             <span className="wa-grip-bar" />
           </div>
 
+          {/* Recording in progress. Deliberately not push-to-talk: releasing a
+              held button is easy to do by accident, and there is no way back
+              from a voice note already sent. */}
+          {voice.recording && (
+            <div
+              className="shrink-0 flex items-center gap-3 px-4 py-2.5"
+              style={{ background: '#fff', borderTop: `1px solid ${LINE}` }}
+            >
+              <span
+                className="inline-flex items-center justify-center shrink-0 animate-pulse"
+                style={{ width: 34, height: 34, borderRadius: 999, background: '#FEE2E2' }}
+              >
+                <Mic size={16} style={{ color: '#B91C1C' }} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#B91C1C' }}>
+                  Recording · {formatDuration(voice.seconds)}
+                </div>
+                <div style={{ fontSize: 11.5, color: FAINT_INK }}>
+                  Stop to listen back before sending
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={voice.cancel}
+                className="shrink-0 cursor-pointer px-2"
+                style={{ fontSize: 12.5, color: FAINT_INK }}
+                title="Discard this recording"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={stopRecording}
+                className="shrink-0 inline-flex items-center justify-center rounded-full cursor-pointer"
+                style={{ width: 36, height: 36, background: '#B91C1C', color: '#fff' }}
+                title="Stop recording"
+                aria-label="Stop recording"
+              >
+                <Square size={13} fill="currentColor" />
+              </button>
+            </div>
+          )}
+
+          {voice.error && !voice.recording && (
+            <p className="shrink-0 px-4 pb-1 text-xs" style={{ color: '#B91C1C' }}>{voice.error}</p>
+          )}
+
           {pending && (
             <div
               className="shrink-0 flex items-center gap-3 px-4 py-2"
@@ -2295,23 +2363,38 @@ export default function WhatsApp() {
                   className="inline-flex items-center justify-center shrink-0"
                   style={{ width: 44, height: 44, borderRadius: 8, background: '#F7F3FF' }}
                 >
-                  <Paperclip size={18} style={{ color: '#5B2BC9' }} />
+                  {isVoicePending
+                    ? <Mic size={18} style={{ color: '#5B2BC9' }} />
+                    : <Paperclip size={18} style={{ color: '#5B2BC9' }} />}
                 </span>
               )}
               <div className="min-w-0 flex-1">
-                <div className="truncate" style={{ fontSize: 13, fontWeight: 600, color: INK }}>{pending.name}</div>
-                <div style={{ fontSize: 11.5, color: FAINT_INK }}>
-                  {(pending.size / 1024 / 1024).toFixed(2)} MB
-                  {pending.size > 16 * 1024 * 1024 && ' · too large, WhatsApp allows 16 MB'}
-                  {' · the message box becomes its caption'}
-                </div>
+                {/* A recording is worth hearing before it goes out; a picked
+                    file just needs naming. */}
+                {isVoicePending && voicePreview ? (
+                  <>
+                    <audio src={voicePreview} controls className="w-full max-w-[260px]" style={{ height: 32 }} />
+                    <div style={{ fontSize: 11.5, color: FAINT_INK, marginTop: 2 }}>
+                      Voice message · press send when you are happy with it
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="truncate" style={{ fontSize: 13, fontWeight: 600, color: INK }}>{pending.name}</div>
+                    <div style={{ fontSize: 11.5, color: FAINT_INK }}>
+                      {(pending.size / 1024 / 1024).toFixed(2)} MB
+                      {pending.size > 16 * 1024 * 1024 && ' · too large, WhatsApp allows 16 MB'}
+                      {' · the message box becomes its caption'}
+                    </div>
+                  </>
+                )}
               </div>
               <button
                 type="button"
                 onClick={() => { setPending(null); if (fileRef.current) fileRef.current.value = '' }}
                 className="shrink-0 cursor-pointer"
                 style={{ color: FAINT_INK }}
-                title="Remove attachment"
+                title={isVoicePending ? 'Discard this recording' : 'Remove attachment'}
               >
                 <X size={16} />
               </button>
@@ -2341,6 +2424,17 @@ export default function WhatsApp() {
             <IconButton title="Quick replies" onClick={() => setQrOpen((v) => !v)} className="!h-10 !w-10 shrink-0">
               <Zap size={16} />
             </IconButton>
+            {/* Hidden while a recording is in progress — the strip above
+                replaces the whole composer with the recorder's own controls. */}
+            {recordingSupported() && !voice.recording && !isVoicePending && (
+              <IconButton
+                title="Record a voice message"
+                onClick={() => { setSendErr(''); voice.start() }}
+                className="!h-10 !w-10 shrink-0"
+              >
+                <Mic size={16} />
+              </IconButton>
+            )}
             <textarea
               ref={taRef}
               rows={1}
