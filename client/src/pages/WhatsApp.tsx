@@ -1314,7 +1314,25 @@ export default function WhatsApp() {
     const digits = String(asked || '').replace(/\D/g, '')
     return digits || localStorage.getItem(LAST_CHAT_KEY) || null
   })
-  const [muted, setMuted] = useState<boolean>(() => localStorage.getItem(MUTE_KEY) === '1')
+  /* Muting, with a middle setting between "on" and "off for ever".
+   *
+   * Stored as '1' for muted indefinitely, or the time it should come back on.
+   * A snooze is what people actually want during a busy stretch — turning the
+   * sound off permanently is the thing they do instead when snoozing is not
+   * offered, and then nobody hears anything for weeks. */
+  const [muteUntil, setMuteUntil] = useState<string>(() => localStorage.getItem(MUTE_KEY) || '0')
+  const [now, setNow] = useState(() => Date.now())
+  const muted = muteUntil === '1' || Number(muteUntil) > now
+
+  // A snooze has to end on its own, or it is just a mute with extra steps.
+  useEffect(() => {
+    const until = Number(muteUntil)
+    if (muteUntil === '1' || !until || until <= now) return
+    const t = window.setTimeout(() => setNow(Date.now()), until - now + 500)
+    return () => window.clearTimeout(t)
+  }, [muteUntil, now])
+
+  const [soundMenuOpen, setSoundMenuOpen] = useState(false)
   const lastSeen = useSeen()
   const [blinking, setBlinking] = useState<Record<string, number>>({})
   const [search, setSearch] = useState('')
@@ -1379,6 +1397,8 @@ export default function WhatsApp() {
 
   const mutedRef = useRef(muted)
   mutedRef.current = muted
+  // When this console was opened. Anything older than this is backlog, not news.
+  const openedAt = useRef(Date.now())
   const selectedRef = useRef(selectedPhone)
   selectedRef.current = selectedPhone
 
@@ -1527,9 +1547,23 @@ export default function WhatsApp() {
 
     if (unannounced.length > 0) {
       for (const phone of unannounced) announced.current.add(phone)
+
+      /* Only ring for what has arrived since this page was opened.
+       *
+       * "New to this browser" and "new in the world" are not the same thing,
+       * and conflating them is why opening the console after a while rang for
+       * a backlog somebody had already dealt with on their phone. A message
+       * from an hour ago is not news; it belongs in the unread count, which
+       * still shows it either way.
+       *
+       * The grace allows for the clock on the message being a touch behind
+       * ours — it comes from Meta, not from here. */
+      const cutoff = openedAt.current - 30_000
+      const reallyNew = inbound.some((m) => new Date(m.occurredAt).getTime() > cutoff)
+
       // One ring, however many chats woke up at once — a second one a
       // millisecond later says nothing the first did not.
-      if (!mutedRef.current) playPing()
+      if (reallyNew && !mutedRef.current) playPing()
     }
 
     const until = Date.now() + BLINK_MS
@@ -1595,13 +1629,13 @@ export default function WhatsApp() {
     qc.invalidateQueries({ queryKey: ['wa-conversations'] })
   }
 
-  function toggleMute() {
-    setMuted((m) => {
-      const next = !m
-      try { localStorage.setItem(MUTE_KEY, next ? '1' : '0') } catch { /* ignore */ }
-      if (!next) primePing()
-      return next
-    })
+  /** '0' on, '1' off, or a timestamp to come back on at. */
+  function setSound(value: string) {
+    setMuteUntil(value)
+    setNow(Date.now())
+    setSoundMenuOpen(false)
+    try { localStorage.setItem(MUTE_KEY, value) } catch { /* ignore */ }
+    if (value === '0') primePing()
   }
 
   const sorted = useMemo(
@@ -1853,9 +1887,50 @@ export default function WhatsApp() {
                 Chats{totalUnread > 0 ? <span style={{ fontSize: 12, fontWeight: 700, color: '#4A1FA0', marginLeft: 6 }}>{totalUnread} unread</span> : null}
               </h2>
               <div className="flex items-center shrink-0" style={{ gap: 4 }}>
-                <IconButton title={muted ? 'Notification sound is off' : 'Notification sound is on'} onClick={toggleMute}>
-                  {muted ? <BellOff size={15} /> : <Bell size={15} />}
-                </IconButton>
+                <div className="relative">
+                  <IconButton
+                    title={
+                      muteUntil === '1' ? 'Notification sound is off'
+                        : muted ? `Sound is snoozed until ${new Date(Number(muteUntil)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                          : 'Notification sound is on'
+                    }
+                    onClick={() => setSoundMenuOpen((v) => !v)}
+                  >
+                    {muted ? <BellOff size={15} /> : <Bell size={15} />}
+                  </IconButton>
+                  {soundMenuOpen && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setSoundMenuOpen(false)} aria-hidden />
+                      <div
+                        className="absolute right-0 mt-1 z-20 rounded-xl overflow-hidden"
+                        style={{ background: '#fff', border: `1px solid ${LINE}`, boxShadow: '0 8px 24px rgba(20,8,31,.14)', minWidth: 186 }}
+                      >
+                        {([
+                          ['0', 'Sound on'],
+                          [String(Date.now() + 3600_000), 'Mute for 1 hour'],
+                          [String(Date.now() + 4 * 3600_000), 'Mute for 4 hours'],
+                          ['1', 'Mute until I turn it back on'],
+                        ] as const).map(([value, label]) => {
+                          const active = value === '0' ? !muted : value === '1' ? muteUntil === '1' : false
+                          return (
+                            <button
+                              key={label}
+                              type="button"
+                              onClick={() => setSound(value)}
+                              className="w-full text-left px-3 py-2.5 cursor-pointer hover:opacity-75"
+                              style={{ fontSize: 12.5, color: INK, fontWeight: active ? 700 : 500, background: active ? '#F7F3FF' : '#fff' }}
+                            >
+                              {label}
+                            </button>
+                          )
+                        })}
+                        <p className="px-3 py-2" style={{ fontSize: 11, color: FAINT_INK, borderTop: `1px solid ${LINE}` }}>
+                          Unread counts keep showing either way.
+                        </p>
+                      </div>
+                    </>
+                  )}
+                </div>
                 <IconButton
                   title="Refresh"
                   onClick={() => { refetchConvos(); qc.invalidateQueries({ queryKey: ['wa-messages'] }) }}

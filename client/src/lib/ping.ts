@@ -14,9 +14,19 @@
 
 const PING_SRC = '/whatsappaduio.mp3'
 
-/* Two rings a moment apart are heard as one stutter, because the second
-   restarts the clip from the top rather than queueing behind it. */
-const PING_GAP_MS = 2000
+/* How long the sound stays quiet after ringing.
+ *
+ * This was two seconds, which only stopped two rings being heard as one
+ * stutter. But the inbox polls every ten seconds and rings once per poll that
+ * carries a new chat, so a busy morning was up to six rings a minute — a
+ * metronome, and the thing staff actually complained about.
+ *
+ * Half a minute is long enough that a busy stretch is a handful of rings
+ * rather than a stream, and short enough that a genuinely new conversation
+ * still gets heard. The unread counts and the blink carry everything else,
+ * which is the right division: the badge is for what is waiting, the sound is
+ * only for "look now". */
+const PING_GAP_MS = 30_000
 
 let pingEl: HTMLAudioElement | null = null
 let pingPrimed = false
