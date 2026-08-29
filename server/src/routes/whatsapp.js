@@ -248,6 +248,16 @@ router.get('/conversations', async (req, res) => {
                     lastAt: { $max: '$occurredAt' },
                     count: { $sum: 1 },
                     phone: { $first: '$phone' },
+                    /* When they last wrote to us.
+                     *
+                     * WhatsApp only allows free text within 24 hours of this;
+                     * after it, only an approved template gets through and
+                     * anything typed is rejected by Meta. The console had no
+                     * idea, so a rep could write a careful reply to somebody
+                     * who last messaged last week and simply have it bounce. */
+                    lastInboundAt: {
+                        $max: { $cond: [{ $eq: ['$direction', 'inbound'] }, '$occurredAt', null] },
+                    },
                 },
             },
             { $sort: { lastAt: -1 } },
@@ -360,6 +370,7 @@ router.get('/conversations', async (req, res) => {
             phone: r.phone,
             count: r.count,
             lastAt: r.lastAt,
+            lastInboundAt: r.lastInboundAt || null,
             lead: lead
                 ? {
                     _id: lead._id,

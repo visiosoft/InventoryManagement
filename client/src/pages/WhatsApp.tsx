@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import {
   Send, MessageSquare, RefreshCw, UserPlus, UserCheck, Bell, BellOff, FileText,
   Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Paperclip, Pencil,
-  Bot, Tag, Check, ClipboardList, Sparkles, Trash2, MapPin, Mic, Square,
+  Bot, Tag, Check, ClipboardList, Sparkles, Trash2, MapPin, Mic, Square, AlertTriangle,
 } from 'lucide-react'
 import { useVoiceRecorder, recordingSupported, formatDuration } from '../lib/voiceRecorder'
 import { api, whatsappApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel } from '../lib/api'
@@ -320,7 +320,17 @@ function MessageBubble({ msg }: { msg: WaMsg }) {
           <Attachment messageId={msg.messageId} media={msg.media} />
         ) : (
           <p className="whitespace-pre-wrap break-words">
-            {msg.text || <span className="italic opacity-60">[{msg.type}]</span>}
+            {msg.text || (
+              <span className="italic opacity-60">
+                {/* Meta's own word for "we could not deliver this to you" —
+                    a view-once photo, a poll, a newer message type. It is not
+                    an empty message, and "[unsupported]" read like a fault of
+                    ours rather than something to ask the customer to resend. */}
+                {msg.type === 'unsupported'
+                  ? 'They sent something WhatsApp could not pass on — ask them to resend it'
+                  : `[${msg.type}]`}
+              </span>
+            )}
           </p>
         )}
         {!msg.deletedAt && msg.media && msg.text && !msg.media.caption && (
@@ -1778,6 +1788,19 @@ export default function WhatsApp() {
     return () => URL.revokeObjectURL(url)
   }, [pending])
 
+  /* Whether a typed message can still reach this person.
+   *
+   * WhatsApp allows free text only within 24 hours of their last message.
+   * Outside it Meta rejects anything typed, so a rep could write a careful
+   * reply and watch it bounce with a raw API error. Most chats sit outside the
+   * window at any given moment, so this is the normal case, not the edge one. */
+  const replyWindow = useMemo(() => {
+    const last = selectedConvo?.lastInboundAt
+    if (!last) return { open: false, known: false, hoursLeft: 0 }
+    const msLeft = new Date(last).getTime() + 24 * 3600_000 - Date.now()
+    return { open: msLeft > 0, known: true, hoursLeft: Math.max(0, Math.floor(msLeft / 3600_000)) }
+  }, [selectedConvo?.lastInboundAt])
+
   async function stopRecording() {
     const file = await voice.stop()
     if (file) { setPending(file); setSendErr('') }
@@ -2420,6 +2443,29 @@ export default function WhatsApp() {
           >
             <span className="wa-grip-bar" />
           </div>
+
+          {/* Said before they type, not after Meta rejects it. */}
+          {selectedPhone && replyWindow.known && !replyWindow.open && (
+            <div
+              className="shrink-0 flex items-start gap-2 px-4 py-2.5"
+              style={{ background: '#FFF7E6', borderTop: `1px solid ${LINE}` }}
+            >
+              <AlertTriangle size={14} style={{ color: '#8A5A00', flex: '0 0 auto', marginTop: 2 }} />
+              <div className="min-w-0 flex-1" style={{ fontSize: 12.5, color: '#6B4500' }}>
+                <strong>They last wrote over 24 hours ago.</strong>{' '}
+                WhatsApp will not deliver a typed message now — send an approved template instead,
+                or ask them to message first.
+                <button
+                  type="button"
+                  onClick={() => setQrOpen(true)}
+                  className="ml-1 underline cursor-pointer"
+                  style={{ color: '#6B4500', background: 'none', border: 'none', font: 'inherit', padding: 0 }}
+                >
+                  Open quick replies
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Recording in progress. Deliberately not push-to-talk: releasing a
               held button is easy to do by accident, and there is no way back

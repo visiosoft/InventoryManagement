@@ -290,6 +290,9 @@ export type WhatsAppConversation = {
   phone: string
   count: number
   lastAt: string
+  /* When they last wrote. WhatsApp only allows free text for 24 hours after
+     this; past it only an approved template gets through. */
+  lastInboundAt?: string | null
   lead: WhatsAppLeadRef | null
   // Resolved on the server by the last nine digits of the number. Whether
   // someone is a customer is a fact about this, not about a lead's status.
