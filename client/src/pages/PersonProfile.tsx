@@ -178,6 +178,9 @@ export default function PersonProfile() {
   const [presetDays, setPresetDays] = useState(0)
   const [followUpTime, setFollowUpTime] = useState('09:00')
   const [followUpNote, setFollowUpNote] = useState('')
+  // The standing note on the lead — what this person is about, not a dated
+  // entry in the timeline below.
+  const [notes, setNotes] = useState('')
   const [stageNote, setStageNote] = useState('')
   // The attempt being logged, if one is.
   const [logging, setLogging] = useState(false)
@@ -220,6 +223,7 @@ export default function PersonProfile() {
     if (!l || hydrated.current === l._id) return
     hydrated.current = l._id
     setFollowUpNote(l.followUpNote || '')
+    setNotes(l.notes || '')
     if (l.followUpAt) setFollowUpTime(String(l.followUpAt).slice(11, 16) || '09:00')
   }, [data?.lead])
 
@@ -989,9 +993,27 @@ export default function PersonProfile() {
             </Card>
           )}
 
-          {lead?.notes && (
+          {/* Always shown once there is a lead, not only when a note already
+              exists — read-only text meant there was no way to write the first
+              one, so the card people needed was the one that never appeared.
+              Saved on blur, the same as the follow-up note above. */}
+          {lead && (
             <Card title="Notes">
-              <p style={{ fontSize: 14, color: INK_2, whiteSpace: 'pre-wrap' }}>{lead.notes}</p>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                onBlur={() => { if (notes !== (lead.notes || '')) patchLead.mutate({ notes }) }}
+                rows={4}
+                placeholder="Anything worth knowing about this person — what they are storing, what was agreed, who referred them."
+                style={{
+                  width: '100%', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff',
+                  padding: '9px 11px', fontSize: 14, fontFamily: 'inherit', color: INK,
+                  resize: 'vertical', boxSizing: 'border-box', outline: 'none', lineHeight: 1.5,
+                }}
+              />
+              <p style={{ fontSize: 12, color: FAINT, marginTop: 6 }}>
+                Saved when you click away.
+              </p>
             </Card>
           )}
         </div>
