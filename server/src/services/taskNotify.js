@@ -32,6 +32,32 @@ function unitLabel(contract) {
 }
 
 /**
+ * The subject line: a reference and a few words, never the whole task.
+ *
+ * The title is a free-text field and people write paragraphs in it — one real
+ * assignment began "Hi Mr. Anthony, we need to generate an invoice for Miss
+ * Laila under this agreement name…" and every word of it became the subject,
+ * which fills a phone screen and says nothing at a glance. The full wording is
+ * in the body, where there is room for it.
+ */
+export function taskSubject({ task, contract }) {
+    const ref = task.taskNo || (contract?.contractNo ? contract.contractNo : '');
+
+    /* Trimmed at a word, not mid-word, and only the first line: a title that
+       runs on is being used as the notes field, and the subject should not
+       inherit that. */
+    const firstLine = String(task.title || '').split('\n')[0].trim();
+    let label = firstLine;
+    if (label.length > 42) {
+        const cut = label.slice(0, 42);
+        const space = cut.lastIndexOf(' ');
+        label = `${(space > 20 ? cut.slice(0, space) : cut).replace(/[,;:.\-—]$/, '')}…`;
+    }
+
+    return [ref, label].filter(Boolean).join(' · ') || 'Task assigned';
+}
+
+/**
  * The message itself — pure, so it can be asserted against.
  *
  * `contract` is optional: a task raised against a lead, or against nothing at
@@ -39,12 +65,10 @@ function unitLabel(contract) {
  */
 export function buildTaskEmail({ task, assignee, assignedByName, contract, signedPdfAttached }) {
     const who = assignee?.name || assignee?.email || 'there';
-    const subjectSuffix = contract?.contractNo
-        ? ` — contract ${contract.contractNo}`
-        : task.leadName ? ` — ${task.leadName}` : '';
-    const subject = `Task assigned: ${task.title}${subjectSuffix}`;
+    const subject = taskSubject({ task, contract });
 
     const rows = [
+        ...(task.taskNo ? [['Reference', task.taskNo]] : []),
         ['Task', task.title],
         ['Assigned by', assignedByName || '—'],
         ['Due', task.dueDate ? fmtDate(task.dueDate) : 'No date set'],

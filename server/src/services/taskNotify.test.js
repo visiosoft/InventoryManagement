@@ -1,6 +1,55 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildTaskEmail } from './taskNotify.js';
+import { buildTaskEmail, taskSubject } from './taskNotify.js';
+
+/* The subject that prompted this: the whole title went into it, filling a
+   phone screen and saying nothing at a glance. */
+const RAMBLING = 'Hi Mr. Anthony, we need to generate an invoice for Miss Laila under this '
+    + 'agreement name. She will be leaving her credit card details on file with us. I have '
+    + 'attached her WhatsApp message below in case you need to contact her directly regarding '
+    + 'the bank and credit card information.';
+
+test('a subject stays short even when the title is a paragraph', () => {
+    const subject = taskSubject({
+        task: { taskNo: 'T-2026-0042', title: RAMBLING },
+        contract: { contractNo: 'PB-2026-0357' },
+    });
+    assert.ok(subject.length <= 60, `too long (${subject.length}): ${subject}`);
+    assert.match(subject, /^T-2026-0042 · /, 'leads with the reference');
+    assert.ok(subject.endsWith('…'), 'shows it was trimmed');
+    assert.ok(!subject.includes('credit card'), 'the body carries the detail, not the subject');
+});
+
+test('a short title is left alone', () => {
+    assert.equal(
+        taskSubject({ task: { taskNo: 'T-2026-0042', title: 'Raise the invoice in Zoho Books' } }),
+        'T-2026-0042 · Raise the invoice in Zoho Books',
+    );
+});
+
+test('trimming happens at a word, and no stray punctuation is left hanging', () => {
+    const subject = taskSubject({
+        task: { taskNo: 'T-1', title: 'Collect the deposit, then confirm the billing cycle with the tenant' },
+    });
+    assert.ok(!/[ ,;:.\-—]…$/.test(subject), `ragged ending: ${subject}`);
+    assert.ok(!subject.includes('confir…'), 'did not cut mid-word');
+});
+
+test('only the first line reaches the subject', () => {
+    const subject = taskSubject({ task: { taskNo: 'T-1', title: 'Invoice request\nDeposit is AED 1600' } });
+    assert.equal(subject, 'T-1 · Invoice request');
+});
+
+test('an older task with no reference falls back to the contract', () => {
+    assert.equal(
+        taskSubject({ task: { title: 'Invoice request' }, contract: { contractNo: 'PB-2026-0357' } }),
+        'PB-2026-0357 · Invoice request',
+    );
+});
+
+test('a task with neither a reference nor a contract still has a subject', () => {
+    assert.equal(taskSubject({ task: { title: '' } }), 'Task assigned');
+});
 
 const ASSIGNEE = { name: 'Accounts', email: 'accounts@purplebox.ae' };
 
@@ -76,9 +125,11 @@ test('the email says which document is attached', () => {
 
 test('a task with no contract is still a proper email', () => {
     const { subject, text, html } = buildTaskEmail({
-        task: { ...TASK, leadName: 'Emad' }, assignee: ASSIGNEE, assignedByName: 'Mase', contract: null,
+        task: { ...TASK, taskNo: 'T-2026-0007', leadName: 'Emad' },
+        assignee: ASSIGNEE, assignedByName: 'Mase', contract: null,
     });
-    assert.match(subject, /Emad/, 'falls back to the lead name');
+    // The reference names it; the lead belongs in the body, not the subject.
+    assert.equal(subject, 'T-2026-0007 · Raise the first invoice');
     assert.ok(!text.includes('Client details'), 'no empty paperwork section');
     assert.ok(!html.includes('Client details'));
     assert.match(text, /Raise the first invoice/);

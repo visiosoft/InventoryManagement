@@ -1939,6 +1939,8 @@ const taskAttachmentSchema = new Schema({
 
 const taskSchema = new Schema(
   {
+    // Short reference, e.g. T-2026-0042. Older tasks predate it and have none.
+    taskNo: { type: String, default: '' },
     title: { type: String, required: true },
     description: { type: String, default: '' },
     assignedTo: { type: Schema.Types.ObjectId, ref: 'User', required: true },
@@ -2021,6 +2023,17 @@ export async function nextContractNo() {
     { new: true, upsert: true }
   );
   return `PB-${year}-${String(counter.seq).padStart(4, '0')}`;
+}
+
+/** A short reference for a task, so an email can be named rather than described. */
+export async function nextTaskNo() {
+  const year = new Date().getFullYear();
+  const counter = await Counter.findOneAndUpdate(
+    { key: `task-${year}` },
+    { $inc: { seq: 1 } },
+    { new: true, upsert: true }
+  );
+  return `T-${year}-${String(counter.seq).padStart(4, '0')}`;
 }
 
 export async function nextQuoteNo() {

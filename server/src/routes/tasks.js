@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { Task, User } from '../models/index.js';
+import { Task, User, nextTaskNo } from '../models/index.js';
 import { uploadFile } from '../services/drive.js';
 import { notifyTaskAssigned } from '../services/taskNotify.js';
 
@@ -65,6 +65,7 @@ router.post('/', async (req, res) => {
   const byName = req.user.name || req.user.email || 'user';
 
   const task = await Task.create({
+    taskNo: await nextTaskNo(),
     title,
     description: String(req.body?.description || '').trim(),
     assignedTo,
