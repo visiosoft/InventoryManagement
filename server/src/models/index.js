@@ -601,6 +601,18 @@ const quoteSchema = new Schema(
     holdAdvance: { type: Boolean, default: true },
     subTotal: { type: Number, default: 0, min: 0 },
     adjustment: { type: Number, default: 0 },
+    /* UAE VAT at 5%, on by default because every storage quote carries it.
+     *
+     * Charged on the rent, add-ons and any adjustment — the supply. Not on the
+     * security deposit or the refundable advance: those are money held and
+     * given back, not something sold, so taxing them would overcharge the
+     * customer by 5% of a sum they are owed.
+     *
+     * The amount is stored rather than recomputed on read, so the figure on a
+     * quote somebody has already accepted cannot move if the rate changes. */
+    vatEnabled: { type: Boolean, default: true },
+    vatRate: { type: Number, default: 5, min: 0, max: 100 },
+    vatAmount: { type: Number, default: 0 },
     total: { type: Number, default: 0 },
     notes: { type: String, default: '' },
     status: { type: String, enum: ['draft', 'sent', 'accepted', 'rejected', 'expired'], default: 'draft' },

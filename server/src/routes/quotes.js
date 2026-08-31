@@ -134,7 +134,17 @@ function normalizeBody(body, { holdAdvance = true } = {}) {
         if (tw > 4) return sum;
         return sum + (u.rate / 4) * tw;
     }, 0);
-    const total = Number((subTotal + adjustment + advanceExtra + deposit).toFixed(2));
+    /* VAT on the supply only.
+     *
+     * The security deposit and the refundable advance are money held and
+     * handed back, not something sold, so they sit outside the tax base —
+     * charging on them would bill the customer 5% of a sum they are owed.
+     * Absent from an older quote's body means on, which is the standing rule. */
+    const vatEnabled = body.vatEnabled === undefined ? true : Boolean(body.vatEnabled);
+    const vatRate = vatEnabled ? 5 : 0;
+    const vatAmount = Number((Math.max(0, subTotal + adjustment) * (vatRate / 100)).toFixed(2));
+
+    const total = Number((subTotal + adjustment + vatAmount + advanceExtra + deposit).toFixed(2));
 
     return {
         quoteDate: body.quoteDate ? new Date(body.quoteDate) : new Date(),
@@ -155,6 +165,9 @@ function normalizeBody(body, { holdAdvance = true } = {}) {
         holdAdvance,
         subTotal,
         adjustment,
+        vatEnabled,
+        vatRate,
+        vatAmount,
         total,
         notes: String(body.notes || ''),
         /* Undefined leaves the schema default in place on a new quote and the

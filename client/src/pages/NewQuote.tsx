@@ -197,6 +197,8 @@ export default function NewQuote() {
   // Remembers the amount when the deposit is removed, so "+ Add back" can restore it
   const removedDepositRef = useRef('')
   const [holdAdvance, setHoldAdvance] = useState(true)
+  // On for every quote; a rare zero-rated one can turn it off.
+  const [vatEnabled, setVatEnabled] = useState(true)
   const [notes, setNotes] = useState('')
   /* Empty until a quote is loaded or saved: the server fills in the standard
      terms, so sending '' from here would blank them. */
@@ -315,6 +317,8 @@ export default function NewQuote() {
     setDeposit(q.deposit ? String(q.deposit) : '')
     // Server default is true; only an explicit false (removed) should turn it off
     setHoldAdvance((q as { holdAdvance?: boolean }).holdAdvance !== false)
+    // Quotes made before VAT existed have no flag; they are taxed too.
+    setVatEnabled((q as { vatEnabled?: boolean }).vatEnabled !== false)
     setNotes(q.notes || '')
     setTerms(q.termsAndConditions || '')
     setAdjustment(q.adjustment || 0)
@@ -575,9 +579,15 @@ export default function NewQuote() {
   const advanceExtra = unitRows.reduce((s, u) => s + (isShortTerm(u.startDate, u.endDate) ? calcUnitAdvance(u.rate, u.startDate, u.endDate) : 0), 0)
   const addOnsTotal = addOnRows.reduce((s, a) => s + a.quantity * a.rate, 0)
   const subTotal = unitsTotal + addOnsTotal
-  // Grand total = rent + add-ons + held advance (short terms) + security
+  /* VAT at 5% on the rent, add-ons and adjustment — not on the security
+     deposit or the refundable advance, which are held and returned rather
+     than sold. Mirrors the server, which owns the figure that is stored. */
+  const vatAmount = vatEnabled
+    ? Math.round(Math.max(0, subTotal + adjustment) * 5) / 100
+    : 0
+  // Grand total = rent + add-ons + VAT + held advance (short terms) + security
   // deposit — identical to what the server stores for the quote.
-  const total = subTotal + adjustment + (holdAdvance ? advanceExtra : 0) + (Number(deposit) || 0)
+  const total = subTotal + adjustment + vatAmount + (holdAdvance ? advanceExtra : 0) + (Number(deposit) || 0)
 
   useEffect(() => { setErr(''); setSentMsg('') }, [step])
 
@@ -594,6 +604,7 @@ export default function NewQuote() {
       ...(terms ? { termsAndConditions: terms } : {}),
       deposit: Number(deposit) || 0,
       holdAdvance,
+      vatEnabled,
       adjustment,
       // No total sent — the server computes it from units/add-ons/deposit
       units: unitRows.map((u) => ({
@@ -1582,6 +1593,29 @@ export default function NewQuote() {
                               setDeposit(restored); removedDepositRef.current = ''
                               if (quoteId) patchQuote.mutate({ deposit: Number(restored) || 0 })
                             }}
+                            className="font-bold cursor-pointer disabled:opacity-50" style={{ color: PURPLE }}>+ Add back</button>
+                        </div>
+                      )}
+                      {/* On for every quote. Charged on the rent and add-ons,
+                          not on the deposit or the refundable advance — those
+                          are held and given back, not sold. */}
+                      {vatEnabled ? (
+                        <InfoRow
+                          label="VAT (5%)"
+                          value={
+                            <span className="inline-flex items-center gap-2">
+                              {formatMoney(vatAmount)} AED
+                              <button type="button" title="Remove VAT from this quote" disabled={patchQuote.isPending}
+                                onClick={() => { setVatEnabled(false); if (quoteId) patchQuote.mutate({ vatEnabled: false }) }}
+                                className="text-destructive font-bold cursor-pointer leading-none disabled:opacity-50">×</button>
+                            </span>
+                          }
+                        />
+                      ) : (
+                        <div className="flex items-center justify-between text-[12px] py-1" style={{ color: MUTED }}>
+                          <span>VAT removed for this quote</span>
+                          <button type="button" disabled={patchQuote.isPending}
+                            onClick={() => { setVatEnabled(true); if (quoteId) patchQuote.mutate({ vatEnabled: true }) }}
                             className="font-bold cursor-pointer disabled:opacity-50" style={{ color: PURPLE }}>+ Add back</button>
                         </div>
                       )}

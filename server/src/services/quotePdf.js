@@ -268,9 +268,25 @@ export function renderQuotePdf({ quote }) {
          y += 16;
       }
 
-      // Total (bold)
       const adjustment = Number(quote.adjustment || 0);
-      const grandTotal = grandSubTotal + adjustment;
+
+      /* VAT. Shown as its own line because a customer is entitled to see the
+         tax separated from what it is charged on — and because the rows above
+         are the taxable supply, while the deposit and refundable advance are
+         not taxed at all. Recomputed from the rows on the page so the figure
+         printed always matches the figures printed above it. */
+      const vatRate = quote.vatEnabled === false ? 0 : Number(quote.vatRate || 5);
+      const vatAmount = Number((Math.max(0, grandSubTotal + adjustment) * (vatRate / 100)).toFixed(2));
+      if (vatRate > 0) {
+         doc.font('Helvetica').fontSize(9).fillColor(GRAY)
+            .text(`VAT (${vatRate}%)`, tX, y, { width: lblW, align: 'right' });
+         doc.font('Helvetica').fontSize(9).fillColor(BLACK)
+            .text(num(vatAmount), valX, y, { width: valW, align: 'right' });
+         y += 16;
+      }
+
+      // Total (bold)
+      const grandTotal = grandSubTotal + adjustment + vatAmount;
       doc.font('Helvetica-Bold').fontSize(10).fillColor(BLACK)
          .text('Total', tX, y, { width: lblW, align: 'right' });
       doc.font('Helvetica-Bold').fontSize(10).fillColor(BLACK)
