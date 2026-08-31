@@ -7,6 +7,17 @@ export interface Site {
   address: string
   hidden: boolean
   isDefault: boolean
+  /* What this facility prints on a customer's paperwork. All optional — empty
+     means "use the company details documents already carry". */
+  legalName?: string
+  tagline?: string
+  addr1?: string
+  addr2?: string
+  country?: string
+  phone?: string
+  email?: string
+  trn?: string
+  logo?: { mimeType?: string; updatedAt?: string | null }
   stats?: { total: number; occupied: number; reserved: number; available: number; maintenance: number }
 }
 

@@ -4,6 +4,7 @@ import { Contract, Customer, Invoice, Lead, Payment, Quote, Unit, nextQuoteNo, n
 import { availableUnitsResponse } from '../services/unitAvailability.js';
 import { syncUnitStatus } from '../utils/unitStatus.js';
 import { renderQuotePdf } from '../services/quotePdf.js';
+import { companyForQuote } from '../services/companyIdentity.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { archivePdf } from '../utils/archivePdf.js';
 
@@ -186,7 +187,7 @@ router.get('/public/:token/pdf', async (req, res) => {
     const quote = await Quote.findOne({ shareToken: req.params.token })
         .populate('customer', 'fullName email phone address');
     if (!quote) return res.status(404).json({ error: 'Quote not found or link expired' });
-    const pdf = await renderQuotePdf({ quote });
+    const pdf = await renderQuotePdf({ quote, co: await companyForQuote(quote) });
     archiveQuotePdf(quote, pdf);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${quote.quoteNo}.pdf"`);
@@ -227,7 +228,7 @@ router.post('/:id/send-email', async (req, res) => {
     const to = String(req.body?.to || quote.customer?.email || '').trim();
     if (!to) return res.status(400).json({ error: 'Customer has no email address' });
 
-    const pdf = await renderQuotePdf({ quote });
+    const pdf = await renderQuotePdf({ quote, co: await companyForQuote(quote) });
     archiveQuotePdf(quote, pdf);
     const userName = req.user.name || req.user.email || 'user';
     const subjectLine = req.body?.subject || `Storage Quotation ${quote.quoteNo} — PurpleBox`;
@@ -703,7 +704,7 @@ router.post('/:id/convert-to-contract', async (req, res) => {
 router.get('/:id/pdf', async (req, res) => {
     const quote = await Quote.findById(req.params.id).populate('customer', 'fullName email phone address');
     if (!quote) return res.status(404).json({ error: 'Quote not found' });
-    const pdf = await renderQuotePdf({ quote });
+    const pdf = await renderQuotePdf({ quote, co: await companyForQuote(quote) });
     archiveQuotePdf(quote, pdf);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${quote.quoteNo}.pdf"`);

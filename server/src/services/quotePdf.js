@@ -1,16 +1,10 @@
 import PDFDocument from 'pdfkit';
 import { drawCompanyLogo } from './pdfLogo.js';
 
-// ── Company constants ───────────────────────────────────────────────────────
-const CO = {
-   name: 'PurpleBox',
-   tagline: 'powered by short term storage',
-   addr1: 'Al Quoz 2, Warehouse 12, ABA Avenue',
-   addr2: ' Dubai 333759',
-   country: 'U.A.E',
-   phone: '0097143293924',
-   email: 'contact@purplebox.ae',
-};
+/* The letterhead now comes from the facility the units are in — see
+   services/companyIdentity.js. FALLBACK_CO is the literal this file used to
+   carry, so a quote for a facility nobody has filled in prints unchanged. */
+import { FALLBACK_CO } from './companyIdentity.js';
 
 // ── Palette ─────────────────────────────────────────────────────────────────
 const DARK = '#1F2937';
@@ -32,7 +26,8 @@ function dt(d) {
    return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-export function renderQuotePdf({ quote }) {
+export function renderQuotePdf({ quote, co }) {
+   const CO = co ?? FALLBACK_CO;
    return new Promise((resolve, reject) => {
       const doc = new PDFDocument({ size: 'A4', margin: 0, info: { Title: quote.quoteNo || 'Quote' } });
       const chunks = [];
@@ -104,7 +99,7 @@ export function renderQuotePdf({ quote }) {
       let ry = 132;
 
       // Company logo
-      drawCompanyLogo(doc, RX, ry, 44);
+      drawCompanyLogo(doc, RX, ry, 44, CO.logo);
       ry += 52;
 
       doc.font('Helvetica-Bold').fontSize(11).fillColor(BLACK)

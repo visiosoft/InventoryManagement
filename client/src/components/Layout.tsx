@@ -4,6 +4,7 @@ import { Bot, Compass, Megaphone, LayoutDashboard, Search, Box, Users, FileText,
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import GlobalSearch from './GlobalSearch'
+import { SiteSwitcher } from './SiteSwitcher'
 import { cn } from '../lib/utils'
 import { isSalesRepRole } from '../lib/roles'
 
@@ -347,8 +348,6 @@ export default function Layout() {
   const showStorageNav = !isMovingOnly && !isSalesRepUser && businessMode === 'storage'
   const showMovingNav = !isSalesRepUser && businessMode === 'moving'
 
-  // Site switcher disabled for now — clear any previously selected site
-  useEffect(() => { localStorage.removeItem('pb_site_id') }, [])
 
   // Close sidebar on route change (mobile)
   useEffect(() => { setSidebarOpen(false); setProfileOpen(false); setMobileSearchOpen(false) }, [location.pathname])
@@ -784,6 +783,9 @@ export default function Layout() {
         <div className="hidden md:flex items-center justify-between h-14 px-6 border-b border-border/40">
           <h1 className="text-lg font-semibold shrink-0" style={{ color: '#14081F' }}>{getPageTitle(location.pathname)}</h1>
           <div className="flex items-center gap-3">
+          {/* Which facility you are working in. Hides itself when there
+              is only one, so nothing changes for a single-site company. */}
+          {!isMovingOnly && <SiteSwitcher />}
           {!isMovingOnly && <GlobalSearch />}
           {/* Unread WhatsApp, on every page — the console is not the only place
               someone works, and a waiting customer should not depend on being

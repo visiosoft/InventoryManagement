@@ -14,8 +14,16 @@ function readLogoBuffer() {
     return cachedLogo;
 }
 
-export function drawCompanyLogo(doc, x, y, size = 44) {
-    const logo = readLogoBuffer();
+/**
+ * Draw the letterhead logo.
+ *
+ * `override` is a facility's own logo bytes, already loaded — the drawing
+ * happens inside a PDF stream and cannot wait on a fetch. Passing nothing
+ * keeps the file on disk that every document used before facilities existed,
+ * so the seven existing call sites need no change and print the same mark.
+ */
+export function drawCompanyLogo(doc, x, y, size = 44, override) {
+    const logo = override ?? readLogoBuffer();
     if (logo) {
         doc.image(logo, x, y, { fit: [size, size], align: 'center', valign: 'center' });
         return;

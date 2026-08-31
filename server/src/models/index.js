@@ -1701,6 +1701,35 @@ const siteSchema = new Schema({
   address: { type: String, default: '' },
   hidden: { type: Boolean, default: false },
   isDefault: { type: Boolean, default: false },
+
+  /* What this facility prints on a customer's paperwork.
+   *
+   * Every one of these is empty by default and falls back to the company
+   * details the PDFs used to hardcode, so a facility nobody has filled in
+   * produces exactly the document it produced before. */
+  legalName: { type: String, default: '' },
+  tagline: { type: String, default: '' },
+  addr1: { type: String, default: '' },
+  addr2: { type: String, default: '' },
+  country: { type: String, default: '' },
+  phone: { type: String, default: '' },
+  email: { type: String, default: '' },
+  trn: { type: String, default: '' },
+  bankInformation: { type: String, default: '' },
+
+  /* The logo as bytes, not a link.
+   *
+   * It is drawn synchronously inside the PDF stream, so fetching it from
+   * Drive per document would add a round trip and a second way to fail — and
+   * Drive credentials can be absent, which is why document uploads already
+   * fall back to local disk. A logo is well under 100 KB. `select: false`
+   * keeps it out of the sites list and the facility switcher, which ask for
+   * every site on most pages. */
+  logo: {
+    data: { type: Buffer, select: false },
+    mimeType: { type: String, default: '' },
+    updatedAt: { type: Date, default: null },
+  },
 }, { timestamps: true });
 
 // ── Indexes for the hottest queries ───────────────────────────────────────────

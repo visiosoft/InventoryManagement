@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Building2, Plus, Search } from 'lucide-react'
-import { api, apiError } from '../lib/api'
+import { api, apiError, apiUrl } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { Site } from '../lib/site'
 import { Button, Field, Input, Modal, Spinner } from '../components/ui'
@@ -26,7 +26,7 @@ export default function Sites() {
   })
 
   const saveMut = useMutation({
-    mutationFn: (body: { id?: string; name: string; code: string; address: string; hidden: boolean }) =>
+    mutationFn: (body: Record<string, unknown> & { id?: string }) =>
       body.id ? api.put(`/sites/${body.id}`, body) : api.post('/sites', body),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['sites'] }); setEditing(null); setAdding(false); setErr('') },
     onError: (e) => setErr(apiError(e)),
@@ -37,6 +37,26 @@ export default function Sites() {
     onError: (e) => setErr(apiError(e)),
   })
 
+  /* Making this the default matters twice: it is where the switcher opens,
+     and its letterhead goes on any document with no unit behind it. */
+  const defaultMut = useMutation({
+    mutationFn: (id: string) => api.put(`/sites/${id}/default`, {}),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['sites'] }); setEditing(null); setErr('') },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  const logoMut = useMutation({
+    mutationFn: ({ id, file }: { id: string; file: File }) => {
+      const form = new FormData()
+      form.append('file', file)
+      return api.post(`/sites/${id}/logo`, form)
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['sites'] }); setErr('') },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  const BRANDING = ['legalName', 'tagline', 'addr1', 'addr2', 'country', 'phone', 'email', 'trn'] as const
+
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const f = new FormData(e.currentTarget)
@@ -46,6 +66,7 @@ export default function Sites() {
       code: String(f.get('code') || ''),
       address: String(f.get('address') || ''),
       hidden: f.get('hidden') === 'on',
+      ...Object.fromEntries(BRANDING.map((k) => [k, String(f.get(k) || '')])),
     })
   }
 
@@ -121,8 +142,73 @@ export default function Sites() {
             </div>
             <label className="flex items-center gap-2.5 cursor-pointer">
               <input type="checkbox" name="hidden" defaultChecked={editing?.hidden ?? false} className="h-4 w-4 rounded" />
-              <span className="text-sm">Hidden — not shown in the site switcher</span>
+              <span className="text-sm">Hidden — not offered in the facility switcher</span>
             </label>
+
+            {/* What this facility prints on a customer's quotation and
+                invoice. Left empty it uses the company details documents have
+                always carried, so filling nothing in changes nothing. */}
+            <div className="pt-2 mt-1 border-t">
+              <p className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: '#5B2BC9' }}>
+                On this facility's paperwork
+              </p>
+              <p className="text-xs text-muted-foreground mb-3">
+                Leave blank to use the company details on documents today.
+              </p>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Trading name"><Input name="legalName" defaultValue={editing?.legalName} placeholder="PurpleBox" /></Field>
+                  <Field label="Tagline"><Input name="tagline" defaultValue={editing?.tagline} placeholder="powered by short term storage" /></Field>
+                </div>
+                <Field label="Address line 1"><Input name="addr1" defaultValue={editing?.addr1} placeholder="Al Quoz 2, Warehouse 12, ABA Avenue" /></Field>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Address line 2"><Input name="addr2" defaultValue={editing?.addr2} placeholder="Dubai 333759" /></Field>
+                  <Field label="Country"><Input name="country" defaultValue={editing?.country} placeholder="U.A.E" /></Field>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Phone"><Input name="phone" defaultValue={editing?.phone} placeholder="0097143293924" /></Field>
+                  <Field label="Email"><Input name="email" defaultValue={editing?.email} placeholder="contact@purplebox.ae" /></Field>
+                </div>
+                <Field label="Tax number (TRN)"><Input name="trn" defaultValue={editing?.trn} placeholder="Printed on invoices" /></Field>
+
+                {editing && (
+                  <Field label="Logo">
+                    <div className="flex items-center gap-3">
+                      {editing.logo?.updatedAt && (
+                        <img
+                          src={apiUrl(`/api/sites/${editing._id}/logo`)}
+                          alt=""
+                          className="h-10 w-10 rounded object-contain"
+                          style={{ border: '1px solid rgba(20,8,31,.12)' }}
+                        />
+                      )}
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/gif,image/webp"
+                        className="text-sm"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          if (file) logoMut.mutate({ id: editing._id, file })
+                        }}
+                      />
+                      {logoMut.isPending && <span className="text-xs text-muted-foreground">Uploading…</span>}
+                    </div>
+                  </Field>
+                )}
+              </div>
+            </div>
+
+            {editing && !editing.isDefault && (
+              <button
+                type="button"
+                onClick={() => defaultMut.mutate(editing._id)}
+                disabled={defaultMut.isPending}
+                className="text-sm font-semibold hover:underline cursor-pointer disabled:opacity-50"
+                style={{ color: '#5B2BC9' }}
+              >
+                Make this the main facility
+              </button>
+            )}
             {err && <p className="text-sm text-red-600">{err}</p>}
             <div className="flex items-center justify-between gap-2 pt-1">
               {editing && !editing.isDefault ? (

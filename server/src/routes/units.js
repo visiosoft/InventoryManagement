@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { requireAdmin } from '../middleware/auth.js';
 import { contractLeased } from '../services/rateRealisation.js';
-import { Unit, Contract } from '../models/index.js';
+import { Unit, Contract, Site } from '../models/index.js';
 import { siteScope } from '../utils/siteScope.js';
 
 const router = Router();
@@ -137,10 +137,28 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { unitNumber, floor, sizeSqf, price, lengthFt, widthFt, status, discountPct, notes } = req.body;
+  const { unitNumber, floor, sizeSqf, price, lengthFt, widthFt, status, discountPct, notes, site } = req.body;
   const exists = await Unit.exists({ unitNumber });
   if (exists) return res.status(409).json({ error: `Unit ${unitNumber} already exists` });
-  const unit = await Unit.create({ unitNumber, floor, sizeSqf, price, lengthFt, widthFt, status, discountPct, notes });
+
+  /* Which facility it belongs to.
+   *
+   * This used to be dropped on the floor: `site` was never read, so every
+   * unit created since facilities shipped landed in none of them — which is
+   * how 151 units ended up unattached. Falls back to the default facility so
+   * a unit is never orphaned again, and an unknown id is refused rather than
+   * stored as a dangling reference. */
+  let siteId = site || null;
+  if (siteId && !(await Site.exists({ _id: siteId }).catch(() => null))) {
+    return res.status(400).json({ error: 'That facility does not exist' });
+  }
+  if (!siteId) {
+    const fallback = await Site.findOne({ isDefault: true }).select('_id')
+      ?? await Site.findOne().sort({ createdAt: 1 }).select('_id');
+    siteId = fallback?._id ?? null;
+  }
+
+  const unit = await Unit.create({ unitNumber, floor, sizeSqf, price, lengthFt, widthFt, status, discountPct, notes, site: siteId });
   res.status(201).json(unit);
 });
 

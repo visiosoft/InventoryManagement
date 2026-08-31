@@ -9,9 +9,41 @@ export const api = axios.create({ baseURL: apiBaseUrl })
  * host, never the frontend origin, so proxies can't misroute it. */
 export const apiUrl = (path: string) => `${apiBaseUrl.replace(/\/$/, '')}${path.startsWith('/') ? path : `/${path}`}`
 
+/**
+ * Which requests carry the chosen facility.
+ *
+ * An allowlist, not every request. The first attempt at facilities sent
+ * `?site=` to everything, including the many routes that ignore it — so some
+ * pages filtered and others did not, the app disagreed with itself, and the
+ * whole feature was switched off. These are exactly the routes whose handlers
+ * call `siteScope()` on the server.
+ *
+ * Everything absent from this list is company-wide on purpose: quotes,
+ * invoices, leads, customers, tasks, documents, expenses and the whole moving
+ * business are not split by facility. Add a path here only alongside the
+ * server-side scoping that makes it mean something.
+ */
+const SITE_SCOPED_PATHS = [
+  '/units',
+  '/contracts',
+  '/payments',
+  '/reports',
+  '/floor-plans',
+]
+
+const isSiteScoped = (url = '') => {
+  const path = url.split('?')[0]
+  return SITE_SCOPED_PATHS.some((p) => path === p || path.startsWith(`${p}/`))
+}
+
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('pb_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
+
+  const siteId = localStorage.getItem('pb_site_id')
+  if (siteId && isSiteScoped(config.url) && config.params?.site === undefined) {
+    config.params = { ...(config.params ?? {}), site: siteId }
+  }
   return config
 })
 
