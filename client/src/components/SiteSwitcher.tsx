@@ -29,6 +29,21 @@ export function SiteSwitcher() {
     ?? visible.find((s) => s.isDefault)
     ?? visible[0]
 
+  /* Commit the facility that is being shown.
+   *
+   * Falling back to the default for display only was not enough: nothing was
+   * stored, so no request carried a facility and every page quietly returned
+   * the whole company while this control claimed a single facility. It went
+   * unnoticed while one facility held every unit — scoped and unscoped gave
+   * the same answer — and appeared the moment a second facility had units in
+   * it. What the control says must be what the app is doing. */
+  const currentId = current?._id
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setSiteId is
+    // recreated each render; depending on it would run this every time.
+    if (!siteId && currentId) setSiteId(currentId)
+  }, [siteId, currentId])
+
   /* Every cached list belongs to the facility it was fetched for. Without
      this the page keeps showing the previous facility's units and contracts
      until each query happens to refetch — which reads as the switch not
