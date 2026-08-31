@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  Plus, ChevronRight, ChevronLeft, Check, User, Box, FileText, Briefcase, Receipt as ShieldCheck, Search, Trash2, CalendarRange, Loader2, CheckCircle2, Send, Mail, Download,
+  Plus, ChevronRight, ChevronLeft, Check, User, Box, FileText, Briefcase, Search, Trash2, CalendarRange, Loader2, CheckCircle2, Send, Mail, Download,
   Upload, X, Eye, } from 'lucide-react'
 import { api, apiError, quoteApi, type AvailableUnit } from '../lib/api'
 import type { AccessPerson, Customer, Invoice, Lead, Quote } from '../lib/types'
@@ -294,7 +294,6 @@ export default function NewQuote() {
   const contract = flowData?.contract
   const invoice = flowData?.invoices?.[0]
   const paidTotal = (flowData?.invoices || []).reduce((s, i) => s + Number(i.paymentMade ?? 0), 0)
-  const approvalStatus = contract?.approvalStatus ?? 'not_required'
   const quoteLocked = false
 
   // Hydrate the wizard from the latest quote for this lead (resume support)
@@ -829,10 +828,18 @@ export default function NewQuote() {
     [assignableUsers],
   )
 
-  const [taskTitle, setTaskTitle] = useState('')
+  /* The job this step exists for. It was only ever placeholder text, which
+     looks filled in but sends nothing — so every booking was retyping the
+     same sentence, or assigning a task with no title at all. */
+  const [taskTitle, setTaskTitle] = useState('Raise the invoice in Zoho Books')
   const [taskOwner, setTaskOwner] = useState('')
   const [taskNotes, setTaskNotes] = useState('')
   const [taskMsg, setTaskMsg] = useState('')
+
+  // With one accounts user there is no choice to make, so it is made.
+  useEffect(() => {
+    if (!taskOwner && accountsUsers.length === 1) setTaskOwner(accountsUsers[0]._id)
+  }, [accountsUsers, taskOwner])
 
   // What has already been handed over on this contract, so the same job is
   // not assigned twice by whoever opens the booking next.
@@ -869,17 +876,13 @@ export default function NewQuote() {
     }),
     onSuccess: () => {
       setTaskMsg(`Assigned to ${accountsUsers.find(u => u._id === taskOwner)?.name || 'them'}`)
+      // Cleared rather than refilled: a second task is a different job, and
+      // handing back the same title invites assigning it twice.
       setTaskTitle(''); setTaskNotes('')
       refetchTasks()
       setTimeout(() => setTaskMsg(''), 3000)
     },
     onError: (e) => setTaskMsg(apiError(e)),
-  })
-
-  const sendForApproval = useMutation({
-    mutationFn: () => api.post(`/contracts/${contractId}/send-for-approval`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['flow-contract'] }); setErr('') },
-    onError: (e) => setErr(apiError(e)),
   })
 
   // Which steps are complete (for the stepper)
@@ -2200,48 +2203,12 @@ export default function NewQuote() {
                     </button>
                   </div>
                 )}
-                {step === STEPS.length - 1 && (
-                  approvalStatus === 'pending' || approvalStatus === 'approved' ? (
-                    <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: approvalStatus === 'approved' ? GREEN : MUTED }}>
-                      <ShieldCheck size={16} />
-                      {approvalStatus === 'approved' ? 'Approved' : 'Sent for approval'}
-                    </div>
-                  ) : (
-                    (() => {
-                      const allInvoices = flowData?.invoices || []
-                      const invoiceSent = allInvoices.some(i => i.status !== 'draft')
-                      const hasPayment = paidTotal > 0
-                      const hasReceipt = allInvoices.some(i => (i.attachments?.length || 0) > 0)
-                      const canApprove = invoiceSent && hasPayment && hasReceipt
-                      const reasons: string[] = []
-                      if (!invoiceSent) reasons.push('Mark invoice as Sent')
-                      if (!hasPayment) reasons.push('Record a payment')
-                      if (!hasReceipt) reasons.push('Upload payment receipt')
-                      return (
-                        <div className="space-y-2">
-                          {!canApprove && (
-                            <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                              <p className="font-semibold mb-1">Before sending for approval:</p>
-                              <ul className="list-disc pl-4 space-y-0.5">
-                                {reasons.map(r => <li key={r}>{r}</li>)}
-                              </ul>
-                            </div>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => sendForApproval.mutate()}
-                            disabled={sendForApproval.isPending || !contractId || !canApprove}
-                            className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90"
-                            style={{ background: GREEN }}
-                          >
-                            {sendForApproval.isPending ? <Loader2 size={15} className="animate-spin" /> : <ShieldCheck size={15} />}
-                            {sendForApproval.isPending ? 'Sending…' : 'Send for Approval'}
-                          </button>
-                        </div>
-                      )
-                    })()
-                  )
-                )}
+                {/* No approval step here any more. This page creates the
+                    contract and hands the follow-up work to somebody; the
+                    invoice, the payment and the receipt are accounts' job and
+                    live in Zoho, so gating the booking on them held up a
+                    booking that was already done. The approval routes remain
+                    for the contracts that still carry a decision. */}
               </div>
             </div>
           </div>
