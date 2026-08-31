@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import GlobalSearch from './GlobalSearch'
 import { SiteSwitcher } from './SiteSwitcher'
+import { SiteGate } from './SiteGate'
 import { cn } from '../lib/utils'
 import { isSalesRepRole } from '../lib/roles'
 
@@ -934,7 +935,12 @@ export default function Layout() {
         </div>
 
         <div className={location.pathname === '/floor-map' ? '' : 'p-3 sm:p-4'}>
-          <Outlet />
+          {/* Nothing fetches until we know which facility we are in — see
+              SiteGate. Without it the first page of a fresh login asks for
+              data before a facility is chosen and caches the whole company. */}
+          <SiteGate>
+            <Outlet />
+          </SiteGate>
         </div>
       </main>
     </div>

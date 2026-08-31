@@ -29,24 +29,9 @@ export function SiteSwitcher() {
     ?? visible.find((s) => s.isDefault)
     ?? visible[0]
 
-  /* Commit the facility that is being shown, and only that one.
-   *
-   * Two ways this control could show a facility it was not applying. Nothing
-   * stored at all, so no request carried one; and — the case that survived the
-   * first fix — something stored that no longer matches any facility, left by
-   * a deleted facility or a long-superseded selection. The dropdown fell back to
-   * the default for display while the stale id went to the server, which did
-   * not recognise it and answered with every facility.
-   *
-   * So this reconciles rather than fills in: whenever what is stored is not
-   * what is shown, what is shown wins. */
-  const currentId = current?._id
-  useEffect(() => {
-    if (!currentId) return
-    if (siteId !== currentId) setSiteId(currentId)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- setSiteId is
-    // recreated each render; depending on it would run this every time.
-  }, [siteId, currentId])
+  /* Resolving which facility we are in belongs to SiteGate, which does it
+     before anything is allowed to fetch. By the time this control renders the
+     answer is already stored, so it only has to show it and change it. */
 
   /* Every cached list belongs to the facility it was fetched for. Without
      this the page keeps showing the previous facility's units and contracts
