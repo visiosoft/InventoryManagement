@@ -29,19 +29,23 @@ export function SiteSwitcher() {
     ?? visible.find((s) => s.isDefault)
     ?? visible[0]
 
-  /* Commit the facility that is being shown.
+  /* Commit the facility that is being shown, and only that one.
    *
-   * Falling back to the default for display only was not enough: nothing was
-   * stored, so no request carried a facility and every page quietly returned
-   * the whole company while this control claimed a single facility. It went
-   * unnoticed while one facility held every unit — scoped and unscoped gave
-   * the same answer — and appeared the moment a second facility had units in
-   * it. What the control says must be what the app is doing. */
+   * Two ways this control could show a facility it was not applying. Nothing
+   * stored at all, so no request carried one; and — the case that survived the
+   * first fix — something stored that no longer matches any facility, left by
+   * a deleted facility or a long-superseded selection. The dropdown fell back to
+   * the default for display while the stale id went to the server, which did
+   * not recognise it and answered with every facility.
+   *
+   * So this reconciles rather than fills in: whenever what is stored is not
+   * what is shown, what is shown wins. */
   const currentId = current?._id
   useEffect(() => {
+    if (!currentId) return
+    if (siteId !== currentId) setSiteId(currentId)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setSiteId is
     // recreated each render; depending on it would run this every time.
-    if (!siteId && currentId) setSiteId(currentId)
   }, [siteId, currentId])
 
   /* Every cached list belongs to the facility it was fetched for. Without
