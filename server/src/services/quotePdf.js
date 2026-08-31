@@ -176,6 +176,7 @@ export function renderQuotePdf({ quote }) {
             qty: uTotalWk || 1,
             rate: wkFull,
             amount: periodAmount,
+            taxable: true,
          });
       }
       // Advance rent (one period, max 4 weeks) is collected on the first
@@ -197,6 +198,7 @@ export function renderQuotePdf({ quote }) {
                qty: uTotalWeeks,
                rate: wkFull,
                amount: Number((wkFull * uTotalWeeks).toFixed(2)),
+               taxable: false,
             });
          }
       }
@@ -207,14 +209,15 @@ export function renderQuotePdf({ quote }) {
             qty: a.quantity,
             rate: a.rate,
             amount: a.amount,
+            taxable: true,
          });
       }
       for (const it of quote.items || []) {
-         rows.push({ title: it.itemDetails || '-', sub: '', qty: it.quantity ?? 0, rate: it.rate, amount: it.amount });
+         rows.push({ title: it.itemDetails || '-', sub: '', qty: it.quantity ?? 0, rate: it.rate, amount: it.amount, taxable: true });
       }
       const depositAmt = Number(quote.deposit || 0);
       if (depositAmt > 0) {
-         rows.push({ title: 'Security Deposit (refundable)', sub: '', qty: 1, rate: depositAmt, amount: depositAmt });
+         rows.push({ title: 'Security Deposit (refundable)', sub: '', qty: 1, rate: depositAmt, amount: depositAmt, taxable: false });
       }
 
       rows.forEach((r, idx) => {
@@ -270,13 +273,18 @@ export function renderQuotePdf({ quote }) {
 
       const adjustment = Number(quote.adjustment || 0);
 
-      /* VAT. Shown as its own line because a customer is entitled to see the
-         tax separated from what it is charged on — and because the rows above
-         are the taxable supply, while the deposit and refundable advance are
-         not taxed at all. Recomputed from the rows on the page so the figure
-         printed always matches the figures printed above it. */
+      /* VAT, on the taxable rows only.
+         *
+         * The sub total above is every row, and two of those rows — the
+         * security deposit and the refundable advance — are money held and
+         * given back rather than sold, so they are outside the tax base.
+         * Taxing the sub total would bill the customer 5% of a sum they are
+         * owed, and would print a figure the system does not hold. Each row
+         * carries its own `taxable` flag so this cannot drift from the list
+         * above it. */
       const vatRate = quote.vatEnabled === false ? 0 : Number(quote.vatRate || 5);
-      const vatAmount = Number((Math.max(0, grandSubTotal + adjustment) * (vatRate / 100)).toFixed(2));
+      const taxableTotal = rows.reduce((s, r) => s + (r.taxable ? r.amount : 0), 0);
+      const vatAmount = Number((Math.max(0, taxableTotal + adjustment) * (vatRate / 100)).toFixed(2));
       if (vatRate > 0) {
          doc.font('Helvetica').fontSize(9).fillColor(GRAY)
             .text(`VAT (${vatRate}%)`, tX, y, { width: lblW, align: 'right' });
