@@ -36,14 +36,47 @@ type Report = {
   generatedAt: string
 }
 
-const EXAMPLES = [
-  'How many units are free and what sizes are they?',
-  'Which contracts expire before the end of October?',
-  'How are the sales reps performing?',
-  'Where are our leads coming from?',
-  'What did we collect in the last six months?',
-  'How long do tenants usually stay?',
+/* Grouped the way somebody thinks about the business, not the way the blocks
+   are named. Each one is a question the catalogue can genuinely answer — an
+   example that comes back empty teaches people the tool does not work. */
+const EXAMPLE_GROUPS = [
+  {
+    label: 'Space',
+    items: [
+      'How many units are free and what sizes are they?',
+      'Which sizes do we have most of, and how many are let?',
+    ],
+  },
+  {
+    label: 'Contracts',
+    items: [
+      'Which contracts are ending this month?',
+      'How long do tenants usually stay?',
+    ],
+  },
+  {
+    label: 'Sales',
+    items: [
+      'How are the sales reps performing?',
+      'Where are our leads coming from?',
+    ],
+  },
+  {
+    label: 'Money',
+    items: [
+      'What did we collect over the last six months?',
+      'What is still owed to us, and how overdue is it?',
+    ],
+  },
 ]
+
+/* Hover states the design calls for. Inline styles cannot express :hover, and
+   these are specific enough to this page not to belong in the shared kit. */
+const CSS = `
+.ask-example:hover { border-color: #A78BFA; background: #F7F3FF; color: #4A1FA0; }
+.ask-build:hover { background: #4A1FA0; }
+.ask-field:focus-within { box-shadow: 0 0 0 4px rgba(91,43,201,.10); }
+`
 
 export default function AskReports() {
   const { siteId } = useSite()
@@ -105,50 +138,95 @@ export default function AskReports() {
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader
-          title="Ask for a report"
-          subtitle="Plain English. The figures come from the system, not from the assistant."
-        />
-        <CardBody className="space-y-3">
-          <div className="flex flex-col sm:flex-row gap-2">
+      <style>{CSS}</style>
+
+      <section style={{ background: '#fff', border: '1px solid rgba(20,8,31,.10)', borderRadius: 24, padding: '30px 30px 26px', boxShadow: '0 8px 24px rgba(20,8,31,.05)' }}>
+        <div className="flex items-end justify-between gap-6 flex-wrap">
+          <div>
+            <h1 style={{ fontFamily: "'Bricolage Grotesque', serif", fontWeight: 700, fontSize: 34, letterSpacing: '-0.03em', lineHeight: 1.05, margin: 0 }}>
+              Ask for a report
+            </h1>
+            <p style={{ margin: '8px 0 0', fontSize: 15, color: '#4A4357' }}>
+              Plain English. Every figure is pulled from your records, not written by the assistant.
+            </p>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 13, fontWeight: 600, color: '#4A4357', background: '#F6F0E4', border: '1px solid rgba(20,8,31,.08)', borderRadius: 999, padding: '8px 14px', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={allFacilities}
+              onChange={(e) => setAllFacilities(e.target.checked)}
+              style={{ width: 15, height: 15, accentColor: '#5B2BC9', margin: 0 }}
+            />
+            <span>Include all facilities</span>
+          </label>
+        </div>
+
+        <div style={{ marginTop: 22, display: 'flex', gap: 12, alignItems: 'stretch', flexWrap: 'wrap' }}>
+          <div
+            className="ask-field"
+            style={{ flex: '1 1 420px', display: 'flex', alignItems: 'center', gap: 12, background: '#FBF8F2', border: '1.5px solid #5B2BC9', borderRadius: 16, padding: '0 18px', height: 60 }}
+          >
+            <Sparkles size={20} style={{ color: '#5B2BC9', flex: '0 0 auto' }} />
             <input
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && question.trim()) ask.mutate() }}
-              placeholder="Which contracts expire before the end of October?"
-              className="flex-1 h-11 px-3 rounded-lg border bg-background text-sm"
+              onKeyDown={(e) => { if (e.key === 'Enter' && question.trim() && !ask.isPending) ask.mutate() }}
+              placeholder="How many customer contracts are ending this month?"
+              style={{ flex: '1 1 auto', border: 0, outline: 0, background: 'transparent', fontFamily: 'inherit', fontSize: 17, fontWeight: 500, color: '#14081F', minWidth: 0 }}
             />
-            <Button onClick={() => ask.mutate()} disabled={!question.trim() || ask.isPending}>
-              <Sparkles size={14} /> {ask.isPending ? 'Working…' : 'Build report'}
-            </Button>
           </div>
+          <button
+            type="button"
+            className="ask-build"
+            onClick={() => ask.mutate()}
+            disabled={!question.trim() || ask.isPending}
+            style={{
+              flex: '0 0 auto', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+              height: 60, padding: '0 28px', border: 0, borderRadius: 16, background: '#5B2BC9', color: '#fff',
+              fontFamily: 'inherit', fontSize: 16, fontWeight: 600,
+              cursor: !question.trim() || ask.isPending ? 'not-allowed' : 'pointer',
+              opacity: !question.trim() || ask.isPending ? 0.5 : 1,
+              boxShadow: '0 8px 20px rgba(91,43,201,.28)',
+            }}
+          >
+            <span>{ask.isPending ? 'Building…' : 'Build report'}</span>
+            {!ask.isPending && (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden>
+                <path d="M5 12h13" /><path d="m13 6 6 6-6 6" />
+              </svg>
+            )}
+          </button>
+        </div>
 
-          <div className="flex flex-wrap gap-1.5">
-            {EXAMPLES.map((x) => (
-              <button
-                key={x}
-                type="button"
-                onClick={() => { setQuestion(x); setErr('') }}
-                className="text-xs px-2.5 py-1 rounded-full border text-muted-foreground hover:bg-muted cursor-pointer"
-              >
-                {x}
-              </button>
-            ))}
-          </div>
-
-          <label className="flex items-center gap-2 text-sm cursor-pointer w-fit">
-            <input type="checkbox" checked={allFacilities} onChange={(e) => setAllFacilities(e.target.checked)} className="h-4 w-4 rounded" />
-            <span>All facilities <span className="text-muted-foreground">(otherwise the one you are switched to)</span></span>
-          </label>
-
-          {err && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 px-3 py-2.5 text-sm text-amber-800 dark:text-amber-300">
-              {err}
+        {/* Worked examples, grouped. Somebody who has never used this does not
+            know what it can reach; a blank box teaches them nothing. */}
+        <div style={{ marginTop: 26, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '18px 26px' }}>
+          {EXAMPLE_GROUPS.map((g) => (
+            <div key={g.label} style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.11em', color: '#756E80' }}>
+                {g.label}
+              </div>
+              {g.items.map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  className="ask-example"
+                  onClick={() => { setQuestion(q); setErr('') }}
+                  style={{ textAlign: 'left', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 500, color: '#4A4357', background: '#fff', border: '1px solid rgba(20,8,31,.12)', borderRadius: 12, padding: '9px 12px', cursor: 'pointer', lineHeight: 1.35 }}
+                >
+                  {q}
+                </button>
+              ))}
             </div>
-          )}
-        </CardBody>
-      </Card>
+          ))}
+        </div>
+
+        {err && (
+          <div style={{ marginTop: 20, borderRadius: 14, border: '1px solid #F5D9A0', background: '#FFF7E6', padding: '12px 16px', fontSize: 14, color: '#6B4500' }}>
+            {err}
+          </div>
+        )}
+      </section>
 
       {ask.isPending && <div className="flex justify-center py-10"><Spinner /></div>}
 
