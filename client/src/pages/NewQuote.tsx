@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
@@ -815,35 +815,62 @@ export default function NewQuote() {
   // Handing the booking on: what still needs doing, and who is doing it.
   // /users is admin-only; /users/assignable is readable by every role, which
   // matters because sales reps do the booking.
-  const { data: assignableUsers = [] } = useQuery<{ _id: string; name: string }[]>({
+  const { data: assignableUsers = [] } = useQuery<{ _id: string; name: string; role?: string }[]>({
     queryKey: ['assignable-users'],
     queryFn: () => api.get('/users/assignable').then((r) => r.data),
     staleTime: 5 * 60_000,
   })
+
+  /* This step hands the booking to accounts — the deposit, the invoice, the
+     billing set-up — so only they belong in the list. Everyone else would
+     just be a way to send it to the wrong person. */
+  const accountsUsers = useMemo(
+    () => assignableUsers.filter((u) => u.role === 'accounts'),
+    [assignableUsers],
+  )
+
   const [taskTitle, setTaskTitle] = useState('')
   const [taskOwner, setTaskOwner] = useState('')
-  const [taskDue, setTaskDue] = useState('')
+  const [taskNotes, setTaskNotes] = useState('')
   const [taskMsg, setTaskMsg] = useState('')
+
+  // What has already been handed over on this contract, so the same job is
+  // not assigned twice by whoever opens the booking next.
+  const { data: contractTasks = [], refetch: refetchTasks } = useQuery<
+    { _id: string; title: string; description?: string; status: string; createdAt: string; assignedTo?: { name?: string; email?: string } | null }[]
+  >({
+    queryKey: ['contract-tasks', contractId],
+    queryFn: () => api.get('/tasks', { params: { leadId: contractId, leadType: 'contract' } }).then((r) => r.data ?? []),
+    enabled: Boolean(contractId),
+  })
 
   const createTask = useMutation({
     mutationFn: () => api.post('/tasks', {
       title: taskTitle.trim(),
       assignedTo: taskOwner,
-      dueDate: taskDue || undefined,
+      // Due today: this is the handover at the end of a booking, and a date
+      // picker on it only ever got left blank or set to today anyway.
+      dueDate: new Date().toISOString().slice(0, 10),
       // Tied to the contract, so the task opens the booking it came from
       // rather than being a sentence with no context a week later.
       leadId: contractId,
       leadType: 'contract',
       leadName: contract?.contractNo || '',
+      /* The notes go first: they are what the person picking this up actually
+         needs — how the deposit was taken, which card, whether Stripe is
+         collecting automatically — and they travel into the assignment email
+         with the signed contract. */
       description: [
+        taskNotes.trim(),
         contract?.contractNo ? `Contract: ${contract.contractNo}` : '',
         customerName ? `Tenant: ${customerName}` : '',
       ].filter(Boolean).join('\n'),
       priority: 'medium',
     }),
     onSuccess: () => {
-      setTaskMsg(`Assigned to ${assignableUsers.find(u => u._id === taskOwner)?.name || 'them'}`)
-      setTaskTitle(''); setTaskDue('')
+      setTaskMsg(`Assigned to ${accountsUsers.find(u => u._id === taskOwner)?.name || 'them'}`)
+      setTaskTitle(''); setTaskNotes('')
+      refetchTasks()
       setTimeout(() => setTaskMsg(''), 3000)
     },
     onError: (e) => setTaskMsg(apiError(e)),
@@ -1997,7 +2024,7 @@ export default function NewQuote() {
                   Assign anything still to do on {contract?.contractNo || 'this contract'} — it lands on their board.
                 </p>
 
-                <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto_auto]">
+                <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
                   <input
                     value={taskTitle}
                     onChange={(e) => setTaskTitle(e.target.value)}
@@ -2008,19 +2035,15 @@ export default function NewQuote() {
                   <select
                     value={taskOwner}
                     onChange={(e) => setTaskOwner(e.target.value)}
-                    className="h-10 px-3 rounded-lg text-sm bg-white cursor-pointer"
+                    disabled={accountsUsers.length === 0}
+                    className="h-10 px-3 rounded-lg text-sm bg-white cursor-pointer disabled:opacity-60"
                     style={{ border: '1px solid rgba(20,8,31,0.14)' }}
                   >
-                    <option value="">Assign to…</option>
-                    {assignableUsers.map((u) => <option key={u._id} value={u._id}>{u.name}</option>)}
+                    <option value="">
+                      {accountsUsers.length ? 'Assign to…' : 'No accounts user set up'}
+                    </option>
+                    {accountsUsers.map((u) => <option key={u._id} value={u._id}>{u.name}</option>)}
                   </select>
-                  <input
-                    type="date"
-                    value={taskDue}
-                    onChange={(e) => setTaskDue(e.target.value)}
-                    className="h-10 px-3 rounded-lg text-sm bg-white"
-                    style={{ border: '1px solid rgba(20,8,31,0.14)' }}
-                  />
                   <button
                     type="button"
                     disabled={!taskTitle.trim() || !taskOwner || createTask.isPending}
@@ -2032,8 +2055,61 @@ export default function NewQuote() {
                   </button>
                 </div>
 
+                {/* What accounts cannot work out from the contract itself:
+                    how the deposit was taken, which card, whether Stripe is
+                    collecting automatically, an unusual billing cycle. Goes
+                    out with the assignment email and the signed contract. */}
+                <textarea
+                  value={taskNotes}
+                  onChange={(e) => setTaskNotes(e.target.value)}
+                  rows={3}
+                  placeholder="Notes for them — security deposit, payment method, auto-payment with Stripe, billing cycle, anything they should know."
+                  className="w-full mt-2 px-3 py-2 rounded-lg text-sm bg-white"
+                  style={{ border: '1px solid rgba(20,8,31,0.14)', resize: 'vertical', fontFamily: 'inherit' }}
+                />
+                <p className="text-xs mt-1" style={{ color: MUTED }}>
+                  Due today. They are emailed the notes, the client details and the signed contract.
+                </p>
+
                 {taskMsg && (
                   <p className="text-xs mt-2" style={{ color: taskMsg.startsWith('Assigned') ? GREEN : '#b91c1c' }}>{taskMsg}</p>
+                )}
+
+                {/* Already handed over. Without this the next person to open
+                    the booking has no way of knowing it was done, and assigns
+                    the same job again. */}
+                {contractTasks.length > 0 && (
+                  <div className="mt-4 pt-3" style={{ borderTop: '1px solid #DDD0FF' }}>
+                    <div className="text-xs font-bold mb-2" style={{ color: '#4A1FA0' }}>
+                      Already assigned on this contract
+                    </div>
+                    <div className="space-y-1.5">
+                      {contractTasks.map((t) => (
+                        <div
+                          key={t._id}
+                          className="flex items-start gap-2 rounded-lg px-3 py-2 bg-white"
+                          style={{ border: '1px solid rgba(20,8,31,0.10)' }}
+                        >
+                          <span
+                            className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold"
+                            style={t.status === 'done'
+                              ? { background: '#DCFCE7', color: '#15803D' }
+                              : { background: '#FFF7E6', color: '#8A5A00' }}
+                          >
+                            {t.status === 'done' ? 'Done' : t.status === 'in_progress' ? 'In progress' : 'To do'}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-semibold truncate" style={{ color: INK }}>{t.title}</div>
+                            <div className="text-xs" style={{ color: MUTED }}>
+                              {t.assignedTo?.name || t.assignedTo?.email || 'Unassigned'}
+                              {' · '}
+                              {new Date(t.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
             )}
