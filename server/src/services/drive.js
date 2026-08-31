@@ -142,6 +142,23 @@ export async function uploadFile({ buffer, filename, mimeType, customerName }) {
   };
 }
 
+/**
+ * Read a stored file back as bytes.
+ *
+ * Needed to attach the signed contract to an email: the signed copy only
+ * exists in Drive, and re-rendering the agreement would produce an unsigned
+ * document that looks like the real one — which is worse than not attaching it.
+ */
+export async function downloadFile({ driveFileId }) {
+    requireDrive();
+    const drive = driveClient();
+    const { data } = await drive.files.get(
+        { fileId: driveFileId, alt: 'media', supportsAllDrives: true },
+        { responseType: 'arraybuffer' },
+    );
+    return Buffer.from(data);
+}
+
 export async function uploadToVendorFolder({ buffer, filename, mimeType, vendorName }) {
   requireDrive();
   const drive = driveClient();

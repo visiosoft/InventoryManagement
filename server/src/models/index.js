@@ -1941,6 +1941,12 @@ const taskSchema = new Schema(
     comments: { type: [taskCommentSchema], default: [] },
     attachments: { type: [taskAttachmentSchema], default: [] },
     assignmentHistory: { type: [taskAssignmentHistorySchema], default: [] },
+    /* When the assignee was emailed about it.
+     *
+     * Stored rather than assumed: the email goes out after the response, so
+     * without this there is no way to tell a task nobody was told about from
+     * one where the mail simply failed. */
+    assigneeNotifiedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

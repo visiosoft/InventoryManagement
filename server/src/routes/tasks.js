@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { Task, User } from '../models/index.js';
 import { uploadFile } from '../services/drive.js';
+import { notifyTaskAssigned } from '../services/taskNotify.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
@@ -84,12 +85,23 @@ router.post('/', async (req, res) => {
   });
 
   res.status(201).json(await task.populate('assignedTo', 'name email'));
+
+  /* After the response, not before it.
+   *
+   * Rendering or downloading the contract PDF and handing it to a mail server
+   * takes seconds, and none of it should sit between somebody pressing "Add
+   * task" and the task appearing. It cannot throw, and it stamps the task when
+   * it succeeds so a silent failure is still visible afterwards. */
+  notifyTaskAssigned({ task, assignee, assignedByName: byName });
 });
 
 router.patch('/:id', async (req, res) => {
   const task = await Task.findById(req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
   if (!canEdit(req, task)) return res.status(403).json({ error: 'Not your task' });
+
+  // Set only when ownership actually moves, so editing a title sends nothing.
+  let reassignedTo = null;
 
   if (req.body?.title !== undefined) task.title = String(req.body.title).trim();
   if (req.body?.description !== undefined) task.description = String(req.body.description).trim();
@@ -113,10 +125,21 @@ router.patch('/:id', async (req, res) => {
       reason: String(req.body?.reassignReason || '').trim() || 'Reassigned',
     });
     task.assignedTo = req.body.assignedTo;
+    // Handed to somebody new: they need telling, the same as on creation.
+    reassignedTo = nextUser;
+    task.assigneeNotifiedAt = null;
   }
 
   await task.save();
   res.json(await task.populate('assignedTo', 'name email'));
+
+  if (reassignedTo) {
+    notifyTaskAssigned({
+      task,
+      assignee: reassignedTo,
+      assignedByName: req.user.name || req.user.email || 'user',
+    });
+  }
 });
 
 router.get('/:id', async (req, res) => {
