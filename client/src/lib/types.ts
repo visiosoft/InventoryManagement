@@ -541,6 +541,12 @@ export interface Summary {
   moveInsLastMonth: number
   moveOutsThisMonth: number
   moveOutsLastMonth: number
+  /* Still in the building with an end date before the month is out — the
+     re-letting pipeline. Distinct from moveOutsThisMonth, which counts
+     contracts that have already ended. */
+  movingOutThisMonth?: number
+  /** The month those figures cover, named by the server. */
+  monthLabel?: string
   moveInsList: Contract[]
   moveOutsList: Contract[]
   availableUnitsList: { _id: string; unitNumber: string; floor: string; sizeSqf: number; monthlyRent: number }[]

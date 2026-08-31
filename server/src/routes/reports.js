@@ -30,7 +30,8 @@ router.get('/summary', async (req, res) => {
   // Use aggregation for unit stats instead of loading all unit documents
   const [unitStats, unitsBySize, unitsByFloor, availableUnits,
     revenueAgg, dueAgg, expiring, overdue, activeContracts,
-    moveInsThisMonthList, moveOutsThisMonthList, moveInsLastMonth, moveOutsLastMonth] = await Promise.all([
+    moveInsThisMonthList, moveOutsThisMonthList, moveInsLastMonth, moveOutsLastMonth,
+    movingOutThisMonth] = await Promise.all([
       Unit.aggregate([
         { $match: uF },
         { $group: { _id: '$status', count: { $sum: 1 } } },
@@ -66,6 +67,13 @@ router.get('/summary', async (req, res) => {
         .populate('customer', 'fullName').populate('unit', 'unitNumber').sort({ endDate: 1 }).lean(),
       Contract.countDocuments({ ...cF, status: { $in: ['active', 'ended'] }, startDate: { $gte: lastMonthStart, $lt: monthStart } }),
       Contract.countDocuments({ ...cF, status: 'ended', endDate: { $gte: lastMonthStart, $lt: monthStart } }),
+      /* Still in, leaving this month.
+       *
+       * Not the same as the move-outs above, which count contracts that have
+       * already ended -- those units are vacant and counted as such. This is
+       * the re-letting pipeline: who is still in the building with an end date
+       * before the month is out. */
+      Contract.countDocuments({ ...cF, status: 'active', endDate: { $gte: monthStart, $lt: monthEnd } }),
     ]);
 
   // Build unit status counts from aggregation
@@ -128,6 +136,9 @@ router.get('/summary', async (req, res) => {
     moveInsThisMonth: moveInsThisMonthList.length,
     moveInsLastMonth,
     moveOutsThisMonth: moveOutsThisMonthList.length,
+    movingOutThisMonth,
+    // Named here so the card is labelled from the server's own month.
+    monthLabel: monthStart.toLocaleString('en-GB', { month: 'long', timeZone: 'Asia/Dubai' }),
     moveOutsLastMonth,
     moveInsList: moveInsThisMonthList,
     moveOutsList: moveOutsThisMonthList,

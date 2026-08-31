@@ -196,9 +196,24 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Available units */}
+            {/* Booked — units with somebody in them. */}
+            <div style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 1px 2px rgba(20,8,31,.05)' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Booked</div>
+              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{data.byStatus.occupied}</div>
+              <div style={{ fontSize: 11, color: '#4A4357', marginTop: 'auto' }}>{data.activeContracts} active contracts</div>
+            </div>
+
+            {/* Reserved — held, not yet moved in. */}
+            <div style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 1px 2px rgba(20,8,31,.05)' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Reserved</div>
+              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{data.byStatus.reserved}</div>
+              <div style={{ fontSize: 11, color: '#4A4357', marginTop: 'auto' }}>held, not moved in yet</div>
+            </div>
+
+            {/* Vacant — the same units the old Available card counted, named
+                the way the team asks for them. */}
             <div onClick={() => { setSizeFilter(null); setMovePanel('available') }} style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 1px 2px rgba(20,8,31,.05)', cursor: 'pointer' }} className="hover:shadow-md transition-shadow">
-              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Available</div>
+              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Vacant</div>
               <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{data.byStatus.available}</div>
               <div className="flex flex-wrap gap-1 mt-auto" onClick={e => e.stopPropagation()}>
                 {data.bySize.filter(s => s.available > 0).slice(0, 3).map(s => (
@@ -207,25 +222,19 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Active contracts */}
-            <div style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 1px 2px rgba(20,8,31,.05)' }}>
-              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Active</div>
-              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{data.activeContracts}</div>
-              <div style={{ fontSize: 11, color: '#4A4357', marginTop: 'auto' }}>{data.expiringContracts.length} expiring soon</div>
-            </div>
-
-            {/* Move-ins */}
-            <div onClick={() => setMovePanel('in')} style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 1px 2px rgba(20,8,31,.05)', cursor: 'pointer' }} className="hover:shadow-md transition-shadow">
-              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Move-ins</div>
-              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{data.moveInsThisMonth}</div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: (data.moveInsThisMonth - data.moveInsLastMonth) < 0 ? '#B3261E' : '#1B7A4B', marginTop: 'auto' }}>{(data.moveInsThisMonth - data.moveInsLastMonth) > 0 ? '+' : ''}{data.moveInsThisMonth - data.moveInsLastMonth} vs {data.moveInsLastMonth}</div>
-            </div>
-
-            {/* Move-outs */}
+            {/* Moving out this month.
+                Deliberately not the old Move-outs figure, which counted
+                contracts that had already ended — those units are vacant and
+                already counted as such. This is who is still in the building
+                with an end date before the month is out, which is the list
+                worth acting on. */}
             <div onClick={() => setMovePanel('out')} style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 1px 2px rgba(20,8,31,.05)', cursor: 'pointer' }} className="hover:shadow-md transition-shadow">
-              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Move-outs</div>
-              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{data.moveOutsThisMonth}</div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: (data.moveOutsThisMonth - data.moveOutsLastMonth) < 0 ? '#B3261E' : '#1B7A4B', marginTop: 'auto' }}>{(data.moveOutsThisMonth - data.moveOutsLastMonth) > 0 ? '+' : ''}{data.moveOutsThisMonth - data.moveOutsLastMonth} vs {data.moveOutsLastMonth}</div>
+              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Moving out</div>
+              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{data.movingOutThisMonth ?? 0}</div>
+              <div style={{ fontSize: 11, color: '#4A4357', marginTop: 'auto' }}>
+                still in, leaving in {data.monthLabel ?? 'this month'}
+                {data.moveOutsThisMonth > 0 && ` · ${data.moveOutsThisMonth} already out`}
+              </div>
             </div>
           </div>
         ),
