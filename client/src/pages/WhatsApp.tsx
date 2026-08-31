@@ -89,6 +89,35 @@ const CSS = `
   .wa-sidebar.wa-sidebar-open { transform: translateX(0); }
   .wa-mobile-only { display: inline-flex !important; }
   .wa-scrim { display: block; position: absolute; inset: 0; z-index: 28; background: rgba(20,8,31,.34); }
+
+  /* A phone's browser chrome is counted by vh but not actually visible, so a
+     100vh panel puts its own last rows — here, the box you type into — below
+     the fold. dvh measures what is really on screen. The 520px floor has to
+     go with it: on a short screen, or once the keyboard is up, it is taller
+     than the viewport and pushes the composer off again. */
+  /* The vh line first as a fallback: a browser without dvh keeps the old
+     behaviour rather than dropping both and collapsing the panel. */
+  .wa-shell { height: calc(100vh - 5rem) !important; min-height: 0 !important; }
+  .wa-shell { height: calc(100dvh - 5rem) !important; }
+
+  /* Room for the message itself. The bubbles had 26px of side padding, which
+     on a 375px screen is a seventh of the width spent on nothing. */
+  .wa-thread { padding: 14px 12px !important; }
+  .wa-bubble { max-width: 88% !important; }
+
+  /* The header carries a name and up to five controls. Letting the name
+     shrink first keeps every button reachable rather than pushing the last
+     one off the edge. */
+  .wa-head { gap: 8px !important; padding-left: 10px !important; padding-right: 10px !important; }
+
+  /* Comfortable thumb targets, and a composer that does not crowd them. */
+  .wa-compose { gap: 6px !important; padding-left: 10px !important; padding-right: 10px !important; }
+}
+
+/* Anything genuinely small: drop to the essentials so nothing overflows. */
+@media (max-width: 400px) {
+  .wa-head-extra { display: none !important; }
+  .wa-bubble { max-width: 92% !important; }
 }
 `
 
@@ -303,7 +332,7 @@ function MessageBubble({ msg }: { msg: WaMsg }) {
         </button>
       )}
       <div
-        className="max-w-[75%] rounded-2xl px-3.5 py-2 text-sm"
+        className="wa-bubble max-w-[75%] rounded-2xl px-3.5 py-2 text-sm"
         style={
           out
             // WhatsApp's own outgoing green, with dark text — white on this
@@ -1883,7 +1912,7 @@ export default function WhatsApp() {
 
   return (
     <div
-      className="flex flex-col rounded-2xl overflow-hidden h-[calc(100vh-5rem)] md:h-[calc(100vh-5.5rem)] min-h-[520px]"
+      className="wa-shell flex flex-col rounded-2xl overflow-hidden h-[calc(100vh-5rem)] md:h-[calc(100vh-5.5rem)] min-h-[520px]"
       style={{ border: `1px solid ${LINE}`, background: '#fff', boxShadow: '0 6px 28px rgba(20,8,31,.07)' }}
     >
       <style>{CSS}</style>
@@ -2173,7 +2202,7 @@ export default function WhatsApp() {
         {/* 3. Chat pane */}
         <section className="flex flex-col flex-1 min-w-0 min-h-0" style={{ background: '#F6F0E4' }}>
           <header
-            className="shrink-0 flex items-center gap-3 px-4"
+            className="wa-head shrink-0 flex items-center gap-3 px-4"
             style={{ height: 64, background: '#fff', borderBottom: `1px solid ${LINE}` }}
           >
             <button
@@ -2290,7 +2319,7 @@ export default function WhatsApp() {
                   rel="noreferrer"
                   title="Open this chat in WhatsApp, in a new tab"
                   aria-label="Open this chat in WhatsApp"
-                  className="inline-flex items-center justify-center rounded-full shrink-0"
+                  className="wa-head-extra inline-flex items-center justify-center rounded-full shrink-0"
                   style={{ width: 32, height: 32, background: 'rgba(22,163,74,.09)', border: '1px solid rgba(22,163,74,.28)', color: '#047857' }}
                 >
                   <MessageSquare size={14} />
@@ -2332,7 +2361,7 @@ export default function WhatsApp() {
           <div
             ref={scrollRef}
             onScroll={onScroll}
-            className="wa-scroll flex-1 min-h-0 flex flex-col gap-[10px]"
+            className="wa-thread wa-scroll flex-1 min-h-0 flex flex-col gap-[10px]"
             style={{
               padding: '22px 26px',
               // Tiled wallpaper behind the bubbles, over the cream base so the
@@ -2566,7 +2595,7 @@ export default function WhatsApp() {
           )}
 
           <div
-            className="shrink-0 flex items-end gap-2 px-4 pb-3 pt-1"
+            className="wa-compose shrink-0 flex items-end gap-2 px-4 pb-3 pt-1"
             style={{ background: '#fff' }}
           >
             <input

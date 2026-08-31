@@ -15,6 +15,73 @@ const INK = '#14081F'
 const MUTED_COLOR = '#756E80'
 const PURPLE = '#5B2BC9'
 
+/**
+ * Making the pipeline usable on a phone.
+ *
+ * Two things stood in the way. The page is a flex row with a fixed 296px rail
+ * beside the list, which on a narrow screen left the list a sliver; and the
+ * list is a nine-column grid with a 980px floor, so it could only be read by
+ * dragging it sideways — a column at a time, with the headings scrolled off.
+ *
+ * Below 1024px the rail drops underneath. Below 760px each row stops being a
+ * table row and becomes a card: name and actions on top, then the details
+ * underneath, labelled — because once the header row is gone, a bare date or
+ * a lone number has nothing to say what it is.
+ */
+const LEADS_CSS = `
+@media (max-width: 1024px) {
+  .lead-shell { flex-direction: column !important; }
+  .lead-rail {
+    width: 100% !important; flex: 1 1 auto !important;
+    border-left: 0 !important; border-top: 1px solid rgba(20,8,31,.10);
+    position: static !important; max-height: none !important;
+    border-radius: 18px;
+  }
+}
+
+@media (max-width: 760px) {
+  /* The horizontal scroll and the width floor under it both go, or the card
+     layout would still be sitting on a 980px canvas. */
+  .lead-table { overflow: visible !important; }
+  .lead-table-inner { min-width: 0 !important; }
+  .lead-head { display: none !important; }
+
+  .lead-row {
+    display: flex !important;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+    padding: 14px !important;
+  }
+  /* Order, not source order: the row's cells are laid out for a table, and on
+     a card the name and its actions belong together at the top. */
+  .lead-row > *:nth-child(1) { order: 1; flex: 0 0 auto; }   /* select      */
+  .lead-row > *:nth-child(2) { order: 2; flex: 1 1 auto; min-width: 0; }  /* name */
+  .lead-row > *:nth-child(9) { order: 3; flex: 0 0 auto; }   /* view/book/delete */
+  .lead-row > *:nth-child(3) { order: 4; flex: 1 0 100%; }   /* phone       */
+  .lead-row > *:nth-child(4) { order: 5; flex: 0 0 auto; }   /* source      */
+  .lead-row > *:nth-child(6) { order: 6; flex: 0 0 auto; }   /* status      */
+  .lead-row > *:nth-child(5) { order: 7; flex: 0 0 auto; }   /* assigned to */
+  .lead-row > *:nth-child(7) { order: 8; flex: 1 1 44%; }    /* chase       */
+  .lead-row > *:nth-child(8) { order: 9; flex: 1 1 44%; }    /* added       */
+
+  /* Without the header row these two are just numbers on a card. The select
+     and the pills say what they are already, so only these need telling. */
+  .lead-row > *:nth-child(7)::before,
+  .lead-row > *:nth-child(8)::before {
+    display: block;
+    font-size: 10.5px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: #756E80; margin-bottom: 2px;
+  }
+  .lead-row > *:nth-child(7)::before { content: 'Chase'; }
+  .lead-row > *:nth-child(8)::before { content: 'Added'; }
+
+  .lead-row > *:nth-child(3) { font-size: 14px !important; }
+  /* A full-width select is easier to hit than one sized to a table column. */
+  .lead-row > *:nth-child(5) { max-width: none !important; }
+}
+`
+
 const LEAD_STATUSES: LeadStatus[] = ['new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost']
 const LEAD_SOURCES: LeadSource[] = ['manual', 'whatsapp', 'referral', 'walk_in', 'other']
 
@@ -939,7 +1006,8 @@ export default function Leads() {
     // page with p-3 sm:p-4, and 32px on top of a 1240px cap left most of a wide
     // screen empty.
     return (
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20, minHeight: '100vh', paddingBottom: 24, background: '#FBF8F2', fontFamily: "'Manrope', system-ui, sans-serif" }}>
+        <div className="lead-shell" style={{ display: 'flex', alignItems: 'flex-start', gap: 20, minHeight: '100vh', paddingBottom: 24, background: '#FBF8F2', fontFamily: "'Manrope', system-ui, sans-serif" }}>
+            <style>{LEADS_CSS}</style>
             <div style={{ flex: 1, minWidth: 0 }}>
 
                 <div>
@@ -1135,11 +1203,11 @@ export default function Leads() {
                 {isLoading ? (
                     <Spinner />
                 ) : (
-                    <div style={{ background: '#fff', border: '1px solid rgba(20,8,31,.10)', borderRadius: 18, overflow: 'auto' }}>
-                        <div style={{ minWidth: 980 }}>
+                    <div className="lead-table" style={{ background: '#fff', border: '1px solid rgba(20,8,31,.10)', borderRadius: 18, overflow: 'auto' }}>
+                        <div className="lead-table-inner" style={{ minWidth: 980 }}>
 
                             {/* Header row */}
-                            <div style={{ display: 'grid', gridTemplateColumns: GRID, alignItems: 'center', gap: 10, padding: '14px 18px', background: '#FBF8F2', borderBottom: '1px solid rgba(20,8,31,.10)' }}>
+                            <div className="lead-head" style={{ display: 'grid', gridTemplateColumns: GRID, alignItems: 'center', gap: 10, padding: '14px 18px', background: '#FBF8F2', borderBottom: '1px solid rgba(20,8,31,.10)' }}>
                                 <input
                                     type="checkbox"
                                     checked={allSelected}
@@ -1161,6 +1229,7 @@ export default function Leads() {
                                 return (
                                     <div
                                         key={lead._id}
+                                        className="lead-row"
                                         style={{
                                             display: 'grid', gridTemplateColumns: GRID, gap: 10, alignItems: 'center',
                                             padding: '14px 18px', borderBottom: '1px solid rgba(20,8,31,.08)',
@@ -1315,7 +1384,7 @@ export default function Leads() {
                  rep sees only their own, so for them it would be one card
                  saying what the page already says. */}
             {isAdmin && (
-                <aside style={{ width: 296, flex: '0 0 296px', borderLeft: '1px solid rgba(20,8,31,.10)', background: '#fff', padding: '24px 22px', position: 'sticky', top: 0, alignSelf: 'flex-start', maxHeight: '100vh', overflowY: 'auto' }}>
+                <aside className="lead-rail" style={{ width: 296, flex: '0 0 296px', borderLeft: '1px solid rgba(20,8,31,.10)', background: '#fff', padding: '24px 22px', position: 'sticky', top: 0, alignSelf: 'flex-start', maxHeight: '100vh', overflowY: 'auto' }}>
                     <div style={{ ...HEADING, fontWeight: 700, fontSize: 17, marginBottom: 4 }}>Team workload</div>
                     <div style={{ fontSize: 13, color: MUTED_COLOR, marginBottom: 16 }}>Active leads by rep · click to filter</div>
 
