@@ -371,6 +371,19 @@ const whatsappMessageSchema = new Schema(
     editedAt: { type: Date, default: null },
     deletedAt: { type: Date, default: null },
     reaction: { type: String, default: '' },
+    /* Quoting another message.
+     *
+     * WhatsApp gives businesses no way to edit a message once it has left —
+     * the app can, the API cannot. A correction is therefore a new message
+     * quoting the wrong one, which is what a person does anyway and what the
+     * customer sees threaded against the original.
+     *
+     * replyToMessageId is the wamid this message quotes; correctedByMessageId
+     * is set on the message that was superseded, so the console can mark it
+     * rather than leaving the mistake looking current. */
+    replyToMessageId: { type: String, default: '' },
+    correctedByMessageId: { type: String, default: '' },
+    correctedAt: { type: Date, default: null },
     raw: { type: Schema.Types.Mixed },
   },
   { timestamps: true }

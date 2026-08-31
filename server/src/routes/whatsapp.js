@@ -219,6 +219,72 @@ router.delete('/messages/:id', async (req, res) => {
  * customer behind it. `phone` guarantees the open chat is in the response even
  * when it falls outside the window, so opening one from a lead always works.
  */
+/**
+ * Correct a message we sent.
+ *
+ * WhatsApp gives a business no way to change a message once it has gone: the
+ * consumer app can edit for about fifteen minutes, the Cloud API cannot edit
+ * at all, and there is no unsend either. So this does not rewrite the old
+ * message on the customer's phone — nothing can. It sends the corrected
+ * wording as a reply quoting the wrong one, which is what a person does by
+ * hand, and threads it against the original in the customer's chat.
+ *
+ * The original is then marked here as superseded, so nobody reading back
+ * through the thread takes the mistake for the current position.
+ */
+router.post('/messages/:id/correct', async (req, res) => {
+    try {
+        const original = await WhatsAppMessage.findById(req.params.id);
+        if (!original) return res.status(404).json({ error: 'Message not found' });
+        if (original.direction !== 'outbound') {
+            return res.status(400).json({ error: 'Only a message we sent can be corrected' });
+        }
+        if (original.deletedAt) return res.status(400).json({ error: 'This message was deleted' });
+
+        const text = String(req.body?.text || '').trim();
+        if (!text) return res.status(400).json({ error: 'The corrected wording is required' });
+        if (text === String(original.text || '').trim()) {
+            return res.status(400).json({ error: 'The wording is unchanged' });
+        }
+        if (!whatsappSendConfigured()) {
+            return res.status(400).json({ error: `WhatsApp not configured. Missing: ${whatsappSendMissing().join(', ')}` });
+        }
+
+        /* Quoting needs the id Meta gave the original. A message sent from
+           another device and echoed to us has one; anything we failed to
+           record an id for cannot be quoted, so it goes as a plain message
+           rather than failing outright. */
+        const result = await sendWhatsAppText({
+            to: original.phone || original.phoneNormalized,
+            body: text,
+            replyTo: original.messageId || undefined,
+        });
+
+        const sent = await WhatsAppMessage.create({
+            messageId: result?.messages?.[0]?.id || '',
+            phone: original.phone,
+            phoneNormalized: original.phoneNormalized,
+            direction: 'outbound',
+            type: 'text',
+            text,
+            status: 'sent',
+            occurredAt: new Date(),
+            sentByAi: false,
+            replyToMessageId: original.messageId || '',
+            raw: result,
+        });
+
+        original.correctedByMessageId = sent.messageId || String(sent._id);
+        original.correctedAt = new Date();
+        await original.save();
+
+        await pauseBotForHuman(original.phoneNormalized);
+        res.json({ ok: true, quoted: Boolean(original.messageId), message: sent });
+    } catch (e) {
+        res.status(400).json({ error: e.message });
+    }
+});
+
 router.get('/conversations', async (req, res) => {
     // Numbers are stored inconsistently (+971 …, 0…, 971…), so people are
     // matched on the last 9 digits — the same rule the Zoho matcher uses.

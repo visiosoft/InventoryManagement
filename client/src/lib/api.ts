@@ -266,6 +266,10 @@ export type WhatsAppMsg = {
   editedAt?: string | null
   deletedAt?: string | null
   reaction?: string
+  /* Set on a message we have since corrected — the wording the customer has
+     is out of date, and the thread should say so. */
+  correctedAt?: string | null
+  replyToMessageId?: string
 }
 
 /** ownerName is '' when nobody has been given the lead yet. */
@@ -338,6 +342,13 @@ export const whatsappApi = {
   // Removes it from our own record — Meta has no unsend endpoint, so this
   // cannot pull a message back off the customer's phone.
   deleteMessage: (id: string) => api.delete<WhatsAppMsg>(`/whatsapp/messages/${id}`).then((r) => r.data),
+  /* Send corrected wording as a reply quoting the original. Meta has no edit
+     for business messages, so the old one stays on their phone with the
+     correction threaded underneath it. */
+  correctMessage: (id: string, text: string) =>
+    api.post<{ ok: boolean; quoted: boolean; message: WhatsAppMsg }>(
+      `/whatsapp/messages/${id}/correct`, { text },
+    ).then((r) => r.data),
   labels: () => api.get<WhatsAppLabel[]>('/whatsapp/labels').then((r) => r.data),
   createLabel: (body: { name: string; color: string }) =>
     api.post<WhatsAppLabel>('/whatsapp/labels', body).then((r) => r.data),

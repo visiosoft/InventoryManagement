@@ -316,7 +316,15 @@ export async function sendWhatsAppTemplate({ to, name, language = 'en', variable
     return payload;
 }
 
-export async function sendWhatsAppText({ to, body }) {
+/**
+ * Send a text message.
+ *
+ * `replyTo` is the id of a message this one quotes. Meta calls it a contextual
+ * reply, and it is the only way to attach a new message to an earlier one —
+ * there is no edit or unsend for anything a business has already sent, so a
+ * correction has to arrive as a reply to the message it corrects.
+ */
+export async function sendWhatsAppText({ to, body, replyTo }) {
     if (!whatsappSendConfigured()) {
         throw new Error('WhatsApp is not configured');
     }
@@ -338,6 +346,7 @@ export async function sendWhatsAppText({ to, body }) {
             to: normalizedTo,
             type: 'text',
             text: { body: String(body || '').trim() },
+            ...(replyTo ? { context: { message_id: String(replyTo) } } : {}),
         }),
     });
 

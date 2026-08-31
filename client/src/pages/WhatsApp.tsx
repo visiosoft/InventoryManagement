@@ -299,6 +299,23 @@ function MessageBubble({ msg }: { msg: WaMsg }) {
   const out = msg.direction === 'outbound'
   const qc = useQueryClient()
   const [hovered, setHovered] = useState(false)
+  const [correcting, setCorrecting] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [err, setErr] = useState('')
+
+  /* Not an edit, because there is no such thing for a business message: Meta
+     offers no way to change or unsend one. The corrected wording goes as a new
+     message quoting the wrong one, so it lands threaded against it in the
+     customer's chat — the same thing a person would do by hand. */
+  const correct = useMutation({
+    mutationFn: () => whatsappApi.correctMessage(msg._id, draft.trim()),
+    onSuccess: () => {
+      setCorrecting(false)
+      setErr('')
+      qc.invalidateQueries({ queryKey: ['wa-messages'] })
+    },
+    onError: (e) => setErr(apiError(e)),
+  })
 
   // Meta has no unsend endpoint — this only removes it from our own record,
   // never from the customer's phone. Restricted to our own messages so a
@@ -315,21 +332,35 @@ function MessageBubble({ msg }: { msg: WaMsg }) {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      {out && !msg.deletedAt && hovered && (
-        <button
-          type="button"
-          title="Delete for us (this does not remove it from their WhatsApp)"
-          aria-label="Delete this message"
-          disabled={deleteMsg.isPending}
-          onClick={() => {
-            if (!confirm('Delete this message from our side?\n\nWhatsApp gives businesses no way to unsend a message — the customer will still have it on their phone. This only removes it from our own record.')) return
-            deleteMsg.mutate()
-          }}
-          className="shrink-0 inline-flex items-center justify-center rounded-full cursor-pointer disabled:opacity-40"
-          style={{ width: 22, height: 22, background: '#FEE2E2', color: '#B91C1C' }}
-        >
-          <Trash2 size={11} />
-        </button>
+      {out && !msg.deletedAt && hovered && !correcting && (
+        <>
+          {msg.type === 'text' && (
+            <button
+              type="button"
+              title="Send a correction quoting this message"
+              aria-label="Correct this message"
+              onClick={() => { setDraft(msg.text || ''); setErr(''); setCorrecting(true) }}
+              className="shrink-0 inline-flex items-center justify-center rounded-full cursor-pointer"
+              style={{ width: 22, height: 22, background: '#F7F3FF', color: '#4A1FA0' }}
+            >
+              <Pencil size={11} />
+            </button>
+          )}
+          <button
+            type="button"
+            title="Delete for us (this does not remove it from their WhatsApp)"
+            aria-label="Delete this message"
+            disabled={deleteMsg.isPending}
+            onClick={() => {
+              if (!confirm('Delete this message from our side?\n\nWhatsApp gives businesses no way to unsend a message — the customer will still have it on their phone. This only removes it from our own record.')) return
+              deleteMsg.mutate()
+            }}
+            className="shrink-0 inline-flex items-center justify-center rounded-full cursor-pointer disabled:opacity-40"
+            style={{ width: 22, height: 22, background: '#FEE2E2', color: '#B91C1C' }}
+          >
+            <Trash2 size={11} />
+          </button>
+        </>
       )}
       <div
         className="wa-bubble max-w-[75%] rounded-2xl px-3.5 py-2 text-sm"
@@ -364,6 +395,56 @@ function MessageBubble({ msg }: { msg: WaMsg }) {
         )}
         {!msg.deletedAt && msg.media && msg.text && !msg.media.caption && (
           <p className="whitespace-pre-wrap break-words mt-1">{msg.text}</p>
+        )}
+
+        {/* The customer still has this wording on their phone — nothing can
+            take it back — so the thread says it has been superseded rather
+            than leaving the mistake reading as current. */}
+        {msg.correctedAt && !msg.deletedAt && (
+          <p className="mt-1" style={{ fontSize: 10.5, fontWeight: 700, color: '#8A5A00' }}>
+            Corrected below · they still have this one
+          </p>
+        )}
+
+        {correcting && (
+          <div className="mt-2" style={{ borderTop: '1px solid rgba(20,8,31,.12)', paddingTop: 8 }}>
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              rows={3}
+              autoFocus
+              className="w-full"
+              style={{
+                borderRadius: 8, border: '1px solid rgba(20,8,31,.18)', background: '#fff',
+                padding: '7px 9px', fontSize: 13, fontFamily: 'inherit', color: INK,
+                resize: 'vertical', outline: 'none', boxSizing: 'border-box',
+              }}
+            />
+            <p style={{ fontSize: 10.5, color: FAINT_INK, marginTop: 4, lineHeight: 1.45 }}>
+              WhatsApp will not let a business change a message it has sent. This goes as a new
+              message quoting the one above, so they see the correction attached to it.
+            </p>
+            {err && <p style={{ fontSize: 11, color: '#B91C1C', marginTop: 4 }}>{err}</p>}
+            <div className="flex items-center gap-2 mt-1.5">
+              <button
+                type="button"
+                onClick={() => correct.mutate()}
+                disabled={correct.isPending || !draft.trim() || draft.trim() === (msg.text || '').trim()}
+                className="rounded-full cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ background: '#5B2BC9', color: '#fff', border: 0, fontSize: 12, fontWeight: 700, padding: '5px 12px' }}
+              >
+                {correct.isPending ? 'Sending…' : 'Send correction'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setCorrecting(false); setErr('') }}
+                className="cursor-pointer"
+                style={{ background: 'none', border: 0, color: FAINT_INK, fontSize: 12, padding: 0 }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         )}
         <div
           className="flex items-center justify-end gap-1 mt-1 text-[10px]"
