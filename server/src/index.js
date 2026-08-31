@@ -31,6 +31,7 @@ import contractRoutes from './routes/contracts.js';
 import paymentRoutes from './routes/payments.js';
 import documentRoutes from './routes/documents.js';
 import reportRoutes from './routes/reports.js';
+import aiReportRoutes from './routes/aiReports.js';
 import leadRoutes from './routes/leads.js';
 import integrationRoutes from './routes/integrations.js';
 import whatsappDiagnosticsRoutes from './routes/whatsappDiagnostics.js';
@@ -164,6 +165,8 @@ app.use(
 app.use('/api/payments', requireAuth, paymentRoutes);
 app.use('/api/documents', requireAuth, documentRoutes);
 app.use('/api/reports', requireAuth, reportRoutes);
+// Asking for a report in plain English. Admin-only inside the router itself.
+app.use('/api/ai-reports', requireAuth, aiReportRoutes);
 app.use('/api/leads', requireAuth, leadRoutes);
 app.use(
   '/api/quotes',

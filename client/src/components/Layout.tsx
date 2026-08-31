@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import WhatsAppBell from './WhatsAppBell'
-import { Bot, Compass, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Target, Calculator, ListTodo, NotebookPen, MessageCircle } from 'lucide-react'
+import { Bot, Compass, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Target, Calculator, ListTodo, NotebookPen, MessageCircle, Sparkles } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import GlobalSearch from './GlobalSearch'
@@ -85,6 +85,10 @@ const profileMenuGroups = [
 const profileMenuItems = profileMenuGroups.flatMap((g) => g.items)
 
 const reportItems = [
+  /* Asking for a report in plain English. adminOnly rather than a module
+     permission: it can reach revenue and every rep's numbers, and the server
+     enforces the same rule. */
+  { to: '/reports/ask', label: 'Ask for a report', icon: Sparkles, perm: '', adminOnly: true },
   { to: '/reports/monthly', label: 'Monthly Payments', icon: CalendarClock, perm: 'reports_monthly' },
   { to: '/reports/units', label: 'Unit Revenue', icon: Building2, perm: 'reports_units' },
   { to: '/reports/rates', label: 'Actual vs Leased', icon: Wallet, perm: 'reports_units' },
@@ -323,7 +327,7 @@ export default function Layout() {
     || movingReportItems.some(({ perm }) => hasPermission(perm))
   const hasStorageAccess = navTop.some(({ perm }) => !perm || hasPermission(perm))
     || navGroups.some(g => g.items.some(({ perm }) => !perm || hasPermission(perm)))
-    || reportItems.some(({ perm }) => hasPermission(perm))
+    || reportItems.some(({ perm, adminOnly }) => (adminOnly ? isAdmin : hasPermission(perm)))
     || navBottom.some(({ perm }) => !perm || hasPermission(perm))
   // Nothing to switch to → no switcher (moving-only users, storage-only users,
   // and sales reps, who keep their own flat nav).
@@ -529,7 +533,7 @@ export default function Layout() {
 
         {/* Reports */}
         {showStorageNav && (() => {
-          const visibleReports = reportItems.filter(({ perm }) => hasPermission(perm))
+          const visibleReports = reportItems.filter(({ perm, adminOnly }) => (adminOnly ? isAdmin : hasPermission(perm)))
           if (visibleReports.length === 0) return null
           if (isCollapsed) {
             return (

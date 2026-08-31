@@ -55,6 +55,7 @@ import ContractDetail from './pages/ContractDetail'
 import Payments from './pages/Payments'
 import Documents from './pages/Documents'
 import Reports from './pages/Reports'
+import AskReports from './pages/reports/AskReports'
 import MonthlyReport from './pages/reports/MonthlyReport'
 import UnitsReport from './pages/reports/UnitsReport'
 import FinancesReport from './pages/reports/FinancesReport'
@@ -215,6 +216,9 @@ export default function App() {
         <Route path="/payments" element={<PermGuard module="payments"><Payments /></PermGuard>} />
         <Route path="/documents" element={<PermGuard module="documents"><Documents /></PermGuard>} />
         <Route path="/reports" element={<Reports />} />
+        {/* Admin-only: a report here can reach revenue and every rep's numbers,
+            and the server enforces the same rule. */}
+        <Route path="/reports/ask" element={<AdminGuard><AskReports /></AdminGuard>} />
         <Route path="/reports/monthly" element={<PermGuard module="reports_monthly"><MonthlyReport /></PermGuard>} />
         <Route path="/reports/units" element={<PermGuard module="reports_units"><UnitsReport /></PermGuard>} />
         <Route path="/reports/finances" element={<PermGuard module="reports_finances"><FinancesReport /></PermGuard>} />
