@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import {
   Send, MessageSquare, RefreshCw, UserPlus, UserCheck, Bell, BellOff, FileText,
   Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Paperclip, Pencil,
-  Bot, Tag, Check, ClipboardList, Sparkles, Trash2, MapPin, Mic, Square, AlertTriangle,
+  Bot, Tag, Check, ClipboardList, Sparkles, Trash2, MapPin, Mic, Square, AlertTriangle, MoreVertical,
 } from 'lucide-react'
 import { useVoiceRecorder, recordingSupported, formatDuration } from '../lib/voiceRecorder'
 import { api, whatsappApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel } from '../lib/api'
@@ -279,6 +279,13 @@ function Attachment({ messageId, media }: { messageId: string; media: WaMedia })
 }
 
 /* ── small presentational helpers ─────────────────────────────────────── */
+/* A row in the chat's overflow menu.
+ *
+ * The header carried five circular icons and no words, which is fine on a
+ * desktop where you can hover for a tooltip and hopeless on a phone. Behind
+ * one button they can be what they always should have been: named actions. */
+const MENU_ROW = 'w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-sm cursor-pointer hover:bg-[#F7F3FF]'
+
 function IconButton({
   title, onClick, children, tone = 'light', className,
 }: {
@@ -523,10 +530,11 @@ function LabelChip({ label, onRemove }: { label: WaLabel; onRemove?: () => void 
  * The whole ticked set is sent on each change rather than a delta, so what is
  * stored is always exactly what is on screen.
  */
-function LabelPicker({ convo, labels, onChanged }: {
+function LabelPicker({ convo, labels, onChanged, menuItem }: {
   convo: WhatsAppConversation
   labels: WaLabel[]
   onChanged: () => void
+  menuItem?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [newName, setNewName] = useState('')
@@ -578,16 +586,24 @@ function LabelPicker({ convo, labels, onChanged }: {
 
   return (
     <div className="relative" ref={boxRef}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center justify-center gap-1 rounded-full cursor-pointer shrink-0"
-        style={{ minWidth: 32, height: 32, padding: on.size > 0 ? '0 9px' : 0, background: '#F7F3FF', border: '1px solid #EDE5FF', color: '#4A1FA0' }}
-        title="Label this chat"
-        aria-label="Label this chat"
-      >
-        <Tag size={14} />{on.size > 0 ? <span style={{ fontSize: 11, fontWeight: 700 }}>{on.size}</span> : null}
-      </button>
+      {menuItem ? (
+        <button type="button" onClick={() => setOpen((v) => !v)} className={MENU_ROW} style={{ color: INK }}>
+          <Tag size={15} style={{ color: '#4A1FA0' }} />
+          <span className="flex-1">Labels</span>
+          {on.size > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: '#4A1FA0' }}>{on.size}</span>}
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="inline-flex items-center justify-center gap-1 rounded-full cursor-pointer shrink-0"
+          style={{ minWidth: 32, height: 32, padding: on.size > 0 ? '0 9px' : 0, background: '#F7F3FF', border: '1px solid #EDE5FF', color: '#4A1FA0' }}
+          title="Label this chat"
+          aria-label="Label this chat"
+        >
+          <Tag size={14} />{on.size > 0 ? <span style={{ fontSize: 11, fontWeight: 700 }}>{on.size}</span> : null}
+        </button>
+      )}
 
       {open && (
         <div
@@ -1070,7 +1086,7 @@ type AssignableUser = { _id: string; name: string; role: string }
  * leaving the page, and prefills what they actually said so it is not retyped
  * from memory a day later.
  */
-function TaskFromChat({ convo, lastInbound }: { convo: WhatsAppConversation; lastInbound: string }) {
+function TaskFromChat({ convo, lastInbound, menuItem }: { convo: WhatsAppConversation; lastInbound: string; menuItem?: boolean }) {
   const [open, setOpen] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -1119,16 +1135,23 @@ function TaskFromChat({ convo, lastInbound }: { convo: WhatsAppConversation; las
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="shrink-0 inline-flex items-center justify-center rounded-full cursor-pointer"
-        style={{ width: 32, height: 32, background: '#FFF7E6', border: '1px solid #F5DFB8', color: '#B45309' }}
-        title="Create a task from this chat"
-        aria-label="Create a task from this chat"
-      >
-        <ClipboardList size={14} />
-      </button>
+      {menuItem ? (
+        <button type="button" onClick={() => setOpen(true)} className={MENU_ROW} style={{ color: INK }}>
+          <ClipboardList size={15} style={{ color: '#B45309' }} />
+          <span className="flex-1">Create a task</span>
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="shrink-0 inline-flex items-center justify-center rounded-full cursor-pointer"
+          style={{ width: 32, height: 32, background: '#FFF7E6', border: '1px solid #F5DFB8', color: '#B45309' }}
+          title="Create a task from this chat"
+          aria-label="Create a task from this chat"
+        >
+          <ClipboardList size={14} />
+        </button>
+      )}
 
       <SlideOver
         open={open}
@@ -1233,7 +1256,7 @@ function TaskFromChat({ convo, lastInbound }: { convo: WhatsAppConversation; las
   )
 }
 
-function LeadAction({ convo, onChanged }: { convo: WhatsAppConversation; onChanged: () => void }) {
+function LeadAction({ convo, onChanged, menuItem }: { convo: WhatsAppConversation; onChanged: () => void; menuItem?: boolean }) {
   const [err, setErr] = useState('')
 
   /* Every chat already has a Lead behind it, carrying a generated name like
@@ -1286,49 +1309,10 @@ function LeadAction({ convo, onChanged }: { convo: WhatsAppConversation; onChang
 
   const pill = 'wa-pill inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold cursor-pointer transition-colors disabled:opacity-60 disabled:cursor-not-allowed'
 
-  return (
-    <div className="flex items-center gap-2 flex-wrap justify-end">
-      {err && <span className="text-xs text-red-600 max-w-[220px] truncate" title={err}>{err}</span>}
-      {!named && !convo.customer ? (
-        <button
-          type="button"
-          className={pill}
-          style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', color: '#4A1FA0' }}
-          // Prefilled with their WhatsApp profile name: it is almost always
-          // right, and retyping a name we already have is busywork.
-          title="Save as lead"
-          aria-label="Save as lead"
-          onClick={() => { setErr(''); setLeadForm({ fullName: convo.lead?.profileName || '', email: '', owner: '', notes: '' }) }}
-        >
-          <UserPlus size={13} /> <span className="wa-pill-label">Save as lead</span>
-        </button>
-      ) : convo.customer ? (
-        // Already a customer: open their profile rather than offering to make
-        // them one again.
-        <Link
-          to={`/customers/${convo.customer._id}`}
-          title={`Open ${convo.customer.fullName}`}
-          aria-label={`Open ${convo.customer.fullName}`}
-          className="inline-flex items-center justify-center rounded-full shrink-0"
-          style={{ width: 32, height: 32, background: 'rgba(22,163,74,.09)', border: '1px solid rgba(22,163,74,.28)', color: '#047857' }}
-        >
-          <UserCheck size={14} />
-        </Link>
-      ) : (
-        <>
-          <button
-            type="button"
-            className={pill}
-            style={{ background: '#5B2BC9', color: '#fff' }}
-            title="Save as customer"
-            aria-label="Save as customer"
-            onClick={() => { setResult(null); setErr(''); setFormOpen(true) }}
-          >
-            <UserCheck size={13} /> <span className="wa-pill-label">Save as customer</span>
-          </button>
-        </>
-      )}
-
+  /* One copy of the dialogs, rendered by whichever variant is on screen.
+     Two copies would mean two pieces of state pretending to be one. */
+  const modals = (
+    <>
       <Modal open={leadForm !== null} onClose={() => setLeadForm(null)} title="Save as lead">
         {leadForm && (
           <div className="space-y-3">
@@ -1385,7 +1369,7 @@ function LeadAction({ convo, onChanged }: { convo: WhatsAppConversation; onChang
           </div>
         )}
       </Modal>
-
+  
       <Modal
         open={formOpen}
         onClose={() => { setFormOpen(false); setResult(null) }}
@@ -1433,6 +1417,91 @@ function LeadAction({ convo, onChanged }: { convo: WhatsAppConversation; onChang
           />
         )}
       </Modal>
+    </>
+  )
+
+  /* The same three states, as named rows. Which one shows is the whole point:
+     an unnamed chat offers "Save as lead", a named one "Save as customer", and
+     somebody who is already a customer gets a way to open their profile. */
+  if (menuItem) {
+    return (
+      <>
+        {err && <p className="px-3 py-1.5 text-xs text-red-600">{err}</p>}
+        {!named && !convo.customer ? (
+          <button
+            type="button"
+            className={MENU_ROW}
+            style={{ color: INK }}
+            onClick={() => { setErr(''); setLeadForm({ fullName: convo.lead?.profileName || '', email: '', owner: '', notes: '' }) }}
+          >
+            <UserPlus size={15} style={{ color: '#4A1FA0' }} />
+            <span className="flex-1">Save as lead</span>
+          </button>
+        ) : convo.customer ? (
+          <Link to={`/customers/${convo.customer._id}`} className={MENU_ROW} style={{ color: INK, textDecoration: 'none' }}>
+            <UserCheck size={15} style={{ color: '#047857' }} />
+            <span className="flex-1 truncate">Open {convo.customer.fullName}</span>
+          </Link>
+        ) : (
+          <button
+            type="button"
+            className={MENU_ROW}
+            style={{ color: INK }}
+            onClick={() => { setResult(null); setErr(''); setFormOpen(true) }}
+          >
+            <UserCheck size={15} style={{ color: '#4A1FA0' }} />
+            <span className="flex-1">Save as customer</span>
+          </button>
+        )}
+        {modals}
+      </>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap justify-end">
+      {err && <span className="text-xs text-red-600 max-w-[220px] truncate" title={err}>{err}</span>}
+      {!named && !convo.customer ? (
+        <button
+          type="button"
+          className={pill}
+          style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', color: '#4A1FA0' }}
+          // Prefilled with their WhatsApp profile name: it is almost always
+          // right, and retyping a name we already have is busywork.
+          title="Save as lead"
+          aria-label="Save as lead"
+          onClick={() => { setErr(''); setLeadForm({ fullName: convo.lead?.profileName || '', email: '', owner: '', notes: '' }) }}
+        >
+          <UserPlus size={13} /> <span className="wa-pill-label">Save as lead</span>
+        </button>
+      ) : convo.customer ? (
+        // Already a customer: open their profile rather than offering to make
+        // them one again.
+        <Link
+          to={`/customers/${convo.customer._id}`}
+          title={`Open ${convo.customer.fullName}`}
+          aria-label={`Open ${convo.customer.fullName}`}
+          className="inline-flex items-center justify-center rounded-full shrink-0"
+          style={{ width: 32, height: 32, background: 'rgba(22,163,74,.09)', border: '1px solid rgba(22,163,74,.28)', color: '#047857' }}
+        >
+          <UserCheck size={14} />
+        </Link>
+      ) : (
+        <>
+          <button
+            type="button"
+            className={pill}
+            style={{ background: '#5B2BC9', color: '#fff' }}
+            title="Save as customer"
+            aria-label="Save as customer"
+            onClick={() => { setResult(null); setErr(''); setFormOpen(true) }}
+          >
+            <UserCheck size={13} /> <span className="wa-pill-label">Save as customer</span>
+          </button>
+        </>
+      )}
+
+      {modals}
     </div>
   )
 }
@@ -1534,6 +1603,21 @@ export default function WhatsApp() {
   mutedRef.current = muted
   // When this console was opened. Anything older than this is backlog, not news.
   const openedAt = useRef(Date.now())
+
+  /* The chat's overflow menu. Closes on a click anywhere else, which is what
+     every menu in this app does and what people expect from one. */
+  const [chatMenuOpen, setChatMenuOpen] = useState(false)
+  const chatMenuRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!chatMenuOpen) return
+    const away = (e: MouseEvent) => {
+      if (!chatMenuRef.current?.contains(e.target as Node)) setChatMenuOpen(false)
+    }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setChatMenuOpen(false) }
+    document.addEventListener('mousedown', away)
+    document.addEventListener('keydown', esc)
+    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc) }
+  }, [chatMenuOpen])
   const selectedRef = useRef(selectedPhone)
   selectedRef.current = selectedPhone
 
@@ -2408,33 +2492,66 @@ export default function WhatsApp() {
                   <div className="truncate" style={{ fontSize: 12, color: FAINT_INK }}>+{selectedConvo.phoneNormalized}</div>
                 </div>
 
-                {/* Straight through to the real WhatsApp, in a new tab. This
-                    console holds the history and is where a reply gets
-                    recorded, but a voice note or an attachment happens in the
-                    app itself and there was no way to get there. */}
-                <a
-                  href={`https://wa.me/${selectedConvo.phoneNormalized}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  title="Open this chat in WhatsApp, in a new tab"
-                  aria-label="Open this chat in WhatsApp"
-                  className="wa-head-extra inline-flex items-center justify-center rounded-full shrink-0"
-                  style={{ width: 32, height: 32, background: 'rgba(22,163,74,.09)', border: '1px solid rgba(22,163,74,.28)', color: '#047857' }}
-                >
-                  <MessageSquare size={14} />
-                </a>
+                {/* Everything this chat can do, behind one button.
+                    Five unlabelled circles told you nothing and left no room
+                    for the name; named rows say what they are and cost 32
+                    pixels. */}
+                <div className="relative shrink-0" ref={chatMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setChatMenuOpen((v) => !v)}
+                    className="inline-flex items-center justify-center rounded-full cursor-pointer"
+                    style={{ width: 32, height: 32, background: chatMenuOpen ? '#EDE5FF' : '#F7F3FF', border: '1px solid #EDE5FF', color: '#4A1FA0' }}
+                    title="More"
+                    aria-label="More actions for this chat"
+                    aria-expanded={chatMenuOpen}
+                  >
+                    <MoreVertical size={16} />
+                  </button>
 
-                <div className="flex items-center shrink-0" style={{ gap: 6 }}>
-                  <LabelPicker
-                    convo={selectedConvo}
-                    labels={waLabels}
-                    onChanged={() => {
-                      refetchConvos()
-                      qc.invalidateQueries({ queryKey: ['wa-labels'] })
-                    }}
-                  />
-                  <TaskFromChat convo={selectedConvo} lastInbound={lastInboundText} />
-                  <LeadAction convo={selectedConvo} onChanged={onSent} />
+                  {chatMenuOpen && (
+                    <div
+                      className="absolute right-0 mt-1 z-30 rounded-xl overflow-hidden"
+                      style={{ background: '#fff', border: `1px solid ${LINE}`, boxShadow: '0 10px 30px rgba(20,8,31,.16)', minWidth: 218 }}
+                      onClick={(e) => {
+                        // A row that opens a dialog should close the menu behind
+                        // it; the label picker opens in place, so it must not.
+                        const t = e.target as HTMLElement
+                        if (!t.closest('[data-keep-open]')) setChatMenuOpen(false)
+                      }}
+                    >
+                      <a
+                        href={`https://wa.me/${selectedConvo.phoneNormalized}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={MENU_ROW}
+                        style={{ color: INK, textDecoration: 'none' }}
+                      >
+                        <MessageSquare size={15} style={{ color: '#047857' }} />
+                        <span className="flex-1">Open in WhatsApp</span>
+                      </a>
+
+                      <button type="button" onClick={() => setQrOpen(true)} className={MENU_ROW} style={{ color: INK }}>
+                        <Zap size={15} style={{ color: '#4A1FA0' }} />
+                        <span className="flex-1">Quick replies</span>
+                      </button>
+
+                      <div data-keep-open>
+                        <LabelPicker
+                          menuItem
+                          convo={selectedConvo}
+                          labels={waLabels}
+                          onChanged={() => {
+                            refetchConvos()
+                            qc.invalidateQueries({ queryKey: ['wa-labels'] })
+                          }}
+                        />
+                      </div>
+
+                      <TaskFromChat menuItem convo={selectedConvo} lastInbound={lastInboundText} />
+                      <LeadAction menuItem convo={selectedConvo} onChanged={onSent} />
+                    </div>
+                  )}
                 </div>
               </>
             ) : (
@@ -2443,16 +2560,6 @@ export default function WhatsApp() {
                 <div style={{ fontSize: 12, color: FAINT_INK }}>Pick a conversation on the left</div>
               </div>
             )}
-            <button
-              type="button"
-              onClick={() => setQrOpen((v) => !v)}
-              className="shrink-0 inline-flex items-center justify-center rounded-full cursor-pointer"
-              style={{ width: 32, height: 32, background: '#F7F3FF', border: '1px solid #EDE5FF', color: '#4A1FA0' }}
-              title="Quick replies"
-              aria-label="Quick replies"
-            >
-              <Zap size={14} />
-            </button>
           </header>
 
           {selectedConvo && <ConversationDigest phoneNormalized={selectedConvo.phoneNormalized} />}

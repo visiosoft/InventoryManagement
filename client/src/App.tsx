@@ -56,8 +56,6 @@ import Payments from './pages/Payments'
 import Documents from './pages/Documents'
 import Reports from './pages/Reports'
 import AskReports from './pages/reports/AskReports'
-import ContractsReport from './pages/reports/ContractsReport'
-import ExpiringContractsReport from './pages/reports/ExpiringContractsReport'
 import DailyDigest from './pages/DailyDigest'
 import RatesReport from './pages/reports/RatesReport'
 import Settings from './pages/Settings'
@@ -212,8 +210,6 @@ export default function App() {
         {/* Admin-only: a report here can reach revenue and every rep's numbers,
             and the server enforces the same rule. */}
         <Route path="/reports/ask" element={<AdminGuard><AskReports /></AdminGuard>} />
-        <Route path="/reports/contracts" element={<PermGuard module="reports_contracts"><ContractsReport /></PermGuard>} />
-        <Route path="/reports/expiring" element={<PermGuard module="reports_expiring"><ExpiringContractsReport /></PermGuard>} />
         <Route path="/reports/conversations" element={<PermGuard module="reports_conversations"><DailyDigest /></PermGuard>} />
         <Route path="/reports/rates" element={<PermGuard module="reports_units"><RatesReport /></PermGuard>} />
         <Route path="/approvals" element={<AdminGuard><Approvals /></AdminGuard>} />

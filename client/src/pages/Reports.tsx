@@ -3,13 +3,11 @@ import { useAuth } from '../lib/auth'
 
 /* Where /reports lands, in order of preference.
  *
- * Only routes that still exist. Seven reports were removed, and leaving them
+ * Only routes that still exist. Nine reports were removed, and leaving them
  * listed here would send somebody with that permission to a page that is no
  * longer built — a blank screen rather than an honest redirect. */
 const REPORT_ROUTES = [
   { perm: 'reports_units',         to: '/reports/rates' },
-  { perm: 'reports_contracts',     to: '/reports/contracts' },
-  { perm: 'reports_expiring',      to: '/reports/expiring' },
   { perm: 'reports_conversations', to: '/reports/conversations' },
 ]
 
