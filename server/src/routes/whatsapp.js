@@ -380,7 +380,16 @@ router.get('/conversations', async (req, res) => {
 
     let visible = rows;
     if (q) {
-        const digits = q.replace(/\D/g, '');
+        /* Numbers are matched on their digits, wherever they appear.
+         *
+         * The leading zero of the local form is dropped first: 055 464 4265 is
+         * stored as 971554644265, and searching the digits raw looked for
+         * "0554644265" inside it and found nothing. Anyone typing a number the
+         * way it is written on a card got no result.
+         *
+         * Contains, not equals, so a fragment works - the last four digits are
+         * how people usually remember a number they are looking for. */
+        const digits = q.replace(/\D/g, '').replace(/^0+/, '');
         visible = rows.filter((r) => (
             nameFor(r._id).includes(q)
             || (digits && r._id.includes(digits))

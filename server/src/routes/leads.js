@@ -185,10 +185,18 @@ router.get('/', async (req, res) => {
         const re = new RegExp(escRegex(term), 'i');
         const or = [{ fullName: re }, { firstName: re }, { lastName: re }, { email: re }, { phone: re }, { whatsappNo: re }, { notes: re }];
 
-        const digits = term.replace(/\D/g, '');
-        if (digits.length >= 6) {
-            const tail = digits.slice(-9);
-            or.push({ phoneNormalized: new RegExp(`${escRegex(tail)}$`) });
+        /* Anchored to the end, this found a whole number and nothing less:
+           "+971 55 464" gave the eight digits 97155464, which is not the END of
+           971554644265, so a half-typed number returned nothing at all. It
+           contains-matches now, which is what typing part of a number means.
+
+           The leading zero of the local form goes first - 0554644265 is stored
+           as 971554644265 - and only the last nine digits are used, so the
+           country code cannot stop a match. */
+        const digits = term.replace(/\D/g, '').replace(/^0+/, '');
+        if (digits.length >= 4) {
+            const core = digits.length > 9 ? digits.slice(-9) : digits;
+            or.push({ phoneNormalized: new RegExp(escRegex(core)) });
         }
 
         filter.$or = or;
