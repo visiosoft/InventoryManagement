@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import {
   Send, MessageSquare, RefreshCw, UserPlus, UserCheck, Bell, BellOff, FileText,
   Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Paperclip, Pencil,
-  Bot, Tag, Check, ClipboardList, Sparkles, Trash2, MapPin, Mic, Square, AlertTriangle, MoreVertical,
+  Bot, Tag, Check, ClipboardList, Sparkles, Trash2, MapPin, Mic, Square, AlertTriangle, MoreVertical, UserCog,
 } from 'lucide-react'
 import { useVoiceRecorder, recordingSupported, formatDuration } from '../lib/voiceRecorder'
 import { api, whatsappApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel } from '../lib/api'
@@ -1252,6 +1252,89 @@ function TaskFromChat({ convo, lastInbound, menuItem }: { convo: WhatsAppConvers
           </div>
         )}
       </SlideOver>
+    </>
+  )
+}
+
+/**
+ * Hand this chat to a sales rep, without leaving the inbox.
+ *
+ * Assigning used to mean opening the lead in another tab, which is why chats
+ * sat unowned: the moment you know who should take it is while you are reading
+ * it. Every chat already has a lead behind it, so this is an owner change.
+ *
+ * It goes through PUT /leads/:id, the same route the leads board uses, so the
+ * two-minute response clock starts here exactly as it does there rather than
+ * this being a quiet side door.
+ */
+function AssignRep({ convo, onChanged }: { convo: WhatsAppConversation; onChanged: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [err, setErr] = useState('')
+  const leadId = convo.lead?._id
+  const ownerId = convo.lead?.ownerId ?? null
+
+  const { data: people = [] } = useQuery<{ _id: string; name: string; email: string; role?: string }[]>({
+    queryKey: ['assignable-users'],
+    queryFn: () => api.get('/users/assignable').then((r) => r.data ?? []),
+    enabled: open,
+    staleTime: 5 * 60_000,
+  })
+
+  const assign = useMutation({
+    mutationFn: (owner: string | null) => api.put(`/leads/${leadId}`, { owner }),
+    onSuccess: () => { setErr(''); setOpen(false); onChanged() },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  if (!leadId) return null
+
+  return (
+    <>
+      <button type="button" onClick={() => setOpen((v) => !v)} className={MENU_ROW} style={{ color: INK }}>
+        <UserCog size={15} style={{ color: '#4A1FA0' }} />
+        <span className="flex-1">
+          Assign to
+          {convo.lead?.ownerName && (
+            <span style={{ color: FAINT_INK }}> · {convo.lead.ownerName}</span>
+          )}
+        </span>
+        <ChevronDown size={13} style={{ color: FAINT_INK, transform: open ? 'rotate(180deg)' : undefined }} />
+      </button>
+
+      {open && (
+        <div style={{ borderTop: `1px solid ${LINE}`, background: '#FBF8F2', maxHeight: 210, overflowY: 'auto' }}>
+          {err && <p className="px-3 py-1.5 text-xs" style={{ color: '#B91C1C' }}>{err}</p>}
+          {people.length === 0 && (
+            <p className="px-3 py-2 text-xs" style={{ color: FAINT_INK }}>Loading people…</p>
+          )}
+          {people.map((u) => (
+            <button
+              key={u._id}
+              type="button"
+              disabled={assign.isPending}
+              onClick={() => assign.mutate(u._id)}
+              className={MENU_ROW}
+              style={{ color: INK, fontWeight: u._id === ownerId ? 700 : 500 }}
+            >
+              <span className="flex-1 truncate">{u.name || u.email}</span>
+              {u._id === ownerId && <Check size={14} style={{ color: '#4A1FA0' }} />}
+            </button>
+          ))}
+          {/* Taking it off somebody is as real an action as giving it to them —
+              an unassigned lead shows on the board as needing an owner. */}
+          {ownerId && (
+            <button
+              type="button"
+              disabled={assign.isPending}
+              onClick={() => assign.mutate(null)}
+              className={MENU_ROW}
+              style={{ color: '#B45309' }}
+            >
+              <span className="flex-1">Leave unassigned</span>
+            </button>
+          )}
+        </div>
+      )}
     </>
   )
 }
@@ -2549,6 +2632,13 @@ export default function WhatsApp() {
                       </div>
 
                       <TaskFromChat menuItem convo={selectedConvo} lastInbound={lastInboundText} />
+
+                      {/* Opens in place like the labels row, so picking a
+                          person does not shut the menu before the list. */}
+                      <div data-keep-open>
+                        <AssignRep convo={selectedConvo} onChanged={() => { refetchConvos(); onSent() }} />
+                      </div>
+
                       <LeadAction menuItem convo={selectedConvo} onChanged={onSent} />
                     </div>
                   )}

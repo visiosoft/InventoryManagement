@@ -443,6 +443,10 @@ router.get('/conversations', async (req, res) => {
                     fullName: lead.fullName,
                     status: lead.status,
                     ownerName: byOwner.get(String(lead.owner)) || '',
+                    // The id as well as the name: the inbox lets you reassign
+                    // from the chat, and matching a person by name would pick
+                    // the wrong one the day two share a first name.
+                    ownerId: lead.owner ? String(lead.owner) : null,
                     profileName: lead.whatsappProfileName || '',
                 }
                 : null,

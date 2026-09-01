@@ -308,6 +308,9 @@ export type WhatsAppMsg = {
 export type WhatsAppLeadRef = {
   _id: string; fullName: string; status: string
   ownerName?: string
+  /** Who owns it, by id — the inbox reassigns from the chat and must not
+      identify a person by name. null when nobody has it. */
+  ownerId?: string | null
   /** The name they set on their own WhatsApp profile, if we have seen one. */
   profileName?: string
 }
