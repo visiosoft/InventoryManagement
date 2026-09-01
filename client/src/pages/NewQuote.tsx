@@ -1563,11 +1563,11 @@ export default function NewQuote() {
                       <InfoRow label={`Add-ons (${addOnRows.length})`} value={`${formatMoney(addOnsTotal)} AED`} />
                       {holdAdvance ? (
                         <InfoRow
-                          label={advanceExtra > 0 ? 'Refundable advance (held)' : 'Advance rent — adjusted against the final period'}
+                          label={advanceExtra > 0 ? 'Refundable Deposit (held)' : 'Refundable Deposit — adjusted against the final period'}
                           value={
                             <span className="inline-flex items-center gap-2">
                               {advanceExtra > 0 ? `${formatMoney(advanceExtra)} AED` : `${formatMoney(advanceTotal)} AED · included`}
-                              <button type="button" title="Remove the held advance from this quote" disabled={patchQuote.isPending}
+                              <button type="button" title="Remove the refundable deposit from this quote" disabled={patchQuote.isPending}
                                 onClick={() => { setHoldAdvance(false); if (quoteId) patchQuote.mutate({ holdAdvance: false }) }}
                                 className="text-destructive font-bold cursor-pointer leading-none disabled:opacity-50">×</button>
                             </span>
@@ -1575,7 +1575,7 @@ export default function NewQuote() {
                         />
                       ) : (
                         <div className="flex items-center justify-between text-[12px] py-1" style={{ color: MUTED }}>
-                          <span>Refundable advance removed for this quote</span>
+                          <span>Refundable Deposit removed for this quote</span>
                           <button type="button" disabled={patchQuote.isPending}
                             onClick={() => { setHoldAdvance(true); if (quoteId) patchQuote.mutate({ holdAdvance: true }) }}
                             className="font-bold cursor-pointer disabled:opacity-50" style={{ color: PURPLE }}>+ Add back</button>

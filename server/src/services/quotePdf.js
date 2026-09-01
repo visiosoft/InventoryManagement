@@ -186,10 +186,29 @@ export function renderQuotePdf({ quote, co }) {
          for (const u of quote.units || []) {
             const uDays = u.startDate && u.endDate ? Math.round((new Date(u.endDate) - new Date(u.startDate)) / 86400000) : 0;
             const uTotalWeeks = uDays > 0 ? Math.ceil(uDays / 7) : 1;
-            if (uTotalWeeks > 4) continue;
             const wkFull = Number((u.rate / 4).toFixed(2));
+            /* Over four weeks the advance prepays the final period, so it is
+               already inside the rent row above. The customer still pays it and
+               still gets it back, so it was wrong to leave it off the quote
+               entirely — but it cannot carry an amount either, or the sub total
+               below (which is the sum of these rows) would bill it twice. It
+               prints as a line worth nothing extra, with the held figure named
+               in the description. */
+            if (uTotalWeeks > 4) {
+               const held = Number((wkFull * 4).toFixed(2));
+               rows.push({
+                  title: `Refundable Deposit · Unit ${u.unitNumber}`,
+                  sub: `${num(held)} AED of the rent above — the final 4 weeks, prepaid and adjusted at the end of the rental`,
+                  qty: 4,
+                  rate: wkFull,
+                  amount: 0,
+                  amountText: 'Included',
+                  taxable: false,
+               });
+               continue;
+            }
             rows.push({
-               title: `Refundable Advance · Unit ${u.unitNumber}`,
+               title: `Refundable Deposit · Unit ${u.unitNumber}`,
                sub: 'Held and refunded or adjusted at the end of the rental',
                qty: uTotalWeeks,
                rate: wkFull,
@@ -236,7 +255,11 @@ export function renderQuotePdf({ quote, co }) {
          doc.font('Helvetica').fontSize(9).fillColor(BLACK);
          doc.text(String(r.qty), TX + nW + iW, y + 8, { width: qW, align: 'right' });
          doc.text(num(r.rate), TX + nW + iW + qW, y + 8, { width: rW, align: 'right' });
-         doc.text(num(r.amount), TX + nW + iW + qW + rW, y + 8, { width: aW - 8, align: 'right' });
+         // A row can print something other than its figure — see the refundable
+         // deposit above, which is worth 0 here because it sits inside the rent.
+         doc.fillColor(r.amountText ? GRAY : BLACK)
+            .text(r.amountText ?? num(r.amount), TX + nW + iW + qW + rW, y + 8, { width: aW - 8, align: 'right' });
+         doc.fillColor(BLACK);
          y += rH;
       });
 
