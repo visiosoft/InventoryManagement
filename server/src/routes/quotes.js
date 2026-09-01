@@ -5,6 +5,7 @@ import { availableUnitsResponse } from '../services/unitAvailability.js';
 import { syncUnitStatus } from '../utils/unitStatus.js';
 import { renderQuotePdf } from '../services/quotePdf.js';
 import { companyForQuote } from '../services/companyIdentity.js';
+import { vatBase, vatOn } from '../services/quoteVat.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { archivePdf } from '../utils/archivePdf.js';
 
@@ -143,7 +144,12 @@ function normalizeBody(body, { holdAdvance = true } = {}) {
      * Absent from an older quote's body means on, which is the standing rule. */
     const vatEnabled = body.vatEnabled === undefined ? true : Boolean(body.vatEnabled);
     const vatRate = vatEnabled ? 5 : 0;
-    const vatAmount = Number((Math.max(0, subTotal + adjustment) * (vatRate / 100)).toFixed(2));
+    /* Charged on the sale, which is not the same as the sub total: an add-on
+       or line item named as refundable is money held, not sold, and taxing it
+       bills the customer 5% of what they are owed. Two live quotes carry an
+       add-on called "Refundable Deposit". services/quoteVat.js holds the rule,
+       and the printed quotation applies the same one. */
+    const vatAmount = vatOn(vatBase({ unitsTotal, addOns, items, adjustment }), vatRate);
 
     const total = Number((subTotal + adjustment + vatAmount + advanceExtra + deposit).toFixed(2));
 

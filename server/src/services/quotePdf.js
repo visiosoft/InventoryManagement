@@ -5,6 +5,7 @@ import { drawCompanyLogo } from './pdfLogo.js';
    services/companyIdentity.js. FALLBACK_CO is the literal this file used to
    carry, so a quote for a facility nobody has filled in prints unchanged. */
 import { FALLBACK_CO } from './companyIdentity.js';
+import { isRefundableRow } from './quoteVat.js';
 
 // ── Palette ─────────────────────────────────────────────────────────────────
 const DARK = '#1F2937';
@@ -204,11 +205,12 @@ export function renderQuotePdf({ quote, co }) {
             qty: a.quantity,
             rate: a.rate,
             amount: a.amount,
-            taxable: true,
+            // An add-on named as refundable is held, not sold — see quoteVat.js.
+            taxable: !isRefundableRow(a.name),
          });
       }
       for (const it of quote.items || []) {
-         rows.push({ title: it.itemDetails || '-', sub: '', qty: it.quantity ?? 0, rate: it.rate, amount: it.amount, taxable: true });
+         rows.push({ title: it.itemDetails || '-', sub: '', qty: it.quantity ?? 0, rate: it.rate, amount: it.amount, taxable: !isRefundableRow(it.itemDetails) });
       }
       const depositAmt = Number(quote.deposit || 0);
       if (depositAmt > 0) {
