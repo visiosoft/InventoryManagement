@@ -61,7 +61,7 @@ function avatarColor(seed: string) {
 export function Avatar({ seed, label, size = 40 }: { seed: string; label: string; size?: number }) {
   return (
     <div
-      className="shrink-0 rounded-full flex items-center justify-center text-white font-bold"
+      className="wa-avatar shrink-0 rounded-full flex items-center justify-center text-white font-bold"
       style={{ width: size, height: size, background: avatarColor(seed), fontSize: size * 0.34 }}
       aria-hidden
     >

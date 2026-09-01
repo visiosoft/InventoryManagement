@@ -105,10 +105,21 @@ const CSS = `
   .wa-thread { padding: 14px 12px !important; }
   .wa-bubble { max-width: 88% !important; }
 
-  /* The header carries a name and up to five controls. Letting the name
-     shrink first keeps every button reachable rather than pushing the last
-     one off the edge. */
-  .wa-head { gap: 8px !important; padding-left: 10px !important; padding-right: 10px !important; }
+  /* The header had a name and five controls competing for 360 pixels, and the
+     name lost: "Save as customer" alone is a third of the screen, so you could
+     not see who you were talking to. The buttons keep their icons and drop
+     their words — each still carries a title and an aria-label — and the name
+     gets the space back. */
+  .wa-head { gap: 6px !important; padding-left: 8px !important; padding-right: 8px !important; }
+  .wa-pill-label { display: none; }
+  .wa-pill { padding: 0 !important; width: 32px; height: 32px; justify-content: center; gap: 0 !important; }
+
+  /* "Lead (Mahmoud Gohar)" is a sentence at this width. The badge still says
+     which it is; who owns it is on the lead itself. */
+  .wa-badge-detail { display: none; }
+
+  /* Small enough to leave room, large enough to still read as a person. */
+  .wa-head .wa-avatar { width: 30px !important; height: 30px !important; font-size: 12px !important; }
 
   /* Comfortable thumb targets, and a composer that does not crowd them. */
   .wa-compose { gap: 6px !important; padding-left: 10px !important; padding-right: 10px !important; }
@@ -1273,7 +1284,7 @@ function LeadAction({ convo, onChanged }: { convo: WhatsAppConversation; onChang
     phones: [dialled],
   }
 
-  const pill = 'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold cursor-pointer transition-colors disabled:opacity-60 disabled:cursor-not-allowed'
+  const pill = 'wa-pill inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold cursor-pointer transition-colors disabled:opacity-60 disabled:cursor-not-allowed'
 
   return (
     <div className="flex items-center gap-2 flex-wrap justify-end">
@@ -1285,9 +1296,11 @@ function LeadAction({ convo, onChanged }: { convo: WhatsAppConversation; onChang
           style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', color: '#4A1FA0' }}
           // Prefilled with their WhatsApp profile name: it is almost always
           // right, and retyping a name we already have is busywork.
+          title="Save as lead"
+          aria-label="Save as lead"
           onClick={() => { setErr(''); setLeadForm({ fullName: convo.lead?.profileName || '', email: '', owner: '', notes: '' }) }}
         >
-          <UserPlus size={13} /> Save as lead
+          <UserPlus size={13} /> <span className="wa-pill-label">Save as lead</span>
         </button>
       ) : convo.customer ? (
         // Already a customer: open their profile rather than offering to make
@@ -1307,9 +1320,11 @@ function LeadAction({ convo, onChanged }: { convo: WhatsAppConversation; onChang
             type="button"
             className={pill}
             style={{ background: '#5B2BC9', color: '#fff' }}
+            title="Save as customer"
+            aria-label="Save as customer"
             onClick={() => { setResult(null); setErr(''); setFormOpen(true) }}
           >
-            <UserCheck size={13} /> Save as customer
+            <UserCheck size={13} /> <span className="wa-pill-label">Save as customer</span>
           </button>
         </>
       )}
@@ -2383,7 +2398,10 @@ export default function WhatsApp() {
                         style={{ fontSize: 10, fontWeight: 700, background: '#F3EDFF', color: '#4A1FA0' }}
                         title={selectedConvo.lead.ownerName ? `Assigned to ${selectedConvo.lead.ownerName}` : 'Not assigned to anybody yet'}
                       >
-                        {selectedConvo.lead.ownerName ? `Lead (${selectedConvo.lead.ownerName})` : 'Lead — unassigned'}
+                        Lead
+                        <span className="wa-badge-detail">
+                          {selectedConvo.lead.ownerName ? ` (${selectedConvo.lead.ownerName})` : ' — unassigned'}
+                        </span>
                       </span>
                     ) : null}
                   </div>
