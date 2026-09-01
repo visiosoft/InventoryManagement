@@ -27,6 +27,9 @@ const SALES_REP_DEFAULT_PERMISSIONS = ['sales_board', 'units', 'customers', 'con
  */
 const ROLE_FLOOR = {
     sales_rep: ['sales_board', 'units'],
+    // Accounts invoice against contracts, so they need the tenant, the unit
+    // and the contract to be reachable. Mirrored in client/src/lib/auth.tsx.
+    accounts: ['dashboard', 'units', 'customers', 'contracts'],
 };
 
 /** The list somebody chose, plus whatever their role cannot be without. */

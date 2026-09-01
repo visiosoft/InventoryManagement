@@ -28,6 +28,12 @@ interface AuthContextValue {
  */
 const ROLE_FLOOR: Record<string, string[]> = {
   sales_rep: ['sales_board', 'units'],
+  /* Accounts raise the invoices, so they need to see what they are invoicing:
+     which units are free, who the tenant is, and the contract behind the
+     charge. Antony had sales_board, moving_jobs and moving_invoices, so the
+     storage side of the nav was empty for him and a task saying "raise the
+     invoice for PB-2026-0359" led nowhere he could open. */
+  accounts: ['dashboard', 'units', 'customers', 'contracts'],
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
