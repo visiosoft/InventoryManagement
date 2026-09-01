@@ -21,8 +21,11 @@ router.get('/', async (req, res) => {
 // Backs Settings → Unit Pricing: actual (list) price vs leased amount.
 router.get('/pricing-matrix', async (req, res) => {
   try {
+    /* Scoped, for the same reason /sizes is: pricing a facility while looking
+       at every facility's units means setting a rate on the wrong building. */
+    const scope = await siteScope(req.query.site);
     const [units, contracts] = await Promise.all([
-      Unit.find().sort({ floor: 1, unitNumber: 1 }).lean(),
+      Unit.find(scope ? scope.unitFilter : {}).sort({ floor: 1, unitNumber: 1 }).lean(),
       Contract.find({ status: { $in: ['active', 'pending_signature'] } })
         .populate('customer', 'fullName')
         .populate('unit', 'price')
@@ -85,10 +88,17 @@ router.get('/pricing-matrix', async (req, res) => {
  *
  * Sizes here are numbers, and they come from the units themselves.
  */
-router.get('/sizes', async (_req, res) => {
+router.get('/sizes', async (req, res) => {
     try {
+        /* Scoped to the facility, like everything else under /units.
+         *
+         * It ignored ?site= and counted every facility together, so a lead at
+         * Al Quoz offered "100 sqft — 11 free of 25" when that building has one
+         * free of fifteen, and offered 80 and 180 sqft sizes it does not stock
+         * at all. A rep reading that promises a unit which is not there. */
+        const scope = await siteScope(req.query.site);
         const rows = await Unit.aggregate([
-            { $match: { sizeSqf: { $ne: null } } },
+            { $match: { ...(scope ? scope.unitFilter : {}), sizeSqf: { $ne: null } } },
             {
                 $group: {
                     _id: '$sizeSqf',
