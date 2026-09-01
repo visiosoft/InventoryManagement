@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { isValidObjectId, Types } from 'mongoose';
 import { stampSignature } from '../services/stampSignature.js';
 import { Contract, Customer, Unit, Payment, Document, Invoice, Quote, AgreementTemplate, nextContractNo, nextInvoiceNo, MessageTemplate } from '../models/index.js';
+import { creditFor, markLeadWon } from '../services/dealCredit.js';
 import { zohoBooksConfigured, zohoOutstandingByCustomer } from '../services/zohoBooks.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { renewLink, moveOutLink } from '../services/renewalLink.js';
@@ -538,6 +539,13 @@ router.post('/', async (req, res) => {
   }
   totalQuotation = Math.round(totalQuotation * 100) / 100;
 
+  /* Which lead this came from, and who gets the credit. Recorded here rather
+     than left to be worked out later - see services/dealCredit.js. */
+  const credit = await creditFor({
+    customer: await Customer.findById(customer).select('phone phones').lean(),
+    fallbackUserId: req.body.salesRep || req.user.id,
+  });
+
   const contract = await Contract.create({
     contractNo: await nextContractNo(),
     customer,
@@ -546,9 +554,13 @@ router.post('/', async (req, res) => {
     billingPeriod, rate, deposit, startDate, endDate, notes,
     firstMonthDiscountPct: Number(req.body.firstMonthDiscountPct || 0),
     totalQuotation,
-    salesRep: req.body.salesRep || req.user.id,
+    lead: credit.leadId,
+    salesRep: req.body.salesRep || credit.ownerId || req.user.id,
     status: 'draft',
   });
+
+  // A lead that has signed is won, whoever ends up credited for it.
+  await markLeadWon({ leadId: credit.leadId, contractNo: contract.contractNo, userId: req.user.id });
 
   await Promise.all(allUnitIds.map((uid) => syncUnitStatus(uid)));
 

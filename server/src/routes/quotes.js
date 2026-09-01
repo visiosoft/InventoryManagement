@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import { Contract, Customer, Invoice, Lead, Payment, Quote, Unit, nextQuoteNo, nextContractNo, nextInvoiceNo } from '../models/index.js';
+import { creditFor, markLeadWon } from '../services/dealCredit.js';
 import { availableUnitsResponse } from '../services/unitAvailability.js';
 import { syncUnitStatus } from '../utils/unitStatus.js';
 import { renderQuotePdf } from '../services/quotePdf.js';
@@ -667,6 +668,15 @@ router.post('/:id/convert-to-contract', async (req, res) => {
         }))
         .filter((p) => p.name);
 
+    /* Which lead this came from, and who gets the credit for closing it.
+       See services/dealCredit.js — the quote names the lead where it has one,
+       and otherwise the customer's number finds it. */
+    const credit = await creditFor({
+        quote,
+        customer: await Customer.findById(quote.customer).select('phone phones').lean(),
+        fallbackUserId: quote.assignedTo || req.user.id,
+    });
+
     const contract = await Contract.create({
         contractNo: await nextContractNo(),
         customer: quote.customer,
@@ -683,7 +693,8 @@ router.post('/:id/convert-to-contract', async (req, res) => {
         authorizedPersons,
         totalQuotation: Number(quote.total || 0),
         quote: quote._id,
-        salesRep: quote.assignedTo || req.user.id,
+        lead: credit.leadId,
+        salesRep: quote.assignedTo || credit.ownerId || req.user.id,
         source: 'quote',
         approvalStatus: 'not_required',
         status: 'draft',
@@ -694,6 +705,9 @@ router.post('/:id/convert-to-contract', async (req, res) => {
     // leaving an orphan draft with no invoice — that orphan previously caused
     // retries to pile up duplicate contracts on every failed attempt.
     try {
+        // Signed, so the lead is won — whoever ends up credited for it.
+        await markLeadWon({ leadId: credit.leadId, contractNo: contract.contractNo, userId: req.user.id });
+
         quote.contract = contract._id;
         quote.timeline.push({ type: 'converted', text: `Converted to contract ${contract.contractNo} by ${userName}`, user: req.user.id });
 

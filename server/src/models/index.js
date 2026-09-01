@@ -439,6 +439,14 @@ const contractSchema = new Schema(
     firstPaymentDate: { type: Date },
     nextPaymentDate: { type: Date },
     quote: { type: Schema.Types.ObjectId, ref: 'Quote' },
+    /* The lead this deal came from.
+     *
+     * Without it there was no way to ask how many of the leads sent to
+     * somebody actually closed — the two halves of the funnel were not
+     * joined, and 209 contracts sat against 6 leads marked won. Set from the
+     * quote's lead where there is one, otherwise by matching the customer's
+     * number; see services/dealCredit.js. */
+    lead: { type: Schema.Types.ObjectId, ref: 'Lead', default: null },
     // Rep credited with this deal — derived from the source quote's
     // assignedTo when converting a quote, or the creator otherwise. Lets
     // revenue eventually be attributed per rep, not just lead counts.
