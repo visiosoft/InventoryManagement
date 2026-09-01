@@ -566,18 +566,21 @@ export default function NewQuote() {
     const days = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86400000)
     if (days <= 0) return 0
     const weeks = Math.ceil(days / 7)
-    const advWeeks = weeks % 4 === 0 ? 4 : weeks % 4
-    return Math.round((rate / 4) * advWeeks * 100) / 100
-  }
-  function isShortTerm(start: string, end: string) {
-    const days = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86400000)
-    return days > 0 && Math.ceil(days / 7) <= 4
+    /* Four weeks, or the whole term if it is shorter. This is the rule the
+       first invoice bills on (routes/quotes.js), and it used to be `weeks % 4`
+       here — so a six-week quote showed 2 weeks held and then invoiced 4. */
+    return Math.round((rate / 4) * Math.min(4, weeks) * 100) / 100
   }
 
   const unitsTotal = unitRows.reduce((s, u) => s + calcUnitPeriodTotal(u.rate, u.discountPct, u.startDate, u.endDate), 0)
+  /* Held on top of the rent, on every term. It used to be added only on terms
+     of four weeks or less, on the reasoning that a longer term's advance
+     prepays the final period and so is already inside the rent — but the first
+     invoice collects it either way, so a year-long quote read 18,732 and was
+     then invoiced 1,480 more. It is charged like the security deposit now, and
+     given back the same way. */
   const advanceTotal = unitRows.reduce((s, u) => s + calcUnitAdvance(u.rate, u.startDate, u.endDate), 0)
-  // Only short terms add the advance on top of the rent
-  const advanceExtra = unitRows.reduce((s, u) => s + (isShortTerm(u.startDate, u.endDate) ? calcUnitAdvance(u.rate, u.startDate, u.endDate) : 0), 0)
+  const advanceExtra = advanceTotal
   const addOnsTotal = addOnRows.reduce((s, a) => s + a.quantity * a.rate, 0)
   const subTotal = unitsTotal + addOnsTotal
   /* VAT at 5% on what is sold.

@@ -127,14 +127,18 @@ function normalizeBody(body, { holdAdvance = true } = {}) {
 
     // The server owns the total — client-sent totals are ignored so every edit
     // path yields the same figure. Rule: rent + add-ons/items + the refundable
-    // advance for short terms + security deposit. For terms over 4 weeks the
-    // advance prepays the final period already counted inside unitsTotal, so it
-    // adds nothing; for terms of 4 weeks or less it is held on top of the rent.
+    // advance + security deposit, both held on top of the rent on every term.
+    //
+    // The advance used to be counted only on terms of 4 weeks or less, on the
+    // reasoning that a longer term's advance prepays the final period and is
+    // therefore already inside unitsTotal. The first invoice does not work that
+    // way - it collects four weeks whatever the term - so a year-long quote
+    // totalled 18,732 and was then invoiced 1,480 more. Same rule as the
+    // invoice now: four weeks, or the whole term if it is shorter, undiscounted.
     const advanceExtra = !holdAdvance ? 0 : units.reduce((sum, u) => {
         const days = Math.round((u.endDate - u.startDate) / 86400000);
         const tw = Math.max(1, Math.ceil(days / 7));
-        if (tw > 4) return sum;
-        return sum + (u.rate / 4) * tw;
+        return sum + (u.rate / 4) * Math.min(4, tw);
     }, 0);
     /* VAT on the supply only.
      *

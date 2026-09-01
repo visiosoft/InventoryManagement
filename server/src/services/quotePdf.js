@@ -175,44 +175,30 @@ export function renderQuotePdf({ quote, co }) {
             taxable: true,
          });
       }
-      // Advance rent (one period, max 4 weeks) is collected on the first
-      // invoice. For terms over 4 weeks it prepays the final period and is
-      // already inside the rent above, so it is NOT charged again here — only
-      // short terms (<= 4 weeks) hold it as a refundable amount on top.
-      // Skipped entirely when the quote removed the held advance (holdAdvance
-      // === false) — mirrors normalizeBody()'s total math in quotes.js, which
-      // this row list must stay in sync with or the printed total won't match.
+      /* The refundable deposit: four weeks, or the whole term if it is
+         shorter, at the undiscounted weekly rate. Held on top of the rent and
+         given back at the end, so it is outside the tax base like the security
+         deposit beneath it.
+
+         It was left off terms over four weeks, on the reasoning that the
+         advance prepays the final period and so was already inside the rent
+         above. The first invoice collects it regardless, so the quote came in
+         short of what the customer was then asked for. Skipped entirely when
+         the quote opts out (holdAdvance === false) - this row list is what the
+         sub total is summed from, so it must match normalizeBody() in
+         routes/quotes.js or the printed total will not match the stored one. */
       if (quote.holdAdvance !== false) {
          for (const u of quote.units || []) {
             const uDays = u.startDate && u.endDate ? Math.round((new Date(u.endDate) - new Date(u.startDate)) / 86400000) : 0;
             const uTotalWeeks = uDays > 0 ? Math.ceil(uDays / 7) : 1;
+            const advWeeks = Math.min(4, uTotalWeeks);
             const wkFull = Number((u.rate / 4).toFixed(2));
-            /* Over four weeks the advance prepays the final period, so it is
-               already inside the rent row above. The customer still pays it and
-               still gets it back, so it was wrong to leave it off the quote
-               entirely — but it cannot carry an amount either, or the sub total
-               below (which is the sum of these rows) would bill it twice. It
-               prints as a line worth nothing extra, with the held figure named
-               in the description. */
-            if (uTotalWeeks > 4) {
-               const held = Number((wkFull * 4).toFixed(2));
-               rows.push({
-                  title: `Refundable Deposit · Unit ${u.unitNumber}`,
-                  sub: `${num(held)} AED of the rent above — the final 4 weeks, prepaid and adjusted at the end of the rental`,
-                  qty: 4,
-                  rate: wkFull,
-                  amount: 0,
-                  amountText: 'Included',
-                  taxable: false,
-               });
-               continue;
-            }
             rows.push({
                title: `Refundable Deposit · Unit ${u.unitNumber}`,
                sub: 'Held and refunded or adjusted at the end of the rental',
-               qty: uTotalWeeks,
+               qty: advWeeks,
                rate: wkFull,
-               amount: Number((wkFull * uTotalWeeks).toFixed(2)),
+               amount: Number((wkFull * advWeeks).toFixed(2)),
                taxable: false,
             });
          }
@@ -255,11 +241,7 @@ export function renderQuotePdf({ quote, co }) {
          doc.font('Helvetica').fontSize(9).fillColor(BLACK);
          doc.text(String(r.qty), TX + nW + iW, y + 8, { width: qW, align: 'right' });
          doc.text(num(r.rate), TX + nW + iW + qW, y + 8, { width: rW, align: 'right' });
-         // A row can print something other than its figure — see the refundable
-         // deposit above, which is worth 0 here because it sits inside the rent.
-         doc.fillColor(r.amountText ? GRAY : BLACK)
-            .text(r.amountText ?? num(r.amount), TX + nW + iW + qW + rW, y + 8, { width: aW - 8, align: 'right' });
-         doc.fillColor(BLACK);
+         doc.text(num(r.amount), TX + nW + iW + qW + rW, y + 8, { width: aW - 8, align: 'right' });
          y += rH;
       });
 
