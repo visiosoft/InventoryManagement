@@ -1086,8 +1086,23 @@ type AssignableUser = { _id: string; name: string; role: string }
  * leaving the page, and prefills what they actually said so it is not retyped
  * from memory a day later.
  */
-function TaskFromChat({ convo, lastInbound, menuItem }: { convo: WhatsAppConversation; lastInbound: string; menuItem?: boolean }) {
-  const [open, setOpen] = useState(false)
+function TaskFromChat({ convo, lastInbound, menuItem, open: openProp, onOpenChange, trigger = true }: {
+  convo: WhatsAppConversation
+  lastInbound: string
+  menuItem?: boolean
+  /* The panel can be driven from outside.
+   *
+   * In the chat's menu it has to be: the row lived inside the dropdown, and
+   * clicking it closed the dropdown, which unmounted this component and took
+   * the half-opened panel with it, so nothing appeared. Quick replies never
+   * had the problem because its state sits on the page, not in the menu. */
+  open?: boolean
+  onOpenChange?: (v: boolean) => void
+  trigger?: boolean
+}) {
+  const [openSelf, setOpenSelf] = useState(false)
+  const open = openProp ?? openSelf
+  const setOpen = onOpenChange ?? setOpenSelf
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [dueDate, setDueDate] = useState('')
@@ -1135,7 +1150,7 @@ function TaskFromChat({ convo, lastInbound, menuItem }: { convo: WhatsAppConvers
 
   return (
     <>
-      {menuItem ? (
+      {!trigger ? null : menuItem ? (
         <button type="button" onClick={() => setOpen(true)} className={MENU_ROW} style={{ color: INK }}>
           <ClipboardList size={15} style={{ color: '#B45309' }} />
           <span className="flex-1">Create a task</span>
@@ -1739,6 +1754,8 @@ export default function WhatsApp() {
   /* The chat's overflow menu. Closes on a click anywhere else, which is what
      every menu in this app does and what people expect from one. */
   const [chatMenuOpen, setChatMenuOpen] = useState(false)
+  // Lives on the page, not in the dropdown: see TaskFromChat.
+  const [taskOpen, setTaskOpen] = useState(false)
   const chatMenuRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     if (!chatMenuOpen) return
@@ -2680,7 +2697,10 @@ export default function WhatsApp() {
                         />
                       </div>
 
-                      <TaskFromChat menuItem convo={selectedConvo} lastInbound={lastInboundText} />
+                      <button type="button" onClick={() => setTaskOpen(true)} className={MENU_ROW} style={{ color: INK }}>
+                        <ClipboardList size={15} style={{ color: '#B45309' }} />
+                        <span className="flex-1">Create a task</span>
+                      </button>
 
                       {/* Opens in place like the labels row, so picking a
                           person does not shut the menu before the list. */}
@@ -2688,9 +2708,23 @@ export default function WhatsApp() {
                         <AssignRep convo={selectedConvo} onChanged={() => refetchConvos()} />
                       </div>
 
-                      <LeadAction menuItem convo={selectedConvo} onChanged={onSent} />
+                      {/* Its dialog holds the form you are filling in, so the
+                          row must not close the menu out from under it. */}
+                      <div data-keep-open>
+                        <LeadAction menuItem convo={selectedConvo} onChanged={onSent} />
+                      </div>
                     </div>
                   )}
+
+                  {/* Mounted out here, not in the dropdown above, so closing
+                      the menu does not take the panel with it. */}
+                  <TaskFromChat
+                    convo={selectedConvo}
+                    lastInbound={lastInboundText}
+                    trigger={false}
+                    open={taskOpen}
+                    onOpenChange={setTaskOpen}
+                  />
                 </div>
               </>
             ) : (
