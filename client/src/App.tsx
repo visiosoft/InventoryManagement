@@ -38,6 +38,12 @@ function TasksGuard({ children }: { children: React.ReactNode }) {
 
 function SmartHome() {
   const { user, hasPermission } = useAuth()
+  /* Accounts get their own dashboard: the company one answers a manager's
+     questions, and their day is invoices, not occupancy. Checked before the
+     sales-rep line below, which counts accounts as a rep-ish role. */
+  if (user?.role === 'accounts') {
+    return <AccountsDashboard />
+  }
   // A rep's home is their own leads board, not the company-wide dashboard.
   if (isSalesRepRole(user?.role)) {
     return <Navigate to="/my-leads" replace />
@@ -83,6 +89,7 @@ import Leads from './pages/Leads'
 import SalesBoard from './pages/SalesBoard'
 import MovingEstimator from './pages/MovingEstimator'
 import MyPerformance from './pages/MyPerformance'
+import AccountsDashboard from './pages/AccountsDashboard'
 import Leaderboard from './pages/Leaderboard'
 import MyAccount from './pages/MyAccount'
 import Quotations from './pages/Quotations'
@@ -204,6 +211,7 @@ export default function App() {
         <Route path="/moving-estimator" element={<PermGuard module="sales_board"><MovingEstimator /></PermGuard>} />
         <Route path="/my-performance" element={<PermGuard module="sales_board"><MyPerformance /></PermGuard>} />
         <Route path="/leaderboard" element={<PermGuard module="sales_board"><Leaderboard /></PermGuard>} />
+        <Route path="/accounts" element={<RoleGuard roles={['admin', 'accounts']}><AccountsDashboard /></RoleGuard>} />
         <Route path="/account" element={<MyAccount />} />
         <Route path="/quotes" element={<PermGuard module="quotes" orSalesRep><Quotations /></PermGuard>} />
         <Route path="/quotes/new" element={<PermGuard module="quotes" orSalesRep><NewQuote /></PermGuard>} />

@@ -74,6 +74,7 @@ import taskRoutes from './routes/tasks.js';
 import salesGoalRoutes from './routes/salesGoals.js';
 import salesTeamRoutes from './routes/salesTeam.js';
 import leaderboardRoutes from './routes/leaderboard.js';
+import accountsDashboardRoutes from './routes/accountsDashboard.js';
 import activityRoutes from './routes/activity.js';
 import signingMovingRoutes from './routes/signingMoving.js';
 import customerAuthRoutes from './routes/customerAuth.js';
@@ -247,6 +248,8 @@ app.use('/api/sales-goals', requireAuth, salesGoalRoutes);
 app.use('/api/sales-team', requireAuth, salesTeamRoutes);
 // Signed in is enough: a board only the manager can see recognises nobody.
 app.use('/api/leaderboard', requireAuth, leaderboardRoutes);
+// The invoicing day, on one page. Admin and accounts only, inside the router.
+app.use('/api/accounts-dashboard', requireAuth, accountsDashboardRoutes);
 app.use('/api/activity', requireAuth, activityRoutes);
 
 // Central error handler
