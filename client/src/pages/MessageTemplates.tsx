@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Mail, MessageSquare, Plus, RotateCcw, Save, Trash2 } from 'lucide-react'
+import { ChevronLeft, Mail, MessageSquare, Plus, RotateCcw, Save, Trash2 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { Button, Card, CardBody, CardHeader, PageHeader, Spinner, Textarea, Field, Input, Select } from '../components/ui'
 
@@ -123,6 +123,8 @@ export default function MessageTemplates() {
   const [qrDrafts, setQrDrafts] = useState<Record<string, QrDraft>>({})
   const [qrSelectedId, setQrSelectedId] = useState<string | null>(null)
   const [qrAdding, setQrAdding] = useState(false)
+  // On a phone the list and the editor take turns; this says the editor is up.
+  const qrEditing = qrAdding || qrSelectedId !== null
   const [qrLabel, setQrLabel] = useState('')
   const [qrCategory, setQrCategory] = useState('')
   const [qrBody, setQrBody] = useState('')
@@ -274,8 +276,12 @@ export default function MessageTemplates() {
           </p>
 
           <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-5">
-            {/* List, grouped by category — the same shape as contract templates */}
-            <div className="space-y-3">
+            {/* List, grouped by category — the same shape as contract templates.
+                On a phone the two panes take turns: the list scrolls to well
+                past a screen, so tapping a reply looked like it did nothing
+                while the editor sat below the fold. Picking one shows the
+                editor; Back returns to the list. */}
+            <div className={`space-y-3 ${qrEditing ? 'hidden lg:block' : ''}`}>
               {qrGroups.map(([category, items]) => (
                 <div key={category} className="space-y-1.5">
                   <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-1">
@@ -305,6 +311,16 @@ export default function MessageTemplates() {
             </div>
 
             {/* Editor */}
+            <div className={qrEditing ? '' : 'hidden lg:block'}>
+            {qrEditing && (
+              <button
+                type="button"
+                onClick={() => { setQrSelectedId(null); setQrAdding(false); setError(''); setSuccess('') }}
+                className="lg:hidden mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground cursor-pointer"
+              >
+                <ChevronLeft size={16} /> All quick replies
+              </button>
+            )}
             {qrAdding ? (
               <Card>
                 <CardHeader title="New quick reply" subtitle="The key is generated from the label" />
@@ -482,6 +498,7 @@ export default function MessageTemplates() {
                 </Card>
               )
             })()}
+            </div>
           </div>
 
           <datalist id="qr-categories">
@@ -491,8 +508,8 @@ export default function MessageTemplates() {
         )
       ) : isLoading ? <Spinner /> : (
       <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-5">
-        {/* Template list */}
-        <div className="space-y-1.5" data-tour="templates-list">
+        {/* Template list. One pane at a time on a phone, as above. */}
+        <div className={`space-y-1.5 ${selected ? 'hidden lg:block' : ''}`} data-tour="templates-list">
           {templates.map(t => (
             <button key={t._id} onClick={() => selectTemplate(t)}
               className={`w-full text-left rounded-lg border px-4 py-3 transition-colors cursor-pointer ${selected?._id === t._id ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}>
@@ -539,6 +556,16 @@ export default function MessageTemplates() {
         </div>
 
         {/* Editor */}
+        <div className={selected ? '' : 'hidden lg:block'}>
+        {selected && (
+          <button
+            type="button"
+            onClick={() => setSelected(null)}
+            className="lg:hidden mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground cursor-pointer"
+          >
+            <ChevronLeft size={16} /> All templates
+          </button>
+        )}
         {selected ? (
           <Card>
             <CardHeader title={selected.label} subtitle={`Template: ${selected.key}`}
@@ -667,6 +694,7 @@ export default function MessageTemplates() {
             </CardBody>
           </Card>
         )}
+        </div>
       </div>
       )}
     </div>
