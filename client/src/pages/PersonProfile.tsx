@@ -3,9 +3,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   AlertTriangle, ArrowLeft, Calendar, Clock, FileText, Mail, MessageCircle, MessageSquare,
-  ExternalLink, PackageCheck, Pencil, Phone, Plus, Repeat, UserCheck, UserPlus,
+  ClipboardList, ExternalLink, PackageCheck, Pencil, Phone, Plus, Repeat, UserCheck, UserPlus,
 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
+import { TaskComposer } from '../components/TaskComposer'
 import { useAuth } from '../lib/auth'
 import { Spinner, statusLabel, LEAD_STATUS_FLOW, LEAD_TEMPERATURES, LEAD_TAGS } from '../components/ui'
 import { formatDate, formatDateTime } from '../lib/utils'
@@ -171,6 +172,7 @@ export default function PersonProfile() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const [err, setErr] = useState('')
+  const [taskOpen, setTaskOpen] = useState(false)
   const [note, setNote] = useState('')
   // A stage picked but not yet committed, and the note going with it.
   const [pendingStage, setPendingStage] = useState('')
@@ -482,6 +484,18 @@ export default function PersonProfile() {
                 <MessageCircle size={16} /> WhatsApp <ExternalLink size={13} style={{ opacity: 0.7 }} />
               </a>
             )}
+            {/* Raising a task about somebody was only possible from their chat,
+                which is the wrong place to be when you are reading their
+                profile — and impossible for a lead who has never messaged. */}
+            <button
+              type="button"
+              onClick={() => setTaskOpen(true)}
+              className="inline-flex items-center cursor-pointer"
+              style={{ gap: 8, height: 44, padding: '0 18px', borderRadius: 999, border: '1px solid #F5DFB8', background: '#FFF7E6', color: '#B45309', fontWeight: 600, fontSize: 14, whiteSpace: 'nowrap' }}
+              title="Create a task about this lead"
+            >
+              <ClipboardList size={16} /> Create a task
+            </button>
             {/* Available at both stages: the wizard creates the customer when a
                 lead is booked, which is the point at which they become one. */}
             <Link to={bookHref} className="inline-flex items-center cursor-pointer" style={{ gap: 8, height: 44, padding: '0 20px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontWeight: 700, fontSize: 14, boxShadow: SHADOW_MD, whiteSpace: 'nowrap' }}>
@@ -1336,6 +1350,16 @@ export default function PersonProfile() {
           ? <><UserCheck size={13} /> Customer record{lead ? ' · still linked to the original lead' : ''}</>
           : <><UserPlus size={13} /> Lead only — no customer record yet</>}
       </p>
+
+      {/* Same panel the inbox uses, so a task raised here and one raised from
+          the chat are the same thing. */}
+      <TaskComposer
+        open={taskOpen}
+        onOpenChange={setTaskOpen}
+        subjectName={name}
+        leadId={lead?._id ?? null}
+        subtitle={`About ${name}`}
+      />
     </div>
   )
 }

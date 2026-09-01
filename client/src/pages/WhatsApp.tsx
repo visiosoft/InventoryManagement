@@ -8,9 +8,10 @@ import {
 } from 'lucide-react'
 import { useVoiceRecorder, recordingSupported, formatDuration } from '../lib/voiceRecorder'
 import { api, whatsappApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel } from '../lib/api'
+import { TaskComposer } from '../components/TaskComposer'
 import { playPing, primePing } from '../lib/ping'
 import { convDisplayName, formatListTime, isPlaceholderName, Avatar } from '../lib/whatsappDisplay'
-import { SlideOver, Modal, Field, Input, Textarea, Select } from '../components/ui'
+import { Modal, Field, Input, Textarea, Select } from '../components/ui'
 import { CustomerForm } from '../components/AddCustomerModal'
 import { useSeen, markSeen as markSeenShared, unreadFrom } from '../lib/whatsappSeen'
 import { cn } from '../lib/utils'
@@ -1076,7 +1077,6 @@ function ConversationDigest({ phoneNormalized }: { phoneNormalized: string }) {
   )
 }
 
-type AssignableUser = { _id: string; name: string; role: string }
 
 /**
  * Raise a task straight from a conversation.
@@ -1103,50 +1103,7 @@ function TaskFromChat({ convo, lastInbound, menuItem, open: openProp, onOpenChan
   const [openSelf, setOpenSelf] = useState(false)
   const open = openProp ?? openSelf
   const setOpen = onOpenChange ?? setOpenSelf
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
-  const [dueDate, setDueDate] = useState('')
-  const [priority, setPriority] = useState('medium')
-  const [assignedTo, setAssignedTo] = useState('')
-  const [err, setErr] = useState('')
-  const [done, setDone] = useState(false)
-
   const who = convDisplayName(convo)
-
-  const { data: assignableUsers } = useQuery<AssignableUser[]>({
-    queryKey: ['assignable-users'],
-    queryFn: () => api.get('/users/assignable').then((r) => r.data),
-    enabled: open,
-    staleTime: 5 * 60_000,
-  })
-
-  // Reopening starts clean, but carries their last message across again.
-  useEffect(() => {
-    if (!open) return
-    setTitle('')
-    setDescription(lastInbound ? `They asked:\n"${lastInbound}"` : '')
-    setDueDate('')
-    setPriority('medium')
-    setAssignedTo('')
-    setErr('')
-    setDone(false)
-  }, [open, lastInbound])
-
-  const createTask = useMutation({
-    mutationFn: () => api.post('/tasks', {
-      title: title.trim(),
-      description: description.trim(),
-      dueDate: dueDate || undefined,
-      priority,
-      assignedTo: assignedTo || undefined,
-      // Linked to the lead when there is one, so the task shows up against the
-      // same person rather than as a loose name.
-      ...(convo.lead?._id ? { leadId: convo.lead._id, leadType: 'storage' } : {}),
-      leadName: who,
-    }),
-    onSuccess: () => { setErr(''); setDone(true) },
-    onError: (e) => setErr(apiError(e)),
-  })
 
   return (
     <>
@@ -1168,105 +1125,17 @@ function TaskFromChat({ convo, lastInbound, menuItem, open: openProp, onOpenChan
         </button>
       )}
 
-      <SlideOver
+      {/* The panel itself lives in components/TaskComposer, shared with the
+          lead profile, so the two cannot ask for different things. */}
+      <TaskComposer
         open={open}
-        onClose={() => setOpen(false)}
-        title="New task"
+        onOpenChange={setOpen}
+        subjectName={who}
+        leadId={convo.lead?._id ?? null}
         subtitle={`From the chat with ${who}`}
-        width="max-w-lg"
-      >
-        {done ? (
-          <div className="space-y-4">
-            <div className="rounded-lg px-3 py-3" style={{ background: '#DCFCE7', color: '#047857', fontSize: 13, fontWeight: 600 }}>
-              Task created for {who}.
-            </div>
-            <div className="flex gap-2">
-              <Link
-                to="/tasks"
-                className="rounded-full px-4 py-2 text-white cursor-pointer"
-                style={{ background: '#5B2BC9', fontSize: 13, fontWeight: 700 }}
-              >
-                Open Tasks
-              </Link>
-              <button
-                type="button"
-                onClick={() => setDone(false)}
-                className="rounded-full px-4 py-2 cursor-pointer"
-                style={{ border: '1px solid rgba(20,8,31,.16)', fontSize: 13, fontWeight: 700 }}
-              >
-                Add another
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <Field label="Title">
-              <Input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. Clean unit F2-80 before Friday"
-                autoFocus
-              />
-            </Field>
-            <Field label="Description">
-              <Textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={4}
-                placeholder="What was asked for, and anything needed to do it"
-              />
-            </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Assign to">
-                <Select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)}>
-                  <option value="">Myself</option>
-                  {(assignableUsers ?? []).map((u) => (
-                    <option key={u._id} value={u._id}>{u.name} ({u.role})</option>
-                  ))}
-                </Select>
-              </Field>
-              <Field label="Priority">
-                <Select value={priority} onChange={(e) => setPriority(e.target.value)}>
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                </Select>
-              </Field>
-            </div>
-            <Field label="Due date">
-              <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-            </Field>
-
-            <p style={{ fontSize: 11.5, color: FAINT_INK }}>
-              {convo.lead?._id
-                ? `Linked to ${who}, so it shows against them in Tasks.`
-                : 'Not saved as a lead yet, so the task carries their name and number only.'}
-            </p>
-
-            {err && <p style={{ fontSize: 12, color: '#C0392B' }}>{err}</p>}
-
-            <div className="flex justify-end gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="rounded-full px-4 py-2 cursor-pointer"
-                style={{ border: '1px solid rgba(20,8,31,.16)', fontSize: 13, fontWeight: 700 }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => createTask.mutate()}
-                disabled={!title.trim() || createTask.isPending}
-                className="rounded-full px-5 py-2 text-white cursor-pointer disabled:opacity-40"
-                style={{ background: '#5B2BC9', fontSize: 13, fontWeight: 700 }}
-              >
-                {createTask.isPending ? 'Creating…' : 'Create task'}
-              </button>
-            </div>
-          </div>
-        )}
-      </SlideOver>
+        prefillDescription={lastInbound ? `They asked:
+"${lastInbound}"` : ''}
+      />
     </>
   )
 }
