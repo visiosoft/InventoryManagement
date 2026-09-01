@@ -10,6 +10,7 @@ import { useAuth } from '../lib/auth'
 import { useSite, unitInSite, type Site } from '../lib/site'
 import type { Unit, Contract } from '../lib/types'
 import { Badge, Card, EmptyState, Spinner, Table, Td, Th, statusLabel, unitStatusTone } from '../components/ui'
+import { ExportButtons } from '../components/ExportButtons'
 import { compareUnitNumbers, formatDate, formatMoney } from '../lib/utils'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', serif", letterSpacing: '-0.02em' } as const
@@ -312,6 +313,11 @@ export default function Units() {
     () => (allSiteUnits || []).filter((u) => unitInSite((u as Unit & { site?: string | null }).site, siteId, sitesList)),
     [allSiteUnits, siteId, sitesList],
   )
+
+  // Which facility the page is showing, for the exported document's title.
+  const siteName = sitesList.find((s) => s._id === siteId)?.name
+    ?? sitesList.find((s) => s.isDefault)?.name
+    ?? ''
 
   // A unit with no site of its own belongs to the default site.
   const siteNameOf = (u: Unit) => {
@@ -874,6 +880,37 @@ export default function Units() {
       {/* ── Table view (unchanged columns, incl. Tenant / Check out) ── */}
       {view === 'table' && (
         <Card>
+          {/* Built from sortedRows, the same list the table below renders, so
+              the file carries the filters, the window and the sort that were
+              on screen rather than whatever a fresh query would return. */}
+          <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4">
+            <span style={{ fontSize: 12.5, color: SECONDARY }}>
+              {sortedRows.length} unit{sortedRows.length === 1 ? '' : 's'} · {windowLabel}
+            </span>
+            <ExportButtons
+              site={siteId}
+              title={`Units${siteName ? ` — ${siteName}` : ''}`}
+              subtitle={`${freeUnits.length} of ${filtered.length} units free for the whole window · ${windowLabel}`}
+              columns={[
+                { label: 'Unit' }, { label: 'Floor' }, { label: 'Size' }, { label: '4wk (AED)', numeric: true },
+                { label: 'Tenant' }, { label: 'Check out' }, { label: 'Status' }, { label: 'Shared' }, { label: 'Notes' },
+              ]}
+              rows={sortedRows.map((u) => {
+                const held = activeByUnit[u._id] ?? []
+                return [
+                  u.unitNumber,
+                  u.floor ?? '',
+                  u.sizeSqf != null ? `${u.sizeSqf} sq ft` : '—',
+                  u.price ?? null,
+                  held.map((c) => c.customerName || '(no name)').join('; ') || '—',
+                  held.map((c) => (c.endDate ? formatDate(c.endDate) : '—')).join('; ') || '—',
+                  statusLabel(u.status),
+                  u.shared ? 'Shared' : '—',
+                  u.notes ?? '',
+                ]
+              })}
+            />
+          </div>
           <Table>
             <thead>
               <tr>

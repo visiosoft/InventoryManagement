@@ -75,6 +75,7 @@ import salesGoalRoutes from './routes/salesGoals.js';
 import salesTeamRoutes from './routes/salesTeam.js';
 import leaderboardRoutes from './routes/leaderboard.js';
 import accountsDashboardRoutes from './routes/accountsDashboard.js';
+import exportRoutes from './routes/exports.js';
 import activityRoutes from './routes/activity.js';
 import signingMovingRoutes from './routes/signingMoving.js';
 import customerAuthRoutes from './routes/customerAuth.js';
@@ -250,6 +251,8 @@ app.use('/api/sales-team', requireAuth, salesTeamRoutes);
 app.use('/api/leaderboard', requireAuth, leaderboardRoutes);
 // The invoicing day, on one page. Admin and accounts only, inside the router.
 app.use('/api/accounts-dashboard', requireAuth, accountsDashboardRoutes);
+// Downloading the table you are looking at, in any format, from any page.
+app.use('/api/exports', requireAuth, exportRoutes);
 app.use('/api/activity', requireAuth, activityRoutes);
 
 // Central error handler
