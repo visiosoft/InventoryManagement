@@ -1563,7 +1563,7 @@ export default function NewQuote() {
                       <InfoRow label={`Add-ons (${addOnRows.length})`} value={`${formatMoney(addOnsTotal)} AED`} />
                       {holdAdvance ? (
                         <InfoRow
-                          label={advanceExtra > 0 ? 'Refundable Deposit (held)' : 'Refundable Deposit — adjusted against the final period'}
+                          label="Refundable Deposit"
                           value={
                             <span className="inline-flex items-center gap-2">
                               {advanceExtra > 0 ? `${formatMoney(advanceExtra)} AED` : `${formatMoney(advanceTotal)} AED · included`}
