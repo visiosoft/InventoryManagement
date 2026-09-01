@@ -676,7 +676,26 @@ export default function Leads() {
     const { user: me } = useAuth()
     const isAdmin = me?.role === 'admin'
 
-    const { data: users } = useQuery<{ _id: string; name: string; email: string }[]>({
+    /* The team, for every owner dropdown on this page.
+     *
+     * This used to hit /users and cache under the same key the WhatsApp inbox
+     * uses for /users/assignable — one key, two endpoints, so whichever page
+     * loaded first decided what the other one saw. Both call the same endpoint
+     * now, which is also the one that knows which roles can hold work.
+     */
+    const { data: assignableUsers } = useQuery<{ _id: string; name: string; email: string; role?: string }[]>({
+        queryKey: ['assignable-users'],
+        queryFn: () => api.get('/users/assignable').then((r) => r.data ?? []),
+        staleTime: 30 * 60_000,
+    })
+
+    /* Who the forms may hand a lead to. An admin can choose anyone; everybody
+       else can only own it themselves, so the list is just them.
+
+       It used to be only-themselves for admins too - Add lead offered a single
+       name, your own, so a lead could not be raised on behalf of the rep who
+       took the call without saving it and reassigning it from the table. */
+    const { data: me_ } = useQuery<{ _id: string; name: string; email: string }[]>({
         queryKey: ['lead-owners'],
         queryFn: () => api.get('/auth/me').then((r) => {
             const u = r.data?.user
@@ -684,13 +703,7 @@ export default function Leads() {
             return [{ _id: u.id, name: u.name, email: u.email }]
         }),
     })
-
-    // Full team list — only admins can reassign leads to anyone, so only fetch for them.
-    const { data: assignableUsers } = useQuery<{ _id: string; name: string; email: string }[]>({
-        queryKey: ['assignable-users'],
-        queryFn: () => api.get('/users').then((r) => r.data.filter((u: { isActive: boolean }) => u.isActive)),
-        enabled: isAdmin,
-    })
+    const users = isAdmin ? assignableUsers : me_
 
     const [page, setPage] = useState(1)
     const [limit, setLimit] = useState(25)
