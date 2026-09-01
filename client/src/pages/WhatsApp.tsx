@@ -1306,15 +1306,19 @@ function AssignRep({ convo, onChanged }: { convo: WhatsAppConversation; onChange
     onMutate: (owner: string | null) => {
       setOpen(false)
       const picked = people.find((u) => u._id === owner)
-      qc.setQueriesData<{ list: WhatsAppConversation[]; total: number; matched: number }>(
-        { queryKey: ['wa-conversations'] },
-        (old) => old && {
-          ...old,
-          list: old.list.map((c) => (c.phoneNormalized === convo.phoneNormalized && c.lead
-            ? { ...c, lead: { ...c.lead, ownerId: owner ?? undefined, ownerName: picked?.name ?? undefined } }
-            : c)),
-        },
-      )
+      const owned = (c: WhatsAppConversation) => (c.phoneNormalized === convo.phoneNormalized && c.lead
+        ? { ...c, lead: { ...c.lead, ownerId: owner ?? undefined, ownerName: picked?.name ?? undefined } }
+        : c)
+      /* Two shapes live under this prefix: the inbox keeps a paged
+         { list, total, matched } and the bell keeps a bare array. Patch
+         whichever this is and leave anything else alone - assuming the paged
+         one crashed the bell's entry on every assign. */
+      qc.setQueriesData({ queryKey: ['wa-conversations'] }, (old: unknown) => {
+        if (Array.isArray(old)) return old.map(owned)
+        const paged = old as { list?: WhatsAppConversation[] } | undefined
+        if (paged && Array.isArray(paged.list)) return { ...paged, list: paged.list.map(owned) }
+        return old
+      })
     },
     mutationFn: async (owner: string | null) => {
       if (leadId) { await api.put(`/leads/${leadId}`, { owner }); return }
