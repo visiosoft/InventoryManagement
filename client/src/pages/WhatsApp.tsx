@@ -1261,11 +1261,18 @@ function TaskFromChat({ convo, lastInbound, menuItem }: { convo: WhatsAppConvers
  *
  * Assigning used to mean opening the lead in another tab, which is why chats
  * sat unowned: the moment you know who should take it is while you are reading
- * it. Every chat already has a lead behind it, so this is an owner change.
+ * it.
  *
- * It goes through PUT /leads/:id, the same route the leads board uses, so the
- * two-minute response clock starts here exactly as it does there rather than
- * this being a quiet side door.
+ * Where the chat is already a lead this is an owner change, through
+ * PUT /leads/:id — the same route the leads board uses, so the two-minute
+ * response clock starts here exactly as it does there rather than this being a
+ * quiet side door.
+ *
+ * Where it is not a lead yet (63 of 567 conversations), assigning makes it one
+ * and hands it over in the same action. Those chats had no Assign option at
+ * all, so the only way to put a name on them was to save the lead first and
+ * then go and find it on the board — and until somebody did, they were invisible
+ * to the pipeline.
  */
 function AssignRep({ convo, onChanged }: { convo: WhatsAppConversation; onChanged: () => void }) {
   const [open, setOpen] = useState(false)
@@ -1273,11 +1280,13 @@ function AssignRep({ convo, onChanged }: { convo: WhatsAppConversation; onChange
   const leadId = convo.lead?._id
   const ownerId = convo.lead?.ownerId ?? null
 
+  /* Fetched with the chat rather than on the click. It used to wait for the
+     menu to open, so opening Assign showed "Loading…" every time — three names
+     that change about never, fetched again at the worst possible moment. */
   const { data: people = [] } = useQuery<{ _id: string; name: string; email: string; role?: string }[]>({
     queryKey: ['assignable-users'],
     queryFn: () => api.get('/users/assignable').then((r) => r.data ?? []),
-    enabled: open,
-    staleTime: 5 * 60_000,
+    staleTime: 30 * 60_000,
   })
 
   /* Sales reps only. The endpoint is shared with task assignment, which wants
@@ -1287,12 +1296,20 @@ function AssignRep({ convo, onChanged }: { convo: WhatsAppConversation; onChange
   const reps = people.filter((u) => u.role === 'sales_rep' || u._id === ownerId)
 
   const assign = useMutation({
-    mutationFn: (owner: string | null) => api.put(`/leads/${leadId}`, { owner }),
+    mutationFn: async (owner: string | null) => {
+      if (leadId) { await api.put(`/leads/${leadId}`, { owner }); return }
+      // No lead behind this chat yet. This endpoint creates one and sets the
+      // owner in a single call, so the chat lands on the leads board owned.
+      // The name is whatever we already know them by; blank is fine, the
+      // server falls back to the number.
+      await whatsappApi.createLead(convo.phoneNormalized, {
+        fullName: convo.customer?.fullName || '',
+        owner: owner || undefined,
+      })
+    },
     onSuccess: () => { setErr(''); setOpen(false); onChanged() },
     onError: (e) => setErr(apiError(e)),
   })
-
-  if (!leadId) return null
 
   return (
     <>
@@ -1308,7 +1325,7 @@ function AssignRep({ convo, onChanged }: { convo: WhatsAppConversation; onChange
       </button>
 
       {open && (
-        <div style={{ borderTop: `1px solid ${LINE}`, background: '#FBF8F2', maxHeight: 210, overflowY: 'auto' }}>
+        <div style={{ borderTop: `1px solid ${LINE}`, background: '#FBF8F2', maxHeight: 320, overflowY: 'auto' }}>
           {err && <p className="px-3 py-1.5 text-xs" style={{ color: '#B91C1C' }}>{err}</p>}
           {reps.length === 0 && (
             <p className="px-3 py-2 text-xs" style={{ color: FAINT_INK }}>
@@ -1321,7 +1338,7 @@ function AssignRep({ convo, onChanged }: { convo: WhatsAppConversation; onChange
               type="button"
               disabled={assign.isPending}
               onClick={() => assign.mutate(u._id)}
-              className={MENU_ROW}
+              className={`${MENU_ROW} py-3`}
               style={{ color: INK, fontWeight: u._id === ownerId ? 700 : 500 }}
             >
               <span className="flex-1 truncate">{u.name || u.email}</span>
@@ -1330,12 +1347,12 @@ function AssignRep({ convo, onChanged }: { convo: WhatsAppConversation; onChange
           ))}
           {/* Taking it off somebody is as real an action as giving it to them —
               an unassigned lead shows on the board as needing an owner. */}
-          {ownerId && (
+          {ownerId && leadId && (
             <button
               type="button"
               disabled={assign.isPending}
               onClick={() => assign.mutate(null)}
-              className={MENU_ROW}
+              className={`${MENU_ROW} py-3`}
               style={{ color: '#B45309' }}
             >
               <span className="flex-1">Leave unassigned</span>

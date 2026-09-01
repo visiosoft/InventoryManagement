@@ -650,6 +650,17 @@ router.post('/conversations/:phoneNormalized/lead', async (req, res) => {
             if (notes) lead.notes = notes;
             await lead.save();
         }
+        /* Choosing the owner at the moment of creation is the same act as
+           choosing one later, so it starts the same clock. Without this the
+           lead was owned but never marked assigned, which is what the board
+           keys on to show a still-placeholder name - so assigning a chat
+           created the lead and then hid it. */
+        if (ownerId) {
+            lead.assignedAt = new Date();
+            lead.ownerSeenAt = null;
+            lead.firstResponseAt = null;
+            await lead.save();
+        }
         await WhatsAppMessage.updateMany({ phoneNormalized, lead: null }, { $set: { lead: lead._id } });
         res.status(201).json({ action: 'created', lead: { _id: lead._id, fullName: lead.fullName, status: lead.status } });
     } catch (e) {

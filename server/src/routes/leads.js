@@ -139,9 +139,25 @@ router.get('/', async (req, res) => {
      * So the list shows named leads by default. Nothing is deleted or hidden
      * for good: ?includeUnsaved=1 returns them, and the WhatsApp contacts view
      * on the same page has always listed them.
+     *
+     * One exception: a placeholder somebody has handed to a rep is not
+     * bookkeeping any more, whatever it is still called. Hiding those meant a
+     * chat assigned from the WhatsApp inbox never reached the board - two of
+     * the three this lets through had already been won.
+     *
+     * The test is assignedAt, not owner: every auto-created contact carries an
+     * owner already, so keying on that would unhide all 252 of them. assignedAt
+     * is only set when a person chose somebody.
+     *
+     * $and, because the search below owns filter.$or.
      */
     if (req.query.includeUnsaved !== '1') {
-        filter.fullName = { $not: /^whatsapp\s*contact/i };
+        filter.$and = [...(filter.$and || []), {
+            $or: [
+                { fullName: { $not: /^whatsapp\s*contact/i } },
+                { assignedAt: { $ne: null } },
+            ],
+        }];
     }
 
     const from = parseDate(req.query.from);
