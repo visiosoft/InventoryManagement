@@ -56,15 +56,8 @@ import Payments from './pages/Payments'
 import Documents from './pages/Documents'
 import Reports from './pages/Reports'
 import AskReports from './pages/reports/AskReports'
-import MonthlyReport from './pages/reports/MonthlyReport'
-import UnitsReport from './pages/reports/UnitsReport'
-import FinancesReport from './pages/reports/FinancesReport'
-import ForecastReport from './pages/reports/ForecastReport'
 import ContractsReport from './pages/reports/ContractsReport'
-import UpcomingVacanciesReport from './pages/reports/UpcomingVacanciesReport'
-import OverduePaymentsReport from './pages/reports/OverduePaymentsReport'
 import ExpiringContractsReport from './pages/reports/ExpiringContractsReport'
-import IncomeAnalysis from './pages/reports/IncomeAnalysis'
 import DailyDigest from './pages/DailyDigest'
 import RatesReport from './pages/reports/RatesReport'
 import Settings from './pages/Settings'
@@ -219,15 +212,8 @@ export default function App() {
         {/* Admin-only: a report here can reach revenue and every rep's numbers,
             and the server enforces the same rule. */}
         <Route path="/reports/ask" element={<AdminGuard><AskReports /></AdminGuard>} />
-        <Route path="/reports/monthly" element={<PermGuard module="reports_monthly"><MonthlyReport /></PermGuard>} />
-        <Route path="/reports/units" element={<PermGuard module="reports_units"><UnitsReport /></PermGuard>} />
-        <Route path="/reports/finances" element={<PermGuard module="reports_finances"><FinancesReport /></PermGuard>} />
-        <Route path="/reports/forecast" element={<PermGuard module="reports_forecast"><ForecastReport /></PermGuard>} />
         <Route path="/reports/contracts" element={<PermGuard module="reports_contracts"><ContractsReport /></PermGuard>} />
-        <Route path="/reports/vacancies" element={<PermGuard module="reports_vacancies"><UpcomingVacanciesReport /></PermGuard>} />
-        <Route path="/reports/overdue" element={<PermGuard module="reports_overdue"><OverduePaymentsReport /></PermGuard>} />
         <Route path="/reports/expiring" element={<PermGuard module="reports_expiring"><ExpiringContractsReport /></PermGuard>} />
-        <Route path="/reports/income" element={<PermGuard module="reports_finances"><IncomeAnalysis /></PermGuard>} />
         <Route path="/reports/conversations" element={<PermGuard module="reports_conversations"><DailyDigest /></PermGuard>} />
         <Route path="/reports/rates" element={<PermGuard module="reports_units"><RatesReport /></PermGuard>} />
         <Route path="/approvals" element={<AdminGuard><Approvals /></AdminGuard>} />

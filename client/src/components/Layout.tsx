@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import WhatsAppBell from './WhatsAppBell'
-import { Bot, Compass, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, CalendarClock, CalendarOff, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Target, Calculator, ListTodo, NotebookPen, MessageCircle, Sparkles } from 'lucide-react'
+import { Bot, Compass, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, Clock, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Target, Calculator, ListTodo, NotebookPen, MessageCircle, Sparkles } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import GlobalSearch from './GlobalSearch'
@@ -89,16 +89,9 @@ const reportItems = [
      permission: it can reach revenue and every rep's numbers, and the server
      enforces the same rule. */
   { to: '/reports/ask', label: 'Ask for a report', icon: Sparkles, perm: '', adminOnly: true },
-  { to: '/reports/monthly', label: 'Monthly Payments', icon: CalendarClock, perm: 'reports_monthly' },
-  { to: '/reports/units', label: 'Unit Revenue', icon: Building2, perm: 'reports_units' },
   { to: '/reports/rates', label: 'Actual vs Leased', icon: Wallet, perm: 'reports_units' },
-  { to: '/reports/finances', label: 'Finances', icon: Wallet, perm: 'reports_finances' },
-  { to: '/reports/forecast', label: 'Forecast', icon: TrendingUp, perm: 'reports_forecast' },
   { to: '/reports/contracts', label: 'Contracts', icon: BarChart3, perm: 'reports_contracts' },
-  { to: '/reports/vacancies', label: 'Upcoming Vacancies', icon: CalendarOff, perm: 'reports_vacancies' },
-  { to: '/reports/overdue', label: 'Overdue Payments', icon: AlertTriangle, perm: 'reports_overdue' },
   { to: '/reports/expiring', label: 'Expiring Contracts', icon: Clock, perm: 'reports_expiring' },
-  { to: '/reports/income', label: 'Income Analysis', icon: TrendingUp, perm: 'reports_finances' },
   { to: '/reports/conversations', label: 'Daily Conversations', icon: MessageCircle, perm: 'reports_conversations' },
 ]
 
@@ -275,13 +268,9 @@ const PAGE_TITLES: Record<string, string> = {
   '/moving/dispatch': 'Dispatch',
   '/moving/claims': 'Claims',
   '/moving/reports': 'Reports',
-  '/reports/monthly': 'Monthly Payments',
-  '/reports/units': 'Unit Revenue',
-  '/reports/finances': 'Finances',
-  '/reports/forecast': 'Forecast',
+  '/reports/ask': 'Ask for a report',
+  '/reports/rates': 'Actual vs Leased',
   '/reports/contracts': 'Contracts Report',
-  '/reports/vacancies': 'Upcoming Vacancies',
-  '/reports/overdue': 'Overdue Payments',
   '/reports/expiring': 'Expiring Contracts',
   '/whatsapp': 'WhatsApp Inbox',
 }
@@ -539,7 +528,7 @@ export default function Layout() {
             return (
               <div className="pt-3">
                 <div className="border-t border-white/10 my-1" />
-                <NavLink to="/reports/monthly"
+                <NavLink to="/reports"
                   className={() => cn('flex items-center justify-center rounded-lg p-2 transition-all duration-150', onReportsRoute ? 'bg-[#FFF799] text-[#111218] shadow-sm' : 'text-sidebar-muted hover:text-sidebar-foreground hover:bg-white/8')}
                   title="Reports">
                   <BarChart3 size={18} />

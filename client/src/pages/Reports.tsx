@@ -1,15 +1,16 @@
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 
+/* Where /reports lands, in order of preference.
+ *
+ * Only routes that still exist. Seven reports were removed, and leaving them
+ * listed here would send somebody with that permission to a page that is no
+ * longer built — a blank screen rather than an honest redirect. */
 const REPORT_ROUTES = [
-  { perm: 'reports_monthly',   to: '/reports/monthly' },
-  { perm: 'reports_units',     to: '/reports/units' },
-  { perm: 'reports_finances',  to: '/reports/finances' },
-  { perm: 'reports_forecast',  to: '/reports/forecast' },
-  { perm: 'reports_contracts', to: '/reports/contracts' },
-  { perm: 'reports_vacancies', to: '/reports/vacancies' },
-  { perm: 'reports_overdue',   to: '/reports/overdue' },
-  { perm: 'reports_expiring',  to: '/reports/expiring' },
+  { perm: 'reports_units',         to: '/reports/rates' },
+  { perm: 'reports_contracts',     to: '/reports/contracts' },
+  { perm: 'reports_expiring',      to: '/reports/expiring' },
+  { perm: 'reports_conversations', to: '/reports/conversations' },
 ]
 
 export default function Reports() {
