@@ -684,6 +684,8 @@ export default function ContractDetail() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
+  // Accounts read a contract to invoice against it; they do not change it.
+  const readOnly = user?.role === 'accounts'
   const qc = useQueryClient()
   const [error, setError] = useState('')
   const [recordingPayment, setRecordingPayment] = useState<Payment | null>(null)
@@ -1386,7 +1388,15 @@ export default function ContractDetail() {
           <h1 className="text-2xl font-bold tracking-tight">Contract overview</h1>
           <p className="text-sm text-muted-foreground mt-0.5">{c.contractNo}</p>
         </div>
+        {/* Every action in this cluster writes: edit, activate, sign, cancel,
+            end, delete. Accounts read a contract to invoice against it and the
+            server refuses all of these, so none of them is offered. */}
         <div className="flex flex-wrap gap-2">
+          {readOnly ? (
+            <span className="rounded-full px-3 py-1.5" style={{ background: '#F7F3FF', color: '#4A1FA0', fontSize: 12, fontWeight: 600 }}>
+              View only
+            </span>
+          ) : (<>
           <Button variant="outline" size="sm" onClick={() => { setError(''); setEditModal(true) }}>
             <PenLine size={14} /> Edit
           </Button>
@@ -1436,6 +1446,7 @@ export default function ContractDetail() {
               <Trash2 size={14} /> Delete
             </Button>
           )}
+          </>)}
         </div>
       </div>
 
@@ -2698,9 +2709,11 @@ export default function ContractDetail() {
                         // Which actions apply is decided by status, the same
                         // way the server gates them — offering "End contract"
                         // on a draft would just produce a 409.
-                        const canCreate = t.status === 'draft'
-                        const canMarkSigned = t.status === 'pending_signature'
-                        const canEnd = t.status === 'active'
+                        // ...and by role: accounts read this list, they do
+                        // not act on it, so no row offers an action at all.
+                        const canCreate = !readOnly && t.status === 'draft'
+                        const canMarkSigned = !readOnly && t.status === 'pending_signature'
+                        const canEnd = !readOnly && t.status === 'active'
                         const busy = rowAction.isPending || rowDelete.isPending
                         const act = 'text-[12px] font-bold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed'
                         return (
@@ -2753,6 +2766,7 @@ export default function ContractDetail() {
                                   End contract
                                 </button>
                               )}
+                              {!readOnly && (
                               <button type="button" disabled={busy} className={act} style={{ color: '#DC2626' }}
                                 onClick={() => {
                                   if (confirm(`Delete contract ${t.contractNo}? This cannot be undone.`)) {
@@ -2764,6 +2778,7 @@ export default function ContractDetail() {
                                 }}>
                                 Delete
                               </button>
+                              )}
                               <button type="button" disabled={isCurrent} className={act} style={{ color: PURPLE }}
                                 title={isCurrent ? 'You are on this contract' : 'Open this contract'}
                                 onClick={() => navigate(`/contracts/${t._id}`)}>
