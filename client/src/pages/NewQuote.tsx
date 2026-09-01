@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { vatBase, vatOn } from '../lib/quoteVat'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
@@ -579,11 +580,19 @@ export default function NewQuote() {
   const advanceExtra = unitRows.reduce((s, u) => s + (isShortTerm(u.startDate, u.endDate) ? calcUnitAdvance(u.rate, u.startDate, u.endDate) : 0), 0)
   const addOnsTotal = addOnRows.reduce((s, a) => s + a.quantity * a.rate, 0)
   const subTotal = unitsTotal + addOnsTotal
-  /* VAT at 5% on the rent, add-ons and adjustment — not on the security
-     deposit or the refundable advance, which are held and returned rather
-     than sold. Mirrors the server, which owns the figure that is stored. */
+  /* VAT at 5% on what is sold.
+     *
+     * Not on the security deposit, the refundable advance, or a refundable
+     * amount entered as an add-on — which is how it actually gets typed, and
+     * what this page previously got wrong: the screen read 25.00 while the
+     * customer's PDF read 12.50. lib/quoteVat.ts mirrors the server rule so
+     * the two cannot say different things. */
   const vatAmount = vatEnabled
-    ? Math.round(Math.max(0, subTotal + adjustment) * 5) / 100
+    ? vatOn(vatBase({
+      unitsTotal,
+      addOns: addOnRows.map((a) => ({ name: a.name, amount: a.quantity * a.rate })),
+      adjustment,
+    }))
     : 0
   // Grand total = rent + add-ons + VAT + held advance (short terms) + security
   // deposit — identical to what the server stores for the quote.

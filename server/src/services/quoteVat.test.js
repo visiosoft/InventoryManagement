@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { isRefundableRow, vatBase, vatOn } from './quoteVat.js';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 /**
  * VAT on a quotation: 5% of what is sold, nothing on money held and returned.
@@ -128,4 +133,38 @@ test('turning VAT off removes the tax and nothing else', () => {
     const off = quoteTotal({ unitsTotal: 1000, deposit: 500, vatEnabled: false });
     assert.equal(off.vat, 0);
     assert.equal(off.total, on.total - on.vat);
+});
+
+/* The quote builder computes VAT again in the browser, so totals move as you
+ * type. That second copy is where this last went wrong: the page said 25.00
+ * while the customer's PDF said 12.50. The rule is written identically in both
+ * files, and this checks it stays that way — a change to one that is not made
+ * to the other fails here rather than reaching a customer.
+ */
+const CLIENT_RULE = path.resolve(HERE, '../../../client/src/lib/quoteVat.ts');
+
+test('the browser copy of the rule matches this one', () => {
+    const server = fs.readFileSync(path.join(HERE, 'quoteVat.js'), 'utf8');
+    const client = fs.readFileSync(CLIENT_RULE, 'utf8');
+
+    const patternsIn = (src) => {
+        const refundable = src.match(/const REFUNDABLE = (\/.*\/i)/)?.[1];
+        const not = src.match(/const NOT_REFUNDABLE = (\/.*\/i)/)?.[1];
+        return { refundable, not };
+    };
+    const a = patternsIn(server);
+    const b = patternsIn(client);
+
+    assert.ok(a.refundable, 'the server rule could not be read');
+    assert.ok(b.refundable, 'the browser rule could not be read');
+    assert.equal(b.refundable, a.refundable, 'the two say different things about what is refundable');
+    assert.equal(b.not, a.not, 'the two disagree about what is a real product');
+});
+
+test('the case from the screen: rent 250 plus a refundable add-on of 250', () => {
+    // The page showed VAT 25.00 and a total of 525.00; the PDF showed 12.50.
+    const base = vatBase({ unitsTotal: 250, addOns: [{ name: 'Refundable Deposit', amount: 250 }] });
+    assert.equal(base, 250, 'only the rent is a sale');
+    assert.equal(vatOn(base), 12.5);
+    assert.equal(250 + 250 + vatOn(base), 512.5, 'the total both should show');
 });
