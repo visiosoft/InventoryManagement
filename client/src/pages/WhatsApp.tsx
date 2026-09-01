@@ -1280,6 +1280,12 @@ function AssignRep({ convo, onChanged }: { convo: WhatsAppConversation; onChange
     staleTime: 5 * 60_000,
   })
 
+  /* Sales reps only. The endpoint is shared with task assignment, which wants
+     accounts and ops too, so the narrowing belongs here — a lead goes to a rep.
+     Whoever holds it now stays on the list even if they are not a rep, or an
+     admin-owned lead would read as unassigned and get handed away by mistake. */
+  const reps = people.filter((u) => u.role === 'sales_rep' || u._id === ownerId)
+
   const assign = useMutation({
     mutationFn: (owner: string | null) => api.put(`/leads/${leadId}`, { owner }),
     onSuccess: () => { setErr(''); setOpen(false); onChanged() },
@@ -1304,10 +1310,12 @@ function AssignRep({ convo, onChanged }: { convo: WhatsAppConversation; onChange
       {open && (
         <div style={{ borderTop: `1px solid ${LINE}`, background: '#FBF8F2', maxHeight: 210, overflowY: 'auto' }}>
           {err && <p className="px-3 py-1.5 text-xs" style={{ color: '#B91C1C' }}>{err}</p>}
-          {people.length === 0 && (
-            <p className="px-3 py-2 text-xs" style={{ color: FAINT_INK }}>Loading people…</p>
+          {reps.length === 0 && (
+            <p className="px-3 py-2 text-xs" style={{ color: FAINT_INK }}>
+              {people.length === 0 ? 'Loading sales reps…' : 'No sales reps to assign to.'}
+            </p>
           )}
-          {people.map((u) => (
+          {reps.map((u) => (
             <button
               key={u._id}
               type="button"
