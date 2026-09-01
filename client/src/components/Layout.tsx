@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import WhatsAppBell from './WhatsAppBell'
-import { Bot, Compass, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Target, Calculator, ListTodo, NotebookPen, MessageCircle, Sparkles } from 'lucide-react'
+import { Bot, Compass, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Target, Calculator, ListTodo, NotebookPen, MessageCircle, Sparkles, Trophy } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import GlobalSearch from './GlobalSearch'
@@ -29,6 +29,7 @@ const navGroups = [
       { to: '/my-leads', label: 'My Leads', icon: UserPlus, perm: 'sales_board' },
       { to: '/moving-estimator', label: 'Moving Estimator', icon: Calculator, perm: 'sales_board' },
       { to: '/my-performance', label: 'Reports', icon: BarChart3, perm: 'sales_board' },
+      { to: '/leaderboard', label: 'Leaderboard', icon: Trophy, perm: 'sales_board' },
       { to: '/account', label: 'Settings', icon: Settings, perm: 'sales_board' },
       { to: '/leads', label: 'Leads', icon: UserPlus, perm: 'leads' },
       { to: '/whatsapp', label: 'WhatsApp', icon: MessageCircle, perm: ['whatsapp', 'leads'] },
@@ -238,6 +239,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/my-leads': 'My Leads',
   '/moving-estimator': 'Moving Estimator',
   '/my-performance': 'My Performance',
+  '/leaderboard': 'Leaderboard',
   '/account': 'Settings',
   '/quotations': 'Quotations',
   '/contracts': 'Tenants',
