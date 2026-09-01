@@ -1295,7 +1295,27 @@ function AssignRep({ convo, onChanged }: { convo: WhatsAppConversation; onChange
      admin-owned lead would read as unassigned and get handed away by mistake. */
   const reps = people.filter((u) => u.role === 'sales_rep' || u._id === ownerId)
 
+  /* The click closes the menu and moves the tick straight away, and the list
+     is put right from the server afterwards.
+     *
+     * It used to wait for the round trip and then refetch the whole inbox
+     * twice - the conversations aggregate runs over 567 chats - so handing a
+     * chat to somebody sat there for seconds looking like it had not worked. */
+  const qc = useQueryClient()
   const assign = useMutation({
+    onMutate: (owner: string | null) => {
+      setOpen(false)
+      const picked = people.find((u) => u._id === owner)
+      qc.setQueriesData<{ list: WhatsAppConversation[]; total: number; matched: number }>(
+        { queryKey: ['wa-conversations'] },
+        (old) => old && {
+          ...old,
+          list: old.list.map((c) => (c.phoneNormalized === convo.phoneNormalized && c.lead
+            ? { ...c, lead: { ...c.lead, ownerId: owner ?? undefined, ownerName: picked?.name ?? undefined } }
+            : c)),
+        },
+      )
+    },
     mutationFn: async (owner: string | null) => {
       if (leadId) { await api.put(`/leads/${leadId}`, { owner }); return }
       // No lead behind this chat yet. This endpoint creates one and sets the
@@ -1307,8 +1327,8 @@ function AssignRep({ convo, onChanged }: { convo: WhatsAppConversation; onChange
         owner: owner || undefined,
       })
     },
-    onSuccess: () => { setErr(''); setOpen(false); onChanged() },
-    onError: (e) => setErr(apiError(e)),
+    onSuccess: () => { setErr(''); onChanged() },
+    onError: (e) => { setErr(apiError(e)); setOpen(true); onChanged() },
   })
 
   return (
@@ -2661,7 +2681,7 @@ export default function WhatsApp() {
                       {/* Opens in place like the labels row, so picking a
                           person does not shut the menu before the list. */}
                       <div data-keep-open>
-                        <AssignRep convo={selectedConvo} onChanged={() => { refetchConvos(); onSent() }} />
+                        <AssignRep convo={selectedConvo} onChanged={() => refetchConvos()} />
                       </div>
 
                       <LeadAction menuItem convo={selectedConvo} onChanged={onSent} />
