@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildTaskEmail, taskSubject } from './taskNotify.js';
+import { quoteLines, quoteTotals } from './quoteLines.js';
 
 /* The subject that prompted this: the whole title went into it, filling a
    phone screen and saying nothing at a glance. */
@@ -157,4 +158,81 @@ test('missing pieces degrade to a dash, not to "undefined"', () => {
     });
     assert.ok(!/undefined|NaN|null/.test(text), `leaked a placeholder:\n${text}`);
     assert.match(text, /Customer: —/);
+});
+
+/* The quoted breakdown.
+ *
+ * The email accounts raise the invoice from used to carry the contract's
+ * monthly rate and nothing else, so a fortnight in F2-37 totalling 750.25
+ * arrived as "Rate AED 650, Deposit AED 0" — no rent, no padlock, no
+ * refundable deposit. These assert the money is all there, and that it is the
+ * same money the printed quotation shows. */
+const QUOTE_143 = {
+   quoteNo: 'QT-000143',
+   vatEnabled: true,
+   vatRate: 5,
+   deposit: 0,
+   holdAdvance: true,
+   units: [{ unitNumber: 'F2-37', sizeSqf: 50, floor: 'F2', rate: 650, discountPct: 0,
+      startDate: new Date('2026-09-01'), endDate: new Date('2026-09-15') }],
+   addOns: [{ name: 'Lock', description: 'Padlock for storage unit', quantity: 1, rate: 80, amount: 80 }],
+   items: [],
+};
+
+test('the task email carries every quoted line, not just the rate', () => {
+   const { text } = buildTaskEmail({
+      task: { taskNo: 'T-2026-0003', title: 'Raise the invoice in Zoho Books' },
+      assignee: { name: 'Antony Albert', email: 'a@x.ae' },
+      assignedByName: 'Mahmoud Gohar',
+      contract: { contractNo: 'PB-2026-0359', rate: 650, deposit: 0 },
+      quote: QUOTE_143,
+   });
+
+   assert.match(text, /Storage Unit F2-37/);          // the rent, which was absent
+   assert.match(text, /Lock/);                        // the padlock, which was absent
+   assert.match(text, /Refundable Deposit · Unit F2-37/); // absent too
+   assert.match(text, /AED 325/);                     // two weeks' rent
+   assert.match(text, /AED 80/);                      // the padlock
+   assert.match(text, /VAT \(5%\): AED 20\.25/);
+   assert.match(text, /Total: AED 750\.25/);
+});
+
+test('refundable lines are marked as refundable, so they are not invoiced as income', () => {
+   const { text, html } = buildTaskEmail({
+      task: { title: 'Raise the invoice' },
+      assignee: { email: 'a@x.ae' },
+      quote: QUOTE_143,
+   });
+   const depositLine = text.split('\n').find((l) => l.startsWith('Refundable Deposit'));
+   assert.ok(depositLine.endsWith('(refundable)'), depositLine);
+   const rentLine = text.split('\n').find((l) => l.startsWith('Storage Unit'));
+   assert.ok(!rentLine.includes('refundable'), rentLine);
+   assert.match(html, /refundable/);
+});
+
+test('the email totals are the quotation\'s totals, line for line', () => {
+   const rows = quoteLines(QUOTE_143);
+   const totals = quoteTotals(QUOTE_143, rows);
+   const { text } = buildTaskEmail({
+      task: { title: 'Raise the invoice' }, assignee: { email: 'a@x.ae' }, quote: QUOTE_143,
+   });
+   for (const r of rows) assert.ok(text.includes(r.title), `missing line: ${r.title}`);
+   assert.ok(text.includes(`Total: AED ${totals.total.toLocaleString('en-AE')}`));
+});
+
+test('a task with no quote still sends, without a money section', () => {
+   const { text } = buildTaskEmail({
+      task: { title: 'Call the tenant' }, assignee: { email: 'a@x.ae' },
+   });
+   assert.ok(!text.includes('What we quoted'));
+   assert.match(text, /Call the tenant/);
+});
+
+test('the rate on a contract is stated as a four-week rate', () => {
+   const { text } = buildTaskEmail({
+      task: { title: 'x' }, assignee: { email: 'a@x.ae' },
+      contract: { contractNo: 'PB-1', rate: 650, deposit: 0 },
+   });
+   // "Rate: AED 650" on a fortnight's booking reads as the amount due.
+   assert.match(text, /Rate: AED 650\.00 per 4 weeks/);
 });

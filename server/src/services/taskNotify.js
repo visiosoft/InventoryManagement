@@ -11,14 +11,18 @@
  * be tested without a mail server or a database.
  */
 
-import { Contract, Document, Task } from '../models/index.js';
+import { Contract, Document, Quote, Task } from '../models/index.js';
 import { mailConfigured, sendMail } from './mail.js';
 import { buildContractPdf } from './contractDocument.js';
 import { downloadFile, driveConfigured } from './drive.js';
+import { quoteLines, quoteTotals } from './quoteLines.js';
 
 const DATE = { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Dubai' };
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('en-GB', DATE) : '—');
-const money = (n) => (Number.isFinite(Number(n)) ? `AED ${Number(n).toLocaleString('en-AE')}` : '—');
+// Always two decimals: a weekly rate of 162.5 is a typo on an invoice.
+const money = (n) => (Number.isFinite(Number(n))
+    ? `AED ${Number(n).toLocaleString('en-AE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : '—');
 
 const escapeHtml = (s) => String(s ?? '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -63,7 +67,7 @@ export function taskSubject({ task, contract }) {
  * `contract` is optional: a task raised against a lead, or against nothing at
  * all, still deserves an email, just without the paperwork section.
  */
-export function buildTaskEmail({ task, assignee, assignedByName, contract, signedPdfAttached }) {
+export function buildTaskEmail({ task, assignee, assignedByName, contract, quote, signedPdfAttached }) {
     const who = assignee?.name || assignee?.email || 'there';
     const subject = taskSubject({ task, contract });
 
@@ -76,6 +80,20 @@ export function buildTaskEmail({ task, assignee, assignedByName, contract, signe
     ];
     if (task.description) rows.push(['Details', task.description]);
 
+    /* What was actually quoted.
+     *
+     * Accounts raise the invoice off this email, and it used to carry the
+     * contract's monthly rate and nothing else — so a fortnight in F2-37 that
+     * came to 750.25 arrived as "Rate AED 650, Deposit AED 0", with no rent
+     * line, no padlock and no refundable deposit. Everything they had to
+     * invoice was missing, and the only way to find it was to open the quote.
+     *
+     * The lines come from quoteLines.js, the same list the printed quotation
+     * is drawn from, so this cannot say something different to the document
+     * the customer was sent. */
+    const lines = quote ? quoteLines(quote) : [];
+    const totals = quote ? quoteTotals(quote, lines) : null;
+
     const clientRows = contract ? [
         ['Contract', contract.contractNo || '—'],
         ['Customer', contract.customer?.fullName || '—'],
@@ -83,7 +101,7 @@ export function buildTaskEmail({ task, assignee, assignedByName, contract, signe
         ['Email', contract.customer?.email || '—'],
         ['Unit', unitLabel(contract)],
         ['Term', `${fmtDate(contract.startDate)} → ${fmtDate(contract.endDate)}`],
-        ['Rate', money(contract.rate)],
+        ['Rate', `${money(contract.rate)} per 4 weeks`],
         ['Deposit', money(contract.deposit)],
         ['Payment method', contract.paymentMethod || '—'],
         ['Status', contract.status || '—'],
@@ -105,10 +123,25 @@ export function buildTaskEmail({ task, assignee, assignedByName, contract, signe
         `${assignedByName || 'Someone'} has assigned you a task.`,
         '',
         textRows(rows),
+        ...(quote ? [
+            '',
+            `--- What we quoted (${quote.quoteNo || 'quote'}) ---`,
+            ...lines.map((l) => `${l.title} — ${l.qty} x ${money(l.rate)} = ${money(l.amount)}${l.taxable ? '' : ' (refundable)'}`),
+            `Sub total: ${money(totals.subTotal)}`,
+            ...(totals.adjustment ? [`Adjustment: ${money(totals.adjustment)}`] : []),
+            ...(totals.vatRate ? [`VAT (${totals.vatRate}%): ${money(totals.vatAmount)}`] : []),
+            `Total: ${money(totals.total)}`,
+        ] : []),
         ...(contract ? ['', '--- Client details ---', textRows(clientRows), '', paperwork] : []),
         '',
         'PurpleBox',
     ].join('\n');
+
+    const htmlTotal = (label, value, bold = false) => `
+      <tr>
+        <td style="padding:4px 14px 4px 0;color:#756E80;font-size:13px;text-align:right${bold ? ';font-weight:700;color:#14081F' : ''}">${escapeHtml(label)}</td>
+        <td style="padding:4px 0;font-size:13px;text-align:right;white-space:nowrap${bold ? ';font-weight:700' : ''};color:#14081F">${escapeHtml(value)}</td>
+      </tr>`;
 
     const htmlRows = (list) => list.map(([k, v]) => `
       <tr>
@@ -121,6 +154,23 @@ export function buildTaskEmail({ task, assignee, assignedByName, contract, signe
       <p style="font-size:14px">Hello ${escapeHtml(who)},</p>
       <p style="font-size:14px">${escapeHtml(assignedByName || 'Someone')} has assigned you a task.</p>
       <table style="border-collapse:collapse;margin:14px 0">${htmlRows(rows)}</table>
+      ${quote ? `
+        <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#5B2BC9;margin:22px 0 6px">What we quoted${quote.quoteNo ? ` · ${escapeHtml(quote.quoteNo)}` : ''}</h3>
+        <table style="border-collapse:collapse;margin-bottom:14px;width:100%">
+          ${lines.map((l) => `
+          <tr>
+            <td style="padding:6px 14px 6px 0;color:#14081F;font-size:13px">
+              ${escapeHtml(l.title)}${l.taxable ? '' : ' <span style="color:#756E80">(refundable)</span>'}
+              <div style="color:#756E80;font-size:12px">${escapeHtml(l.qty)} &times; ${escapeHtml(money(l.rate))}${l.sub ? ` · ${escapeHtml(l.sub)}` : ''}</div>
+            </td>
+            <td style="padding:6px 0;color:#14081F;font-size:13px;text-align:right;white-space:nowrap;vertical-align:top">${escapeHtml(money(l.amount))}</td>
+          </tr>`).join('')}
+          <tr><td colspan="2" style="border-top:1px solid #E6E0F0;padding:0"></td></tr>
+          ${htmlTotal('Sub total', money(totals.subTotal))}
+          ${totals.adjustment ? htmlTotal('Adjustment', money(totals.adjustment)) : ''}
+          ${totals.vatRate ? htmlTotal(`VAT (${totals.vatRate}%)`, money(totals.vatAmount)) : ''}
+          ${htmlTotal('Total', money(totals.total), true)}
+        </table>` : ''}
       ${contract ? `
         <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#5B2BC9;margin:22px 0 6px">Client details</h3>
         <table style="border-collapse:collapse;margin-bottom:14px">${htmlRows(clientRows)}</table>
@@ -141,9 +191,15 @@ export async function notifyTaskAssigned({ task, assignee, assignedByName }) {
 
     try {
         let contract = null;
+        let quote = null;
         if (task.leadType === 'contract' && task.leadId) {
             contract = await Contract.findById(task.leadId)
                 .populate('customer').populate('unit').populate('units').lean();
+            // The quote is where the money is: the contract carries a monthly
+            // rate, not the rent, the add-ons or the deposits that are actually
+            // being invoiced.
+            if (contract?.quote) quote = await Quote.findById(contract.quote).lean();
+            if (!quote) quote = await Quote.findOne({ contract: contract?._id }).sort({ createdAt: -1 }).lean();
         }
 
         const attachments = [];
@@ -178,7 +234,7 @@ export async function notifyTaskAssigned({ task, assignee, assignedByName }) {
         }
 
         const { subject, text, html } = buildTaskEmail({
-            task, assignee, assignedByName, contract, signedPdfAttached,
+            task, assignee, assignedByName, contract, quote, signedPdfAttached,
         });
 
         await sendMail({

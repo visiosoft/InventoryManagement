@@ -5,7 +5,7 @@ import { drawCompanyLogo } from './pdfLogo.js';
    services/companyIdentity.js. FALLBACK_CO is the literal this file used to
    carry, so a quote for a facility nobody has filled in prints unchanged. */
 import { FALLBACK_CO } from './companyIdentity.js';
-import { isRefundableRow } from './quoteVat.js';
+import { quoteLines, quoteTotals } from './quoteLines.js';
 
 // ── Palette ─────────────────────────────────────────────────────────────────
 const DARK = '#1F2937';
@@ -152,75 +152,7 @@ export function renderQuotePdf({ quote, co }) {
       y += hH;
 
       // Build display rows: units first (name + rental period), then add-ons, then legacy items.
-      const rows = [];
-      for (const u of quote.units || []) {
-         const size = u.sizeSqf ? `${u.sizeSqf} sqft` : '';
-         const floor = u.floor ? `Floor ${u.floor}` : '';
-         const meta = [size, floor].filter(Boolean).join(', ');
-         const disc = Number(u.discountPct || 0);
-         const uDays = u.startDate && u.endDate ? Math.round((new Date(u.endDate) - new Date(u.startDate)) / 86400000) : 0;
-         const uTotalWk = uDays > 0 ? Math.ceil(uDays / 7) : 0;
-         const durationStr = uTotalWk > 0 ? ` · ${uTotalWk} week${uTotalWk !== 1 ? 's' : ''}` : '';
-         const wkFull = Number((u.rate / 4).toFixed(2));
-         const wkDisc = Number((wkFull - (wkFull * disc) / 100).toFixed(2));
-         const discWks = Math.min(4, uTotalWk || 1);
-         const fullWks = Math.max(0, (uTotalWk || 1) - 4);
-         const periodAmount = Number((discWks * wkDisc + fullWks * wkFull).toFixed(2));
-         rows.push({
-            title: `Storage Unit ${u.unitNumber}${meta ? ` (${meta})` : ''}`,
-            sub: `${dt(u.startDate)} – ${dt(u.endDate)}${durationStr}${disc > 0 ? ` · ${disc}% off first 4 weeks` : ''}`,
-            qty: uTotalWk || 1,
-            rate: wkFull,
-            amount: periodAmount,
-            taxable: true,
-         });
-      }
-      /* The refundable deposit: four weeks, or the whole term if it is
-         shorter, at the undiscounted weekly rate. Held on top of the rent and
-         given back at the end, so it is outside the tax base like the security
-         deposit beneath it.
-
-         It was left off terms over four weeks, on the reasoning that the
-         advance prepays the final period and so was already inside the rent
-         above. The first invoice collects it regardless, so the quote came in
-         short of what the customer was then asked for. Skipped entirely when
-         the quote opts out (holdAdvance === false) - this row list is what the
-         sub total is summed from, so it must match normalizeBody() in
-         routes/quotes.js or the printed total will not match the stored one. */
-      if (quote.holdAdvance !== false) {
-         for (const u of quote.units || []) {
-            const uDays = u.startDate && u.endDate ? Math.round((new Date(u.endDate) - new Date(u.startDate)) / 86400000) : 0;
-            const uTotalWeeks = uDays > 0 ? Math.ceil(uDays / 7) : 1;
-            const advWeeks = Math.min(4, uTotalWeeks);
-            const wkFull = Number((u.rate / 4).toFixed(2));
-            rows.push({
-               title: `Refundable Deposit · Unit ${u.unitNumber}`,
-               sub: 'Held and refunded or adjusted at the end of the rental',
-               qty: advWeeks,
-               rate: wkFull,
-               amount: Number((wkFull * advWeeks).toFixed(2)),
-               taxable: false,
-            });
-         }
-      }
-      for (const a of quote.addOns || []) {
-         rows.push({
-            title: a.name,
-            sub: a.description || '',
-            qty: a.quantity,
-            rate: a.rate,
-            amount: a.amount,
-            // An add-on named as refundable is held, not sold — see quoteVat.js.
-            taxable: !isRefundableRow(a.name),
-         });
-      }
-      for (const it of quote.items || []) {
-         rows.push({ title: it.itemDetails || '-', sub: '', qty: it.quantity ?? 0, rate: it.rate, amount: it.amount, taxable: !isRefundableRow(it.itemDetails) });
-      }
-      const depositAmt = Number(quote.deposit || 0);
-      if (depositAmt > 0) {
-         rows.push({ title: 'Security Deposit (refundable)', sub: '', qty: 1, rate: depositAmt, amount: depositAmt, taxable: false });
-      }
+      const rows = quoteLines(quote);
 
       rows.forEach((r, idx) => {
          doc.font('Helvetica-Bold').fontSize(9);
@@ -284,9 +216,7 @@ export function renderQuotePdf({ quote, co }) {
          * owed, and would print a figure the system does not hold. Each row
          * carries its own `taxable` flag so this cannot drift from the list
          * above it. */
-      const vatRate = quote.vatEnabled === false ? 0 : Number(quote.vatRate || 5);
-      const taxableTotal = rows.reduce((s, r) => s + (r.taxable ? r.amount : 0), 0);
-      const vatAmount = Number((Math.max(0, taxableTotal + adjustment) * (vatRate / 100)).toFixed(2));
+      const { vatRate, vatAmount } = quoteTotals(quote, rows);
       if (vatRate > 0) {
          doc.font('Helvetica').fontSize(9).fillColor(GRAY)
             .text(`VAT (${vatRate}%)`, tX, y, { width: lblW, align: 'right' });
