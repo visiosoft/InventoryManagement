@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { ChevronRight, FileSignature, Package, Plus, Search, Trash2 } from 'lucide-react'
 import { api, apiError, quoteApi, type AvailableUnit } from '../lib/api'
+import { useAuth } from '../lib/auth'
 import type { Quote, QuoteStatus, QuoteUnit, QuoteAddOn } from '../lib/types'
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Table, Td, Th, Textarea } from '../components/ui'
 import { RentalFlowStepper, type FlowStep } from '../components/RentalFlowStepper'
@@ -94,6 +95,9 @@ function QuoteWizard({
   leads: { _id: string; fullName: string; phone?: string }[]
   onSubmit: (body: Record<string, unknown>) => void
 }) {
+  const { user } = useAuth()
+  const readOnly = user?.role === 'accounts'
+
   const [step, setStep] = useState(0)
   const [customerId, setCustomerId] = useState(
     typeof initial?.customer === 'object' ? initial.customer._id : ''
@@ -552,7 +556,11 @@ function QuoteWizard({
             <Button variant="outline" onClick={() => setStep(1)}>
               Back
             </Button>
-            <Button onClick={handleSubmit} disabled={busy || !unitRows.length}>
+            {/* Accounts read this screen to see what was agreed; they do not
+                agree it. The server refuses the write regardless, so the
+                button is disabled rather than left to fail. */}
+            <Button onClick={handleSubmit} disabled={busy || !unitRows.length || readOnly}
+              title={readOnly ? 'Your role can view a booking but not create one' : undefined}>
               {busy ? 'Saving…' : initial?._id ? 'Update Quote' : 'Create Quote'}
             </Button>
           </div>
@@ -563,6 +571,8 @@ function QuoteWizard({
 }
 
 function QuoteDetailPanel({ quote }: { quote: Quote }) {
+  const { user } = useAuth()
+  const readOnly = user?.role === 'accounts'
   const qc = useQueryClient()
   const navigate = useNavigate()
   const [convertError, setConvertError] = useState('')
@@ -709,7 +719,8 @@ function QuoteDetailPanel({ quote }: { quote: Quote }) {
           <p className="text-xs text-muted-foreground">
             Creates a draft contract with the units, dates, rate and deposit from this quote.
           </p>
-          <Button disabled={convert.isPending} onClick={() => convert.mutate()}>
+          <Button disabled={convert.isPending || readOnly} onClick={() => convert.mutate()}
+            title={readOnly ? 'Your role can view a booking but not create one' : undefined}>
             <FileSignature size={14} /> {convert.isPending ? 'Converting…' : 'Convert to Contract'}
           </Button>
           {convertError && <p className="text-xs text-destructive">{convertError}</p>}

@@ -300,8 +300,16 @@ export default function Tasks({ embedded = false }: { embedded?: boolean } = {})
     onSuccess: () => qc.invalidateQueries({ queryKey: ['all-tasks'] }),
   })
 
+  /* Newest first.
+   *
+   * This was ordered by due date, so a task raised this morning appeared below
+   * one from last week and the thing you had just been given was the hardest
+   * to find. Undated tasks sort with the rest by when they were raised rather
+   * than being swept to the bottom. */
   const sortedForList = useMemo(
-    () => [...tasks].sort((a, b) => (a.dueDate || '9999').localeCompare(b.dueDate || '9999')),
+    () => [...tasks].sort((a, b) => (
+      new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()
+    )),
     [tasks]
   )
 

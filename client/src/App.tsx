@@ -10,7 +10,11 @@ function PermGuard({ module, orSalesRep, children }: { module: string; orSalesRe
   // after a booking, they do not take one. Hiding the sidebar entry alone
   // would leave the page a URL away.
   const allowed = hasPermission(module)
-    || (orSalesRep && user?.role === 'sales_rep')
+    // Accounts are in as readers: they invoice against what was booked, so the
+    // booking screen is worth reading. Every write it makes is refused by the
+    // server (readOnlyFor in middleware/auth.js), and the page hides the
+    // buttons rather than letting them fail.
+    || (orSalesRep && (user?.role === 'sales_rep' || user?.role === 'accounts'))
   return allowed ? <>{children}</> : <Navigate to="/" replace />
 }
 
@@ -18,6 +22,12 @@ function PermGuard({ module, orSalesRep, children }: { module: string; orSalesRe
 function AdminGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
   return user?.role === 'admin' ? <>{children}</> : <Navigate to="/" replace />
+}
+
+/** Some screens are for a named set of roles rather than a module. */
+function RoleGuard({ roles, children }: { roles: string[]; children: React.ReactNode }) {
+  const { user } = useAuth()
+  return roles.includes(user?.role ?? '') ? <>{children}</> : <Navigate to="/" replace />
 }
 
 /** Tasks is a sales-rep/admin tool — staff don't get it. */
@@ -186,9 +196,11 @@ export default function App() {
         <Route path="/customers" element={<Customers />} />
         <Route path="/customers/:id" element={<PersonProfile />} />
         <Route path="/people/:id" element={<PersonProfile />} />
-        <Route path="/leads" element={<Leads />} />
+        {/* Accounts do not work leads, so the page is not theirs — hiding the
+            sidebar entry alone would leave it a URL away. */}
+        <Route path="/leads" element={<RoleGuard roles={['admin', 'staff', 'sales_rep']}><Leads /></RoleGuard>} />
         <Route path="/leads/:id" element={<PersonProfile />} />
-        <Route path="/my-leads" element={<PermGuard module="sales_board"><SalesBoard /></PermGuard>} />
+        <Route path="/my-leads" element={<RoleGuard roles={['admin', 'staff', 'sales_rep']}><SalesBoard /></RoleGuard>} />
         <Route path="/moving-estimator" element={<PermGuard module="sales_board"><MovingEstimator /></PermGuard>} />
         <Route path="/my-performance" element={<PermGuard module="sales_board"><MyPerformance /></PermGuard>} />
         <Route path="/leaderboard" element={<PermGuard module="sales_board"><Leaderboard /></PermGuard>} />
@@ -211,7 +223,7 @@ export default function App() {
         <Route path="/reports" element={<Reports />} />
         {/* Admin-only: a report here can reach revenue and every rep's numbers,
             and the server enforces the same rule. */}
-        <Route path="/reports/ask" element={<AdminGuard><AskReports /></AdminGuard>} />
+        <Route path="/reports/ask" element={<RoleGuard roles={['admin', 'accounts']}><AskReports /></RoleGuard>} />
         <Route path="/reports/conversations" element={<PermGuard module="reports_conversations"><DailyDigest /></PermGuard>} />
         <Route path="/reports/rates" element={<PermGuard module="reports_units"><RatesReport /></PermGuard>} />
         <Route path="/approvals" element={<AdminGuard><Approvals /></AdminGuard>} />

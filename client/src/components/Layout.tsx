@@ -86,10 +86,11 @@ const profileMenuGroups = [
 const profileMenuItems = profileMenuGroups.flatMap((g) => g.items)
 
 const reportItems = [
-  /* Asking for a report in plain English. adminOnly rather than a module
+  /* Asking for a report in plain English. By role rather than by module
      permission: it can reach revenue and every rep's numbers, and the server
-     enforces the same rule. */
-  { to: '/reports/ask', label: 'Ask for a report', icon: Sparkles, perm: '', adminOnly: true },
+     enforces the same rule. Accounts are in because the numbers they are asked
+     for are the ones they already work from. */
+  { to: '/reports/ask', label: 'Ask for a report', icon: Sparkles, perm: '', roles: ['admin', 'accounts'] },
   { to: '/reports/rates', label: 'Actual vs Leased', icon: Wallet, perm: 'reports_units' },
   { to: '/reports/conversations', label: 'Daily Conversations', icon: MessageCircle, perm: 'reports_conversations' },
 ]
@@ -114,7 +115,7 @@ const salesRepNavGroups = [
       // Called "Dashboard" until a rep asked where Leads had gone. The page is
       // their leads board — the same one the top menu calls My Leads — so
       // naming it after the thing it shows is the whole fix.
-      { key: 'leads', to: '/my-leads', label: 'Leads', icon: UserPlus, perm: 'sales_board' },
+      { key: 'leads', to: '/my-leads', label: 'Leads', icon: UserPlus, perm: 'sales_board', notFor: 'accounts' },
       { key: 'tasks', to: '/tasks', label: 'Tasks', icon: ListTodo, perm: 'sales_board' },
       { key: 'whatsapp', to: '/whatsapp', label: 'WhatsApp', icon: MessageCircle, perm: 'sales_board' },
     ],
@@ -128,7 +129,10 @@ const salesRepNavGroups = [
       // Accounts is not given this: they handle billing after a booking rather
       // than taking one. It is a role difference, not a permission one — the
       // two roles deliberately carry the same modules.
-      { key: 'book-unit', to: '/quotes', label: 'Book Unit', icon: FileText, perm: 'sales_board', notFor: 'accounts' },
+      /* Accounts see the booking screen but cannot book from it: they invoice
+         against what was agreed, so what is on it is worth reading. The server
+         refuses the write either way. */
+      { key: 'book-unit', to: '/quotes', label: 'Book Unit', icon: FileText, perm: 'sales_board' },
       { key: 'customers', to: '/contracts', label: 'Customers', icon: Users, perm: 'contracts' },
     ],
   },
@@ -314,7 +318,7 @@ export default function Layout() {
     || movingReportItems.some(({ perm }) => hasPermission(perm))
   const hasStorageAccess = navTop.some(({ perm }) => !perm || hasPermission(perm))
     || navGroups.some(g => g.items.some(({ perm }) => !perm || hasPermission(perm)))
-    || reportItems.some(({ perm, adminOnly }) => (adminOnly ? isAdmin : hasPermission(perm)))
+    || reportItems.some(({ perm, roles }) => (roles ? roles.includes(user?.role ?? '') : hasPermission(perm)))
     || navBottom.some(({ perm }) => !perm || hasPermission(perm))
   // Nothing to switch to → no switcher (moving-only users, storage-only users,
   // and sales reps, who keep their own flat nav).
@@ -520,7 +524,7 @@ export default function Layout() {
 
         {/* Reports */}
         {showStorageNav && (() => {
-          const visibleReports = reportItems.filter(({ perm, adminOnly }) => (adminOnly ? isAdmin : hasPermission(perm)))
+          const visibleReports = reportItems.filter(({ perm, roles }) => (roles ? roles.includes(user?.role ?? '') : hasPermission(perm)))
           if (visibleReports.length === 0) return null
           if (isCollapsed) {
             return (

@@ -158,6 +158,20 @@ export default function GlobalSearch() {
           placeholder="Search tenant, phone, contract no, unit…"
           className="flex-1 bg-transparent outline-none text-[13px]"
           style={{ color: '#14081F' }}
+          /* Browsers were dropping the saved sign-in address into this - it
+             sits in a header near a name, which is enough for them to guess a
+             username field - so the box opened already reading
+             "accounting@purplebox.ae". type="search" and a name of its own say
+             what it is; the rest turns off autofill in the browsers that need
+             telling twice. */
+          type="search"
+          name="global-search"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          data-1p-ignore
+          data-lpignore="true"
         />
         {isFetching && debounced.length >= 2 && <Loader2 size={13} className="animate-spin" style={{ color: MUTED }} />}
         {term && !isFetching && (

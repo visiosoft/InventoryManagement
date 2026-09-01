@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import PDFDocument from 'pdfkit';
-import { requireAdmin } from '../middleware/auth.js';
 import { buildReport, validateSpec, runSpec } from '../services/reportAgent.js';
 import { blockCatalogue } from '../services/reportBlocks.js';
 import { companyForSite } from '../services/companyIdentity.js';
@@ -12,7 +11,14 @@ const router = Router();
    numbers, which is a wider view than a rep or accounts has anywhere else in
    the app. Widening this later is a one-line change; narrowing it after people
    have seen the data is not. */
-router.use(requireAdmin);
+/* Admins and accounts. The figures a report can reach - revenue, every rep's
+   numbers - are the ones accounts already work from, and they are the people
+   most often asked for them. Nobody else. */
+router.use((req, res, next) => (
+    ['admin', 'accounts'].includes(req.user?.role)
+        ? next()
+        : res.status(403).json({ error: 'Admin access required' })
+));
 
 /** What can be asked about — shown on the page so the box is not a guess. */
 router.get('/blocks', (_req, res) => {

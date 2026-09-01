@@ -20,7 +20,7 @@ import cors from 'cors';
 import mongoose from 'mongoose';
 import { connectDb } from './db.js';
 
-import { requireAuth } from './middleware/auth.js';
+import { requireAuth, readOnlyFor } from './middleware/auth.js';
 import { UPLOADS_DIR } from './services/drive.js';
 import authRoutes from './routes/auth.js';
 import unitRoutes from './routes/units.js';
@@ -154,13 +154,18 @@ app.use('/api/contracts/zoho-webhook', (req, _res, next) => next());
 // WhatsApp webhook verification and events must be reachable without a JWT.
 app.use('/api/integrations/whatsapp/webhook', (req, _res, next) => next());
 app.use('/api/units', requireAuth, unitRoutes);
-app.use('/api/customers', requireAuth, customerRoutes);
+/* Accounts read tenants and contracts to invoice against them; they do not
+   agree terms or correct somebody's details. See readOnlyFor. */
+const accountsReadOnly = readOnlyFor('accounts');
+app.use('/api/customers', requireAuth, accountsReadOnly, customerRoutes);
 // Before the authenticated mount below: a tenant clicking the renewal link in
 // their expiry email has no account, and Express matches in order.
 app.use('/api/contracts/public', contractsPublicRoutes);
 app.use(
   '/api/contracts',
   (req, res, next) => (req.path === '/zoho-webhook' ? next() : requireAuth(req, res, next)),
+  // The webhook is Zoho's, not a person's, so it is past the role check above.
+  (req, res, next) => (req.path === '/zoho-webhook' ? next() : accountsReadOnly(req, res, next)),
   contractRoutes
 );
 app.use('/api/payments', requireAuth, paymentRoutes);
@@ -168,7 +173,8 @@ app.use('/api/documents', requireAuth, documentRoutes);
 app.use('/api/reports', requireAuth, reportRoutes);
 // Asking for a report in plain English. Admin-only inside the router itself.
 app.use('/api/ai-reports', requireAuth, aiReportRoutes);
-app.use('/api/leads', requireAuth, leadRoutes);
+// A lead is client information too, and accounts have no leads screen at all.
+app.use('/api/leads', requireAuth, accountsReadOnly, leadRoutes);
 app.use(
   '/api/quotes',
   (req, res, next) => req.path.startsWith('/public/') ? next() : requireAuth(req, res, next),
