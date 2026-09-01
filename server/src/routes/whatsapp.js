@@ -341,7 +341,7 @@ router.get('/conversations', async (req, res) => {
          *
          * The number is the fact. Matched on the last nine digits, the same
          * rule used for customers and everywhere else people are matched. */
-        Lead.find({}).select('fullName status owner whatsappProfileName phone phoneNormalized').lean(),
+        Lead.find({}).select('fullName status owner assignedAt whatsappProfileName phone phoneNormalized').lean(),
         Customer.find({}).select('fullName phone phones').lean(),
     ]);
 
@@ -456,6 +456,12 @@ router.get('/conversations', async (req, res) => {
                     // from the chat, and matching a person by name would pick
                     // the wrong one the day two share a first name.
                     ownerId: lead.owner ? String(lead.owner) : null,
+                    /* Whether a person put it on somebody, as opposed to the
+                       owner every auto-created contact is given at birth. The
+                       inbox shows the owner badge on this, so a chat handed to
+                       a rep says so even while it is still called
+                       "WhatsApp Contact 5521". */
+                    assigned: Boolean(lead.assignedAt),
                     profileName: lead.whatsappProfileName || '',
                 }
                 : null,

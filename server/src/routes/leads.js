@@ -593,7 +593,20 @@ router.put('/:id', async (req, res) => {
     // choice — "Unassigned" — not a missing value to fill in with the caller,
     // which is what it used to become: toggling a tag on a lead nobody owned
     // quietly handed it to the admin doing the toggling.
-    const ownerId = isSalesRep(req) ? req.user.id : (body.owner || null);
+    /* Only an edit that actually mentions the owner may change it.
+     *
+     * This read the merged body, which folds the stored lead in underneath —
+     * so it usually kept the owner, but anything that sent an explicit empty
+     * owner, or lost it in the merge, silently unassigned the lead. A chat
+     * assigned to Sales came back owned by nobody, and the only trace was
+     * "Lead updated" in the timeline. Leaving somebody unassigned is still
+     * possible; it just has to be said, which is what the menu's "Leave
+     * unassigned" sends. */
+    const ownerId = isSalesRep(req)
+        ? req.user.id
+        : (req.body.owner === undefined
+            ? (lead.owner ? String(lead.owner) : null)
+            : (body.owner || null));
     if (ownerId && !(await validateOwner(ownerId))) return res.status(400).json({ error: 'Lead owner not found' });
 
     // Handing a lead to somebody makes it new to them, whatever its age, so

@@ -2462,7 +2462,13 @@ export default function WhatsApp() {
                             Asking the lead marked 53 of 60 real customers as
                             leads, because converting is not the only way
                             somebody becomes one. */}
-                        {(c.customer || (c.lead && !isPlaceholderName(c.lead.fullName))) && (
+                        {/* A chat somebody has been handed shows its owner even
+                            while the lead is still called "WhatsApp Contact
+                            5521" - it was assigned to Sales and the row said
+                            nothing. `assigned` rather than an owner: every
+                            auto-created contact is given one, so that would
+                            badge the whole inbox. */}
+                        {(c.customer || (c.lead && (!isPlaceholderName(c.lead.fullName) || c.lead.assigned))) && (
                           <span
                             className="shrink-0 rounded-full px-1.5 py-0.5"
                             style={
