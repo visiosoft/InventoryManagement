@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Bot, CalendarOff, Check, Plus, Trash2, UserCheck } from 'lucide-react'
+import { AlertTriangle, Bell, BellOff, Bot, CalendarOff, Check, Plus, Trash2, UserCheck } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { PageHeader, Card, CardHeader, CardBody, Spinner, Field, Input, Select, Button } from '../components/ui'
 
@@ -39,6 +39,7 @@ type Rule = {
   todayCount: number
   effectivePct: number
   unavailableBecause: string | null
+  pushEnabled: boolean
 }
 type Data = {
   config: {
@@ -142,6 +143,18 @@ export default function LeadDistribution() {
             </CardBody>
           </Card>
 
+          {data.rules.length > 0 && data.rules.every((r) => !r.pushEnabled) && (
+            <div className="rounded-lg px-3 py-2.5 flex items-start gap-2" style={{ background: '#FEF3C7', color: '#92400E', fontSize: 12.5 }}>
+              <AlertTriangle size={15} style={{ marginTop: 1, flexShrink: 0 }} />
+              <span>
+                <strong>Nobody would be told.</strong> None of these reps has switched notifications on,
+                so a lead would land on their board silently. Each of them needs to open
+                <strong> My Account</strong> on the phone or laptop they actually use and turn notifications
+                on — once, per device. They will still get an email if one is configured.
+              </span>
+            </div>
+          )}
+
           {/* The reps */}
           <Card>
             <CardHeader
@@ -156,7 +169,7 @@ export default function LeadDistribution() {
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
                 <thead>
                   <tr style={{ borderBottom: `1px solid ${LINE}` }}>
-                    {['Rep', 'Status', 'Share', 'Now due', 'Today', 'Daily cap', 'Working hours', 'While away', ''].map((h) => (
+                    {['Rep', 'Status', 'Share', 'Now due', 'Today', 'Daily cap', 'Working hours', 'While away', 'Alerts', ''].map((h) => (
                       <th key={h} style={{ textAlign: 'left', padding: '10px 12px', fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: MUTED }}>{h}</th>
                     ))}
                   </tr>
@@ -173,7 +186,7 @@ export default function LeadDistribution() {
                     />
                   ))}
                   {!data.rules.length && (
-                    <tr><td colSpan={9} style={{ padding: '28px 12px', textAlign: 'center', fontSize: 13, color: MUTED }}>
+                    <tr><td colSpan={10} style={{ padding: '28px 12px', textAlign: 'center', fontSize: 13, color: MUTED }}>
                       Nobody is in the rotation yet. Add a rep below.
                     </td></tr>
                   )}
@@ -421,6 +434,23 @@ function RuleRow({ rule, people, busy, onSave, onRemove }: {
             <option value="">Choose…</option>
             {people.filter((p) => p._id !== rule.user._id).map((p) => <option key={p._id} value={p._id}>{p.name}</option>)}
           </Select>
+        )}
+      </td>
+
+      <td style={cell}>
+        {/* A lead they are never told about is a lead they find tomorrow. */}
+        {rule.pushEnabled ? (
+          <span className="inline-flex items-center gap-1" style={{ fontSize: 11.5, color: '#047857' }} title="Gets a notification the moment a lead lands">
+            <Bell size={12} /> On
+          </span>
+        ) : (
+          <span
+            className="inline-flex items-center gap-1"
+            style={{ fontSize: 11.5, color: '#B45309' }}
+            title={`${rule.user.name} has not switched notifications on. They need to open My Account on the device they use and turn them on — until then a lead lands silently.`}
+          >
+            <BellOff size={12} /> Off
+          </span>
         )}
       </td>
 

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import mongoose from 'mongoose';
 import { Customer, Contract, Document, Lead, Task, User, WhatsAppMessage } from '../models/index.js';
+import { notifyLeadAssigned } from '../services/leadNotify.js';
 import { FOLLOW_UP_KINDS, runFollowUps, syncFollowUpTask, syncSiteVisitTask } from '../services/followUps.js';
 import { applyOutcome, getFollowUpPlan, nextDateFor, sequenceState } from '../services/followUpSequence.js';
 import { summarise } from '../services/speedToLead.js';
@@ -613,7 +614,8 @@ router.put('/:id', async (req, res) => {
     // the highlight on their board comes back — and starts their clock. A lead
     // moved to a second person gets a fresh two minutes: it is their window,
     // not a continuation of somebody else's.
-    if (String(lead.owner || '') !== String(ownerId || '')) {
+    const handedOver = String(lead.owner || '') !== String(ownerId || '');
+    if (handedOver) {
         lead.ownerSeenAt = null;
         lead.assignedAt = ownerId ? new Date() : null;
         lead.firstResponseAt = null;
@@ -688,6 +690,20 @@ router.put('/:id', async (req, res) => {
     await syncSiteVisitTask(lead);
 
     await lead.save();
+
+    /* Tell the person who has just been given it.
+     *
+     * Only on an actual hand-off, and never to somebody handing a lead to
+     * themselves — a notification about your own click is noise. Not awaited:
+     * the answer to this request should not wait on a mail server. */
+    if (handedOver && ownerId && String(ownerId) !== String(req.user?.id || '')) {
+        notifyLeadAssigned({
+            lead,
+            ownerId,
+            assignedByName: req.user?.name || req.user?.email || '',
+        }).catch((e) => console.error('[Leads] notify failed:', e.message));
+    }
+
     res.json(await lead.populate('owner', 'name email'));
 });
 

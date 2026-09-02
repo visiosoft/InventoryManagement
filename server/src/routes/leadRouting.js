@@ -5,7 +5,7 @@
  */
 
 import { Router } from 'express';
-import { LeadRoutingConfig, LeadRoutingRule, User } from '../models/index.js';
+import { LeadRoutingConfig, LeadRoutingRule, PushSubscription, User } from '../models/index.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { availability, countsForToday, pickOwner, targetShares } from '../services/leadRouting.js';
 
@@ -24,12 +24,20 @@ async function loadConfig() {
  */
 router.get('/', async (_req, res) => {
    try {
-      const [config, rules, people, counts] = await Promise.all([
+      const [config, rules, people, counts, subscribed] = await Promise.all([
          loadConfig(),
          LeadRoutingRule.find({}).populate('user', 'name email role isActive').populate('fallbackUser', 'name').lean(),
          User.find({ isActive: true, role: { $in: ROLES } }).select('name email role').sort({ name: 1 }).lean(),
          countsForToday(),
+         /* Who would actually hear about it.
+          *
+          * Sharing leads out is half a feature if the person it lands on is not
+          * told, and a browser push only reaches somebody who has switched it
+          * on once under My Account. Surfaced per rep so it is obvious who
+          * still needs to, rather than being a silent gap. */
+         PushSubscription.distinct('user'),
       ]);
+      const notified = new Set(subscribed.map(String));
 
       // A rule for somebody who has since been deactivated is noise, not a rep.
       const live = rules.filter((r) => r.user && r.user.isActive !== false);
@@ -47,6 +55,7 @@ router.get('/', async (_req, res) => {
             // on — which is not the same as the share they were typed in with.
             effectivePct: totalShare > 0 ? Math.round(((shares.get(String(r.user._id)) || 0) / totalShare) * 1000) / 10 : 0,
             unavailableBecause: excluded.find((e) => e.id === String(r.user._id))?.reason ?? null,
+            pushEnabled: notified.has(String(r.user._id)),
          })),
          totalSharePct: live.reduce((s, r) => s + (Number(r.sharePct) || 0), 0),
       });

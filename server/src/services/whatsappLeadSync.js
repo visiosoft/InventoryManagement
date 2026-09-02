@@ -1,5 +1,6 @@
 import { Lead, User, WhatsAppLabelState, WhatsAppWebhookEvent, WhatsAppMessage } from '../models/index.js';
 import { routeInboundLead } from './leadRouting.js';
+import { notifyLeadAssigned } from './leadNotify.js';
 import { normalizeLeadPhone } from '../routes/leads.js';
 import { noteInboundForBot, pauseBotForHuman } from './aiBot.js';
 
@@ -336,6 +337,15 @@ export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, stat
             ...(routingNote ? [{ type: 'note', text: routingNote }] : []),
         ],
     });
+
+    /* Tell them. A lead that lands silently on a board is found the next time
+       somebody happens to look, which for a WhatsApp enquiry is far too late.
+       Deliberately not awaited into the caller's failure path — a webhook must
+       not fail because a mail server is slow. */
+    if (routingNote && ownerId) {
+        notifyLeadAssigned({ lead, ownerId, reason: routingNote.replace(/^Assigned by distribution rules — /, '') })
+            .catch((e) => console.error('[WhatsAppLeadSync] notify failed:', e.message));
+    }
 
     return lead;
 }
