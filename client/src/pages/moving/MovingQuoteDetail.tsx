@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft, Download, Plus, Trash2, Edit, Receipt, Pencil } from 'lucide-react'
 import { api, apiError, apiUrl } from '../../lib/api'
+import { movingTotals } from '../../lib/movingTotals'
 import { EditCustomerModalLoader } from '../../components/AddCustomerModal'
 import type { MovingQuote, MovingQuoteStatus } from '../../lib/types'
 import { Badge, Button, Field, Input, Modal, Spinner, Textarea } from '../../components/ui'
@@ -78,10 +79,14 @@ export default function MovingQuoteDetail() {
 
   const updateItemsMut = useMutation({
     mutationFn: (newItems: typeof items) => {
-      const subTotal = newItems.reduce((s, i) => s + i.amount, 0)
-      const discountAmt = subTotal * discountPct / 100
-      const total = subTotal - discountAmt
-      return api.put(`/moving-quotes/${id}`, { items: newItems, subTotal, discount: discountPct, total }).then(r => r.data)
+      /* The server recomputes all of this from the items — see
+         services/movingTotals.js — so what matters here is that the page shows
+         the same figures it will get back. */
+      const t = movingTotals({ items: newItems, discount: discountPct, vatEnabled: quote?.vatEnabled, vatRate: quote?.vatRate })
+      return api.put(`/moving-quotes/${id}`, {
+        items: newItems, discount: discountPct,
+        subTotal: t.subTotal, vatAmount: t.vatAmount, total: t.total,
+      }).then(r => r.data)
     },
     onSuccess: () => { invalidate(); setItemsModal(false); setEditIdx(null) },
     onError: (e) => setErr(apiError(e)),
@@ -115,6 +120,8 @@ export default function MovingQuoteDetail() {
 
   const transitions = STATUS_TRANSITIONS[quote.status] ?? []
   const total = items.reduce((s, i) => s + i.amount, 0)
+  // What the document comes to, by the one rule the server and the PDF use.
+  const shown = movingTotals({ items, discount: quote?.discount, vatEnabled: quote?.vatEnabled, vatRate: quote?.vatRate })
 
   return (
     <div style={{ background: '#FDFCFA', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
@@ -271,17 +278,23 @@ export default function MovingQuoteDetail() {
           <div className="flex flex-col items-end gap-1">
             <div className="flex gap-8" style={{ fontSize: 13, color: MUTED }}>
               <span>Sub Total</span>
-              <span style={{ fontVariantNumeric: 'tabular-nums', color: INK }}>AED {fmt(total)}</span>
+              <span style={{ fontVariantNumeric: 'tabular-nums', color: INK }}>AED {fmt(shown.subTotal)}</span>
             </div>
-            {(quote.discount || 0) > 0 && (
+            {shown.discount > 0 && (
               <div className="flex gap-8" style={{ fontSize: 13, color: '#EF4444' }}>
-                <span>Discount ({quote.discount}%)</span>
-                <span style={{ fontVariantNumeric: 'tabular-nums' }}>-AED {fmt(total * (quote.discount || 0) / 100)}</span>
+                <span>Discount ({shown.discount}%)</span>
+                <span style={{ fontVariantNumeric: 'tabular-nums' }}>-AED {fmt(shown.discountAmount)}</span>
+              </div>
+            )}
+            {shown.vatRate > 0 && (
+              <div className="flex gap-8" style={{ fontSize: 13, color: MUTED }}>
+                <span>VAT ({shown.vatRate}%)</span>
+                <span style={{ fontVariantNumeric: 'tabular-nums', color: INK }}>AED {fmt(shown.vatAmount)}</span>
               </div>
             )}
             <div className="flex gap-8" style={{ fontSize: 16, fontWeight: 700, color: PURPLE, ...HEADING }}>
               <span>Total</span>
-              <span style={{ fontVariantNumeric: 'tabular-nums' }}>AED {fmt(total - total * (quote.discount || 0) / 100)}</span>
+              <span style={{ fontVariantNumeric: 'tabular-nums' }}>AED {fmt(shown.total)}</span>
             </div>
           </div>
         </div>

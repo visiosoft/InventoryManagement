@@ -747,6 +747,12 @@ export interface MovingQuote {
   items: MovingQuoteItem[]
   subTotal: number
   discount?: number
+  /** VAT at 5%, charged on the sub total less the discount. `total` includes
+   *  it. Absent on documents stored before VAT existed, which the shared rule
+   *  in lib/movingTotals.ts treats as "on". */
+  vatEnabled?: boolean
+  vatRate?: number
+  vatAmount?: number
   total: number
   depositRequired?: boolean
   depositPct?: number
@@ -809,6 +815,13 @@ export interface MovingInvoice {
   dueDate?: string
   items: MovingQuoteItem[]
   subTotal: number
+  discount?: number
+  /** VAT at 5%, charged on the sub total less the discount. `total` includes
+   *  it. Absent on documents stored before VAT existed, which the shared rule
+   *  in lib/movingTotals.ts treats as "on". */
+  vatEnabled?: boolean
+  vatRate?: number
+  vatAmount?: number
   total: number
   depositPaid: number
   balanceDue: number

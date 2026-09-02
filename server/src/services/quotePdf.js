@@ -119,6 +119,10 @@ export function renderQuotePdf({ quote, co }) {
       doc.text(CO.phone, RX, ry, { width: RW });
       ry += 11;
       doc.text(CO.email, RX, ry, { width: RW });
+      if (CO.trn) {
+         ry += 11;
+         doc.font('Helvetica-Bold').fontSize(8).fillColor(BLACK).text(`TRN: ${CO.trn}`, RX, ry, { width: RW });
+      }
 
       // ── SUBJECT (full width, below header) ────────────────────────────────
       let y = Math.max(ly + 12, ry + 12);

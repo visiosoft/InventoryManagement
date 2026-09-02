@@ -1,4 +1,5 @@
 import PDFDocument from 'pdfkit';
+import { TRN } from './companyIdentity.js';
 import { drawCompanyLogo } from './pdfLogo.js';
 
 // ── Company constants ───────────────────────────────────────────────────────
@@ -10,6 +11,8 @@ const CO = {
   country: 'U.A.E',
   phone: '0097143293924',
   email: 'contact@purplebox.ae',
+  // One legal entity, one tax number — imported rather than retyped here.
+  trn: TRN,
 };
 
 const DEFAULT_TC =
@@ -140,7 +143,10 @@ export function renderInvoicePdf({ invoice }) {
 
     // ── TITLE ─────────────────────────────────────────────────────────────
     doc.font('Helvetica').fontSize(36).fillColor(DARK)
-       .text(invoice.status === 'draft' ? 'QUOTE' : 'INVOICE', M, 68, { width: PW - 2 * M, align: 'center' });
+       // A document that charges VAT and carries a TRN is a tax invoice, and
+       // is what a customer needs in order to reclaim the tax. A draft is not
+       // one yet, so it stays a quote.
+       .text(invoice.status === 'draft' ? 'QUOTE' : 'TAX INVOICE', M, 68, { width: PW - 2 * M, align: 'center' });
 
     // ── LEFT COLUMN ───────────────────────────────────────────────────────
     let ly = 132;
@@ -205,6 +211,8 @@ export function renderInvoicePdf({ invoice }) {
     doc.text(CO.phone, RX, ry, { width: RW });
     ry += 11;
     doc.text(CO.email, RX, ry, { width: RW });
+    ry += 11;
+    doc.font('Helvetica-Bold').fontSize(8).fillColor(BLACK).text(`TRN: ${CO.trn}`, RX, ry, { width: RW });
 
     // ── TOTAL SUMMARY BAR (below left column, above table) ────────────────
     const hdrBottom = Math.max(ly + 12, ry + 12);

@@ -1232,6 +1232,13 @@ const movingQuoteSchema = new Schema(
     items: [movingQuoteItemSchema],
     subTotal: { type: Number, default: 0 },
     discount: { type: Number, default: 0 },
+    /* VAT, charged on the sub total less the discount. On by default, and on
+       for documents stored before it existed: services/movingTotals.js treats
+       an absent flag as on, so an old quote reopened does not quietly lose the
+       tax. `total` includes it. */
+    vatEnabled: { type: Boolean, default: true },
+    vatRate: { type: Number, default: 5 },
+    vatAmount: { type: Number, default: 0 },
     total: { type: Number, default: 0 },
     depositRequired: { type: Boolean, default: false },
     depositPct: { type: Number, default: 0 },
@@ -1278,6 +1285,11 @@ const movingInvoiceSchema = new Schema(
     dueDate: { type: Date },
     items: [movingQuoteItemSchema],
     subTotal: { type: Number, default: 0 },
+    // Carried over from the quote it came from — see the note there.
+    discount: { type: Number, default: 0 },
+    vatEnabled: { type: Boolean, default: true },
+    vatRate: { type: Number, default: 5 },
+    vatAmount: { type: Number, default: 0 },
     total: { type: Number, default: 0 },
     depositPaid: { type: Number, default: 0 },
     balanceDue: { type: Number, default: 0 },

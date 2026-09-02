@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import { MovingInvoice, Customer, MovingJob, nextMovingInvoiceNo } from '../models/index.js';
+import { movingTotals, movingBalance } from '../services/movingTotals.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { generateMovingInvoicePdf } from '../services/movingInvoicePdf.js';
 import { notifyInvoiceReady, notifyPaymentReceived } from '../services/movingNotifications.js';
@@ -76,13 +77,18 @@ router.post('/', async (req, res) => {
   try {
     const invoiceNo = await nextMovingInvoiceNo();
     const body = req.body;
-    const balanceDue = (body.total || 0) - (body.depositPaid || 0);
     if (!body.dueDate) {
       const base = body.invoiceDate ? new Date(body.invoiceDate) : new Date();
       base.setDate(base.getDate() + 1);
       body.dueDate = base;
     }
-    const invoice = await MovingInvoice.create({ ...body, invoiceNo, balanceDue });
+    /* Figures from the items rather than from the browser — the same rule the
+       quote follows, so converting one into the other cannot change the sum.
+       An invoice posted with its own total is recomputed, which is what adds
+       VAT to anything raised by a caller that does not know about it. */
+    const totals = movingTotals(body);
+    const { balanceDue } = movingBalance({ total: totals.total, depositPaid: body.depositPaid, paymentHistory: body.paymentHistory });
+    const invoice = await MovingInvoice.create({ ...body, ...totals, invoiceNo, balanceDue });
     res.status(201).json(invoice);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -147,13 +153,17 @@ router.get('/:id', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { invoiceNo, ...update } = req.body;
-    if (update.total !== undefined || update.depositPaid !== undefined) {
-      const inv = await MovingInvoice.findById(req.params.id);
-      const total = update.total ?? inv.total;
-      const paid = (update.depositPaid ?? inv.depositPaid) +
-        (inv.paymentHistory?.reduce((s, p) => s + p.amount, 0) ?? 0);
-      update.balanceDue = Math.max(0, total - paid);
-    }
+    const inv = await MovingInvoice.findById(req.params.id).lean();
+    if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+
+    // Recomputed from what the invoice will be once this edit lands, so the
+    // stored total, the VAT line and the balance can never disagree.
+    Object.assign(update, movingTotals({ ...inv, ...update }));
+    update.balanceDue = movingBalance({
+      total: update.total,
+      depositPaid: update.depositPaid ?? inv.depositPaid,
+      paymentHistory: update.paymentHistory ?? inv.paymentHistory,
+    }).balanceDue;
     const invoice = await MovingInvoice.findByIdAndUpdate(req.params.id, update, { new: true, runValidators: true })
       .populate(POPULATE_INV);
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });

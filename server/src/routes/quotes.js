@@ -6,7 +6,7 @@ import { availableUnitsResponse } from '../services/unitAvailability.js';
 import { syncUnitStatus } from '../utils/unitStatus.js';
 import { renderQuotePdf } from '../services/quotePdf.js';
 import { companyForQuote } from '../services/companyIdentity.js';
-import { vatBase, vatOn } from '../services/quoteVat.js';
+import { isRefundableRow, vatBase, vatOn } from '../services/quoteVat.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { archivePdf } from '../utils/archivePdf.js';
 
@@ -486,6 +486,32 @@ async function createFirstInvoiceFromQuote(quote, contract, userName) {
             discountPct: 0,
             amount: depositAmt,
         });
+    }
+
+    /* VAT, on the same terms as the quote it came from.
+     *
+     * The first invoice carried none: a customer accepted QT-000146 at
+     * 20,212.00 including 892.00 of VAT and was then invoiced for the rent
+     * with no tax on it at all. The document now says TAX INVOICE and carries
+     * a TRN, which makes a claim it has to meet.
+     *
+     * Charged on this invoice's own lines rather than copied from the quote —
+     * the invoice covers the first period, not the whole term — and the
+     * refundable lines are outside the base, the rule quoteVat.js holds and
+     * the printed quotation already applies. */
+    if (quote.vatEnabled !== false) {
+        const taxable = items.reduce((sum, it) => sum + (isRefundableRow(it.itemDetails) ? 0 : it.amount), 0);
+        const vatAmount = vatOn(taxable, Number(quote.vatRate || 5));
+        if (vatAmount > 0) {
+            items.push({
+                sortOrder: items.length,
+                itemDetails: `VAT (${Number(quote.vatRate || 5)}%)`,
+                quantity: 1,
+                rate: vatAmount,
+                discountPct: 0,
+                amount: vatAmount,
+            });
+        }
     }
 
     const invoiceTotal = Number(items.reduce((s, it) => s + it.amount, 0).toFixed(2));

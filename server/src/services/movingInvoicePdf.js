@@ -1,4 +1,6 @@
 import PDFDocument from 'pdfkit';
+import { TRN } from './companyIdentity.js';
+import { movingTotals } from './movingTotals.js';
 import { drawCompanyLogo } from './pdfLogo.js';
 
 const CO = {
@@ -9,6 +11,8 @@ const CO = {
   country: 'U.A.E',
   phone: '0097143293924',
   email: 'moving@purplebox.ae',
+  // One legal entity, one tax number — imported rather than retyped here.
+  trn: TRN,
 };
 
 const DARK = '#1F2937';
@@ -52,7 +56,9 @@ export function generateMovingInvoicePdf(invoice) {
     doc.font('Helvetica').fontSize(9).fillColor(GRAY)
       .text(dt(invoice.invoiceDate), M, 52, { width: PW - 2 * M, align: 'right' });
     doc.font('Helvetica').fontSize(36).fillColor(DARK)
-      .text('INVOICE', M, 68, { width: PW - 2 * M, align: 'center' });
+      // A document that charges VAT and carries a TRN is a tax invoice, and
+      // is what a customer needs in order to reclaim the tax.
+      .text('TAX INVOICE', M, 68, { width: PW - 2 * M, align: 'center' });
 
     // PAID stamp
     if (invoice.status === 'paid') {
@@ -114,6 +120,8 @@ export function generateMovingInvoicePdf(invoice) {
     doc.text(CO.phone, RX, ry, { width: RW });
     ry += 11;
     doc.text(CO.email, RX, ry, { width: RW });
+    ry += 11;
+    doc.font('Helvetica-Bold').fontSize(8).fillColor(BLACK).text(`TRN: ${CO.trn}`, RX, ry, { width: RW });
 
     // Move addresses
     let y = Math.max(ly + 12, ry + 12);
@@ -180,12 +188,31 @@ export function generateMovingInvoicePdf(invoice) {
     const valX = tX + lblW;
     const valW = aW - 8;
 
+    /* Recomputed from the same rule the stored figure uses, so the printed
+       document and the record behind it cannot drift apart. The stored sub
+       total is not trusted: older records carry 0 in it while the items add up
+       to the full amount, which printed "Sub Total 0.00" above a real VAT
+       line and a real total. */
+    const t = movingTotals(invoice);
+
     doc.font('Helvetica').fontSize(9).fillColor(GRAY).text('Sub Total', tX, y, { width: lblW, align: 'right' });
-    doc.font('Helvetica').fontSize(9).fillColor(BLACK).text(num(invoice.subTotal), valX, y, { width: valW, align: 'right' });
+    doc.font('Helvetica').fontSize(9).fillColor(BLACK).text(num(t.subTotal), valX, y, { width: valW, align: 'right' });
     y += 16;
 
+    if (t.discount) {
+      doc.font('Helvetica').fontSize(9).fillColor(GRAY).text(`Discount (${t.discount}%)`, tX, y, { width: lblW, align: 'right' });
+      doc.font('Helvetica').fontSize(9).fillColor(BLACK).text(`-${num(t.discountAmount)}`, valX, y, { width: valW, align: 'right' });
+      y += 16;
+    }
+
+    if (t.vatRate > 0) {
+      doc.font('Helvetica').fontSize(9).fillColor(GRAY).text(`VAT (${t.vatRate}%)`, tX, y, { width: lblW, align: 'right' });
+      doc.font('Helvetica').fontSize(9).fillColor(BLACK).text(num(t.vatAmount), valX, y, { width: valW, align: 'right' });
+      y += 16;
+    }
+
     doc.font('Helvetica-Bold').fontSize(10).fillColor(BLACK).text('Total', tX, y, { width: lblW, align: 'right' });
-    doc.font('Helvetica-Bold').fontSize(10).fillColor(BLACK).text(aed(invoice.total), valX, y, { width: valW, align: 'right' });
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(BLACK).text(aed(t.total), valX, y, { width: valW, align: 'right' });
     y += 16;
 
     if (invoice.depositPaid) {

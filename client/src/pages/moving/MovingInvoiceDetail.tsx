@@ -6,6 +6,7 @@ import { api, apiError, apiUrl } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
 import { EditCustomerModalLoader } from '../../components/AddCustomerModal'
 import type { MovingInvoice, MovingInvoiceStatus } from '../../lib/types'
+import { movingTotals } from '../../lib/movingTotals'
 import { Badge, Button, Field, Input, Modal, Select, Spinner, Textarea } from '../../components/ui'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
@@ -130,9 +131,16 @@ export default function MovingInvoiceDetail() {
 
   const updateItemsMut = useMutation({
     mutationFn: (newItems: typeof items) => {
-      const total = newItems.reduce((s, i) => s + i.amount, 0)
+      /* The server recomputes all of this from the items — see
+         services/movingTotals.js — so what matters here is that the page shows
+         the same figures it will get back. */
+      const t = movingTotals({ items: newItems, discount: invoice?.discount, vatEnabled: invoice?.vatEnabled, vatRate: invoice?.vatRate })
       const paid = (invoice?.depositPaid ?? 0) + (invoice?.paymentHistory ?? []).reduce((s, p) => s + p.amount, 0)
-      return api.put(`/moving-invoices/${id}`, { items: newItems, total, balanceDue: Math.max(0, total - paid) }).then(r => r.data)
+      return api.put(`/moving-invoices/${id}`, {
+        items: newItems,
+        subTotal: t.subTotal, vatAmount: t.vatAmount, total: t.total,
+        balanceDue: Math.max(0, t.total - paid),
+      }).then(r => r.data)
     },
     onSuccess: () => { invalidate(); setItemsModal(false); setEditIdx(null) },
     onError: (e) => setErr(apiError(e)),
@@ -205,6 +213,8 @@ export default function MovingInvoiceDetail() {
 
   const transitions = STATUS_TRANSITIONS[invoice.status] ?? []
   const total = items.reduce((s, i) => s + i.amount, 0)
+  // What the document comes to, by the one rule the server and the PDF use.
+  const shown = movingTotals({ items, discount: invoice?.discount, vatEnabled: invoice?.vatEnabled, vatRate: invoice?.vatRate })
 
   function handlePayment(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -417,11 +427,23 @@ export default function MovingInvoiceDetail() {
           <div className="flex flex-col items-end gap-1">
             <div className="flex gap-4 sm:gap-8" style={{ fontSize: 13, color: MUTED }}>
               <span>Sub Total</span>
-              <span style={{ fontVariantNumeric: 'tabular-nums', color: INK }}>AED {fmt(total)}</span>
+              <span style={{ fontVariantNumeric: 'tabular-nums', color: INK }}>AED {fmt(shown.subTotal)}</span>
             </div>
+            {shown.discount > 0 && (
+              <div className="flex gap-4 sm:gap-8" style={{ fontSize: 13, color: '#EF4444' }}>
+                <span>Discount ({shown.discount}%)</span>
+                <span style={{ fontVariantNumeric: 'tabular-nums' }}>-AED {fmt(shown.discountAmount)}</span>
+              </div>
+            )}
+            {shown.vatRate > 0 && (
+              <div className="flex gap-4 sm:gap-8" style={{ fontSize: 13, color: MUTED }}>
+                <span>VAT ({shown.vatRate}%)</span>
+                <span style={{ fontVariantNumeric: 'tabular-nums', color: INK }}>AED {fmt(shown.vatAmount)}</span>
+              </div>
+            )}
             <div className="flex gap-4 sm:gap-8" style={{ fontSize: 16, fontWeight: 700, color: PURPLE, ...HEADING }}>
               <span>Total</span>
-              <span style={{ fontVariantNumeric: 'tabular-nums' }}>AED {fmt(total)}</span>
+              <span style={{ fontVariantNumeric: 'tabular-nums' }}>AED {fmt(shown.total)}</span>
             </div>
             <div className="flex gap-4 sm:gap-8 mt-1" style={{ fontSize: 13, fontWeight: 600, color: (invoice.balanceDue ?? 0) > 0 ? '#EF4444' : '#059669' }}>
               <span>Balance Due</span>

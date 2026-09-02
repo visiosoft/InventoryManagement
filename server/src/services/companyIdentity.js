@@ -18,6 +18,17 @@
 import { Site, Unit, Contract } from '../models/index.js';
 
 /** The details every PDF hardcoded. Unchanged, so output is identical. */
+/**
+ * The company's tax registration number.
+ *
+ * One legal entity, so one number, whichever facility or which side of the
+ * business a document comes from. Defined here and imported by the moving
+ * documents too, which keep their own letterhead (different trading name and
+ * email) but not their own TRN — four copies of a tax number is three chances
+ * to print the wrong one.
+ */
+export const TRN = '104974005100003';
+
 export const FALLBACK_CO = {
     name: 'PurpleBox',
     legalName: 'PurpleBox',
@@ -27,7 +38,7 @@ export const FALLBACK_CO = {
     country: 'U.A.E',
     phone: '0097143293924',
     email: 'contact@purplebox.ae',
-    trn: '',
+    trn: TRN,
     bankInformation: '',
 };
 

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { MovingQuote, MovingInvoice, MovingJob, nextMovingQuoteNo, nextMovingInvoiceNo } from '../models/index.js';
 import { generateMovingQuotePdf } from '../services/movingQuotePdf.js';
+import { movingTotals } from '../services/movingTotals.js';
 
 const router = Router();
 
@@ -26,7 +27,13 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const quoteNo = await nextMovingQuoteNo();
-    const quote = await MovingQuote.create({ ...req.body, quoteNo });
+    /* The server owns the money.
+     *
+     * Sub total, VAT and total were whatever the browser posted, so two
+     * screens could disagree and the document followed whichever saved last.
+     * They are recomputed from the items here, which is also what puts VAT on
+     * a quote raised by anything that does not know to add it. */
+    const quote = await MovingQuote.create({ ...req.body, quoteNo, ...movingTotals(req.body) });
     res.status(201).json(quote);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -50,6 +57,11 @@ router.get('/:id', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { quoteNo, ...update } = req.body;
+    /* Recomputed on every edit, from the items and discount as they will be
+       stored — the merge below is what the document ends up being. */
+    const existing = await MovingQuote.findById(req.params.id).lean();
+    if (!existing) return res.status(404).json({ error: 'Quote not found' });
+    Object.assign(update, movingTotals({ ...existing, ...update }));
     const quote = await MovingQuote.findByIdAndUpdate(req.params.id, update, { new: true, runValidators: true })
       .populate('customer', 'fullName phone email address')
       .populate('job', 'jobNo status');
@@ -128,7 +140,13 @@ router.post('/:id/convert-to-invoice', async (req, res) => {
       status: 'draft',
       invoiceDate: new Date(),
       items: quote.items,
+      // The quote's own figures, VAT included — an invoice that recomputed
+      // them could ask for a different sum than the customer accepted.
       subTotal: quote.subTotal,
+      discount: quote.discount || 0,
+      vatEnabled: quote.vatEnabled !== false,
+      vatRate: quote.vatRate ?? 5,
+      vatAmount: quote.vatAmount || 0,
       total: quote.total,
       depositPaid,
       balanceDue: Math.max(0, quote.total - depositPaid),
