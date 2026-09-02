@@ -76,6 +76,7 @@ import salesTeamRoutes from './routes/salesTeam.js';
 import leaderboardRoutes from './routes/leaderboard.js';
 import accountsDashboardRoutes from './routes/accountsDashboard.js';
 import exportRoutes from './routes/exports.js';
+import leadRoutingRoutes from './routes/leadRouting.js';
 import activityRoutes from './routes/activity.js';
 import signingMovingRoutes from './routes/signingMoving.js';
 import customerAuthRoutes from './routes/customerAuth.js';
@@ -253,6 +254,8 @@ app.use('/api/leaderboard', requireAuth, leaderboardRoutes);
 app.use('/api/accounts-dashboard', requireAuth, accountsDashboardRoutes);
 // Downloading the table you are looking at, in any format, from any page.
 app.use('/api/exports', requireAuth, exportRoutes);
+// Who gets the next WhatsApp lead. Admin only, inside the router.
+app.use('/api/lead-routing', requireAuth, leadRoutingRoutes);
 app.use('/api/activity', requireAuth, activityRoutes);
 
 // Central error handler

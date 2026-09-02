@@ -1807,6 +1807,58 @@ whatsappWebhookHitSchema.index({ at: -1 });
 export const WhatsAppWebhookHit = model('WhatsAppWebhookHit', whatsappWebhookHitSchema);
 
 export const WhatsAppMessage = model('WhatsAppMessage', whatsappMessageSchema);
+
+/* ── Who gets the next WhatsApp lead ──────────────────────────────────────────
+ *
+ * One row per rep. Every inbound chat used to go to whichever user was created
+ * first, which is how one admin came to own 252 of them; these rows are what
+ * replaced that. services/leadRouting.js holds the arithmetic and is tested on
+ * its own — nothing here decides anything.
+ */
+const leadRoutingRuleSchema = new Schema({
+  user: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+  /* A share, not a promise of a percentage. They need not sum to 100: two reps
+     on 2 and 1 split the day two to one, which is the same thing as 67 and 33
+     and easier to type. */
+  sharePct: { type: Number, default: 0, min: 0 },
+  // active takes work; absent is away with a reason; paused is a deliberate
+  // pull-out (training, a bad week) that nobody should have to date.
+  status: { type: String, enum: ['active', 'absent', 'paused'], default: 'active' },
+  absentFrom: { type: Date, default: null },
+  absentTo: { type: Date, default: null },
+  // A ceiling that beats the share: "never give Sara more than ten a day".
+  // 0 means no ceiling.
+  dailyCap: { type: Number, default: 0, min: 0 },
+  workingHours: {
+    // 0 = Sunday. Empty means every day.
+    days: { type: [Number], default: [] },
+    start: { type: String, default: '' },
+    end: { type: String, default: '' },
+  },
+  // Where this rep's share goes while they are away: spread across whoever is
+  // left in proportion, or handed to one named stand-in.
+  fallbackMode: { type: String, enum: ['pool', 'user'], default: 'pool' },
+  fallbackUser: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+  notes: { type: String, default: '' },
+}, { timestamps: true });
+
+/** The settings that are not about one person. A single document. */
+const leadRoutingConfigSchema = new Schema({
+  enabled: { type: Boolean, default: false },
+  timeZone: { type: String, default: 'Asia/Dubai' },
+  /* Nobody on shift. 'ai' leaves the chat to the assistant and the lead
+     unassigned, so it is picked up in the morning by whoever is due it rather
+     than landing on somebody asleep; 'user' hands it to a named person. */
+  outOfHoursMode: { type: String, enum: ['ai', 'unassigned', 'user'], default: 'ai' },
+  outOfHoursUser: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+  /* Somebody we already have as a customer is not a new lead — they are an
+     account with a history, and go to whoever looks after accounts rather than
+     into the rotation. Null keeps them in it. */
+  existingCustomerUser: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+}, { timestamps: true });
+
+export const LeadRoutingRule = model('LeadRoutingRule', leadRoutingRuleSchema);
+export const LeadRoutingConfig = model('LeadRoutingConfig', leadRoutingConfigSchema);
 export const Contract = model('Contract', contractSchema);
 export const Quote = model('Quote', quoteSchema);
 export const Invoice = model('Invoice', invoiceSchema);

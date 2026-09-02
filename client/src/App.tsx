@@ -90,6 +90,7 @@ import SalesBoard from './pages/SalesBoard'
 import MovingEstimator from './pages/MovingEstimator'
 import MyPerformance from './pages/MyPerformance'
 import AccountsDashboard from './pages/AccountsDashboard'
+import LeadDistribution from './pages/LeadDistribution'
 import Leaderboard from './pages/Leaderboard'
 import MyAccount from './pages/MyAccount'
 import Quotations from './pages/Quotations'
@@ -212,6 +213,7 @@ export default function App() {
         <Route path="/my-performance" element={<PermGuard module="sales_board"><MyPerformance /></PermGuard>} />
         <Route path="/leaderboard" element={<PermGuard module="sales_board"><Leaderboard /></PermGuard>} />
         <Route path="/accounts" element={<RoleGuard roles={['admin', 'accounts']}><AccountsDashboard /></RoleGuard>} />
+        <Route path="/settings/lead-distribution" element={<AdminGuard><LeadDistribution /></AdminGuard>} />
         <Route path="/account" element={<MyAccount />} />
         <Route path="/quotes" element={<PermGuard module="quotes" orSalesRep><Quotations /></PermGuard>} />
         <Route path="/quotes/new" element={<PermGuard module="quotes" orSalesRep><NewQuote /></PermGuard>} />

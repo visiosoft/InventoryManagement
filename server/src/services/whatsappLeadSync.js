@@ -1,4 +1,5 @@
 import { Lead, User, WhatsAppLabelState, WhatsAppWebhookEvent, WhatsAppMessage } from '../models/index.js';
+import { routeInboundLead } from './leadRouting.js';
 import { normalizeLeadPhone } from '../routes/leads.js';
 import { noteInboundForBot, pauseBotForHuman } from './aiBot.js';
 
@@ -279,8 +280,31 @@ async function getDefaultOwnerId() {
 }
 
 export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, status = 'new', timelineText, fullName, ownerId: ownerOverride, profileName = '' }) {
-    const ownerId = ownerOverride || await getDefaultOwnerId();
-    if (!ownerId) return null;
+    /* Who this belongs to.
+     *
+     * An explicit owner wins — somebody saving a chat as a lead has already
+     * chosen. Otherwise the distribution rules decide: by share, by who is on
+     * shift, and by what has gone out today. See services/leadRouting.js.
+     *
+     * With distribution switched off this is exactly what it always was, the
+     * first user on the system, so turning it on is a decision somebody makes
+     * rather than something that happens to them. */
+    let ownerId = ownerOverride || null;
+    let routingNote = '';
+    if (!ownerId) {
+        const decision = await routeInboundLead({ phoneNormalized }).catch(() => null);
+        if (decision && !decision.off) {
+            ownerId = decision.ownerId;
+            routingNote = decision.ownerId
+                ? `Assigned by distribution rules — ${decision.reason}`
+                : `Left unassigned — ${decision.reason}`;
+        } else {
+            ownerId = await getDefaultOwnerId();
+        }
+    }
+    // An unowned lead is a real outcome out of hours; only a lead with nobody
+    // to give it to and no rules at all is a failure.
+    if (!ownerId && !routingNote) return null;
 
     const lead = await Lead.create({
         fullName: String(fullName || '').trim() || `WhatsApp Contact ${phoneNormalized.slice(-4)}`,
@@ -297,6 +321,10 @@ export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, stat
         durationValue: 1,
         durationUnit: 'month',
         owner: ownerId,
+        /* A lead the rules handed to somebody is a lead they have been given,
+           so it starts their response clock and shows on their board — unlike
+           the auto-created contacts that exist only to hang messages off. */
+        assignedAt: routingNote && ownerId ? new Date() : null,
         unitsNeeded: 1,
         notes: '',
         timeline: [
@@ -304,6 +332,8 @@ export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, stat
                 type: 'whatsapp_created',
                 text: timelineText || 'Lead auto-created from WhatsApp webhook',
             },
+            // Why this person and not another. Worth having when somebody asks.
+            ...(routingNote ? [{ type: 'note', text: routingNote }] : []),
         ],
     });
 
