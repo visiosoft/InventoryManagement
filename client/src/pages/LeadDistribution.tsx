@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Bell, BellOff, Bot, CalendarOff, Check, Plus, Trash2, UserCheck } from 'lucide-react'
+import { AlertTriangle, Bell, BellOff, Bot, Plus, Trash2, UserCheck } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { PageHeader, Card, CardHeader, CardBody, Spinner, Field, Input, Select, Button } from '../components/ui'
 
@@ -166,10 +166,10 @@ export default function LeadDistribution() {
               }
             />
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
                 <thead>
                   <tr style={{ borderBottom: `1px solid ${LINE}` }}>
-                    {['Rep', 'Status', 'Share', 'Now due', 'Today', 'Daily cap', 'Working hours', 'While away', 'Alerts', ''].map((h) => (
+                    {['Rep', 'Status', 'Share', 'Working hours', ''].map((h) => (
                       <th key={h} style={{ textAlign: 'left', padding: '10px 12px', fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: MUTED }}>{h}</th>
                     ))}
                   </tr>
@@ -179,14 +179,13 @@ export default function LeadDistribution() {
                     <RuleRow
                       key={r._id}
                       rule={r}
-                      people={data.people}
                       busy={saveRule.isPending}
                       onSave={(body) => saveRule.mutate({ userId: r.user._id, body })}
                       onRemove={() => removeRule.mutate(r.user._id)}
                     />
                   ))}
                   {!data.rules.length && (
-                    <tr><td colSpan={10} style={{ padding: '28px 12px', textAlign: 'center', fontSize: 13, color: MUTED }}>
+                    <tr><td colSpan={5} style={{ padding: '28px 12px', textAlign: 'center', fontSize: 13, color: MUTED }}>
                       Nobody is in the rotation yet. Add a rep below.
                     </td></tr>
                   )}
@@ -307,31 +306,55 @@ export default function LeadDistribution() {
   )
 }
 
-function RuleRow({ rule, people, busy, onSave, onRemove }: {
+/* Common shifts as one click each, because that is what people actually work.
+   Custom is there for the exception rather than being the only way in — two
+   time fields and seven day toggles on every row was a lot of furniture for
+   "she works normal hours". */
+const SHIFTS = [
+  { key: 'any', label: 'Any time', start: '', end: '' },
+  { key: 'day', label: '9am - 6pm', start: '09:00', end: '18:00' },
+  { key: 'early', label: '8am - 5pm', start: '08:00', end: '17:00' },
+  { key: 'late', label: '12pm - 9pm', start: '12:00', end: '21:00' },
+] as const
+
+function RuleRow({ rule, busy, onSave, onRemove }: {
   rule: Rule
-  people: Person[]
   busy: boolean
   onSave: (body: Record<string, unknown>) => void
   onRemove: () => void
 }) {
   const [share, setShare] = useState(String(rule.sharePct))
-  const [cap, setCap] = useState(String(rule.dailyCap || ''))
-  const cell = { padding: '10px 12px', fontSize: 13, verticalAlign: 'top' as const }
+  const cell = { padding: '12px', fontSize: 13, verticalAlign: 'middle' as const }
   const tone = STATUS_TONE[rule.status] ?? STATUS_TONE.active
   const hours = rule.workingHours ?? {}
+
+  const matched = SHIFTS.find((sh) => sh.start === (hours.start ?? '') && sh.end === (hours.end ?? ''))
+  const [custom, setCustom] = useState(!matched)
+  const days = hours.days?.length ? hours.days : DAYS.map(([, d]) => d)
 
   return (
     <tr style={{ borderBottom: `1px solid ${LINE}` }}>
       <td style={cell}>
-        <div style={{ fontWeight: 600, color: INK }}>{rule.user.name}</div>
-        <div style={{ fontSize: 11.5, color: MUTED }}>{rule.user.role}</div>
+        <div className="flex items-center gap-1.5">
+          <span style={{ fontWeight: 600, color: INK }}>{rule.user.name}</span>
+          {/* A lead nobody is told about is a lead found tomorrow, so this sits
+              beside the name rather than taking a column of its own. */}
+          {rule.pushEnabled
+            ? <Bell size={12} style={{ color: '#047857' }} />
+            : <BellOff size={12} style={{ color: '#B45309' }} />}
+        </div>
+        <div style={{ fontSize: 11.5, color: MUTED, marginTop: 1 }}>
+          {rule.unavailableBecause
+            ? <span style={{ color: '#B45309' }}>{rule.unavailableBecause}</span>
+            : <>due {rule.effectivePct}% now, {rule.todayCount} today</>}
+        </div>
       </td>
 
       <td style={cell}>
         <Select
           value={rule.status}
           onChange={(e) => onSave({ status: e.target.value })}
-          style={{ background: tone.bg, color: tone.fg, fontWeight: 600 }}
+          style={{ background: tone.bg, color: tone.fg, fontWeight: 600, minWidth: 108 }}
         >
           <option value="active">Active</option>
           <option value="absent">Absent</option>
@@ -340,7 +363,7 @@ function RuleRow({ rule, people, busy, onSave, onRemove }: {
         {rule.status === 'absent' && (
           <div className="flex items-center gap-1 mt-1.5">
             <Input type="date" value={asDate(rule.absentFrom)} onChange={(e) => onSave({ absentFrom: e.target.value || null })} style={{ fontSize: 11.5, padding: '3px 6px' }} />
-            <span style={{ fontSize: 11, color: MUTED }}>→</span>
+            <span style={{ fontSize: 11, color: MUTED }}>to</span>
             <Input type="date" value={asDate(rule.absentTo)} onChange={(e) => onSave({ absentTo: e.target.value || null })} style={{ fontSize: 11.5, padding: '3px 6px' }} />
           </div>
         )}
@@ -352,105 +375,61 @@ function RuleRow({ rule, people, busy, onSave, onRemove }: {
             value={share}
             onChange={(e) => setShare(e.target.value)}
             onBlur={() => Number(share) !== rule.sharePct && onSave({ sharePct: Number(share) || 0 })}
-            style={{ width: 62, fontVariantNumeric: 'tabular-nums' }}
+            style={{ width: 64, fontVariantNumeric: 'tabular-nums' }}
             disabled={busy}
           />
           <span style={{ color: MUTED }}>%</span>
         </div>
       </td>
 
-      <td style={{ ...cell, fontVariantNumeric: 'tabular-nums' }}>
-        {rule.unavailableBecause ? (
-          <span style={{ color: '#B45309', fontSize: 12 }}>—</span>
-        ) : (
-          <span style={{ fontWeight: 700, color: rule.effectivePct !== rule.sharePct ? PURPLE : INK }}>
-            {rule.effectivePct}%
-          </span>
-        )}
-        {rule.unavailableBecause && (
-          <div className="flex items-center gap-1" style={{ fontSize: 11, color: '#B45309' }}>
-            <CalendarOff size={11} /> {rule.unavailableBecause}
-          </div>
-        )}
-      </td>
-
-      <td style={{ ...cell, fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{rule.todayCount}</td>
-
       <td style={cell}>
-        <Input
-          value={cap}
-          placeholder="none"
-          onChange={(e) => setCap(e.target.value)}
-          onBlur={() => Number(cap || 0) !== rule.dailyCap && onSave({ dailyCap: Number(cap) || 0 })}
-          style={{ width: 74, fontVariantNumeric: 'tabular-nums' }}
-          disabled={busy}
-        />
-      </td>
-
-      <td style={cell}>
-        <div className="flex items-center gap-1">
-          <Input type="time" value={hours.start ?? ''} onChange={(e) => onSave({ workingHours: { ...hours, start: e.target.value } })} style={{ fontSize: 12, padding: '3px 6px' }} />
-          <span style={{ fontSize: 11, color: MUTED }}>–</span>
-          <Input type="time" value={hours.end ?? ''} onChange={(e) => onSave({ workingHours: { ...hours, end: e.target.value } })} style={{ fontSize: 12, padding: '3px 6px' }} />
-        </div>
-        <div className="flex gap-0.5 mt-1">
-          {DAYS.map(([label, n]) => {
-            const on = !hours.days?.length || hours.days.includes(n)
-            return (
-              <button
-                key={n}
-                type="button"
-                title={`${label}${on ? '' : ' — off'}`}
-                onClick={() => {
-                  const current = hours.days?.length ? hours.days : DAYS.map(([, d]) => d)
-                  const next = current.includes(n) ? current.filter((d) => d !== n) : [...current, n]
-                  onSave({ workingHours: { ...hours, days: next } })
-                }}
-                style={{
-                  fontSize: 10, fontWeight: 700, borderRadius: 4, padding: '2px 4px', cursor: 'pointer',
-                  border: `1px solid ${on ? PURPLE : LINE}`,
-                  background: on ? '#F3EDFF' : 'transparent',
-                  color: on ? PURPLE : MUTED,
-                }}
-              >
-                {label[0]}
-              </button>
-            )
-          })}
-        </div>
-      </td>
-
-      <td style={cell}>
-        <Select value={rule.fallbackMode} onChange={(e) => onSave({ fallbackMode: e.target.value })} style={{ fontSize: 12 }}>
-          <option value="pool">Share it out</option>
-          <option value="user">One stand-in</option>
+        <Select
+          value={custom ? 'custom' : (matched ? matched.key : 'any')}
+          onChange={(e) => {
+            if (e.target.value === 'custom') { setCustom(true); return }
+            setCustom(false)
+            const sh = SHIFTS.find((x) => x.key === e.target.value)
+            if (sh) onSave({ workingHours: { days: [], start: sh.start, end: sh.end } })
+          }}
+          style={{ minWidth: 132 }}
+        >
+          {SHIFTS.map((sh) => <option key={sh.key} value={sh.key}>{sh.label}</option>)}
+          <option value="custom">Custom...</option>
         </Select>
-        {rule.fallbackMode === 'user' && (
-          <Select
-            value={rule.fallbackUser?._id ?? ''}
-            onChange={(e) => onSave({ fallbackUser: e.target.value || null })}
-            style={{ fontSize: 12, marginTop: 4 }}
-          >
-            <option value="">Choose…</option>
-            {people.filter((p) => p._id !== rule.user._id).map((p) => <option key={p._id} value={p._id}>{p.name}</option>)}
-          </Select>
-        )}
-      </td>
 
-      <td style={cell}>
-        {/* A lead they are never told about is a lead they find tomorrow. */}
-        {rule.pushEnabled ? (
-          <span className="inline-flex items-center gap-1" style={{ fontSize: 11.5, color: '#047857' }} title="Gets a notification the moment a lead lands">
-            <Bell size={12} /> On
-          </span>
-        ) : (
-          <span
-            className="inline-flex items-center gap-1"
-            style={{ fontSize: 11.5, color: '#B45309' }}
-            title={`${rule.user.name} has not switched notifications on. They need to open My Account on the device they use and turn them on — until then a lead lands silently.`}
-          >
-            <BellOff size={12} /> Off
-          </span>
+        {custom && (
+          <div className="mt-1.5 space-y-1.5">
+            <div className="flex items-center gap-1">
+              <Input type="time" value={hours.start ?? ''} onChange={(e) => onSave({ workingHours: { ...hours, start: e.target.value } })} style={{ fontSize: 12, padding: '3px 6px' }} />
+              <span style={{ fontSize: 11, color: MUTED }}>to</span>
+              <Input type="time" value={hours.end ?? ''} onChange={(e) => onSave({ workingHours: { ...hours, end: e.target.value } })} style={{ fontSize: 12, padding: '3px 6px' }} />
+            </div>
+            <div className="flex gap-1">
+              {DAYS.map(([label, n]) => {
+                const on = days.includes(n)
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    title={label}
+                    onClick={() => {
+                      const next = on ? days.filter((d) => d !== n) : [...days, n]
+                      // All seven is the same as no restriction, and stores smaller.
+                      onSave({ workingHours: { ...hours, days: next.length === 7 ? [] : next } })
+                    }}
+                    style={{
+                      width: 26, height: 26, fontSize: 11, fontWeight: 700, borderRadius: 6, cursor: 'pointer',
+                      border: `1px solid ${on ? PURPLE : LINE}`,
+                      background: on ? PURPLE : 'transparent',
+                      color: on ? '#fff' : MUTED,
+                    }}
+                  >
+                    {label[0]}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
         )}
       </td>
 
@@ -461,11 +440,10 @@ function RuleRow({ rule, people, busy, onSave, onRemove }: {
           title="Take out of the rotation"
           style={{ color: '#DC2626', cursor: 'pointer', background: 'none', border: 'none' }}
         >
-          <Trash2 size={14} />
+          <Trash2 size={15} />
         </button>
       </td>
     </tr>
   )
 }
 
-export { AlertTriangle, Check }
