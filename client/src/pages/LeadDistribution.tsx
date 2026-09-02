@@ -96,6 +96,30 @@ export default function LeadDistribution() {
     onError: (e) => setErr(apiError(e)),
   })
 
+  /* The customer chats already in the inbox, which the setting below does
+     nothing about — it only decides where the next one goes. */
+  const { data: customerChats } = useQuery<{
+    chats: number; withLead: number; withoutLead: number
+    byOwner: { name: string; count: number }[]
+  }>({
+    queryKey: ['lead-routing', 'customer-chats'],
+    queryFn: () => api.get('/lead-routing/customer-chats').then((r) => r.data),
+  })
+
+  const [handTo, setHandTo] = useState('')
+  const [handed, setHanded] = useState('')
+  const handOver = useMutation({
+    mutationFn: (userId: string) => api.post('/lead-routing/customer-chats/assign', { userId }).then((r) => r.data),
+    onSuccess: (d: { moved: number; alreadyTheirs: number; owner: string }) => {
+      setErr('')
+      setHanded(d.moved
+        ? `${d.moved} chat${d.moved === 1 ? '' : 's'} handed to ${d.owner}.`
+        : `They already had all ${d.alreadyTheirs} of them.`)
+      qc.invalidateQueries({ queryKey: ['lead-routing'] })
+    },
+    onError: (e) => setErr(apiError(e)),
+  })
+
   const { data: preview } = useQuery<{ order: { name: string | null; reason: string }[]; tallyAfter: { name: string; count: number }[] }>({
     queryKey: ['lead-routing-preview'],
     queryFn: () => api.get('/lead-routing/preview?n=20').then((r) => r.data),
@@ -266,6 +290,39 @@ export default function LeadDistribution() {
                   the green <strong>Customer</strong> tag. They skip the rotation entirely, so a tenant
                   with a question does not count against anybody's share.
                 </p>
+
+                {/* The setting above is about the next chat. This is about the
+                    ones already sitting in the inbox. */}
+                {customerChats && customerChats.chats > 0 && (
+                  <div className="rounded-lg p-3 space-y-2" style={{ background: '#FBF8F3', border: `1px solid ${LINE}` }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: INK }}>
+                      {customerChats.chats} chats are already from customers
+                    </div>
+                    <div style={{ fontSize: 12, color: MUTED }}>
+                      Currently with {customerChats.byOwner.slice(0, 3).map((o) => `${o.name} (${o.count})`).join(', ')}
+                      {customerChats.byOwner.length > 3 ? ` and ${customerChats.byOwner.length - 3} more` : ''}.
+                      {customerChats.withoutLead > 0 && ` ${customerChats.withoutLead} have no lead behind them yet and cannot be handed over.`}
+                    </div>
+                    <div className="flex flex-wrap items-end gap-2">
+                      <Select value={handTo} onChange={(e) => { setHandTo(e.target.value); setHanded('') }} style={{ minWidth: 190 }}>
+                        <option value="">Hand them all to…</option>
+                        {data.people.map((p) => <option key={p._id} value={p._id}>{p.name} ({p.role})</option>)}
+                      </Select>
+                      <Button
+                        disabled={!handTo || handOver.isPending}
+                        onClick={() => {
+                          const who = data.people.find((p) => p._id === handTo)?.name ?? 'them'
+                          if (confirm(`Hand all ${customerChats.withLead} customer chats to ${who}? Each becomes new to them and starts their response clock.`)) {
+                            handOver.mutate(handTo)
+                          }
+                        }}
+                      >
+                        {handOver.isPending ? 'Handing over…' : `Hand over ${customerChats.withLead}`}
+                      </Button>
+                    </div>
+                    {handed && <div style={{ fontSize: 12, color: '#047857', fontWeight: 600 }}>{handed}</div>}
+                  </div>
+                )}
               </CardBody>
             </Card>
           </div>

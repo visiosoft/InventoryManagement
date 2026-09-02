@@ -5,14 +5,20 @@
  */
 
 import { Router } from 'express';
-import { LeadRoutingConfig, LeadRoutingRule, PushSubscription, User } from '../models/index.js';
+import { Customer, Lead, LeadRoutingConfig, LeadRoutingRule, PushSubscription, User, WhatsAppMessage } from '../models/index.js';
 import { requireAdmin } from '../middleware/auth.js';
-import { availability, countsForToday, pickOwner, targetShares } from '../services/leadRouting.js';
+import { availability, countsForToday, digitTail, pickOwner, targetShares } from '../services/leadRouting.js';
 
 const router = Router();
 router.use(requireAdmin);
 
-const ROLES = ['sales_rep', 'admin', 'accounts', 'staff'];
+/* Sales reps only.
+ *
+ * Every dropdown on this page hands somebody leads to work, and that is a
+ * rep's job — an admin appearing in the list is an invitation to give the
+ * whole rotation to whoever set it up, which is how one person came to own 275
+ * chats in the first place. */
+const ROLES = ['sales_rep'];
 
 async function loadConfig() {
    return (await LeadRoutingConfig.findOne()) ?? (await LeadRoutingConfig.create({}));
@@ -152,6 +158,77 @@ router.get('/preview', async (req, res) => {
          tallyAfter: Object.entries(tally).map(([id, n2]) => ({ name: nameOf(id), count: n2 })).sort((a, b) => b.count - a.count),
          startedFrom: Object.entries(counts).map(([id, n2]) => ({ name: nameOf(id), count: n2 })),
       });
+   } catch (e) {
+      res.status(500).json({ error: e.message });
+   }
+});
+
+/**
+ * The chats that belong to somebody we already deal with.
+ *
+ * The setting above decides where a customer's chat goes from now on. It does
+ * nothing about the ones already in the inbox — 114 of them, 87 sitting with
+ * one admin because that is where every chat used to land. This finds them and
+ * hands them over in one go.
+ *
+ * Matched on the last nine digits, the same rule behind the green Customer tag
+ * in the inbox, so what this counts is exactly what somebody can see.
+ */
+async function customerChats() {
+   const [customers, chatPhones] = await Promise.all([
+      Customer.find({}).select('_id fullName phone phones').lean(),
+      WhatsAppMessage.distinct('phoneNormalized'),
+   ]);
+
+   const tails = new Set();
+   for (const c of customers) {
+      for (const p of [c.phone, ...(c.phones || [])]) { const t = digitTail(p); if (t) tails.add(t); }
+   }
+   const phones = chatPhones.filter((p) => tails.has(digitTail(p)));
+   const leads = await Lead.find({ phoneNormalized: { $in: phones } })
+      .select('_id fullName phoneNormalized owner').populate('owner', 'name').lean();
+   return { phones, leads };
+}
+
+router.get('/customer-chats', async (_req, res) => {
+   try {
+      const { phones, leads } = await customerChats();
+      const byOwner = {};
+      for (const l of leads) {
+         const name = l.owner?.name ?? 'Nobody';
+         byOwner[name] = (byOwner[name] || 0) + 1;
+      }
+      res.json({
+         chats: phones.length,
+         withLead: leads.length,
+         // A chat with no lead behind it cannot be handed to anybody until one
+         // exists, so it is counted separately rather than silently skipped.
+         withoutLead: phones.length - leads.length,
+         byOwner: Object.entries(byOwner).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
+      });
+   } catch (e) {
+      res.status(500).json({ error: e.message });
+   }
+});
+
+router.post('/customer-chats/assign', async (req, res) => {
+   try {
+      const owner = await User.findById(req.body?.userId).select('_id name');
+      if (!owner) return res.status(400).json({ error: 'Choose somebody to hand them to' });
+
+      const { leads } = await customerChats();
+      const toMove = leads.filter((l) => String(l.owner?._id ?? l.owner ?? '') !== String(owner._id));
+      if (!toMove.length) return res.json({ moved: 0, alreadyTheirs: leads.length, owner: owner.name });
+
+      /* The same stamps a hand-off by hand sets: it is new to them, their
+         two-minute clock starts, and the board stops calling it somebody
+         else's. */
+      const now = new Date();
+      await Lead.updateMany(
+         { _id: { $in: toMove.map((l) => l._id) } },
+         { $set: { owner: owner._id, assignedAt: now, ownerSeenAt: null, firstResponseAt: null } },
+      );
+      res.json({ moved: toMove.length, alreadyTheirs: leads.length - toMove.length, owner: owner.name });
    } catch (e) {
       res.status(500).json({ error: e.message });
    }
