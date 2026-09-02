@@ -272,6 +272,11 @@ const leadSchema = new Schema(
      * chat a default owner and would otherwise start thirty-five clocks a day
      * nobody asked for. */
     assignedAt: { type: Date, default: null },
+    /* Handed over by the distribution rules rather than by a person. The rota
+       counts its own work when deciding whose turn is next — see
+       services/leadRouting.js — so a lead somebody assigned by hand does not
+       skew the rotation. */
+    autoAssigned: { type: Boolean, default: false },
     /* The first thing the rep did about it: an attempt logged, or the stage
        moved. Written once and never moved, so a later action cannot make the
        response look slower than it was. */

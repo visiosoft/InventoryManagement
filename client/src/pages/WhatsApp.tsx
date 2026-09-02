@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import {
   Send, MessageSquare, RefreshCw, UserPlus, UserCheck, Bell, BellOff, FileText,
   Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Paperclip, Pencil,
-  Bot, Tag, Check, ClipboardList, Sparkles, Trash2, MapPin, Mic, Square, AlertTriangle, MoreVertical, UserCog,
+  Bot, Tag, Check, ClipboardList, Sparkles, Trash2, MapPin, Mic, Square, AlertTriangle, MoreVertical, UserCog, Loader2,
 } from 'lucide-react'
 import { useVoiceRecorder, recordingSupported, formatDuration } from '../lib/voiceRecorder'
 import { api, whatsappApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel } from '../lib/api'
@@ -893,6 +893,96 @@ function TaskFromChat({ convo, lastInbound, menuItem, open: openProp, onOpenChan
 }
 
 /**
+ * Put a name on a chat nobody has picked up, straight from the list.
+ *
+ * A new enquiry arrives owned by nobody — out of hours, or before the rules
+ * were switched on — and looked exactly like the two hundred beneath it. This
+ * is the one tap that fixes that: the row shows a small assign icon, and the
+ * list of reps drops out of it.
+ *
+ * It goes the same way the chat menu does, so the response clock starts and
+ * the leads board sees it: PUT /leads/:id where a lead exists, and the
+ * create-from-chat endpoint where it does not.
+ */
+function QuickAssign({ convo, onChanged }: { convo: WhatsAppConversation; onChanged: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [err, setErr] = useState('')
+  const boxRef = useRef<HTMLDivElement | null>(null)
+  const leadId = convo.lead?._id
+
+  useEffect(() => {
+    if (!open) return
+    const away = (e: MouseEvent) => {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', away)
+    return () => document.removeEventListener('mousedown', away)
+  }, [open])
+
+  const { data: people = [] } = useQuery<{ _id: string; name: string; email: string; role?: string }[]>({
+    queryKey: ['assignable-users'],
+    queryFn: () => api.get('/users/assignable').then((r) => r.data ?? []),
+    staleTime: 30 * 60_000,
+  })
+  const reps = people.filter((u) => u.role === 'sales_rep')
+
+  const assign = useMutation({
+    mutationFn: async (owner: string) => {
+      if (leadId) { await api.put(`/leads/${leadId}`, { owner }); return }
+      await whatsappApi.createLead(convo.phoneNormalized, {
+        fullName: convo.customer?.fullName || '',
+        owner,
+      })
+    },
+    onSuccess: () => { setErr(''); setOpen(false); onChanged() },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  return (
+    <span ref={boxRef} className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title="Nobody has this yet — assign it"
+        className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 cursor-pointer"
+        style={{ fontSize: 10, fontWeight: 700, background: '#FFF7E6', color: '#B45309', border: 'none' }}
+      >
+        {assign.isPending
+          ? <Loader2 size={11} className="animate-spin" />
+          : <UserPlus size={11} />}
+        {assign.isPending ? 'Assigning…' : 'Assign'}
+      </button>
+
+      {open && (
+        <div
+          className="absolute right-0 mt-1 z-40 rounded-xl overflow-hidden"
+          style={{ background: '#fff', border: `1px solid ${LINE}`, boxShadow: '0 10px 30px rgba(20,8,31,.16)', minWidth: 170 }}
+        >
+          {err && <p className="px-3 py-1.5" style={{ fontSize: 11, color: '#B91C1C' }}>{err}</p>}
+          {reps.length === 0 && (
+            <p className="px-3 py-2" style={{ fontSize: 12, color: FAINT_INK }}>
+              {people.length === 0 ? 'Loading…' : 'No sales reps to assign to.'}
+            </p>
+          )}
+          {reps.map((u) => (
+            <button
+              key={u._id}
+              type="button"
+              disabled={assign.isPending}
+              onClick={() => assign.mutate(u._id)}
+              className="w-full text-left px-3 py-2 cursor-pointer hover:bg-[#F7F3FF]"
+              style={{ fontSize: 12.5, color: INK, background: 'none', border: 'none' }}
+            >
+              {u.name || u.email}
+            </button>
+          ))}
+        </div>
+      )}
+    </span>
+  )
+}
+
+/**
  * Hand this chat to a sales rep, without leaving the inbox.
  *
  * Assigning used to mean opening the lead in another tab, which is why chats
@@ -1664,17 +1754,34 @@ export default function WhatsApp() {
     [conversations]
   )
 
+  const isMine = (c: WhatsAppConversation) => Boolean(me?.id) && String(c.lead?.ownerId ?? '') === String(me?.id)
+  const isUnowned = (c: WhatsAppConversation) => !c.lead?.ownerId
+
   /* Counted over every conversation on the server, not over what has been
      loaded — the tabs used to count the 200 most recent, so a rep with 275
-     chats was told they had four. */
-  const ownerCounts = convoPage?.ownerCounts ?? { all: 0, mine: 0, unassigned: 0 }
+     chats was told they had four.
 
-  /* Only the label filter is applied here. The search and the owner both ran
-     on the server, against every conversation rather than just this page. */
+     Where the API has not been updated yet there is no such header, and the
+     page counts what it has rather than showing zeros next to a list that
+     plainly is not empty. */
+  const serverKnowsOwner = Boolean(convoPage?.ownerCounts)
+  const ownerCounts = convoPage?.ownerCounts ?? {
+    all: convoList.length,
+    mine: convoList.filter(isMine).length,
+    unassigned: convoList.filter(isUnowned).length,
+  }
+
+  /* The label filter always runs here. The owner runs here too when the server
+     did not do it, so the tabs work against either version of the API. */
   const filteredConvos = useMemo(() => {
-    if (!labelFilter) return convoList
-    return convoList.filter((c) => (c.labels || []).some((l) => l._id === labelFilter))
-  }, [convoList, labelFilter])
+    let list = convoList
+    if (!serverKnowsOwner) {
+      if (ownerFilter === 'mine') list = list.filter(isMine)
+      else if (ownerFilter === 'unassigned') list = list.filter(isUnowned)
+    }
+    if (labelFilter) list = list.filter((c) => (c.labels || []).some((l) => l._id === labelFilter))
+    return list
+  }, [convoList, labelFilter, ownerFilter, serverKnowsOwner, me?.id])
 
   const realConvo = convoList.find((c) => c.phoneNormalized === selectedPhone) ?? null
   // A number typed into "New chat" behaves like an empty conversation so the
@@ -2180,6 +2287,12 @@ export default function WhatsApp() {
                                 ? `Lead (${c.lead.ownerName})`
                                 : 'Lead'}
                           </span>
+                        )}
+                        {/* Nobody has picked this up: no owner, not a customer,
+                            no label. One tap puts a name on it, rather than
+                            opening the chat to reach the menu. */}
+                        {!c.customer && !c.lead?.ownerId && (
+                          <QuickAssign convo={c} onChanged={() => refetchConvos()} />
                         )}
                         {isUnread && (
                           <span

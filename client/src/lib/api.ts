@@ -372,9 +372,16 @@ export const whatsappApi = {
     }).then((r) => {
       /* Counted over every conversation, not the page being returned — the
          tabs used to count what had been loaded, so a rep with 275 chats was
-         told they had four. */
-      let ownerCounts = { all: 0, mine: 0, unassigned: 0 }
-      try { ownerCounts = JSON.parse(String(r.headers['x-owner-counts'] ?? '')) } catch { /* older API */ }
+         told they had four.
+
+         null means the API predates this and did neither the counting nor the
+         filtering, so the page falls back to doing both over what it has. A
+         missing header must not read as "you have none". */
+      let ownerCounts: { all: number; mine: number; unassigned: number } | null = null
+      try {
+        const raw = r.headers['x-owner-counts']
+        if (raw) ownerCounts = JSON.parse(String(raw))
+      } catch { /* an older API, handled above */ }
       return {
         list: r.data,
         total: Number(r.headers['x-total-conversations']) || r.data.length,

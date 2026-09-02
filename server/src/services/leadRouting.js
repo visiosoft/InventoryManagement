@@ -241,7 +241,14 @@ export function startOfDayIn(at = new Date(), timeZone = 'Asia/Dubai') {
 export async function countsForToday({ at = new Date(), timeZone = 'Asia/Dubai' } = {}) {
    const since = startOfDayIn(at, timeZone);
    const rows = await Lead.aggregate([
-      { $match: { source: 'whatsapp', owner: { $ne: null }, createdAt: { $gte: since } } },
+      /* Only what the rules themselves handed out.
+       *
+       * Counting every WhatsApp lead of the day meant the tally started full
+       * of leads the old system had already given away, so the engine thought
+       * whoever had none was owed a catch-up and gave them six in a row. The
+       * rota is about what it has done, so it counts its own work: everyone
+       * starts level and the leads alternate one by one. */
+      { $match: { autoAssigned: true, owner: { $ne: null }, createdAt: { $gte: since } } },
       { $group: { _id: '$owner', n: { $sum: 1 } } },
    ]);
    return Object.fromEntries(rows.map((r) => [String(r._id), r.n]));

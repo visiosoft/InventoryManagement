@@ -326,6 +326,8 @@ export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, stat
            so it starts their response clock and shows on their board — unlike
            the auto-created contacts that exist only to hang messages off. */
         assignedAt: routingNote && ownerId ? new Date() : null,
+        // The rota counts its own work when deciding whose turn is next.
+        autoAssigned: Boolean(routingNote && ownerId),
         unitsNeeded: 1,
         notes: '',
         timeline: [
