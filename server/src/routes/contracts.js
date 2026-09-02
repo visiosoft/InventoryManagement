@@ -61,6 +61,39 @@ async function deleteContractRecord(contract) {
   await Promise.all(allUnitIds.map((uid) => syncUnitStatus(uid)));
 }
 
+/**
+ * What each tenant owes, from Zoho Books.
+ *
+ * Its own request because it is slow and the rest of the page is not: Zoho's
+ * contact list is a paged remote call that takes about fifteen seconds when
+ * the five-minute cache is cold, and the Tenants list used to wait on it
+ * before drawing a single row. Now the page appears and this fills the owed
+ * column in behind it.
+ *
+ * Keyed by contract so the page can merge without matching customers again.
+ */
+router.get('/outstanding', async (req, res) => {
+    try {
+        if (!zohoBooksConfigured()) return res.json({ configured: false, byContract: {} });
+
+        const ids = String(req.query.ids || '').split(',').map((v) => v.trim()).filter(Boolean).slice(0, 500);
+        if (!ids.length) return res.json({ configured: true, byContract: {} });
+
+        const contracts = await Contract.find({ _id: { $in: ids } })
+            .select('customer').populate('customer', 'fullName email phone phones').lean();
+        const { byCustomer } = await zohoOutstandingByCustomer(contracts.map((c) => c.customer).filter(Boolean));
+
+        const byContract = {};
+        for (const c of contracts) {
+            const hit = c.customer ? byCustomer.get(String(c.customer._id)) : null;
+            if (hit?.outstanding) byContract[String(c._id)] = hit.outstanding;
+        }
+        res.json({ configured: true, byContract });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 router.get('/', async (req, res) => {
   const filter = {};
   if (req.query.archived === 'true') filter.archived = true;
@@ -120,14 +153,25 @@ router.get('/', async (req, res) => {
   const sortByRenewal = req.query.sort === 'renewal_asc' || req.query.sort === 'renewal_desc';
   const inMemorySort = sortByOwed || sortByRenewal;
 
+  /* Everything except the bulk.
+   *
+   * A contract stores the whole agreement — around 59 KB of it — so a page of
+   * 25 weighed a megabyte and took eleven seconds to come down the wire, for a
+   * list that shows a name, a unit and a date. Without those fields the same
+   * page is 11 KB and a quarter of a second. The list has never read either.
+   *
+   * signingToken goes with it: it is the secret in a signing link, and it had
+   * no business being sent to every browser that opens the Tenants page. */
+  const LIST_EXCLUDE = '-agreementText -signingToken -timeline';
+
   const [contracts, total] = await Promise.all([
     inMemorySort
-      ? Contract.find(filter)
+      ? Contract.find(filter).select(LIST_EXCLUDE)
         .populate('customer', 'fullName email phone phones')
         .populate('unit', 'unitNumber floor')
         .populate('units', 'unitNumber floor')
         .sort({ endDate: 1 }).limit(2000).lean()
-      : Contract.find(filter)
+      : Contract.find(filter).select(LIST_EXCLUDE)
         .populate('customer', 'fullName email phone phones')
         .populate('unit', 'unitNumber floor')
         .populate('units', 'unitNumber floor')
@@ -185,11 +229,15 @@ router.get('/', async (req, res) => {
     };
   });
 
-  // What the tenant owes, from Zoho Books. Shown here as well as on the Tenants
-  // list because this is the screen the team actually works from — chasing a
-  // renewal without knowing there is money outstanding is the wrong call to make.
+  /* What the tenant owes comes separately — see GET /outstanding below.
+   *
+   * Zoho's contact list is a paged remote call that takes about fifteen
+   * seconds when its five-minute cache is cold, and the whole page waited on
+   * it. Sorting by what is owed still needs the figures here, so that one case
+   * fetches them; everything else gets a page that renders now and an owed
+   * column that fills in a moment later. */
   let data = rows;
-  if (zohoBooksConfigured() && rows.length) {
+  if (sortByOwed && zohoBooksConfigured() && rows.length) {
     const customers = rows.map((r) => r.customer).filter(Boolean);
     const { byCustomer } = await zohoOutstandingByCustomer(customers);
     data = rows.map((r) => {

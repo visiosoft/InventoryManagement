@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react'
+import { useMemo, Fragment, useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ChevronDown, ChevronUp, Mail, Paperclip, Search, SlidersHorizontal, Trash2, X } from 'lucide-react'
@@ -117,7 +117,26 @@ export default function Contracts() {
     placeholderData: (prev) => prev,
   })
 
-  const contracts = data?.data ?? []
+  const rows = data?.data ?? []
+
+  /* What each tenant owes, fetched separately.
+   *
+   * Zoho's contact list is a paged remote call that takes about fifteen
+   * seconds when its cache is cold, and this page used to wait on it before
+   * drawing a row. The list appears now and the owed column fills in behind
+   * it. */
+  const contractIds = rows.map((c) => c._id).join(',')
+  const { data: owed } = useQuery<{ configured: boolean; byContract: Record<string, number> }>({
+    queryKey: ['contracts-outstanding', contractIds],
+    queryFn: () => api.get('/contracts/outstanding', { params: { ids: contractIds } }).then((r) => r.data),
+    enabled: contractIds.length > 0,
+    staleTime: 5 * 60_000,
+  })
+
+  const contracts = useMemo(
+    () => rows.map((c) => (owed?.byContract?.[c._id] ? { ...c, outstanding: owed.byContract[c._id] } : c)),
+    [rows, owed],
+  )
   const hasFilters = search || status || billing || floor || from || to
 
   // Full contract value: scheduled payments total from the server, or rate × term fallback
