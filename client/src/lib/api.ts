@@ -313,6 +313,10 @@ export type WhatsAppLeadRef = {
   ownerId?: string | null
   /** Somebody chose this owner, rather than it being auto-created with one. */
   assigned?: boolean
+  /** The distribution rules chose the owner, not a person. */
+  autoAssigned?: boolean
+  /** The person who chose the owner, where one did. */
+  assignedByName?: string
   /** The name they set on their own WhatsApp profile, if we have seen one. */
   profileName?: string
 }

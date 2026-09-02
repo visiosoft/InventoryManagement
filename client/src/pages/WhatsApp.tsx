@@ -2289,6 +2289,12 @@ export default function WhatsApp() {
                         {(c.customer || (c.lead && (!isPlaceholderName(c.lead.fullName) || c.lead.assigned))) && (
                           <span
                             className="shrink-0 rounded-full px-1.5 py-0.5"
+                            title={
+                              c.customer ? 'Already a customer'
+                                : c.lead?.autoAssigned ? `Given to ${c.lead.ownerName} by the distribution rules`
+                                  : c.lead?.assignedByName ? `Given to ${c.lead.ownerName} by ${c.lead.assignedByName}`
+                                    : undefined
+                            }
                             style={
                               c.customer
                                 ? { fontSize: 10, fontWeight: 700, background: '#DCFCE7', color: '#047857' }
@@ -2300,6 +2306,12 @@ export default function WhatsApp() {
                               : c.lead?.ownerName
                                 ? `Lead (${c.lead.ownerName})`
                                 : 'Lead'}
+                            {/* How it came to be theirs. The rota hands out most
+                                of these now, and "why is this mine?" is a fair
+                                question to be able to answer from the row. */}
+                            {!c.customer && c.lead?.ownerName && c.lead?.autoAssigned && (
+                              <Sparkles size={9} style={{ display: 'inline', marginLeft: 3, verticalAlign: 'middle' }} />
+                            )}
                           </span>
                         )}
                         {/* Nobody has picked this up: no owner, not a customer,
@@ -2468,7 +2480,17 @@ export default function WhatsApp() {
                       </span>
                     ) : null}
                   </div>
-                  <div className="truncate" style={{ fontSize: 12, color: FAINT_INK }}>+{selectedConvo.phoneNormalized}</div>
+                  <div className="truncate" style={{ fontSize: 12, color: FAINT_INK }}>
+                    +{selectedConvo.phoneNormalized}
+                    {/* Said in words here, where there is room for it. */}
+                    {selectedConvo.lead?.ownerName && (
+                      selectedConvo.lead.autoAssigned
+                        ? <span> · given to {selectedConvo.lead.ownerName} by the rota</span>
+                        : selectedConvo.lead.assignedByName
+                          ? <span> · given to {selectedConvo.lead.ownerName} by {selectedConvo.lead.assignedByName}</span>
+                          : null
+                    )}
+                  </div>
                 </div>
 
                 {/* Everything this chat can do, behind one button.

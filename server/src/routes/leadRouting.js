@@ -226,7 +226,7 @@ router.post('/customer-chats/assign', async (req, res) => {
       const now = new Date();
       await Lead.updateMany(
          { _id: { $in: toMove.map((l) => l._id) } },
-         { $set: { owner: owner._id, assignedAt: now, ownerSeenAt: null, firstResponseAt: null } },
+         { $set: { owner: owner._id, assignedAt: now, ownerSeenAt: null, firstResponseAt: null, assignedBy: req.user?.id ?? null, autoAssigned: false } },
       );
       res.json({ moved: toMove.length, alreadyTheirs: leads.length - toMove.length, owner: owner.name });
    } catch (e) {

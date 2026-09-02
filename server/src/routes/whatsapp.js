@@ -341,7 +341,7 @@ router.get('/conversations', async (req, res) => {
          *
          * The number is the fact. Matched on the last nine digits, the same
          * rule used for customers and everywhere else people are matched. */
-        Lead.find({}).select('fullName status owner assignedAt whatsappProfileName phone phoneNormalized').lean(),
+        Lead.find({}).select('fullName status owner assignedAt autoAssigned assignedBy whatsappProfileName phone phoneNormalized').lean(),
         Customer.find({}).select('fullName phone phones').lean(),
     ]);
 
@@ -443,8 +443,13 @@ router.get('/conversations', async (req, res) => {
     // Who is working each lead. The inbox showed a bare "Lead" badge, which
     // told you somebody had saved this person but not who is meant to answer
     // them — so a thread with an owner looked exactly like an unclaimed one.
+    /* Owners, and whoever handed a lead over — an admin who assigns but owns
+       nothing is still a name the row has to print. */
     const ownerIds = [...new Set(
-        visible.map((r) => byLeadPhone.get(suffix(r._id))?.owner).filter(Boolean).map(String),
+        visible.flatMap((r) => {
+            const lead = byLeadPhone.get(suffix(r._id));
+            return [lead?.owner, lead?.assignedBy];
+        }).filter(Boolean).map(String),
     )];
     const phones = visible.map((r) => r._id);
 
@@ -495,6 +500,10 @@ router.get('/conversations', async (req, res) => {
                        a rep says so even while it is still called
                        "WhatsApp Contact 5521". */
                     assigned: Boolean(lead.assignedAt),
+                    /* How it came to be theirs. "Why is this mine?" deserves an
+                       answer on the row rather than in a timeline note. */
+                    autoAssigned: Boolean(lead.autoAssigned),
+                    assignedByName: lead.assignedBy ? (byOwner.get(String(lead.assignedBy)) || '') : '',
                     profileName: lead.whatsappProfileName || '',
                 }
                 : null,
@@ -672,6 +681,8 @@ router.post('/conversations/:phoneNormalized/lead', async (req, res) => {
                 existing.ownerSeenAt = null;
                 existing.assignedAt = new Date();
                 existing.firstResponseAt = null;
+                existing.assignedBy = req.user.id;
+                existing.autoAssigned = false;
             }
             // Appended, never replaced: whatever was already noted about this
             // person is part of the record.

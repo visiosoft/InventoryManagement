@@ -350,6 +350,7 @@ export async function sweepUnassignedLeads({ at = new Date(), limit = 25 } = {})
             owner: decision.ownerId,
             assignedAt: at,
             autoAssigned: true,
+            assignedBy: null,        // the rules, not a person
             ownerSeenAt: null,
             firstResponseAt: null,
          },

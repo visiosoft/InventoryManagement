@@ -619,6 +619,9 @@ router.put('/:id', async (req, res) => {
         lead.ownerSeenAt = null;
         lead.assignedAt = ownerId ? new Date() : null;
         lead.firstResponseAt = null;
+        // A person chose this one, and the record says who.
+        lead.assignedBy = ownerId ? req.user?.id ?? null : null;
+        lead.autoAssigned = false;
     }
 
     const phoneNormalized = normalizePhone(body.phone);

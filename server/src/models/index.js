@@ -277,6 +277,12 @@ const leadSchema = new Schema(
        services/leadRouting.js — so a lead somebody assigned by hand does not
        skew the rotation. */
     autoAssigned: { type: Boolean, default: false },
+    /* Who chose the owner. Null alongside autoAssigned means the rules did;
+       null with neither means nobody ever chose, it was the default owner
+       every inbound chat used to get. "Why is this mine?" is a fair question
+       and it deserves an answer on the record rather than in a timeline note
+       somebody has to go and read. */
+    assignedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     /* The first thing the rep did about it: an attempt logged, or the stage
        moved. Written once and never moved, so a later action cannot make the
        response look slower than it was. */
