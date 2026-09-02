@@ -76,7 +76,9 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const invoiceNo = await nextMovingInvoiceNo();
-    const body = req.body;
+    /* New invoices carry VAT; ones raised before it existed do not, and are
+       never given it retrospectively. See the note on the schema field. */
+    const body = { vatEnabled: true, vatRate: 5, ...req.body };
     if (!body.dueDate) {
       const base = body.invoiceDate ? new Date(body.invoiceDate) : new Date();
       base.setDate(base.getDate() + 1);

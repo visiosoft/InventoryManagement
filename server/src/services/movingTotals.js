@@ -30,10 +30,15 @@ export function movingTotals({ items = [], discount = 0, vatEnabled, vatRate } =
    const discountAmount = round2((subTotal * pct) / 100);
    const net = round2(subTotal - discountAmount);
 
-   /* Absent means on. Every quote carries VAT unless somebody deliberately
-      turns it off, which is the same standing rule as a storage quote — a new
-      document must never be the one that quietly forgets the tax. */
-   const rate = vatEnabled === false ? 0 : Number(vatRate ?? MOVING_VAT_RATE) || 0;
+   /* VAT is charged only where the document says so.
+    *
+    * Absent means no VAT, not "assume yes". Every quote and invoice raised
+    * before VAT existed here has no such field, and this function is what the
+    * PDFs print from — so assuming yes would have reprinted a settled invoice
+    * with tax added to it. MVI-00009 was stored at 2,500.00 and would have
+    * printed 2,625.00. New documents opt in when they are created; old ones
+    * keep exactly the figures they were agreed at. */
+   const rate = vatEnabled === true ? Number(vatRate ?? MOVING_VAT_RATE) || 0 : 0;
    const vatAmount = round2((Math.max(0, net) * rate) / 100);
 
    return {

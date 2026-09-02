@@ -36,7 +36,7 @@ export function movingTotals({ items = [], discount = 0, vatEnabled, vatRate }: 
   const discountAmount = round2((subTotal * pct) / 100)
   const net = round2(subTotal - discountAmount)
 
-  const rate = vatEnabled === false ? 0 : Number(vatRate ?? MOVING_VAT_RATE) || 0
+  const rate = vatEnabled === true ? Number(vatRate ?? MOVING_VAT_RATE) || 0 : 0
   const vatAmount = round2((Math.max(0, net) * rate) / 100)
 
   return {

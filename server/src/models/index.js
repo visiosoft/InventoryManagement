@@ -1232,11 +1232,16 @@ const movingQuoteSchema = new Schema(
     items: [movingQuoteItemSchema],
     subTotal: { type: Number, default: 0 },
     discount: { type: Number, default: 0 },
-    /* VAT, charged on the sub total less the discount. On by default, and on
-       for documents stored before it existed: services/movingTotals.js treats
-       an absent flag as on, so an old quote reopened does not quietly lose the
-       tax. `total` includes it. */
-    vatEnabled: { type: Boolean, default: true },
+    /* VAT, charged on the sub total less the discount, and included in
+       `total`.
+       
+       The default is false and the routes turn it on for documents they
+       create. It cannot default to true: mongoose fills a missing field with
+       its default when it loads a document, so every quote raised before VAT
+       existed here would come back with the flag on, and the next save of any
+       kind — recording a payment, say — would write tax onto a settled
+       document. Verified against MVI-00009, which has no such field stored. */
+    vatEnabled: { type: Boolean, default: false },
     vatRate: { type: Number, default: 5 },
     vatAmount: { type: Number, default: 0 },
     total: { type: Number, default: 0 },
@@ -1287,7 +1292,7 @@ const movingInvoiceSchema = new Schema(
     subTotal: { type: Number, default: 0 },
     // Carried over from the quote it came from — see the note there.
     discount: { type: Number, default: 0 },
-    vatEnabled: { type: Boolean, default: true },
+    vatEnabled: { type: Boolean, default: false },
     vatRate: { type: Number, default: 5 },
     vatAmount: { type: Number, default: 0 },
     total: { type: Number, default: 0 },

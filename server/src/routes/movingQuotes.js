@@ -33,7 +33,10 @@ router.post('/', async (req, res) => {
      * screens could disagree and the document followed whichever saved last.
      * They are recomputed from the items here, which is also what puts VAT on
      * a quote raised by anything that does not know to add it. */
-    const quote = await MovingQuote.create({ ...req.body, quoteNo, ...movingTotals(req.body) });
+    /* New quotes carry VAT; documents raised before it existed do not, and are
+       never given it retrospectively. See the note on the schema field. */
+    const body = { vatEnabled: true, vatRate: 5, ...req.body };
+    const quote = await MovingQuote.create({ ...body, quoteNo, ...movingTotals(body) });
     res.status(201).json(quote);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -144,7 +147,9 @@ router.post('/:id/convert-to-invoice', async (req, res) => {
       // them could ask for a different sum than the customer accepted.
       subTotal: quote.subTotal,
       discount: quote.discount || 0,
-      vatEnabled: quote.vatEnabled !== false,
+      // Whatever the customer accepted. A quote raised before VAT existed has
+      // no such flag, and its invoice must not invent one.
+      vatEnabled: quote.vatEnabled === true,
       vatRate: quote.vatRate ?? 5,
       vatAmount: quote.vatAmount || 0,
       total: quote.total,
