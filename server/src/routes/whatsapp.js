@@ -397,6 +397,32 @@ router.get('/conversations', async (req, res) => {
         ));
     }
 
+    /* Whose chats to return, and how many there are of each.
+     *
+     * The inbox used to load the 200 most recent and count the tabs from those,
+     * so a rep with 275 chats was told they had four — the other 271 were
+     * simply outside the window. Both the filter and the counts are worked out
+     * here, over every conversation, so "My leads" means all of them however
+     * old and the number beside it is true.
+     */
+    const ownerOf = (r) => {
+        const lead = byLeadPhone.get(suffix(r._id));
+        return lead?.owner ? String(lead.owner) : '';
+    };
+    const me = String(req.user?.id || '');
+    const ownerCounts = { all: visible.length, mine: 0, unassigned: 0 };
+    for (const r of visible) {
+        const owner = ownerOf(r);
+        if (!owner) ownerCounts.unassigned += 1;
+        else if (owner === me) ownerCounts.mine += 1;
+    }
+    res.setHeader('X-Owner-Counts', JSON.stringify(ownerCounts));
+
+    const ownerFilter = String(req.query.owner || '').trim();
+    if (ownerFilter === 'mine') visible = visible.filter((r) => ownerOf(r) === me);
+    else if (ownerFilter === 'unassigned') visible = visible.filter((r) => !ownerOf(r));
+    else if (ownerFilter && ownerFilter !== 'all') visible = visible.filter((r) => ownerOf(r) === ownerFilter);
+
     const total = visible.length;
     visible = visible.slice(0, limit);
 
@@ -831,9 +857,38 @@ router.post('/send-quick-reply', async (req, res) => {
 // Send a file. Stored as an outbound message carrying the same media shape
 // the webhook produces for inbound ones, so the thread renders both the same
 // way and the media proxy can serve it back.
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 * 1024 * 1024 } });
+/* What WhatsApp itself accepts, per kind.
+ *
+ * These are Meta's limits, not ours, and they differ by an order of magnitude:
+ * a 40 MB document goes through, a 40 MB video does not. The old ceiling was a
+ * flat 16 MB, which refused documents Meta would have taken and accepted images
+ * it would not — the sender saw a rejection from Meta with no useful wording,
+ * long after the file had finished uploading.
+ *
+ * The upload itself is capped at the largest of them; the per-kind check
+ * happens once the type is known and says which limit was hit.
+ */
+const MEDIA_LIMITS = { image: 5, video: 16, audio: 16, sticker: 0.1, document: 100 };
+const MB = 1024 * 1024;
 
-router.post('/send-media', upload.single('file'), async (req, res) => {
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 100 * MB },
+});
+
+/* Multer throws before the handler runs, so without this an oversized file
+   surfaces as an unhandled error and the sender is told nothing useful. */
+function uploadOne(req, res, next) {
+    upload.single('file')(req, res, (err) => {
+        if (!err) return next();
+        if (err.code === 'LIMIT_FILE_SIZE') {
+            return res.status(413).json({ error: 'That file is over 100 MB, which is more than WhatsApp accepts for anything.' });
+        }
+        return res.status(400).json({ error: err.message || 'That file could not be read' });
+    });
+}
+
+router.post('/send-media', uploadOne, async (req, res) => {
     try {
         if (!whatsappSendConfigured()) {
             return res.status(400).json({ error: `WhatsApp not configured. Missing: ${whatsappSendMissing().join(', ')}` });
@@ -844,6 +899,18 @@ router.post('/send-media', upload.single('file'), async (req, res) => {
 
         const caption = String(req.body?.caption || '').trim();
         const kind = whatsappMediaKind(req.file.mimetype);
+
+        /* Checked here rather than left to Meta, which rejects an oversized
+           file only after the whole thing has been uploaded to it and answers
+           with wording no sender can act on. */
+        const limitMb = MEDIA_LIMITS[kind] ?? 100;
+        if (req.file.size > limitMb * MB) {
+            const sizeMb = (req.file.size / MB).toFixed(1);
+            return res.status(413).json({
+                error: `WhatsApp takes ${kind}s up to ${limitMb} MB. This one is ${sizeMb} MB.`
+                    + (kind === 'video' ? ' Sending it as a document instead allows up to 100 MB.' : ''),
+            });
+        }
 
         let buffer = req.file.buffer;
         let mimeType = req.file.mimetype;

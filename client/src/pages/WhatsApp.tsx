@@ -1366,6 +1366,9 @@ export default function WhatsApp() {
   })
   function chooseOwnerFilter(v: 'all' | 'mine' | 'unassigned') {
     setOwnerFilter(v)
+    // Back to the first page: 200 of everybody's chats and 200 of your own are
+    // different lists, and carrying a deep window across is meaningless.
+    setConvoLimit(200)
     try { localStorage.setItem(OWNER_KEY, v) } catch { /* ignore */ }
   }
   const [notifOpen, setNotifOpen] = useState(false)
@@ -1441,11 +1444,12 @@ export default function WhatsApp() {
   }, [search])
 
   const { data: convoPage, isLoading: loadingConvos, refetch: refetchConvos } = useQuery({
-    queryKey: ['wa-conversations', debouncedSearch, selectedPhone, convoLimit],
+    queryKey: ['wa-conversations', debouncedSearch, selectedPhone, convoLimit, ownerFilter],
     queryFn: () => whatsappApi.conversations({
       q: debouncedSearch,
       phone: selectedPhone ?? undefined,
       limit: convoLimit,
+      owner: ownerFilter,
     }),
     refetchInterval: 10_000,
     placeholderData: (prev) => prev,
@@ -1660,27 +1664,17 @@ export default function WhatsApp() {
     [conversations]
   )
 
-  const isMine = (c: WhatsAppConversation) => Boolean(me?.id) && String(c.lead?.ownerId ?? '') === String(me?.id)
-  const isUnowned = (c: WhatsAppConversation) => !c.lead?.ownerId
+  /* Counted over every conversation on the server, not over what has been
+     loaded — the tabs used to count the 200 most recent, so a rep with 275
+     chats was told they had four. */
+  const ownerCounts = convoPage?.ownerCounts ?? { all: 0, mine: 0, unassigned: 0 }
 
-  // Counts for the tabs, from the whole loaded list rather than the filtered
-  // one — a tab that reports its own emptiness is no use for switching to.
-  const ownerCounts = useMemo(() => ({
-    all: convoList.length,
-    mine: convoList.filter(isMine).length,
-    unassigned: convoList.filter(isUnowned).length,
-  }), [convoList, me?.id])
-
-  /* Only the label and owner filters are applied here — the text search
-     already ran on the server, against every conversation rather than just the
-     loaded ones. */
+  /* Only the label filter is applied here. The search and the owner both ran
+     on the server, against every conversation rather than just this page. */
   const filteredConvos = useMemo(() => {
-    let list = convoList
-    if (ownerFilter === 'mine') list = list.filter(isMine)
-    else if (ownerFilter === 'unassigned') list = list.filter(isUnowned)
-    if (labelFilter) list = list.filter((c) => (c.labels || []).some((l) => l._id === labelFilter))
-    return list
-  }, [convoList, labelFilter, ownerFilter, me?.id])
+    if (!labelFilter) return convoList
+    return convoList.filter((c) => (c.labels || []).some((l) => l._id === labelFilter))
+  }, [convoList, labelFilter])
 
   const realConvo = convoList.find((c) => c.phoneNormalized === selectedPhone) ?? null
   // A number typed into "New chat" behaves like an empty conversation so the
@@ -1822,21 +1816,36 @@ export default function WhatsApp() {
     if (file) { setPending(file); setSendErr('') }
   }
 
+  /* How far a file has got.
+   *
+   * A photo from a phone is a few megabytes and a video can be sixteen, so
+   * without this the button simply sat there and people pressed it again. null
+   * means nothing is uploading. */
+  const [uploadPct, setUploadPct] = useState<number | null>(null)
+
   const sendMedia = useMutation({
     mutationFn: async (payload: { to: string; file: File; caption: string }) => {
       const form = new FormData()
       form.append('to', payload.to)
       form.append('file', payload.file)
       if (payload.caption) form.append('caption', payload.caption)
-      return api.post('/whatsapp/send-media', form).then((r) => r.data)
+      setUploadPct(0)
+      return api.post('/whatsapp/send-media', form, {
+        onUploadProgress: (e) => {
+          // Once the bytes are with us there is still Meta to wait for, so it
+          // stops at 99 rather than sitting on a finished-looking 100.
+          if (!e.total) return
+          setUploadPct(Math.min(99, Math.round((e.loaded / e.total) * 100)))
+        },
+      }).then((r) => r.data)
     },
     onSuccess: () => {
-      setSendErr(''); setPending(null); setDraft('')
+      setSendErr(''); setPending(null); setDraft(''); setUploadPct(null)
       if (fileRef.current) fileRef.current.value = ''
       stickToBottom.current = true
       onSent()
     },
-    onError: (e) => setSendErr(apiError(e)),
+    onError: (e) => { setUploadPct(null); setSendErr(apiError(e)) },
   })
 
   const send = useMutation({
@@ -2649,21 +2658,33 @@ export default function WhatsApp() {
                     <div className="truncate" style={{ fontSize: 13, fontWeight: 600, color: INK }}>{pending.name}</div>
                     <div style={{ fontSize: 11.5, color: FAINT_INK }}>
                       {(pending.size / 1024 / 1024).toFixed(2)} MB
-                      {pending.size > 16 * 1024 * 1024 && ' · too large, WhatsApp allows 16 MB'}
                       {' · the message box becomes its caption'}
                     </div>
                   </>
                 )}
               </div>
-              <button
-                type="button"
-                onClick={() => { setPending(null); if (fileRef.current) fileRef.current.value = '' }}
-                className="shrink-0 cursor-pointer"
-                style={{ color: FAINT_INK }}
-                title={isVoicePending ? 'Discard this recording' : 'Remove attachment'}
-              >
-                <X size={16} />
-              </button>
+              {/* While it is going up. Without this the send button just sat
+                  there on a large file and people pressed it again. */}
+              {uploadPct !== null ? (
+                <div className="shrink-0 flex items-center gap-2" style={{ width: 108 }}>
+                  <div style={{ flex: 1, height: 4, borderRadius: 999, background: '#EDE5FF', overflow: 'hidden' }}>
+                    <div style={{ width: `${uploadPct}%`, height: '100%', background: '#5B2BC9', transition: 'width .2s' }} />
+                  </div>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#4A1FA0', fontVariantNumeric: 'tabular-nums' }}>
+                    {uploadPct}%
+                  </span>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => { setPending(null); if (fileRef.current) fileRef.current.value = '' }}
+                  className="shrink-0 cursor-pointer"
+                  style={{ color: FAINT_INK }}
+                  title={isVoicePending ? 'Discard this recording' : 'Remove attachment'}
+                >
+                  <X size={16} />
+                </button>
+              )}
             </div>
           )}
 
@@ -2675,9 +2696,31 @@ export default function WhatsApp() {
               ref={fileRef}
               type="file"
               className="hidden"
+              /* Named types rather than anything at all: on a phone this is
+                 what makes the picker offer the camera and the photo roll
+                 instead of a file browser. Documents are still listed, so the
+                 one button covers all of it. */
+              accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.zip"
               onChange={(e) => {
                 const f = e.target.files?.[0]
-                if (f) { setPending(f); setSendErr('') }
+                if (!f) return
+                setSendErr('')
+                /* Checked before it is uploaded. These are WhatsApp's limits,
+                   and finding out after a 40 MB video has crawled up is a
+                   waste of somebody's morning. */
+                const MB = 1024 * 1024
+                const cap = f.type.startsWith('image/') ? 5
+                  : f.type.startsWith('video/') || f.type.startsWith('audio/') ? 16
+                  : 100
+                if (f.size > cap * MB) {
+                  const kind = f.type.startsWith('image/') ? 'Images'
+                    : f.type.startsWith('video/') ? 'Videos'
+                    : f.type.startsWith('audio/') ? 'Audio files' : 'Files'
+                  setSendErr(`${kind} can be up to ${cap} MB on WhatsApp. That one is ${(f.size / MB).toFixed(1)} MB.`)
+                  e.target.value = ''
+                  return
+                }
+                setPending(f)
               }}
             />
             <IconButton

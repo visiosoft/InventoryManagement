@@ -361,18 +361,27 @@ export const whatsappApi = {
    * older chat. `phone` keeps the open conversation in the response even when
    * it sorts below that window.
    */
-  conversations: (opts: { q?: string; phone?: string; limit?: number } = {}) =>
+  conversations: (opts: { q?: string; phone?: string; limit?: number; owner?: string } = {}) =>
     api.get<WhatsAppConversation[]>('/whatsapp/conversations', {
       params: {
         ...(opts.q ? { q: opts.q } : {}),
         ...(opts.phone ? { phone: opts.phone } : {}),
         ...(opts.limit ? { limit: opts.limit } : {}),
+        ...(opts.owner && opts.owner !== 'all' ? { owner: opts.owner } : {}),
       },
-    }).then((r) => ({
-      list: r.data,
-      total: Number(r.headers['x-total-conversations']) || r.data.length,
-      matched: Number(r.headers['x-matched-conversations']) || r.data.length,
-    })),
+    }).then((r) => {
+      /* Counted over every conversation, not the page being returned — the
+         tabs used to count what had been loaded, so a rep with 275 chats was
+         told they had four. */
+      let ownerCounts = { all: 0, mine: 0, unassigned: 0 }
+      try { ownerCounts = JSON.parse(String(r.headers['x-owner-counts'] ?? '')) } catch { /* older API */ }
+      return {
+        list: r.data,
+        total: Number(r.headers['x-total-conversations']) || r.data.length,
+        matched: Number(r.headers['x-matched-conversations']) || r.data.length,
+        ownerCounts,
+      }
+    }),
   messages: (phone?: string) =>
     api.get<WhatsAppMsg[]>('/whatsapp/messages', { params: phone ? { phone } : {} }).then((r) => r.data),
   send: (to: string, body: string) => api.post<{ ok: boolean }>('/whatsapp/send', { to, body }).then((r) => r.data),
