@@ -416,6 +416,13 @@ router.get('/conversations', async (req, res) => {
         if (!owner) ownerCounts.unassigned += 1;
         else if (owner === me) ownerCounts.mine += 1;
     }
+    /* Also in the body, below.
+     *
+     * In production nginx adds the CORS headers, and a custom one is only
+     * readable by the browser if it is named in Access-Control-Expose-Headers
+     * there — which this is not. The tabs read 0 next to a list that was
+     * plainly not empty, and then read the filtered page as if it were the
+     * whole inbox. Anything the page needs travels in the body. */
     res.setHeader('X-Owner-Counts', JSON.stringify(ownerCounts));
 
     const ownerFilter = String(req.query.owner || '').trim();
@@ -461,7 +468,7 @@ router.get('/conversations', async (req, res) => {
     res.setHeader('X-Total-Conversations', String(rows.length));
     res.setHeader('X-Matched-Conversations', String(total));
 
-    res.json(visible.map((r) => {
+    const payload = visible.map((r) => {
         const lead = byLeadPhone.get(suffix(r._id)) || null;
         const customer = byPhone.get(suffix(r._id)) || null;
         const leadName = isPlaceholderLeadName(lead?.fullName) ? '' : lead.fullName;
@@ -501,7 +508,11 @@ router.get('/conversations', async (req, res) => {
             botDraft: bot?.draftText || '',
             botEscalationReason: bot?.escalationReason || '',
         };
-    }));
+    });
+
+    /* An object, where it used to be a bare array. The client accepts either,
+       so the two halves can be deployed in any order. */
+    res.json({ list: payload, total: rows.length, matched: total, ownerCounts });
 });
 
 // Link a chat to a lead. Inbound chats usually get one automatically from the

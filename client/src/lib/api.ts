@@ -362,7 +362,7 @@ export const whatsappApi = {
    * it sorts below that window.
    */
   conversations: (opts: { q?: string; phone?: string; limit?: number; owner?: string } = {}) =>
-    api.get<WhatsAppConversation[]>('/whatsapp/conversations', {
+    api.get<WhatsAppConversation[] | { list: WhatsAppConversation[]; total: number; matched: number; ownerCounts: { all: number; mine: number; unassigned: number } }>('/whatsapp/conversations', {
       params: {
         ...(opts.q ? { q: opts.q } : {}),
         ...(opts.phone ? { phone: opts.phone } : {}),
@@ -370,23 +370,32 @@ export const whatsappApi = {
         ...(opts.owner && opts.owner !== 'all' ? { owner: opts.owner } : {}),
       },
     }).then((r) => {
-      /* Counted over every conversation, not the page being returned — the
-         tabs used to count what had been loaded, so a rep with 275 chats was
-         told they had four.
-
-         null means the API predates this and did neither the counting nor the
-         filtering, so the page falls back to doing both over what it has. A
-         missing header must not read as "you have none". */
-      let ownerCounts: { all: number; mine: number; unassigned: number } | null = null
-      try {
-        const raw = r.headers['x-owner-counts']
-        if (raw) ownerCounts = JSON.parse(String(raw))
-      } catch { /* an older API, handled above */ }
+      /* Either shape.
+       *
+       * A bare array is the older API, which neither counted nor filtered by
+       * owner; an object carries both. Accepting each means the server and the
+       * page can be deployed in any order, which matters because they are
+       * deployed by different things at different times.
+       *
+       * The counts have to come in the body: in production nginx owns the CORS
+       * headers and does not expose custom ones, so a header the server sets is
+       * simply not readable here. `null` means the API did not supply them and
+       * the page should work them out from what it has. */
+      if (Array.isArray(r.data)) {
+        return {
+          list: r.data,
+          total: Number(r.headers['x-total-conversations']) || r.data.length,
+          matched: Number(r.headers['x-matched-conversations']) || r.data.length,
+          ownerCounts: null as { all: number; mine: number; unassigned: number } | null,
+          serverFiltered: false,
+        }
+      }
       return {
-        list: r.data,
-        total: Number(r.headers['x-total-conversations']) || r.data.length,
-        matched: Number(r.headers['x-matched-conversations']) || r.data.length,
-        ownerCounts,
+        list: r.data.list,
+        total: r.data.total,
+        matched: r.data.matched,
+        ownerCounts: r.data.ownerCounts ?? null,
+        serverFiltered: true,
       }
     }),
   messages: (phone?: string) =>

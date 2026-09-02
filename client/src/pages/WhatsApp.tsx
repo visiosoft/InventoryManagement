@@ -1764,7 +1764,7 @@ export default function WhatsApp() {
      Where the API has not been updated yet there is no such header, and the
      page counts what it has rather than showing zeros next to a list that
      plainly is not empty. */
-  const serverKnowsOwner = Boolean(convoPage?.ownerCounts)
+  const serverKnowsOwner = Boolean(convoPage?.serverFiltered)
   const ownerCounts = convoPage?.ownerCounts ?? {
     all: convoList.length,
     mine: convoList.filter(isMine).length,
