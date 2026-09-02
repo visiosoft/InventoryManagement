@@ -134,7 +134,7 @@ export default function MovingInvoiceDetail() {
       /* The server recomputes all of this from the items — see
          services/movingTotals.js — so what matters here is that the page shows
          the same figures it will get back. */
-      const t = movingTotals({ items: newItems, discount: invoice?.discount, vatEnabled: invoice?.vatEnabled, vatRate: invoice?.vatRate })
+      const t = movingTotals({ items: newItems, discount: invoice?.discount, vatEnabled: invoice?.vatEnabled, vatRate: invoice?.vatRate, status: invoice?.status })
       const paid = (invoice?.depositPaid ?? 0) + (invoice?.paymentHistory ?? []).reduce((s, p) => s + p.amount, 0)
       return api.put(`/moving-invoices/${id}`, {
         items: newItems,
@@ -214,7 +214,7 @@ export default function MovingInvoiceDetail() {
   const transitions = STATUS_TRANSITIONS[invoice.status] ?? []
   const total = items.reduce((s, i) => s + i.amount, 0)
   // What the document comes to, by the one rule the server and the PDF use.
-  const shown = movingTotals({ items, discount: invoice?.discount, vatEnabled: invoice?.vatEnabled, vatRate: invoice?.vatRate })
+  const shown = movingTotals({ items, discount: invoice?.discount, vatEnabled: invoice?.vatEnabled, vatRate: invoice?.vatRate, status: invoice?.status })
 
   function handlePayment(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()

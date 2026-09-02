@@ -499,13 +499,17 @@ async function createFirstInvoiceFromQuote(quote, contract, userName) {
      * the invoice covers the first period, not the whole term — and the
      * refundable lines are outside the base, the rule quoteVat.js holds and
      * the printed quotation already applies. */
-    /* Only where the quote itself charged VAT.
+    /* Every invoice raised from here on charges VAT.
      *
-     * Not `vatEnabled`: mongoose fills that in from the schema default when it
-     * loads a quote raised before VAT existed, so it reads true on all 42 of
-     * them and 6 are still convertible. The tax the customer actually agreed
-     * to is the one stored on the quote, and that is what the invoice bills. */
-    if (Number(quote.vatAmount || 0) > 0) {
+     * Worked out from this invoice's own lines rather than copied from the
+     * quote — the invoice covers the first period, not the whole term — with
+     * the refundable ones outside the base, the rule quoteVat.js holds and the
+     * printed quotation already applies.
+     *
+     * Note for anyone converting one of the six quotes that were accepted
+     * before VAT existed here: their invoice will come to 5% more than the
+     * quote the customer agreed to. */
+    {
         const taxable = items.reduce((sum, it) => sum + (isRefundableRow(it.itemDetails) ? 0 : it.amount), 0);
         const vatAmount = vatOn(taxable, Number(quote.vatRate || 5));
         if (vatAmount > 0) {

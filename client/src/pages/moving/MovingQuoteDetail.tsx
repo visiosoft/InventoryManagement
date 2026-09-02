@@ -82,7 +82,7 @@ export default function MovingQuoteDetail() {
       /* The server recomputes all of this from the items — see
          services/movingTotals.js — so what matters here is that the page shows
          the same figures it will get back. */
-      const t = movingTotals({ items: newItems, discount: discountPct, vatEnabled: quote?.vatEnabled, vatRate: quote?.vatRate })
+      const t = movingTotals({ items: newItems, discount: discountPct, vatEnabled: quote?.vatEnabled, vatRate: quote?.vatRate, status: quote?.status })
       return api.put(`/moving-quotes/${id}`, {
         items: newItems, discount: discountPct,
         subTotal: t.subTotal, vatAmount: t.vatAmount, total: t.total,
@@ -121,7 +121,7 @@ export default function MovingQuoteDetail() {
   const transitions = STATUS_TRANSITIONS[quote.status] ?? []
   const total = items.reduce((s, i) => s + i.amount, 0)
   // What the document comes to, by the one rule the server and the PDF use.
-  const shown = movingTotals({ items, discount: quote?.discount, vatEnabled: quote?.vatEnabled, vatRate: quote?.vatRate })
+  const shown = movingTotals({ items, discount: quote?.discount, vatEnabled: quote?.vatEnabled, vatRate: quote?.vatRate, status: quote?.status })
 
   return (
     <div style={{ background: '#FDFCFA', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">

@@ -1235,13 +1235,13 @@ const movingQuoteSchema = new Schema(
     /* VAT, charged on the sub total less the discount, and included in
        `total`.
        
-       The default is false and the routes turn it on for documents they
-       create. It cannot default to true: mongoose fills a missing field with
-       its default when it loads a document, so every quote raised before VAT
-       existed here would come back with the flag on, and the next save of any
-       kind — recording a payment, say — would write tax onto a settled
-       document. Verified against MVI-00009, which has no such field stored. */
-    vatEnabled: { type: Boolean, default: false },
+       No default at all, deliberately. Mongoose fills a missing field with its
+       default when it loads a document, so any default makes "raised before
+       VAT existed" indistinguishable from a deliberate choice — and with a
+       default of true, the next save of any kind on a settled invoice would
+       write tax onto it. Absent is a third state, resolved by status: see
+       chargesVat in services/movingTotals.js. */
+    vatEnabled: { type: Boolean },
     vatRate: { type: Number, default: 5 },
     vatAmount: { type: Number, default: 0 },
     total: { type: Number, default: 0 },
@@ -1292,7 +1292,7 @@ const movingInvoiceSchema = new Schema(
     subTotal: { type: Number, default: 0 },
     // Carried over from the quote it came from — see the note there.
     discount: { type: Number, default: 0 },
-    vatEnabled: { type: Boolean, default: false },
+    vatEnabled: { type: Boolean },
     vatRate: { type: Number, default: 5 },
     vatAmount: { type: Number, default: 0 },
     total: { type: Number, default: 0 },

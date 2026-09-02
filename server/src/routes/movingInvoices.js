@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import { MovingInvoice, Customer, MovingJob, nextMovingInvoiceNo } from '../models/index.js';
-import { movingTotals, movingBalance } from '../services/movingTotals.js';
+import { chargesVat, movingTotals, movingBalance } from '../services/movingTotals.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { generateMovingInvoicePdf } from '../services/movingInvoicePdf.js';
 import { notifyInvoiceReady, notifyPaymentReceived } from '../services/movingNotifications.js';
@@ -160,7 +160,10 @@ router.put('/:id', async (req, res) => {
 
     // Recomputed from what the invoice will be once this edit lands, so the
     // stored total, the VAT line and the balance can never disagree.
-    Object.assign(update, movingTotals({ ...inv, ...update }));
+    const merged = { ...inv, ...update };
+    Object.assign(update, movingTotals(merged));
+    // Pinned, so a draft that charges VAT goes on charging it once it is sent.
+    update.vatEnabled = chargesVat(merged);
     update.balanceDue = movingBalance({
       total: update.total,
       depositPaid: update.depositPaid ?? inv.depositPaid,
@@ -179,7 +182,18 @@ router.put('/:id', async (req, res) => {
 router.patch('/:id/status', async (req, res) => {
   try {
     const { status } = req.body;
-    const invoice = await MovingInvoice.findByIdAndUpdate(req.params.id, { status }, { new: true });
+    /* Leaving draft settles the VAT question for good — see the same note on
+       the quote route. Without it, sending a draft would flip the answer back
+       and the total would quietly drop the tax it was showing. */
+    const existing = await MovingInvoice.findById(req.params.id).lean();
+    if (!existing) return res.status(404).json({ error: 'Invoice not found' });
+    const patch = { status };
+    if (existing.vatEnabled === undefined) {
+      patch.vatEnabled = chargesVat(existing);
+      Object.assign(patch, movingTotals({ ...existing, vatEnabled: patch.vatEnabled }));
+      patch.balanceDue = movingBalance({ total: patch.total, depositPaid: existing.depositPaid, paymentHistory: existing.paymentHistory }).balanceDue;
+    }
+    const invoice = await MovingInvoice.findByIdAndUpdate(req.params.id, patch, { new: true });
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
     res.json(invoice);
   } catch (err) {

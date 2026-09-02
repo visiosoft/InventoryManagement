@@ -24,11 +24,19 @@ export type MovingTotals = {
   total: number
 }
 
-export function movingTotals({ items = [], discount = 0, vatEnabled, vatRate }: {
+/** See the note in server/src/services/movingTotals.js — three states. */
+export function chargesVat({ vatEnabled, status }: { vatEnabled?: boolean; status?: string } = {}) {
+  if (vatEnabled === true) return true
+  if (vatEnabled === false) return false
+  return status === 'draft'
+}
+
+export function movingTotals({ items = [], discount = 0, vatEnabled, vatRate, status }: {
   items?: { amount?: number | null }[]
   discount?: number
   vatEnabled?: boolean
   vatRate?: number
+  status?: string
 } = {}): MovingTotals {
   const subTotal = round2((items || []).reduce((s, i) => s + (Number(i?.amount) || 0), 0))
 
@@ -36,7 +44,7 @@ export function movingTotals({ items = [], discount = 0, vatEnabled, vatRate }: 
   const discountAmount = round2((subTotal * pct) / 100)
   const net = round2(subTotal - discountAmount)
 
-  const rate = vatEnabled === true ? Number(vatRate ?? MOVING_VAT_RATE) || 0 : 0
+  const rate = chargesVat({ vatEnabled, status }) ? Number(vatRate ?? MOVING_VAT_RATE) || 0 : 0
   const vatAmount = round2((Math.max(0, net) * rate) / 100)
 
   return {

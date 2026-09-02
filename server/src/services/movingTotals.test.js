@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { movingTotals, movingBalance, MOVING_VAT_RATE } from './movingTotals.js';
+import { chargesVat, movingTotals, movingBalance, MOVING_VAT_RATE } from './movingTotals.js';
 
 test('VAT is 5% where a document asks for it', () => {
    const t = movingTotals({ items: [{ amount: 1000 }], vatEnabled: true });
@@ -10,7 +10,31 @@ test('VAT is 5% where a document asks for it', () => {
    assert.equal(t.total, 1050);
 });
 
-test('a document with no vatEnabled field is never given tax', () => {
+test('a draft raised before VAT existed is priced at the rules in force today', () => {
+   /* 42 moving quotes and 3 invoices are drafts with no vatEnabled field. A
+      draft has not gone to anybody, so it is priced today. */
+   const t = movingTotals({ items: [{ amount: 1000 }], status: 'draft' });
+   assert.equal(t.vatAmount, 50);
+   assert.equal(t.total, 1050);
+});
+
+test('a document that was sent or paid keeps the figures it was agreed at', () => {
+   for (const status of ['sent', 'accepted', 'paid', 'partial', 'cancelled', 'rejected', 'expired']) {
+      const t = movingTotals({ items: [{ amount: 1000 }], status });
+      assert.equal(t.vatAmount, 0, `${status} must not gain tax`);
+      assert.equal(t.total, 1000);
+   }
+});
+
+test('the three states of the flag are all different', () => {
+   assert.equal(chargesVat({ vatEnabled: true, status: 'paid' }), true, 'an explicit yes wins over status');
+   assert.equal(chargesVat({ vatEnabled: false, status: 'draft' }), false, 'turning it off is honoured');
+   assert.equal(chargesVat({ status: 'draft' }), true, 'absent on a draft means it is priced today');
+   assert.equal(chargesVat({ status: 'accepted' }), false, 'absent on a settled document means leave it alone');
+   assert.equal(chargesVat(), false);
+});
+
+test('a document with no vatEnabled field and no status is never given tax', () => {
    /* Every quote and invoice raised before VAT existed here looks like this,
       and this function is what the PDFs print from. Assuming yes would have
       reprinted settled invoices with tax added: MVI-00009 is stored at
@@ -94,7 +118,7 @@ test('the client mirror computes the same figures', async () => {
       'const pct = Math.min(100, Math.max(0, Number(discount) || 0))',
       'const discountAmount = round2((subTotal * pct) / 100)',
       'const net = round2(subTotal - discountAmount)',
-      'const rate = vatEnabled === true ? Number(vatRate ?? MOVING_VAT_RATE) || 0 : 0',
+      'const rate = chargesVat({ vatEnabled, status }) ? Number(vatRate ?? MOVING_VAT_RATE) || 0 : 0',
       'const vatAmount = round2((Math.max(0, net) * rate) / 100)',
       'total: round2(net + vatAmount)',
    ];
@@ -102,4 +126,7 @@ test('the client mirror computes the same figures', async () => {
       assert.ok(ts.includes(line), `client/src/lib/movingTotals.ts has drifted — missing: ${line}`);
    }
    assert.ok(ts.includes('export const MOVING_VAT_RATE = 5'), 'the client mirror disagrees about the rate');
+   for (const line of ['if (vatEnabled === true) return true', 'if (vatEnabled === false) return false', "return status === 'draft'"]) {
+      assert.ok(ts.includes(line), `the client mirror decides VAT differently — missing: ${line}`);
+   }
 });

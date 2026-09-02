@@ -1,6 +1,6 @@
 import PDFDocument from 'pdfkit';
 import { TRN } from './companyIdentity.js';
-import { movingTotals } from './movingTotals.js';
+import { movingBalance, movingTotals } from './movingTotals.js';
 import { drawCompanyLogo } from './pdfLogo.js';
 
 const CO = {
@@ -228,8 +228,13 @@ export function generateMovingInvoicePdf(invoice) {
       y += 16;
     }
 
+    /* From the total printed above, not the stored figure.
+       A draft invoice priced at today's rules shows a total with VAT in it,
+       and the balance saved before that would have sat underneath saying
+       something 62.50 smaller. */
+    const { balanceDue } = movingBalance({ total: t.total, depositPaid: invoice.depositPaid, paymentHistory: invoice.paymentHistory });
     doc.font('Helvetica-Bold').fontSize(10).fillColor(BLACK).text('Balance Due', tX, y, { width: lblW, align: 'right' });
-    doc.font('Helvetica-Bold').fontSize(10).fillColor(BLACK).text(aed(invoice.balanceDue), valX, y, { width: valW, align: 'right' });
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(BLACK).text(aed(balanceDue), valX, y, { width: valW, align: 'right' });
     y += 30;
 
     // Bank info

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { MovingQuote, MovingInvoice, MovingJob, nextMovingQuoteNo, nextMovingInvoiceNo } from '../models/index.js';
 import { generateMovingQuotePdf } from '../services/movingQuotePdf.js';
-import { movingTotals } from '../services/movingTotals.js';
+import { chargesVat, movingTotals } from '../services/movingTotals.js';
 
 const router = Router();
 
@@ -64,7 +64,11 @@ router.put('/:id', async (req, res) => {
        stored — the merge below is what the document ends up being. */
     const existing = await MovingQuote.findById(req.params.id).lean();
     if (!existing) return res.status(404).json({ error: 'Quote not found' });
-    Object.assign(update, movingTotals({ ...existing, ...update }));
+    const merged = { ...existing, ...update };
+    Object.assign(update, movingTotals(merged));
+    // Pinned, so the answer cannot change later: a draft charges VAT, and it
+    // must go on charging it once it is sent or accepted.
+    update.vatEnabled = chargesVat(merged);
     const quote = await MovingQuote.findByIdAndUpdate(req.params.id, update, { new: true, runValidators: true })
       .populate('customer', 'fullName phone email address')
       .populate('job', 'jobNo status');
@@ -79,7 +83,19 @@ router.put('/:id', async (req, res) => {
 router.patch('/:id/status', async (req, res) => {
   try {
     const { status } = req.body;
-    const quote = await MovingQuote.findByIdAndUpdate(req.params.id, { status }, { new: true });
+    /* Leaving draft settles the VAT question for good.
+     *
+     * A draft raised before VAT existed here is priced at today's rules, which
+     * is decided by its status — so without this, sending it would flip the
+     * answer back and the total would quietly drop the tax it was showing. */
+    const existing = await MovingQuote.findById(req.params.id).lean();
+    if (!existing) return res.status(404).json({ error: 'Quote not found' });
+    const patch = { status };
+    if (existing.vatEnabled === undefined) {
+      patch.vatEnabled = chargesVat(existing);
+      Object.assign(patch, movingTotals({ ...existing, vatEnabled: patch.vatEnabled }));
+    }
+    const quote = await MovingQuote.findByIdAndUpdate(req.params.id, patch, { new: true });
     if (!quote) return res.status(404).json({ error: 'Quote not found' });
     res.json(quote);
   } catch (err) {
@@ -135,7 +151,11 @@ router.post('/:id/convert-to-invoice', async (req, res) => {
     if (!quote) return res.status(404).json({ error: 'Quote not found' });
 
     const invoiceNo = await nextMovingInvoiceNo();
-    const depositPaid = quote.depositRequired ? Math.round(quote.total * (quote.depositPct || 0) / 100 * 100) / 100 : 0;
+    /* The invoice is a new document, so it charges VAT — recomputed from the
+       quote's own lines rather than copied, because a quote raised before VAT
+       existed carries a total without it. */
+    const t = movingTotals({ ...quote, vatEnabled: true });
+    const depositPaid = quote.depositRequired ? Math.round(t.total * (quote.depositPct || 0) / 100 * 100) / 100 : 0;
     const invoice = await MovingInvoice.create({
       invoiceNo,
       job: quote.job?._id || undefined,
@@ -143,18 +163,14 @@ router.post('/:id/convert-to-invoice', async (req, res) => {
       status: 'draft',
       invoiceDate: new Date(),
       items: quote.items,
-      // The quote's own figures, VAT included — an invoice that recomputed
-      // them could ask for a different sum than the customer accepted.
-      subTotal: quote.subTotal,
-      discount: quote.discount || 0,
-      // Whatever the customer accepted. A quote raised before VAT existed has
-      // no such flag, and its invoice must not invent one.
-      vatEnabled: quote.vatEnabled === true,
-      vatRate: quote.vatRate ?? 5,
-      vatAmount: quote.vatAmount || 0,
-      total: quote.total,
+      subTotal: t.subTotal,
+      discount: t.discount,
+      vatEnabled: true,
+      vatRate: t.vatRate,
+      vatAmount: t.vatAmount,
+      total: t.total,
       depositPaid,
-      balanceDue: Math.max(0, quote.total - depositPaid),
+      balanceDue: Math.max(0, t.total - depositPaid),
       notes: `Generated from quote ${quote.quoteNo}`,
       termsAndConditions: quote.termsAndConditions || '',
     });

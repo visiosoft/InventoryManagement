@@ -23,22 +23,35 @@ const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
  * @param vatEnabled false turns VAT off entirely; absent means on
  * @param vatRate    percent, defaults to 5
  */
-export function movingTotals({ items = [], discount = 0, vatEnabled, vatRate } = {}) {
+/**
+ * Does this document charge VAT?
+ *
+ * Three states, and they are all different:
+ *   true       — it charges VAT, decided when it was saved
+ *   false      — somebody turned it off
+ *   undefined  — it was raised before VAT existed here
+ *
+ * The last one is settled by status. A draft has not gone to anybody, so it is
+ * priced at today's rules; anything sent, accepted or paid keeps the figures
+ * it was agreed at. That is why the schema stores no default: a default makes
+ * "never had the field" indistinguishable from "deliberately off".
+ */
+export function chargesVat({ vatEnabled, status } = {}) {
+   if (vatEnabled === true) return true;
+   if (vatEnabled === false) return false;
+   return status === 'draft';
+}
+
+export function movingTotals({ items = [], discount = 0, vatEnabled, vatRate, status } = {}) {
    const subTotal = round2((items || []).reduce((s, i) => s + (Number(i?.amount) || 0), 0));
 
    const pct = Math.min(100, Math.max(0, Number(discount) || 0));
    const discountAmount = round2((subTotal * pct) / 100);
    const net = round2(subTotal - discountAmount);
 
-   /* VAT is charged only where the document says so.
-    *
-    * Absent means no VAT, not "assume yes". Every quote and invoice raised
-    * before VAT existed here has no such field, and this function is what the
-    * PDFs print from — so assuming yes would have reprinted a settled invoice
-    * with tax added to it. MVI-00009 was stored at 2,500.00 and would have
-    * printed 2,625.00. New documents opt in when they are created; old ones
-    * keep exactly the figures they were agreed at. */
-   const rate = vatEnabled === true ? Number(vatRate ?? MOVING_VAT_RATE) || 0 : 0;
+   // See chargesVat: a settled document keeps its own figures, a draft is
+   // priced at today's rules.
+   const rate = chargesVat({ vatEnabled, status }) ? Number(vatRate ?? MOVING_VAT_RATE) || 0 : 0;
    const vatAmount = round2((Math.max(0, net) * rate) / 100);
 
    return {
