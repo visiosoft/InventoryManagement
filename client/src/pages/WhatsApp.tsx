@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { useVoiceRecorder, recordingSupported, formatDuration } from '../lib/voiceRecorder'
 import { api, whatsappApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel } from '../lib/api'
+import { useAuth } from '../lib/auth'
 import { TaskComposer } from '../components/TaskComposer'
 import { playPing, primePing } from '../lib/ping'
 import { convDisplayName, formatListTime, isPlaceholderName, Avatar } from '../lib/whatsappDisplay'
@@ -1594,6 +1595,28 @@ export default function WhatsApp() {
     staleTime: 60_000,
   })
   const [labelFilter, setLabelFilter] = useState<string>('')
+
+  /* Whose chats to show.
+   *
+   * The inbox listed every conversation to everybody, so a rep scrolled past
+   * forty of somebody else's to find their own. Remembered per person, and a
+   * rep starts on their own — which is the list they came here for.
+   */
+  const { user: me } = useAuth()
+  const OWNER_KEY = 'pb-wa-owner-filter'
+  const [ownerFilter, setOwnerFilter] = useState<'all' | 'mine' | 'unassigned'>(() => {
+    try {
+      const saved = localStorage.getItem(OWNER_KEY)
+      if (saved === 'all' || saved === 'mine' || saved === 'unassigned') return saved
+    } catch { /* a private window has no storage, and that is fine */ }
+    // Only a rep: accounts share the rep-ish role but own no leads, and would
+    // land on an empty tab wondering where the inbox went.
+    return me?.role === 'sales_rep' ? 'mine' : 'all'
+  })
+  function chooseOwnerFilter(v: 'all' | 'mine' | 'unassigned') {
+    setOwnerFilter(v)
+    try { localStorage.setItem(OWNER_KEY, v) } catch { /* ignore */ }
+  }
   const [notifOpen, setNotifOpen] = useState(false)
   const notifRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
@@ -1886,12 +1909,27 @@ export default function WhatsApp() {
     [conversations]
   )
 
-  /* Only the label filter is applied here — the text search already ran on the
-     server, against every conversation rather than just the loaded ones. */
+  const isMine = (c: WhatsAppConversation) => Boolean(me?.id) && String(c.lead?.ownerId ?? '') === String(me?.id)
+  const isUnowned = (c: WhatsAppConversation) => !c.lead?.ownerId
+
+  // Counts for the tabs, from the whole loaded list rather than the filtered
+  // one — a tab that reports its own emptiness is no use for switching to.
+  const ownerCounts = useMemo(() => ({
+    all: convoList.length,
+    mine: convoList.filter(isMine).length,
+    unassigned: convoList.filter(isUnowned).length,
+  }), [convoList, me?.id])
+
+  /* Only the label and owner filters are applied here — the text search
+     already ran on the server, against every conversation rather than just the
+     loaded ones. */
   const filteredConvos = useMemo(() => {
-    if (!labelFilter) return convoList
-    return convoList.filter((c) => (c.labels || []).some((l) => l._id === labelFilter))
-  }, [convoList, labelFilter])
+    let list = convoList
+    if (ownerFilter === 'mine') list = list.filter(isMine)
+    else if (ownerFilter === 'unassigned') list = list.filter(isUnowned)
+    if (labelFilter) list = list.filter((c) => (c.labels || []).some((l) => l._id === labelFilter))
+    return list
+  }, [convoList, labelFilter, ownerFilter, me?.id])
 
   const realConvo = convoList.find((c) => c.phoneNormalized === selectedPhone) ?? null
   // A number typed into "New chat" behaves like an empty conversation so the
@@ -2234,6 +2272,32 @@ export default function WhatsApp() {
 
             <InboxAsk onOpenChat={(phone) => { setSelectedPhone(phone); setSidebarOpen(false) }} />
 
+            {/* Mine, everyone's, or the ones nobody has picked up yet. */}
+            <div className="flex items-center gap-1 p-1" style={{ background: '#F7F3FF', borderRadius: 999 }}>
+              {([['mine', 'My leads'], ['all', 'All'], ['unassigned', 'Unassigned']] as const).map(([key, label]) => {
+                const active = ownerFilter === key
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => chooseOwnerFilter(key)}
+                    className="flex-1 cursor-pointer"
+                    style={{
+                      height: 28, borderRadius: 999, fontSize: 12, fontWeight: 600, border: 'none',
+                      background: active ? '#fff' : 'transparent',
+                      color: active ? INK : FAINT_INK,
+                      boxShadow: active ? '0 1px 2px rgba(20,8,31,.10)' : 'none',
+                    }}
+                  >
+                    {label}
+                    <span style={{ marginLeft: 5, fontWeight: 700, color: active ? '#4A1FA0' : FAINT_INK }}>
+                      {ownerCounts[key]}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+
             {/* Click a label to narrow the list to the chats carrying it. */}
             {waLabels.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
@@ -2276,7 +2340,13 @@ export default function WhatsApp() {
               <p className="px-4 py-3 text-sm" style={{ color: FAINT_INK }}>Loading…</p>
             ) : filteredConvos.length === 0 ? (
               <p className="px-4 py-3 text-xs" style={{ color: FAINT_INK }}>
-                {convoList.length === 0 ? 'No conversations yet. Start a new chat.' : 'No chats match that search.'}
+                {convoList.length === 0
+                  ? 'No conversations yet. Start a new chat.'
+                  : ownerFilter === 'mine'
+                    ? 'None of these chats are yours yet. Try All.'
+                    : ownerFilter === 'unassigned'
+                      ? 'Every chat has somebody on it.'
+                      : 'No chats match that search.'}
               </p>
             ) : (
               filteredConvos.map((c) => {
