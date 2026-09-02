@@ -202,6 +202,7 @@ export function pickOwner({ rules = [], counts = {}, at = new Date(), timeZone =
  */
 
 import { Customer, Lead, LeadRoutingConfig, LeadRoutingRule } from '../models/index.js';
+import { notifyLeadAssigned } from './leadNotify.js';
 
 /** The last nine digits of a number, however it was written down. */
 export function digitTail(v) {
@@ -305,4 +306,60 @@ export async function routeInboundLead({ phoneNormalized, at = new Date() } = {}
       // The assistant answers and the lead stays unowned until somebody is on.
       leaveToAssistant: config.outOfHoursMode === 'ai',
    };
+}
+
+/**
+ * Hand out anything the webhook left unowned.
+ *
+ * The webhook assigns as each chat arrives, which covers the ordinary case
+ * without anybody opening a page. Two things slip past it: a chat that came in
+ * out of hours, which is deliberately left unowned so it does not land on
+ * somebody asleep, and anything that arrived while distribution was switched
+ * off. Both sit there until a person notices.
+ *
+ * This is the sweep that notices instead. It runs on a timer, and does nothing
+ * at all unless somebody is on shift — so an overnight enquiry is handed to
+ * whoever is due it at the start of the morning rather than at 3am.
+ *
+ * Deliberately narrow: only WhatsApp leads, only ones nobody owns, only the
+ * last few days. It will not reassign anything, and it will not sweep up a
+ * lead somebody deliberately left unassigned months ago.
+ */
+export async function sweepUnassignedLeads({ at = new Date(), limit = 25 } = {}) {
+   const config = await LeadRoutingConfig.findOne().lean();
+   if (!config?.enabled) return { assigned: 0, reason: 'distribution is off' };
+
+   const since = new Date(at.getTime() - 3 * 86400000);
+   const waiting = await Lead.find({
+      source: 'whatsapp',
+      owner: null,
+      createdAt: { $gte: since },
+      status: { $nin: ['won', 'lost'] },
+   }).sort({ createdAt: 1 }).limit(limit).lean();
+   if (!waiting.length) return { assigned: 0, reason: 'nothing waiting' };
+
+   let assigned = 0;
+   for (const lead of waiting) {
+      /* Re-read the tally each time, so a sweep of twenty respects the shares
+         rather than giving them all to whoever was furthest behind first. */
+      const decision = await routeInboundLead({ phoneNormalized: lead.phoneNormalized, at });
+      if (!decision.ownerId) break;   // still nobody on shift; try again later
+
+      await Lead.updateOne({ _id: lead._id }, {
+         $set: {
+            owner: decision.ownerId,
+            assignedAt: at,
+            autoAssigned: true,
+            ownerSeenAt: null,
+            firstResponseAt: null,
+         },
+         $push: { timeline: { type: 'note', text: `Assigned by distribution rules — ${decision.reason}` } },
+      });
+      assigned += 1;
+
+      notifyLeadAssigned({ lead, ownerId: decision.ownerId, reason: decision.reason })
+         .catch((e) => console.error('[LeadRouting] notify failed:', e.message));
+   }
+
+   return { assigned, waiting: waiting.length };
 }

@@ -86,6 +86,7 @@ import crewPortalRoutes from './routes/crewPortal.js';
 import whatsappFlowRoutes from './routes/whatsappFlow.js';
 import { startBackupScheduler } from './services/backup.js';
 import { runFollowUps, pushDueFollowUps } from './services/followUps.js';
+import { sweepUnassignedLeads } from './services/leadRouting.js';
 import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
 import { runAiBotTick, getAiBotConfig } from './services/aiBot.js';
 import { summariseRecent } from './services/conversationSummary.js';
@@ -420,6 +421,28 @@ async function start() {
       console.error('[FollowUps]', e.message);
     }
   }, 60_000);
+
+  /* Leads the webhook could not hand out.
+   *
+   * The webhook assigns each chat as it arrives, so nobody has to open a page
+   * for that to happen. What it cannot do is hand out a chat that came in when
+   * nobody was on shift — those are left unowned on purpose rather than
+   * landing on somebody asleep — or anything that arrived while distribution
+   * was switched off.
+   *
+   * This picks those up. It does nothing unless somebody is on shift, so an
+   * overnight enquiry goes out at the start of the morning. Every two minutes,
+   * starting a little after boot so it is not competing with everything else
+   * that runs at startup. */
+  const SWEEP_INTERVAL = 2 * 60 * 1000;
+  setTimeout(() => setInterval(async () => {
+    try {
+      const out = await sweepUnassignedLeads();
+      if (out.assigned) console.log(`[LeadRouting] handed out ${out.assigned} lead(s) nobody owned`);
+    } catch (e) {
+      console.error('[LeadRouting]', e.message);
+    }
+  }, SWEEP_INTERVAL), 45_000);
 }
 
 start().catch((err) => {
