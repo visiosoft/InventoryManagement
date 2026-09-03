@@ -16,7 +16,7 @@ type Config = {
   voice: string
   voiceStyle: string
   voiceSpeed: number
-  voiceAmbience: 'none' | 'room' | 'office'
+  voiceAmbience: 'none' | 'room' | 'office' | 'callcentre'
   voiceAmbienceLevel: number
   voices?: string[]
   escalateTo: string
@@ -287,12 +287,13 @@ export default function AiAssistant() {
                       Behind the voice:{' '}
                       <select
                         value={draft.voiceAmbience}
-                        onChange={(e) => set({ voiceAmbience: e.target.value as 'none' | 'room' | 'office' })}
+                        onChange={(e) => set({ voiceAmbience: e.target.value as 'none' | 'room' | 'office' | 'callcentre' })}
                         className="border rounded px-1.5 py-0.5 text-[12.5px]"
                       >
                         <option value="none">Nothing</option>
                         <option value="room">Room tone — air and a faint hum</option>
                         <option value="office">Office — someone talking across the room</option>
+                        <option value="callcentre">Call centre — real voices behind it</option>
                       </select>
                       {draft.voiceAmbience !== 'none' && (
                         <>
@@ -307,9 +308,13 @@ export default function AiAssistant() {
                         </>
                       )}
                       <span className="block text-[12px] mt-0.5">
-                        Press “hear it” to compare the two. The murmur is shaped like speech but
-                        carries no words — nothing is ever said that the business did not say. Above
-                        about 0.10 it starts competing with the voice.
+                        Press “hear it” to compare them. Room and Office are synthesised, which is
+                        why they can sound blurred; <strong>Call centre</strong> is built from real
+                        voices, set back and overlapping, and is the one that sounds like a room with
+                        people in it. It is built once and kept, so it costs nothing per reply. No
+                        sentence in it carries as a statement — nothing is ever heard that the
+                        business did not say. Above about 0.10 the bed starts competing with the
+                        voice.
                       </span>
                     </span>
 

@@ -13,12 +13,16 @@
  *              somewhere" and claims nothing else.
  *   'office' — the same, with an indistinct murmur of talking behind it, as
  *              though somebody else is on a call across the room.
+ *   'callcentre'
+ *            — actual voices, several of them, overlapped and set back in the
+ *              room. The two above are synthesised and sound like it; people
+ *              do not sound like filtered noise. See callCentreBed.js.
  *
- * Both are synthesised here rather than shipped as recordings: nothing to
- * licence, nothing to keep on disk, and the murmur is filtered noise shaped
- * like speech rhythm, so no words are ever intelligible. That last point is
- * deliberate — a bed that suggested a colleague is one thing, one carrying
- * words the business never said is another.
+ * The first two are synthesised here — nothing to licence, and the murmur is
+ * filtered noise shaped like speech rhythm, so no words are ever intelligible.
+ * The third is real speech, built once by callCentreBed.js and set far enough
+ * back that no sentence carries as a statement: a bed that suggests a busy
+ * office is one thing, one putting words in the business's mouth is another.
  *
  * No ffmpeg. The API host has never needed a system binary to send a voice
  * note (see audioRemux.js) and this does not change that: the mix happens in
@@ -28,6 +32,7 @@
 
 import OpusScript from 'opusscript';
 import { oggFromOpusPackets } from './audioRemux.js';
+import { callCentreBed } from './callCentreBed.js';
 
 /* OpenAI returns raw PCM at 24 kHz, mono, signed 16-bit little-endian. Opus
    handles 24 kHz natively, so nothing is resampled. */
@@ -93,13 +98,13 @@ function buildBed(length, withVoices) {
  * Mix a bed under speech and hand back an Ogg/Opus voice note.
  *
  * @param pcm      raw 24 kHz mono signed 16-bit LE, as OpenAI returns it
- * @param kind     'room' | 'office'
+ * @param kind     'room' | 'office' | 'callcentre'
  * @param level    0..1, how loud the bed sits under the voice
  * @returns Buffer, or null if it could not be built — the caller then sends
  *          the plain voice, because a reply with no room tone is fine and a
  *          reply that failed to send is not.
  */
-export function mixAmbience({ pcm, kind = 'room', level = 0.12 }) {
+export async function mixAmbience({ pcm, kind = 'room', level = 0.12 }) {
     try {
         if (!pcm?.length || kind === 'none') return null;
 
@@ -111,7 +116,19 @@ export function mixAmbience({ pcm, kind = 'room', level = 0.12 }) {
         const pad = Math.floor(RATE * 0.35);
         const total = samples + pad * 2;
 
-        const bed = buildBed(total, kind === 'office');
+        /* Real voices, where they are asked for. The bed is thirty seconds
+           long and a different slice of it is used each time, so two replies
+           in a row never carry the same background. */
+        let bed;
+        if (kind === 'callcentre') {
+            const recorded = await callCentreBed();
+            if (!recorded) return null;
+            bed = new Float64Array(total);
+            const start = Math.floor(Math.random() * recorded.length);
+            for (let i = 0; i < total; i++) bed[i] = recorded[(start + i) % recorded.length];
+        } else {
+            bed = buildBed(total, kind === 'office');
+        }
         const gain = Math.min(0.4, Math.max(0, level));
         const out = new Int16Array(total);
 

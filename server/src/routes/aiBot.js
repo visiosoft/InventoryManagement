@@ -16,7 +16,7 @@ const PROMPT_LIMIT = 40000;
    natural ones; alloy and echo are the flattest, which is what people mean
    when they say it sounds robotic. */
 /** What can be put behind the voice. */
-const AMBIENCE = ['none', 'room', 'office'];
+const AMBIENCE = ['none', 'room', 'office', 'callcentre'];
 
 const VOICES = ['coral', 'sage', 'ballad', 'ash', 'verse', 'nova', 'shimmer', 'fable', 'onyx', 'alloy', 'echo'];
 

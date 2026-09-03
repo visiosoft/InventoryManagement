@@ -680,6 +680,6 @@ export async function speakAsConfigured(text, config) {
 
     const pcm = await synthesizeSpeech({ text, voice, instructions, speed, format: 'pcm' });
     if (!pcm) return null;
-    return mixAmbience({ pcm, kind: ambience, level: config.voiceAmbienceLevel ?? 0.08 })
+    return (await mixAmbience({ pcm, kind: ambience, level: config.voiceAmbienceLevel ?? 0.08 }))
         ?? synthesizeSpeech({ text, voice, instructions, speed });
 }
