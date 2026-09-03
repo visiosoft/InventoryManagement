@@ -1388,7 +1388,17 @@ function LeadAction({ convo, onChanged, menuItem }: { convo: WhatsAppConversatio
   )
 }
 
-export default function WhatsApp() {
+/**
+ * The WhatsApp console.
+ *
+ * Given `embeddedPhone` it becomes one conversation with no chat list — which
+ * is what the WhatsApp tab on a lead or a tenant renders. Everything else is
+ * unchanged, and that is the point: the history, the live updates, quick
+ * replies, voice notes, attachments, editing, assigning and the rest are the
+ * same code in both places, so the tab cannot quietly fall behind the console.
+ */
+export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } = {}) {
+  const embedded = Boolean(embeddedPhone)
   const qc = useQueryClient()
   // The last chat opened, so returning to the inbox lands where you left off
   // instead of on a combined feed of everyone.
@@ -1396,10 +1406,16 @@ export default function WhatsApp() {
   // ?phone= wins over the remembered chat, so a link from elsewhere in the app
   // — a contract's Chat tab, say — opens the conversation it names.
   const [selectedPhone, setSelectedPhone] = useState<string | null>(() => {
+    if (embeddedPhone) return String(embeddedPhone).replace(/\D/g, '')
     const asked = new URLSearchParams(window.location.search).get('phone')
     const digits = String(asked || '').replace(/\D/g, '')
     return digits || localStorage.getItem(LAST_CHAT_KEY) || null
   })
+
+  // Following the person the page is about, if it changes under us.
+  useEffect(() => {
+    if (embeddedPhone) setSelectedPhone(String(embeddedPhone).replace(/\D/g, ''))
+  }, [embeddedPhone])
   /* Muting, with a middle setting between "on" and "off for ever".
    *
    * Stored as '1' for muted indefinitely, or the time it should come back on.
@@ -1887,7 +1903,8 @@ export default function WhatsApp() {
     const next = phone
     stickToBottom.current = true
     setSelectedPhone(next)
-    localStorage.setItem(LAST_CHAT_KEY, next)
+    // Opening somebody's tab is not "where I left off in the inbox".
+    if (!embedded) localStorage.setItem(LAST_CHAT_KEY, next)
     setSendErr('')
     setSidebarOpen(false)
     if (next) {
@@ -2046,8 +2063,11 @@ export default function WhatsApp() {
 
   return (
     <div
-      className="wa-shell flex flex-col rounded-2xl overflow-hidden h-[calc(100vh-5rem)] md:h-[calc(100vh-5.5rem)] min-h-[520px]"
-      style={{ border: `1px solid ${LINE}`, background: '#fff', boxShadow: '0 6px 28px rgba(20,8,31,.07)' }}
+      className={cn(
+        'wa-shell flex flex-col rounded-2xl overflow-hidden min-h-[520px]',
+        embedded ? 'h-[70vh]' : 'h-[calc(100vh-5rem)] md:h-[calc(100vh-5.5rem)]',
+      )}
+      style={{ border: `1px solid ${LINE}`, background: '#fff', boxShadow: embedded ? 'none' : '0 6px 28px rgba(20,8,31,.07)' }}
     >
       <style>{CSS}</style>
 
@@ -2057,7 +2077,8 @@ export default function WhatsApp() {
         style={{ flexDirection: 'row', flexWrap: 'nowrap' }}
       >
 
-        {/* 2. Sidebar */}
+        {/* 2. Sidebar — not when the page is about one person already. */}
+        {!embedded && (
         <aside
           className={cn('wa-sidebar flex flex-col min-h-0', sidebarOpen && 'wa-sidebar-open')}
           style={{ flex: `0 0 ${CHAT_PANEL_W}px`, width: CHAT_PANEL_W, background: '#fff', borderRight: `1px solid ${LINE}`, fontFamily: CHAT_PANEL_FONT }}
@@ -2384,6 +2405,7 @@ export default function WhatsApp() {
             )}
           </div>
         </aside>
+        )}
 
         {sidebarOpen && <div className="wa-scrim" onClick={() => setSidebarOpen(false)} aria-hidden />}
 
@@ -2396,7 +2418,8 @@ export default function WhatsApp() {
             <button
               type="button"
               className="wa-mobile-only items-center justify-center h-8 w-8 rounded-lg cursor-pointer shrink-0"
-              style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', color: '#4A1FA0' }}
+              // Nothing to go back to when the page is about one person.
+              style={{ display: embedded ? 'none' : undefined, background: '#F7F3FF', border: '1px solid #EDE5FF', color: '#4A1FA0' }}
               aria-label="Show chats"
               onClick={() => setSidebarOpen((v) => !v)}
             >

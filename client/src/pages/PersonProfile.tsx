@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { TaskComposer } from '../components/TaskComposer'
+import WhatsAppConsole from './WhatsApp'
 import { useAuth } from '../lib/auth'
 import { Spinner, statusLabel, LEAD_STATUS_FLOW, LEAD_TEMPERATURES, LEAD_TAGS } from '../components/ui'
 import { formatDate, formatDateTime } from '../lib/utils'
@@ -166,6 +167,7 @@ function eventMeta(t: TimelineEntry): string {
 }
 
 export default function PersonProfile() {
+  const [pane, setPane] = useState<'details' | 'chat'>('details')
   const { id = '' } = useParams()
   const qc = useQueryClient()
   const navigate = useNavigate()
@@ -375,6 +377,8 @@ export default function PersonProfile() {
   const phone = customer?.phone || lead?.phone || ''
   const email = customer?.email || lead?.email || ''
   const waNumber = (lead?.phoneNormalized || phone).replace(/\D/g, '')
+  // Which half of the right-hand column is showing. The chat is a tab rather
+  // than another card because it needs the height.
   const isCustomer = stage === 'customer'
   const initials = name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '—'
 
@@ -1046,6 +1050,35 @@ export default function PersonProfile() {
 
         {/* ── The running account ─────────────────────────────────────────── */}
         <div className="flex flex-col" style={{ flex: '2 1 480px', gap: 20 }}>
+          {/* The conversation, on the page about the person.
+              Rendered by the console itself rather than a copy of it, so the
+              history, the live updates, quick replies, voice notes,
+              attachments and the rest are the same code here as there and
+              cannot drift apart. */}
+          {waNumber && (
+            <div className="flex" style={{ gap: 4, background: '#F7F3FF', borderRadius: 999, padding: 4 }}>
+              {([['details', 'Details'], ['chat', 'WhatsApp']] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setPane(key)}
+                  className="flex-1 cursor-pointer"
+                  style={{
+                    height: 32, borderRadius: 999, border: 'none', fontSize: 13, fontWeight: 700,
+                    background: pane === key ? '#fff' : 'transparent',
+                    color: pane === key ? INK : FAINT,
+                    boxShadow: pane === key ? '0 1px 2px rgba(20,8,31,.10)' : 'none',
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {pane === 'chat' && waNumber && <WhatsAppConsole embeddedPhone={waNumber} />}
+
+          {pane === 'details' && (<>
           {lead && (
             <Card title="Ownership & status">
               <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 16, alignItems: 'start' }}>
@@ -1339,6 +1372,7 @@ export default function PersonProfile() {
               )}
             </Card>
           )}
+          </>)}
         </div>
       </div>
 
