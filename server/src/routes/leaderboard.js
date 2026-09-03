@@ -108,6 +108,9 @@ router.get('/', async (req, res) => {
             closed: c?.closed ?? 0,
             value: Math.round(c?.value ?? 0),
             medianResponseMins: median(responses),
+            // How many that median is built from — a fast answer to three
+            // leads is not a fast rep. See MIN_REPLIES_FOR_SPEED.
+            responsesMeasured: responses.length,
             closedPreviously: get(before, u._id)?.closed ?? 0,
             closedEverBefore: (get(everBefore, u._id)?.n ?? 0) > 0,
          };
@@ -116,7 +119,7 @@ router.get('/', async (req, res) => {
       // Nobody with nothing at all: an empty row is not a person on a board.
       const active = rows.filter((r) => r.received || r.closed || r.value);
       const ranked = rank(active);
-      const awards = awardsFor(active);
+      const awards = awardsFor(active, { hasPreviousPeriod: Boolean(prevStart) });
 
       res.json({
          period: String(req.query.period || 'month'),

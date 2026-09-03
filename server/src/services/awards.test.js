@@ -52,11 +52,29 @@ test('conversion needs enough leads for the rate to mean anything', () => {
 test('fastest reply ignores anybody who has never replied', () => {
    // 0 minutes means "no measurement", not "instant".
    const a = awardsFor([
-      row({ userId: 'never', closed: 1, medianResponseMins: 0 }),
-      row({ userId: 'quick', closed: 1, medianResponseMins: 4 }),
+      row({ userId: 'never', closed: 1, medianResponseMins: 0, responsesMeasured: 0 }),
+      row({ userId: 'quick', closed: 1, medianResponseMins: 4, responsesMeasured: 9 }),
    ]);
    assert.ok(a.quick.includes('fastest_response'));
    assert.ok(!(a.never ?? []).includes('fastest_response'));
+});
+
+test('being fast on a handful of leads is not being fast', () => {
+   // On production one rep held the best median in the company off three
+   // leads, which is luck rather than a habit.
+   const a = awardsFor([
+      row({ userId: 'lucky', closed: 1, medianResponseMins: 2, responsesMeasured: 3 }),
+      row({ userId: 'steady', closed: 1, medianResponseMins: 11, responsesMeasured: 40 }),
+   ]);
+   assert.ok(a.steady.includes('fastest_response'));
+   assert.ok(!(a.lucky ?? []).includes('fastest_response'));
+});
+
+test('nobody is most improved on an all-time board', () => {
+   // There is nothing behind all time to have improved on.
+   const rows = [row({ userId: 'top', closed: 9, closedPreviously: 0 })];
+   assert.ok(awardsFor(rows).top.includes('most_improved'));
+   assert.ok(!awardsFor(rows, { hasPreviousPeriod: false }).top.includes('most_improved'));
 });
 
 test('most improved needs an actual rise', () => {

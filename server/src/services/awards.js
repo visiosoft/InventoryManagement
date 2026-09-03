@@ -17,6 +17,11 @@
 /** Enough leads that a rate means something. One-of-one is not a conversion. */
 export const MIN_LEADS_FOR_RATE = 10;
 
+/** How many answered leads somebody needs before their reply time is a habit
+ *  rather than an accident. Measured on production, one rep held the fastest
+ *  median in the company off three leads. */
+export const MIN_REPLIES_FOR_SPEED = 5;
+
 export const AWARDS = {
    top_closer: { label: 'Top closer', hint: 'Most deals closed this period' },
    highest_value: { label: 'Biggest book', hint: 'Largest total deal value this period' },
@@ -44,10 +49,12 @@ function leadersBy(rows, value, { minimum = 0, lowerIsBetter = false } = {}) {
  * Award keys per person.
  *
  * `rows` are this period; each row carries { userId, closed, value, received,
- * medianResponseMins, closedPreviously, closedEverBefore }.
+ * medianResponseMins, responsesMeasured, closedPreviously, closedEverBefore }.
+ * `hasPreviousPeriod` is false for the all-time board, which has nothing
+ * behind it to improve on.
  * Returns { [userId]: string[] }.
  */
-export function awardsFor(rows = []) {
+export function awardsFor(rows = [], { hasPreviousPeriod = true } = {}) {
    const out = {};
    const give = (ids, key) => ids.forEach((id) => { (out[id] ||= []).push(key); });
 
@@ -65,10 +72,24 @@ export function awardsFor(rows = []) {
       'best_conversion',
    );
 
-   give(leadersBy(rows, (r) => r.medianResponseMins, { lowerIsBetter: true }), 'fastest_response');
+   /* Speed is only a habit once there are a few of them. Somebody handed three
+      leads who answered all three in two minutes is not the fastest in the
+      company, and a board that says so is one nobody believes twice. */
+   give(
+      leadersBy(
+         rows.filter((r) => (r.responsesMeasured ?? 0) >= MIN_REPLIES_FOR_SPEED),
+         (r) => r.medianResponseMins,
+         { lowerIsBetter: true },
+      ),
+      'fastest_response',
+   );
 
-   // Improvement is a rise, so somebody who stood still or fell wins nothing.
-   give(leadersBy(rows, (r) => r.closed - (r.closedPreviously ?? 0)), 'most_improved');
+   /* Improvement is a rise, so somebody who stood still or fell wins nothing —
+      and on an all-time board there is nothing to have risen from, so it is not
+      awarded at all rather than handed to whoever closed the most. */
+   if (hasPreviousPeriod) {
+      give(leadersBy(rows, (r) => r.closed - (r.closedPreviously ?? 0)), 'most_improved');
+   }
 
    // Once only, and only for a real first: closed now, nothing ever before.
    for (const r of rows) {
