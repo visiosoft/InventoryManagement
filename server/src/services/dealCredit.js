@@ -30,6 +30,25 @@ export function phoneSuffixes(customer) {
 }
 
 /**
+ * The lead this customer came from, found by their number.
+ *
+ * Split out because it is wanted before a deal is closed as well as at the
+ * moment it is: a quote that records the lead it came from makes the credit
+ * exact later, instead of leaving it to be guessed from a phone number.
+ * The oldest match wins — the first time they ever contacted us is the
+ * enquiry that started this.
+ */
+export async function leadForCustomer(customer) {
+   const suffixes = phoneSuffixes(customer);
+   if (!suffixes.length) return null;
+   /* Anchored at the end, so 554644265 matches 971554644265 without also
+      matching a number that merely contains those digits in the middle. */
+   const or = suffixes.map((s) => ({ phoneNormalized: new RegExp(`${s}$`) }));
+   return Lead.findOne({ $or: or }).select('_id owner assignedAt status fullName')
+      .sort({ createdAt: 1 }).lean();
+}
+
+/**
  * Decide who to credit.
  *
  * Returns { leadId, ownerId, matchedBy } where matchedBy is:
@@ -50,15 +69,8 @@ export async function creditFor({ quote, customer, fallbackUserId }) {
    }
 
    if (!lead) {
-      const suffixes = phoneSuffixes(customer);
-      if (suffixes.length) {
-         /* Anchored at the end, so 554644265 matches 971554644265 without also
-            matching a number that merely contains those digits in the middle. */
-         const or = suffixes.map((s) => ({ phoneNormalized: new RegExp(`${s}$`) }));
-         lead = await Lead.findOne({ $or: or }).select('_id owner assignedAt status')
-            .sort({ createdAt: 1 }).lean();
-         if (lead) matchedBy = 'phone';
-      }
+      lead = await leadForCustomer(customer);
+      if (lead) matchedBy = 'phone';
    }
 
    /* Credit the lead's owner only where a person chose them.

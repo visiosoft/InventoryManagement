@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import { Contract, Customer, Invoice, Lead, Payment, Quote, Unit, nextQuoteNo, nextContractNo, nextInvoiceNo } from '../models/index.js';
-import { creditFor, markLeadWon } from '../services/dealCredit.js';
+import { creditFor, markLeadWon, leadForCustomer } from '../services/dealCredit.js';
 import { availableUnitsResponse } from '../services/unitAvailability.js';
 import { syncUnitStatus } from '../utils/unitStatus.js';
 import { renderQuotePdf } from '../services/quotePdf.js';
@@ -314,6 +314,19 @@ router.post('/', async (req, res) => {
     if (body.lead) {
         const lead = await Lead.findById(body.lead).select('_id');
         if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    }
+
+    /* Which enquiry this came from, recorded now rather than guessed later.
+     *
+     * Quotes have always had somewhere to put this and the pages almost never
+     * filled it in: 1 of 57 quotes on production named a lead. Every deal
+     * closed from one of the other 56 then had to be attributed by matching
+     * phone numbers after the fact, which is right often enough to be
+     * misleading. The number is known here, so the link is made here. */
+    if (!body.lead) {
+        const full = await Customer.findById(body.customer).select('phone phones').lean();
+        const found = await leadForCustomer(full).catch(() => null);
+        if (found) body.lead = found._id;
     }
 
     const userName = req.user.name || req.user.email || 'user';
