@@ -425,6 +425,47 @@ router.get('/follow-ups', async (req, res) => {
  * Only the person it belongs to can mark it seen — an admin opening a rep's
  * lead should not clear the highlight the rep has not acted on yet.
  */
+/**
+ * Leads handed to me that I have not looked at yet.
+ *
+ * Drives the alert in the corner of the screen. A rep is told the moment a
+ * lead becomes theirs rather than the next time they think to look at the
+ * board — which for a WhatsApp enquiry is the difference between answering it
+ * and losing it.
+ *
+ * Bounded by time as well as by the seen flag: a lead somebody was given last
+ * month and never opened is not news, and popping it up every twenty seconds
+ * forever would teach people to ignore the thing entirely.
+ */
+router.get('/newly-assigned', async (req, res) => {
+    try {
+        const since = new Date(Date.now() - 6 * 60 * 60 * 1000);
+        const leads = await Lead.find({
+            owner: req.user.id,
+            ownerSeenAt: null,
+            assignedAt: { $ne: null, $gte: since },
+            status: { $nin: ['won', 'lost'] },
+        })
+            .select('fullName phone status assignedAt autoAssigned assignedBy source')
+            .populate('assignedBy', 'name')
+            .sort({ assignedAt: -1 })
+            .limit(10)
+            .lean();
+
+        res.json(leads.map((l) => ({
+            _id: l._id,
+            fullName: l.fullName,
+            phone: l.phone,
+            source: l.source,
+            assignedAt: l.assignedAt,
+            // How it came to be theirs, so the alert can say.
+            by: l.autoAssigned ? 'the rota' : (l.assignedBy?.name || ''),
+        })));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 router.post('/:id/seen', async (req, res) => {
     try {
         const lead = await Lead.findById(req.params.id);

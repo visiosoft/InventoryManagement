@@ -5,6 +5,7 @@ import {
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import GlobalSearch from './GlobalSearch'
+import LeadAlerts from './LeadAlerts'
 import { SiteSwitcher } from './SiteSwitcher'
 import { SiteGate } from './SiteGate'
 import { cn } from '../lib/utils'
@@ -941,6 +942,10 @@ export default function Layout() {
           </SiteGate>
         </div>
       </main>
+
+      {/* Outside the page, so a rep is told about a new lead whichever screen
+          they happen to be on. */}
+      <LeadAlerts />
     </div>
   )
 }
