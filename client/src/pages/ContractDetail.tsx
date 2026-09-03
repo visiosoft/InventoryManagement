@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { AlertTriangle, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Download, FileText, Mail, MessageSquare, PenLine, Pin, ShieldCheck, Trash2, Upload, X, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Download, FileText, Mail, MessageSquare, PenLine, Pin, ShieldCheck, Trash2, Upload, X, XCircle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { AppDocument, Contract, Invoice, Payment, Unit, UnitLine } from '../lib/types'
@@ -450,16 +450,6 @@ function AddPaymentForm({ contractId, rate, busy, onSubmit }: {
   )
 }
 
-// ── Invoice group row (one row per invoice in the payment schedule) ───────────
-type InvoiceGroup = {
-  invoiceId: string; invoiceRef: { _id: string; invoiceNo: string }
-  payments: Payment[]; unpaidInGroup: Payment[]; paidInGroup: Payment[]
-  total: number; paidTotal: number; rentTotal: number; depositTotal: number
-  earliestDue: Date; latestDue: Date; periodLabel: string
-  /** The period this invoice actually bills, when its lines/notes state one */
-  periodStart?: Date
-  status: 'paid' | 'partial' | 'overdue' | 'pending'
-}
 
 // ── Main page ──────────────────────────────────────────────────────────────────
 
@@ -990,10 +980,6 @@ export default function ContractDetail() {
     }
   }
 
-  const multipleZohoContacts = (zohoInvoices.data?.matchedContacts?.length ?? 0) > 1
-  const zohoCols = multipleZohoContacts
-    ? '130px 95px 95px 90px 1fr 90px 90px'
-    : '130px 95px 95px 1fr 90px 90px'
 
 
   function invalidate() {
@@ -1166,11 +1152,8 @@ export default function ContractDetail() {
   // Sort and split
   const byDue = (a: Payment, b: Payment) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
   const overdue = payments.filter((p) => p.status === 'overdue').sort(byDue)
-  const pending = payments.filter((p) => p.status === 'pending').sort(byDue)
   const paid = payments.filter((p) => p.status === 'paid')
     .sort((a, b) => new Date(b.paidDate ?? b.dueDate).getTime() - new Date(a.paidDate ?? a.dueDate).getTime())
-  // Exclude security deposit records from rent totals — deposit is a separate liability
-  const isDepositPayment = (p: Payment) => /^security deposit/i.test(p.notes || '')
   // Group payments by invoice → one display row per invoice
   const groupMap = new Map<string, Payment[]>()
   const standalonePayments: Payment[] = []
@@ -1179,72 +1162,13 @@ export default function ContractDetail() {
     if (invId) { if (!groupMap.has(invId)) groupMap.set(invId, []); groupMap.get(invId)!.push(p) }
     else standalonePayments.push(p)
   }
-  const fmtShortDate = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-  const invoiceDocFor = (invId: string) => (data?.invoices ?? []).find((i) => String(i._id) === String(invId))
 
-  // "17 Jul 2026 – 13 Aug 2026" out of a note or line description. "Sept" is
-  // written by the PDF/invoice builders but Date only parses "Sep".
-  const parseDateRange = (text: string): { start: Date; end: Date } | null => {
-    const m = String(text || '').match(/(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})\s*[–-]\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})/)
-    if (!m) return null
-    const norm = (s: string) => s.replace(/Sept\b/i, 'Sep')
-    const start = new Date(norm(m[1]))
-    const end = new Date(norm(m[2]))
-    return Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) ? null : { start, end }
-  }
 
-  const invoiceGroups: InvoiceGroup[] = Array.from(groupMap.entries()).map(([invId, ps]) => {
-    const sorted = [...ps].sort(byDue)
-    const paidInGroup = ps.filter(p => p.status === 'paid')
-    const unpaidInGroup = ps.filter(p => p.status !== 'paid').sort(byDue)
-    const anyOverdue = ps.some(p => p.status === 'overdue')
-    const depositTotal = Math.round(ps.filter(isDepositPayment).reduce((s, p) => s + p.amount, 0) * 100) / 100
-    const total = Math.round(ps.reduce((s, p) => s + p.amount, 0) * 100) / 100
-    const rentTotal = Math.round((total - depositTotal) * 100) / 100
-    // Pull the service period out of any payment note or invoice line, e.g.
-    // "... 17 Jul 2026 – 13 Aug 2026 ...". This is what the invoice actually
-    // covers; the due date can be any day (often today) and must not be used
-    // to decide which month an invoice belongs to.
-    const periodText = [
-      ...sorted.map(p => p.notes || ''),
-      ...((invoiceDocFor(invId)?.items ?? []).map(it => it.itemDetails || '')),
-    ].map(parseDateRange).find(Boolean) ?? null
-    const periodLabel = periodText
-      ? `${fmtShortDate(periodText.start)} – ${fmtShortDate(periodText.end)}`
-      : fmtShortDate(new Date(sorted[0].dueDate))
-    // Paid figure: payment records may lag behind money taken straight against
-    // the invoice (recorded in its paymentHistory), so trust whichever is higher.
-    const recordPaid = Math.round(paidInGroup.reduce((s, p) => s + p.amount, 0) * 100) / 100
-    const invoiceDoc = (data?.invoices ?? []).find((i) => String(i._id) === String(invId))
-    const invoicePaid = Math.round(Number(invoiceDoc?.paymentMade ?? 0) * 100) / 100
-    const paidTotal = Math.min(Math.max(recordPaid, invoicePaid), total)
-
-    const allPaid = unpaidInGroup.length === 0 || paidTotal >= total - 0.01
-    const anyPaid = paidTotal > 0
-    const status: InvoiceGroup['status'] = allPaid ? 'paid' : anyOverdue ? 'overdue' : anyPaid ? 'partial' : 'pending'
-
-    return {
-      invoiceId: invId,
-      invoiceRef: ps[0].invoice as { _id: string; invoiceNo: string },
-      payments: sorted, unpaidInGroup, paidInGroup,
-      total, paidTotal,
-      rentTotal, depositTotal, periodLabel,
-      periodStart: periodText?.start,
-      earliestDue: new Date(sorted[0].dueDate),
-      latestDue: new Date(sorted[sorted.length - 1].dueDate),
-      status,
-    }
-  }).sort((a, b) => a.earliestDue.getTime() - b.earliestDue.getTime())
-
-  const unpaidGroups = invoiceGroups.filter(g => g.status !== 'paid')
 
 
   // Deposit-covered invoices: status 'paid', net 0, no payment records linked to them
   const allUnits = c.units?.length ? c.units : c.unit ? [c.unit] : []
 
-
-  // allUnpaid for "Pay multiple" header button
-  const allUnpaid = [...overdue, ...pending]
 
   // Sidebar computed values
   const initials = (c.customer?.fullName ?? '').split(' ').slice(0, 2).map((w: string) => w[0] ?? '').join('').toUpperCase()
@@ -1768,7 +1692,6 @@ export default function ContractDetail() {
               ['documents', 'Documents', 0],
               ['notices', 'Notices', 0],
               ['reminders', 'Reminders', 0],
-              ['payments', 'Payments', unpaidGroups.length],
               ['chat', 'Chat', 0],
             ] as [typeof activeTab, string, number][]).map(([key, label, count]) => (
               <button key={key} onClick={() => setActiveTab(key)}
@@ -2035,41 +1958,19 @@ export default function ContractDetail() {
                 {/* Right column */}
                 <div className="space-y-4">
                   <Card>
-                    <CardHeader title="Payments" action={
-                      allUnpaid.length > 1 ? <Button size="sm" variant="outline" onClick={() => setBulkTarget(allUnpaid)}><CalendarDays size={12} /> Pay multiple</Button> : null
-                    } />
-                    <CardBody className="pt-0 space-y-2">
-                      {unpaidGroups.length === 0 ? (
-                        <p className="text-xs text-muted-foreground text-center py-2">All paid</p>
-                      ) : unpaidGroups.slice(0, 4).map((g) => {
-                        const isOverdue = g.status === 'overdue'
-                        const daysLateN = isOverdue ? Math.round((new Date().getTime() - g.earliestDue.getTime()) / 86400000) : 0
-                        const isDueNow = !isOverdue && g.earliestDue <= new Date()
-                        return (
-                          <div key={g.invoiceId} className={`rounded-lg border px-3 py-2.5 ${isOverdue ? 'border-red-200 bg-red-50 dark:bg-red-950/20 dark:border-red-900/40' : 'border-border'}`}>
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0">
-                                <p className="text-xs font-semibold">
-                                  {g.earliestDue.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – {g.latestDue.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                                </p>
-                                <p className="text-xs text-muted-foreground mt-0.5">Due {g.earliestDue.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}{isOverdue ? ` · ${daysLateN}d late` : ''}</p>
-                              </div>
-                              <div className="text-right shrink-0">
-                                <p className="text-sm font-bold">{formatMoney(g.total - g.paidTotal)}</p>
-                                <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${isOverdue ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400' : isDueNow ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400' : 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'}`}>
-                                  {isOverdue ? 'Overdue' : isDueNow ? 'Due now' : 'Upcoming'}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      })}
+                    {/* Invoices live in Zoho Books.
 
-                      {/* Zoho Books is where invoices actually live, so the
-                          payments card shows them alongside the schedule.
-                          Matched to this tenant by email/phone, never name. */}
-                      <div className="pt-2 mt-1" style={{ borderTop: '1px solid rgba(20,8,31,.08)' }}>
-                        <div style={SECTION_LABEL} className="mb-1.5">Zoho Books</div>
+                        The schedule this card used to show above them was
+                        the internal payment records, which the business
+                        stopped keeping - two sets of figures for the same
+                        money, one of them nobody updates. Zoho is the one
+                        that is true, so it is the only one here.
+
+                        Matched to this tenant by email and phone, never by
+                        name. */}
+                    <CardHeader title="Invoices" subtitle="From Zoho Books" />
+                    <CardBody className="pt-0 space-y-2">
+                      <div>
                         {zohoInvoices.isLoading ? (
                           <p className="text-xs text-muted-foreground py-1">Looking up…</p>
                         ) : zohoInvoices.isError ? (
@@ -2452,123 +2353,6 @@ export default function ContractDetail() {
           })()}
 
           {/* PAYMENTS */}
-          {activeTab === 'payments' && (
-            <div className="space-y-4">
-            {/* Zoho Books is now the only invoice record — local invoicing on
-                a contract was retired, so this tab shows nothing else. */}
-            <Card>
-              <CardHeader
-                title="Zoho Books invoices"
-                subtitle="Matched to this tenant by email or phone number, not by name"
-              />
-              <CardBody className="pt-0">
-                {zohoInvoices.isLoading ? (
-                  <p className="text-sm text-muted-foreground py-4">Looking up Zoho Books…</p>
-                ) : zohoInvoices.isError ? (
-                  (() => {
-                    const status = (zohoInvoices.error as { response?: { status?: number } })?.response?.status
-                    const msg = (zohoInvoices.error as { response?: { data?: { error?: string } } })?.response?.data?.error
-                    return (
-                      <p className="text-sm text-muted-foreground py-4">
-                        {status === 501
-                          ? 'Zoho Books is not connected — add its credentials in Settings to see invoices here.'
-                          : status === 404
-                            ? 'This lookup is not available on the API yet — the server needs to be redeployed.'
-                            : `Could not reach Zoho Books${status ? ` (HTTP ${status})` : ''}: ${msg || 'no error message returned'}`}
-                      </p>
-                    )
-                  })()
-                ) : !zohoInvoices.data?.matchedContacts?.length ? (
-                  <p className="text-sm text-muted-foreground py-4">
-                    No Zoho Books contact matches this tenant&apos;s email or phone number
-                    {c.customer.email || c.customer.phone ? '' : ' — this tenant has neither on file'}.
-                  </p>
-                ) : (
-                  <>
-                    {/* Which Zoho contact(s) matched, and how. The names differ
-                        by design, so show what was matched instead of hiding it. */}
-                    <div className="flex flex-wrap items-center gap-1.5 pb-3">
-                      {zohoInvoices.data.matchedContacts.map((m) => (
-                        <span key={m.id} className="text-[11px] rounded-full px-2 py-0.5 border"
-                          style={{ borderColor: 'rgba(20,8,31,.16)', color: MUTED }}
-                          title={`Matched by ${m.matchedBy}: ${m.matchedBy === 'email' ? m.email : m.phone}`}>
-                          {m.name || '(unnamed)'} · matched by {m.matchedBy}
-                        </span>
-                      ))}
-                      {zohoInvoices.data.matchedContacts.length > 1 && (
-                        <span className="text-[11px] text-amber-700">
-                          {zohoInvoices.data.matchedContacts.length} Zoho contacts share these details — invoices from all of them are shown
-                        </span>
-                      )}
-                    </div>
-
-                    {zohoInvoices.data.invoices.length === 0 ? (
-                      <p className="text-sm text-muted-foreground py-3">This contact has no invoices in Zoho Books.</p>
-                    ) : (
-                      <>
-                        {zohoPdfError && (
-                          <p className="text-[12px] text-destructive pb-2">{zohoPdfError}</p>
-                        )}
-                        <div className="overflow-x-auto">
-                          <div style={{ minWidth: multipleZohoContacts ? 720 : 560 }}>
-                            <div className="grid gap-3 pb-2 text-[13px] font-bold"
-                              style={{ gridTemplateColumns: zohoCols, borderBottom: '1px solid rgba(20,8,31,.16)' }}>
-                              <span>Invoice</span><span>Date</span><span>Due</span><span>Status</span>
-                              {multipleZohoContacts && <span>Billed to</span>}
-                              <span className="text-right">Total</span><span className="text-right">Balance</span>
-                            </div>
-                            {zohoInvoices.data.invoices.map((inv) => (
-                              <div key={inv.id} className="grid gap-3 items-center py-2 text-[13px]"
-                                style={{ gridTemplateColumns: zohoCols, borderBottom: '1px solid rgba(20,8,31,.06)' }}>
-                                <button type="button"
-                                  onClick={() => openZohoInvoicePdf(inv.id)}
-                                  disabled={openingZohoPdf === inv.id}
-                                  className="font-semibold text-left text-primary hover:underline cursor-pointer disabled:opacity-60"
-                                  title="Open this invoice's PDF from Zoho Books">
-                                  {openingZohoPdf === inv.id ? 'Opening…' : (inv.number || '—')}
-                                </button>
-                                <span style={{ color: MUTED }}>{inv.date ? formatDate(inv.date) : '—'}</span>
-                                <span style={{ color: MUTED }}>{inv.dueDate ? formatDate(inv.dueDate) : '—'}</span>
-                                <span>
-                                  <span className="text-[10px] font-bold rounded-full px-2 py-0.5 capitalize"
-                                    style={
-                                      inv.status === 'paid' ? { background: '#DCFCE7', color: '#15803D' }
-                                        : inv.status === 'overdue' ? { background: '#FEE2E2', color: '#B91C1C' }
-                                          : { background: 'rgba(20,8,31,.06)', color: MUTED }
-                                    }>
-                                    {inv.status || 'unknown'}
-                                  </span>
-                                </span>
-                                {multipleZohoContacts && (
-                                  <span className="truncate" style={{ color: MUTED }} title={inv.customerName}>
-                                    {inv.customerName || '—'}
-                                  </span>
-                                )}
-                                <span className="text-right">{inv.currency || 'AED'} {formatMoney(inv.total)}</span>
-                                <span className="text-right font-bold" style={{ color: inv.balance > 0 ? '#DC2626' : '#16A34A' }}>
-                                  {formatMoney(inv.balance)}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-end gap-5 pt-3 text-[13px]">
-                          <span style={{ color: MUTED }}>{zohoInvoices.data.totals.count} invoice{zohoInvoices.data.totals.count === 1 ? '' : 's'}</span>
-                          <span>Total <strong>{formatMoney(zohoInvoices.data.totals.total)}</strong></span>
-                          <span>Outstanding <strong style={{ color: zohoInvoices.data.totals.balance > 0 ? '#DC2626' : '#16A34A' }}>
-                            {formatMoney(zohoInvoices.data.totals.balance)}</strong></span>
-                        </div>
-                        <p className="text-[11.5px] pt-2" style={{ color: MUTED }}>
-                          Click an invoice number to open its PDF. These are the tenant&apos;s Zoho Books invoices across all their contracts, not only this one — Zoho is the source of truth, so edit them there.
-                        </p>
-                      </>
-                    )}
-                  </>
-                )}
-              </CardBody>
-            </Card>
-            </div>
-          )}
 
           {activeTab === 'chat' && (
             <Card>
