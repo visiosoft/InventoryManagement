@@ -2952,7 +2952,7 @@ export default function WhatsApp() {
             <div className="shrink-0 flex items-start gap-2 px-4 py-3.5" style={{ borderBottom: `1px solid ${LINE}` }}>
               <div className="min-w-0 flex-1">
                 <h2 style={{ fontFamily: "'Bricolage Grotesque', serif", fontWeight: 700, fontSize: 17, color: INK }}>Quick replies</h2>
-                <p style={{ fontSize: 11.5, color: FAINT_INK }}>Click text to insert · tap send icon to send now</p>
+                <p style={{ fontSize: 11.5, color: FAINT_INK }}>Tap one to send it</p>
               </div>
               <button type="button" onClick={() => setQrOpen(false)} className="cursor-pointer p-1" style={{ color: FAINT_INK }} aria-label="Close quick replies">
                 <X size={16} />
@@ -3001,22 +3001,19 @@ export default function WhatsApp() {
                                   </span>
                                 )}
                               </div>
-                              {/* Tapping the words sends the whole reply when it
-                                  carries a file, and only drops the text into
-                                  the composer when there is nothing else to
-                                  lose. Inserting a video reply put its caption
-                                  in the box and left the video behind — the
-                                  customer got the words about a tour and no
-                                  tour, and the rep had no way of knowing. */}
+                              {/* One tap sends it, whichever reply it is.
+                                  Tapping the words used to drop them into the
+                                  message box instead — which quietly left a
+                                  video behind, and meant every canned reply
+                                  took two actions to send when the whole point
+                                  of them is that they are ready to go. */}
                               <button
                                 type="button"
-                                onClick={() => (t.mediaKind
-                                  ? sendQuickReply.mutate(t._id)
-                                  : insertText(t.whatsappBody))}
-                                disabled={Boolean(t.mediaKind) && (!selectedPhone || sendQuickReply.isPending)}
+                                onClick={() => sendQuickReply.mutate(t._id)}
+                                disabled={!selectedPhone || send.isPending || sendQuickReply.isPending}
                                 className="text-left w-full cursor-pointer hover:opacity-75 disabled:opacity-40"
                                 style={{ fontSize: 12.5, color: MUTED_INK, whiteSpace: 'pre-wrap' }}
-                                title={t.mediaKind ? `Send this, with the ${t.mediaKind}` : 'Insert into the message box'}
+                                title={t.mediaKind ? `Send this, with the ${t.mediaKind}` : 'Send this now'}
                               >
                                 {t.whatsappBody}
                               </button>
