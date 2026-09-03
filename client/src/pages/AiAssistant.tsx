@@ -16,6 +16,8 @@ type Config = {
   maxRepliesPerThreadPerDay: number
   humanPauseHours: number
   defaultPrompt: string
+  /** How long the instructions may be, as the server enforces it. */
+  promptLimit?: number
   openai: { configured: boolean; model: string }
 }
 
@@ -144,6 +146,22 @@ export default function AiAssistant() {
         <CardBody className="space-y-3">
           <Textarea rows={12} value={draft.systemPrompt} className="font-mono text-[12.5px]"
             onChange={(e) => set({ systemPrompt: e.target.value })} />
+          {/* The length, in plain sight.
+              The server used to cut these at 8,000 characters and save the
+              stump, so a long prompt came back ending mid-word with nothing
+              said about it. It refuses rather than truncates now, and the count
+              is here so nobody has to find the ceiling by losing work. */}
+          {(() => {
+            const limit = draft.promptLimit ?? 40000
+            const used = draft.systemPrompt.length
+            const over = used > limit
+            return (
+              <p style={{ fontSize: 11.5, color: over ? '#B91C1C' : 'rgba(20,8,31,.55)', fontVariantNumeric: 'tabular-nums' }}>
+                {used.toLocaleString()} of {limit.toLocaleString()} characters
+                {over ? ' — too long to save, shorten it' : ''}
+              </p>
+            )
+          })()}
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => set({ systemPrompt: draft.defaultPrompt })}>
               Reset to the default wording

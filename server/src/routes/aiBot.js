@@ -6,6 +6,10 @@ import { openaiConfigured, openaiModel } from '../services/openai.js';
 
 const router = Router();
 
+/** How long the assistant's instructions may be. Generous, and enforced
+ *  rather than applied silently — see the note in the handler. */
+const PROMPT_LIMIT = 40000;
+
 const shape = (config) => ({
     enabled: config.enabled,
     mode: config.mode,
@@ -17,6 +21,8 @@ const shape = (config) => ({
     maxRepliesPerThreadPerDay: config.maxRepliesPerThreadPerDay,
     humanPauseHours: config.humanPauseHours,
     defaultPrompt: DEFAULT_PROMPT,
+    // So the page can show the real ceiling rather than a number copied by hand.
+    promptLimit: PROMPT_LIMIT,
     openai: { configured: openaiConfigured(), model: openaiModel() },
 });
 
@@ -30,7 +36,26 @@ router.put('/config', requireAdmin, async (req, res) => {
 
     if (b.enabled !== undefined) config.enabled = Boolean(b.enabled);
     if (b.mode === 'draft' || b.mode === 'auto') config.mode = b.mode;
-    if (b.systemPrompt !== undefined) config.systemPrompt = String(b.systemPrompt).slice(0, 8000);
+    /* The instructions, whole or refused — never quietly shortened.
+     *
+     * This used to slice at 8,000 characters and save the stump. Somebody
+     * pasted a prompt with eleven numbered sections, saved it, and got back
+     * one that stopped mid-word in section 11 — "the customer's first
+     * interaction. D" — with everything after it gone and nothing said. From
+     * the page it read as "it is not saving".
+     *
+     * 40,000 leaves room for a prompt of that shape several times over and is
+     * still a fraction of what the model will read. Over it, the request is
+     * refused with the number, so the person can see what to cut. */
+    if (b.systemPrompt !== undefined) {
+        const prompt = String(b.systemPrompt);
+        if (prompt.length > PROMPT_LIMIT) {
+            return res.status(400).json({
+                error: `Those instructions are ${prompt.length.toLocaleString()} characters and the limit is ${PROMPT_LIMIT.toLocaleString()}. Nothing was saved — shorten them and save again.`,
+            });
+        }
+        config.systemPrompt = prompt;
+    }
     if (b.useAvailability !== undefined) config.useAvailability = Boolean(b.useAvailability);
     if (b.autoSummarise !== undefined) config.autoSummarise = Boolean(b.autoSummarise);
     if (b.handoverKeywords !== undefined) {
