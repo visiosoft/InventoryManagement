@@ -348,3 +348,39 @@ export function webmToOggOpus(buffer) {
 
     return Buffer.concat(out);
 }
+
+/**
+ * Does this file look like what it says it is?
+ *
+ * Meta sniffs the bytes and refuses anything whose container does not match
+ * the declared type — "uploaded with mimetype as audio/mp4, however on
+ * processing it is of type application/octet-stream" — and that refusal
+ * arrives long after the upload, by webhook, as a failed message.
+ *
+ * Checking the first bytes here turns that into an answer the sender gets
+ * straight away. Only the containers with an unambiguous signature are
+ * judged; anything else is left alone rather than guessed at.
+ */
+export function containerMismatch(buffer, mimeType) {
+   const mime = String(mimeType || '').toLowerCase();
+   if (!buffer || buffer.length < 12) return '';
+
+   const ascii = (start, end) => buffer.toString('ascii', start, end);
+
+   // An MP4 of any flavour carries an ftyp box, almost always at offset 4.
+   if (/^audio\/(mp4|m4a|x-m4a)|^video\/mp4/.test(mime)) {
+      return ascii(4, 8) === 'ftyp' ? '' : 'it is not an MP4 inside';
+   }
+   if (/^audio\/ogg|^application\/ogg/.test(mime)) {
+      return ascii(0, 4) === 'OggS' ? '' : 'it is not an Ogg inside';
+   }
+   if (/webm|matroska/.test(mime)) {
+      return buffer.readUInt32BE(0) === 0x1a45dfa3 ? '' : 'it is not a WebM inside';
+   }
+   if (mime === 'audio/mpeg') {
+      const id3 = ascii(0, 3) === 'ID3';
+      const frame = buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0;
+      return id3 || frame ? '' : 'it is not an MP3 inside';
+   }
+   return '';
+}

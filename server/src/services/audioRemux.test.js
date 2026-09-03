@@ -304,3 +304,38 @@ test('a one-packet recording is still a complete stream', () => {
    assert.equal(pages[2].flags & 0x04, 0x04, 'the single audio page is also the last one');
    assert.ok(pages[2].granule > 0, 'and it carries samples');
 });
+
+/* What Meta refuses, and why a rep never found out until the customer said so. */
+test('a file whose bytes do not match its declared type is caught', async () => {
+   const { containerMismatch } = await import('./audioRemux.js');
+
+   // The real failure: Safari and recent Chrome write a fragmented mp4 that is
+   // not recognisable as one, and Meta answers "on processing it is of type
+   // application/octet-stream".
+   const notMp4 = Buffer.alloc(64, 0);
+   assert.match(containerMismatch(notMp4, 'audio/mp4'), /not an MP4/);
+
+   const realMp4 = Buffer.alloc(64, 0);
+   realMp4.write('ftyp', 4, 'ascii');
+   assert.equal(containerMismatch(realMp4, 'audio/mp4'), '', 'a real mp4 passes');
+
+   const ogg = Buffer.alloc(64, 0);
+   ogg.write('OggS', 0, 'ascii');
+   assert.equal(containerMismatch(ogg, 'audio/ogg'), '');
+   assert.match(containerMismatch(Buffer.alloc(64), 'audio/ogg'), /not an Ogg/);
+
+   const webm = Buffer.alloc(64, 0);
+   webm.writeUInt32BE(0x1a45dfa3, 0);
+   assert.equal(containerMismatch(webm, 'audio/webm;codecs=opus'), '');
+   assert.match(containerMismatch(Buffer.alloc(64), 'video/webm'), /not a WebM/);
+
+   const mp3 = Buffer.from([0xff, 0xfb, 0x90, 0x00, ...Array(60).fill(0)]);
+   assert.equal(containerMismatch(mp3, 'audio/mpeg'), '');
+   assert.equal(containerMismatch(Buffer.from('ID3aaaaaaaaaaaa'), 'audio/mpeg'), '');
+
+   // Anything without an unambiguous signature is left alone rather than
+   // guessed at — a false accusation is worse than no check.
+   assert.equal(containerMismatch(Buffer.alloc(64), 'application/pdf'), '');
+   assert.equal(containerMismatch(Buffer.alloc(64), 'image/jpeg'), '');
+   assert.equal(containerMismatch(Buffer.alloc(4), 'audio/mp4'), '', 'too short to judge');
+});

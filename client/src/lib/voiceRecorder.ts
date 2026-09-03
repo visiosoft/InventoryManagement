@@ -12,11 +12,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 /* Ordered by what WhatsApp is happiest with, best first. */
+/* In the order WhatsApp is happiest with them.
+ *
+ * mp4 used to sit second, which meant Chrome took it — recent Chrome supports
+ * audio/mp4 — and MediaRecorder writes a fragmented mp4 that Meta reads as
+ * application/octet-stream and refuses: "Audio file uploaded with mimetype as
+ * audio/mp4, however on processing it is of type application/octet-stream."
+ *
+ * Opus in WebM is repackaged to Ogg on the server and has been delivered and
+ * played hundreds of times, so it goes ahead of mp4. mp4 stays last for Safari,
+ * which offers nothing else. */
 const PREFERRED_TYPES = [
-  'audio/ogg;codecs=opus', // Firefox — already exactly what Meta wants
-  'audio/mp4',             // Safari
-  'audio/webm;codecs=opus', // Chrome, Edge — repackaged server-side
+  'audio/ogg;codecs=opus',  // Firefox — already exactly what Meta wants
+  'audio/webm;codecs=opus', // Chrome, Edge — repackaged server-side to Ogg
   'audio/webm',
+  'audio/mp4',              // Safari, which has no other option
 ]
 
 export function recordingSupported(): boolean {

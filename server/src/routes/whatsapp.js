@@ -3,7 +3,7 @@ import { mediaFromRaw } from './whatsappMedia.js';
 import { WhatsAppMessage, Lead, Customer, User, AiBotThread, WhatsAppLabel, WhatsAppChatLabel, MessageTemplate } from '../models/index.js';
 import { sendWhatsAppText, sendWhatsAppMedia, sendWhatsAppLocation, uploadWhatsAppMedia, whatsappMediaKind, whatsappSendConfigured, whatsappSendMissing } from '../services/whatsapp.js';
 import { pauseBotForHuman } from '../services/aiBot.js';
-import { needsRemux, webmToOggOpus } from '../services/audioRemux.js';
+import { containerMismatch, needsRemux, webmToOggOpus } from '../services/audioRemux.js';
 import multer from 'multer';
 import { createLeadFromWhatsAppPhone } from '../services/whatsappLeadSync.js';
 import { summariseConversation, summariseRecent } from '../services/conversationSummary.js';
@@ -58,7 +58,7 @@ router.get('/customer-thread/:customerId', async (req, res) => {
             const media = mediaFromRaw(m.raw);
             const { raw, ...rest } = m;
             return media
-                ? { ...rest, media: { kind: media.kind, mimeType: media.mimeType, filename: media.filename, caption: media.caption } }
+                ? { ...rest, media: { kind: media.kind, mimeType: media.mimeType, filename: media.filename, caption: media.caption, link: media.link ?? '' } }
                 : rest;
         }),
     });
@@ -178,7 +178,7 @@ router.get('/messages', async (req, res) => {
         const media = mediaFromRaw(m.raw);
         const { raw, ...rest } = m;
         return media
-            ? { ...rest, media: { kind: media.kind, mimeType: media.mimeType, filename: media.filename, caption: media.caption } }
+            ? { ...rest, media: { kind: media.kind, mimeType: media.mimeType, filename: media.filename, caption: media.caption, link: media.link ?? '' } }
             : rest;
     }));
 });
@@ -946,6 +946,19 @@ router.post('/send-media', uploadOne, async (req, res) => {
             buffer = webmToOggOpus(buffer);
             mimeType = 'audio/ogg';
             filename = filename.replace(/\.[^.]+$/, '') + '.ogg';
+        }
+
+        /* Caught here rather than by Meta.
+         *
+         * Meta refuses a file whose bytes do not match its declared type, and
+         * that refusal comes back by webhook minutes later as a failed
+         * message. Saying it now means the sender can pick another file
+         * instead of finding out from the customer. */
+        const mismatch = containerMismatch(buffer, mimeType);
+        if (mismatch) {
+            return res.status(400).json({
+                error: `That file says it is ${mimeType} but ${mismatch}. WhatsApp will refuse it — try another file, or record the note again.`,
+            });
         }
 
         const mediaId = await uploadWhatsAppMedia({ buffer, mimeType, filename });

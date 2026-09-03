@@ -22,7 +22,11 @@ import { cn } from '../lib/utils'
    adds a `media` descriptor on messages that carry one. Widened here because
    this page is the only consumer. */
 type WaMediaKind = 'image' | 'video' | 'audio' | 'voice' | 'document' | 'sticker'
-type WaMedia = { kind: WaMediaKind; mimeType: string; filename: string; caption: string }
+type WaMedia = {
+  kind: WaMediaKind; mimeType: string; filename: string; caption: string
+  /** A file this app serves itself, rather than one to fetch back from Meta. */
+  link?: string
+}
 type WaMsg = WhatsAppMsg & { media?: WaMedia }
 
 /** Settings → Message Templates. Reused verbatim as the quick-reply library. */
@@ -190,11 +194,15 @@ function revokeAllMedia() {
 /** Renders one attachment. Mounts only for messages actually on screen, and
  *  the fetch starts on mount — so loading is lazy per rendered message. */
 function Attachment({ messageId, media }: { messageId: string; media: WaMedia }) {
-  const [url, setUrl] = useState<string | null>(() => mediaUrls.get(messageId) ?? null)
+  /* A link is already a URL we serve, so there is nothing to fetch: the
+     facility tour video is sent to WhatsApp as a link precisely so no upload
+     or media id is involved, and the same link renders it here. */
+  const [url, setUrl] = useState<string | null>(() => media.link || mediaUrls.get(messageId) || null)
   // The reason the fetch failed, shown in place of the attachment.
   const [failed, setFailed] = useState('')
 
   useEffect(() => {
+    if (media.link) { setUrl(media.link); setFailed(''); return }
     const cached = mediaUrls.get(messageId)
     if (cached) { setUrl(cached); setFailed(''); return }
     let alive = true
@@ -204,7 +212,7 @@ function Attachment({ messageId, media }: { messageId: string; media: WaMedia })
       .then((u) => { if (alive) setUrl(u) })
       .catch((e) => { if (alive) setFailed(e?.message || 'Attachment unavailable') })
     return () => { alive = false }
-  }, [messageId])
+  }, [messageId, media.link])
 
   const caption = media.caption ? (
     <p className="whitespace-pre-wrap break-words mt-1">{media.caption}</p>

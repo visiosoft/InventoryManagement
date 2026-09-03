@@ -16,10 +16,30 @@ export function mediaFromRaw(raw) {
     if (!raw || typeof raw !== 'object') return null;
     for (const kind of ['image', 'video', 'audio', 'voice', 'document', 'sticker']) {
         const node = raw[kind];
-        if (node?.id) {
+        if (!node) continue;
+
+        /* An id is something uploaded to Meta and fetched back through the
+           proxy. A link is a file this app already serves — the facility tour
+           video goes out that way, because a link needs no upload and no media
+           id to keep alive.
+
+           Only the id form was recognised, so a quick reply with a video was
+           stored complete and then rendered as its caption alone: the rep saw
+           the words about a tour and no way to tell whether the tour itself
+           had gone. */
+        if (node.id) {
             return {
                 kind,
                 id: String(node.id),
+                mimeType: node.mime_type || '',
+                filename: node.filename || '',
+                caption: node.caption || '',
+            };
+        }
+        if (node.link) {
+            return {
+                kind,
+                link: String(node.link),
                 mimeType: node.mime_type || '',
                 filename: node.filename || '',
                 caption: node.caption || '',
