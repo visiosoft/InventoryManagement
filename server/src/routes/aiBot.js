@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { requireAdmin } from '../middleware/auth.js';
 import { AiBotThread, User, WhatsAppMessage } from '../models/index.js';
-import { getAiBotConfig, generateReply, decideAction, runAiBotTick, aiBotState, pauseBotForHuman, DEFAULT_PROMPT } from '../services/aiBot.js';
+import { getAiBotConfig, generateReply, decideAction, runAiBotTick, aiBotState, pauseBotForHuman, speakAsConfigured, DEFAULT_PROMPT } from '../services/aiBot.js';
 import { openaiConfigured, openaiModel, synthesizeSpeech } from '../services/openai.js';
 import { sendWhatsAppMedia, uploadWhatsAppMedia, whatsappSendConfigured } from '../services/whatsapp.js';
 
@@ -15,6 +15,9 @@ const PROMPT_LIMIT = 40000;
 /* Every voice the speech model offers. The first five are the newer, more
    natural ones; alloy and echo are the flattest, which is what people mean
    when they say it sounds robotic. */
+/** What can be put behind the voice. */
+const AMBIENCE = ['none', 'room', 'office'];
+
 const VOICES = ['coral', 'sage', 'ballad', 'ash', 'verse', 'nova', 'shimmer', 'fable', 'onyx', 'alloy', 'echo'];
 
 const shape = (config) => ({
@@ -28,6 +31,8 @@ const shape = (config) => ({
     voice: config.voice || 'coral',
     voiceStyle: config.voiceStyle || '',
     voiceSpeed: config.voiceSpeed ?? 1.15,
+    voiceAmbience: config.voiceAmbience || 'none',
+    voiceAmbienceLevel: config.voiceAmbienceLevel ?? 0.08,
     voices: VOICES,
     escalateTo: config.escalateTo ? String(config.escalateTo) : '',
     handoverKeywords: config.handoverKeywords || [],
@@ -76,6 +81,8 @@ router.put('/config', requireAdmin, async (req, res) => {
     if (b.voice !== undefined && VOICES.includes(String(b.voice))) config.voice = String(b.voice);
     if (b.voiceStyle !== undefined) config.voiceStyle = String(b.voiceStyle).slice(0, 600);
     if (b.voiceSpeed !== undefined) config.voiceSpeed = Math.min(2, Math.max(0.5, Number(b.voiceSpeed) || 1));
+    if (b.voiceAmbience !== undefined && AMBIENCE.includes(String(b.voiceAmbience))) config.voiceAmbience = String(b.voiceAmbience);
+    if (b.voiceAmbienceLevel !== undefined) config.voiceAmbienceLevel = Math.min(0.4, Math.max(0, Number(b.voiceAmbienceLevel) || 0));
     if (b.handoverKeywords !== undefined) {
         config.handoverKeywords = (Array.isArray(b.handoverKeywords) ? b.handoverKeywords : [])
             .map((k) => String(k).trim().toLowerCase()).filter(Boolean).slice(0, 30);
@@ -238,16 +245,23 @@ router.post('/speak', async (req, res) => {
 
         /* A voice and a style may be supplied so the settings page can try one
            before saving it; otherwise it speaks as it currently would. */
+        /* Anything supplied is tried without being saved, so a voice, a pace,
+           a style or a room can be heard before it is committed to. */
         const config = await getAiBotConfig();
-        const audio = await synthesizeSpeech({
-            text,
+        const audio = await speakAsConfigured(text, {
             voice: VOICES.includes(String(req.body?.voice)) ? String(req.body.voice) : (config.voice || 'coral'),
-            instructions: req.body?.voiceStyle !== undefined
+            voiceStyle: req.body?.voiceStyle !== undefined
                 ? String(req.body.voiceStyle).slice(0, 600)
                 : (config.voiceStyle || ''),
-            speed: req.body?.voiceSpeed !== undefined
+            voiceSpeed: req.body?.voiceSpeed !== undefined
                 ? Number(req.body.voiceSpeed)
                 : (config.voiceSpeed ?? 1.15),
+            voiceAmbience: AMBIENCE.includes(String(req.body?.voiceAmbience))
+                ? String(req.body.voiceAmbience)
+                : (config.voiceAmbience || 'none'),
+            voiceAmbienceLevel: req.body?.voiceAmbienceLevel !== undefined
+                ? Number(req.body.voiceAmbienceLevel)
+                : (config.voiceAmbienceLevel ?? 0.08),
         });
         if (!audio) return res.status(502).json({ error: 'The voice could not be produced' });
 
@@ -277,7 +291,7 @@ router.post('/speak-and-send', async (req, res) => {
         if (!whatsappSendConfigured()) return res.status(400).json({ error: 'WhatsApp is not configured' });
 
         const config = await getAiBotConfig();
-        const audio = await synthesizeSpeech({ text, voice: config.voice || 'coral', instructions: config.voiceStyle || '', speed: config.voiceSpeed ?? 1.15 });
+        const audio = await speakAsConfigured(text, config);
         if (!audio) return res.status(502).json({ error: 'The voice could not be produced — send it as text instead' });
 
         const mediaId = await uploadWhatsAppMedia({ buffer: audio, mimeType: 'audio/ogg', filename: 'reply.ogg' });

@@ -5,6 +5,7 @@ import { openaiConfigured, openaiModel, chatJson, parseAvailabilityQuery, synthe
 import { computeUnitAvailability } from './unitAvailability.js';
 import { sendWhatsAppMedia, sendWhatsAppText, uploadWhatsAppMedia, whatsappSendConfigured } from './whatsapp.js';
 import { understandMedia } from './mediaUnderstanding.js';
+import { mixAmbience } from './voiceAmbience.js';
 
 // WhatsApp only permits a free-form reply inside 24 hours of the customer's
 // last message. Replying at 23h59 would race that limit and fail at Meta, so
@@ -547,7 +548,7 @@ async function handleThread(thread, config) {
     const spokenTo = READABLE_TYPES.has(thread.pendingType) && thread.pendingType !== 'image';
     let voiceNote = null;
     if (config.replyWithVoice && spokenTo) {
-        voiceNote = await synthesizeSpeech({ text: result.reply, voice: config.voice || 'coral', instructions: config.voiceStyle || '', speed: config.voiceSpeed ?? 1.15 });
+        voiceNote = await speakAsConfigured(result.reply, config);
     }
 
     let sent;
@@ -651,4 +652,34 @@ export async function runAiBotTick() {
         aiBotState.lastError = err?.message || 'unknown error';
         return { error: aiBotState.lastError };
     }
+}
+
+
+/**
+ * A spoken reply, exactly as the settings say it should sound.
+ *
+ * One place, because three callers need it — the assistant's own replies, the
+ * preview in the console, and sending a suggestion as a voice note — and a
+ * customer hearing something different from what was approved is the outcome
+ * worth ruling out.
+ *
+ * With a room behind it the speech is fetched raw and mixed before being
+ * packaged; without, the model's own Ogg is already the finished article. If
+ * mixing fails the plain voice is used: a reply without room tone is fine, a
+ * reply that never went is not.
+ */
+export async function speakAsConfigured(text, config) {
+    const voice = config.voice || 'coral';
+    const instructions = config.voiceStyle || '';
+    const speed = config.voiceSpeed ?? 1.15;
+    const ambience = config.voiceAmbience || 'none';
+
+    if (ambience === 'none') {
+        return synthesizeSpeech({ text, voice, instructions, speed });
+    }
+
+    const pcm = await synthesizeSpeech({ text, voice, instructions, speed, format: 'pcm' });
+    if (!pcm) return null;
+    return mixAmbience({ pcm, kind: ambience, level: config.voiceAmbienceLevel ?? 0.08 })
+        ?? synthesizeSpeech({ text, voice, instructions, speed });
 }

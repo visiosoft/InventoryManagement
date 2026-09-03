@@ -245,13 +245,15 @@ function oggPage({ serial, sequence, headerType, granule, packets }) {
     return page;
 }
 
-function opusHead(channels) {
+function opusHead(channels, sampleRate = 48000) {
     const head = Buffer.alloc(19);
     head.write('OpusHead', 0, 'ascii');
     head[8] = 1;                       // version
     head[9] = channels;
     head.writeUInt16LE(3840, 10);      // pre-skip
-    head.writeUInt32LE(48000, 12);     // original sample rate
+    // The rate the speech was actually made at. A decoder resamples from this,
+    // so stating 48k for 24k audio plays everything at half speed.
+    head.writeUInt32LE(sampleRate, 12);
     head.writeInt16LE(0, 16);          // output gain
     head[18] = 0;                      // channel mapping family
     return head;
@@ -307,10 +309,30 @@ export function webmToOggOpus(buffer) {
         : opusHead(parsed.channels || 1);
     const preSkip = head.readUInt16LE(10);
 
+    return oggFromOpusPackets({ packets, head });
+}
+
+/**
+ * Wrap finished Opus packets in an Ogg stream.
+ *
+ * Split out because it is wanted twice: once to repackage a browser recording
+ * and once to package speech this system has encoded itself. Muxing Ogg
+ * correctly is fiddly enough — page granules, the 255-segment ceiling, a CRC
+ * that is not the usual CRC-32 — that a second copy would be a second set of
+ * files players silently refuse.
+ *
+ * `head` is an OpusHead; one is made if none is given.
+ */
+export function oggFromOpusPackets({ packets, head, channels = 1, sampleRate = 48000 }) {
+    if (!packets?.length) throw new Error('No audio to package');
+
+    const opusHeader = head ?? opusHead(channels, sampleRate);
+    const preSkip = opusHeader.readUInt16LE(10);
+
     // A fixed serial is fine: each file is a single stream on its own.
     const serial = 0x50427831; // "PBx1"
     const out = [
-        oggPage({ serial, sequence: 0, headerType: 0x02, granule: 0, packets: [head] }),
+        oggPage({ serial, sequence: 0, headerType: 0x02, granule: 0, packets: [opusHeader] }),
         oggPage({ serial, sequence: 1, headerType: 0x00, granule: 0, packets: [opusTags()] }),
     ];
 

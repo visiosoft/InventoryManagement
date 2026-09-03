@@ -339,3 +339,40 @@ test('a file whose bytes do not match its declared type is caught', async () => 
    assert.equal(containerMismatch(Buffer.alloc(64), 'image/jpeg'), '');
    assert.equal(containerMismatch(Buffer.alloc(4), 'audio/mp4'), '', 'too short to judge');
 });
+
+/* Speech this system encodes itself goes through the same muxer as a browser
+ * recording. A second muxer would be a second set of files players refuse. */
+test('the muxer packages packets we encoded ourselves', async () => {
+   const { oggFromOpusPackets } = await import('./audioRemux.js');
+   const OpusScript = (await import('opusscript')).default;
+
+   // Two seconds of quiet tone at 24 kHz, the rate the speech arrives at.
+   const RATE = 24000;
+   const FRAME = RATE / 50;
+   const encoder = new OpusScript(RATE, 1, OpusScript.Application.AUDIO);
+   const packets = [];
+   for (let f = 0; f < 100; f++) {
+      const pcm = Buffer.alloc(FRAME * 2);
+      for (let i = 0; i < FRAME; i++) {
+         pcm.writeInt16LE(Math.round(Math.sin((2 * Math.PI * 220 * (f * FRAME + i)) / RATE) * 6000), i * 2);
+      }
+      packets.push(Buffer.from(encoder.encode(pcm, FRAME)));
+   }
+
+   const ogg = oggFromOpusPackets({ packets, channels: 1, sampleRate: RATE });
+   const pages = walkOgg(ogg);
+
+   assert.equal(ogg.toString('ascii', 0, 4), 'OggS');
+   assert.equal(pages[0].flags, 0x02, 'flagged beginning of stream');
+   assert.equal(pages.at(-1).flags & 0x04, 0x04, 'flagged end of stream');
+   assert.ok(pages.length >= 3);
+   for (let i = 3; i < pages.length; i++) {
+      assert.ok(pages[i].granule > pages[i - 1].granule, `granule went backwards at page ${i}`);
+   }
+
+   // The rate must be stated honestly, or a decoder resamples and everything
+   // plays at the wrong speed.
+   const head = ogg.subarray(28, 28 + 19);
+   assert.equal(head.toString('ascii', 0, 8), 'OpusHead');
+   assert.equal(head.readUInt32LE(12), RATE, 'OpusHead should say 24000, not 48000');
+});

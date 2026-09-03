@@ -16,6 +16,8 @@ type Config = {
   voice: string
   voiceStyle: string
   voiceSpeed: number
+  voiceAmbience: 'none' | 'room' | 'office'
+  voiceAmbienceLevel: number
   voices?: string[]
   escalateTo: string
   handoverKeywords: string[]
@@ -53,6 +55,8 @@ export default function AiAssistant() {
         voice: draft?.voice,
         voiceStyle: draft?.voiceStyle,
         voiceSpeed: draft?.voiceSpeed,
+        voiceAmbience: draft?.voiceAmbience,
+        voiceAmbienceLevel: draft?.voiceAmbienceLevel,
       }, { responseType: 'blob' })
       const url = URL.createObjectURL(data as Blob)
       const audio = new Audio(url)
@@ -273,6 +277,39 @@ export default function AiAssistant() {
                         1.00 is the model's own pace, which most people find slow. Around 1.15 reads
                         as ordinary speaking speed; past 1.4 it stops sounding like a person in a
                         hurry and starts sounding wrong.
+                      </span>
+                    </span>
+
+                    {/* A room behind it. Speech from a model arrives in a
+                        vacuum, and that silence is much of what makes it sound
+                        generated. */}
+                    <span className="block">
+                      Behind the voice:{' '}
+                      <select
+                        value={draft.voiceAmbience}
+                        onChange={(e) => set({ voiceAmbience: e.target.value as 'none' | 'room' | 'office' })}
+                        className="border rounded px-1.5 py-0.5 text-[12.5px]"
+                      >
+                        <option value="none">Nothing</option>
+                        <option value="room">Room tone — air and a faint hum</option>
+                        <option value="office">Office — someone talking across the room</option>
+                      </select>
+                      {draft.voiceAmbience !== 'none' && (
+                        <>
+                          {' '}
+                          <input
+                            type="range" min={0.02} max={0.2} step={0.01}
+                            value={draft.voiceAmbienceLevel}
+                            onChange={(e) => set({ voiceAmbienceLevel: Number(e.target.value) })}
+                            style={{ verticalAlign: 'middle', width: 90 }}
+                          />
+                          <span style={{ fontVariantNumeric: 'tabular-nums' }}> {draft.voiceAmbienceLevel.toFixed(2)}</span>
+                        </>
+                      )}
+                      <span className="block text-[12px] mt-0.5">
+                        Press “hear it” to compare the two. The murmur is shaped like speech but
+                        carries no words — nothing is ever said that the business did not say. Above
+                        about 0.10 it starts competing with the voice.
                       </span>
                     </span>
 

@@ -1688,6 +1688,11 @@ const aiBotConfigSchema = new Schema({
   /* How fast it talks. 1 is the model's own pace, which several people have
      found slow; 1.1 to 1.25 reads as an ordinary speaking speed. */
   voiceSpeed: { type: Number, default: 1.15, min: 0.5, max: 2 },
+  /* A room behind the voice. 'room' is air and a distant hum and claims
+     nothing; 'office' adds an indistinct murmur of talking, as though somebody
+     is on a call across the room. Off by default — see voiceAmbience.js. */
+  voiceAmbience: { type: String, enum: ['none', 'room', 'office'], default: 'none' },
+  voiceAmbienceLevel: { type: Number, default: 0.08, min: 0, max: 0.4 },
   voiceStyle: {
     type: String,
     default: 'Speak warmly and naturally, like a friendly colleague on the phone. Normal conversational rhythm, unhurried, never like reading an announcement.',

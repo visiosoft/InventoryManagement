@@ -244,7 +244,7 @@ export async function transcribeAudio({ buffer, mimeType = 'audio/ogg', filename
  * Returns the bytes, or null when it could not be produced. Null must mean
  * "send the text instead", never "send nothing".
  */
-export async function synthesizeSpeech({ text, voice = 'coral', instructions = '', speed = 1, timeout = 45000 }) {
+export async function synthesizeSpeech({ text, voice = 'coral', instructions = '', speed = 1, format = 'opus', timeout = 45000 }) {
     if (!openaiConfigured()) return null;
     const words = String(text || '').trim();
     if (!words) return null;
@@ -256,7 +256,10 @@ export async function synthesizeSpeech({ text, voice = 'coral', instructions = '
                 model: SPEECH_MODEL,
                 voice,
                 input: words.slice(0, 4000),
-                response_format: 'opus',
+                /* 'opus' is a finished voice note. 'pcm' is raw 24 kHz mono
+                   16-bit, for when something is going to be mixed underneath
+                   it before it is packaged — see voiceAmbience.js. */
+                response_format: format === 'pcm' ? 'pcm' : 'opus',
                 // The API takes 0.25 to 4; anything past about 1.4 stops
                 // sounding like a person in a hurry and starts sounding wrong.
                 speed: Math.min(2, Math.max(0.5, Number(speed) || 1)),
@@ -268,6 +271,7 @@ export async function synthesizeSpeech({ text, voice = 'coral', instructions = '
             { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` }, responseType: 'arraybuffer', timeout },
         );
         const buffer = Buffer.from(data);
+        if (format === 'pcm') return buffer.length ? buffer : null;
         // A voice note that will not play is worse than a written reply.
         return buffer.toString('ascii', 0, 4) === 'OggS' ? buffer : null;
     } catch {
