@@ -415,7 +415,10 @@ export default function NewQuote() {
   const customers = customersPage?.data ?? []
 
   const createCustomerMut = useMutation({
-    mutationFn: (body: Record<string, unknown>) => api.post('/customers', body).then((r) => r.data),
+    /* Somebody being quoted is a prospect, not a tenant. They are promoted the
+       moment a contract exists — see server/src/services/customerStage.js. */
+    mutationFn: (body: Record<string, unknown>) =>
+      api.post('/customers', { stage: 'prospect', ...body }).then((r) => r.data),
     onSuccess: (customer: Customer) => {
       qc.invalidateQueries({ queryKey: ['customers-search'] })
       setCustomerId(customer._id)

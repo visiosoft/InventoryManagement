@@ -2,6 +2,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { Contract, Customer, Invoice, Lead, Payment, Quote, Unit, nextQuoteNo, nextContractNo, nextInvoiceNo } from '../models/index.js';
 import { creditFor, markLeadWon, leadForCustomer } from '../services/dealCredit.js';
+import { promoteToCustomer } from '../services/customerStage.js';
 import { availableUnitsResponse } from '../services/unitAvailability.js';
 import { syncUnitStatus } from '../utils/unitStatus.js';
 import { renderQuotePdf } from '../services/quotePdf.js';
@@ -756,6 +757,9 @@ router.post('/:id/convert-to-contract', async (req, res) => {
     try {
         // Signed, so the lead is won — whoever ends up credited for it.
         await markLeadWon({ leadId: credit.leadId, contractNo: contract.contractNo, userId: req.user.id });
+        // They have signed, so they are a tenant rather than somebody we
+        // quoted. See services/customerStage.js.
+        await promoteToCustomer(quote.customer, { contractNo: contract.contractNo });
 
         quote.contract = contract._id;
         quote.timeline.push({ type: 'converted', text: `Converted to contract ${contract.contractNo} by ${userName}`, user: req.user.id });

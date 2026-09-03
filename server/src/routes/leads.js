@@ -549,9 +549,14 @@ router.get('/:id/profile', async (req, res) => {
             customer,
             contracts,
             documents,
-            // Said plainly so the page can show the right actions rather than
-            // inferring the stage from which fields happen to be present.
+            /* Said plainly so the page can show the right actions rather than
+               inferring the stage from which fields happen to be present.
+
+               'customer' here means a customer record exists — which since
+               quoting stopped creating tenants is not the same as having
+               signed. Whether they have is `customer.stage`. */
             stage: customer ? 'customer' : lead ? 'lead' : 'unknown',
+            signed: customer ? customer.stage !== 'prospect' : false,
         });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -931,14 +936,25 @@ router.post('/:id/convert', async (req, res) => {
         }
         if (filled.length || suppliedPhones.length) await existingCustomer.save();
 
-        lead.status = 'won';
-        lead.timeline.push({ type: 'converted', text: 'Lead converted to existing customer.', user: req.user.id });
+        /* The lead stays a lead.
+         *
+         * This used to set 'won' here, which said somebody had signed when all
+         * that had happened was a record being made so a quotation could be
+         * raised. It put people who never came back in the won column, and the
+         * leaderboard counted them as closed. Only a contract wins a lead —
+         * see services/dealCredit.js. */
+        lead.timeline.push({
+            type: 'converted',
+            text: `Details saved against ${existingCustomer.fullName} so they can be quoted. Still a lead until a contract is signed.`,
+            user: req.user.id,
+        });
         await lead.save();
         return res.json({
             ok: true,
             created: false,
             filled,
             customer: existingCustomer,
+            stage: existingCustomer.stage || 'customer',
         });
     }
 
@@ -957,16 +973,26 @@ router.post('/:id/convert', async (req, res) => {
         // Applied last so a typed name beats the lead's placeholder.
         ...supplied,
         ...(suppliedPhones.length ? { phone: suppliedPhones[0] } : {}),
+        /* Somebody we are quoting, not a tenant. A quotation is a
+           conversation; the tenant list is for people who have signed. The
+           record is promoted the moment a contract exists — see
+           services/customerStage.js. */
+        stage: 'prospect',
     });
 
-    lead.status = 'won';
-    lead.timeline.push({ type: 'converted', text: 'Lead converted to new customer.', user: req.user.id });
+    // Not 'won'. Making a record so somebody can be quoted is not them signing.
+    lead.timeline.push({
+        type: 'converted',
+        text: 'Details saved so they can be quoted. Still a lead until a contract is signed.',
+        user: req.user.id,
+    });
     await lead.save();
 
     res.json({
         ok: true,
         created: true,
         customer,
+        stage: 'prospect',
     });
 });
 

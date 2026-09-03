@@ -32,6 +32,13 @@ export default function Customers() {
   // active contract, "owes" off their Zoho Books balance.
   const [renewal, setRenewal] = useState('')
   const [owing, setOwing] = useState(false)
+  /* Tenants, or people we have only quoted.
+   *
+   * Quoting used to require making a tenant record, so anybody who asked for a
+   * price and never came back stayed on this list for good — 170 of 354 had
+   * never rented anything. They are still here, still searchable, still
+   * quotable; they are just not tenants until they sign. */
+  const [stage, setStage] = useState<'customer' | 'prospect' | 'all'>('customer')
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(25)
   const [adding, setAdding] = useState(false)
@@ -82,11 +89,17 @@ export default function Customers() {
     data: (Customer & { outstanding?: number; zohoName?: string })[]
     total: number; page: number; pages: number; limit: number
     unmatchedOwing?: number
+    stageCounts?: { customer: number; prospect: number }
   }
   const { data, isLoading } = useQuery<PagedCustomers>({
-    queryKey: ['customers', search, sort, page, limit, renewal, owing],
+    queryKey: ['customers', search, sort, page, limit, renewal, owing, stage],
     queryFn: () => api.get('/customers', {
-      params: { search, sort, page, limit, ...(renewal ? { renewal } : {}), ...(owing ? { owing: true } : {}) },
+      params: {
+        search, sort, page, limit,
+        ...(renewal ? { renewal } : {}),
+        ...(owing ? { owing: true } : {}),
+        ...(stage === 'all' ? {} : { stage }),
+      },
     }).then((r) => r.data),
     staleTime: 30_000,
     placeholderData: (prev) => prev,
@@ -94,9 +107,9 @@ export default function Customers() {
   const customers = data?.data ?? []
 
   // Clear selection when page/search changes
-  useEffect(() => { setSelected(new Set()) }, [search, sort, page, renewal, owing])
+  useEffect(() => { setSelected(new Set()) }, [search, sort, page, renewal, owing, stage])
 
-  useEffect(() => { setPage(1) }, [renewal, owing])
+  useEffect(() => { setPage(1) }, [renewal, owing, stage])
 
   const allPageIds = customers.map((c) => c._id)
   const allSelected = allPageIds.length > 0 && allPageIds.every((id) => selected.has(id))
@@ -237,6 +250,39 @@ export default function Customers() {
         </div>
       </div>
 
+      {/* Tenants, or people we have only quoted. Its own row above the rest,
+          because it decides what the word "tenant" means everywhere below it. */}
+      <div className="mb-3 flex flex-wrap items-center gap-1.5">
+        {([
+          ['customer', 'Tenants', data?.stageCounts?.customer],
+          ['prospect', 'Quoted, not signed', data?.stageCounts?.prospect],
+          ['all', 'Everyone', (data?.stageCounts?.customer ?? 0) + (data?.stageCounts?.prospect ?? 0)],
+        ] as [typeof stage, string, number | undefined][]).map(([value, label, count]) => {
+          const active = stage === value
+          return (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setStage(value)}
+              className="rounded-full cursor-pointer transition-colors"
+              style={{
+                padding: '5px 12px', fontSize: 12.5, fontWeight: 700,
+                background: active ? INK : CHIP_BG,
+                color: active ? '#fff' : MUTED_COLOR,
+              }}
+              title={value === 'prospect'
+                ? 'Quoted or talked to, but no contract signed. Still searchable from every quote and booking screen.'
+                : undefined}
+            >
+              {label}
+              {count !== undefined && (
+                <span style={{ marginLeft: 5, fontWeight: 800, opacity: active ? 0.85 : 0.7 }}>{count}</span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
       {/* Who to focus on. Renewal intent is set by the team from each contract;
           the money comes from Zoho Books. */}
       <div className="mb-4 flex flex-wrap items-center gap-1.5">
@@ -326,6 +372,17 @@ export default function Customers() {
                       {c.fullName}
                     </Link>
                     {c.tenantType === 'company' && <span className="ml-1.5 text-[10px] text-muted-foreground">(Co.)</span>}
+                    {/* Visible on every tab, so a name on the Everyone list is
+                        never mistaken for a tenant. */}
+                    {c.stage === 'prospect' && (
+                      <span
+                        className="ml-1.5 rounded-full px-1.5 py-0.5 align-middle"
+                        style={{ fontSize: 10, fontWeight: 700, background: '#FEF3C7', color: '#92400E' }}
+                        title="Quoted or talked to — no contract signed"
+                      >
+                        Not signed
+                      </span>
+                    )}
                   </Td>
                   <Td className="text-muted-foreground text-xs">{c.clientId || '—'}</Td>
                   <Td>{c.email || '—'}</Td>

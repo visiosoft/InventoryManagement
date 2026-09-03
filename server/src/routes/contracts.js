@@ -4,6 +4,7 @@ import { isValidObjectId, Types } from 'mongoose';
 import { stampSignature } from '../services/stampSignature.js';
 import { Contract, Customer, Unit, Payment, Document, Invoice, Quote, AgreementTemplate, nextContractNo, nextInvoiceNo, MessageTemplate } from '../models/index.js';
 import { creditFor, markLeadWon } from '../services/dealCredit.js';
+import { promoteToCustomer } from '../services/customerStage.js';
 import { zohoBooksConfigured, zohoOutstandingByCustomer } from '../services/zohoBooks.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { renewLink, moveOutLink } from '../services/renewalLink.js';
@@ -609,6 +610,8 @@ router.post('/', async (req, res) => {
 
   // A lead that has signed is won, whoever ends up credited for it.
   await markLeadWon({ leadId: credit.leadId, contractNo: contract.contractNo, userId: req.user.id });
+  // A signed contract is the only thing that makes somebody a tenant.
+  await promoteToCustomer(contract.customer, { contractNo: contract.contractNo });
 
   await Promise.all(allUnitIds.map((uid) => syncUnitStatus(uid)));
 

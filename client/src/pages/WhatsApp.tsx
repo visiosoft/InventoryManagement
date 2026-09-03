@@ -1325,8 +1325,13 @@ function LeadAction({ convo, onChanged, menuItem }: { convo: WhatsAppConversatio
   )
 
   /* The same three states, as named rows. Which one shows is the whole point:
-     an unnamed chat offers "Save as lead", a named one "Save as customer", and
-     somebody who is already a customer gets a way to open their profile. */
+     an unnamed chat offers "Save as lead", a named one "Save details to
+     quote", and somebody with a record already gets a way to open it.
+
+     Deliberately not "Save as customer" any more. It made a tenant out of
+     everybody who asked for a price, and nearly half the tenant list had never
+     rented anything. The record it makes is a prospect until a contract is
+     signed — see server/src/services/customerStage.js. */
   if (menuItem) {
     return (
       <>
@@ -1354,7 +1359,7 @@ function LeadAction({ convo, onChanged, menuItem }: { convo: WhatsAppConversatio
             onClick={() => { setResult(null); setErr(''); setFormOpen(true) }}
           >
             <UserCheck size={15} style={{ color: '#4A1FA0' }} />
-            <span className="flex-1">Save as customer</span>
+            <span className="flex-1">Save details to quote</span>
           </button>
         )}
         {modals}
@@ -1396,11 +1401,11 @@ function LeadAction({ convo, onChanged, menuItem }: { convo: WhatsAppConversatio
             type="button"
             className={pill}
             style={{ background: '#5B2BC9', color: '#fff' }}
-            title="Save as customer"
-            aria-label="Save as customer"
+            title="Save their details so a quotation can be raised"
+            aria-label="Save details to quote"
             onClick={() => { setResult(null); setErr(''); setFormOpen(true) }}
           >
-            <UserCheck size={13} /> <span className="wa-pill-label">Save as customer</span>
+            <UserCheck size={13} /> <span className="wa-pill-label">Save details to quote</span>
           </button>
         </>
       )}

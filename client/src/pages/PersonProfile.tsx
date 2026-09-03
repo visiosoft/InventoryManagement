@@ -93,6 +93,8 @@ type Lead = {
   unitsNeeded?: number
 }
 type Customer = {
+  // Absent on records made before the field existed, which means tenant.
+  stage?: 'prospect' | 'customer'
   _id: string; fullName: string; email: string; phone: string; phones: string[]
   company: string; nationality: string; emergencyNumber: string; address: string
   emiratesId: string; eidExpiry: string | null; passportNumber: string; notes: string
@@ -109,6 +111,9 @@ type Profile = {
   contracts: ContractRow[]
   documents: { _id: string; name: string; type: string; url: string; createdAt: string }[]
   stage: 'lead' | 'customer' | 'unknown'
+  // Whether they have actually signed. A record existing is not the same
+  // thing since quoting stopped creating tenants.
+  signed?: boolean
 }
 
 const STATUS_TONE: Record<string, { bg: string; fg: string }> = {
@@ -373,6 +378,10 @@ export default function PersonProfile() {
   if (!data) return <p style={{ padding: 40, color: FAINT }}>Nobody found with that id.</p>
 
   const { lead, customer, contracts, documents, stage } = data
+  /* A record exists, but have they signed? Since quoting stopped making
+     tenants out of everybody who asked for a price, those are two questions.
+     `signed` comes from the server; the fallback keeps an older API working. */
+  const signed = data.signed ?? (customer ? customer.stage !== 'prospect' : false)
   const name = customer?.fullName || lead?.fullName || 'Unnamed'
   const phone = customer?.phone || lead?.phone || ''
   const email = customer?.email || lead?.email || ''
@@ -385,9 +394,11 @@ export default function PersonProfile() {
   // Book Unit already accepts either, so the wizard opens with them filled in.
   const bookHref = isCustomer ? `/quotes/new?customer=${customer!._id}` : `/quotes/new?lead=${lead?._id ?? ''}`
 
-  const statusTone = isCustomer
+  const statusTone = isCustomer && signed
     ? { bg: 'rgba(22,163,74,.09)', fg: '#16A34A' }
-    : STATUS_TONE[lead?.status ?? 'new'] ?? { bg: PURPLE_50, fg: DEEP }
+    : isCustomer
+      ? { bg: '#FEF3C7', fg: '#92400E' }
+      : STATUS_TONE[lead?.status ?? 'new'] ?? { bg: PURPLE_50, fg: DEEP }
   const temp = LEAD_TEMPERATURES.find((t) => t.value === lead?.temperature)
   const pkg = (lead?.storageSizeValue ?? 0) > 0
     ? `${lead!.storageSizeValue} ${lead!.storageSizeUnit || 'sqft'}${(lead!.unitsNeeded ?? 1) > 1 ? ` · ${lead!.unitsNeeded} units` : ''}`
@@ -428,7 +439,9 @@ export default function PersonProfile() {
               <h1 style={{ ...DISPLAY, fontSize: 24, fontWeight: 700, margin: 0 }}>{name}</h1>
               <div className="flex items-center flex-wrap" style={{ gap: 8, marginTop: 8 }}>
                 <span className="inline-flex rounded-full" style={{ padding: '5px 12px', fontSize: 12, fontWeight: 700, background: statusTone.bg, color: statusTone.fg }}>
-                  {isCustomer ? 'Customer' : statusLabel(lead?.status ?? 'new')}
+                  {isCustomer
+                    ? (signed ? 'Customer' : 'Quoted, not signed')
+                    : statusLabel(lead?.status ?? 'new')}
                 </span>
                 {temp && (
                   <span className="inline-flex rounded-full" style={{ padding: '5px 12px', fontSize: 12, fontWeight: 700, background: temp.bg, color: temp.fg }}>

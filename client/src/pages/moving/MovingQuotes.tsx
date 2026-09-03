@@ -83,7 +83,9 @@ export default function MovingQuotes() {
   })
 
   const addCustMut = useMutation({
-    mutationFn: (body: { fullName: string; phone: string }) => api.post('/customers', body).then(r => r.data),
+    // Quoted, not signed — the same rule storage quotes follow.
+    mutationFn: (body: { fullName: string; phone: string }) =>
+      api.post('/customers', { stage: 'prospect', ...body }).then(r => r.data),
     onSuccess: (cust) => {
       qc.invalidateQueries({ queryKey: ['customers-list'] })
       setShowAddCust(false)

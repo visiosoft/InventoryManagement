@@ -123,6 +123,20 @@ const customerSchema = new Schema(
       at: { type: Date, default: Date.now },
       sentBy: { type: String, default: '' },
     }],
+    /* Somebody we have quoted, or somebody who has actually signed.
+     *
+     * Quoting used to require creating a customer, so anybody who asked for a
+     * price and never came back stayed on the tenant list for good: 354
+     * records, 185 with a contract. A quotation is a conversation, not a
+     * tenancy — see services/customerStage.js. Promoted to 'customer' the
+     * moment a contract exists, and never demoted.
+     *
+     * The default is 'customer' deliberately. It is what every record meant
+     * before this field existed, so nothing already there changes meaning on
+     * its own; the backfill is what says which of them are prospects. */
+    stage: { type: String, enum: ['prospect', 'customer'], default: 'customer' },
+    // When they signed, and what they signed. Set by the promotion.
+    becameCustomerAt: { type: Date, default: null },
     source: { type: String, enum: ['manual', 'import_csv', 'google'], default: 'manual' },
     importBatch: { type: String, default: null },
     googleId: { type: String, default: '' },

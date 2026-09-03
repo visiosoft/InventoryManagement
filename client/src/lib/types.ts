@@ -33,6 +33,10 @@ export interface AccessPerson {
 }
 
 export interface Customer {
+  /* Somebody who has signed, or somebody we have only quoted. Absent on older
+     records, which means tenant — see services/customerStage.js. */
+  stage?: 'prospect' | 'customer'
+  becameCustomerAt?: string | null
   _id: string
   fullName: string
   clientId?: string

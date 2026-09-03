@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { isValidObjectId } from 'mongoose';
 import { Customer, Contract, Document, Payment, Invoice, Unit, Quote } from '../models/index.js';
+import { stageCounts, stageFilter } from '../services/customerStage.js';
 import { syncUnitStatus } from '../utils/unitStatus.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { phoneClauses } from '../utils/phoneSearch.js';
@@ -35,6 +36,15 @@ const RENEWAL_INTENTS = new Set(['undecided', 'renewing', 'not_renewing']);
 
 router.get('/', async (req, res) => {
   const filter = {};
+
+  /* Tenants, or people we have only quoted.
+   *
+   * Absent on purpose means everybody. Every quote, booking and invoice screen
+   * searches this endpoint to find somebody to raise a document for, and a
+   * prospect is exactly who those are raised for — filtering by default would
+   * hide the people the feature exists to serve. The tenant list asks for
+   * `stage=customer`; the pickers ask for nothing. */
+  Object.assign(filter, stageFilter(String(req.query.stage || '').trim()));
 
   // Renewal intent lives on the contract, not the tenant, so narrow to the
   // customers whose *active* contract carries it. An ended contract's intent is
@@ -121,6 +131,9 @@ router.get('/', async (req, res) => {
     page,
     pages: Math.ceil(total / limit),
     limit,
+    // How many of each there are, so the tabs are counted over everybody
+    // rather than over the page that happens to be loaded.
+    stageCounts: await stageCounts(),
     // Balances Zoho holds that no tenant here could be matched to. Surfaced so
     // a short list is never mistaken for a complete one.
     ...(owingOnly ? { unmatchedOwing } : {}),
@@ -237,6 +250,16 @@ router.post('/', async (req, res) => {
 });
 
 router.put('/:id', async (req, res) => {
+  /* Nobody who has signed can be turned back into a prospect.
+   *
+   * A contract is a fact about them, and a tenant whose contract ended is a
+   * past tenant rather than somebody to prospect again. Ignored rather than
+   * refused, so an edit form that happens to post the whole record back does
+   * not fail on a field the person editing never touched. */
+  if (req.body?.stage === 'prospect') {
+    const signed = await Contract.exists({ customer: req.params.id });
+    if (signed) delete req.body.stage;
+  }
   const customer = await Customer.findByIdAndUpdate(req.params.id, req.body, { new: true });
   if (!customer) return res.status(404).json({ error: 'Customer not found' });
   res.json(customer);
