@@ -17,7 +17,6 @@ type Config = {
   escalateTo: string
   handoverKeywords: string[]
   maxRepliesPerThreadPerDay: number
-  humanPauseHours: number
   defaultPrompt: string
   /** How long the instructions may be, as the server enforces it. */
   promptLimit?: number
@@ -97,8 +96,8 @@ export default function AiAssistant() {
             <span className="text-sm">
               <span className="font-medium">Turn the assistant on</span>
               <span className="block text-muted-foreground text-[13px]">
-                It considers every inbound WhatsApp message. Threads a colleague has replied to by hand
-                are left alone for {draft.humanPauseHours} hours.
+                It considers every inbound WhatsApp message. If a colleague has already replied to
+                the customer's latest message, it stands down rather than speaking over them.
               </span>
             </span>
           </label>
@@ -270,10 +269,6 @@ export default function AiAssistant() {
             <Field label="Most replies to one number per day">
               <Input type="number" min={1} max={200} value={draft.maxRepliesPerThreadPerDay}
                 onChange={(e) => set({ maxRepliesPerThreadPerDay: Number(e.target.value) })} />
-            </Field>
-            <Field label="Stay quiet after a colleague replies (hours)">
-              <Input type="number" min={0} max={168} value={draft.humanPauseHours}
-                onChange={(e) => set({ humanPauseHours: Number(e.target.value) })} />
             </Field>
           </div>
         </CardBody>

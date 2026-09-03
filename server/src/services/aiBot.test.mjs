@@ -41,12 +41,15 @@ test('stays quiet once handed to a person', () => {
     assert.equal(decide({ status: 'escalated' }).action, 'skip');
 });
 
-test('stays quiet while a colleague has the thread', () => {
-    assert.equal(decide({ status: 'paused', pausedUntil: new Date(NOW.getTime() + 6 * HOUR) }).action, 'skip');
-});
-
-test('picks the thread back up once the pause has expired', () => {
+test('a colleague having replied does not silence it for hours', () => {
+    /* It used to stand back for twelve hours after any human reply, so a
+       customer's next question got no suggestion at all. Nothing is sent
+       without a person reading it, so that wait bought nothing — and what
+       stops the assistant speaking over somebody is now a check immediately
+       before sending, not a timer. */
+    assert.equal(decide({ status: 'paused', pausedUntil: new Date(NOW.getTime() + 6 * HOUR) }).action, 'generate');
     assert.equal(decide({ status: 'paused', pausedUntil: new Date(NOW.getTime() - HOUR) }).action, 'generate');
+    assert.equal(decide({ status: 'paused', pausedUntil: null }).action, 'generate');
 });
 
 test('will not reply outside the 24-hour WhatsApp window', () => {
@@ -199,37 +202,25 @@ test('a rush larger than the limit is answered in waves, not all at once', async
 
 /* The reason a voice note went unanswered with no draft and no error: a
  * colleague had replied five hours earlier and the pause runs twelve. */
-test('a live pause stops the assistant sending, but not suggesting', () => {
-   const paused = {
-      status: 'paused',
-      pausedUntil: new Date(Date.now() + 6 * 3600_000),
-      pendingText: 'do you have a 50 sqft unit?',
-      pendingType: 'text',
-      pendingAt: new Date(),
-   };
-
-   // Sending would talk over the colleague.
-   assert.equal(
-      decideAction({ thread: paused, config: { mode: 'auto', maxRepliesPerThreadPerDay: 20 } }).action,
-      'skip',
-   );
-   // A suggestion cannot talk over anybody, and is the whole point of drafting.
-   assert.equal(
-      decideAction({ thread: paused, config: { mode: 'draft', maxRepliesPerThreadPerDay: 20 } }).action,
-      'generate',
-   );
-});
-
-test('a voice note during a pause is still read when drafting', () => {
-   const paused = {
+test('an old pause does not hold anything up, in either mode', () => {
+   /* The conversation that started this: a voice note arrived five hours after
+      a colleague said "Hi" and was skipped with "a colleague replied recently",
+      leaving no draft and no error. Eighty-one conversations were in that state
+      at once. */
+   const stale = {
       status: 'paused',
       pausedUntil: new Date(Date.now() + 6 * 3600_000),
       pendingText: '',
       pendingType: 'audio',
       pendingAt: new Date(),
    };
-   assert.equal(decideAction({ thread: paused, config: { mode: 'draft', maxRepliesPerThreadPerDay: 20 } }).action, 'read');
-   assert.equal(decideAction({ thread: paused, config: { mode: 'auto', maxRepliesPerThreadPerDay: 20 } }).action, 'skip');
+   for (const mode of ['draft', 'auto']) {
+      assert.equal(
+         decideAction({ thread: stale, config: { mode, maxRepliesPerThreadPerDay: 20 } }).action,
+         'read',
+         `${mode} should read the voice note`,
+      );
+   }
 });
 
 test('an escalated conversation is left alone even in draft mode', () => {

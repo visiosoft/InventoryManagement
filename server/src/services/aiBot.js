@@ -29,10 +29,6 @@ const HISTORY_DAYS = 90;
 // or something this WhatsApp version cannot render is not a customer asking
 // for help — treating them as unreadable content handed whole conversations
 // to a person and silenced the assistant on them for good.
-/** What "0 hours" actually means when a colleague replies. Named because the
- *  settings page was showing 0 while the system stood back for twelve. */
-export const HUMAN_PAUSE_FALLBACK_HOURS = 12;
-
 const IGNORED_TYPES = new Set(['reaction', 'system', 'unsupported', 'ephemeral', 'sticker']);
 
 /* What the assistant can make sense of itself: speech becomes text, a photo
@@ -305,21 +301,22 @@ export async function noteInboundForBot({ phoneNormalized, messageId, text, type
  * A colleague replied by hand, so the assistant steps back for a while. Also
  * clears any draft, which is now stale — the human has already said something.
  */
+/**
+ * A colleague has replied. Throw away any suggestion still sitting there.
+ *
+ * This used to also mute the assistant for twelve hours. It no longer does:
+ * nothing is sent without a person reading it, so the wait cost a customer
+ * their next answer and bought nothing. What is kept is clearing the draft —
+ * a suggestion written before a colleague answered is about a conversation
+ * that has since moved on, and offering it would be worse than offering
+ * nothing.
+ */
 export async function pauseBotForHuman(phoneNormalized) {
     if (!phoneNormalized) return;
-    const config = await getAiBotConfig();
-    // 0 has always meant "not set" here and become twelve hours, which the
-    // settings page then showed as 0 — see HUMAN_PAUSE_FALLBACK_HOURS.
-    const hours = Number(config.humanPauseHours) > 0 ? Number(config.humanPauseHours) : HUMAN_PAUSE_FALLBACK_HOURS;
     await AiBotThread.findOneAndUpdate(
         { phoneNormalized },
         {
-            $set: {
-                status: 'paused',
-                pausedUntil: new Date(Date.now() + hours * 3600_000),
-                draftText: '',
-                draftAt: null,
-            },
+            $set: { draftText: '', draftAt: null, pausedUntil: null },
             $setOnInsert: { phoneNormalized },
         },
         { upsert: true },
@@ -337,21 +334,19 @@ export function decideAction({ thread, config, now = new Date() }) {
     if (thread.status === 'escalated') {
         return { action: 'skip', reason: 'Already handed over to a person' };
     }
-    /* A colleague replying stops the assistant sending — not suggesting.
+    /* A colleague replying no longer silences the assistant for hours.
      *
-     * The pause exists so the assistant cannot talk over somebody mid
-     * conversation. A draft is a suggestion sitting in the console; it cannot
-     * talk over anyone, and while the wording is still being trained a
-     * suggestion is exactly what is wanted.
+     * It used to stand back for twelve hours after any human reply, which meant
+     * a customer's next question got no suggestion at all — a voice note went
+     * unanswered because somebody had said "Hi" five hours earlier, and
+     * eighty-one conversations were standing back at once. For a suggestion
+     * that nobody sends without reading, that wait bought nothing.
      *
-     * This is why a voice note went unanswered with no draft and no error: a
-     * colleague had said "Hi" five hours earlier, and the pause runs twelve
-     * hours. Eighty-one conversations were standing back for the same reason.
-     */
-    if (thread.status === 'paused' && thread.pausedUntil && new Date(thread.pausedUntil) > now
-        && config.mode !== 'draft') {
-        return { action: 'skip', reason: 'A colleague replied recently' };
-    }
+     * What guards against the assistant talking over a colleague is narrower
+     * and exact: immediately before sending, it checks whether a person has
+     * replied since the customer's message and stands down if so. That is a
+     * fact about this conversation rather than a timer, and it does not stop
+     * anybody being offered a suggestion in the meantime. */
 
     const inboundAt = thread.pendingAt ? new Date(thread.pendingAt) : now;
     if ((now - inboundAt) / 3600_000 > REPLY_WINDOW_HOURS) {
@@ -482,13 +477,8 @@ async function handleThread(thread, config) {
         ).catch(() => {});
     }
 
-    /* A pause that has run out is lifted only once we are actually going to
-       answer, so a skipped message does not silently resume the assistant.
-
-       Never in draft mode: drafting straight through a live pause is
-       deliberate, and clearing it here would mean the next message got sent
-       for real by an assistant that was supposed to be standing back. */
-    if (thread.status === 'paused' && config.mode !== 'draft') {
+    // Threads left 'paused' by the old twelve-hour rule are simply active.
+    if (thread.status === 'paused') {
         thread.status = 'bot';
         thread.pausedUntil = null;
     }

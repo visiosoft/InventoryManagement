@@ -1664,7 +1664,12 @@ const aiBotConfigSchema = new Schema({
   escalateTo: { type: Schema.Types.ObjectId, ref: 'User', default: null },
   handoverKeywords: { type: [String], default: ['human', 'agent', 'manager', 'call me', 'speak to someone'] },
   maxRepliesPerThreadPerDay: { type: Number, default: 20 },
-  humanPauseHours: { type: Number, default: 12 },
+  /* Kept only so an existing document does not lose a field on save. The
+     twelve-hour silence after a colleague replied is gone: nothing is sent
+     without a person reading it, so the wait cost a customer their next answer
+     and bought nothing. What replaced it is a check immediately before
+     sending — see aiBot.js. */
+  humanPauseHours: { type: Number, default: 0 },
   // Keep summaries current for conversations that moved in the last couple of
   // days. Reads only — it sends nothing and writes nothing to a Lead.
   autoSummarise: { type: Boolean, default: true },
