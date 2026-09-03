@@ -244,7 +244,7 @@ export async function transcribeAudio({ buffer, mimeType = 'audio/ogg', filename
  * Returns the bytes, or null when it could not be produced. Null must mean
  * "send the text instead", never "send nothing".
  */
-export async function synthesizeSpeech({ text, voice = 'coral', instructions = '', timeout = 45000 }) {
+export async function synthesizeSpeech({ text, voice = 'coral', instructions = '', speed = 1, timeout = 45000 }) {
     if (!openaiConfigured()) return null;
     const words = String(text || '').trim();
     if (!words) return null;
@@ -257,6 +257,9 @@ export async function synthesizeSpeech({ text, voice = 'coral', instructions = '
                 voice,
                 input: words.slice(0, 4000),
                 response_format: 'opus',
+                // The API takes 0.25 to 4; anything past about 1.4 stops
+                // sounding like a person in a hurry and starts sounding wrong.
+                speed: Math.min(2, Math.max(0.5, Number(speed) || 1)),
                 /* How it should be said, not what. Without this the delivery is
                    flat and announcement-like — the thing people mean when they
                    say a voice sounds robotic. */

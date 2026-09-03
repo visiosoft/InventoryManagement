@@ -1685,6 +1685,9 @@ const aiBotConfigSchema = new Schema({
   /* How it should sound. Steers delivery rather than wording, and matters more
      than the voice does — the flat, announcement-like reading people call
      robotic is what you get with nothing here. */
+  /* How fast it talks. 1 is the model's own pace, which several people have
+     found slow; 1.1 to 1.25 reads as an ordinary speaking speed. */
+  voiceSpeed: { type: Number, default: 1.15, min: 0.5, max: 2 },
   voiceStyle: {
     type: String,
     default: 'Speak warmly and naturally, like a friendly colleague on the phone. Normal conversational rhythm, unhurried, never like reading an announcement.',

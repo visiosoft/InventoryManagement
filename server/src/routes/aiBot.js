@@ -27,6 +27,7 @@ const shape = (config) => ({
     replyWithVoice: Boolean(config.replyWithVoice),
     voice: config.voice || 'coral',
     voiceStyle: config.voiceStyle || '',
+    voiceSpeed: config.voiceSpeed ?? 1.15,
     voices: VOICES,
     escalateTo: config.escalateTo ? String(config.escalateTo) : '',
     handoverKeywords: config.handoverKeywords || [],
@@ -74,6 +75,7 @@ router.put('/config', requireAdmin, async (req, res) => {
     // Only the voices OpenAI actually offers; anything else is a silent failure.
     if (b.voice !== undefined && VOICES.includes(String(b.voice))) config.voice = String(b.voice);
     if (b.voiceStyle !== undefined) config.voiceStyle = String(b.voiceStyle).slice(0, 600);
+    if (b.voiceSpeed !== undefined) config.voiceSpeed = Math.min(2, Math.max(0.5, Number(b.voiceSpeed) || 1));
     if (b.handoverKeywords !== undefined) {
         config.handoverKeywords = (Array.isArray(b.handoverKeywords) ? b.handoverKeywords : [])
             .map((k) => String(k).trim().toLowerCase()).filter(Boolean).slice(0, 30);
@@ -243,6 +245,9 @@ router.post('/speak', async (req, res) => {
             instructions: req.body?.voiceStyle !== undefined
                 ? String(req.body.voiceStyle).slice(0, 600)
                 : (config.voiceStyle || ''),
+            speed: req.body?.voiceSpeed !== undefined
+                ? Number(req.body.voiceSpeed)
+                : (config.voiceSpeed ?? 1.15),
         });
         if (!audio) return res.status(502).json({ error: 'The voice could not be produced' });
 
@@ -272,7 +277,7 @@ router.post('/speak-and-send', async (req, res) => {
         if (!whatsappSendConfigured()) return res.status(400).json({ error: 'WhatsApp is not configured' });
 
         const config = await getAiBotConfig();
-        const audio = await synthesizeSpeech({ text, voice: config.voice || 'coral', instructions: config.voiceStyle || '' });
+        const audio = await synthesizeSpeech({ text, voice: config.voice || 'coral', instructions: config.voiceStyle || '', speed: config.voiceSpeed ?? 1.15 });
         if (!audio) return res.status(502).json({ error: 'The voice could not be produced — send it as text instead' });
 
         const mediaId = await uploadWhatsAppMedia({ buffer: audio, mimeType: 'audio/ogg', filename: 'reply.ogg' });

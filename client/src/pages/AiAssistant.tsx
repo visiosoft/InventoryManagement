@@ -15,6 +15,7 @@ type Config = {
   replyWithVoice: boolean
   voice: string
   voiceStyle: string
+  voiceSpeed: number
   voices?: string[]
   escalateTo: string
   handoverKeywords: string[]
@@ -51,6 +52,7 @@ export default function AiAssistant() {
         text: 'Yes, we have fifty square foot units free from next week. They are 950 dirhams for four weeks. Shall I hold one for you?',
         voice: draft?.voice,
         voiceStyle: draft?.voiceStyle,
+        voiceSpeed: draft?.voiceSpeed,
       }, { responseType: 'blob' })
       const url = URL.createObjectURL(data as Blob)
       const audio = new Audio(url)
@@ -255,6 +257,22 @@ export default function AiAssistant() {
                       <span className="block text-[12px] mt-0.5">
                         The first few are the newer, more natural voices. <strong>alloy</strong> and{' '}
                         <strong>echo</strong> are the flattest — they are what sounds robotic.
+                      </span>
+                    </span>
+
+                    <span className="block">
+                      Pace:{' '}
+                      <input
+                        type="range" min={0.8} max={1.5} step={0.05}
+                        value={draft.voiceSpeed}
+                        onChange={(e) => set({ voiceSpeed: Number(e.target.value) })}
+                        style={{ verticalAlign: 'middle', width: 130 }}
+                      />
+                      <span style={{ fontVariantNumeric: 'tabular-nums' }}> {draft.voiceSpeed.toFixed(2)}×</span>
+                      <span className="block text-[12px] mt-0.5">
+                        1.00 is the model's own pace, which most people find slow. Around 1.15 reads
+                        as ordinary speaking speed; past 1.4 it stops sounding like a person in a
+                        hurry and starts sounding wrong.
                       </span>
                     </span>
 
