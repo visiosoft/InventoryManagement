@@ -348,7 +348,11 @@ router.get('/conversations', async (req, res) => {
          * The number is the fact. Matched on the last nine digits, the same
          * rule used for customers and everywhere else people are matched. */
         Lead.find({}).select('fullName status owner assignedAt autoAssigned assignedBy whatsappProfileName phone phoneNormalized').lean(),
-        Customer.find({}).select('fullName phone phones').lean(),
+        /* `stage` as well: a record existing no longer means they are a
+           tenant. Somebody quoted last week and gone quiet is a prospect, and
+           the inbox must not badge them green — a rep reading "Customer"
+           treats the conversation completely differently. */
+        Customer.find({}).select('fullName phone phones stage').lean(),
     ]);
 
     const byLeadPhone = new Map();
@@ -539,7 +543,15 @@ router.get('/conversations', async (req, res) => {
                     profileName: lead.whatsappProfileName || '',
                 }
                 : null,
-            customer: customer ? { _id: customer._id, fullName: customer.fullName } : null,
+            customer: customer
+                ? {
+                    _id: customer._id,
+                    fullName: customer.fullName,
+                    // Absent means tenant, which is what it meant before the
+                    // field existed. See services/customerStage.js.
+                    stage: customer.stage === 'prospect' ? 'prospect' : 'customer',
+                }
+                : null,
             // What the inbox should show: a name somebody here decided on
             // first, then the name they set on their own WhatsApp profile,
             // and only then the number. Never the placeholder.

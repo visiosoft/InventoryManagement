@@ -1384,14 +1384,17 @@ function LeadAction({ convo, onChanged, menuItem }: { convo: WhatsAppConversatio
           <UserPlus size={13} /> <span className="wa-pill-label">Save as lead</span>
         </button>
       ) : convo.customer ? (
-        // Already a customer: open their profile rather than offering to make
-        // them one again.
+        /* A record already exists, so open it rather than offering to make a
+           second one. Green only for somebody who has signed — amber says
+           there is a record without claiming a tenancy. */
         <Link
           to={`/customers/${convo.customer._id}`}
-          title={`Open ${convo.customer.fullName}`}
+          title={`Open ${convo.customer.fullName}${convo.customer.stage === 'prospect' ? ' — quoted, not signed' : ''}`}
           aria-label={`Open ${convo.customer.fullName}`}
           className="inline-flex items-center justify-center rounded-full shrink-0"
-          style={{ width: 32, height: 32, background: 'rgba(22,163,74,.09)', border: '1px solid rgba(22,163,74,.28)', color: '#047857' }}
+          style={convo.customer.stage === 'prospect'
+            ? { width: 32, height: 32, background: '#FEF3C7', border: '1px solid #F5DFB8', color: '#92400E' }
+            : { width: 32, height: 32, background: 'rgba(22,163,74,.09)', border: '1px solid rgba(22,163,74,.28)', color: '#047857' }}
         >
           <UserCheck size={14} />
         </Link>
@@ -1830,6 +1833,11 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
 
   const isMine = (c: WhatsAppConversation) => Boolean(me?.id) && String(c.lead?.ownerId ?? '') === String(me?.id)
   const isUnowned = (c: WhatsAppConversation) => !c.lead?.ownerId
+  /* Somebody who has actually signed, as opposed to somebody a record exists
+     for. Quoting creates the record, so the two stopped being the same thing —
+     see server/src/services/customerStage.js. Absent means tenant, which is
+     what every record meant before the field existed. */
+  const isTenant = (c: WhatsAppConversation) => Boolean(c.customer) && c.customer?.stage !== 'prospect'
   /* They wrote last and nobody has answered. Worked out here as well as on the
      server so the tab is honest against an API that has not been updated yet —
      the same reason the owner tabs do it. */
@@ -2463,22 +2471,27 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                           <span
                             className="shrink-0 rounded-full px-1.5 py-0.5"
                             title={
-                              c.customer ? 'Already a customer'
-                                : c.lead?.autoAssigned ? `Given to ${c.lead.ownerName} by the distribution rules`
-                                  : c.lead?.assignedByName ? `Given to ${c.lead.ownerName} by ${c.lead.assignedByName}`
-                                    : undefined
+                              isTenant(c) ? 'A tenant — they have signed'
+                                : c.customer ? 'Quoted, but they have not signed'
+                                  : c.lead?.autoAssigned ? `Given to ${c.lead.ownerName} by the distribution rules`
+                                    : c.lead?.assignedByName ? `Given to ${c.lead.ownerName} by ${c.lead.assignedByName}`
+                                      : undefined
                             }
                             style={
-                              c.customer
+                              isTenant(c)
                                 ? { fontSize: 10, fontWeight: 700, background: '#DCFCE7', color: '#047857' }
-                                : { fontSize: 10, fontWeight: 700, background: '#F3EDFF', color: '#4A1FA0' }
+                                : c.customer
+                                  ? { fontSize: 10, fontWeight: 700, background: '#FEF3C7', color: '#92400E' }
+                                  : { fontSize: 10, fontWeight: 700, background: '#F3EDFF', color: '#4A1FA0' }
                             }
                           >
-                            {c.customer
+                            {isTenant(c)
                               ? 'Customer'
-                              : c.lead?.ownerName
-                                ? `Lead (${c.lead.ownerName})`
-                                : 'Lead'}
+                              : c.customer
+                                ? 'Quoted'
+                                : c.lead?.ownerName
+                                  ? `Lead (${c.lead.ownerName})`
+                                  : 'Lead'}
                             {/* How it came to be theirs. The rota hands out most
                                 of these now, and "why is this mine?" is a fair
                                 question to be able to answer from the row. */}

@@ -71,7 +71,12 @@ router.post('/verify-otp', async (req, res) => {
     const isNew = !customer;
     if (!customer) {
       const { fullName } = req.body;
-      customer = await Customer.create({ fullName: fullName || phone, phone, phones: [phone] });
+      /* Signing in is not renting.
+       *
+       * Anybody can reach the portal and get themselves a record; before this
+       * they arrived on the tenant list as a customer. They are promoted when
+       * a contract exists, like everybody else — services/customerStage.js. */
+      customer = await Customer.create({ fullName: fullName || phone, phone, phones: [phone], stage: 'prospect' });
     }
 
     const token = signCustomerToken(customer);
@@ -101,6 +106,8 @@ router.post('/google', async (req, res) => {
         email: gUser.email,
         phone: '',
         googleId: gUser.sub,
+        // Signing in with Google is not renting either.
+        stage: 'prospect',
       });
     } else if (!customer.googleId) {
       customer.googleId = gUser.sub;

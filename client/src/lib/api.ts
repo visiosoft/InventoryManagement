@@ -353,7 +353,9 @@ export type WhatsAppConversation = {
   lead: WhatsAppLeadRef | null
   // Resolved on the server by the last nine digits of the number. Whether
   // someone is a customer is a fact about this, not about a lead's status.
-  customer: { _id: string; fullName: string } | null
+  /* `stage` says whether they have actually signed. A record exists for
+     anybody who has been quoted, so its presence alone is not a tenancy. */
+  customer: { _id: string; fullName: string; stage?: 'prospect' | 'customer' } | null
   labels: WhatsAppLabel[]
   // AI assistant state for this thread: '' when it has never looked at it.
   botStatus?: '' | 'bot' | 'escalated' | 'paused'

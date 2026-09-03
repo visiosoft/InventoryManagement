@@ -287,7 +287,15 @@ export async function routeInboundLead({ phoneNormalized, at = new Date() } = {}
        * compared after stripping everything that is not a digit. */
       const tail = digitTail(phoneNormalized);
       if (tail) {
-         const customers = await Customer.find({}).select('_id fullName phone phones').lean();
+         /* Only people who have actually signed.
+          *
+          * A record exists for anybody who has ever been quoted, so matching
+          * on its existence would divert a fresh enquiry from somebody who
+          * asked for a price last month and never came back — sending them to
+          * whoever handles accounts instead of into the rotation, which is
+          * exactly backwards: that person is still being won. */
+         const customers = await Customer.find({ stage: { $ne: 'prospect' } })
+            .select('_id fullName phone phones').lean();
          const known = customers.find((c) => [c.phone, ...(c.phones || [])].some((p) => digitTail(p) === tail));
          if (known) {
             return { ownerId: String(config.existingCustomerUser), reason: `existing customer (${known.fullName})`, existingCustomer: true };
