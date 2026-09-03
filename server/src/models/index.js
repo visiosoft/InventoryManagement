@@ -372,6 +372,15 @@ const whatsappMessageSchema = new Schema(
     type: { type: String, default: 'text' },
     text: { type: String, default: '' },
     status: { type: String, default: '' },
+    /* Why a send failed, as Meta explained it.
+     *
+     * A failure used to be recorded as the bare word "failed" and nothing
+     * else, so "the audio did not work" had no answer anywhere in the system —
+     * not the code, not the wrong file, not even which of them it was. Meta
+     * sends all three on the status webhook and they were thrown away. */
+    errorCode: { type: Number, default: null },
+    errorTitle: { type: String, default: '' },
+    errorDetail: { type: String, default: '' },
     occurredAt: { type: Date, default: Date.now },
     // Written by the assistant rather than a colleague. The console labels
     // these, so a customer's reply is never mistaken for a human's work.

@@ -233,3 +233,74 @@ test('only the containers WhatsApp refuses are remuxed', () => {
     assert.equal(needsRemux('audio/mpeg'), false);
     assert.equal(needsRemux('image/png'), false);
 });
+
+/**
+ * Walk the finished file the way a player does.
+ *
+ * The tests above check the pieces; this checks the whole thing is a stream a
+ * decoder will accept — right capture patterns, right flags in the right
+ * places, checksums that match, a granule that only moves forwards. A file
+ * that uploads happily and will not play on the recipient's phone fails here
+ * and nowhere else.
+ */
+function walkOgg(buf) {
+   const pages = [];
+   let off = 0;
+   while (off < buf.length) {
+      assert.equal(buf.toString('ascii', off, off + 4), 'OggS', `page ${pages.length} does not start with OggS`);
+      assert.equal(buf[off + 4], 0, 'stream structure version must be 0');
+      const flags = buf[off + 5];
+      const granule = Number(buf.readBigUInt64LE(off + 6));
+      const serial = buf.readUInt32LE(off + 14);
+      const sequence = buf.readUInt32LE(off + 18);
+      const stored = buf.readUInt32LE(off + 22);
+      const segCount = buf[off + 26];
+      const table = buf.subarray(off + 27, off + 27 + segCount);
+      const bodyLen = table.reduce((s, v) => s + v, 0);
+      const end = off + 27 + segCount + bodyLen;
+      assert.ok(end <= buf.length, `page ${pages.length} runs past the end of the file`);
+
+      // The checksum is computed with its own field zeroed.
+      const page = Buffer.from(buf.subarray(off, end));
+      page.writeUInt32LE(0, 22);
+      assert.equal(crcOf(page), stored, `page ${pages.length} has a bad checksum`);
+
+      pages.push({ flags, granule, serial, sequence, segCount });
+      off = end;
+   }
+   return pages;
+}
+
+test('the finished file is a stream a decoder will accept', () => {
+   // 700 packets, so the audio spills over several pages.
+   const frames = Array.from({ length: 700 }, (_, i) => packet(16, 12 + (i % 7), i % 251));
+   const pages = walkOgg(webmToOggOpus(buildWebm(frames)));
+
+   assert.ok(pages.length >= 3, 'a header page, a tags page and at least one of audio');
+   assert.equal(pages[0].flags, 0x02, 'the first page must be flagged beginning-of-stream');
+   assert.equal(pages.filter((p) => p.flags & 0x02).length, 1, 'only the first page may be');
+   assert.equal(pages.at(-1).flags & 0x04, 0x04, 'the last page must be flagged end-of-stream');
+   assert.equal(pages.filter((p) => p.flags & 0x04).length, 1, 'only the last page may be');
+
+   const serials = new Set(pages.map((p) => p.serial));
+   assert.equal(serials.size, 1, 'every page belongs to the same stream');
+
+   pages.forEach((p, i) => assert.equal(p.sequence, i, `page ${i} is numbered ${p.sequence}`));
+
+   assert.equal(pages[0].granule, 0, 'the header page carries no samples');
+   assert.equal(pages[1].granule, 0, 'nor does the tags page');
+   for (let i = 3; i < pages.length; i++) {
+      assert.ok(pages[i].granule > pages[i - 1].granule,
+         `granule went backwards at page ${i}: ${pages[i - 1].granule} then ${pages[i].granule}`);
+   }
+   pages.forEach((p, i) => assert.ok(p.segCount <= 255, `page ${i} has ${p.segCount} segments`));
+});
+
+test('a one-packet recording is still a complete stream', () => {
+   // The shortest thing somebody can send: tap record, tap stop.
+   const pages = walkOgg(webmToOggOpus(buildWebm([packet(15, 40, 0x11)])));
+   assert.equal(pages.length, 3);
+   assert.equal(pages[0].flags, 0x02);
+   assert.equal(pages[2].flags & 0x04, 0x04, 'the single audio page is also the last one');
+   assert.ok(pages[2].granule > 0, 'and it carries samples');
+});

@@ -291,6 +291,10 @@ export type WhatsAppMsg = {
   type: string
   text: string
   status: string
+  /** Why Meta refused it, where it refused it. */
+  errorCode?: number | null
+  errorTitle?: string
+  errorDetail?: string
   occurredAt: string
   // Written by the AI assistant rather than a colleague.
   sentByAi?: boolean

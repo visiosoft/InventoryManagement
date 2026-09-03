@@ -258,6 +258,9 @@ export function extractMessagesFromPayload(payload) {
                 const ts = st?.timestamp ? new Date(Number(st.timestamp) * 1000) : new Date();
                 const phoneNormalized = normalizeLeadPhone(recipient);
                 if (!phoneNormalized) continue;
+                /* Meta explains a failure and we used to drop the
+                   explanation, leaving "failed" and nothing else. */
+                const err = Array.isArray(st?.errors) ? st.errors[0] : null;
                 out.push({
                     messageId,
                     phone: recipient,
@@ -266,6 +269,9 @@ export function extractMessagesFromPayload(payload) {
                     type: 'status',
                     text: '',
                     status,
+                    errorCode: err?.code ?? null,
+                    errorTitle: err?.title || '',
+                    errorDetail: err?.error_data?.details || err?.message || '',
                     occurredAt: Number.isNaN(ts.getTime()) ? new Date() : ts,
                     raw: st,
                 });
@@ -361,10 +367,14 @@ async function persistMessages(messages) {
         // and storing it as one produced empty "[status]" bubbles in the chat.
         if (msg.type === 'status') {
             if (msg.messageId && msg.status) {
-                await WhatsAppMessage.updateOne(
-                    { messageId: msg.messageId },
-                    { $set: { status: msg.status } },
-                );
+                const set = { status: msg.status };
+                if (msg.errorCode || msg.errorTitle || msg.errorDetail) {
+                    set.errorCode = msg.errorCode ?? null;
+                    set.errorTitle = msg.errorTitle || '';
+                    set.errorDetail = msg.errorDetail || '';
+                    console.error(`[WhatsApp] send failed (${msg.errorCode}) ${msg.errorTitle}: ${msg.errorDetail}`);
+                }
+                await WhatsAppMessage.updateOne({ messageId: msg.messageId }, { $set: set });
             }
             continue;
         }

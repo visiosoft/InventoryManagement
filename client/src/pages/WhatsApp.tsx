@@ -482,8 +482,24 @@ function MessageBubble({ msg }: { msg: WaMsg }) {
           <span>{formatClock(msg.occurredAt)}</span>
           {/* Grey until read, then WhatsApp's blue — the same signal people
               already read without being told. */}
-          {out && <CheckCheck size={13} style={{ color: msg.status === 'read' ? '#53BDEB' : 'rgba(20,8,31,.35)' }} />}
+          {out && (msg.status === 'failed'
+            /* A failure used to look exactly like a success: the same grey
+               ticks, no word anywhere. Somebody sent a voice note, watched it
+               sit there looking fine, and only heard days later that it never
+               arrived. */
+            ? <AlertTriangle size={12} style={{ color: '#DC2626' }} />
+            : <CheckCheck size={13} style={{ color: msg.status === 'read' ? '#53BDEB' : 'rgba(20,8,31,.35)' }} />)}
         </div>
+        {out && msg.status === 'failed' && (
+          <div
+            className="mt-1 rounded-lg px-2 py-1"
+            style={{ background: '#FEE2E2', color: '#B91C1C', fontSize: 11, lineHeight: 1.35 }}
+          >
+            <strong>Not delivered.</strong>{' '}
+            {msg.errorDetail || msg.errorTitle
+              || 'WhatsApp refused it and gave no reason. If they last wrote more than 24 hours ago, only an approved template gets through.'}
+          </div>
+        )}
         {msg.reaction && (
           <div className={cn('flex -mb-1 mt-0.5', out ? 'justify-end' : 'justify-start')}>
             <span
