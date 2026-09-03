@@ -12,6 +12,8 @@ type Config = {
   useAvailability: boolean
   autoSummarise: boolean
   sendVideoOnFirstContact: boolean
+  replyWithVoice: boolean
+  voice: string
   escalateTo: string
   handoverKeywords: string[]
   maxRepliesPerThreadPerDay: number
@@ -177,6 +179,35 @@ export default function AiAssistant() {
               <span className="block text-muted-foreground text-[13px]">
                 Reads the real free units for the dates the customer mentions, using the same
                 calculation as the booking screens. Off means it talks about sizes and prices only.
+              </span>
+            </span>
+          </label>
+
+          <label className="flex items-start gap-3 cursor-pointer pt-1">
+            <input type="checkbox" className="mt-1" checked={draft.replyWithVoice}
+              onChange={(e) => set({ replyWithVoice: e.target.checked })} />
+            <span className="text-sm">
+              <span className="font-medium">Answer a voice note with a voice note</span>
+              <span className="block text-muted-foreground text-[13px]">
+                Somebody who sends a voice message gets a spoken reply back, in the same language
+                they used. Only ever in reply to one — a spoken answer to somebody who typed cannot
+                be skimmed, and a price is the thing people most want to read back. The words are
+                saved on the message either way, so the thread stays readable and searchable.
+                {draft.replyWithVoice && (
+                  <span className="block mt-1">
+                    Voice:{' '}
+                    <select
+                      value={draft.voice}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => set({ voice: e.target.value })}
+                      className="border rounded px-1.5 py-0.5 text-[12.5px]"
+                    >
+                      {['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'].map((v) => (
+                        <option key={v} value={v}>{v}</option>
+                      ))}
+                    </select>
+                  </span>
+                )}
               </span>
             </span>
           </label>

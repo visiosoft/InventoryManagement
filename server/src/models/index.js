@@ -1672,6 +1672,11 @@ const aiBotConfigSchema = new Schema({
      assistant's instructions already describe this as happening; see
      services/firstContact.js, which is what actually does it. */
   sendVideoOnFirstContact: { type: Boolean, default: false },
+  /* Answer a voice note with a voice note. Only ever in reply to one — a
+     spoken answer to somebody who typed cannot be skimmed or copied, and a
+     price is the thing people most want to read back. */
+  replyWithVoice: { type: Boolean, default: false },
+  voice: { type: String, default: 'alloy' },
 }, { timestamps: true });
 
 // One per conversation, holding the state machine and any pending draft.

@@ -10,6 +10,9 @@ const router = Router();
  *  rather than applied silently — see the note in the handler. */
 const PROMPT_LIMIT = 40000;
 
+/** The voices OpenAI offers for spoken replies. */
+const VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
+
 const shape = (config) => ({
     enabled: config.enabled,
     mode: config.mode,
@@ -17,6 +20,8 @@ const shape = (config) => ({
     useAvailability: config.useAvailability,
     autoSummarise: config.autoSummarise !== false,
     sendVideoOnFirstContact: Boolean(config.sendVideoOnFirstContact),
+    replyWithVoice: Boolean(config.replyWithVoice),
+    voice: config.voice || 'alloy',
     escalateTo: config.escalateTo ? String(config.escalateTo) : '',
     handoverKeywords: config.handoverKeywords || [],
     maxRepliesPerThreadPerDay: config.maxRepliesPerThreadPerDay,
@@ -60,6 +65,9 @@ router.put('/config', requireAdmin, async (req, res) => {
     if (b.useAvailability !== undefined) config.useAvailability = Boolean(b.useAvailability);
     if (b.autoSummarise !== undefined) config.autoSummarise = Boolean(b.autoSummarise);
     if (b.sendVideoOnFirstContact !== undefined) config.sendVideoOnFirstContact = Boolean(b.sendVideoOnFirstContact);
+    if (b.replyWithVoice !== undefined) config.replyWithVoice = Boolean(b.replyWithVoice);
+    // Only the voices OpenAI actually offers; anything else is a silent failure.
+    if (b.voice !== undefined && VOICES.includes(String(b.voice))) config.voice = String(b.voice);
     if (b.handoverKeywords !== undefined) {
         config.handoverKeywords = (Array.isArray(b.handoverKeywords) ? b.handoverKeywords : [])
             .map((k) => String(k).trim().toLowerCase()).filter(Boolean).slice(0, 30);

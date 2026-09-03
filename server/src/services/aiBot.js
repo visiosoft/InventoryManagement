@@ -1,9 +1,9 @@
 import {
     AiBotConfig, AiBotThread, WhatsAppMessage, Unit, Lead, Task, User,
 } from '../models/index.js';
-import { openaiConfigured, openaiModel, chatJson, parseAvailabilityQuery } from './openai.js';
+import { openaiConfigured, openaiModel, chatJson, parseAvailabilityQuery, synthesizeSpeech } from './openai.js';
 import { computeUnitAvailability } from './unitAvailability.js';
-import { sendWhatsAppText, whatsappSendConfigured } from './whatsapp.js';
+import { sendWhatsAppMedia, sendWhatsAppText, uploadWhatsAppMedia, whatsappSendConfigured } from './whatsapp.js';
 import { understandMedia } from './mediaUnderstanding.js';
 
 // WhatsApp only permits a free-form reply inside 24 hours of the customer's
@@ -522,14 +522,39 @@ async function handleThread(thread, config) {
         return;
     }
 
-    const sent = await sendWhatsAppText({ to: thread.phoneNormalized, body: result.reply });
+    /* Answer a voice note with a voice note.
+     *
+     * Only in reply to one: a spoken answer to somebody who typed cannot be
+     * skimmed, and a price is exactly the thing people want to read back.
+     *
+     * The words are stored on the message whichever way it goes out, so the
+     * thread stays readable and searchable — a colleague scrolling back should
+     * not have to play audio to find out what was said on our behalf. If the
+     * speech cannot be made, the text goes instead; a silent failure here would
+     * leave the customer with nothing. */
+    const spokenTo = READABLE_TYPES.has(thread.pendingType) && thread.pendingType !== 'image';
+    let voiceNote = null;
+    if (config.replyWithVoice && spokenTo) {
+        voiceNote = await synthesizeSpeech({ text: result.reply, voice: config.voice || 'alloy' });
+    }
+
+    let sent;
+    if (voiceNote) {
+        const mediaId = await uploadWhatsAppMedia({ buffer: voiceNote, mimeType: 'audio/ogg', filename: 'reply.ogg' });
+        sent = await sendWhatsAppMedia({ to: thread.phoneNormalized, mediaId, kind: 'audio', filename: 'reply.ogg' });
+    } else {
+        sent = await sendWhatsAppText({ to: thread.phoneNormalized, body: result.reply });
+    }
+
     await WhatsAppMessage.create({
         messageId: sent?.messages?.[0]?.id || '',
         phone: thread.phoneNormalized,
         phoneNormalized: thread.phoneNormalized,
         direction: 'outbound',
-        type: 'text',
+        type: voiceNote ? 'audio' : 'text',
         text: result.reply,
+        // What was said, for a thread somebody reads rather than listens to.
+        transcript: voiceNote ? result.reply : '',
         status: 'sent',
         occurredAt: new Date(),
         sentByAi: true,

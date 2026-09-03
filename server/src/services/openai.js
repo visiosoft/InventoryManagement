@@ -9,6 +9,8 @@ const API_BASE = process.env.OPENAI_API_BASE || 'https://api.openai.com/v1';
 const DEFAULT_MODEL = 'gpt-4o-mini';
 // Speech to text. The chat models do not take audio, so this is its own model.
 const TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL || 'whisper-1';
+// Text to speech, for answering a voice note in kind.
+const SPEECH_MODEL = process.env.OPENAI_SPEECH_MODEL || 'gpt-4o-mini-tts';
 
 export function openaiConfigured() {
     return Boolean(process.env.OPENAI_API_KEY);
@@ -226,4 +228,33 @@ export async function transcribeAudio({ buffer, mimeType = 'audio/ogg', filename
         timeout,
     });
     return String(data?.text || '').trim();
+}
+
+/**
+ * Say something out loud.
+ *
+ * Opus in an Ogg container, which is the one audio format WhatsApp treats as a
+ * voice note rather than a file to download — the same shape the browser
+ * recorder is repackaged into before sending.
+ *
+ * Returns the bytes, or null when it could not be produced. Null must mean
+ * "send the text instead", never "send nothing".
+ */
+export async function synthesizeSpeech({ text, voice = 'alloy', timeout = 45000 }) {
+    if (!openaiConfigured()) return null;
+    const words = String(text || '').trim();
+    if (!words) return null;
+
+    try {
+        const { data } = await axios.post(
+            `${API_BASE}/audio/speech`,
+            { model: SPEECH_MODEL, voice, input: words.slice(0, 4000), response_format: 'opus' },
+            { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` }, responseType: 'arraybuffer', timeout },
+        );
+        const buffer = Buffer.from(data);
+        // A voice note that will not play is worse than a written reply.
+        return buffer.toString('ascii', 0, 4) === 'OggS' ? buffer : null;
+    } catch {
+        return null;
+    }
 }
