@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import {
   Send, MessageSquare, RefreshCw, UserPlus, UserCheck, Bell, BellOff, FileText,
   Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Paperclip, Pencil,
-  Bot, Tag, Check, ClipboardList, Sparkles, Trash2, MapPin, Mic, Square, AlertTriangle, MoreVertical, UserCog, Loader2,
+  Bot, Tag, Check, ClipboardList, Sparkles, Trash2, MapPin, Mic, Square, AlertTriangle, MoreVertical, UserCog, Loader2, Clock,
 } from 'lucide-react'
 import { useVoiceRecorder, recordingSupported, formatDuration } from '../lib/voiceRecorder'
 import { api, whatsappApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel } from '../lib/api'
@@ -16,6 +16,28 @@ import { Modal, Field, Input, Textarea, Select } from '../components/ui'
 import { CustomerForm } from '../components/AddCustomerModal'
 import { useSeen, markSeen as markSeenShared, unreadFrom } from '../lib/whatsappSeen'
 import { cn } from '../lib/utils'
+
+/** Which slice of the inbox is on screen. 'waiting' is not a slice by owner
+ *  like the others — it is everybody who is owed an answer. */
+type OwnerTab = 'all' | 'mine' | 'unassigned' | 'waiting'
+
+/** How long somebody has been waiting, said the way a person would say it. */
+function waitedFor(since: string): string {
+  const mins = Math.max(0, Math.round((Date.now() - new Date(since).getTime()) / 60000))
+  if (mins < 60) return `${mins}m`
+  const hours = Math.round(mins / 60)
+  if (hours < 48) return `${hours}h`
+  return `${Math.round(hours / 24)}d`
+}
+
+/* Waiting an hour is a queue; waiting a day is a lost customer. The colour
+   says which without anybody reading the number. */
+function waitTone(since: string): { bg: string; fg: string } {
+  const hours = (Date.now() - new Date(since).getTime()) / 36e5
+  if (hours >= 24) return { bg: '#FEE2E2', fg: '#B91C1C' }
+  if (hours >= 4) return { bg: '#FEF3C7', fg: '#92400E' }
+  return { bg: '#F1F5F9', fg: '#475569' }
+}
 
 /* ── local types ──────────────────────────────────────────────────────────
    The API layer's WhatsAppMsg predates attachments; /whatsapp/messages now
@@ -1485,16 +1507,16 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
    */
   const { user: me } = useAuth()
   const OWNER_KEY = 'pb-wa-owner-filter'
-  const [ownerFilter, setOwnerFilter] = useState<'all' | 'mine' | 'unassigned'>(() => {
+  const [ownerFilter, setOwnerFilter] = useState<OwnerTab>(() => {
     try {
       const saved = localStorage.getItem(OWNER_KEY)
-      if (saved === 'all' || saved === 'mine' || saved === 'unassigned') return saved
+      if (saved === 'all' || saved === 'mine' || saved === 'unassigned' || saved === 'waiting') return saved
     } catch { /* a private window has no storage, and that is fine */ }
     // Only a rep: accounts share the rep-ish role but own no leads, and would
     // land on an empty tab wondering where the inbox went.
     return me?.role === 'sales_rep' ? 'mine' : 'all'
   })
-  function chooseOwnerFilter(v: 'all' | 'mine' | 'unassigned') {
+  function chooseOwnerFilter(v: OwnerTab) {
     setOwnerFilter(v)
     // Back to the first page: 200 of everybody's chats and 200 of your own are
     // different lists, and carrying a deep window across is meaningless.
@@ -1803,6 +1825,14 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
 
   const isMine = (c: WhatsAppConversation) => Boolean(me?.id) && String(c.lead?.ownerId ?? '') === String(me?.id)
   const isUnowned = (c: WhatsAppConversation) => !c.lead?.ownerId
+  /* They wrote last and nobody has answered. Worked out here as well as on the
+     server so the tab is honest against an API that has not been updated yet —
+     the same reason the owner tabs do it. */
+  const isWaiting = (c: WhatsAppConversation) => (
+    c.waitingSince
+      ? true
+      : Boolean(c.lastInboundAt) && (!c.lastOutboundAt || String(c.lastInboundAt) > String(c.lastOutboundAt))
+  )
 
   /* Counted over every conversation on the server, not over what has been
      loaded — the tabs used to count the 200 most recent, so a rep with 275
@@ -1816,6 +1846,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     all: convoList.length,
     mine: convoList.filter(isMine).length,
     unassigned: convoList.filter(isUnowned).length,
+    waiting: convoList.filter(isWaiting).length,
   }
 
   /* The label filter always runs here. The owner runs here too when the server
@@ -1825,6 +1856,11 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     if (!serverKnowsOwner) {
       if (ownerFilter === 'mine') list = list.filter(isMine)
       else if (ownerFilter === 'unassigned') list = list.filter(isUnowned)
+      else if (ownerFilter === 'waiting') {
+        list = list.filter(isWaiting)
+          .slice()
+          .sort((a, b) => +new Date(a.waitingSince || a.lastInboundAt || 0) - +new Date(b.waitingSince || b.lastInboundAt || 0))
+      }
     }
     if (labelFilter) list = list.filter((c) => (c.labels || []).some((l) => l._id === labelFilter))
     return list
@@ -2274,6 +2310,27 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
               })}
             </div>
 
+            {/* Who is owed an answer.
+                Its own bar rather than a fourth pill: it is not another way to
+                slice the inbox, it is the work outstanding, and a number that
+                is not zero should be uncomfortable to look at. */}
+            <button
+              type="button"
+              onClick={() => chooseOwnerFilter(ownerFilter === 'waiting' ? (me?.role === 'sales_rep' ? 'mine' : 'all') : 'waiting')}
+              className="flex w-full items-center gap-2 cursor-pointer"
+              style={{
+                padding: '7px 10px', borderRadius: 10, fontSize: 12, fontWeight: 700, textAlign: 'left',
+                border: `1px solid ${ownerCounts.waiting > 0 ? '#F6C9B8' : '#EDE5FF'}`,
+                background: ownerFilter === 'waiting' ? '#FDEDE6' : ownerCounts.waiting > 0 ? '#FEF6F2' : '#F7F3FF',
+                color: ownerCounts.waiting > 0 ? '#9A3412' : FAINT_INK,
+              }}
+              title="Conversations where the customer wrote last and nobody has replied"
+            >
+              <Clock size={13} />
+              <span className="flex-1">Waiting on us</span>
+              <span style={{ fontWeight: 800 }}>{ownerCounts.waiting ?? 0}</span>
+            </button>
+
             {/* Click a label to narrow the list to the chats carrying it. */}
             {waLabels.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
@@ -2322,7 +2379,9 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                     ? 'None of these chats are yours yet. Try All.'
                     : ownerFilter === 'unassigned'
                       ? 'Every chat has somebody on it.'
-                      : 'No chats match that search.'}
+                      : ownerFilter === 'waiting'
+                        ? 'Nobody is waiting on a reply. Everything has been answered.'
+                        : 'No chats match that search.'}
               </p>
             ) : (
               filteredConvos.map((c) => {
@@ -2350,6 +2409,18 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                         >
                           {label}
                         </span>
+                        {/* How long they have been owed an answer. Shown on
+                            every tab, not only the waiting one: the point is
+                            to notice it while scrolling past. */}
+                        {isWaiting(c) && (
+                          <span
+                            className="shrink-0 rounded-full px-1.5"
+                            style={{ fontSize: 10, fontWeight: 700, ...(() => { const t = waitTone(c.waitingSince || c.lastInboundAt || ''); return { background: t.bg, color: t.fg } })() }}
+                            title={`Waiting ${waitedFor(c.waitingSince || c.lastInboundAt || '')} for a reply`}
+                          >
+                            {waitedFor(c.waitingSince || c.lastInboundAt || '')}
+                          </span>
+                        )}
                         <span className="shrink-0" style={{ fontSize: 11, color: FAINT_INK }}>{formatListTime(c.lastAt)}</span>
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5">

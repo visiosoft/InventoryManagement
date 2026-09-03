@@ -334,6 +334,10 @@ export type WhatsAppLabel = {
   chatCount?: number
 }
 
+/** How many conversations sit behind each inbox tab, counted over all of them
+ *  on the server rather than over the page that was loaded. */
+export type OwnerCounts = { all: number; mine: number; unassigned: number; waiting: number }
+
 export type WhatsAppConversation = {
   phoneNormalized: string
   phone: string
@@ -342,6 +346,10 @@ export type WhatsAppConversation = {
   /* When they last wrote. WhatsApp only allows free text for 24 hours after
      this; past it only an approved template gets through. */
   lastInboundAt?: string | null
+  lastOutboundAt?: string | null
+  /* Since when this person has been owed an answer — they wrote last and
+     nobody has replied. Null when nothing is owed. */
+  waitingSince?: string | null
   lead: WhatsAppLeadRef | null
   // Resolved on the server by the last nine digits of the number. Whether
   // someone is a customer is a fact about this, not about a lead's status.
@@ -370,7 +378,7 @@ export const whatsappApi = {
    * it sorts below that window.
    */
   conversations: (opts: { q?: string; phone?: string; limit?: number; owner?: string } = {}) =>
-    api.get<WhatsAppConversation[] | { list: WhatsAppConversation[]; total: number; matched: number; ownerCounts: { all: number; mine: number; unassigned: number } }>('/whatsapp/conversations', {
+    api.get<WhatsAppConversation[] | { list: WhatsAppConversation[]; total: number; matched: number; ownerCounts: OwnerCounts }>('/whatsapp/conversations', {
       params: {
         ...(opts.q ? { q: opts.q } : {}),
         ...(opts.phone ? { phone: opts.phone } : {}),
@@ -394,7 +402,7 @@ export const whatsappApi = {
           list: r.data,
           total: Number(r.headers['x-total-conversations']) || r.data.length,
           matched: Number(r.headers['x-matched-conversations']) || r.data.length,
-          ownerCounts: null as { all: number; mine: number; unassigned: number } | null,
+          ownerCounts: null as OwnerCounts | null,
           serverFiltered: false,
         }
       }

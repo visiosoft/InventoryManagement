@@ -324,6 +324,12 @@ router.get('/conversations', async (req, res) => {
                     lastInboundAt: {
                         $max: { $cond: [{ $eq: ['$direction', 'inbound'] }, '$occurredAt', null] },
                     },
+                    /* And when we last wrote back. The two together say
+                       whether anybody still owes this person an answer, which
+                       is the one thing the inbox could not tell you. */
+                    lastOutboundAt: {
+                        $max: { $cond: [{ $eq: ['$direction', 'outbound'] }, '$occurredAt', null] },
+                    },
                 },
             },
             { $sort: { lastAt: -1 } },
@@ -410,11 +416,29 @@ router.get('/conversations', async (req, res) => {
         return lead?.owner ? String(lead.owner) : '';
     };
     const me = String(req.user?.id || '');
-    const ownerCounts = { all: visible.length, mine: 0, unassigned: 0 };
+
+    /* Waiting on us: they wrote last and nobody has answered.
+     *
+     * Forty-four conversations were sitting in this state when it was measured,
+     * with no way to see them — they were scattered down a list sorted by
+     * recency, indistinguishable from the ones already handled. Every one is a
+     * customer who asked something and heard nothing back.
+     */
+    /* Bounded to a month. Measured over the whole inbox, 141 conversations had
+       the customer speaking last, but 5 of them were older than thirty days —
+       those are history, not work, and a queue that can only grow is one people
+       stop opening. Meta's free-text window closed on them long ago anyway. */
+    const waitingCutoff = new Date(Date.now() - 30 * 864e5);
+    const waitingOn = (r) => Boolean(r.lastInboundAt)
+        && r.lastInboundAt > waitingCutoff
+        && (!r.lastOutboundAt || r.lastInboundAt > r.lastOutboundAt);
+
+    const ownerCounts = { all: visible.length, mine: 0, unassigned: 0, waiting: 0 };
     for (const r of visible) {
         const owner = ownerOf(r);
         if (!owner) ownerCounts.unassigned += 1;
         else if (owner === me) ownerCounts.mine += 1;
+        if (waitingOn(r)) ownerCounts.waiting += 1;
     }
     /* Also in the body, below.
      *
@@ -428,7 +452,12 @@ router.get('/conversations', async (req, res) => {
     const ownerFilter = String(req.query.owner || '').trim();
     if (ownerFilter === 'mine') visible = visible.filter((r) => ownerOf(r) === me);
     else if (ownerFilter === 'unassigned') visible = visible.filter((r) => !ownerOf(r));
-    else if (ownerFilter && ownerFilter !== 'all') visible = visible.filter((r) => ownerOf(r) === ownerFilter);
+    else if (ownerFilter === 'waiting') {
+        /* Oldest first, which is the opposite of every other tab and the whole
+           point of this one: the person who has been waiting since Tuesday is
+           the one to answer, not the one who wrote a minute ago. */
+        visible = visible.filter(waitingOn).sort((a, b) => new Date(a.lastInboundAt) - new Date(b.lastInboundAt));
+    } else if (ownerFilter && ownerFilter !== 'all') visible = visible.filter((r) => ownerOf(r) === ownerFilter);
 
     const total = visible.length;
     visible = visible.slice(0, limit);
@@ -484,6 +513,9 @@ router.get('/conversations', async (req, res) => {
             count: r.count,
             lastAt: r.lastAt,
             lastInboundAt: r.lastInboundAt || null,
+            lastOutboundAt: r.lastOutboundAt || null,
+            // Since when they have been owed an answer; null when they are not.
+            waitingSince: waitingOn(r) ? r.lastInboundAt : null,
             lead: lead
                 ? {
                     _id: lead._id,
