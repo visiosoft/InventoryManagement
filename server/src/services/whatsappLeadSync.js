@@ -4,6 +4,7 @@ import { notifyLeadAssigned } from './leadNotify.js';
 import { normalizeLeadPhone } from '../routes/leads.js';
 import { getAiBotConfig, noteInboundForBot, pauseBotForHuman } from './aiBot.js';
 import { sendFirstContactVideo } from './firstContact.js';
+import { mediaFromRaw } from '../routes/whatsappMedia.js';
 
 const DEFAULT_STATUS_BY_LABEL = {
     lead: 'new',
@@ -453,6 +454,8 @@ async function persistMessages(messages) {
                     text: msg.text,
                     type: msg.type,
                     occurredAt: msg.occurredAt,
+                    // So the assistant can fetch and read it.
+                    mediaId: mediaFromRaw(msg.raw)?.id || '',
                 });
             } catch { /* the assistant must never break message delivery */ }
         } else {

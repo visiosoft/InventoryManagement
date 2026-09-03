@@ -59,16 +59,28 @@ test('replies just inside the window', () => {
     assert.equal(decide({ pendingAt: new Date(NOW.getTime() - 22 * HOUR) }).action, 'generate');
 });
 
-test('hands over media it cannot read', () => {
-    for (const type of ['image', 'audio', 'document', 'video', 'voice', 'location', 'contacts']) {
-        const r = decide({ pendingType: type, pendingText: '' });
-        assert.equal(r.action, 'escalate', `${type} should escalate`);
+test('speech and photos are read rather than handed over on sight', () => {
+    /* Somebody saying out loud what they would otherwise have typed used to
+       always wait for a colleague. The reading itself needs a network call, so
+       this decision only says "read" — see understandMedia. */
+    for (const type of ['audio', 'voice', 'image']) {
+        assert.equal(decide({ pendingType: type, pendingText: '' }).action, 'read', `${type} should be read`);
     }
 });
 
-test('media handover reads as English, not "a unsupported"', () => {
+test('everything else a customer attaches still goes to a person', () => {
+    /* A video is more than it is worth reading for what it usually says, and a
+       document is a contract or a receipt — exactly what the assistant must not
+       answer for. */
+    for (const type of ['document', 'video', 'location', 'contacts']) {
+        assert.equal(decide({ pendingType: type, pendingText: '' }).action, 'escalate', `${type} should escalate`);
+    }
+});
+
+test('the reason reads as English, not "a unsupported"', () => {
     assert.match(decide({ pendingType: 'image', pendingText: '' }).reason, /sent a photo/);
     assert.match(decide({ pendingType: 'voice', pendingText: '' }).reason, /sent a voice note/);
+    assert.match(decide({ pendingType: 'document', pendingText: '' }).reason, /cannot read/);
 });
 
 test('ignores reactions and system notices instead of handing them over', () => {

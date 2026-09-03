@@ -4,6 +4,7 @@ import {
 import { openaiConfigured, openaiModel, chatJson, parseAvailabilityQuery } from './openai.js';
 import { computeUnitAvailability } from './unitAvailability.js';
 import { sendWhatsAppText, whatsappSendConfigured } from './whatsapp.js';
+import { understandMedia } from './mediaUnderstanding.js';
 
 // WhatsApp only permits a free-form reply inside 24 hours of the customer's
 // last message. Replying at 23h59 would race that limit and fail at Meta, so
@@ -29,6 +30,10 @@ const HISTORY_DAYS = 90;
 // for help — treating them as unreadable content handed whole conversations
 // to a person and silenced the assistant on them for good.
 const IGNORED_TYPES = new Set(['reaction', 'system', 'unsupported', 'ephemeral', 'sticker']);
+
+/* What the assistant can make sense of itself: speech becomes text, a photo
+   becomes a description. A video and a document still go to a person. */
+const READABLE_TYPES = new Set(['audio', 'voice', 'image']);
 
 // Real content a customer sent that the assistant genuinely cannot read, so a
 // person should look at it.
@@ -272,7 +277,7 @@ async function escalate(thread, reason, config, draft = '') {
 }
 
 /** Record an inbound message for the worker to consider. Called by the webhook. */
-export async function noteInboundForBot({ phoneNormalized, messageId, text, type, occurredAt }) {
+export async function noteInboundForBot({ phoneNormalized, messageId, text, type, occurredAt, mediaId = '' }) {
     if (!phoneNormalized || !messageId) return;
     // Filtered here as well as in decideAction, so noise never even queues.
     if (IGNORED_TYPES.has(type)) return;
@@ -283,6 +288,7 @@ export async function noteInboundForBot({ phoneNormalized, messageId, text, type
                 pendingMessageId: messageId,
                 pendingText: String(text || ''),
                 pendingType: type || 'text',
+                pendingMediaId: String(mediaId || ''),
                 pendingAt: occurredAt || new Date(),
             },
             $setOnInsert: { phoneNormalized },
@@ -344,10 +350,20 @@ export function decideAction({ thread, config, now = new Date() }) {
         return { action: 'skip', reason: `Ignoring a ${type}` };
     }
 
-    // Real media does carry meaning the assistant cannot read. Guessing at a
-    // photo of a damaged item or a payment receipt would be worse than
-    // handing it over.
+    /* A voice note or a photo is read rather than handed over on sight.
+     *
+     * Both used to escalate immediately, which meant somebody saying out loud
+     * what they would otherwise have typed always waited for a colleague. The
+     * reading happens in handleThread — it needs a network call, and this
+     * function is deliberately pure so the rules can be tested directly.
+     *
+     * Everything else still goes to a person: a video is too much to read for
+     * what it usually says, and a document is a contract or a receipt, which is
+     * exactly the sort of thing the assistant must not answer for. */
     const text = String(thread.pendingText || '').trim();
+    if (READABLE_TYPES.has(type)) {
+        return { action: 'read', reason: `Customer sent ${MEDIA_LABELS[type] || `a ${type}`}` };
+    }
     if (type !== 'text') {
         return { action: 'escalate', reason: `Customer sent ${MEDIA_LABELS[type] || `a ${type}`}, which the assistant cannot read` };
     }
@@ -378,7 +394,6 @@ export const aiBotState = {
 
 async function handleThread(thread, config) {
     const now = new Date();
-    const inboundText = thread.pendingText;
 
     // Claim the message atomically. The previous read-then-write let two
     // workers — a restarted instance overlapping itself, or a second
@@ -418,6 +433,35 @@ async function handleThread(thread, config) {
         await escalate(thread, reason, config);
         aiBotState.escalated += 1;
         return;
+    }
+
+    /* Speech and photos: read first, then answer the reading.
+     *
+     * The transcript replaces the message text, so everything downstream — the
+     * history, the rules, the reply itself — works on words exactly as if the
+     * customer had typed them. A photo becomes a description rather than words
+     * put in their mouth, and either can still come back "a person is needed",
+     * which is what a receipt or a damaged item should do. */
+    let inboundText = thread.pendingText || '';
+    if (action === 'read') {
+        const read = await understandMedia({
+            kind: thread.pendingType,
+            mediaId: thread.pendingMediaId,
+            sentAt: thread.pendingAt,
+        });
+        if (read.needsHuman || !read.text) {
+            await escalate(thread, read.reason || `${reason}, which needs a person`, config);
+            aiBotState.escalated += 1;
+            return;
+        }
+        inboundText = read.text;
+        /* Kept on the record. A colleague reading the thread later sees what
+           the assistant heard, not just that it answered something. */
+        thread.pendingText = inboundText;
+        await WhatsAppMessage.updateOne(
+            { messageId: thread.pendingMessageId },
+            { $set: { transcript: inboundText } },
+        ).catch(() => {});
     }
 
     // A pause that has run out is lifted only once we are actually going to

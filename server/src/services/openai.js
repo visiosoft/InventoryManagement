@@ -7,6 +7,8 @@ import axios from 'axios';
 
 const API_BASE = process.env.OPENAI_API_BASE || 'https://api.openai.com/v1';
 const DEFAULT_MODEL = 'gpt-4o-mini';
+// Speech to text. The chat models do not take audio, so this is its own model.
+const TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL || 'whisper-1';
 
 export function openaiConfigured() {
     return Boolean(process.env.OPENAI_API_KEY);
@@ -83,8 +85,14 @@ export async function chatJson({ system, messages = [], temperature = 0, maxToke
  * publicly fetchable so a model could read it would be a far worse problem
  * than the typing it saves.
  *
- * Returns the parsed object, or null when the model produced anything else.
- * Callers must treat null as a failure to read, never as an empty document.
+ * Returns `{ parsed, usage }` — `parsed` is the object, or null when the model
+ * produced anything else, and `usage` is the token count so the cost per
+ * document is a measured number rather than an estimate.
+ *
+ * A caller must treat a null `parsed` as a failure to read, never as an empty
+ * document. (This block used to say the function returned the object itself,
+ * which reads as working code right up to the point where every field is
+ * undefined.)
  */
 export async function visionJson({ system, imageBase64, mimeType, prompt = '', maxTokens = 500, timeout = 45000 }) {
     const { data } = await axios.post(
@@ -189,4 +197,33 @@ export async function parseAvailabilityQuery(text, context = {}) {
             parsed.sizeSqf && !sizeSqf ? `no ${parsed.sizeSqf} sqft size here` : '',
         ].filter(Boolean).join('; ') || null,
     };
+}
+
+/**
+ * Turn a voice note into text.
+ *
+ * A separate model and a separate endpoint from everything else here: the chat
+ * models do not take audio, so a voice note used to be handed straight to a
+ * person with "the assistant cannot read this".
+ *
+ * Returns the transcript, or '' when it could not be read. Empty must be
+ * treated as a failure to hear — never as somebody having said nothing, which
+ * would have the assistant answer a question it never received.
+ */
+export async function transcribeAudio({ buffer, mimeType = 'audio/ogg', filename = 'voice.ogg', timeout = 45000 }) {
+    if (!openaiConfigured()) return '';
+    if (!buffer?.length) return '';
+
+    const form = new FormData();
+    form.append('file', new Blob([buffer], { type: mimeType }), filename);
+    form.append('model', TRANSCRIBE_MODEL);
+    // A hint, not a restriction: it still transcribes Arabic or Hindi, but
+    // saying what to expect stops it mishearing English brand names.
+    form.append('prompt', 'PurpleBox self storage, Al Quoz Dubai. Sizes in square feet, prices in AED.');
+
+    const { data } = await axios.post(`${API_BASE}/audio/transcriptions`, form, {
+        headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+        timeout,
+    });
+    return String(data?.text || '').trim();
 }

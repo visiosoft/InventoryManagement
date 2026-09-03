@@ -378,6 +378,9 @@ const whatsappMessageSchema = new Schema(
      * else, so "the audio did not work" had no answer anywhere in the system —
      * not the code, not the wrong file, not even which of them it was. Meta
      * sends all three on the status webhook and they were thrown away. */
+    /* What a voice note said, once the assistant has heard it. Kept so a
+       colleague reading the thread sees the words rather than just a player. */
+    transcript: { type: String, default: '' },
     errorCode: { type: Number, default: null },
     errorTitle: { type: String, default: '' },
     errorDetail: { type: String, default: '' },
@@ -1685,6 +1688,10 @@ const aiBotThreadSchema = new Schema({
   pendingMessageId: { type: String, default: '' },
   pendingText: { type: String, default: '' },
   pendingType: { type: String, default: 'text' },
+  /* The attachment on the message waiting to be answered, so the assistant can
+     fetch and read it — a voice note transcribed, a photo described. See
+     services/mediaUnderstanding.js. */
+  pendingMediaId: { type: String, default: '' },
   pendingAt: { type: Date, default: null },
   handledMessageId: { type: String, default: '' },
   draftText: { type: String, default: '' },

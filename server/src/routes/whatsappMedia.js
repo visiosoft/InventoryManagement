@@ -3,9 +3,9 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { WhatsAppMessage } from '../models/index.js';
+import { fetchWhatsAppMedia } from '../services/whatsappMediaFetch.js';
 
 const router = Router();
-const GRAPH = 'https://graph.facebook.com/v20.0';
 
 // Meta's media URLs expire within minutes, so fetched bytes are cached on
 // disk. The media id is immutable, which makes it a safe cache key.
@@ -80,30 +80,18 @@ router.get('/:messageId', async (req, res) => {
             return res.send(readFileSync(cachePath));
         }
 
-        const lookup = await fetch(`${GRAPH}/${media.id}`, { headers: { Authorization: `Bearer ${token}` } });
-        const info = await lookup.json().catch(() => ({}));
-        if (!lookup.ok || !info?.url) {
-            const detail = info?.error?.message || `HTTP ${lookup.status}`;
-            // "Unavailable" on its own sends people looking in the wrong place.
-            // The two things that actually go wrong here are a dead token and
-            // Meta having deleted the file, and they need different fixes.
-            const ageDays = msg.occurredAt ? (Date.now() - new Date(msg.occurredAt)) / 86_400_000 : 0;
-            let error = detail;
-            if (lookup.status === 401 || /auth|token|session|expired/i.test(detail)) {
-                error = 'The WhatsApp access token is not valid — reconnect it in Settings → Integrations';
-            } else if (ageDays > 30) {
-                // Meta keeps media for 30 days. Past that it is gone for good,
-                // whatever the credentials say.
-                error = 'WhatsApp deleted this attachment — it only keeps files for 30 days';
-            }
-            return res.status(502).json({ error });
+        /* One place knows how to get bytes out of WhatsApp — the assistant
+           reads attachments too, and two copies of a two-hop fetch with its own
+           error wording is how they come to disagree. */
+        let fetched;
+        try {
+            fetched = await fetchWhatsAppMedia({ id: media.id, sentAt: msg.occurredAt });
+        } catch (e) {
+            return res.status(e.status || 502).json({ error: e.message });
         }
+        const buf = fetched.buffer;
 
-        const file = await fetch(info.url, { headers: { Authorization: `Bearer ${token}` } });
-        if (!file.ok) return res.status(502).json({ error: `Download failed (HTTP ${file.status})` });
-        const buf = Buffer.from(await file.arrayBuffer());
-
-        const mimeType = info.mime_type || media.mimeType || 'application/octet-stream';
+        const mimeType = fetched.mimeType || media.mimeType || 'application/octet-stream';
         try {
             mkdirSync(CACHE_DIR, { recursive: true });
             writeFileSync(cachePath, buf);
