@@ -196,3 +196,47 @@ test('a rush larger than the limit is answered in waves, not all at once', async
    // Twelve at once would be a good way to be rate-limited and answer nobody.
    assert.equal(peak, 5, `had ${peak} calls to OpenAI in flight at once`);
 });
+
+/* The reason a voice note went unanswered with no draft and no error: a
+ * colleague had replied five hours earlier and the pause runs twelve. */
+test('a live pause stops the assistant sending, but not suggesting', () => {
+   const paused = {
+      status: 'paused',
+      pausedUntil: new Date(Date.now() + 6 * 3600_000),
+      pendingText: 'do you have a 50 sqft unit?',
+      pendingType: 'text',
+      pendingAt: new Date(),
+   };
+
+   // Sending would talk over the colleague.
+   assert.equal(
+      decideAction({ thread: paused, config: { mode: 'auto', maxRepliesPerThreadPerDay: 20 } }).action,
+      'skip',
+   );
+   // A suggestion cannot talk over anybody, and is the whole point of drafting.
+   assert.equal(
+      decideAction({ thread: paused, config: { mode: 'draft', maxRepliesPerThreadPerDay: 20 } }).action,
+      'generate',
+   );
+});
+
+test('a voice note during a pause is still read when drafting', () => {
+   const paused = {
+      status: 'paused',
+      pausedUntil: new Date(Date.now() + 6 * 3600_000),
+      pendingText: '',
+      pendingType: 'audio',
+      pendingAt: new Date(),
+   };
+   assert.equal(decideAction({ thread: paused, config: { mode: 'draft', maxRepliesPerThreadPerDay: 20 } }).action, 'read');
+   assert.equal(decideAction({ thread: paused, config: { mode: 'auto', maxRepliesPerThreadPerDay: 20 } }).action, 'skip');
+});
+
+test('an escalated conversation is left alone even in draft mode', () => {
+   // Handing over is a decision a person made; suggesting into it would be
+   // the assistant overriding them.
+   const handed = { status: 'escalated', pendingText: 'hello', pendingType: 'text', pendingAt: new Date() };
+   for (const mode of ['draft', 'auto']) {
+      assert.equal(decideAction({ thread: handed, config: { mode, maxRepliesPerThreadPerDay: 20 } }).action, 'skip');
+   }
+});

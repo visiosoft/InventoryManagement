@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { requireAdmin } from '../middleware/auth.js';
 import { AiBotThread, User, WhatsAppMessage } from '../models/index.js';
-import { getAiBotConfig, generateReply, decideAction, runAiBotTick, aiBotState, pauseBotForHuman, DEFAULT_PROMPT } from '../services/aiBot.js';
+import { getAiBotConfig, generateReply, decideAction, runAiBotTick, aiBotState, pauseBotForHuman, HUMAN_PAUSE_FALLBACK_HOURS, DEFAULT_PROMPT } from '../services/aiBot.js';
 import { openaiConfigured, openaiModel, synthesizeSpeech } from '../services/openai.js';
 import { sendWhatsAppMedia, uploadWhatsAppMedia, whatsappSendConfigured } from '../services/whatsapp.js';
 
@@ -27,6 +27,9 @@ const shape = (config) => ({
     handoverKeywords: config.handoverKeywords || [],
     maxRepliesPerThreadPerDay: config.maxRepliesPerThreadPerDay,
     humanPauseHours: config.humanPauseHours,
+    /* What 0 really means, so the page can say "12 (default)" rather than a
+       figure the system does not use. */
+    humanPauseFallbackHours: HUMAN_PAUSE_FALLBACK_HOURS,
     defaultPrompt: DEFAULT_PROMPT,
     // So the page can show the real ceiling rather than a number copied by hand.
     promptLimit: PROMPT_LIMIT,
