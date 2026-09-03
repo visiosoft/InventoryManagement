@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { requireAdmin } from '../middleware/auth.js';
-import { AiBotThread, User } from '../models/index.js';
-import { getAiBotConfig, generateReply, decideAction, runAiBotTick, aiBotState, DEFAULT_PROMPT } from '../services/aiBot.js';
-import { openaiConfigured, openaiModel } from '../services/openai.js';
+import { AiBotThread, User, WhatsAppMessage } from '../models/index.js';
+import { getAiBotConfig, generateReply, decideAction, runAiBotTick, aiBotState, pauseBotForHuman, DEFAULT_PROMPT } from '../services/aiBot.js';
+import { openaiConfigured, openaiModel, synthesizeSpeech } from '../services/openai.js';
+import { sendWhatsAppMedia, uploadWhatsAppMedia, whatsappSendConfigured } from '../services/whatsapp.js';
 
 const router = Router();
 
@@ -179,6 +180,78 @@ router.post('/threads/:phone/dismiss-draft', async (req, res) => {
 });
 
 // Run a pass now rather than waiting for the interval — used when testing.
+/**
+ * Hear a suggested reply before it goes anywhere.
+ *
+ * Synthesised on demand rather than stored with the draft, so what you hear is
+ * the wording as it stands — including an edit made a moment ago. Nothing is
+ * sent and nothing is written down.
+ */
+router.post('/speak', async (req, res) => {
+    try {
+        const text = String(req.body?.text || '').trim();
+        if (!text) return res.status(400).json({ error: 'Nothing to say' });
+
+        const audio = await synthesizeSpeech({ text, voice: (await getAiBotConfig()).voice || 'alloy' });
+        if (!audio) return res.status(502).json({ error: 'The voice could not be produced' });
+
+        res.setHeader('Content-Type', 'audio/ogg');
+        res.setHeader('Cache-Control', 'no-store');
+        res.send(audio);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * Send a suggestion as a voice note.
+ *
+ * The same words are spoken again here rather than a recording being carried
+ * over from the preview: the preview may have been of an earlier wording, and
+ * sending a customer something different from what was approved is the one
+ * outcome worth ruling out. The words are stored on the message either way, so
+ * the thread stays readable.
+ */
+router.post('/speak-and-send', async (req, res) => {
+    try {
+        const phoneNormalized = String(req.body?.phone || '').replace(/\D/g, '');
+        const text = String(req.body?.text || '').trim();
+        if (!phoneNormalized) return res.status(400).json({ error: 'Which conversation?' });
+        if (!text) return res.status(400).json({ error: 'Nothing to say' });
+        if (!whatsappSendConfigured()) return res.status(400).json({ error: 'WhatsApp is not configured' });
+
+        const config = await getAiBotConfig();
+        const audio = await synthesizeSpeech({ text, voice: config.voice || 'alloy' });
+        if (!audio) return res.status(502).json({ error: 'The voice could not be produced — send it as text instead' });
+
+        const mediaId = await uploadWhatsAppMedia({ buffer: audio, mimeType: 'audio/ogg', filename: 'reply.ogg' });
+        const sent = await sendWhatsAppMedia({ to: phoneNormalized, mediaId, kind: 'audio', filename: 'reply.ogg' });
+
+        await WhatsAppMessage.create({
+            messageId: sent?.messages?.[0]?.id || '',
+            phone: phoneNormalized,
+            phoneNormalized,
+            direction: 'outbound',
+            type: 'audio',
+            text,
+            transcript: text,
+            status: 'sent',
+            occurredAt: new Date(),
+            // A person approved these words, so it must pause the assistant the
+            // way any other reply by hand does.
+            sentByAi: false,
+            raw: sent,
+        });
+
+        await pauseBotForHuman(phoneNormalized);
+        await AiBotThread.updateOne({ phoneNormalized }, { $set: { draftText: '', draftAt: null } });
+
+        res.json({ ok: true });
+    } catch (e) {
+        res.status(400).json({ error: e.message });
+    }
+});
+
 router.post('/run', requireAdmin, async (_req, res) => {
     res.json(await runAiBotTick());
 });

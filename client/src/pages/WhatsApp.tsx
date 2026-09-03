@@ -2027,6 +2027,34 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
 
   // Sending a quick reply goes through the server so it can attach the file,
   // set it as the caption and record one message rather than two.
+  /* Hearing a suggestion before it goes anywhere.
+   *
+   * Spoken on demand rather than stored with the draft, so what you hear is
+   * the wording as it stands. Nothing is sent by pressing play. */
+  const [hearing, setHearing] = useState(false)
+  async function hearDraft(text: string) {
+    setHearing(true)
+    setSendErr('')
+    try {
+      const { data } = await api.post('/ai-bot/speak', { text }, { responseType: 'blob' })
+      const url = URL.createObjectURL(data as Blob)
+      const audio = new Audio(url)
+      audio.onended = () => URL.revokeObjectURL(url)
+      await audio.play()
+    } catch (e) {
+      setSendErr(apiError(e))
+    } finally {
+      setHearing(false)
+    }
+  }
+
+  const sendVoiceDraft = useMutation({
+    mutationFn: ({ phone, text }: { phone: string; text: string }) =>
+      api.post('/ai-bot/speak-and-send', { phone, text }),
+    onSuccess: () => { setSendErr(''); stickToBottom.current = true; onSent() },
+    onError: (e) => setSendErr(apiError(e)),
+  })
+
   const sendQuickReply = useMutation({
     mutationFn: (templateId: string) =>
       api.post('/whatsapp/send-quick-reply', { to: selectedPhone, templateId }).then((r) => r.data),
@@ -2710,6 +2738,26 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                   className="h-7 px-3 rounded-full text-white cursor-pointer disabled:opacity-50"
                   style={{ background: '#5B2BC9', fontSize: 12, fontWeight: 700 }}>
                   Send
+                </button>
+                {/* Hear it, and send the voice — so what the customer gets is
+                    what was approved, and a spoken reply can be judged before
+                    anybody turns automatic replies on. */}
+                <button type="button"
+                  onClick={() => hearDraft(selectedConvo.botDraft!)}
+                  disabled={hearing}
+                  className="h-7 px-3 rounded-full cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5"
+                  style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, fontWeight: 600, color: MUTED_INK }}
+                  title="Hear this read aloud. Nothing is sent.">
+                  {hearing ? <Loader2 size={12} className="animate-spin" /> : <Mic size={12} />}
+                  {hearing ? 'Speaking…' : 'Hear it'}
+                </button>
+                <button type="button"
+                  onClick={() => sendVoiceDraft.mutate({ phone: selectedConvo.phoneNormalized, text: selectedConvo.botDraft! })}
+                  disabled={sendVoiceDraft.isPending}
+                  className="h-7 px-3 rounded-full cursor-pointer disabled:opacity-50"
+                  style={{ border: '1px solid #D9CBFA', background: '#fff', fontSize: 12, fontWeight: 700, color: '#4A1FA0' }}
+                  title="Send this as a voice note">
+                  {sendVoiceDraft.isPending ? 'Sending…' : 'Send as voice'}
                 </button>
                 <button type="button"
                   onClick={() => { insertText(selectedConvo.botDraft!); dismissDraft.mutate(selectedConvo.phoneNormalized) }}
