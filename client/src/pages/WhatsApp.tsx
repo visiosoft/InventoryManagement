@@ -1765,23 +1765,16 @@ export default function WhatsApp() {
   )
 
   // Newest activity first, so an incoming message floats its chat to the top.
-  /* Anything unanswered first, then newest.
+  /* Newest first, full stop.
    *
-   * Sorting by time alone buried the chats that actually wanted something: a
-   * thread with nine unread sat sixth because somebody else had said "thank
-   * you" more recently. Within each group it is still newest first, so the
-   * order underneath is the one people already know.
-   *
-   * A chat drops out of the top group once it has been read, which is the
-   * point — the top of the list is the work left. */
+   * Unread chats were floated to the top for a while, which read as wrong the
+   * moment a message arrived at 16:12 and sat below one from 13:08 that
+   * happened to be unread. The most recent thing said is the thing at the
+   * top; unread is shown by the dot and the bold, which is signal enough
+   * without also moving the row. */
   const convoList = useMemo(
-    () => [...(conversations ?? [])].sort((a, b) => {
-      const aNew = (unreadByPhone[a.phoneNormalized] ?? 0) > 0 ? 1 : 0
-      const bNew = (unreadByPhone[b.phoneNormalized] ?? 0) > 0 ? 1 : 0
-      if (aNew !== bNew) return bNew - aNew
-      return new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime()
-    }),
-    [conversations, unreadByPhone]
+    () => [...(conversations ?? [])].sort((a, b) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime()),
+    [conversations]
   )
 
   const isMine = (c: WhatsAppConversation) => Boolean(me?.id) && String(c.lead?.ownerId ?? '') === String(me?.id)
