@@ -8,6 +8,7 @@ import { Router } from 'express';
 import { Customer, Lead, LeadRoutingConfig, LeadRoutingRule, PushSubscription, User, WhatsAppMessage } from '../models/index.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { availability, countsForToday, digitTail, pickOwner, targetShares } from '../services/leadRouting.js';
+import { runLeadSla } from '../services/leadSla.js';
 
 const router = Router();
 router.use(requireAdmin);
@@ -78,10 +79,30 @@ router.put('/config', async (req, res) => {
       }
       if (req.body.enabled !== undefined) config.enabled = Boolean(req.body.enabled);
       if (req.body.timeZone) config.timeZone = String(req.body.timeZone);
+      /* The two marks on the unanswered-lead clock, in minutes. Clamped rather
+         than rejected: a typo should not be able to set a reminder to fire in
+         a second or a reassignment to fire never-but-look-set. 0 means off. */
+      for (const key of ['slaNudgeMinutes', 'slaReassignMinutes']) {
+         if (req.body[key] !== undefined) {
+            const n = Math.round(Number(req.body[key]));
+            config[key] = Number.isFinite(n) ? Math.min(24 * 60, Math.max(0, n)) : 0;
+         }
+      }
       await config.save();
       res.json(config);
    } catch (e) {
       res.status(400).json({ error: e.message });
+   }
+});
+
+/* What the clock would do right now, without waiting a minute for it or
+   writing anything. This is how the settings get trusted before they are left
+   to move somebody's leads on their own. */
+router.get('/sla/preview', async (_req, res) => {
+   try {
+      res.json(await runLeadSla({ dry: true }));
+   } catch (e) {
+      res.status(500).json({ error: e.message });
    }
 });
 

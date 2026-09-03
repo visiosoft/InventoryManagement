@@ -81,14 +81,19 @@ export function isAbsent(rule, at) {
  *
  * `counts` is how many each has already been given today, keyed by user id.
  */
-export function availability({ rules = [], counts = {}, at = new Date(), timeZone = 'Asia/Dubai' } = {}) {
+export function availability({ rules = [], counts = {}, at = new Date(), timeZone = 'Asia/Dubai', exclude = [] } = {}) {
    const available = [];
    const excluded = [];
+   /* Somebody deliberately left out of this decision. Used when a lead is
+      being taken off the person who did not answer it: handing it back to them
+      is not a reassignment. */
+   const skip = new Set([...exclude].filter(Boolean).map(String));
 
    for (const rule of rules) {
       const id = String(rule.user?._id ?? rule.user);
       const taken = Number(counts[id] || 0);
 
+      if (skip.has(id)) { excluded.push({ id, reason: 'already had it' }); continue; }
       if (rule.status !== 'active') { excluded.push({ id, reason: rule.status === 'paused' ? 'paused' : 'absent' }); continue; }
       if (isAbsent(rule, at)) { excluded.push({ id, reason: 'absent' }); continue; }
       if (!withinWorkingHours(rule, at, timeZone)) { excluded.push({ id, reason: 'off shift' }); continue; }
@@ -163,8 +168,8 @@ export function targetShares({ rules = [], available = [] }) {
  * first lead of the day everyone is at zero, so the biggest share goes first —
  * which is what somebody expects from "Ahmed takes half of them".
  */
-export function pickOwner({ rules = [], counts = {}, at = new Date(), timeZone = 'Asia/Dubai' } = {}) {
-   const { available, excluded } = availability({ rules, counts, at, timeZone });
+export function pickOwner({ rules = [], counts = {}, at = new Date(), timeZone = 'Asia/Dubai', exclude = [] } = {}) {
+   const { available, excluded } = availability({ rules, counts, at, timeZone, exclude });
    if (!available.length) {
       return { ownerId: null, reason: excluded.length ? 'nobody is available' : 'no distribution rules are set', excluded };
    }

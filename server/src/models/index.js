@@ -268,6 +268,11 @@ const leadSchema = new Schema(
     // Cleared whenever the lead is reassigned, because it is new to the person
     // receiving it however old the record is.
     ownerSeenAt: { type: Date, default: null },
+    /* When the owner was reminded that this is still unanswered, and when it
+       was taken off somebody for not answering. Both stop the clock repeating
+       itself — see services/leadSla.js. */
+    slaNudgedAt: { type: Date, default: null },
+    slaReassignedAt: { type: Date, default: null },
 
     /* When somebody was put on this lead.
      *
@@ -1915,6 +1920,11 @@ const leadRoutingConfigSchema = new Schema({
      account with a history, and go to whoever looks after accounts rather than
      into the rotation. Null keeps them in it. */
   existingCustomerUser: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+  /* The clock on a lead nobody has answered yet — see services/leadSla.js.
+     Minutes from being handed over to a reminder, and from being handed over
+     to being taken back and given to somebody else. 0 turns either off. */
+  slaNudgeMinutes: { type: Number, default: 15, min: 0 },
+  slaReassignMinutes: { type: Number, default: 30, min: 0 },
 }, { timestamps: true });
 
 export const LeadRoutingRule = model('LeadRoutingRule', leadRoutingRuleSchema);

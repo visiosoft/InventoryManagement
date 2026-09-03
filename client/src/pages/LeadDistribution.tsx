@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Bell, BellOff, Bot, Plus, Trash2, UserCheck } from 'lucide-react'
+import { AlertTriangle, Bell, BellOff, Bot, Clock, Plus, Trash2, UserCheck } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { PageHeader, Card, CardHeader, CardBody, Spinner, Field, Input, Select, Button } from '../components/ui'
 
@@ -48,6 +48,10 @@ type Data = {
     outOfHoursMode: 'ai' | 'unassigned' | 'user'
     outOfHoursUser?: string | null
     existingCustomerUser?: string | null
+    /* The clock on a lead nobody has answered, in minutes. 0 turns either
+       half off. */
+    slaNudgeMinutes?: number
+    slaReassignMinutes?: number
   }
   people: Person[]
   rules: Rule[]
@@ -239,6 +243,38 @@ export default function LeadDistribution() {
 
           {/* The rest */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <Card>
+              <CardHeader title="When a lead is not answered" subtitle="Handing it over is not the same as somebody replying" />
+              <CardBody className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Remind the owner after">
+                    <Select
+                      value={String(config.slaNudgeMinutes ?? 15)}
+                      onChange={(e) => saveConfig.mutate({ slaNudgeMinutes: Number(e.target.value) })}
+                    >
+                      <option value="0">Never</option>
+                      {[5, 10, 15, 20, 30, 45, 60].map((m) => <option key={m} value={m}>{m} minutes</option>)}
+                    </Select>
+                  </Field>
+                  <Field label="Give it to somebody else after">
+                    <Select
+                      value={String(config.slaReassignMinutes ?? 30)}
+                      onChange={(e) => saveConfig.mutate({ slaReassignMinutes: Number(e.target.value) })}
+                    >
+                      <option value="0">Never — leave it with them</option>
+                      {[15, 30, 45, 60, 90, 120].map((m) => <option key={m} value={m}>{m} minutes</option>)}
+                    </Select>
+                  </Field>
+                </div>
+                <p className="flex items-start gap-2" style={{ fontSize: 12, color: MUTED }}>
+                  <Clock size={14} style={{ marginTop: 1, flexShrink: 0 }} />
+                  The clock stops when the rep logs an attempt or moves the stage — opening the lead does
+                  not count. A lead is only ever moved once, and never moved at all when there is nobody
+                  else on shift to take it; in that case the owner is reminded instead.
+                </p>
+              </CardBody>
+            </Card>
+
             <Card>
               <CardHeader title="Out of hours" subtitle="When nobody is on shift, or everybody has hit their cap" />
               <CardBody className="space-y-3">

@@ -92,6 +92,7 @@ import { runAiBotTick, getAiBotConfig } from './services/aiBot.js';
 import { summariseRecent } from './services/conversationSummary.js';
 import { ensureDigest, dayKeyFor, previousDay, localHour } from './services/dailyDigest.js';
 import { runDayBriefs } from './services/dayBrief.js';
+import { runLeadSla } from './services/leadSla.js';
 import { runCampaignTick } from './services/campaignSender.js';
 import { inspectWhatsAppToken } from './services/whatsapp.js';
 import { runAutomationRules, getAutoSend } from './services/automationEngine.js';
@@ -450,6 +451,21 @@ async function start() {
    * overnight enquiry goes out at the start of the morning. Every two minutes,
    * starting a little after boot so it is not competing with everything else
    * that runs at startup. */
+  /* The clock on a lead nobody has answered: a reminder to its owner, and
+     then it goes to somebody else. Every minute, because fifteen minutes late
+     on a fifteen-minute promise is half a promise. Does nothing unless
+     distribution is on — see services/leadSla.js. */
+  setTimeout(() => setInterval(async () => {
+    try {
+      const out = await runLeadSla();
+      if (out.nudged || out.reassigned) {
+        console.log(`[LeadSLA] reminded ${out.nudged}, moved ${out.reassigned}`);
+      }
+    } catch (e) {
+      console.error('[LeadSLA]', e.message);
+    }
+  }, 60_000), 60_000);
+
   const SWEEP_INTERVAL = 2 * 60 * 1000;
   setTimeout(() => setInterval(async () => {
     try {
