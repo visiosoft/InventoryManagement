@@ -2031,22 +2031,53 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
    *
    * Spoken on demand rather than stored with the draft, so what you hear is
    * the wording as it stands. Nothing is sent by pressing play. */
-  const [hearing, setHearing] = useState(false)
+  const [hearing, setHearing] = useState<'loading' | 'playing' | null>(null)
+  // Held so it can be stopped: a fifteen-second reply you have already judged
+  // is fifteen seconds you cannot get back.
+  const playingRef = useRef<HTMLAudioElement | null>(null)
+
+  function stopHearing() {
+    const audio = playingRef.current
+    if (audio) {
+      audio.pause()
+      audio.currentTime = 0
+      if (audio.src.startsWith('blob:')) URL.revokeObjectURL(audio.src)
+      playingRef.current = null
+    }
+    setHearing(null)
+  }
+
   async function hearDraft(text: string) {
-    setHearing(true)
+    if (hearing) { stopHearing(); return }
+    setHearing('loading')
     setSendErr('')
     try {
       const { data } = await api.post('/ai-bot/speak', { text }, { responseType: 'blob' })
       const url = URL.createObjectURL(data as Blob)
       const audio = new Audio(url)
-      audio.onended = () => URL.revokeObjectURL(url)
+      playingRef.current = audio
+      const done = () => { URL.revokeObjectURL(url); playingRef.current = null; setHearing(null) }
+      audio.onended = done
+      audio.onerror = done
       await audio.play()
+      setHearing('playing')
     } catch (e) {
       setSendErr(apiError(e))
-    } finally {
-      setHearing(false)
+      setHearing(null)
     }
   }
+
+  // Leaving the chat should not leave a voice talking to an empty room.
+  useEffect(() => stopHearing, [selectedPhone])
+
+  /* A dismissed suggestion is gone, which is what dismissing means. This asks
+     for another against the same conversation, for one dismissed by accident
+     or a wording worth a second try. */
+  const suggestAgain = useMutation({
+    mutationFn: (phone: string) => api.post(`/ai-bot/threads/${phone}/suggest`),
+    onSuccess: () => { setSendErr(''); refetchConvos() },
+    onError: (e) => setSendErr(apiError(e)),
+  })
 
   const sendVoiceDraft = useMutation({
     mutationFn: ({ phone, text }: { phone: string; text: string }) =>
@@ -2720,6 +2751,26 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
             </div>
           )}
 
+          {/* No suggestion, so offer to write one.
+              Dismissing removes a suggestion for good, which is what it should
+              do — but there was then no way to ask for another until the
+              customer wrote again. */}
+          {selectedConvo && !selectedConvo.botDraft && selectedConvo.botStatus !== 'escalated' && (
+            <div className="shrink-0 mx-6 mb-2">
+              <button
+                type="button"
+                onClick={() => suggestAgain.mutate(selectedConvo.phoneNormalized)}
+                disabled={suggestAgain.isPending}
+                className="h-7 px-3 rounded-full cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-50"
+                style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, fontWeight: 600, color: '#4A1FA0' }}
+                title="Ask the assistant for a reply to their last message"
+              >
+                {suggestAgain.isPending ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                {suggestAgain.isPending ? 'Thinking…' : 'Suggest a reply'}
+              </button>
+            </div>
+          )}
+
           {/* A suggested reply. It is never sent on its own — someone reads it
               and presses Send, or edits it in the composer first. */}
           {selectedConvo?.botDraft && (
@@ -2744,12 +2795,13 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                     anybody turns automatic replies on. */}
                 <button type="button"
                   onClick={() => hearDraft(selectedConvo.botDraft!)}
-                  disabled={hearing}
-                  className="h-7 px-3 rounded-full cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5"
+                  className="h-7 px-3 rounded-full cursor-pointer inline-flex items-center gap-1.5"
                   style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, fontWeight: 600, color: MUTED_INK }}
-                  title="Hear this read aloud. Nothing is sent.">
-                  {hearing ? <Loader2 size={12} className="animate-spin" /> : <Mic size={12} />}
-                  {hearing ? 'Speaking…' : 'Hear it'}
+                  title={hearing === 'playing' ? 'Stop' : 'Hear this read aloud. Nothing is sent.'}>
+                  {hearing === 'loading' ? <Loader2 size={12} className="animate-spin" />
+                    : hearing === 'playing' ? <Square size={11} />
+                      : <Mic size={12} />}
+                  {hearing === 'loading' ? 'Speaking…' : hearing === 'playing' ? 'Stop' : 'Hear it'}
                 </button>
                 <button type="button"
                   onClick={() => sendVoiceDraft.mutate({ phone: selectedConvo.phoneNormalized, text: selectedConvo.botDraft! })}

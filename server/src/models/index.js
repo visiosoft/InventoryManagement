@@ -1681,7 +1681,14 @@ const aiBotConfigSchema = new Schema({
      spoken answer to somebody who typed cannot be skimmed or copied, and a
      price is the thing people most want to read back. */
   replyWithVoice: { type: Boolean, default: false },
-  voice: { type: String, default: 'alloy' },
+  voice: { type: String, default: 'coral' },
+  /* How it should sound. Steers delivery rather than wording, and matters more
+     than the voice does — the flat, announcement-like reading people call
+     robotic is what you get with nothing here. */
+  voiceStyle: {
+    type: String,
+    default: 'Speak warmly and naturally, like a friendly colleague on the phone. Normal conversational rhythm, unhurried, never like reading an announcement.',
+  },
 }, { timestamps: true });
 
 // One per conversation, holding the state machine and any pending draft.

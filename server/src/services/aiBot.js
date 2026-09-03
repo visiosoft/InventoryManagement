@@ -547,7 +547,7 @@ async function handleThread(thread, config) {
     const spokenTo = READABLE_TYPES.has(thread.pendingType) && thread.pendingType !== 'image';
     let voiceNote = null;
     if (config.replyWithVoice && spokenTo) {
-        voiceNote = await synthesizeSpeech({ text: result.reply, voice: config.voice || 'alloy' });
+        voiceNote = await synthesizeSpeech({ text: result.reply, voice: config.voice || 'coral', instructions: config.voiceStyle || '' });
     }
 
     let sent;

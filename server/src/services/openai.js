@@ -237,10 +237,14 @@ export async function transcribeAudio({ buffer, mimeType = 'audio/ogg', filename
  * voice note rather than a file to download — the same shape the browser
  * recorder is repackaged into before sending.
  *
+ * `instructions` steers the delivery — warmth, pace, how conversational it is.
+ * It is the difference between a person and an announcement, and it does more
+ * for how human it sounds than the choice of voice does.
+ *
  * Returns the bytes, or null when it could not be produced. Null must mean
  * "send the text instead", never "send nothing".
  */
-export async function synthesizeSpeech({ text, voice = 'alloy', timeout = 45000 }) {
+export async function synthesizeSpeech({ text, voice = 'coral', instructions = '', timeout = 45000 }) {
     if (!openaiConfigured()) return null;
     const words = String(text || '').trim();
     if (!words) return null;
@@ -248,7 +252,16 @@ export async function synthesizeSpeech({ text, voice = 'alloy', timeout = 45000 
     try {
         const { data } = await axios.post(
             `${API_BASE}/audio/speech`,
-            { model: SPEECH_MODEL, voice, input: words.slice(0, 4000), response_format: 'opus' },
+            {
+                model: SPEECH_MODEL,
+                voice,
+                input: words.slice(0, 4000),
+                response_format: 'opus',
+                /* How it should be said, not what. Without this the delivery is
+                   flat and announcement-like — the thing people mean when they
+                   say a voice sounds robotic. */
+                ...(instructions ? { instructions } : {}),
+            },
             { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` }, responseType: 'arraybuffer', timeout },
         );
         const buffer = Buffer.from(data);

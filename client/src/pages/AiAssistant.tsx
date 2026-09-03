@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { Bot, Save, Play, AlertTriangle, UserCheck, X } from 'lucide-react'
@@ -14,6 +14,8 @@ type Config = {
   sendVideoOnFirstContact: boolean
   replyWithVoice: boolean
   voice: string
+  voiceStyle: string
+  voices?: string[]
   escalateTo: string
   handoverKeywords: string[]
   maxRepliesPerThreadPerDay: number
@@ -28,6 +30,41 @@ type Assignable = { _id: string; name: string; email: string; role: string }
 type TestResult = { reply: string; needsHuman: boolean; reason: string; model?: string; facts?: string }
 
 export default function AiAssistant() {
+  /* Hearing a voice before saving it. Sent the unsaved choice, so trying one
+     costs nothing and does not have to be committed to first. */
+  const [speaking, setSpeaking] = useState(false)
+  const voicePlayer = useRef<HTMLAudioElement | null>(null)
+  const [voiceErr, setVoiceErr] = useState('')
+
+  function stopVoice() {
+    const a = voicePlayer.current
+    if (a) { a.pause(); if (a.src.startsWith('blob:')) URL.revokeObjectURL(a.src); voicePlayer.current = null }
+    setSpeaking(false)
+  }
+
+  async function hearVoice() {
+    if (speaking) { stopVoice(); return }
+    setVoiceErr('')
+    setSpeaking(true)
+    try {
+      const { data } = await api.post('/ai-bot/speak', {
+        text: 'Yes, we have fifty square foot units free from next week. They are 950 dirhams for four weeks. Shall I hold one for you?',
+        voice: draft?.voice,
+        voiceStyle: draft?.voiceStyle,
+      }, { responseType: 'blob' })
+      const url = URL.createObjectURL(data as Blob)
+      const audio = new Audio(url)
+      voicePlayer.current = audio
+      const done = () => { URL.revokeObjectURL(url); voicePlayer.current = null; setSpeaking(false) }
+      audio.onended = done
+      audio.onerror = done
+      await audio.play()
+    } catch (e) {
+      setVoiceErr(apiError(e))
+      setSpeaking(false)
+    }
+  }
+
   const qc = useQueryClient()
   const [draft, setDraft] = useState<Config | null>(null)
   const [error, setError] = useState('')
@@ -193,18 +230,50 @@ export default function AiAssistant() {
                 be skimmed, and a price is the thing people most want to read back. The words are
                 saved on the message either way, so the thread stays readable and searchable.
                 {draft.replyWithVoice && (
-                  <span className="block mt-1">
-                    Voice:{' '}
-                    <select
-                      value={draft.voice}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => set({ voice: e.target.value })}
-                      className="border rounded px-1.5 py-0.5 text-[12.5px]"
-                    >
-                      {['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'].map((v) => (
-                        <option key={v} value={v}>{v}</option>
-                      ))}
-                    </select>
+                  <span className="block mt-2 space-y-2" onClick={(e) => e.stopPropagation()}>
+                    <span className="block">
+                      Voice:{' '}
+                      <select
+                        value={draft.voice}
+                        onChange={(e) => set({ voice: e.target.value })}
+                        className="border rounded px-1.5 py-0.5 text-[12.5px]"
+                      >
+                        {(draft.voices ?? ['coral', 'sage', 'ballad', 'ash', 'verse']).map((v) => (
+                          <option key={v} value={v}>{v}</option>
+                        ))}
+                      </select>
+                      {' '}
+                      <button
+                        type="button"
+                        onClick={() => hearVoice()}
+                        className="underline cursor-pointer"
+                        style={{ color: '#4A1FA0' }}
+                      >
+                        {speaking ? 'stop' : 'hear it'}
+                      </button>
+                      {voiceErr && <span className="block text-[12px]" style={{ color: '#B91C1C' }}>{voiceErr}</span>}
+                      <span className="block text-[12px] mt-0.5">
+                        The first few are the newer, more natural voices. <strong>alloy</strong> and{' '}
+                        <strong>echo</strong> are the flattest — they are what sounds robotic.
+                      </span>
+                    </span>
+
+                    {/* Delivery, not wording. This does more for how human it
+                        sounds than the choice of voice does. */}
+                    <span className="block">
+                      <span className="block font-medium text-[13px]">How it should sound</span>
+                      <textarea
+                        rows={2}
+                        value={draft.voiceStyle}
+                        onChange={(e) => set({ voiceStyle: e.target.value })}
+                        className="w-full border rounded px-2 py-1 text-[12.5px] mt-0.5"
+                        placeholder="Speak warmly and naturally, like a friendly colleague on the phone…"
+                      />
+                      <span className="block text-[12px]">
+                        Describe the delivery — warmth, pace, how conversational. Press “hear it” to
+                        try a change before saving it.
+                      </span>
+                    </span>
                   </span>
                 )}
               </span>

@@ -12,7 +12,10 @@ const router = Router();
 const PROMPT_LIMIT = 40000;
 
 /** The voices OpenAI offers for spoken replies. */
-const VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
+/* Every voice the speech model offers. The first five are the newer, more
+   natural ones; alloy and echo are the flattest, which is what people mean
+   when they say it sounds robotic. */
+const VOICES = ['coral', 'sage', 'ballad', 'ash', 'verse', 'nova', 'shimmer', 'fable', 'onyx', 'alloy', 'echo'];
 
 const shape = (config) => ({
     enabled: config.enabled,
@@ -22,7 +25,9 @@ const shape = (config) => ({
     autoSummarise: config.autoSummarise !== false,
     sendVideoOnFirstContact: Boolean(config.sendVideoOnFirstContact),
     replyWithVoice: Boolean(config.replyWithVoice),
-    voice: config.voice || 'alloy',
+    voice: config.voice || 'coral',
+    voiceStyle: config.voiceStyle || '',
+    voices: VOICES,
     escalateTo: config.escalateTo ? String(config.escalateTo) : '',
     handoverKeywords: config.handoverKeywords || [],
     maxRepliesPerThreadPerDay: config.maxRepliesPerThreadPerDay,
@@ -68,6 +73,7 @@ router.put('/config', requireAdmin, async (req, res) => {
     if (b.replyWithVoice !== undefined) config.replyWithVoice = Boolean(b.replyWithVoice);
     // Only the voices OpenAI actually offers; anything else is a silent failure.
     if (b.voice !== undefined && VOICES.includes(String(b.voice))) config.voice = String(b.voice);
+    if (b.voiceStyle !== undefined) config.voiceStyle = String(b.voiceStyle).slice(0, 600);
     if (b.handoverKeywords !== undefined) {
         config.handoverKeywords = (Array.isArray(b.handoverKeywords) ? b.handoverKeywords : [])
             .map((k) => String(k).trim().toLowerCase()).filter(Boolean).slice(0, 30);
@@ -168,6 +174,46 @@ router.post('/threads/:phone/resume', requireAdmin, async (req, res) => {
     res.json({ ok: true });
 });
 
+/**
+ * Write a fresh suggestion for whatever the customer last said.
+ *
+ * A dismissed suggestion is gone — that is what dismissing means — and there
+ * was no way to ask for another short of waiting for the customer to write
+ * again. This asks now, against the same conversation, so a suggestion
+ * dismissed by accident or a wording worth a second try is one click away.
+ */
+router.post('/threads/:phone/suggest', async (req, res) => {
+    try {
+        const phoneNormalized = String(req.params.phone).replace(/\D/g, '');
+        const config = await getAiBotConfig();
+        if (!openaiConfigured()) return res.status(400).json({ error: 'OpenAI is not configured' });
+
+        const thread = await AiBotThread.findOne({ phoneNormalized });
+        // The last thing they actually said, which is what a reply answers.
+        const lastInbound = await WhatsAppMessage.findOne({ phoneNormalized, direction: 'inbound' })
+            .sort({ occurredAt: -1 }).select('text type').lean();
+
+        const inboundText = String(thread?.pendingText || lastInbound?.text || '').trim();
+        if (!inboundText) {
+            return res.status(400).json({ error: 'There is nothing of theirs to answer — the last thing they sent was not text the assistant can read' });
+        }
+
+        const result = await generateReply({ phoneNormalized, inboundText, config });
+        if (!result.reply) {
+            return res.status(502).json({ error: result.reason || 'The assistant had nothing to suggest' });
+        }
+
+        await AiBotThread.updateOne(
+            { phoneNormalized },
+            { $set: { draftText: result.reply, draftAt: new Date() }, $setOnInsert: { phoneNormalized } },
+            { upsert: true },
+        );
+        res.json({ ok: true, reply: result.reply, needsHuman: Boolean(result.needsHuman) });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // Clear a suggestion a human does not want.
 router.post('/threads/:phone/dismiss-draft', async (req, res) => {
     const phoneNormalized = String(req.params.phone).replace(/\D/g, '');
@@ -188,7 +234,16 @@ router.post('/speak', async (req, res) => {
         const text = String(req.body?.text || '').trim();
         if (!text) return res.status(400).json({ error: 'Nothing to say' });
 
-        const audio = await synthesizeSpeech({ text, voice: (await getAiBotConfig()).voice || 'alloy' });
+        /* A voice and a style may be supplied so the settings page can try one
+           before saving it; otherwise it speaks as it currently would. */
+        const config = await getAiBotConfig();
+        const audio = await synthesizeSpeech({
+            text,
+            voice: VOICES.includes(String(req.body?.voice)) ? String(req.body.voice) : (config.voice || 'coral'),
+            instructions: req.body?.voiceStyle !== undefined
+                ? String(req.body.voiceStyle).slice(0, 600)
+                : (config.voiceStyle || ''),
+        });
         if (!audio) return res.status(502).json({ error: 'The voice could not be produced' });
 
         res.setHeader('Content-Type', 'audio/ogg');
@@ -217,7 +272,7 @@ router.post('/speak-and-send', async (req, res) => {
         if (!whatsappSendConfigured()) return res.status(400).json({ error: 'WhatsApp is not configured' });
 
         const config = await getAiBotConfig();
-        const audio = await synthesizeSpeech({ text, voice: config.voice || 'alloy' });
+        const audio = await synthesizeSpeech({ text, voice: config.voice || 'coral', instructions: config.voiceStyle || '' });
         if (!audio) return res.status(502).json({ error: 'The voice could not be produced — send it as text instead' });
 
         const mediaId = await uploadWhatsAppMedia({ buffer: audio, mimeType: 'audio/ogg', filename: 'reply.ogg' });
