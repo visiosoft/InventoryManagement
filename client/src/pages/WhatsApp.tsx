@@ -2994,18 +2994,28 @@ export default function WhatsApp() {
                                   <span
                                     className="ml-1.5 inline-flex items-center gap-1 rounded-full px-1.5"
                                     style={{ background: '#EDE5FF', fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase' }}
-                                    title={t.mediaKind === 'location' ? 'Sends our location pin — use Send, not Insert' : 'Sends a file — use Send, not Insert'}
+                                    title={t.mediaKind === 'location' ? 'Sends our location pin' : `Sends a ${t.mediaKind}`}
                                   >
                                     {t.mediaKind === 'location' ? <MapPin size={9} /> : <Paperclip size={9} />}{t.mediaKind}
                                   </span>
                                 )}
                               </div>
+                              {/* Tapping the words sends the whole reply when it
+                                  carries a file, and only drops the text into
+                                  the composer when there is nothing else to
+                                  lose. Inserting a video reply put its caption
+                                  in the box and left the video behind — the
+                                  customer got the words about a tour and no
+                                  tour, and the rep had no way of knowing. */}
                               <button
                                 type="button"
-                                onClick={() => insertText(t.whatsappBody)}
-                                className="text-left w-full cursor-pointer hover:opacity-75"
+                                onClick={() => (t.mediaKind
+                                  ? sendQuickReply.mutate(t._id)
+                                  : insertText(t.whatsappBody))}
+                                disabled={Boolean(t.mediaKind) && (!selectedPhone || sendQuickReply.isPending)}
+                                className="text-left w-full cursor-pointer hover:opacity-75 disabled:opacity-40"
                                 style={{ fontSize: 12.5, color: MUTED_INK, whiteSpace: 'pre-wrap' }}
-                                title="Insert into composer"
+                                title={t.mediaKind ? `Send this, with the ${t.mediaKind}` : 'Insert into the message box'}
                               >
                                 {t.whatsappBody}
                               </button>
