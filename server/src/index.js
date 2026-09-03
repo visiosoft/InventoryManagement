@@ -91,6 +91,7 @@ import { runWhatsAppLabelReconciliation } from './services/whatsappLeadSync.js';
 import { runAiBotTick, getAiBotConfig } from './services/aiBot.js';
 import { summariseRecent } from './services/conversationSummary.js';
 import { ensureDigest, dayKeyFor, previousDay, localHour } from './services/dailyDigest.js';
+import { runDayBriefs } from './services/dayBrief.js';
 import { runCampaignTick } from './services/campaignSender.js';
 import { inspectWhatsAppToken } from './services/whatsapp.js';
 import { runAutomationRules, getAutoSend } from './services/automationEngine.js';
@@ -408,6 +409,21 @@ async function start() {
       if (out.pushed) console.log(`[Push] ${out.pushed} follow-up reminder(s) sent`);
     } catch (e) {
       console.error('[Push]', e.message);
+    }
+  }, 60_000);
+
+  /* Everybody's morning brief: what is late, what is due, who is waiting.
+     Same minute tick and fixed local hour as the digest, idempotent through
+     each user's dayBriefSentAt rather than a stored row. Sends to people, not
+     to customers. */
+  const DAY_BRIEF_HOUR = Number(process.env.DAY_BRIEF_HOUR ?? 8);
+  setInterval(async () => {
+    try {
+      if (localHour() !== DAY_BRIEF_HOUR) return;
+      const out = await runDayBriefs();
+      if (out.sent) console.log(`[DayBrief] sent ${out.sent} brief(s)`);
+    } catch (e) {
+      console.error('[DayBrief]', e.message);
     }
   }, 60_000);
 

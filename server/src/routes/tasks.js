@@ -3,6 +3,7 @@ import multer from 'multer';
 import { Task, User, nextTaskNo } from '../models/index.js';
 import { uploadFile } from '../services/drive.js';
 import { notifyTaskAssigned } from '../services/taskNotify.js';
+import { runDayBriefs } from '../services/dayBrief.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
@@ -11,6 +12,21 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 
 router.use((req, res, next) => {
   if (req.user?.role === 'staff') return res.status(403).json({ error: 'Not allowed' });
   next();
+});
+
+/* Send the morning brief now.
+ *
+ * The job runs itself at 08:00, but a thing that happens once a day is a thing
+ * nobody can check. This is how it gets tried, and how somebody sees what
+ * their team is actually being sent. `?dry=1` reports without sending. */
+router.post('/day-brief/run', async (req, res) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Only an admin can send the morning brief' });
+  try {
+    const out = await runDayBriefs({ dry: String(req.query.dry || '') === '1' });
+    res.json(out);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 const ALLOWED_PRIORITY = new Set(['low', 'medium', 'high']);

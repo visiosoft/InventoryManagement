@@ -38,6 +38,10 @@ const userSchema = new Schema(
     isActive: { type: Boolean, default: true },
     resetToken: { type: String, default: null },
     resetTokenExpiry: { type: Date, default: null },
+    /* When this person was last sent their morning brief. Stored rather than
+       assumed: it is what stops a restart at 07:30 sending a second one — see
+       services/dayBrief.js. */
+    dayBriefSentAt: { type: Date, default: null },
     // Guided walkthroughs. `enabled` defaults true so a new user gets them
     // without anything being written for them first, which is what "on for any
     // new user" has to mean. An id absent from `completed` means not yet seen.
