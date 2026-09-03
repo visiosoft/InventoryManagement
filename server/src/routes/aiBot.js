@@ -4,6 +4,8 @@ import { AiBotThread, User, WhatsAppMessage } from '../models/index.js';
 import { getAiBotConfig, generateReply, decideAction, runAiBotTick, aiBotState, pauseBotForHuman, speakAsConfigured, DEFAULT_PROMPT } from '../services/aiBot.js';
 import { openaiConfigured, openaiModel, synthesizeSpeech } from '../services/openai.js';
 import { sendWhatsAppMedia, uploadWhatsAppMedia, whatsappSendConfigured } from '../services/whatsapp.js';
+import { understandMedia } from '../services/mediaUnderstanding.js';
+import { mediaFromRaw } from './whatsappMedia.js';
 
 const router = Router();
 
@@ -16,6 +18,27 @@ const PROMPT_LIMIT = 40000;
    natural ones; alloy and echo are the flattest, which is what people mean
    when they say it sounds robotic. */
 /** What can be put behind the voice. */
+/** What the assistant can make sense of itself. Mirrors READABLE_TYPES in
+ *  services/aiBot.js — the worker and this button must agree about what can be
+ *  answered, or one of them refuses what the other handles. */
+const READABLE = new Set(['audio', 'voice', 'image']);
+
+/** What a customer would call the thing they just sent. The words go into the
+ *  prompt, so "a audio" reads back in the suggestion; these do not. */
+const ATTACHMENT_NAMES = {
+    audio: 'a voice note',
+    voice: 'a voice note',
+    image: 'a photo',
+    video: 'a video',
+    document: 'a document',
+    location: 'their location',
+    sticker: 'a sticker',
+    contacts: 'a contact card',
+};
+function describeAttachment(type) {
+    return ATTACHMENT_NAMES[String(type)] || 'something the assistant cannot open';
+}
+
 const AMBIENCE = ['none', 'room', 'office', 'callcentre'];
 
 const VOICES = ['coral', 'sage', 'ballad', 'ash', 'verse', 'nova', 'shimmer', 'fable', 'onyx', 'alloy', 'echo'];
@@ -200,11 +223,50 @@ router.post('/threads/:phone/suggest', async (req, res) => {
         const thread = await AiBotThread.findOne({ phoneNormalized });
         // The last thing they actually said, which is what a reply answers.
         const lastInbound = await WhatsAppMessage.findOne({ phoneNormalized, direction: 'inbound' })
-            .sort({ occurredAt: -1 }).select('text type').lean();
+            .sort({ occurredAt: -1 }).select('text type transcript raw occurredAt').lean();
 
-        const inboundText = String(thread?.pendingText || lastInbound?.text || '').trim();
+        let inboundText = String(thread?.pendingText || lastInbound?.text || lastInbound?.transcript || '').trim();
+        let note = '';
+
+        /* A voice note or a photo is read here too.
+         *
+         * This asked only for text and refused everything else — "there is
+         * nothing of theirs to answer" — while the worker that writes
+         * suggestions on its own had been reading both for days. Pressing the
+         * button after somebody sent a voice note gave an error about a
+         * limitation that no longer existed.
+         */
+        if (!inboundText && READABLE.has(String(lastInbound?.type))) {
+            const read = await understandMedia({
+                kind: lastInbound.type,
+                mediaId: mediaFromRaw(lastInbound.raw)?.id || '',
+                sentAt: lastInbound.occurredAt,
+            });
+            if (read.text) {
+                inboundText = read.text;
+                // Kept, so a colleague sees the words rather than a player.
+                if (read.kind === 'audio') {
+                    await WhatsAppMessage.updateOne({ _id: lastInbound._id }, { $set: { transcript: read.text } }).catch(() => {});
+                }
+            } else {
+                /* Why it could not be read stays out of the prompt: those
+                   messages are for us ("reconnect the token in Settings"), and
+                   a customer must never be told about our plumbing. */
+                note = 'it could not be opened';
+            }
+        }
+
+        /* Every message gets an answer.
+         *
+         * This used to refuse anything it could not read, which meant the
+         * button did nothing on exactly the conversations somebody most wants
+         * help with — a video, a document, a sticker. The whole conversation is
+         * still there to answer from, so an attachment nobody can read is
+         * described and the assistant replies to it the way a person would:
+         * acknowledging what arrived and asking about it.
+         */
         if (!inboundText) {
-            return res.status(400).json({ error: 'There is nothing of theirs to answer — the last thing they sent was not text the assistant can read' });
+            inboundText = `[The customer sent ${describeAttachment(lastInbound?.type)}${note ? `, and ${note}` : ''}. Acknowledge what they sent, answer from the rest of the conversation, and ask them about it if you need to.]`;
         }
 
         const result = await generateReply({ phoneNormalized, inboundText, config });
