@@ -454,6 +454,30 @@ async function handleThread(thread, config) {
         return;
     }
 
+    /* Last look before it speaks.
+     *
+     * A colleague replying pauses the assistant, whether they type in the
+     * console or answer from the WhatsApp app on their phone. What neither
+     * covers is the few seconds this reply spent being written: a rep can
+     * answer in that window, and the assistant would then say its piece on top
+     * of them. Cheap to check, and the alternative is the assistant talking
+     * over somebody in front of a customer. */
+    const humanSince = await WhatsAppMessage.findOne({
+        phoneNormalized: thread.phoneNormalized,
+        direction: 'outbound',
+        sentByAi: { $ne: true },
+        occurredAt: { $gt: thread.pendingAt || new Date(0) },
+    }).select('_id').lean();
+    if (humanSince) {
+        thread.handledMessageId = thread.pendingMessageId;
+        thread.draftText = '';
+        thread.draftAt = null;
+        await thread.save();
+        await pauseBotForHuman(thread.phoneNormalized);
+        aiBotState.skipped += 1;
+        return;
+    }
+
     const sent = await sendWhatsAppText({ to: thread.phoneNormalized, body: result.reply });
     await WhatsAppMessage.create({
         messageId: sent?.messages?.[0]?.id || '',
@@ -484,6 +508,23 @@ async function handleThread(thread, config) {
  * it, and the retry would produce a second reply. Waiting a few seconds also
  * means a customer who fires off three messages gets one considered answer.
  */
+/** How many conversations are answered at once. Enough that a small rush is
+ *  handled together, few enough not to trip OpenAI's rate limit. */
+const AI_CONCURRENCY = 5;
+
+/**
+ * Run `work` over everything, `size` at a time.
+ *
+ * Promise.all over the lot would be simpler and would put twenty requests to
+ * OpenAI in flight at once; a rate-limit rejection there means nobody gets
+ * answered, which is worse than the fourth person waiting a moment.
+ */
+async function inBatches(items, size, work) {
+    for (let i = 0; i < items.length; i += size) {
+        await Promise.all(items.slice(i, i + size).map(work));
+    }
+}
+
 export async function runAiBotTick() {
     try {
         const config = await getAiBotConfig();
@@ -495,7 +536,20 @@ export async function runAiBotTick() {
             $expr: { $ne: ['$pendingMessageId', '$handledMessageId'] },
         }).limit(20);
 
-        for (const thread of threads) {
+        /* Everybody waiting is answered at the same time.
+         *
+         * This used to await each conversation in turn, so four people who
+         * messaged together were answered one after another — each waiting on
+         * the previous person's call to the model, which takes a few seconds.
+         * The fourth could wait the better part of a minute for a reply the
+         * system had all the information to write immediately.
+         *
+         * The conversations are genuinely independent: each reads its own
+         * history and writes only its own thread, so there is nothing to
+         * serialise for correctness. Capped anyway, because twenty simultaneous
+         * calls to OpenAI is a good way to be rate-limited and answer nobody.
+         */
+        await inBatches(threads, AI_CONCURRENCY, async (thread) => {
             aiBotState.considered += 1;
             try {
                 await handleThread(thread, config);
@@ -507,7 +561,7 @@ export async function runAiBotTick() {
                     await thread.save();
                 } catch { /* the tick must survive a bad thread */ }
             }
-        }
+        });
 
         aiBotState.at = new Date().toISOString();
         return { considered: threads.length };

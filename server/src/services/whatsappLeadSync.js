@@ -2,7 +2,8 @@ import { Lead, User, WhatsAppLabelState, WhatsAppWebhookEvent, WhatsAppMessage }
 import { routeInboundLead } from './leadRouting.js';
 import { notifyLeadAssigned } from './leadNotify.js';
 import { normalizeLeadPhone } from '../routes/leads.js';
-import { noteInboundForBot, pauseBotForHuman } from './aiBot.js';
+import { getAiBotConfig, noteInboundForBot, pauseBotForHuman } from './aiBot.js';
+import { sendFirstContactVideo } from './firstContact.js';
 
 const DEFAULT_STATUS_BY_LABEL = {
     lead: 'new',
@@ -439,6 +440,12 @@ async function persistMessages(messages) {
         // decides whether to reply; this only records that something arrived,
         // so the webhook still returns to Meta immediately.
         if (msg.direction === 'inbound') {
+            /* Their first message gets the tour, before anything else is
+               said about the place. Not awaited into the delivery path — a
+               webhook must not fail because a video did not go out. */
+            sendFirstContactVideo({ phoneNormalized: msg.phoneNormalized, config: await getAiBotConfig() })
+                .catch((e) => console.error('[FirstContact]', e.message));
+
             try {
                 await noteInboundForBot({
                     phoneNormalized: msg.phoneNormalized,

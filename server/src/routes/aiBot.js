@@ -16,6 +16,7 @@ const shape = (config) => ({
     systemPrompt: config.systemPrompt,
     useAvailability: config.useAvailability,
     autoSummarise: config.autoSummarise !== false,
+    sendVideoOnFirstContact: Boolean(config.sendVideoOnFirstContact),
     escalateTo: config.escalateTo ? String(config.escalateTo) : '',
     handoverKeywords: config.handoverKeywords || [],
     maxRepliesPerThreadPerDay: config.maxRepliesPerThreadPerDay,
@@ -58,6 +59,7 @@ router.put('/config', requireAdmin, async (req, res) => {
     }
     if (b.useAvailability !== undefined) config.useAvailability = Boolean(b.useAvailability);
     if (b.autoSummarise !== undefined) config.autoSummarise = Boolean(b.autoSummarise);
+    if (b.sendVideoOnFirstContact !== undefined) config.sendVideoOnFirstContact = Boolean(b.sendVideoOnFirstContact);
     if (b.handoverKeywords !== undefined) {
         config.handoverKeywords = (Array.isArray(b.handoverKeywords) ? b.handoverKeywords : [])
             .map((k) => String(k).trim().toLowerCase()).filter(Boolean).slice(0, 30);

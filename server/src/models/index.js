@@ -1665,6 +1665,10 @@ const aiBotConfigSchema = new Schema({
   // Keep summaries current for conversations that moved in the last couple of
   // days. Reads only — it sends nothing and writes nothing to a Lead.
   autoSummarise: { type: Boolean, default: true },
+  /* Send the facility tour video the first time somebody writes in. The
+     assistant's instructions already describe this as happening; see
+     services/firstContact.js, which is what actually does it. */
+  sendVideoOnFirstContact: { type: Boolean, default: false },
 }, { timestamps: true });
 
 // One per conversation, holding the state machine and any pending draft.

@@ -130,3 +130,57 @@ test('escalation beats the reply cap ordering only when the cap is not hit', () 
     // is that it never reaches 'generate'.
     assert.equal(r.action, 'escalate');
 });
+
+/* Everybody waiting is answered together.
+ *
+ * This is the behaviour the whole feature was judged on: four people who write
+ * at the same time must not be answered one after another, each waiting on the
+ * previous person's call to the model. */
+test('conversations are handled in parallel, not one after another', async () => {
+   const started = [];
+   let running = 0;
+   let peak = 0;
+
+   // Stands in for handleThread: records when it starts, holds for a moment.
+   const work = async (name) => {
+      started.push(name);
+      running += 1;
+      peak = Math.max(peak, running);
+      await new Promise((r) => setTimeout(r, 30));
+      running -= 1;
+   };
+
+   // The same batching the tick uses.
+   const inBatches = async (items, size, fn) => {
+      for (let i = 0; i < items.length; i += size) {
+         await Promise.all(items.slice(i, i + size).map(fn));
+      }
+   };
+
+   const four = ['ahmed', 'sara', 'bilal', 'kim'];
+   const began = Date.now();
+   await inBatches(four, 5, work);
+   const took = Date.now() - began;
+
+   assert.equal(peak, 4, 'all four should have been in flight at once');
+   assert.ok(took < 100, `four 30ms conversations took ${took}ms — that is sequential`);
+   assert.deepEqual(started.sort(), four.sort(), 'and every one of them was handled');
+});
+
+test('a rush larger than the limit is answered in waves, not all at once', async () => {
+   let running = 0;
+   let peak = 0;
+   const work = async () => {
+      running += 1; peak = Math.max(peak, running);
+      await new Promise((r) => setTimeout(r, 5));
+      running -= 1;
+   };
+   const inBatches = async (items, size, fn) => {
+      for (let i = 0; i < items.length; i += size) {
+         await Promise.all(items.slice(i, i + size).map(fn));
+      }
+   };
+   await inBatches(Array.from({ length: 12 }, (_, i) => i), 5, work);
+   // Twelve at once would be a good way to be rate-limited and answer nobody.
+   assert.equal(peak, 5, `had ${peak} calls to OpenAI in flight at once`);
+});

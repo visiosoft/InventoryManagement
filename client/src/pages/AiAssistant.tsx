@@ -11,6 +11,7 @@ type Config = {
   systemPrompt: string
   useAvailability: boolean
   autoSummarise: boolean
+  sendVideoOnFirstContact: boolean
   escalateTo: string
   handoverKeywords: string[]
   maxRepliesPerThreadPerDay: number
@@ -176,6 +177,20 @@ export default function AiAssistant() {
               <span className="block text-muted-foreground text-[13px]">
                 Reads the real free units for the dates the customer mentions, using the same
                 calculation as the booking screens. Off means it talks about sizes and prices only.
+              </span>
+            </span>
+          </label>
+
+          <label className="flex items-start gap-3 cursor-pointer pt-1">
+            <input type="checkbox" className="mt-1" checked={draft.sendVideoOnFirstContact}
+              onChange={(e) => set({ sendVideoOnFirstContact: e.target.checked })} />
+            <span className="text-sm">
+              <span className="font-medium">Send the facility video on a first message</span>
+              <span className="block text-muted-foreground text-[13px]">
+                The first time somebody writes in, the facility tour goes out straight away — the
+                same quick reply a colleague would tap, so there is one piece of wording and one
+                file to keep current. Once per number, ever: somebody coming back months later is
+                not new, and getting the tour twice reads as a machine.
               </span>
             </span>
           </label>
