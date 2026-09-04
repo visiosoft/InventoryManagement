@@ -115,9 +115,17 @@ const salesRepNavGroups = [
   {
     title: 'Sales',
     items: [
-      // Called "Dashboard" until a rep asked where Leads had gone. The page is
-      // their leads board — the same one the top menu calls My Leads — so
-      // naming it after the thing it shows is the whole fix.
+      /* The day comes before the list.
+       *
+       * My Day was made the home route and given no way in, so a rep clicking
+       * Leads — the first thing in the sidebar — landed straight back on the
+       * board it was built to replace and never saw it. It is the first item
+       * now, because "what do I owe someone right now" is the question they
+       * open the app with.
+       *
+       * Leads stays: the full board is still where you go to search, filter by
+       * temperature and work the whole pipeline. */
+      { key: 'my-day', to: '/my-day', label: 'My Day', icon: Sun, perm: 'sales_board', notFor: 'accounts' },
       { key: 'leads', to: '/my-leads', label: 'Leads', icon: UserPlus, perm: 'sales_board', notFor: 'accounts' },
       { key: 'tasks', to: '/tasks', label: 'Tasks', icon: ListTodo, perm: 'sales_board' },
       { key: 'whatsapp', to: '/whatsapp', label: 'WhatsApp', icon: MessageCircle, perm: 'sales_board' },
@@ -243,6 +251,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/sites': 'Sites',
   '/customers': 'Tenants',
   '/leads': 'Leads',
+  '/my-day': 'My Day',
   '/my-leads': 'My Leads',
   '/moving-estimator': 'Moving Estimator',
   '/my-performance': 'My Performance',

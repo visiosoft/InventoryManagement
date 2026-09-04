@@ -218,7 +218,10 @@ export default function App() {
         <Route path="/moving-estimator" element={<PermGuard module="sales_board"><MovingEstimator /></PermGuard>} />
         <Route path="/my-performance" element={<PermGuard module="sales_board"><MyPerformance /></PermGuard>} />
         <Route path="/leaderboard" element={<PermGuard module="sales_board"><Leaderboard /></PermGuard>} />
-        <Route path="/my-day" element={<MyDay />} />
+        {/* Guarded like every other sales page, so it is reachable by the
+            people it was built for and by an admin looking over a shoulder —
+            and not by a role that has no leads at all. */}
+        <Route path="/my-day" element={<PermGuard module="sales_board"><MyDay /></PermGuard>} />
         <Route path="/accounts" element={<RoleGuard roles={['admin', 'accounts']}><AccountsDashboard /></RoleGuard>} />
         <Route path="/settings/lead-distribution" element={<AdminGuard><LeadDistribution /></AdminGuard>} />
         <Route path="/account" element={<MyAccount />} />
