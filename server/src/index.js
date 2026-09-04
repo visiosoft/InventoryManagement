@@ -19,6 +19,15 @@ import cors from 'cors';
 
 import mongoose from 'mongoose';
 import { connectDb } from './db.js';
+import { useBaseConnection, baseConnection } from './tenancy/connections.js';
+import { withTenant, withTenantFor } from './middleware/tenant.js';
+import { everyOrg, forEachOrg } from './tenancy/scheduler.js';
+
+/** Whether the cluster is up. The default connection is never opened, so
+ *  asking it would always say no. */
+const dbReady = () => {
+  try { return baseConnection().readyState === 1; } catch { return false; }
+};
 
 import { requireAuth, readOnlyFor } from './middleware/auth.js';
 import { UPLOADS_DIR } from './services/drive.js';
@@ -117,6 +126,14 @@ if (process.env.CORS_HANDLED_BY_PROXY === 'true') {
 // WhatsApp Flow endpoint. Mounted ahead of the global parser with a larger
 // limit of its own — Meta calls it directly, so there is no JWT, and the
 // encrypted payload can exceed the 2mb the rest of the app allows.
+/* Every API request runs inside one organisation's context.
+ *
+ * Mounted here, in front of everything, so a route added later is covered
+ * without anybody remembering to do it. In single-tenant mode this pins the
+ * one database from .env; in multi-tenant mode the organisation comes from the
+ * signed-in user. Either way the code underneath is identical. */
+app.use('/api', withTenant);
+
 app.use('/api/whatsapp/flow', express.json({ limit: '20mb' }), whatsappFlowRoutes);
 
 app.use(
@@ -143,7 +160,7 @@ const STARTED_AT = new Date().toISOString();
 app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
-    db: mongoose.connection.readyState === 1,
+    db: dbReady(),
     startedAt: STARTED_AT,
     uptimeSec: Math.round(process.uptime()),
   });
@@ -283,32 +300,40 @@ function isTransientMongoNetworkError(error) {
 }
 
 async function start() {
-  await connectDb();
-  mongoose.connection.on('error', (err) => {
+  /* One pool, and deliberately no default database.
+   *
+   * Every customer gets their own database and the connection travels with the
+   * request (see tenancy/context.js). Nothing opens `mongoose.connection`, so
+   * code that reaches for a database it was not handed finds nothing rather
+   * than quietly reading whichever one happened to be default. */
+  const cluster = await connectDb();
+  useBaseConnection(cluster);
+
+  cluster.on('error', (err) => {
     console.error('[MongoDB] connection error:', err.message);
   });
-  mongoose.connection.on('disconnected', () => {
+  cluster.on('disconnected', () => {
     console.warn('[MongoDB] disconnected from Atlas. The driver will keep retrying.');
   });
 
-  const client = mongoose.connection.getClient?.();
+  const client = cluster.getClient?.();
   if (client?.on) {
     client.on('error', (err) => {
       console.error('[MongoDB] client error:', err.message);
     });
   }
 
-  await seedUnitTypes();
+  // Seeding writes, so it needs to know whose database it is writing to.
+  await withTenantFor(null, () => seedUnitTypes());
   console.log(`Connected to MongoDB (db: ${process.env.DB_NAME})`);
   app.listen(PORT, () => console.log(`PurpleBox API listening on http://localhost:${PORT}`));
 
   // Reconcile WhatsApp label-driven lead state every 15 minutes.
   const WHATSAPP_RECONCILE_INTERVAL = 15 * 60 * 1000;
   if (process.env.WHATSAPP_LABEL_SYNC_ENABLED === 'true') {
-    setTimeout(async () => {
-      await runWhatsAppLabelReconciliation();
-      setInterval(runWhatsAppLabelReconciliation, WHATSAPP_RECONCILE_INTERVAL);
-    }, 7000);
+    everyOrg('WhatsAppLabels', runWhatsAppLabelReconciliation, {
+      every: WHATSAPP_RECONCILE_INTERVAL, delay: 7000,
+    });
   }
 
   // Daily database backup — runs every day at 02:00 server time.
@@ -325,10 +350,7 @@ async function start() {
       await runAutomationRules();
     } catch (e) { console.error('[Automation]', e.message); }
   };
-  setTimeout(async () => {
-    await automationTick();
-    setInterval(automationTick, REMINDER_INTERVAL);
-  }, 15_000);
+  everyOrg('Automation', automationTick, { every: REMINDER_INTERVAL, delay: 15_000 });
 
   // WhatsApp AI assistant. Deliberately not run inside the webhook: an OpenAI
   // round trip in front of Meta's ACK would make the webhook slow enough for
@@ -338,7 +360,7 @@ async function start() {
   // when a token saved through Settings can be lost — the Settings page writes
   // it to .env, and hosts that rebuild the filesystem on deploy discard that —
   // so this is the moment the answer is most worth having in the log.
-  setTimeout(async () => {
+  setTimeout(() => forEachOrg('WhatsAppToken', async (org) => {
     try {
       const t = await inspectWhatsAppToken({ force: true });
       if (!t.configured) return console.warn('[WhatsApp] No access token configured — sending is off.');
@@ -351,20 +373,16 @@ async function start() {
         else console.log(line);
       }
     } catch { /* a diagnostic must never stop the server booting */ }
-  }, 5_000);
+  }), 5_000);
 
   // Marketing campaigns work through their recipients here rather than in the
   // request that starts them: several hundred sends take minutes, and the
   // batching is what keeps a campaign from spending the whole daily mail
   // allowance at once.
-  setTimeout(() => setInterval(() => {
-    runCampaignTick().catch((e) => console.error('[Campaign]', e.message));
-  }, 15 * 1000), 25_000);
+  everyOrg('Campaign', runCampaignTick, { every: 15 * 1000, delay: 25_000 });
 
   const AI_BOT_INTERVAL = 10 * 1000;
-  setTimeout(() => setInterval(() => {
-    runAiBotTick().catch((e) => console.error('[AI bot]', e.message));
-  }, AI_BOT_INTERVAL), 20_000);
+  everyOrg('AIBot', runAiBotTick, { every: AI_BOT_INTERVAL, delay: 20_000 });
 
   // Keep the inbox summaries current, so "hot leads" answers about today
   // rather than about whichever chats somebody happened to open. Only
@@ -376,24 +394,21 @@ async function start() {
     if (cfg?.autoSummarise === false) return;
     await summariseRecent({});
   };
-  setTimeout(() => {
-    summaryTick().catch((e) => console.error('[Summaries]', e.message));
-    setInterval(() => summaryTick().catch((e) => console.error('[Summaries]', e.message)), SUMMARY_INTERVAL);
-  }, 45_000);
+  everyOrg('Summaries', summaryTick, { every: SUMMARY_INTERVAL, delay: 45_000 });
 
   // Yesterday's conversations, built once each morning. Same shape as the
   // backup scheduler: a minute tick, a fixed local hour, and a stored row that
   // makes it idempotent — a restart at 08:30 cannot produce a second digest,
   // because the day is unique and ensureDigest returns the one already there.
   const DIGEST_HOUR = Number(process.env.DIGEST_HOUR ?? 8);
-  setInterval(async () => {
+  everyOrg('Digest', async () => {
     try {
       if (localHour() !== DIGEST_HOUR) return;
       await ensureDigest(previousDay(dayKeyFor()));
     } catch (e) {
       console.error('[Digest]', e.message);
     }
-  }, 60_000);
+  }, { every: 60_000 });
 
   // Follow-ups that have come due, raised as tasks on the owner's board.
   // Same minute tick and fixed local hour; idempotent through each lead's
@@ -407,40 +422,28 @@ async function start() {
    * A minute tick rather than the daily one: a follow-up set for 16:00 is no
    * use arriving at 07:00 the next morning. Idempotent through
    * followUpPushedAt, so the same lead is not pushed on every tick. */
-  setInterval(async () => {
-    try {
-      const out = await pushDueFollowUps();
-      if (out.pushed) console.log(`[Push] ${out.pushed} follow-up reminder(s) sent`);
-    } catch (e) {
-      console.error('[Push]', e.message);
-    }
-  }, 60_000);
+  everyOrg('Push', async () => {
+    const out = await pushDueFollowUps();
+    if (out.pushed) console.log(`[Push] ${out.pushed} follow-up reminder(s) sent`);
+  }, { every: 60_000 });
 
   /* Everybody's morning brief: what is late, what is due, who is waiting.
      Same minute tick and fixed local hour as the digest, idempotent through
      each user's dayBriefSentAt rather than a stored row. Sends to people, not
      to customers. */
   const DAY_BRIEF_HOUR = Number(process.env.DAY_BRIEF_HOUR ?? 8);
-  setInterval(async () => {
-    try {
-      if (localHour() !== DAY_BRIEF_HOUR) return;
-      const out = await runDayBriefs();
-      if (out.sent) console.log(`[DayBrief] sent ${out.sent} brief(s)`);
-    } catch (e) {
-      console.error('[DayBrief]', e.message);
-    }
-  }, 60_000);
+  everyOrg('DayBrief', async () => {
+    if (localHour() !== DAY_BRIEF_HOUR) return;
+    const out = await runDayBriefs();
+    if (out.sent) console.log(`[DayBrief] sent ${out.sent} brief(s)`);
+  }, { every: 60_000 });
 
   const FOLLOW_UP_HOUR = Number(process.env.FOLLOW_UP_HOUR ?? 7);
-  setInterval(async () => {
-    try {
-      if (localHour() !== FOLLOW_UP_HOUR) return;
-      const out = await runFollowUps();
-      if (out.raised.length) console.log(`[FollowUps] raised ${out.raised.length} reminder(s) for ${out.day}`);
-    } catch (e) {
-      console.error('[FollowUps]', e.message);
-    }
-  }, 60_000);
+  everyOrg('FollowUps', async () => {
+    if (localHour() !== FOLLOW_UP_HOUR) return;
+    const out = await runFollowUps();
+    if (out.raised.length) console.log(`[FollowUps] raised ${out.raised.length} reminder(s) for ${out.day}`);
+  }, { every: 60_000 });
 
   /* Leads the webhook could not hand out.
    *
@@ -458,39 +461,27 @@ async function start() {
      then it goes to somebody else. Every minute, because fifteen minutes late
      on a fifteen-minute promise is half a promise. Does nothing unless
      distribution is on — see services/leadSla.js. */
-  setTimeout(() => setInterval(async () => {
-    try {
-      const out = await runLeadSla();
-      if (out.nudged || out.reassigned) {
-        console.log(`[LeadSLA] reminded ${out.nudged}, moved ${out.reassigned}`);
-      }
-    } catch (e) {
-      console.error('[LeadSLA]', e.message);
+  everyOrg('LeadSLA', async () => {
+    const out = await runLeadSla();
+    if (out.nudged || out.reassigned) {
+      console.log(`[LeadSLA] reminded ${out.nudged}, moved ${out.reassigned}`);
     }
-  }, 60_000), 60_000);
+  }, { every: 60_000, delay: 60_000 });
 
   /* Units held by a quotation that has since expired.
      A quote holds its unit until its expiry date, and nothing else sweeps
      those — without this a unit quoted in June would stay reserved for ever.
      Hourly, and it only ever releases. */
-  setTimeout(() => setInterval(async () => {
-    try {
-      const freed = await releaseLapsedHolds();
-      if (freed.length) console.log(`[Units] released ${freed.length} unit(s): ${freed.join(', ')}`);
-    } catch (e) {
-      console.error('[Units]', e.message);
-    }
-  }, 60 * 60 * 1000), 90_000);
+  everyOrg('Units', async () => {
+    const freed = await releaseLapsedHolds();
+    if (freed.length) console.log(`[Units] released ${freed.length} unit(s): ${freed.join(', ')}`);
+  }, { every: 60 * 60 * 1000, delay: 90_000 });
 
   const SWEEP_INTERVAL = 2 * 60 * 1000;
-  setTimeout(() => setInterval(async () => {
-    try {
-      const out = await sweepUnassignedLeads();
-      if (out.assigned) console.log(`[LeadRouting] handed out ${out.assigned} lead(s) nobody owned`);
-    } catch (e) {
-      console.error('[LeadRouting]', e.message);
-    }
-  }, SWEEP_INTERVAL), 45_000);
+  everyOrg('LeadRouting', async () => {
+    const out = await sweepUnassignedLeads();
+    if (out.assigned) console.log(`[LeadRouting] handed out ${out.assigned} lead(s) nobody owned`);
+  }, { every: SWEEP_INTERVAL, delay: 45_000 });
 }
 
 start().catch((err) => {

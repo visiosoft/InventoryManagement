@@ -6,6 +6,8 @@ import { fileURLToPath } from 'url';
 import { google } from 'googleapis';
 import { Readable } from 'stream';
 import mongoose from 'mongoose';
+import { currentConnection } from '../tenancy/context.js';
+import { everyOrg } from '../tenancy/scheduler.js';
 
 const gzip = promisify(zlib.gzip);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -102,7 +104,7 @@ async function _doBackup(triggeredBy) {
   log(`Triggered by: ${triggeredBy}`);
 
   // 1. Export all collections
-  const db = mongoose.connection.db;
+  const db = currentConnection().db;
   log('Listing database collections…');
   const collectionInfos = await db.listCollections().toArray();
   log(`Found ${collectionInfos.length} collections`);
@@ -268,7 +270,7 @@ const CONFIG_DEFAULTS = { enabled: true, frequency: 'daily', hour: 2 };
 const FREQUENCY_HOURS = { '6h': 6, '12h': 12, daily: 24, weekly: 168 };
 
 function configCollection() {
-  return mongoose.connection.db.collection('backupconfig');
+  return currentConnection().db.collection('backupconfig');
 }
 
 export async function getBackupConfig() {
@@ -300,9 +302,18 @@ async function markAutoRun() {
 
 // Checks once a minute whether an automatic backup is due, per the saved
 // config. Survives restarts because lastAutoAt lives in the database.
+/**
+ * The scheduled backup, for every organisation.
+ *
+ * Each customer's database is backed up on their own schedule, from their own
+ * settings — one company's nightly hour is not another's, and a single global
+ * timer would dump whichever database happened to be in scope.
+ *
+ * The tick itself is unchanged; it simply runs once per organisation now.
+ */
 export function startBackupScheduler() {
-  setInterval(async () => {
-    try {
+  everyOrg('Backup', async () => {
+    {
       if (backupState.running || restoreState.running) return;
       const cfg = await getBackupConfig();
       if (!cfg.enabled) return;
@@ -320,10 +331,8 @@ export function startBackupScheduler() {
       if (!due) return;
       await markAutoRun();
       await runBackup('scheduler');
-    } catch (e) {
-      console.error('[Backup] scheduler:', e.message);
     }
-  }, 60_000);
+  }, { every: 60_000 });
   console.log('[Backup] Scheduler active — frequency comes from the Backup page settings');
 }
 
@@ -422,7 +431,7 @@ export async function runRestore({ buffer, filename = '', actor = '' }) {
       restoreState.running = true;
     }
 
-    const db = mongoose.connection.db;
+    const db = currentConnection().db;
     let restoredDocs = 0;
     for (const name of names) {
       const docs = (payload.collections[name] || []).map((d) => revive(d, ''));

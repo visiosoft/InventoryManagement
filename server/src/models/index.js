@@ -1,6 +1,46 @@
 import mongoose from 'mongoose';
+import { currentConnection } from '../tenancy/context.js';
 
-const { Schema, model } = mongoose;
+const { Schema } = mongoose;
+
+/**
+ * A model that follows whoever is being served.
+ *
+ * Each customer has their own database, so `Contract` cannot be one object —
+ * it has to be the contracts of the organisation this request belongs to. The
+ * proxy resolves that at the moment a property is touched, which is why the 90
+ * files importing these names did not have to change: `Contract.find(...)`
+ * still reads exactly as it did, and now means "this customer's contracts".
+ *
+ * Statics are bound to the real model so `this` is the model and not the
+ * proxy. Everything else — `schema`, `modelName`, `db`, the prototype behind
+ * `instanceof` — is passed straight through.
+ *
+ * Outside a tenant context `currentConnection()` throws, which is the whole
+ * design: there is no default database to leak into.
+ */
+function tenantModel(name) {
+   const real = () => currentConnection().model(name);
+   return new Proxy(function () {}, {
+      get(_target, prop) {
+         const model = real();
+         const value = model[prop];
+         return typeof value === 'function' ? value.bind(model) : value;
+      },
+      set(_target, prop, value) { real()[prop] = value; return true; },
+      has(_target, prop) { return prop in real(); },
+      ownKeys() { return Reflect.ownKeys(real()); },
+      getOwnPropertyDescriptor(_target, prop) {
+         // Mongoose models are functions; the descriptor has to stay
+         // configurable or `ownKeys` traps throw on a non-extensible target.
+         const d = Reflect.getOwnPropertyDescriptor(real(), prop);
+         return d ? { ...d, configurable: true } : undefined;
+      },
+      getPrototypeOf() { return Reflect.getPrototypeOf(real()); },
+      construct(_target, args) { return new (real())(...args); },
+      apply(_target, thisArg, args) { return real().apply(thisArg, args); },
+   });
+}
 
 const ALL_MODULES = [
   'dashboard', 'units', 'moving_inventory', 'contracts', 'documents',
@@ -1516,7 +1556,7 @@ const followUpPlanSchema = new Schema({
   responseSlaMinutes: { type: Number, default: 2, min: 1, max: 240 },
 }, { timestamps: true });
 
-export const FollowUpPlan = model('FollowUpPlan', followUpPlanSchema);
+export const FollowUpPlan = tenantModel('FollowUpPlan');
 
 const reminderConfigSchema = new Schema({
   enabled: { type: Boolean, default: true },
@@ -1573,7 +1613,7 @@ sentEmailSchema.index({ at: -1 });
 sentEmailSchema.index({ status: 1, at: -1 });
 sentEmailSchema.index({ customer: 1, at: -1 });
 
-export const SentEmail = model('SentEmail', sentEmailSchema);
+export const SentEmail = tenantModel('SentEmail');
 
 // ── Marketing campaigns ──────────────────────────────────────────────────────
 // One deliberate send to a group: a discount, an event, a seasonal greeting.
@@ -1650,8 +1690,8 @@ campaignRecipientSchema.index({ campaign: 1, status: 1 });
 // if they arrived from both the tenant list and the lead list.
 campaignRecipientSchema.index({ campaign: 1, channel: 1, kind: 1, refId: 1 }, { unique: true });
 
-export const Campaign = model('Campaign', campaignSchema);
-export const CampaignRecipient = model('CampaignRecipient', campaignRecipientSchema);
+export const Campaign = tenantModel('Campaign');
+export const CampaignRecipient = tenantModel('CampaignRecipient');
 
 // ── WhatsApp chat labels ─────────────────────────────────────────────────────
 // The same idea as labels in the WhatsApp Business app: a short, named tag a
@@ -1672,8 +1712,8 @@ const whatsappChatLabelSchema = new Schema({
   labels: [{ type: Schema.Types.ObjectId, ref: 'WhatsAppLabel' }],
 }, { timestamps: true });
 
-export const WhatsAppLabel = model('WhatsAppLabel', whatsappLabelSchema);
-export const WhatsAppChatLabel = model('WhatsAppChatLabel', whatsappChatLabelSchema);
+export const WhatsAppLabel = tenantModel('WhatsAppLabel');
+export const WhatsAppChatLabel = tenantModel('WhatsAppChatLabel');
 
 // ── WhatsApp AI assistant ────────────────────────────────────────────────────
 // One config document for the whole account, the same shape reminderConfig uses.
@@ -1777,7 +1817,7 @@ const conversationSummarySchema = new Schema({
   generatedAt: { type: Date, default: Date.now },
 }, { timestamps: true });
 
-export const ConversationSummary = model('ConversationSummary', conversationSummarySchema);
+export const ConversationSummary = tenantModel('ConversationSummary');
 
 /* One day's conversations, as read that morning.
 
@@ -1791,10 +1831,10 @@ const dailyDigestSchema = new Schema({
   chats: { type: [Schema.Types.Mixed], default: [] },
 }, { timestamps: true });
 
-export const DailyDigest = model('DailyDigest', dailyDigestSchema);
+export const DailyDigest = tenantModel('DailyDigest');
 
-export const AiBotConfig = model('AiBotConfig', aiBotConfigSchema);
-export const AiBotThread = model('AiBotThread', aiBotThreadSchema);
+export const AiBotConfig = tenantModel('AiBotConfig');
+export const AiBotThread = tenantModel('AiBotThread');
 
 const counterSchema = new Schema({
   key: { type: String, required: true, unique: true },
@@ -1869,13 +1909,13 @@ unitSchema.index({ floor: 1, unitNumber: 1 });
 customerSchema.index({ fullName: 1 });
 customerSchema.index({ createdAt: -1 });
 
-export const User = model('User', userSchema);
-export const UnitType = model('UnitType', unitTypeSchema);
-export const Unit = model('Unit', unitSchema);
-export const Customer = model('Customer', customerSchema);
-export const Lead = model('Lead', leadSchema);
-export const WhatsAppWebhookEvent = model('WhatsAppWebhookEvent', whatsappWebhookEventSchema);
-export const WhatsAppLabelState = model('WhatsAppLabelState', whatsappLabelStateSchema);
+export const User = tenantModel('User');
+export const UnitType = tenantModel('UnitType');
+export const Unit = tenantModel('Unit');
+export const Customer = tenantModel('Customer');
+export const Lead = tenantModel('Lead');
+export const WhatsAppWebhookEvent = tenantModel('WhatsAppWebhookEvent');
+export const WhatsAppLabelState = tenantModel('WhatsAppLabelState');
 // Every call Meta makes to the webhook, accepted or not. Without this a
 // rejected delivery is indistinguishable from Meta never calling at all,
 // which is exactly the question when replies do not arrive.
@@ -1893,9 +1933,9 @@ const whatsappWebhookHitSchema = new Schema(
   { versionKey: false },
 );
 whatsappWebhookHitSchema.index({ at: -1 });
-export const WhatsAppWebhookHit = model('WhatsAppWebhookHit', whatsappWebhookHitSchema);
+export const WhatsAppWebhookHit = tenantModel('WhatsAppWebhookHit');
 
-export const WhatsAppMessage = model('WhatsAppMessage', whatsappMessageSchema);
+export const WhatsAppMessage = tenantModel('WhatsAppMessage');
 
 /* ── Who gets the next WhatsApp lead ──────────────────────────────────────────
  *
@@ -1951,28 +1991,28 @@ const leadRoutingConfigSchema = new Schema({
   slaReassignMinutes: { type: Number, default: 30, min: 0 },
 }, { timestamps: true });
 
-export const LeadRoutingRule = model('LeadRoutingRule', leadRoutingRuleSchema);
-export const LeadRoutingConfig = model('LeadRoutingConfig', leadRoutingConfigSchema);
-export const Contract = model('Contract', contractSchema);
-export const Quote = model('Quote', quoteSchema);
-export const Invoice = model('Invoice', invoiceSchema);
-export const Vendor = model('Vendor', vendorSchema);
-export const Purchase = model('Purchase', purchaseSchema);
-export const Expense = model('Expense', expenseSchema);
-export const Payment = model('Payment', paymentSchema);
-export const MovingItem = model('MovingItem', movingItemSchema);
-export const MovingStockTxn = model('MovingStockTxn', movingStockTxnSchema);
-export const Worker = model('Worker', workerSchema);
-export const Truck = model('Truck', truckSchema);
-export const MovingLead = model('MovingLead', movingLeadSchema);
-export const MovingJob = model('MovingJob', movingJobSchema);
-export const MovingQuote = model('MovingQuote', movingQuoteSchema);
-export const MovingInvoice = model('MovingInvoice', movingInvoiceSchema);
-export const MovingSurvey = model('MovingSurvey', movingSurveySchema);
-export const MovingDocument = model('MovingDocument', movingDocumentSchema);
-export const MovingClaim = model('MovingClaim', movingClaimSchema);
-export const ReminderConfig = model('ReminderConfig', reminderConfigSchema);
-export const ReminderLog = model('ReminderLog', reminderLogSchema);
+export const LeadRoutingRule = tenantModel('LeadRoutingRule');
+export const LeadRoutingConfig = tenantModel('LeadRoutingConfig');
+export const Contract = tenantModel('Contract');
+export const Quote = tenantModel('Quote');
+export const Invoice = tenantModel('Invoice');
+export const Vendor = tenantModel('Vendor');
+export const Purchase = tenantModel('Purchase');
+export const Expense = tenantModel('Expense');
+export const Payment = tenantModel('Payment');
+export const MovingItem = tenantModel('MovingItem');
+export const MovingStockTxn = tenantModel('MovingStockTxn');
+export const Worker = tenantModel('Worker');
+export const Truck = tenantModel('Truck');
+export const MovingLead = tenantModel('MovingLead');
+export const MovingJob = tenantModel('MovingJob');
+export const MovingQuote = tenantModel('MovingQuote');
+export const MovingInvoice = tenantModel('MovingInvoice');
+export const MovingSurvey = tenantModel('MovingSurvey');
+export const MovingDocument = tenantModel('MovingDocument');
+export const MovingClaim = tenantModel('MovingClaim');
+export const ReminderConfig = tenantModel('ReminderConfig');
+export const ReminderLog = tenantModel('ReminderLog');
 
 const productSchema = new Schema(
   {
@@ -1984,13 +2024,13 @@ const productSchema = new Schema(
   },
   { timestamps: true }
 );
-export const SiteVisit = model('SiteVisit', siteVisitSchema);
-export const Product = model('Product', productSchema);
-export const Document = model('Document', documentSchema);
-export const AuditLog = model('AuditLog', auditLogSchema);
-export const Counter = model('Counter', counterSchema);
-export const FloorPlan = model('FloorPlan', floorPlanSchema);
-export const Site = model('Site', siteSchema);
+export const SiteVisit = tenantModel('SiteVisit');
+export const Product = tenantModel('Product');
+export const Document = tenantModel('Document');
+export const AuditLog = tenantModel('AuditLog');
+export const Counter = tenantModel('Counter');
+export const FloorPlan = tenantModel('FloorPlan');
+export const Site = tenantModel('Site');
 
 // ── Automation Rules ──────────────────────────────────────────────────────────
 const automationStepSchema = new Schema({
@@ -2050,8 +2090,8 @@ const automationLogSchema = new Schema({
 automationLogSchema.index({ sentAt: -1 });
 automationLogSchema.index({ customer: 1, sentAt: -1 });
 
-export const AutomationRule = model('AutomationRule', automationRuleSchema);
-export const AutomationLog = model('AutomationLog', automationLogSchema);
+export const AutomationRule = tenantModel('AutomationRule');
+export const AutomationLog = tenantModel('AutomationLog');
 
 const messageTemplateSchema = new Schema({
   key: { type: String, required: true, unique: true },
@@ -2100,7 +2140,7 @@ const messageTemplateSchema = new Schema({
   locationName: { type: String, default: '' },
   locationAddress: { type: String, default: '' },
 }, { timestamps: true });
-export const MessageTemplate = model('MessageTemplate', messageTemplateSchema);
+export const MessageTemplate = tenantModel('MessageTemplate');
 
 // Document templates designed in the app — the storage agreement, notices
 // (expiry, payment reminder, …). Rich HTML bodies; placeholders like
@@ -2114,7 +2154,7 @@ const agreementTemplateSchema = new Schema({
   updatedBy: { type: String, default: '' },
   key: { type: String }, // legacy singleton key, kept for old documents
 }, { timestamps: true });
-export const AgreementTemplate = model('AgreementTemplate', agreementTemplateSchema);
+export const AgreementTemplate = tenantModel('AgreementTemplate');
 
 // Asana-style task, assignable by admins to sales reps or created by a rep
 // for themselves. Optionally linked to a lead (storage or moving) — the
@@ -2178,7 +2218,7 @@ const taskSchema = new Schema(
   { timestamps: true }
 );
 taskSchema.index({ assignedTo: 1, status: 1, dueDate: 1 });
-export const Task = model('Task', taskSchema);
+export const Task = tenantModel('Task');
 
 /* One browser that has agreed to be interrupted.
  *
@@ -2200,7 +2240,7 @@ const pushSubscriptionSchema = new Schema({
 }, { timestamps: true });
 pushSubscriptionSchema.index({ user: 1 });
 
-export const PushSubscription = model('PushSubscription', pushSubscriptionSchema);
+export const PushSubscription = tenantModel('PushSubscription');
 
 // Admin-set weekly/monthly targets for a sales rep — "actual" progress is
 // computed on read from Lead/MovingLead status, not stored here.
@@ -2225,7 +2265,7 @@ const salesGoalSchema = new Schema(
   },
   { timestamps: true }
 );
-export const SalesGoal = model('SalesGoal', salesGoalSchema);
+export const SalesGoal = tenantModel('SalesGoal');
 
 export async function nextContractNo() {
   const year = new Date().getFullYear();
@@ -2342,4 +2382,84 @@ export async function nextSiteVisitNo() {
     { new: true, upsert: true }
   );
   return `SV-${date}-${String(counter.seq).padStart(3, '0')}`;
+}
+
+/* ── Registering the models on a database ────────────────────────────────
+ *
+ * Every schema, by the name the rest of the app imports it under. A new
+ * customer's database is set up by handing its connection to registerModels,
+ * so a model added above is available to every organisation without anything
+ * else being remembered.
+ */
+export const SCHEMAS = {
+   FollowUpPlan: followUpPlanSchema,
+   SentEmail: sentEmailSchema,
+   Campaign: campaignSchema,
+   CampaignRecipient: campaignRecipientSchema,
+   WhatsAppLabel: whatsappLabelSchema,
+   WhatsAppChatLabel: whatsappChatLabelSchema,
+   ConversationSummary: conversationSummarySchema,
+   DailyDigest: dailyDigestSchema,
+   AiBotConfig: aiBotConfigSchema,
+   AiBotThread: aiBotThreadSchema,
+   User: userSchema,
+   UnitType: unitTypeSchema,
+   Unit: unitSchema,
+   Customer: customerSchema,
+   Lead: leadSchema,
+   WhatsAppWebhookEvent: whatsappWebhookEventSchema,
+   WhatsAppLabelState: whatsappLabelStateSchema,
+   WhatsAppWebhookHit: whatsappWebhookHitSchema,
+   WhatsAppMessage: whatsappMessageSchema,
+   LeadRoutingRule: leadRoutingRuleSchema,
+   LeadRoutingConfig: leadRoutingConfigSchema,
+   Contract: contractSchema,
+   Quote: quoteSchema,
+   Invoice: invoiceSchema,
+   Vendor: vendorSchema,
+   Purchase: purchaseSchema,
+   Expense: expenseSchema,
+   Payment: paymentSchema,
+   MovingItem: movingItemSchema,
+   MovingStockTxn: movingStockTxnSchema,
+   Worker: workerSchema,
+   Truck: truckSchema,
+   MovingLead: movingLeadSchema,
+   MovingJob: movingJobSchema,
+   MovingQuote: movingQuoteSchema,
+   MovingInvoice: movingInvoiceSchema,
+   MovingSurvey: movingSurveySchema,
+   MovingDocument: movingDocumentSchema,
+   MovingClaim: movingClaimSchema,
+   ReminderConfig: reminderConfigSchema,
+   ReminderLog: reminderLogSchema,
+   SiteVisit: siteVisitSchema,
+   Product: productSchema,
+   Document: documentSchema,
+   AuditLog: auditLogSchema,
+   Counter: counterSchema,
+   FloorPlan: floorPlanSchema,
+   Site: siteSchema,
+   AutomationRule: automationRuleSchema,
+   AutomationLog: automationLogSchema,
+   MessageTemplate: messageTemplateSchema,
+   AgreementTemplate: agreementTemplateSchema,
+   Task: taskSchema,
+   PushSubscription: pushSubscriptionSchema,
+   SalesGoal: salesGoalSchema,
+};
+
+/**
+ * Compile every model onto one organisation's connection.
+ *
+ * Called once per database, when it is first opened. Registering all of them
+ * together matters for `populate`: a reference is resolved against the
+ * connection that owns the document, so a half-registered connection fails
+ * only later, on the one query that follows a ref.
+ */
+export function registerModels(connection) {
+   for (const [name, schema] of Object.entries(SCHEMAS)) {
+      if (!connection.models[name]) connection.model(name, schema);
+   }
+   return connection;
 }

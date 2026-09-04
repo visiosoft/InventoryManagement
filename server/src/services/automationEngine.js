@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+import { currentConnection } from '../tenancy/context.js';
 import { AutomationRule, AutomationLog, MessageTemplate, Payment, Contract } from '../models/index.js';
 import { sendWhatsAppText, sendWhatsAppTemplate, whatsappSendConfigured } from './whatsapp.js';
 import { sendMail, mailConfigured } from './mail.js';
@@ -10,7 +10,9 @@ import { renewLink, moveOutLink } from './renewalLink.js';
 const CONFIG_ID = 'automation-config';
 
 async function configCollection() {
-  return mongoose.connection.db.collection('automationconfig');
+  /* The organisation being served, not the default connection — there is no
+     longer any such thing. See tenancy/context.js. */
+  return currentConnection().db.collection('automationconfig');
 }
 
 export async function getAutoSend() {
