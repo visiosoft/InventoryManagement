@@ -31,6 +31,7 @@ import { Task, User, Lead, WhatsAppMessage } from '../models/index.js';
 import { mailConfigured, sendMail } from './mail.js';
 import { pushConfigured, pushToUser } from './push.js';
 import { localHour } from './dailyDigest.js';
+import { mayEmailStaff } from './staffMail.js';
 
 const escapeHtml = (s) => String(s ?? '')
    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -319,7 +320,8 @@ export async function runDayBriefs({ now = new Date(), dry = false } = {}) {
 
       try {
          if (pushConfigured()) await pushToUser(user._id, brief.push).catch(() => null);
-         if (mailConfigured() && user.email) {
+         // Accounts is the only seat emailed — see services/staffMail.js.
+         if (mailConfigured() && mayEmailStaff(user)) {
             await sendMail({ to: user.email, subject: brief.subject, text: brief.text, html: brief.html });
          }
          await User.updateOne({ _id: user._id }, { $set: { dayBriefSentAt: new Date(now) } });

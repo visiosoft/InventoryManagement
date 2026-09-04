@@ -37,6 +37,7 @@ import { countsForToday, pickOwner } from './leadRouting.js';
 import { notifyLeadAssigned, leadLabel } from './leadNotify.js';
 import { mailConfigured, sendMail } from './mail.js';
 import { pushConfigured, pushToUser } from './push.js';
+import { mayEmailStaff } from './staffMail.js';
 
 const MINUTE_MS = 60_000;
 
@@ -289,14 +290,16 @@ export async function runLeadSla({ now = new Date(), dry = false, limit = 50 } =
 
    for (const [ownerId, items] of nudgesByOwner) {
       try {
-         const owner = await User.findById(ownerId).select('name email').lean();
+         const owner = await User.findById(ownerId).select('name email role').lean();
          const notice = buildNudge({
             leads: items,
             reassignMinutes,
             appUrl,
          });
          if (pushConfigured()) await pushToUser(ownerId, notice.push).catch(() => null);
-         if (mailConfigured() && owner?.email) {
+         // Accounts only — see services/staffMail.js. A rep is told in the
+         // inbox, where the unanswered chat already sits at the top.
+         if (mailConfigured() && mayEmailStaff(owner)) {
             await sendMail({ to: owner.email, subject: notice.subject, text: notice.text, html: notice.html });
          }
          await Lead.updateMany(

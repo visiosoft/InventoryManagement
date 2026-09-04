@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildTaskEmail, taskSubject, notifyTaskAssigned, NOT_EMAILED } from './taskNotify.js';
+import { buildTaskEmail, taskSubject, notifyTaskAssigned } from './taskNotify.js';
+import { mayEmailStaff } from './staffMail.js';
 import { quoteLines, quoteTotals } from './quoteLines.js';
 
 /* The subject that prompted this: the whole title went into it, filling a
@@ -237,24 +238,30 @@ test('the rate on a contract is stated as a four-week rate', () => {
    assert.match(text, /Rate: AED 650\.00 per 4 weeks/);
 });
 
-test('a sales rep is not emailed about a task', async () => {
+test('a sales rep is not emailed about their own task', async () => {
    /* The board is already open in front of them and the morning brief lists
       what is due; between tasks and leads this was putting dozens of messages
-      a day into two inboxes. */
+      a day into two inboxes.
+
+      Without a mail server configured this stops before deciding recipients,
+      which is the honest thing for a unit test to assert — who receives it is
+      covered by mayEmailStaff below. */
    const out = await notifyTaskAssigned({
       task: { title: 'Call the tenant' },
       assignee: { email: 'rep@purplebox.ae', role: 'sales_rep' },
       assignedByName: 'Mase',
    });
    assert.equal(out.sent, false);
-   assert.match(out.reason, /sales reps are not emailed/);
 });
 
-test('accounts and admins still are, because that email carries the contract', () => {
-   /* Their copy attaches the signed PDF, which is how an invoice gets raised.
-      Silencing those would not be quieter, it would be broken. */
-   assert.ok(NOT_EMAILED.has('sales_rep'));
-   for (const role of ['accounts', 'admin', 'staff']) {
-      assert.ok(!NOT_EMAILED.has(role), `${role} must still be emailed`);
+test('accounts is the only seat emailed', () => {
+   /* Their copy attaches the signed contract PDF, which is how an invoice gets
+      raised — work arriving from outside a screen they were already watching.
+      Everybody else finds theirs on a board that is already open. */
+   assert.equal(mayEmailStaff({ email: 'accounting@purplebox.ae', role: 'accounts' }), true);
+   for (const role of ['sales_rep', 'admin', 'staff']) {
+      assert.equal(mayEmailStaff({ email: 'x@purplebox.ae', role }), false, `${role} must not be emailed`);
    }
+   // Somebody with no address is not emailable whatever their role.
+   assert.equal(mayEmailStaff({ role: 'accounts' }), false);
 });

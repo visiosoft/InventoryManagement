@@ -13,6 +13,7 @@
 
 import { Contract, Document, Quote, Task } from '../models/index.js';
 import { mailConfigured, sendMail } from './mail.js';
+import { mayEmailStaff, whyNotEmailed, accountsAddresses } from './staffMail.js';
 import { buildContractPdf } from './contractDocument.js';
 import { downloadFile, driveConfigured } from './drive.js';
 import { quoteLines, quoteTotals } from './quoteLines.js';
@@ -185,22 +186,20 @@ export function buildTaskEmail({ task, assignee, assignedByName, contract, quote
  * Send it. Never throws — a task must still be created if the mail fails, and
  * the caller has already answered the request by the time this runs.
  */
-/* Who is not emailed about a task.
- *
- * A rep working the inbox all day does not need a message telling them a task
- * exists; the board is already open in front of them, and the morning brief
- * lists what is overdue and what is due today. Between tasks and leads this
- * was putting dozens of messages a day into two inboxes.
- *
- * Accounts and admins still get theirs, and deliberately: those carry the
- * signed contract PDF, which is how an invoice gets raised. Silencing those
- * would not be quieter, it would be broken. */
-export const NOT_EMAILED = new Set(['sales_rep']);
-
 export async function notifyTaskAssigned({ task, assignee, assignedByName }) {
-    if (!assignee?.email) return { sent: false, reason: 'assignee has no email address' };
-    if (NOT_EMAILED.has(assignee.role)) return { sent: false, reason: 'sales reps are not emailed about tasks' };
     if (!mailConfigured()) return { sent: false, reason: 'email is not configured' };
+
+    /* Who gets this.
+     *
+     * Accounts, on every task — not only the ones assigned to them. The work
+     * they have to do starts on somebody else's task: a contract another
+     * person signed becomes an invoice they have to raise, and the signed PDF
+     * rides along on this message. Nobody else is emailed; a rep finds their
+     * tasks on the board that is already open in front of them. See
+     * services/staffMail.js. */
+    const recipients = new Set(await accountsAddresses());
+    if (mayEmailStaff(assignee)) recipients.add(assignee.email);
+    if (!recipients.size) return { sent: false, reason: whyNotEmailed(assignee) };
 
     try {
         let contract = null;
@@ -250,15 +249,18 @@ export async function notifyTaskAssigned({ task, assignee, assignedByName }) {
             task, assignee, assignedByName, contract, quote, signedPdfAttached,
         });
 
+        // One message, addressed to everybody who needs it, so a task assigned
+        // to accounts is not sent to them twice.
+        const to = [...recipients].join(', ');
         await sendMail({
-            to: assignee.email,
+            to,
             subject, text, html,
             attachments: attachments.length ? attachments : undefined,
             context: { kind: 'task_assigned', taskId: String(task._id) },
         });
 
         await Task.updateOne({ _id: task._id }, { $set: { assigneeNotifiedAt: new Date() } });
-        return { sent: true, signedPdfAttached, to: assignee.email };
+        return { sent: true, signedPdfAttached, to };
     } catch (e) {
         // Logged rather than thrown: the task exists and the response is gone.
         console.error(`Task assignment email failed for ${task?._id}:`, e?.message || e);

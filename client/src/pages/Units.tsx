@@ -828,6 +828,24 @@ export default function Units() {
         </div>
       </div>
 
+      {/* The pulse for a unit a quotation is holding. Defined once, here,
+          rather than in a global stylesheet nobody would connect to this. */}
+      <style>{`
+        @keyframes unitQuotedRing {
+          0%, 100% { border-color: #2563EB; box-shadow: 0 0 0 0 rgba(37,99,235,.30); }
+          50%      { border-color: #93B4F7; box-shadow: 0 0 0 5px rgba(37,99,235,0); }
+        }
+        @keyframes unitQuotedDot {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(37,99,235,.55); }
+          50%      { box-shadow: 0 0 0 6px rgba(37,99,235,0); }
+        }
+        .unit-quoted { animation: unitQuotedRing 2s ease-in-out infinite; }
+        @media (prefers-reduced-motion: reduce) {
+          .unit-quoted { animation: none; border-color: #2563EB; }
+          .unit-quoted span { animation: none !important; }
+        }
+      `}</style>
+
       {/* ── List view ──────────────────────────────────────────────── */}
       {view === 'list' && (
         <div>
@@ -842,12 +860,23 @@ export default function Units() {
                   title={u.notes}
                   style={{
                     position: 'relative', textAlign: 'left', background: s.bg,
-                    border: `1px solid ${s.border}`,
+                    // A quoted unit carries its border in the animation below,
+                    // and a two-pixel one so it reads as ringed rather than
+                    // merely tinted.
+                    border: a.state === 'quoted' ? '2px solid transparent' : `1px solid ${s.border}`,
                     borderRadius: 16, padding: '16px 18px', boxShadow: CARD_SHADOW, cursor: 'pointer',
                   }}
-                  className="hover:-translate-y-0.5 transition-transform"
+                  /* Held by a quotation is the one state somebody has to act
+                     on — the unit looks free, and is not. A colour of its own
+                     was still easy to scroll past in a grid of sixty cards, so
+                     this one pulses. Slow, two seconds, and it stops for anyone
+                     who has asked for less motion. */
+                  className={`hover:-translate-y-0.5 transition-transform${a.state === 'quoted' ? ' unit-quoted' : ''}`}
                 >
-                  <span style={{ position: 'absolute', top: 16, right: 16, width: 10, height: 10, borderRadius: 999, background: s.dot }} />
+                  <span style={{
+                    position: 'absolute', top: 16, right: 16, width: 10, height: 10, borderRadius: 999, background: s.dot,
+                    ...(a.state === 'quoted' ? { boxShadow: '0 0 0 0 rgba(37,99,235,.55)', animation: 'unitQuotedDot 2s ease-in-out infinite' } : {}),
+                  }} />
                   <div style={{ ...HEADING, fontWeight: 700, fontSize: 18, paddingRight: 18 }}>{u.unitNumber}</div>
                   <div style={{ fontSize: 13, color: MUTED, marginTop: 2 }}>
                     {u.sizeSqf != null ? `${u.sizeSqf} sqft` : 'size not set'} · Floor {u.floor}
