@@ -1,0 +1,12 @@
+# Database backups.
+#
+# These are full dumps of the live database — every customer's name, number,
+# Emirates ID reference and contract. 215 MB of it sits here, and none of it
+# belongs in a repository that gets cloned onto laptops and CI runners.
+#
+# Ignored rather than merely untracked: untracked is one `git add -A` away
+# from being committed for good, and a secret in git history stays there.
+backups/
+
+# The scratch files a probe or a migration leaves behind.
+tmp-*.mjs
