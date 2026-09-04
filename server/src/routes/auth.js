@@ -37,14 +37,25 @@ router.post('/login', async (req, res) => {
     };
   };
 
-  // One company, one database: the context is already pinned.
-  if (tenancyMode() === 'single') {
-    const out = await attempt(null);
-    return out ? res.json(out) : res.status(401).json({ error: 'Invalid email or password' });
-  }
+  /* The directory first, in both modes.
+   *
+   * A customer created through the owner console lives in their own database,
+   * and single mode never looks at those — so a customer could be set up and
+   * then be unable to sign in, with "invalid email or password" as the only
+   * explanation. Checking the directory first means one deployment serves the
+   * company that owns it and the customers it has taken on, which is also how
+   * a new customer gets tried before there is anywhere else to try them. */
+  const org = await organisationForEmail(email).catch(() => null);
 
-  const org = await organisationForEmail(email);
-  if (!org) return res.status(401).json({ error: 'Invalid email or password' });
+  // Nobody in the directory: in single mode that is simply one of our own
+  // users, in the one database this deployment serves.
+  if (!org) {
+    if (tenancyMode() === 'single') {
+      const out = await attempt(null);
+      return out ? res.json(out) : res.status(401).json({ error: 'Invalid email or password' });
+    }
+    return res.status(401).json({ error: 'Invalid email or password' });
+  }
   if (org.status === 'suspended') {
     return res.status(403).json({ error: 'This account is suspended. Please get in touch.' });
   }

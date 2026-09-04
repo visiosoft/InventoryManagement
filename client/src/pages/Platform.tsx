@@ -39,6 +39,16 @@ type Org = {
   error?: string
 }
 
+/** The same rule the server applies, so the preview cannot promise an address
+ *  the server would not give. */
+function slugify(name: string) {
+  return String(name || '')
+    .toLowerCase().trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 40)
+}
+
 const STATUS_TONE: Record<Org['status'], { bg: string; fg: string }> = {
   provisioning: { bg: '#EDE5FF', fg: '#4A1FA0' },
   trial: { bg: '#DBEAFE', fg: '#1D4ED8' },
@@ -266,12 +276,24 @@ export default function Platform() {
               placeholder="Acme Storage"
             />
           </Field>
-          <Field label="Address (leave blank to take it from the name)">
+          {/* Called "Address" once, and somebody reasonably typed a street
+              address into it — which became a forty-character subdomain. It is
+              a web address, and the field now shows the URL it produces so
+              there is nothing to guess at. */}
+          <Field label="Web address">
             <Input
               value={form.slug}
               onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))}
               placeholder="acme"
             />
+            <div style={{ fontSize: 12, color: MUTED, marginTop: 5 }}>
+              {(() => {
+                const preview = slugify(form.slug || form.name)
+                return preview
+                  ? <>Their system will be at <strong>{preview}.purplebox.ae</strong></>
+                  : 'Leave blank to take it from the company name.'
+              })()}
+            </div>
           </Field>
           <Field label="Their first admin's email">
             <Input

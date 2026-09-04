@@ -38,7 +38,12 @@ const legacyOrg = () => ({ id: 'single', slug: 'single', name: process.env.COMPA
  * nothing is needed, because there is only one.
  */
 export function withTenant(req, res, next) {
-   if (tenancyMode() === 'single') {
+   /* Single mode serves the company that owns the deployment — and any
+      customer created on it. A token carrying an organisation is honoured
+      whatever the mode; without one, single mode falls back to the database
+      from .env, which is every one of our own users. Multi mode has no
+      fallback, because there is no "our own" there to fall back to. */
+   if (tenancyMode() === 'single' && !req.user?.org) {
       return runInTenant({ connection: connectionFor(legacyDbName()), org: legacyOrg() }, () => next());
    }
 
