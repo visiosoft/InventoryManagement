@@ -122,6 +122,12 @@ export default function MyDay() {
   const [temp, setTemp] = useState<'all' | 'hot' | 'warm' | 'cold'>('all')
   const [stage, setStage] = useState<string | null>(null)
   const [snoozeFor, setSnoozeFor] = useState<string | null>(null)
+  /* When they wrote, as a way of cutting the waiting list.
+   *
+   * The longest waits are over nine days old, so "everyone who is waiting" is
+   * a list nobody finishes. Today and Yesterday are the ones still worth a
+   * fast answer; the rest is a backlog to work through, not a morning. */
+  const [waitWhen, setWaitWhen] = useState<'all' | 'today' | 'yesterday' | 'week'>('all')
   /** The chat open in the slide-over, by number. */
   const [chatPhone, setChatPhone] = useState<string | null>(null)
 
@@ -164,6 +170,33 @@ export default function MyDay() {
   const stages = data?.stages ?? []
   const maxCount = Math.max(1, ...stages.map((s) => counts[s.key] ?? 0))
   const openCount = stages.slice(0, 6).reduce((sum, s) => sum + (counts[s.key] ?? 0), 0)
+
+  /* Local day boundaries, so "today" is the day the rep is having rather than
+     whatever UTC thinks. */
+  const dayStart = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime() }, [])
+  const yesterdayStart = dayStart - 864e5
+  const weekStart = useMemo(() => {
+    const d = new Date(dayStart)
+    // Monday first: a sales week is not a calendar accident.
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7))
+    return d.getTime()
+  }, [dayStart])
+
+  const inWindow = (since: string, window: typeof waitWhen) => {
+    const at = new Date(since).getTime()
+    if (window === 'today') return at >= dayStart
+    if (window === 'yesterday') return at >= yesterdayStart && at < dayStart
+    if (window === 'week') return at >= weekStart
+    return true
+  }
+
+  const waitingShown = waiting.filter((w) => inWindow(w.since, waitWhen))
+  const waitCounts = {
+    all: waiting.length,
+    today: waiting.filter((w) => inWindow(w.since, 'today')).length,
+    yesterday: waiting.filter((w) => inWindow(w.since, 'yesterday')).length,
+    week: waiting.filter((w) => inWindow(w.since, 'week')).length,
+  }
 
   const counter = data?.counters?.[range]
   const kpis = useMemo(() => {
@@ -331,26 +364,64 @@ export default function MyDay() {
                 Leads waiting on you
               </div>
               <div style={{ fontSize: 12.5, color: ORANGE_INK2, marginTop: 1 }}>
-                {waiting.length ? `Longest ${waitLabel(waiting[0].since)} with no reply` : 'Nobody is waiting'}
+                {waitingShown.length
+                  ? `Longest ${waitLabel(waitingShown[0].since)} with no reply`
+                  : waiting.length ? 'Nothing in this window' : 'Nobody is waiting'}
               </div>
             </div>
             <div className="flex items-center" style={{ marginLeft: 'auto', gap: 7 }}>
-              {waiting.length > 0 && (
+              {waitingShown.length > 0 && (
                 <span data-pulse style={{ width: 8, height: 8, borderRadius: '50%', background: ORANGE, animation: 'pbPulse 1.8s ease-in-out infinite' }} />
               )}
               <span style={{ fontFamily: DISPLAY, fontSize: 32, fontWeight: 700, letterSpacing: '-.03em', color: ORANGE }}>
-                {waiting.length}
+                {waitingShown.length}
               </span>
+              {/* The headline follows the filter, so it can never disagree with
+                  the list under it — but the whole number stays visible, or
+                  narrowing the window would look like the backlog went away. */}
+              {waitWhen !== 'all' && (
+                <span style={{ fontSize: 12.5, color: ORANGE_INK2, fontWeight: 600 }}>of {waiting.length}</span>
+              )}
             </div>
           </div>
 
+          {/* When they wrote. Counts on the chips, so choosing one is an
+              informed decision rather than a guess at what is behind it. */}
+          <div className="flex flex-wrap" style={{ gap: 6, marginTop: 14 }}>
+            {([['all', 'All'], ['today', 'Today'], ['yesterday', 'Yesterday'], ['week', 'This week']] as const).map(([key, label]) => {
+              const active = waitWhen === key
+              const n = waitCounts[key]
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setWaitWhen(key)}
+                  disabled={n === 0 && key !== 'all'}
+                  className="cursor-pointer disabled:cursor-default"
+                  style={{
+                    fontSize: 11.5, fontWeight: 600, borderRadius: 20, padding: '5px 12px',
+                    color: active ? '#fff' : n === 0 && key !== 'all' ? 'rgba(154,44,6,.38)' : ORANGE_INK,
+                    background: active ? ORANGE : '#fff',
+                    border: `1px solid ${active ? ORANGE : 'rgba(244,81,30,.28)'}`,
+                    opacity: n === 0 && key !== 'all' ? 0.6 : 1,
+                  }}
+                >
+                  {label}
+                  <span style={{ marginLeft: 5, fontWeight: 800 }}>{n}</span>
+                </button>
+              )
+            })}
+          </div>
+
           <div className="flex flex-col" style={{ gap: 8, marginTop: 18 }}>
-            {waiting.length === 0 && (
+            {waitingShown.length === 0 && (
               <div style={{ fontSize: 13, color: ORANGE_INK2, padding: '10px 2px 6px' }}>
-                Every customer who wrote to you has had an answer. This is what finished looks like.
+                {waiting.length
+                  ? 'Nobody wrote in this window. Try All to see the rest.'
+                  : 'Every customer who wrote to you has had an answer. This is what finished looks like.'}
               </div>
             )}
-            {waiting.slice(0, 5).map((w) => (
+            {waitingShown.slice(0, 5).map((w) => (
               <button
                 key={w.leadId}
                 type="button"
@@ -382,12 +453,12 @@ export default function MyDay() {
 
           <div className="flex items-center" style={{ gap: 8, padding: '14px 2px 6px' }}>
             <span style={{ fontSize: 12, color: ORANGE_INK2 }}>
-              {waiting.length > 5 ? `${waiting.length - 5} more waiting` : 'They wrote to you, nobody has replied'}
+              {waitingShown.length > 5 ? `${waitingShown.length - 5} more waiting` : 'They wrote to you, nobody has replied'}
             </span>
-            {waiting.length > 0 && (
+            {waitingShown.length > 0 && (
               <button
                 type="button"
-                onClick={() => setChatPhone(waiting[0].phoneNormalized)}
+                onClick={() => setChatPhone(waitingShown[0].phoneNormalized)}
                 className="flex items-center cursor-pointer"
                 style={{ marginLeft: 'auto', gap: 8, background: ORANGE, color: '#fff', border: 'none', borderRadius: 20, padding: '9px 16px', fontSize: 12.5, fontWeight: 600 }}
               >
