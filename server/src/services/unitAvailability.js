@@ -1,5 +1,5 @@
 import { Unit, Contract, Quote } from '../models/index.js';
-import { HOLDING_STATUSES } from '../utils/unitStatus.js';
+import { HOLDING_STATUSES, QUOTE_ISSUED_STEP } from '../utils/unitStatus.js';
 
 /**
  * Which units are taken over a date window, and by what.
@@ -53,9 +53,13 @@ export async function computeUnitAvailability({ from = null, to = null, includeA
 
     if (from && to) {
         const openQuotes = await Quote.find({
-            status: { $in: HOLDING_STATUSES },
-            // A quote nobody can accept any more is not a promise being kept.
+            // A quote nobody can accept any more is not a promise being kept,
+            // and a booking abandoned half-built was never one.
             expiryDate: { $gte: new Date() },
+            $or: [
+                { status: { $in: HOLDING_STATUSES } },
+                { status: 'draft', flowStep: { $gte: QUOTE_ISSUED_STEP } },
+            ],
             'units.startDate': { $lte: to },
             'units.endDate': { $gte: from },
         })

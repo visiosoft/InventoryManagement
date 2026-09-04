@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { heldByQuoteFilter } from './unitStatus.js';
+import { heldByQuoteFilter, QUOTE_ISSUED_STEP } from './unitStatus.js';
 
 /* The filter is the rule. Asserting it directly keeps the four conditions
    honest without a database — each one is here because dropping it puts a
@@ -14,20 +14,24 @@ test('a quotation holds the unit it names', () => {
    assert.equal(f['units.unit'], UNIT);
 });
 
-test('a draft counts, because on this database every quote is one', () => {
+test('a draft counts, but only once it is actually a quotation', () => {
    /* Both send actions set 'sent' and not one quote of 57 has ever carried it:
-      the team downloads the PDF and sends it by hand. A rule keyed on 'sent'
-      would be tidy and would hold nothing at all. */
+      the team downloads the PDF and sends it by hand, so every real quotation
+      sits in 'draft'. But the wizard writes the row at the start, so a booking
+      somebody opened and walked away from looks the same to a query that only
+      reads status — F2-64 was held by a quote abandoned on the Units step. */
    const f = heldByQuoteFilter(UNIT, AT);
-   assert.ok(f.status.$in.includes('draft'));
-   assert.ok(f.status.$in.includes('sent'));
-   assert.ok(f.status.$in.includes('accepted'));
+   const [sentOrAccepted, issuedDraft] = f.$or;
+   assert.deepEqual(sentOrAccepted.status, { $in: ['sent', 'accepted'] });
+   assert.equal(issuedDraft.status, 'draft');
+   assert.deepEqual(issuedDraft.flowStep, { $gte: QUOTE_ISSUED_STEP });
 });
 
 test('a quote that was turned down holds nothing', () => {
    const f = heldByQuoteFilter(UNIT, AT);
-   assert.ok(!f.status.$in.includes('rejected'));
-   assert.ok(!f.status.$in.includes('expired'));
+   const statuses = f.$or.flatMap((c) => c.status?.$in ?? [c.status]);
+   assert.ok(!statuses.includes('rejected'));
+   assert.ok(!statuses.includes('expired'));
 });
 
 test('a quote nobody can accept any more holds nothing', () => {

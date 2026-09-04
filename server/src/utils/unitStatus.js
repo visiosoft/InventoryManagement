@@ -22,18 +22,34 @@ import { Unit, Contract, Quote } from '../models/index.js';
  * actions set that status, and on production not one quote of 57 has ever
  * carried it — the team downloads the PDF and sends it by hand over WhatsApp,
  * so every real quotation sits in 'draft' for ever. A rule keyed on 'sent'
- * would be tidy and would hold nothing at all. Writing a quotation for a named
- * customer against a named unit is the commitment here, and that is what is
- * honoured.
+ * would be tidy and would hold nothing at all.
+ *
+ * So a draft counts — but only once it is actually a quotation. The booking
+ * wizard writes the quote row at the start and keeps `flowStep` as it moves,
+ * so a booking somebody opened and walked away from looks exactly like a real
+ * quotation to a query that only reads `status`. That is not theoretical:
+ * F2-64 was held by QT-000150, opened for Eldon lemuel, abandoned on the Units
+ * step, while the genuine quotation for that unit belonged to somebody else.
+ * Of ten drafts, five sit at step 2 or below and five have reached the
+ * quotation itself — the step is what separates a promise from a false start.
  */
-export const HOLDING_STATUSES = ['draft', 'sent', 'accepted'];
+
+/** The wizard's steps: 0 customer, 1 units, 2 quotation, 3 contract. A quote
+ *  that has reached the contract step has been produced and priced; anything
+ *  earlier is still being written. */
+export const QUOTE_ISSUED_STEP = 3;
+
+export const HOLDING_STATUSES = ['sent', 'accepted'];
 
 export function heldByQuoteFilter(unitId, at = new Date()) {
    return {
       'units.unit': unitId,
-      status: { $in: HOLDING_STATUSES },
       expiryDate: { $gte: at },
       contract: { $in: [null, undefined] },
+      $or: [
+         { status: { $in: HOLDING_STATUSES } },
+         { status: 'draft', flowStep: { $gte: QUOTE_ISSUED_STEP } },
+      ],
    };
 }
 
