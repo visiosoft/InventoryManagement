@@ -16,6 +16,7 @@
  * the middleware never knows or cares which mode it is running in.
  */
 
+import jwt from 'jsonwebtoken';
 import { connectionFor } from '../tenancy/connections.js';
 import { runInTenant } from '../tenancy/context.js';
 
@@ -37,13 +38,39 @@ const legacyOrg = () => ({ id: 'single', slug: 'single', name: process.env.COMPA
  * `requireAuth`, which puts the organisation on the token; in single mode
  * nothing is needed, because there is only one.
  */
+/**
+ * The organisation on the request's token.
+ *
+ * Read here rather than taken from `req.user`, because this middleware is
+ * mounted in front of every API route and `requireAuth` runs after it — so
+ * `req.user` is not set yet when this needs to know. Relying on it meant every
+ * request looked like an anonymous one, single mode pinned the deployment's
+ * own database for all of them, and a customer signing in was shown the
+ * landlord's contracts. That is the bug this function exists to prevent.
+ *
+ * This does not authorise anything: a bad token is simply "no organisation",
+ * and `requireAuth` still refuses it a moment later.
+ */
+export function orgOnToken(req) {
+   if (req.user?.org) return req.user.org;
+   const header = req.headers.authorization || '';
+   if (!header.startsWith('Bearer ')) return null;
+   try {
+      return jwt.verify(header.slice(7), process.env.JWT_SECRET)?.org ?? null;
+   } catch {
+      return null;
+   }
+}
+
 export function withTenant(req, res, next) {
+   const orgId = orgOnToken(req);
+
    /* Single mode serves the company that owns the deployment — and any
       customer created on it. A token carrying an organisation is honoured
       whatever the mode; without one, single mode falls back to the database
       from .env, which is every one of our own users. Multi mode has no
       fallback, because there is no "our own" there to fall back to. */
-   if (tenancyMode() === 'single' && !req.user?.org) {
+   if (tenancyMode() === 'single' && !orgId) {
       return runInTenant({ connection: connectionFor(legacyDbName()), org: legacyOrg() }, () => next());
    }
 
@@ -52,7 +79,6 @@ export function withTenant(req, res, next) {
       from. They are not given a context here, so if one of them touches a
       database without choosing an organisation first, it throws rather than
       guessing. */
-   const orgId = req.user?.org;
    if (!orgId) return next();
 
    loadOrganisation(orgId)
