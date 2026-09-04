@@ -93,6 +93,7 @@ import { summariseRecent } from './services/conversationSummary.js';
 import { ensureDigest, dayKeyFor, previousDay, localHour } from './services/dailyDigest.js';
 import { runDayBriefs } from './services/dayBrief.js';
 import { runLeadSla } from './services/leadSla.js';
+import { releaseLapsedHolds } from './utils/unitStatus.js';
 import { runCampaignTick } from './services/campaignSender.js';
 import { inspectWhatsAppToken } from './services/whatsapp.js';
 import { runAutomationRules, getAutoSend } from './services/automationEngine.js';
@@ -465,6 +466,19 @@ async function start() {
       console.error('[LeadSLA]', e.message);
     }
   }, 60_000), 60_000);
+
+  /* Units held by a quotation that has since expired.
+     A quote holds its unit until its expiry date, and nothing else sweeps
+     those — without this a unit quoted in June would stay reserved for ever.
+     Hourly, and it only ever releases. */
+  setTimeout(() => setInterval(async () => {
+    try {
+      const freed = await releaseLapsedHolds();
+      if (freed.length) console.log(`[Units] released ${freed.length} unit(s): ${freed.join(', ')}`);
+    } catch (e) {
+      console.error('[Units]', e.message);
+    }
+  }, 60 * 60 * 1000), 90_000);
 
   const SWEEP_INTERVAL = 2 * 60 * 1000;
   setTimeout(() => setInterval(async () => {

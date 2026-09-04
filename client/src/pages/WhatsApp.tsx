@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import {
   Send, MessageSquare, RefreshCw, UserPlus, UserCheck, Bell, BellOff, FileText,
   Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Paperclip, Pencil,
-  Bot, Tag, Check, ClipboardList, Sparkles, Trash2, MapPin, Mic, Square, AlertTriangle, MoreVertical, UserCog, Loader2, Clock,
+  Bot, Tag, Check, ClipboardList, Sparkles, Trash2, MapPin, Mic, Square, AlertTriangle, MoreVertical, UserCog, Loader2,
 } from 'lucide-react'
 import { useVoiceRecorder, recordingSupported, formatDuration } from '../lib/voiceRecorder'
 import { api, whatsappApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel } from '../lib/api'
@@ -1866,6 +1866,10 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     waiting: convoList.filter(isWaiting).length,
     quiet: convoList.filter(isQuiet).length,
   }
+  /* One number for the closed dropdown. The two queues never overlap — a chat
+     is either owed a reply or silent on us, never both — so adding them is
+     honest. */
+  const needsAttention = (ownerCounts.waiting ?? 0) + (ownerCounts.quiet ?? 0)
 
   /* The label filter always runs here. The owner runs here too when the server
      did not do it, so the tabs work against either version of the API. */
@@ -2143,6 +2147,9 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
    * the date is known, and it was the one place the follow-up could not be
    * set. Everything after this is machinery that already existed: a task on
    * the board that morning, a push at the hour. */
+  /* Notices somebody has read and put away, by chat. Kept for the session
+     only: a thread that escalates again tomorrow should say so again. */
+  const [escalationHidden, setEscalationHidden] = useState<Set<string>>(new Set())
   const [remindOpen, setRemindOpen] = useState(false)
   const [remindDate, setRemindDate] = useState('')
   const remind = useMutation({
@@ -2347,47 +2354,31 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
               })}
             </div>
 
-            {/* Who is owed an answer.
-                Its own bar rather than a fourth pill: it is not another way to
-                slice the inbox, it is the work outstanding, and a number that
-                is not zero should be uncomfortable to look at. */}
-            <button
-              type="button"
-              onClick={() => chooseOwnerFilter(ownerFilter === 'waiting' ? (me?.role === 'sales_rep' ? 'mine' : 'all') : 'waiting')}
-              className="flex w-full items-center gap-2 cursor-pointer"
+            {/* The two queues that are not about ownership: who is owed an
+                answer, and what has gone silent on us. A dropdown rather than
+                two more bars — they were costing a third of the sidebar's
+                height before any chat was visible, and most of the day both
+                read as "nothing to do here". */}
+            <select
+              value={ownerFilter === 'waiting' || ownerFilter === 'quiet' ? ownerFilter : ''}
+              onChange={(e) => chooseOwnerFilter(
+                (e.target.value || (me?.role === 'sales_rep' ? 'mine' : 'all')) as OwnerTab,
+              )}
+              className="w-full cursor-pointer"
               style={{
-                padding: '7px 10px', borderRadius: 10, fontSize: 12, fontWeight: 700, textAlign: 'left',
-                border: `1px solid ${ownerCounts.waiting > 0 ? '#F6C9B8' : '#EDE5FF'}`,
-                background: ownerFilter === 'waiting' ? '#FDEDE6' : ownerCounts.waiting > 0 ? '#FEF6F2' : '#F7F3FF',
-                color: ownerCounts.waiting > 0 ? '#9A3412' : FAINT_INK,
+                height: 30, borderRadius: 10, fontSize: 12, fontWeight: 700, padding: '0 8px',
+                color: needsAttention > 0 ? '#9A3412' : FAINT_INK,
+                background: needsAttention > 0 ? '#FEF6F2' : '#F7F3FF',
+                border: `1px solid ${needsAttention > 0 ? '#F6C9B8' : '#EDE5FF'}`,
               }}
-              title="Conversations where the customer wrote last and nobody has replied"
+              title="Chats that need chasing, whoever owns them"
             >
-              <Clock size={13} />
-              <span className="flex-1">Waiting on us</span>
-              <span style={{ fontWeight: 800 }}>{ownerCounts.waiting ?? 0}</span>
-            </button>
-
-            {/* The quiet half. "I'll let you know" is answered, so it never
-                reaches the bar above — and then nobody thinks about it again.
-                Deliberately calmer than that one: this is work to get to, not
-                somebody kept waiting. */}
-            <button
-              type="button"
-              onClick={() => chooseOwnerFilter(ownerFilter === 'quiet' ? (me?.role === 'sales_rep' ? 'mine' : 'all') : 'quiet')}
-              className="flex w-full items-center gap-2 cursor-pointer"
-              style={{
-                padding: '7px 10px', borderRadius: 10, fontSize: 12, fontWeight: 700, textAlign: 'left',
-                border: `1px solid ${ownerFilter === 'quiet' ? '#C9BDF0' : '#EDE5FF'}`,
-                background: ownerFilter === 'quiet' ? '#EDE5FF' : '#F7F3FF',
-                color: (ownerCounts.quiet ?? 0) > 0 ? '#4A1FA0' : FAINT_INK,
-              }}
-              title="We spoke last and nothing has come back for three days or more. Setting a reminder takes a chat off this list."
-            >
-              <MessageSquare size={13} />
-              <span className="flex-1">Went quiet</span>
-              <span style={{ fontWeight: 800 }}>{ownerCounts.quiet ?? 0}</span>
-            </button>
+              <option value="">
+                {needsAttention > 0 ? `Needs chasing · ${needsAttention}` : 'Nothing needs chasing'}
+              </option>
+              <option value="waiting">Waiting on us · {ownerCounts.waiting ?? 0}</option>
+              <option value="quiet">Went quiet · {ownerCounts.quiet ?? 0}</option>
+            </select>
 
             {/* Click a label to narrow the list to the chats carrying it. */}
             {waLabels.length > 0 && (
@@ -2887,7 +2878,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
 
           {/* The assistant handed this thread over. Shown rather than silently
               going quiet, so nobody wonders why it stopped replying. */}
-          {selectedConvo?.botStatus === 'escalated' && (
+          {selectedConvo?.botStatus === 'escalated' && !escalationHidden.has(selectedConvo.phoneNormalized) && (
             <div className="shrink-0 mx-6 mb-2 flex items-start gap-2 rounded-xl px-3.5 py-2.5"
               style={{ background: '#FFF7E6', border: '1px solid #F5D9A0' }}>
               <UserCheck size={15} style={{ color: '#8A5A00', flex: '0 0 auto', marginTop: 1 }} />
@@ -2904,6 +2895,20 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                 title="The assistant will answer this conversation again"
               >
                 {resumeBot.isPending ? 'Handing back…' : 'Hand back to AI'}
+              </button>
+              {/* Out of the way without handing the thread back: reading the
+                  reason is usually all somebody needs, and after that the
+                  notice is just taking up the composer's space. It returns if
+                  the assistant escalates again. */}
+              <button
+                type="button"
+                onClick={() => setEscalationHidden((h) => new Set(h).add(selectedConvo.phoneNormalized))}
+                className="shrink-0 cursor-pointer"
+                style={{ background: 'none', border: 'none', color: '#8A5A00', lineHeight: 1, padding: 2 }}
+                title="Hide this notice"
+                aria-label="Hide this notice"
+              >
+                <X size={14} />
               </button>
             </div>
           )}

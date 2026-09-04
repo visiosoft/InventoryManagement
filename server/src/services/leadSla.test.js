@@ -58,19 +58,19 @@ test('how long it has been waiting', () => {
 });
 
 test('the reminder says what happens next, and when it will not', () => {
-   const soon = buildNudge({ lead: lead(), waited: 20, reassignInMinutes: 10 });
+   const soon = buildNudge({ leads: [{ lead: lead(), waited: 20 }], reassignMinutes: 30 });
    assert.match(soon.text, /has been yours for 20 minutes/);
    assert.match(soon.text, /next 10 minutes it goes to somebody else/);
 
    // With reassignment off there is no threat to make, so none is made.
-   const quiet = buildNudge({ lead: lead(), waited: 20, reassignInMinutes: 0 });
+   const quiet = buildNudge({ leads: [{ lead: lead(), waited: 20 }], reassignMinutes: 0 });
    assert.match(quiet.text, /They are still waiting\./);
    assert.ok(!quiet.text.includes('somebody else'));
 });
 
 test('a lead with no name is still referred to as somebody', () => {
    const anonymous = lead({ fullName: 'WhatsApp Contact 5521', whatsappProfileName: 'Sam' });
-   assert.match(buildNudge({ lead: anonymous, waited: 16 }).subject, /Sam/);
+   assert.match(buildNudge({ leads: [{ lead: anonymous, waited: 16 }] }).subject, /Sam/);
 });
 
 test('a long wait is said in hours or days, not in minutes', () => {
@@ -80,7 +80,26 @@ test('a long wait is said in hours or days, not in minutes', () => {
    assert.equal(humanWait(180), '3 hours');
    assert.equal(humanWait(2962), '2 days');
 
-   const stale = buildNudge({ lead: { _id: 'l1', fullName: 'Nadia' }, waited: 2962 });
+   const stale = buildNudge({ leads: [{ lead: { _id: 'l1', fullName: 'Nadia' }, waited: 2962 }] });
    assert.match(stale.text, /has been yours for 2 days/);
    assert.ok(!stale.text.includes('2962'));
+});
+
+test('everything one person is due arrives as one message', () => {
+   /* Per lead this sent 27 emails in a day to two inboxes, on top of the one
+      each lead already sends when it is handed over. Two emails per lead is
+      how an inbox rule gets written. */
+   const many = buildNudge({
+      leads: [
+         { lead: lead({ _id: 'a', fullName: 'Nadia' }), waited: 20 },
+         { lead: lead({ _id: 'b', fullName: 'Omar' }), waited: 300 },
+      ],
+      reassignMinutes: 30,
+   });
+   assert.equal(many.subject, '2 leads still waiting');
+   // Longest wait first, whatever order they came in.
+   assert.ok(many.text.indexOf('Omar') < many.text.indexOf('Nadia'));
+   assert.match(many.push.body, /Longest: Omar, 5 hours/);
+   // One link to the board, not one per lead.
+   assert.equal(many.push.url, '/leads');
 });

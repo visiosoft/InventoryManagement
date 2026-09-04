@@ -1,11 +1,19 @@
 import { Unit, Contract, Quote } from '../models/index.js';
+import { HOLDING_STATUSES } from '../utils/unitStatus.js';
 
 /**
  * Which units are taken over a date window, and by what.
  *
  * A unit is unavailable if an active or pending-signature contract overlaps the
- * window, or if an open quote holds it — a quote that has been sent is a promise
- * we have already made, so treating it as free would let us sell it twice.
+ * window, or if an open quote holds it — a quotation is a promise we have
+ * already made, so treating it as free would let us sell it twice.
+ *
+ * Which quote statuses count is decided once, in utils/unitStatus.js, and
+ * imported here. The two used to disagree: this asked for 'sent' or 'accepted'
+ * and no quote on production has ever been marked sent, because the team
+ * downloads the PDF and sends it by hand. So the picker offered units that had
+ * been quoted to somebody — F2-64 was offered as free while a quotation for it
+ * sat with a customer.
  *
  * Extracted from GET /quotes/available-units so the availability answer the AI
  * assistant gives a customer is computed by the same code that the booking
@@ -45,7 +53,9 @@ export async function computeUnitAvailability({ from = null, to = null, includeA
 
     if (from && to) {
         const openQuotes = await Quote.find({
-            status: { $in: ['sent', 'accepted'] },
+            status: { $in: HOLDING_STATUSES },
+            // A quote nobody can accept any more is not a promise being kept.
+            expiryDate: { $gte: new Date() },
             'units.startDate': { $lte: to },
             'units.endDate': { $gte: from },
         })

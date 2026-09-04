@@ -223,6 +223,7 @@ router.post('/:id/share', async (req, res) => {
         user: req.user.id,
     });
     await quote.save();
+    await resyncQuoteUnits(quote.units.map((u) => u.unit));
 
     const proto = req.headers['x-forwarded-proto'] || req.protocol;
     const host = req.headers['x-forwarded-host'] || req.get('host');
@@ -264,6 +265,7 @@ router.post('/:id/send-email', async (req, res) => {
     if (quote.status === 'draft') quote.status = 'sent';
     quote.timeline.push({ type: 'sent', text: `Quote emailed to ${to} by ${userName}`, user: req.user.id });
     await quote.save();
+    await resyncQuoteUnits(quote.units.map((u) => u.unit));
     res.json({ sent: true, to });
 });
 
@@ -337,6 +339,8 @@ router.post('/', async (req, res) => {
         assignedTo: req.user.id,
         timeline: [{ type: 'created', text: `Quote created by ${userName}`, user: req.user.id }],
     });
+    // A quote created as sent holds its units from that moment.
+    await resyncQuoteUnits(quote.units.map((u) => u.unit));
     res.status(201).json(await quote.populate('customer', 'fullName email phone'));
 });
 
@@ -358,15 +362,30 @@ router.put('/:id', async (req, res) => {
     const userName = req.user.name || req.user.email || 'user';
     quote.timeline.push({ type: 'updated', text: `Quote updated by ${userName}`, user: req.user.id });
 
+    // What it held before the edit, so a unit taken off the quote is released
+    // rather than left reserved by a quote that no longer mentions it.
+    const heldBefore = quote.units.map((u) => u.unit);
+
     // Keep the current status unless the caller explicitly changes it
     Object.assign(quote, body, req.body.status ? {} : { status: quote.status });
     await quote.save();
+
+    await resyncQuoteUnits(heldBefore, quote.units.map((u) => u.unit));
 
     // Keep a not-yet-booked contract + its unpaid invoice in sync with the edit
     await syncContractFromQuote(quote, userName);
 
     res.json(await quote.populate('customer', 'fullName email phone'));
 });
+
+/* A quote's units, whichever of them it had before and after a change.
+ *
+ * Both sides matter: taking a unit off a quote has to release it just as
+ * surely as putting one on has to hold it. */
+async function resyncQuoteUnits(...lists) {
+    const ids = [...new Set(lists.flat().filter(Boolean).map(String))];
+    await Promise.all(ids.map((uid) => syncUnitStatus(uid)));
+}
 
 router.patch('/:id/status', async (req, res) => {
     const status = String(req.body?.status || '');
@@ -380,6 +399,11 @@ router.patch('/:id/status', async (req, res) => {
     quote.status = status;
     quote.timeline.push({ type: 'status_changed', text: `Status changed to ${status} by ${userName}`, user: req.user.id });
     await quote.save();
+
+    /* Sending it holds the units; rejecting or expiring it lets them go. Both
+       directions run through the same recompute, which reads the world rather
+       than trying to work out what this particular change implies. */
+    await resyncQuoteUnits(quote.units.map((u) => u.unit));
 
     res.json(await quote.populate('customer', 'fullName email phone'));
 });

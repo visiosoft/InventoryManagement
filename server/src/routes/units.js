@@ -3,6 +3,7 @@ import { requireAdmin } from '../middleware/auth.js';
 import { contractLeased } from '../services/rateRealisation.js';
 import { Unit, Contract, Site } from '../models/index.js';
 import { siteScope } from '../utils/siteScope.js';
+import { syncAllUnitStatuses, statusForUnit } from '../utils/unitStatus.js';
 
 const router = Router();
 
@@ -229,6 +230,33 @@ router.put('/:id', async (req, res) => {
   Object.assign(unit, update);
   await unit.save();
   res.json(unit);
+});
+
+/* Recompute every unit's status from the contracts and quotations that
+ * reference it.
+ *
+ * Statuses are stored, not derived on read, so a change to what counts as a
+ * hold does not reach units already sitting in the database — a quotation
+ * written before that change still shows its unit as available until something
+ * touches it. This is how that is put right, once, deliberately, by an admin.
+ *
+ * `?dry=1` reports what would change without writing.
+ */
+router.post('/resync-status', requireAdmin, async (req, res) => {
+  try {
+    if (String(req.query.dry || '') === '1') {
+      const units = await Unit.find().select('unitNumber status').lean();
+      const would = [];
+      for (const u of units) {
+        const should = await statusForUnit(u._id);
+        if (should && should !== u.status) would.push({ unitNumber: u.unitNumber, from: u.status, to: should });
+      }
+      return res.json({ dry: true, changed: would });
+    }
+    res.json({ changed: await syncAllUnitStatuses() });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 router.delete('/:id', requireAdmin, async (req, res) => {
