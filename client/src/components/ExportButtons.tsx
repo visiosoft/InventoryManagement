@@ -13,12 +13,22 @@ import { api, apiError } from '../lib/api'
 
 export type ExportColumn = { label: string; numeric?: boolean }
 
-export function ExportButtons({ title, subtitle, columns, rows, site }: {
+export function ExportButtons({ title, subtitle, columns, rows, getRows, total, site }: {
   title: string
   subtitle?: string
   columns: ExportColumn[]
   /** One array per row, in the same order as `columns`. */
   rows: (string | number | null)[][]
+  /* Fetched when the button is pressed, for a paged table.
+   *
+   * A page showing 25 of 148 would otherwise export 25 — the file would match
+   * the screen and not the answer somebody wanted. Where this is given it wins
+   * over `rows`, and `rows` is used only to know whether there is anything to
+   * export at all. */
+  getRows?: () => Promise<(string | number | null)[][]>
+  /** How many rows will actually be written, for the tooltip. Defaults to
+   *  what is on screen, which is right when `getRows` is not given. */
+  total?: number
   /** Puts the right facility on the PDF letterhead. */
   site?: string | null
 }) {
@@ -29,9 +39,10 @@ export function ExportButtons({ title, subtitle, columns, rows, site }: {
     setBusy(kind)
     setErr('')
     try {
+      const body = getRows ? await getRows() : rows
       const { data, headers } = await api.post(
         `/exports/${kind}${site ? `?site=${site}` : ''}`,
-        { title, subtitle, columns, rows },
+        { title, subtitle, columns, rows: body },
         { responseType: 'blob' },
       )
       // The filename the server chose, so the two cannot disagree.
@@ -52,6 +63,8 @@ export function ExportButtons({ title, subtitle, columns, rows, site }: {
     }
   }
 
+  const count = total ?? rows.length
+
   const btn = {
     height: 30, borderRadius: 999, padding: '0 12px', fontSize: 12.5, fontWeight: 600,
     background: '#fff', color: '#2B2440', border: '1px solid rgba(20,8,31,.14)',
@@ -65,7 +78,7 @@ export function ExportButtons({ title, subtitle, columns, rows, site }: {
         disabled={busy !== null || !rows.length}
         style={btn}
         className="inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-40"
-        title={rows.length ? `Download ${rows.length} rows as a spreadsheet` : 'Nothing to export'}
+        title={count ? `Download ${count} rows as a spreadsheet` : 'Nothing to export'}
       >
         {busy === 'xlsx' ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />}
         Excel
@@ -76,7 +89,7 @@ export function ExportButtons({ title, subtitle, columns, rows, site }: {
         disabled={busy !== null || !rows.length}
         style={btn}
         className="inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-40"
-        title={rows.length ? `Download ${rows.length} rows as a PDF` : 'Nothing to export'}
+        title={count ? `Download ${count} rows as a PDF` : 'Nothing to export'}
       >
         {busy === 'pdf' ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
         PDF

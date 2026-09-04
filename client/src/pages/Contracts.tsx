@@ -7,6 +7,7 @@ import { useAuth } from '../lib/auth'
 import type { Contract } from '../lib/types'
 import EmailCustomersModal from './customers/EmailCustomersModal'
 import { Button, EmptyState, Modal, Spinner, statusLabel } from '../components/ui'
+import { ExportButtons, type ExportColumn } from '../components/ExportButtons'
 import { formatDate, formatMoney } from '../lib/utils'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', serif", letterSpacing: '-0.02em' } as const
@@ -119,6 +120,8 @@ export default function Contracts() {
 
   const rows = data?.data ?? []
 
+
+
   /* What each tenant owes, fetched separately.
    *
    * Zoho's contact list is a paged remote call that takes about fifteen
@@ -150,6 +153,77 @@ export default function Contracts() {
     }
     return 0
   }
+
+  /* Downloading the tenant list.
+   *
+   * Every filter on screen goes with it, and every row that matches them —
+   * not the twenty-five being displayed. A spreadsheet of one page of a
+   * hundred and forty-eight is the wrong answer to "export the tenants", and
+   * the person opening it in Excel has no way to tell it was cut.
+   *
+   * The columns are what the page shows plus the things a spreadsheet is
+   * actually used for: the phone number and email nobody can copy off a table
+   * row, and the balance, which is the reason most of these get exported. */
+  const exportColumns: ExportColumn[] = [
+    { label: 'Tenant' },
+    { label: 'Phone' },
+    { label: 'Email' },
+    { label: 'Contract' },
+    { label: 'Units' },
+    { label: 'Floor' },
+    { label: 'Start' },
+    { label: 'End' },
+    { label: 'Days left', numeric: true },
+    { label: 'Rate', numeric: true },
+    { label: 'Contract value', numeric: true },
+    { label: 'Balance due', numeric: true },
+    { label: 'Status' },
+    { label: 'Renewal' },
+  ]
+
+  const toExportRow = (c: Contract): (string | number | null)[] => {
+    const units = c.units?.length ? c.units : c.unit ? [c.unit] : []
+    const daysLeft = (!c.endDate || !['active', 'pending_signature'].includes(c.status))
+      ? null
+      : Math.ceil((new Date(c.endDate).getTime() - Date.now()) / 86400000)
+    return [
+      c.customer?.fullName ?? '',
+      // The primary number, then whatever else is on file — a spreadsheet is
+      // where somebody goes to phone a list of people.
+      [c.customer?.phone, ...(c.customer?.phones ?? [])].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(' / '),
+      c.customer?.email ?? '',
+      c.contractNo ?? '',
+      units.map((u) => u?.unitNumber).filter(Boolean).join(', '),
+      units.map((u) => u?.floor).filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(', '),
+      c.startDate ? formatDate(c.startDate) : '',
+      c.endDate ? formatDate(c.endDate) : '',
+      daysLeft,
+      // Numbers go as numbers: a total somebody cannot sum in Excel is a
+      // picture of a number.
+      Number(c.rate) || 0,
+      Number(contractValue(c)) || 0,
+      Number(c.outstanding) || 0,
+      statusLabel(c.status),
+      c.renewalIntent ? c.renewalIntent.replace(/_/g, ' ') : '',
+    ]
+  }
+
+  /* Fetched when the button is pressed, not held in memory: the page keeps
+     twenty-five rows and this asks for everything the filters match. */
+  async function fetchAllForExport() {
+    const all = await api
+      .get('/contracts', { params: { ...params, page: 1, limit: 5000 } })
+      .then((r) => r.data as PagedContracts)
+    return (all.data ?? []).map(toExportRow)
+  }
+
+  const exportSubtitle = [
+    `${data?.total ?? 0} tenants`,
+    search ? `matching "${search}"` : '',
+    status ? statusLabel(status) : '',
+    floor ? `floor ${floor}` : '',
+    showArchived ? 'including archived' : '',
+  ].filter(Boolean).join(' · ')
 
   // Group the current page's rows for display
   const PAYMENT_LABELS: Record<string, string> = { paid: 'Fully paid', partial: 'Partially paid', unpaid: 'Unpaid', no_invoice: 'No invoice' }
@@ -276,6 +350,14 @@ export default function Contracts() {
                 {deleteManyContracts.isPending ? 'Deleting…' : `Delete selected (${selectedContractIds.length})`}
               </button>
             )}
+            <ExportButtons
+              title="Tenants"
+              subtitle={exportSubtitle}
+              columns={exportColumns}
+              rows={rows.map(toExportRow)}
+              getRows={fetchAllForExport}
+              total={data?.total ?? rows.length}
+            />
             {isAdmin && (
               <button
                 onClick={() => setEmailing(true)}
