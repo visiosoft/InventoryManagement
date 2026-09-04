@@ -15,10 +15,11 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import { Organisation, OrgUserIndex, PlatformAudit } from '../tenancy/control.js';
-import { connectionFor, forgetDatabase } from '../tenancy/connections.js';
+import { connectionFor, dropTenantDatabase } from '../tenancy/connections.js';
 import { runInTenant } from '../tenancy/context.js';
 import { provisionOrganisation } from '../tenancy/provision.js';
 import { forgetOrganisation, tenancyMode } from '../middleware/tenant.js';
+import { isProtectedDatabase } from '../tenancy/protected.js';
 
 const router = Router();
 
@@ -218,15 +219,13 @@ router.delete('/organisations/:id/data', async (req, res) => {
        * company down with one click on a page whose whole job is deleting
        * things. The prefix is set at creation and never changes, so anything
        * without it is not a customer database and this refuses to touch it. */
-      if (!/^org_/.test(String(org.dbName || ''))) {
+      if (isProtectedDatabase(org.dbName)) {
          return res.status(409).json({
             error: `"${org.dbName}" is not a customer database. Refusing to drop it.`,
          });
       }
 
-      const connection = connectionFor(org.dbName);
-      await connection.dropDatabase();
-      forgetDatabase(org.dbName);
+      await dropTenantDatabase(org.dbName);
       forgetOrganisation(org._id);
 
       await OrgUserIndex().deleteMany({ organisation: org._id });

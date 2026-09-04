@@ -61,6 +61,26 @@ export function openDatabases() {
 }
 
 /**
+ * Delete a customer's database.
+ *
+ * Through the raw driver, deliberately, and never through `connectionFor`:
+ * that compiles 55 models onto the connection, and compiling a model can
+ * create its collection. Dropping through it therefore raced against its own
+ * index building — the database was dropped and then quietly rebuilt itself,
+ * empty but present, so a delete that reported success left 55 collections
+ * behind. Dropping needs no models at all.
+ *
+ * The caller checks `isProtectedDatabase` first. This does not, because a
+ * function whose whole purpose is to destroy a database should not also be the
+ * thing deciding whether it is allowed to.
+ */
+export async function dropTenantDatabase(dbName) {
+   if (!dbName) throw new Error('No database to drop');
+   await baseConnection().getClient().db(dbName).dropDatabase();
+   cache.delete(dbName);
+}
+
+/**
  * Forget one database's connection.
  *
  * Wanted when an organisation is deleted or its database is re-seeded — the

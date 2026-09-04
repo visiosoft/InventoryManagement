@@ -7,3 +7,7 @@ server/uploads/
 whatsapplead/.wa-profile/
 *.log
 .DS_Store
+
+# The snapshot used by scripts/verify-live-untouched.mjs — a local record of
+# what the live database held, not something to share or commit.
+server/.live-snapshot.json

@@ -20,6 +20,7 @@ import { Organisation, OrgUserIndex, PlatformAudit } from './control.js';
 import { connectionFor } from './connections.js';
 import { runInTenant, currentConnection } from './context.js';
 import { SCHEMAS } from '../models/index.js';
+import { isProtectedDatabase } from './protected.js';
 
 /** A URL-safe name from whatever somebody typed. */
 export function slugify(name) {
@@ -74,6 +75,17 @@ async function freeSlug(wanted) {
 
 async function databaseNameFor(slug) {
    const base = `org_${slug}`.slice(0, 60);
+
+   /* Never the database this deployment already serves.
+    *
+    * The prefix makes a collision impossible today, because nothing existing
+    * carries it. This says so out loud anyway: the cost of being wrong here is
+    * a new customer being seeded on top of a live company's data, and a
+    * one-line check is cheaper than trusting that a naming convention is never
+    * revisited. */
+   if (isProtectedDatabase(base)) {
+      throw new Error(`${base} is this deployment's own database and cannot be given to a customer`);
+   }
    if (!await Organisation().exists({ dbName: base })) return base;
 
    /* Two customers who sanitise to the same name — "Acme Storage" and
