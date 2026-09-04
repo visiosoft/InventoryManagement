@@ -42,23 +42,51 @@ export function withTenant(req, res, next) {
       return runInTenant({ connection: connectionFor(legacyDbName()), org: legacyOrg() }, () => next());
    }
 
+   /* No signed-in user yet. Signing in, signing up and the webhooks work out
+      their own customer, because they have to — there is no token to read one
+      from. They are not given a context here, so if one of them touches a
+      database without choosing an organisation first, it throws rather than
+      guessing. */
    const orgId = req.user?.org;
-   if (!orgId) {
-      /* A token issued before organisations existed. Rejected rather than
-         guessed at: signing in again is a small inconvenience, and picking a
-         database for somebody is not a thing to do on a hunch. */
-      return res.status(401).json({ error: 'Please sign in again.' });
-   }
+   if (!orgId) return next();
 
-   // Resolved from the control database in Phase 1's org-aware login; until
-   // then multi mode is not something a deployment can switch on.
-   const org = req.org;
-   if (!org) return res.status(401).json({ error: 'Please sign in again.' });
-   if (org.status === 'suspended') {
-      return res.status(403).json({ error: 'This account is suspended. Please get in touch.' });
-   }
+   loadOrganisation(orgId)
+      .then((org) => {
+         if (!org) return res.status(401).json({ error: 'Please sign in again.' });
+         if (org.status === 'suspended') {
+            return res.status(403).json({ error: 'This account is suspended. Please get in touch.' });
+         }
+         if (org.status !== 'trial' && org.status !== 'active') {
+            return res.status(403).json({ error: 'This account is not active.' });
+         }
+         req.org = org;
+         return runInTenant({ connection: connectionFor(org.dbName), org }, () => next());
+      })
+      .catch(next);
+   return undefined;
+}
 
-   return runInTenant({ connection: connectionFor(org.dbName), org }, () => next());
+/* The organisation, briefly remembered.
+ *
+ * Every request would otherwise be a second round trip to the control database
+ * before it could start. Thirty seconds is short enough that a suspension takes
+ * effect while somebody is still on the phone about it, and long enough that a
+ * busy customer is not paying for the lookup on every click. */
+const orgCache = new Map();
+const ORG_CACHE_MS = 30_000;
+
+async function loadOrganisation(id) {
+   const held = orgCache.get(String(id));
+   if (held && held.at > Date.now() - ORG_CACHE_MS) return held.org;
+   const { organisationById } = await import('../tenancy/control.js');
+   const org = await organisationById(id);
+   orgCache.set(String(id), { org, at: Date.now() });
+   return org;
+}
+
+/** After a change an owner made — suspending somebody should not wait. */
+export function forgetOrganisation(id) {
+   orgCache.delete(String(id));
 }
 
 /**
@@ -77,6 +105,6 @@ export function withTenantFor(org, fn) {
 /** Every organisation a scheduled job should sweep. One, for now. */
 export async function activeOrganisations() {
    if (tenancyMode() === 'single') return [legacyOrg()];
-   // Phase 1 replaces this with the control database's list.
-   return [];
+   const { organisationsForJobs } = await import('../tenancy/control.js');
+   return organisationsForJobs();
 }

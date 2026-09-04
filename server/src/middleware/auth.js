@@ -12,9 +12,20 @@ export function requireAuth(req, res, next) {
   }
 }
 
-export function signToken(user) {
+/**
+ * @param org  the customer this person belongs to, in multi-tenant mode. The
+ *             claim is the organisation's id and nothing else: never the
+ *             database name, which is ours to resolve and not a client's to
+ *             know or influence. Resolving it per request is also what makes a
+ *             suspension take effect without waiting for a token to expire.
+ */
+export function signToken(user, org = null) {
   return jwt.sign(
-    { id: user._id, email: user.email, name: user.name, role: user.role, permissions: user.permissions ?? [] },
+    {
+      id: user._id, email: user.email, name: user.name, role: user.role,
+      permissions: user.permissions ?? [],
+      ...(org ? { org: String(org._id) } : {}),
+    },
     process.env.JWT_SECRET,
     { expiresIn: '7d' }
   );

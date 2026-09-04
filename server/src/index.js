@@ -20,6 +20,7 @@ import cors from 'cors';
 import mongoose from 'mongoose';
 import { connectDb } from './db.js';
 import { useBaseConnection, baseConnection } from './tenancy/connections.js';
+import { openControl } from './tenancy/control.js';
 import { withTenant, withTenantFor } from './middleware/tenant.js';
 import { everyOrg, forEachOrg } from './tenancy/scheduler.js';
 
@@ -308,6 +309,9 @@ async function start() {
    * than quietly reading whichever one happened to be default. */
   const cluster = await connectDb();
   useBaseConnection(cluster);
+  // The directory of customers, on its own database. Opened in both modes so a
+  // single-tenant deployment can be pointed at the SaaS later without a change.
+  openControl(cluster);
 
   cluster.on('error', (err) => {
     console.error('[MongoDB] connection error:', err.message);

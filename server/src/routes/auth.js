@@ -4,20 +4,59 @@ import bcrypt from 'bcryptjs';
 import { User } from '../models/index.js';
 import { signToken, requireAuth } from '../middleware/auth.js';
 import { sendMail, mailConfigured } from '../services/mail.js';
+import { tenancyMode } from '../middleware/tenant.js';
+import { organisationForEmail } from '../tenancy/control.js';
+import { connectionFor } from '../tenancy/connections.js';
+import { runInTenant } from '../tenancy/context.js';
 
 const router = Router();
 
+/**
+ * The one request that has to work out which customer it belongs to before it
+ * can open a database.
+ *
+ * Everywhere else the organisation comes from the token; here there is no
+ * token yet, so the address is looked up in the directory and the password is
+ * checked inside that customer's own database.
+ *
+ * An unknown address and a wrong password are answered identically, so this
+ * cannot be used to find out who has an account.
+ */
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
-  const user = await User.findOne({ email: String(email).toLowerCase() });
-  if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
-    return res.status(401).json({ error: 'Invalid email or password' });
+
+  const attempt = async (org) => {
+    const user = await User.findOne({ email: String(email).toLowerCase() });
+    if (!user || !(await bcrypt.compare(password, user.passwordHash))) return null;
+    if (user.isActive === false) return null;
+    return {
+      token: signToken(user, org),
+      user: { id: user._id, name: user.name, email: user.email, role: user.role, permissions: user.permissions ?? [], isActive: user.isActive ?? true },
+      ...(org ? { organisation: { id: String(org._id), name: org.name, slug: org.slug } } : {}),
+    };
+  };
+
+  // One company, one database: the context is already pinned.
+  if (tenancyMode() === 'single') {
+    const out = await attempt(null);
+    return out ? res.json(out) : res.status(401).json({ error: 'Invalid email or password' });
   }
-  res.json({
-    token: signToken(user),
-    user: { id: user._id, name: user.name, email: user.email, role: user.role, permissions: user.permissions ?? [], isActive: user.isActive ?? true },
-  });
+
+  const org = await organisationForEmail(email);
+  if (!org) return res.status(401).json({ error: 'Invalid email or password' });
+  if (org.status === 'suspended') {
+    return res.status(403).json({ error: 'This account is suspended. Please get in touch.' });
+  }
+  if (org.status === 'provisioning') {
+    return res.status(503).json({ error: 'This account is still being set up. Try again in a moment.' });
+  }
+  if (org.status === 'cancelled') {
+    return res.status(403).json({ error: 'This account is closed.' });
+  }
+
+  const out = await runInTenant({ connection: connectionFor(org.dbName), org }, () => attempt(org));
+  return out ? res.json(out) : res.status(401).json({ error: 'Invalid email or password' });
 });
 
 router.post('/forgot-password', async (req, res) => {
