@@ -35,15 +35,22 @@ const AMBER = '#D98A1A'
 
 /* How free a unit is across the *chosen window* — deliberately not the same
    thing as Unit.status, which only describes today. */
-type AvailState = 'free' | 'partial' | 'taken' | 'maintenance'
+/* 'quoted' is deliberately not 'taken'.
+ *
+ * A quotation holds a unit, but it is not a tenancy, and calling it one made
+ * F2-64 read as "Occupied entire window" with a customer's name against it
+ * while both of its contracts were ended and cancelled. Somebody looking at
+ * that reasonably concluded the page was wrong. It is a hold, and it says so. */
+type AvailState = 'free' | 'partial' | 'quoted' | 'taken' | 'maintenance'
 
 const STATE_STYLE: Record<AvailState, { bg: string; border: string; dot: string; text: string }> = {
   free: { bg: '#F3FBF6', border: '#BBEBCD', dot: GREEN, text: '#1D8A46' },
   partial: { bg: '#FEF9F0', border: '#F5DFB8', dot: AMBER, text: '#B45309' },
+  quoted: { bg: '#FEF9F0', border: '#F5DFB8', dot: AMBER, text: '#B45309' },
   taken: { bg: '#F4F0FF', border: '#DDD0FF', dot: PURPLE, text: DEEP },
   maintenance: { bg: '#F5F4F6', border: 'rgba(20,8,31,.12)', dot: MUTED, text: MUTED },
 }
-const STATE_RANK: Record<AvailState, number> = { free: 0, partial: 1, taken: 2, maintenance: 3 }
+const STATE_RANK: Record<AvailState, number> = { free: 0, partial: 1, quoted: 2, taken: 3, maintenance: 4 }
 
 /* ── Dates ──────────────────────────────────────────────────────────────
    Everything here works on plain `YYYY-MM-DD` strings so a window never
@@ -63,7 +70,15 @@ const addDays = (s: string, n: number) => {
 }
 const daysBetween = (a: string, b: string) => Math.round((fromISO(b).getTime() - fromISO(a).getTime()) / DAY_MS)
 const dayOnly = (s?: string | null) => (s ? String(s).slice(0, 10) : '')
-const shortDate = (s: string) => fromISO(dayOnly(s)).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+/* The year is shown whenever it is not this one. Without it a quote running to
+   2 September 2027 printed as "2 Sept", which reads as next week. */
+const shortDate = (s: string) => {
+  const d = fromISO(dayOnly(s))
+  const sameYear = d.getFullYear() === new Date().getFullYear()
+  return d.toLocaleDateString(undefined, sameYear
+    ? { day: 'numeric', month: 'short' }
+    : { day: 'numeric', month: 'short', year: 'numeric' })
+}
 
 /* ── Plain-English phrase parser ────────────────────────────────────────
    There is no language model in this project. This is a deterministic
@@ -372,6 +387,22 @@ export default function Units() {
         const lead = ranked[0]?.b
         const who = lead?.customer || (activeByUnit[u._id] ?? [])[0]?.customerName || lead?.ref || ''
         const until = dayOnly(lead?.endDate) || dayOnly((activeByUnit[u._id] ?? [])[0]?.endDate)
+
+        /* Nothing but quotations holding it. Said as what it is, with the
+           quote number, so somebody can go and look at the thing doing the
+           holding rather than hunting for a contract that does not exist. */
+        if (spans.every((x) => x.b.kind === 'quote')) {
+          const quotes = ranked.map((x) => x.b)
+          return {
+            state: 'quoted',
+            freeFrom: null,
+            line: quotes.length > 1 ? `Quoted to ${quotes.length} people` : 'Quoted, not signed',
+            detail: quotes
+              .map((q) => `${q.ref}${q.customer ? ` · ${q.customer}` : ''}${q.endDate ? ` · until ${shortDate(dayOnly(q.endDate))}` : ''}`)
+              .join('  ·  '),
+          }
+        }
+
         return {
           state: 'taken',
           freeFrom: null,
@@ -979,7 +1010,7 @@ export default function Units() {
       {/* ── Legend ─────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center" style={{ gap: 16, fontSize: 12, color: MUTED }}>
         <span className="flex items-center gap-1.5"><span style={{ width: 10, height: 10, borderRadius: 999, background: GREEN }} /> Free entire window</span>
-        <span className="flex items-center gap-1.5"><span style={{ width: 10, height: 10, borderRadius: 999, background: AMBER }} /> Partly free (also a quote hold on the timeline)</span>
+        <span className="flex items-center gap-1.5"><span style={{ width: 10, height: 10, borderRadius: 999, background: AMBER }} /> Partly free, or held by a quotation</span>
         <span className="flex items-center gap-1.5"><span style={{ width: 10, height: 10, borderRadius: 999, background: PURPLE }} /> Occupied entire window</span>
         <span className="flex items-center gap-1.5"><span style={{ width: 10, height: 10, borderRadius: 999, background: MUTED }} /> Maintenance</span>
       </div>
@@ -1091,11 +1122,20 @@ function UnitDetail({ unit, siteName, canEdit, bookFrom, bookTo }: { unit: Unit;
                     <div className="font-medium">{c.endDate ? formatDate(c.endDate) : '—'}</div>
                   </div>
                   <div>
+                    {/* Label and value both follow the contract's status.
+                        They used to disagree: the label was worked out from
+                        the end date and the value from the status, so a
+                        tenancy closed early — PB-2026-0172, ended, but dated
+                        to 17 September — printed "Remaining 12 wks" on a
+                        contract that was over. Nothing is remaining on a
+                        contract that has ended. */}
                     <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
                       {(() => {
                         if (!c.endDate) return 'Term'
+                        if (c.status === 'cancelled') return 'Cancelled'
+                        if (c.status !== 'active') return 'Ran for'
                         const days = Math.round((new Date(c.endDate).getTime() - Date.now()) / 86400000)
-                        return days < 0 ? 'Ended' : 'Remaining'
+                        return days < 0 ? 'Overdue' : 'Remaining'
                       })()}
                     </div>
                     <div className="font-medium">
