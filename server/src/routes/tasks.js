@@ -73,7 +73,8 @@ router.post('/', async (req, res) => {
   if (!title) return res.status(400).json({ error: 'Title is required' });
 
   const assignedTo = req.body?.assignedTo || req.user.id;
-  const assignee = await User.findById(assignedTo).select('name email');
+  // `role` as well: a sales rep is not emailed about a task — see taskNotify.js.
+  const assignee = await User.findById(assignedTo).select('name email role');
   if (!assignee) return res.status(400).json({ error: 'Assignee not found' });
 
   const priority = ALLOWED_PRIORITY.has(req.body?.priority) ? req.body.priority : 'medium';
@@ -131,7 +132,8 @@ router.patch('/:id', async (req, res) => {
   if (req.body?.assignedTo !== undefined && String(req.body.assignedTo) !== String(task.assignedTo)) {
     const [prevUser, nextUser] = await Promise.all([
       User.findById(task.assignedTo).select('name email'),
-      User.findById(req.body.assignedTo).select('name email'),
+      // `role` decides whether they are emailed about it — see taskNotify.js.
+      User.findById(req.body.assignedTo).select('name email role'),
     ]);
     if (!nextUser) return res.status(400).json({ error: 'Assignee not found' });
     const byName = req.user.name || req.user.email || 'user';

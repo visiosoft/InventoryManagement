@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildTaskEmail, taskSubject } from './taskNotify.js';
+import { buildTaskEmail, taskSubject, notifyTaskAssigned, NOT_EMAILED } from './taskNotify.js';
 import { quoteLines, quoteTotals } from './quoteLines.js';
 
 /* The subject that prompted this: the whole title went into it, filling a
@@ -235,4 +235,26 @@ test('the rate on a contract is stated as a four-week rate', () => {
    });
    // "Rate: AED 650" on a fortnight's booking reads as the amount due.
    assert.match(text, /Rate: AED 650\.00 per 4 weeks/);
+});
+
+test('a sales rep is not emailed about a task', async () => {
+   /* The board is already open in front of them and the morning brief lists
+      what is due; between tasks and leads this was putting dozens of messages
+      a day into two inboxes. */
+   const out = await notifyTaskAssigned({
+      task: { title: 'Call the tenant' },
+      assignee: { email: 'rep@purplebox.ae', role: 'sales_rep' },
+      assignedByName: 'Mase',
+   });
+   assert.equal(out.sent, false);
+   assert.match(out.reason, /sales reps are not emailed/);
+});
+
+test('accounts and admins still are, because that email carries the contract', () => {
+   /* Their copy attaches the signed PDF, which is how an invoice gets raised.
+      Silencing those would not be quieter, it would be broken. */
+   assert.ok(NOT_EMAILED.has('sales_rep'));
+   for (const role of ['accounts', 'admin', 'staff']) {
+      assert.ok(!NOT_EMAILED.has(role), `${role} must still be emailed`);
+   }
 });

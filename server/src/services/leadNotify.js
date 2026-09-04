@@ -102,10 +102,17 @@ export async function notifyLeadAssigned({ lead, ownerId, assignedByName = '', r
       if (pushConfigured()) {
          result.push = await pushToUser(ownerId, notice.push).catch((e) => ({ error: e.message }));
       }
-      if (mailConfigured() && owner.email) {
-         await sendMail({ to: owner.email, subject: notice.subject, text: notice.text, html: notice.html });
-         result.email = 'sent';
-      }
+
+      /* No email for this.
+       *
+       * One per lead put 34 messages into two inboxes in a day, and a rep who
+       * is looking at the chat in the inbox has already been told. The lead
+       * still shows on their board, still badges the conversation, and still
+       * appears in the morning brief — none of which interrupts anybody.
+       *
+       * The message itself is still built and still pushed, so turning email
+       * back on is a line rather than a rewrite. */
+      result.email = 'not sent — leads are not emailed';
    } catch (e) {
       // Never the reason a lead fails to be created or handed over.
       console.error('[LeadNotify] could not notify:', e.message);

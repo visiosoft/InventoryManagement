@@ -185,8 +185,21 @@ export function buildTaskEmail({ task, assignee, assignedByName, contract, quote
  * Send it. Never throws — a task must still be created if the mail fails, and
  * the caller has already answered the request by the time this runs.
  */
+/* Who is not emailed about a task.
+ *
+ * A rep working the inbox all day does not need a message telling them a task
+ * exists; the board is already open in front of them, and the morning brief
+ * lists what is overdue and what is due today. Between tasks and leads this
+ * was putting dozens of messages a day into two inboxes.
+ *
+ * Accounts and admins still get theirs, and deliberately: those carry the
+ * signed contract PDF, which is how an invoice gets raised. Silencing those
+ * would not be quieter, it would be broken. */
+export const NOT_EMAILED = new Set(['sales_rep']);
+
 export async function notifyTaskAssigned({ task, assignee, assignedByName }) {
     if (!assignee?.email) return { sent: false, reason: 'assignee has no email address' };
+    if (NOT_EMAILED.has(assignee.role)) return { sent: false, reason: 'sales reps are not emailed about tasks' };
     if (!mailConfigured()) return { sent: false, reason: 'email is not configured' };
 
     try {

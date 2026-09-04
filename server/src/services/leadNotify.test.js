@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildLeadNotice, leadLabel } from './leadNotify.js';
+import { notifyLeadAssigned, buildLeadNotice, leadLabel } from './leadNotify.js';
 
 const lead = { _id: 'abc123', fullName: 'Najwa Darwish', phone: '971528409889', source: 'whatsapp' };
 
@@ -72,4 +72,16 @@ test('a long first message is trimmed rather than filling the screen', () => {
 
 test('one notification per lead, so a re-send replaces rather than stacks', () => {
    assert.equal(buildLeadNotice({ lead }).push.tag, 'lead-abc123');
+});
+
+test('a new lead is pushed, never emailed', async () => {
+   /* One email per lead put 34 messages into two inboxes in a day. The lead
+      still shows on the board, still badges the conversation and still appears
+      in the morning brief — none of which interrupts anybody. */
+   const out = await notifyLeadAssigned({ lead: { _id: 'l1', fullName: 'Nadia' }, ownerId: null });
+   assert.equal(out.email, null, 'nothing is sent when there is no owner to send to');
+
+   // The message itself is still built, so turning email back on is a line.
+   const notice = buildLeadNotice({ lead: { _id: 'l1', fullName: 'Nadia', phone: '+9715' } });
+   assert.ok(notice.subject && notice.text && notice.push);
 });
