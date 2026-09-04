@@ -44,9 +44,14 @@ function SmartHome() {
   if (user?.role === 'accounts') {
     return <AccountsDashboard />
   }
-  // A rep's home is their own leads board, not the company-wide dashboard.
+  /* A rep's home is their day, not a board.
+   *
+   * It used to be the leads list: every lead they own, sorted by nothing in
+   * particular, from which they had to work out for themselves who to call.
+   * MyDay answers that question directly — reminders, unanswered chats, new
+   * leads and tasks, in the order they cost money. */
   if (isSalesRepRole(user?.role)) {
-    return <Navigate to="/my-leads" replace />
+    return <MyDay />
   }
   const hasMoving = hasPermission('moving_dashboard')
   const hasStorage = hasPermission('units') || hasPermission('dashboard')
@@ -61,6 +66,7 @@ import Login from './pages/Login'
 import SignContract from './pages/SignContract'
 import SignMovingJob from './pages/SignMovingJob'
 import Dashboard from './pages/Dashboard'
+import MyDay from './pages/MyDay'
 import Units from './pages/Units'
 import FloorMap from './pages/FloorMap'
 import Sites from './pages/Sites'
@@ -212,6 +218,7 @@ export default function App() {
         <Route path="/moving-estimator" element={<PermGuard module="sales_board"><MovingEstimator /></PermGuard>} />
         <Route path="/my-performance" element={<PermGuard module="sales_board"><MyPerformance /></PermGuard>} />
         <Route path="/leaderboard" element={<PermGuard module="sales_board"><Leaderboard /></PermGuard>} />
+        <Route path="/my-day" element={<MyDay />} />
         <Route path="/accounts" element={<RoleGuard roles={['admin', 'accounts']}><AccountsDashboard /></RoleGuard>} />
         <Route path="/settings/lead-distribution" element={<AdminGuard><LeadDistribution /></AdminGuard>} />
         <Route path="/account" element={<MyAccount />} />
