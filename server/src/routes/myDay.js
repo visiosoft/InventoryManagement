@@ -216,7 +216,17 @@ router.get('/', async (req, res) => {
       const weekStart = startOfLocalWeek(now);
       const dayStart = startOfLocalDay(now);
 
-      const myContracts = await Contract.find({ salesRep: me, createdAt: { $gte: monthStart } })
+      /* A cancelled contract is not a booking, and an archived one is not on
+         the books at all. Both were being counted: F3-107 showed on the card
+         marked "cancelled" and its 625 was inside the month's value. A draft
+         or one out for signature does count — the unit is committed and the
+         rep did the work; it is only a cancellation that undoes that. */
+      const myContracts = await Contract.find({
+         salesRep: me,
+         createdAt: { $gte: monthStart },
+         status: { $ne: 'cancelled' },
+         archived: { $ne: true },
+      })
          .select('contractNo customer unit units rate startDate status createdAt')
          .populate('customer', 'fullName')
          .sort({ createdAt: -1 })
