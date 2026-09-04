@@ -18,7 +18,7 @@ import { Organisation, OrgUserIndex, PlatformAudit } from '../tenancy/control.js
 import { connectionFor, forgetDatabase } from '../tenancy/connections.js';
 import { runInTenant } from '../tenancy/context.js';
 import { provisionOrganisation } from '../tenancy/provision.js';
-import { forgetOrganisation } from '../middleware/tenant.js';
+import { forgetOrganisation, tenancyMode } from '../middleware/tenant.js';
 
 const router = Router();
 
@@ -29,17 +29,31 @@ const owners = () => String(process.env.PLATFORM_OWNERS || '')
 /**
  * Only the people who own the product.
  *
- * Refused rather than defaulted when the list is empty: a console that lets
- * everybody in until it is configured is a console that ships unconfigured.
+ * The rule depends on whether there are other people's companies to protect,
+ * because the danger is not the same in both:
+ *
+ *   single   one company, and every admin in it works for that company. An
+ *            admin is the owner. Requiring a list here would only mean a
+ *            deployment that is already correct refusing to open its own
+ *            console until somebody guessed why.
+ *
+ *   multi    every customer has admins of their own, and "is an admin" would
+ *            let each of them manage every other. The list is required, and
+ *            with it empty the console refuses everybody — including us. A
+ *            console that stands open until it is configured is a console
+ *            that ships unconfigured.
  */
 function requireOwner(req, res, next) {
    const list = owners();
+   const who = String(req.user?.email || '').toLowerCase();
+
    if (!list.length) {
+      if (tenancyMode() === 'single' && req.user?.role === 'admin') return next();
       return res.status(503).json({
          error: 'The owner console is not set up. Add PLATFORM_OWNERS to the server environment — a comma-separated list of the email addresses allowed to manage customers.',
       });
    }
-   const who = String(req.user?.email || '').toLowerCase();
+
    if (!list.includes(who)) return res.status(403).json({ error: 'Not allowed' });
    return next();
 }
