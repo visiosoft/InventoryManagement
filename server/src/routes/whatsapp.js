@@ -454,11 +454,19 @@ router.get('/conversations', async (req, res) => {
         followUpAt: leadOf(r)?.followUpAt || null,
     });
 
+    /* Unassigned means a new enquiry nobody has picked up.
+     *
+     * It used to mean "no owner", which swept in every tenant who messages us
+     * — people we already deal with, with a green Customer badge on the row,
+     * sitting in the queue of things to hand out. Somebody we have on file is
+     * not a new chat whoever owns the lead, so they are not in here. */
+    const unassignedOn = (r) => !ownerOf(r) && !byPhone.get(suffix(r._id));
+
     const ownerCounts = { all: visible.length, mine: 0, unassigned: 0, waiting: 0, quiet: 0 };
     for (const r of visible) {
         const owner = ownerOf(r);
-        if (!owner) ownerCounts.unassigned += 1;
-        else if (owner === me) ownerCounts.mine += 1;
+        if (unassignedOn(r)) ownerCounts.unassigned += 1;
+        if (owner && owner === me) ownerCounts.mine += 1;
         if (waitingOn(r)) ownerCounts.waiting += 1;
         else if (quietOn(r)) ownerCounts.quiet += 1;
     }
@@ -473,7 +481,11 @@ router.get('/conversations', async (req, res) => {
 
     const ownerFilter = String(req.query.owner || '').trim();
     if (ownerFilter === 'mine') visible = visible.filter((r) => ownerOf(r) === me);
-    else if (ownerFilter === 'unassigned') visible = visible.filter((r) => !ownerOf(r));
+    else if (ownerFilter === 'unassigned') {
+        // Newest first, like the ordinary inbox: an enquiry that arrived a
+        // minute ago is the one to pick up.
+        visible = visible.filter(unassignedOn).sort((a, b) => new Date(b.lastAt) - new Date(a.lastAt));
+    }
     else if (ownerFilter === 'waiting') {
         /* Oldest first, which is the opposite of every other tab and the whole
            point of this one: the person who has been waiting since Tuesday is

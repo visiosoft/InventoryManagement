@@ -13,8 +13,8 @@ import { Unit, Contract, Quote } from '../models/index.js';
  *   not rejected       a quote the customer turned down is over.
  *   not yet expired    every quote carries an expiry date and nothing ever
  *                      swept them, so one written in June still reads as live.
- *                      This is also what stops an abandoned quote holding a
- *                      unit for good: the hold lapses on its own.
+ *   worked on lately   the hold lasts QUOTE_HOLD_DAYS and then lets go by
+ *                      itself, signed or not.
  *   no contract yet    once it converts, the contract decides — occupied while
  *                      it runs, reserved while it is a draft.
  *
@@ -39,13 +39,36 @@ import { Unit, Contract, Quote } from '../models/index.js';
  *  earlier is still being written. */
 export const QUOTE_ISSUED_STEP = 3;
 
+/**
+ * How long a quotation holds a unit.
+ *
+ * Two days, counted from when the quotation was last worked on. The expiry
+ * date is no use for this: quotes are written with a month on them, so a unit
+ * quoted to somebody who never replied would sit out of the inventory for four
+ * weeks. Two days is long enough for a customer to think about it over a
+ * weekend and short enough that an unanswered quotation costs nothing.
+ *
+ * Revising the quote starts the two days again, which is right: working on it
+ * is evidence the conversation is alive.
+ *
+ * Nothing has to run for a hold to lapse — the rule is a date comparison, so a
+ * unit is free the moment it should be, whether or not a job has swept it. The
+ * hourly sweep only exists to bring the stored status into line.
+ */
+export const QUOTE_HOLD_DAYS = 2;
+
 export const HOLDING_STATUSES = ['sent', 'accepted'];
 
 export function heldByQuoteFilter(unitId, at = new Date()) {
+   const heldSince = new Date(new Date(at).getTime() - QUOTE_HOLD_DAYS * 864e5);
    return {
       'units.unit': unitId,
       expiryDate: { $gte: at },
       contract: { $in: [null, undefined] },
+      // Worked on within the hold window. `updatedAt` is the same field the
+      // card reads for "quoted 4 days ago", so the label and the hold can
+      // never disagree about how old a quotation is.
+      updatedAt: { $gte: heldSince },
       $or: [
          { status: { $in: HOLDING_STATUSES } },
          { status: 'draft', flowStep: { $gte: QUOTE_ISSUED_STEP } },

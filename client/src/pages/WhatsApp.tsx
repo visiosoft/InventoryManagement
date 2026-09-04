@@ -1832,7 +1832,9 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
   )
 
   const isMine = (c: WhatsAppConversation) => Boolean(me?.id) && String(c.lead?.ownerId ?? '') === String(me?.id)
-  const isUnowned = (c: WhatsAppConversation) => !c.lead?.ownerId
+  /* A new enquiry nobody has picked up — not merely "no owner", which swept in
+     every tenant who messages us. Somebody already on file is not a new chat. */
+  const isUnowned = (c: WhatsAppConversation) => !c.lead?.ownerId && !c.customer
   /* Somebody who has actually signed, as opposed to somebody a record exists
      for. Quoting creates the record, so the two stopped being the same thing —
      see server/src/services/customerStage.js. Absent means tenant, which is
@@ -1877,7 +1879,11 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     let list = convoList
     if (!serverKnowsOwner) {
       if (ownerFilter === 'mine') list = list.filter(isMine)
-      else if (ownerFilter === 'unassigned') list = list.filter(isUnowned)
+      else if (ownerFilter === 'unassigned') {
+        list = list.filter(isUnowned)
+          .slice()
+          .sort((a, b) => +new Date(b.lastAt) - +new Date(a.lastAt))
+      }
       else if (ownerFilter === 'waiting') {
         list = list.filter(isWaiting)
           .slice()

@@ -1117,6 +1117,12 @@ export default function Units() {
                 canEdit={canEditUnits}
                 bookFrom={winFrom}
                 bookTo={winTo}
+                /* What the card says about this unit, so the two cannot
+                   disagree. The panel read the stored status while the card
+                   worked the window out live, and F2-60 showed "Quoted, not
+                   signed" on the card and "Available" in the panel at the same
+                   time. The stored status is a cache; this is the answer. */
+                availability={availOf(selected)}
               />
             </div>
           </div>
@@ -1128,7 +1134,10 @@ export default function Units() {
 
 /* A read-only record of the unit. Creating, editing and deleting units moved
    to Settings → Unit Pricing, so this panel only reports. */
-function UnitDetail({ unit, siteName, canEdit, bookFrom, bookTo }: { unit: Unit; siteName: string; canEdit: boolean; bookFrom: string; bookTo: string }) {
+function UnitDetail({ unit, siteName, canEdit, bookFrom, bookTo, availability }: {
+  unit: Unit; siteName: string; canEdit: boolean; bookFrom: string; bookTo: string
+  availability?: { state: AvailState; line: string; detail: string }
+}) {
   const { data, isLoading: contractsLoading } = useQuery<{ unit: Unit; contracts: Contract[] }>({
     queryKey: ['unit', unit._id],
     queryFn: () => api.get(`/units/${unit._id}`).then((r) => r.data),
@@ -1248,7 +1257,16 @@ function UnitDetail({ unit, siteName, canEdit, bookFrom, bookTo }: { unit: Unit;
           ))}
           <div className="flex items-start justify-between gap-3 px-3 py-2">
             <dt className="text-xs text-muted-foreground shrink-0">Status</dt>
-            <dd><Badge tone={unitStatusTone[unit.status]}>{statusLabel(unit.status)}</Badge></dd>
+            <dd className="text-right">
+              {availability?.state === 'quoted' ? (
+                <>
+                  <Badge tone="blue">Quoted, not signed</Badge>
+                  <div className="text-xs text-muted-foreground mt-1">{availability.detail}</div>
+                </>
+              ) : (
+                <Badge tone={unitStatusTone[unit.status]}>{statusLabel(unit.status)}</Badge>
+              )}
+            </dd>
           </div>
           <div className="px-3 py-2">
             <dt className="text-xs text-muted-foreground">Notes</dt>

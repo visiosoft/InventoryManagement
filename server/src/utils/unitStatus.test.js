@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { heldByQuoteFilter, QUOTE_ISSUED_STEP } from './unitStatus.js';
+import { heldByQuoteFilter, QUOTE_ISSUED_STEP, QUOTE_HOLD_DAYS } from './unitStatus.js';
 
 /* The filter is the rule. Asserting it directly keeps the four conditions
    honest without a database — each one is here because dropping it puts a
@@ -53,4 +53,21 @@ test('the moment defaults to now, so callers need not pass one', () => {
    const before = Date.now();
    const f = heldByQuoteFilter(UNIT);
    assert.ok(f.expiryDate.$gte.getTime() >= before);
+});
+
+test('a hold lasts two days and then lets go by itself', () => {
+   /* The expiry date is no use for this: quotes carry a month, so a unit
+      quoted to somebody who never replied would sit out of the inventory for
+      four weeks. Two days covers a weekend and costs nothing after that. */
+   assert.equal(QUOTE_HOLD_DAYS, 2);
+   const f = heldByQuoteFilter(UNIT, AT);
+   const since = f.updatedAt.$gte;
+   assert.equal(Math.round((AT - since) / 864e5), 2);
+});
+
+test('the hold is read off the same field the card shows', () => {
+   // The card says "quoted 4 days ago" from updatedAt. If the hold were
+   // measured from anything else the label and the rule could disagree.
+   const f = heldByQuoteFilter(UNIT, AT);
+   assert.ok(f.updatedAt, 'the hold window is on updatedAt');
 });
