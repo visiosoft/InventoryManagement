@@ -202,7 +202,7 @@ export async function generateReply({ phoneNormalized, inboundText, config }) {
 
     let parsed;
     try {
-        parsed = await chatJson({ system, messages, temperature: 0.3, maxTokens: 400 });
+        parsed = await chatJson({ system, messages, temperature: 0.3, maxTokens: 400, model: config.model || undefined });
     } catch (err) {
         const detail = err?.response?.data?.error?.message || err?.message || 'unknown error';
         return { reply: '', needsHuman: true, reason: `OpenAI request failed: ${detail}` };

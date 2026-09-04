@@ -43,6 +43,44 @@ const AMBIENCE = ['none', 'room', 'office', 'callcentre'];
 
 const VOICES = ['coral', 'sage', 'ballad', 'ash', 'verse', 'nova', 'shimmer', 'fable', 'onyx', 'alloy', 'echo'];
 
+/* What the assistant may be set to answer with.
+ *
+ * A short list rather than everything the key can reach: each of these was put
+ * through the same two questions against the real instructions and the real
+ * price list, and each behaved. An untested model in a dropdown is a promise
+ * nobody checked.
+ *
+ * `cost` is relative to the cheapest, on this prompt — the instructions are
+ * 33,000 characters, so input dominates and the multiples hold.
+ */
+const MODELS = [
+    {
+        id: 'gpt-4o-mini',
+        label: 'GPT-4o mini',
+        cost: '1×',
+        note: 'Cheapest. Quoted a price off a guessed size when asked what a 2-bedroom flat needs.',
+    },
+    {
+        id: 'gpt-4.1-mini',
+        label: 'GPT-4.1 mini',
+        cost: '~3×',
+        note: 'Asked what was being stored before quoting. The best balance of the four.',
+    },
+    {
+        id: 'gpt-4o',
+        label: 'GPT-4o',
+        cost: '~13×',
+        note: 'Quoted off a guess, then handed the conversation to a person.',
+    },
+    {
+        id: 'gpt-4.1',
+        label: 'GPT-4.1',
+        cost: '~13×',
+        note: 'Best answers of the four, and the readiest to state availability on its own.',
+    },
+];
+const MODEL_IDS = MODELS.map((m) => m.id);
+
 const shape = (config) => ({
     enabled: config.enabled,
     mode: config.mode,
@@ -57,6 +95,11 @@ const shape = (config) => ({
     voiceAmbience: config.voiceAmbience || 'none',
     voiceAmbienceLevel: config.voiceAmbienceLevel ?? 0.08,
     voices: VOICES,
+    // Empty means whatever the server is set to, which is what the page shows
+    // as the default rather than pretending a choice has been made.
+    model: config.model || '',
+    models: MODELS,
+    serverModel: openaiModel(),
     escalateTo: config.escalateTo ? String(config.escalateTo) : '',
     handoverKeywords: config.handoverKeywords || [],
     maxRepliesPerThreadPerDay: config.maxRepliesPerThreadPerDay,
@@ -95,6 +138,15 @@ router.put('/config', requireAdmin, async (req, res) => {
             });
         }
         config.systemPrompt = prompt;
+    }
+    /* Only a model that was actually tried. An empty string is allowed and
+       means "follow the server", which is how somebody undoes a choice. */
+    if (b.model !== undefined) {
+        const wanted = String(b.model || '');
+        if (wanted && !MODEL_IDS.includes(wanted)) {
+            return res.status(400).json({ error: `That model is not one of: ${MODEL_IDS.join(', ')}` });
+        }
+        config.model = wanted;
     }
     if (b.useAvailability !== undefined) config.useAvailability = Boolean(b.useAvailability);
     if (b.autoSummarise !== undefined) config.autoSummarise = Boolean(b.autoSummarise);

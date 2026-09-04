@@ -1683,6 +1683,16 @@ const aiBotConfigSchema = new Schema({
   enabled: { type: Boolean, default: false },
   mode: { type: String, enum: ['draft', 'auto'], default: 'draft' },
   systemPrompt: { type: String, default: '' },
+  /* Which model answers. Empty means whatever the server is set to
+     (OPENAI_MODEL, or gpt-4o-mini) — so a deployment can move everything at
+     once, and this page can override it for the assistant alone.
+
+     It matters more than a setting usually does. Asked what size somebody
+     needs for a two-bedroom flat, gpt-4o-mini guessed a size and quoted a
+     price off the guess; the 4.1 models asked what was being stored first.
+     The instructions are explicit that a price is never an estimate, and the
+     cheapest model is the one that does not hold on to that. */
+  model: { type: String, default: '' },
   useAvailability: { type: Boolean, default: true },
   escalateTo: { type: Schema.Types.ObjectId, ref: 'User', default: null },
   handoverKeywords: { type: [String], default: ['human', 'agent', 'manager', 'call me', 'speak to someone'] },

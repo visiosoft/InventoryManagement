@@ -57,11 +57,14 @@ export async function verifyOpenAIKey(apiKey, model) {
  * is not JSON. Callers must treat null as a failure to answer, never as an
  * empty answer.
  */
-export async function chatJson({ system, messages = [], temperature = 0, maxTokens = 400, timeout = 30000 }) {
+export async function chatJson({ system, messages = [], temperature = 0, maxTokens = 400, timeout = 30000, model }) {
     const { data } = await axios.post(
         `${API_BASE}/chat/completions`,
         {
-            model: openaiModel(),
+            // The caller's choice, then the server's, then the default. The
+            // assistant picks its own on the settings page; everything else
+            // here is happy with whatever the server is set to.
+            model: model || openaiModel(),
             messages: [{ role: 'system', content: system }, ...messages],
             response_format: { type: 'json_object' },
             temperature,
@@ -96,11 +99,14 @@ export async function chatJson({ system, messages = [], temperature = 0, maxToke
  * which reads as working code right up to the point where every field is
  * undefined.)
  */
-export async function visionJson({ system, imageBase64, mimeType, prompt = '', maxTokens = 500, timeout = 45000 }) {
+export async function visionJson({ system, imageBase64, mimeType, prompt = '', maxTokens = 500, timeout = 45000, model }) {
     const { data } = await axios.post(
         `${API_BASE}/chat/completions`,
         {
-            model: openaiModel(),
+            // Whatever the assistant is set to reads its photos too: one model
+            // for the conversation, so a picture and the words about it are
+            // not understood by two different things.
+            model: model || openaiModel(),
             messages: [
                 { role: 'system', content: system },
                 {

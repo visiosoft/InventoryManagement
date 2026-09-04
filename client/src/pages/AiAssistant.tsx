@@ -19,6 +19,10 @@ type Config = {
   voiceAmbience: 'none' | 'room' | 'office' | 'callcentre'
   voiceAmbienceLevel: number
   voices?: string[]
+  /** Empty means "follow the server", which is what serverModel names. */
+  model?: string
+  models?: { id: string; label: string; cost: string; note: string }[]
+  serverModel?: string
   escalateTo: string
   handoverKeywords: string[]
   maxRepliesPerThreadPerDay: number
@@ -52,6 +56,7 @@ export default function AiAssistant() {
     try {
       const { data } = await api.post('/ai-bot/speak', {
         text: 'Yes, we have fifty square foot units free from next week. They are 950 dirhams for four weeks. Shall I hold one for you?',
+        model: draft?.model ?? '',
         voice: draft?.voice,
         voiceStyle: draft?.voiceStyle,
         voiceSpeed: draft?.voiceSpeed,
@@ -131,8 +136,41 @@ export default function AiAssistant() {
       )}
 
       <Card>
-        <CardHeader title="Status" subtitle={`Model: ${draft.openai.model}`} />
+        <CardHeader title="Status" subtitle={`Server default: ${draft.serverModel || draft.openai.model}`} />
         <CardBody className="space-y-4">
+          {/* Which model answers.
+              Not a technical detail: asked what size a two-bedroom flat needs,
+              the cheapest model guessed a size and quoted a price off the
+              guess, which the instructions forbid in capitals. The costs are
+              relative to the cheapest on this prompt — the instructions are
+              33,000 characters, so input dominates and the multiples hold. */}
+          <div className="space-y-2">
+            <div className="text-sm font-medium">Which model answers</div>
+            <select
+              value={draft.model ?? ''}
+              onChange={(e) => set({ model: e.target.value })}
+              className="w-full rounded-lg border px-3 py-2 text-sm"
+            >
+              <option value="">
+                Follow the server ({draft.serverModel || draft.openai.model})
+              </option>
+              {(draft.models ?? []).map((m) => (
+                <option key={m.id} value={m.id}>{m.label} · {m.cost} the cost</option>
+              ))}
+            </select>
+            {(() => {
+              const chosen = (draft.models ?? []).find((m) => m.id === draft.model)
+              return chosen ? (
+                <p className="text-[13px] text-muted-foreground">{chosen.note}</p>
+              ) : (
+                <p className="text-[13px] text-muted-foreground">
+                  Whatever the server is set to. Choose one here to override it for the assistant
+                  alone — the rest of the app keeps using the server's.
+                </p>
+              )
+            })()}
+          </div>
+
           <label className="flex items-start gap-3 cursor-pointer">
             <input type="checkbox" className="mt-1" checked={draft.enabled}
               onChange={(e) => set({ enabled: e.target.checked })} />
