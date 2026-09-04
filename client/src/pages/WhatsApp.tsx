@@ -2915,12 +2915,19 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
             className="wa-thread wa-scroll flex-1 min-h-0 flex flex-col gap-[10px]"
             style={{
               padding: '22px 26px',
-              // Tiled wallpaper behind the bubbles, over the cream base so the
-              // tile's own edges never show as bands.
-              backgroundColor: '#F6F0E4',
-              // A cream wash over the tile knocks the pattern back so the
-              // bubbles stay the thing you read.
-              backgroundImage: 'linear-gradient(rgba(246,240,228,.82), rgba(246,240,228,.82)), url(/chat-bg.avif)',
+              /* Tiled wallpaper behind the bubbles, over a near-white base so
+                 the tile's own edges never show as bands.
+
+                 The base was a full cream, which put a strong colour behind
+                 every message and left the white bubbles looking like cut-outs
+                 laid on top. This is the same warmth at a fraction of the
+                 strength: enough that the thread is not a flat white page,
+                 little enough that the bubbles are what carries the colour. */
+              backgroundColor: '#FCFAF6',
+              // The wash over the tile knocks the pattern back so the bubbles
+              // stay the thing you read. Heavier than before, because a paler
+              // ground shows the pattern more.
+              backgroundImage: 'linear-gradient(rgba(252,250,246,.90), rgba(252,250,246,.90)), url(/chat-bg.avif)',
               backgroundRepeat: 'repeat, repeat',
               backgroundSize: 'auto, 400px auto',
             }}
