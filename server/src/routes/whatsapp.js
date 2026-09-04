@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { mediaFromRaw } from './whatsappMedia.js';
+import { wentQuiet, remindAt, PRESETS } from '../services/chatFollowUp.js';
 import { WhatsAppMessage, Lead, Customer, User, AiBotThread, WhatsAppLabel, WhatsAppChatLabel, MessageTemplate } from '../models/index.js';
 import { sendWhatsAppText, sendWhatsAppMedia, sendWhatsAppLocation, uploadWhatsAppMedia, whatsappMediaKind, whatsappSendConfigured, whatsappSendMissing } from '../services/whatsapp.js';
 import { pauseBotForHuman } from '../services/aiBot.js';
@@ -347,7 +348,7 @@ router.get('/conversations', async (req, res) => {
          *
          * The number is the fact. Matched on the last nine digits, the same
          * rule used for customers and everywhere else people are matched. */
-        Lead.find({}).select('fullName status owner assignedAt autoAssigned assignedBy whatsappProfileName phone phoneNormalized').lean(),
+        Lead.find({}).select('fullName status owner assignedAt autoAssigned assignedBy whatsappProfileName phone phoneNormalized followUpAt').lean(),
         /* `stage` as well: a record existing no longer means they are a
            tenant. Somebody quoted last week and gone quiet is a prospect, and
            the inbox must not badge them green — a rep reading "Customer"
@@ -415,8 +416,9 @@ router.get('/conversations', async (req, res) => {
      * here, over every conversation, so "My leads" means all of them however
      * old and the number beside it is true.
      */
+    const leadOf = (r) => byLeadPhone.get(suffix(r._id)) || null;
     const ownerOf = (r) => {
-        const lead = byLeadPhone.get(suffix(r._id));
+        const lead = leadOf(r);
         return lead?.owner ? String(lead.owner) : '';
     };
     const me = String(req.user?.id || '');
@@ -437,12 +439,28 @@ router.get('/conversations', async (req, res) => {
         && r.lastInboundAt > waitingCutoff
         && (!r.lastOutboundAt || r.lastInboundAt > r.lastOutboundAt);
 
-    const ownerCounts = { all: visible.length, mine: 0, unassigned: 0, waiting: 0 };
+    /* Gone quiet: we spoke last and nothing has come back.
+     *
+     * The opposite shape to the one above, and the one nothing could see. They
+     * said "I'll let you know", the rep answered, and the conversation reads as
+     * finished — nothing is owed, so it is not waiting; the lead was answered,
+     * so the unanswered-lead clock has no view of it either. 366 chats were in
+     * this state with the lead still open, 185 of them silent three days or
+     * more. See services/chatFollowUp.js for the rule and why three days. */
+    const quietOn = (r) => wentQuiet({
+        lastInboundAt: r.lastInboundAt,
+        lastOutboundAt: r.lastOutboundAt,
+        leadStatus: leadOf(r)?.status || '',
+        followUpAt: leadOf(r)?.followUpAt || null,
+    });
+
+    const ownerCounts = { all: visible.length, mine: 0, unassigned: 0, waiting: 0, quiet: 0 };
     for (const r of visible) {
         const owner = ownerOf(r);
         if (!owner) ownerCounts.unassigned += 1;
         else if (owner === me) ownerCounts.mine += 1;
         if (waitingOn(r)) ownerCounts.waiting += 1;
+        else if (quietOn(r)) ownerCounts.quiet += 1;
     }
     /* Also in the body, below.
      *
@@ -461,6 +479,9 @@ router.get('/conversations', async (req, res) => {
            point of this one: the person who has been waiting since Tuesday is
            the one to answer, not the one who wrote a minute ago. */
         visible = visible.filter(waitingOn).sort((a, b) => new Date(a.lastInboundAt) - new Date(b.lastInboundAt));
+    } else if (ownerFilter === 'quiet') {
+        // Longest silence first — the ones closest to being lost for good.
+        visible = visible.filter(quietOn).sort((a, b) => new Date(a.lastOutboundAt) - new Date(b.lastOutboundAt));
     } else if (ownerFilter && ownerFilter !== 'all') visible = visible.filter((r) => ownerOf(r) === ownerFilter);
 
     const total = visible.length;
@@ -520,6 +541,8 @@ router.get('/conversations', async (req, res) => {
             lastOutboundAt: r.lastOutboundAt || null,
             // Since when they have been owed an answer; null when they are not.
             waitingSince: waitingOn(r) ? r.lastInboundAt : null,
+            // Since when nothing has come back from them; null when it has.
+            quietSince: quietOn(r) ? r.lastOutboundAt : null,
             lead: lead
                 ? {
                     _id: lead._id,
@@ -541,6 +564,8 @@ router.get('/conversations', async (req, res) => {
                     autoAssigned: Boolean(lead.autoAssigned),
                     assignedByName: lead.assignedBy ? (byOwner.get(String(lead.assignedBy)) || '') : '',
                     profileName: lead.whatsappProfileName || '',
+                    // When somebody has said they will come back to this.
+                    followUpAt: lead.followUpAt || null,
                 }
                 : null,
             customer: customer
@@ -572,6 +597,66 @@ router.get('/conversations', async (req, res) => {
 // webhook sync, so this is the manual path for numbers that don't have one yet
 // (e.g. a thread we started outbound). Idempotent — returns the existing lead
 // rather than creating a duplicate.
+/* ── Remind me about this chat ─────────────────────────────────────────────
+ *
+ * Declared before the /:phone routes so "remind" is never taken for a phone
+ * number, the same reason "digest" is declared where it is.
+ *
+ * This writes the lead's follow-up date and nothing else. Everything that
+ * happens afterwards — a task on the owner's board that morning, a push at the
+ * minute it was set for — is the follow-up machinery that already existed and
+ * that nobody could reach from the inbox: 623 leads and 64 future follow-up
+ * dates between them. The rep is in the chat when they learn when to chase; the
+ * button belongs where they are.
+ */
+router.post('/:phone/remind', async (req, res) => {
+    try {
+        const phoneNormalized = String(req.params.phone).replace(/\D/g, '');
+        const lead = await Lead.findOne({ phoneNormalized });
+        if (!lead) return res.status(404).json({ error: 'This chat has no lead behind it yet — save it as a lead first' });
+
+        const choice = String(req.body?.when || '').trim();
+
+        // Clearing is the same button, pressed by somebody who has dealt with it.
+        if (choice === 'clear') {
+            lead.followUpAt = null;
+            lead.followUpNotifiedAt = null;
+            lead.followUpPushedAt = null;
+            lead.timeline.push({ type: 'note', text: `Follow-up cleared by ${req.user?.name || 'a colleague'}`, user: req.user?.id });
+            await lead.save();
+            return res.json({ ok: true, followUpAt: null });
+        }
+
+        const at = remindAt(choice);
+        if (!at) {
+            return res.status(400).json({ error: `Say when: ${PRESETS.join(', ')}, or a date` });
+        }
+
+        lead.followUpAt = at;
+        lead.followUpKind = 'date';
+        /* Cleared, so a reminder moved to a new date is raised again rather
+           than counting as already done. */
+        lead.followUpNotifiedAt = null;
+        lead.followUpPushedAt = null;
+        // Only from a stage that is behind it: somebody at "quotation sent"
+        // has got further than "following up" and must not be walked back.
+        if (['new', 'contacted', 'contact_attempted'].includes(lead.status)) {
+            lead.status = 'follow_up_scheduled';
+        }
+        const when = at.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Dubai' });
+        lead.timeline.push({
+            type: 'note',
+            text: `Follow-up set for ${when} by ${req.user?.name || 'a colleague'}, from the chat`,
+            user: req.user?.id,
+        });
+        await lead.save();
+
+        res.json({ ok: true, followUpAt: lead.followUpAt, status: lead.status });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 /* ── Daily digest ─────────────────────────────────────────────────────────
    One day's conversations as read that morning. Declared before /:phone routes
    so "digest" is never taken for a phone number. */

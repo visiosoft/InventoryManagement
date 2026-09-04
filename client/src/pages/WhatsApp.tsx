@@ -19,7 +19,7 @@ import { cn } from '../lib/utils'
 
 /** Which slice of the inbox is on screen. 'waiting' is not a slice by owner
  *  like the others — it is everybody who is owed an answer. */
-type OwnerTab = 'all' | 'mine' | 'unassigned' | 'waiting'
+type OwnerTab = 'all' | 'mine' | 'unassigned' | 'waiting' | 'quiet'
 
 /** How long somebody has been waiting, said the way a person would say it. */
 function waitedFor(since: string): string {
@@ -1518,7 +1518,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
   const [ownerFilter, setOwnerFilter] = useState<OwnerTab>(() => {
     try {
       const saved = localStorage.getItem(OWNER_KEY)
-      if (saved === 'all' || saved === 'mine' || saved === 'unassigned' || saved === 'waiting') return saved
+      if (saved === 'all' || saved === 'mine' || saved === 'unassigned' || saved === 'waiting' || saved === 'quiet') return saved
     } catch { /* a private window has no storage, and that is fine */ }
     // Only a rep: accounts share the rep-ish role but own no leads, and would
     // land on an empty tab wondering where the inbox went.
@@ -1846,6 +1846,10 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
       ? true
       : Boolean(c.lastInboundAt) && (!c.lastOutboundAt || String(c.lastInboundAt) > String(c.lastOutboundAt))
   )
+  /* The other half: we spoke last and nothing came back. Trusted from the
+     server, which knows the lead's stage and whether a reminder is already
+     set — neither of which the row carries. */
+  const isQuiet = (c: WhatsAppConversation) => Boolean(c.quietSince)
 
   /* Counted over every conversation on the server, not over what has been
      loaded — the tabs used to count the 200 most recent, so a rep with 275
@@ -1860,6 +1864,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     mine: convoList.filter(isMine).length,
     unassigned: convoList.filter(isUnowned).length,
     waiting: convoList.filter(isWaiting).length,
+    quiet: convoList.filter(isQuiet).length,
   }
 
   /* The label filter always runs here. The owner runs here too when the server
@@ -1873,6 +1878,10 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
         list = list.filter(isWaiting)
           .slice()
           .sort((a, b) => +new Date(a.waitingSince || a.lastInboundAt || 0) - +new Date(b.waitingSince || b.lastInboundAt || 0))
+      } else if (ownerFilter === 'quiet') {
+        list = list.filter(isQuiet)
+          .slice()
+          .sort((a, b) => +new Date(a.quietSince || 0) - +new Date(b.quietSince || 0))
       }
     }
     if (labelFilter) list = list.filter((c) => (c.labels || []).some((l) => l._id === labelFilter))
@@ -2128,6 +2137,21 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     onError: (e) => setSendErr(apiError(e)),
   })
 
+  /* "Remind me about this."
+   *
+   * The rep is in the chat when they learn when to chase — that is the moment
+   * the date is known, and it was the one place the follow-up could not be
+   * set. Everything after this is machinery that already existed: a task on
+   * the board that morning, a push at the hour. */
+  const [remindOpen, setRemindOpen] = useState(false)
+  const [remindDate, setRemindDate] = useState('')
+  const remind = useMutation({
+    mutationFn: ({ phone, when }: { phone: string; when: string }) =>
+      api.post(`/whatsapp/${phone}/remind`, { when }),
+    onSuccess: () => { setSendErr(''); setRemindOpen(false); setRemindDate(''); refetchConvos() },
+    onError: (e) => setSendErr(apiError(e)),
+  })
+
   const sendVoiceDraft = useMutation({
     mutationFn: ({ phone, text }: { phone: string; text: string }) =>
       api.post('/ai-bot/speak-and-send', { phone, text }),
@@ -2344,6 +2368,27 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
               <span style={{ fontWeight: 800 }}>{ownerCounts.waiting ?? 0}</span>
             </button>
 
+            {/* The quiet half. "I'll let you know" is answered, so it never
+                reaches the bar above — and then nobody thinks about it again.
+                Deliberately calmer than that one: this is work to get to, not
+                somebody kept waiting. */}
+            <button
+              type="button"
+              onClick={() => chooseOwnerFilter(ownerFilter === 'quiet' ? (me?.role === 'sales_rep' ? 'mine' : 'all') : 'quiet')}
+              className="flex w-full items-center gap-2 cursor-pointer"
+              style={{
+                padding: '7px 10px', borderRadius: 10, fontSize: 12, fontWeight: 700, textAlign: 'left',
+                border: `1px solid ${ownerFilter === 'quiet' ? '#C9BDF0' : '#EDE5FF'}`,
+                background: ownerFilter === 'quiet' ? '#EDE5FF' : '#F7F3FF',
+                color: (ownerCounts.quiet ?? 0) > 0 ? '#4A1FA0' : FAINT_INK,
+              }}
+              title="We spoke last and nothing has come back for three days or more. Setting a reminder takes a chat off this list."
+            >
+              <MessageSquare size={13} />
+              <span className="flex-1">Went quiet</span>
+              <span style={{ fontWeight: 800 }}>{ownerCounts.quiet ?? 0}</span>
+            </button>
+
             {/* Click a label to narrow the list to the chats carrying it. */}
             {waLabels.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
@@ -2394,7 +2439,9 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                       ? 'Every chat has somebody on it.'
                       : ownerFilter === 'waiting'
                         ? 'Nobody is waiting on a reply. Everything has been answered.'
-                        : 'No chats match that search.'}
+                        : ownerFilter === 'quiet'
+                          ? 'Nothing has gone quiet. Every open chat has either come back or has a reminder on it.'
+                          : 'No chats match that search.'}
               </p>
             ) : (
               filteredConvos.map((c) => {
@@ -2432,6 +2479,27 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                             title={`Waiting ${waitedFor(c.waitingSince || c.lastInboundAt || '')} for a reply`}
                           >
                             {waitedFor(c.waitingSince || c.lastInboundAt || '')}
+                          </span>
+                        )}
+                        {/* Silent on us. Muted next to the waiting chip: both
+                            need doing, one of them has somebody hanging. */}
+                        {!isWaiting(c) && isQuiet(c) && (
+                          <span
+                            className="shrink-0 rounded-full px-1.5"
+                            style={{ fontSize: 10, fontWeight: 700, background: '#F1F5F9', color: '#64748B' }}
+                            title={`No reply from them for ${waitedFor(c.quietSince || '')}`}
+                          >
+                            {waitedFor(c.quietSince || '')} quiet
+                          </span>
+                        )}
+                        {/* Somebody is on it, with a date. */}
+                        {c.lead?.followUpAt && new Date(c.lead.followUpAt) > new Date() && (
+                          <span
+                            className="shrink-0 rounded-full px-1.5"
+                            style={{ fontSize: 10, fontWeight: 700, background: '#EDE5FF', color: '#4A1FA0' }}
+                            title={`Follow-up set for ${new Date(c.lead.followUpAt).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}`}
+                          >
+                            <Bell size={9} style={{ display: 'inline', verticalAlign: 'middle' }} />
                           </span>
                         )}
                         <span className="shrink-0" style={{ fontSize: 11, color: FAINT_INK }}>{formatListTime(c.lastAt)}</span>
@@ -2837,6 +2905,84 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
               >
                 {resumeBot.isPending ? 'Handing back…' : 'Hand back to AI'}
               </button>
+            </div>
+          )}
+
+          {/* When to come back to this.
+              Its own strip above the composer, visible whether or not the
+              assistant has anything to say — a reminder is about the chat, not
+              about the reply. */}
+          {selectedConvo?.lead && (
+            <div className="shrink-0 mx-6 mb-2 flex flex-wrap items-center gap-2">
+              {selectedConvo.lead.followUpAt && new Date(selectedConvo.lead.followUpAt) > new Date() ? (
+                <>
+                  <span
+                    className="h-7 px-3 rounded-full inline-flex items-center gap-1.5"
+                    style={{ background: '#EDE5FF', color: '#4A1FA0', fontSize: 12, fontWeight: 700 }}
+                  >
+                    <Bell size={12} />
+                    Follow up {new Date(selectedConvo.lead.followUpAt).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => remind.mutate({ phone: selectedConvo.phoneNormalized, when: 'clear' })}
+                    disabled={remind.isPending}
+                    className="cursor-pointer disabled:opacity-50"
+                    style={{ fontSize: 11, fontWeight: 600, color: FAINT_INK, background: 'none', border: 'none' }}
+                  >
+                    Clear
+                  </button>
+                  {/* Said here as well as in the lead's timeline: somebody
+                      setting a reminder should know it will not fire at them
+                      while they are mid-conversation. */}
+                  <span style={{ fontSize: 11, color: FAINT_INK }}>Cancels itself if they write back.</span>
+                </>
+              ) : remindOpen ? (
+                <>
+                  {([['tomorrow', 'Tomorrow'], ['three_days', 'In 3 days'], ['next_week', 'Next week']] as const).map(([when, label]) => (
+                    <button
+                      key={when}
+                      type="button"
+                      onClick={() => remind.mutate({ phone: selectedConvo.phoneNormalized, when })}
+                      disabled={remind.isPending}
+                      className="h-7 px-3 rounded-full cursor-pointer disabled:opacity-50"
+                      style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, fontWeight: 600, color: INK }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                  <input
+                    type="date"
+                    value={remindDate}
+                    min={new Date().toISOString().slice(0, 10)}
+                    onChange={(e) => {
+                      setRemindDate(e.target.value)
+                      if (e.target.value) remind.mutate({ phone: selectedConvo.phoneNormalized, when: e.target.value })
+                    }}
+                    className="h-7 px-2 rounded-full cursor-pointer"
+                    style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, color: INK }}
+                    aria-label="Pick a day to follow up"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setRemindOpen(false)}
+                    className="cursor-pointer"
+                    style={{ fontSize: 11, fontWeight: 600, color: FAINT_INK, background: 'none', border: 'none' }}
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setRemindOpen(true)}
+                  className="h-7 px-3 rounded-full cursor-pointer inline-flex items-center gap-1.5"
+                  style={{ border: `1px solid ${LINE}`, background: '#fff', fontSize: 12, fontWeight: 600, color: INK }}
+                  title="Set a reminder to come back to this chat"
+                >
+                  <Bell size={12} /> Remind me
+                </button>
+              )}
             </div>
           )}
 

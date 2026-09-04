@@ -5,6 +5,7 @@ import { normalizeLeadPhone } from '../routes/leads.js';
 import { getAiBotConfig, noteInboundForBot, pauseBotForHuman } from './aiBot.js';
 import { sendFirstContactVideo } from './firstContact.js';
 import { mediaFromRaw } from '../routes/whatsappMedia.js';
+import { cancelFollowUpOnReply } from './chatFollowUp.js';
 
 const DEFAULT_STATUS_BY_LABEL = {
     lead: 'new',
@@ -434,6 +435,16 @@ async function persistMessages(messages) {
         if (lead && msg.direction === 'inbound' && msg.text) {
             pushTimeline(lead, 'whatsapp_message', `Inbound WhatsApp message: ${msg.text.slice(0, 200)}`);
             await lead.save();
+        }
+
+        /* They wrote back, so any reminder to chase them is off.
+         *
+         * Being told to chase somebody you are in the middle of talking to is
+         * the fastest way to teach people that reminders are noise — see
+         * services/chatFollowUp.js. Any inbound message counts, not only a
+         * text one: a voice note is them getting back to us too. */
+        if (lead && msg.direction === 'inbound') {
+            await cancelFollowUpOnReply(lead, { at: msg.occurredAt || new Date() });
         }
 
         // Hand the message to the AI assistant's queue. Inbound only — noting

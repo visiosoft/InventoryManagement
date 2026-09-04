@@ -323,6 +323,8 @@ export type WhatsAppLeadRef = {
   assignedByName?: string
   /** The name they set on their own WhatsApp profile, if we have seen one. */
   profileName?: string
+  /** When somebody has said they will come back to this chat. */
+  followUpAt?: string | null
 }
 
 /** A named tag a person puts on a conversation, as in the WhatsApp Business app. */
@@ -336,7 +338,13 @@ export type WhatsAppLabel = {
 
 /** How many conversations sit behind each inbox tab, counted over all of them
  *  on the server rather than over the page that was loaded. */
-export type OwnerCounts = { all: number; mine: number; unassigned: number; waiting: number }
+export type OwnerCounts = {
+  all: number; mine: number; unassigned: number
+  /** They wrote last and nobody has replied. */
+  waiting: number
+  /** We wrote last and nothing has come back — see chatFollowUp.js. */
+  quiet: number
+}
 
 export type WhatsAppConversation = {
   phoneNormalized: string
@@ -350,6 +358,9 @@ export type WhatsAppConversation = {
   /* Since when this person has been owed an answer — they wrote last and
      nobody has replied. Null when nothing is owed. */
   waitingSince?: string | null
+  /* Since when nothing has come back from them. The quiet half of the same
+     idea: we spoke last, the lead is open, and it has gone silent. */
+  quietSince?: string | null
   lead: WhatsAppLeadRef | null
   // Resolved on the server by the last nine digits of the number. Whether
   // someone is a customer is a fact about this, not about a lead's status.
