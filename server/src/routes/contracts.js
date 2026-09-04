@@ -4,6 +4,7 @@ import { isValidObjectId, Types } from 'mongoose';
 import { stampSignature } from '../services/stampSignature.js';
 import { Contract, Customer, Unit, Payment, Document, Invoice, Quote, AgreementTemplate, nextContractNo, nextInvoiceNo, MessageTemplate } from '../models/index.js';
 import { creditFor, markLeadWon } from '../services/dealCredit.js';
+import { contractExportRows } from '../services/contractExportRows.js';
 import { promoteToCustomer } from '../services/customerStage.js';
 import { zohoBooksConfigured, zohoOutstandingByCustomer } from '../services/zohoBooks.js';
 import { requireAdmin } from '../middleware/auth.js';
@@ -95,7 +96,14 @@ router.get('/outstanding', async (req, res) => {
     }
 });
 
-router.get('/', async (req, res) => {
+/**
+ * The filter behind the tenant list, from the query string.
+ *
+ * Pulled out so the export cannot drift from the page: a spreadsheet that
+ * quietly applies different filters from the screen it was taken off is worse
+ * than no export, because nothing about the file says so.
+ */
+async function listFilter(req) {
   const filter = {};
   if (req.query.archived === 'true') filter.archived = true;
   else if (req.query.archived !== 'all') filter.archived = { $ne: true };
@@ -122,6 +130,22 @@ router.get('/', async (req, res) => {
   if (scope) {
     filter.$and = [...(filter.$and || []), { $or: [{ unit: { $in: scope.unitIds } }, { units: { $in: scope.unitIds } }] }];
   }
+  return filter;
+}
+
+/* Every tenant the current filters match, with the figures the contract card
+   shows — asking, leased, quotation, received, remaining. Declared before the
+   /:id routes so "export-rows" is never read as an id. */
+router.get('/export-rows', async (req, res) => {
+  try {
+    res.json({ rows: await contractExportRows(await listFilter(req)) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/', async (req, res) => {
+  const filter = await listFilter(req);
   const page = Math.max(1, Number(req.query.page) || 1);
   // Cap allows a full fetch: the booking screen needs every open contract to
   // detect unit conflicts, and a truncated page would show booked units free.

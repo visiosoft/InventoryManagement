@@ -156,14 +156,17 @@ export default function Contracts() {
 
   /* Downloading the tenant list.
    *
-   * Every filter on screen goes with it, and every row that matches them —
+   * Every filter on screen goes with it, and every row those filters match —
    * not the twenty-five being displayed. A spreadsheet of one page of a
    * hundred and forty-eight is the wrong answer to "export the tenants", and
-   * the person opening it in Excel has no way to tell it was cut.
+   * nothing in the file would say it had been cut.
    *
-   * The columns are what the page shows plus the things a spreadsheet is
-   * actually used for: the phone number and email nobody can copy off a table
-   * row, and the balance, which is the reason most of these get exported. */
+   * The figures come from the server rather than being recomputed here.
+   * Asking, leased, quotation, received and remaining are all derived — from
+   * the unit's price list, a discount, an override and the payment records, in
+   * that order — and doing that arithmetic twice is how a spreadsheet ends up
+   * disagreeing with the contract card it was taken from. See
+   * services/contractExportRows.js, which mirrors ContractDetail.tsx. */
   const exportColumns: ExportColumn[] = [
     { label: 'Tenant' },
     { label: 'Phone' },
@@ -171,50 +174,44 @@ export default function Contracts() {
     { label: 'Contract' },
     { label: 'Units' },
     { label: 'Floor' },
-    { label: 'Start' },
-    { label: 'End' },
+    { label: 'Unit size (sq ft)', numeric: true },
+    { label: 'Check in' },
+    { label: 'Check out' },
+    { label: 'Weeks', numeric: true },
     { label: 'Days left', numeric: true },
-    { label: 'Rate', numeric: true },
-    { label: 'Contract value', numeric: true },
-    { label: 'Balance due', numeric: true },
+    { label: 'Asking price', numeric: true },
+    { label: 'Leased price', numeric: true },
+    { label: 'Total quotation', numeric: true },
+    { label: 'Received', numeric: true },
+    { label: 'Remaining', numeric: true },
     { label: 'Status' },
     { label: 'Renewal' },
   ]
 
-  const toExportRow = (c: Contract): (string | number | null)[] => {
-    const units = c.units?.length ? c.units : c.unit ? [c.unit] : []
-    const daysLeft = (!c.endDate || !['active', 'pending_signature'].includes(c.status))
-      ? null
-      : Math.ceil((new Date(c.endDate).getTime() - Date.now()) / 86400000)
-    return [
-      c.customer?.fullName ?? '',
-      // The primary number, then whatever else is on file — a spreadsheet is
-      // where somebody goes to phone a list of people.
-      [c.customer?.phone, ...(c.customer?.phones ?? [])].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(' / '),
-      c.customer?.email ?? '',
-      c.contractNo ?? '',
-      units.map((u) => u?.unitNumber).filter(Boolean).join(', '),
-      units.map((u) => u?.floor).filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(', '),
-      c.startDate ? formatDate(c.startDate) : '',
-      c.endDate ? formatDate(c.endDate) : '',
-      daysLeft,
-      // Numbers go as numbers: a total somebody cannot sum in Excel is a
-      // picture of a number.
-      Number(c.rate) || 0,
-      Number(contractValue(c)) || 0,
-      Number(c.outstanding) || 0,
-      statusLabel(c.status),
-      c.renewalIntent ? c.renewalIntent.replace(/_/g, ' ') : '',
-    ]
+  type ExportRow = {
+    tenant: string; phone: string; email: string; contractNo: string
+    units: string; floor: string; sizeSqf: number | null
+    checkIn: string | null; checkOut: string | null
+    weeks: number | null; daysLeft: number | null
+    asking: number; leased: number; quotation: number; received: number; remaining: number
+    status: string; renewal: string
   }
 
-  /* Fetched when the button is pressed, not held in memory: the page keeps
-     twenty-five rows and this asks for everything the filters match. */
   async function fetchAllForExport() {
-    const all = await api
-      .get('/contracts', { params: { ...params, page: 1, limit: 5000 } })
-      .then((r) => r.data as PagedContracts)
-    return (all.data ?? []).map(toExportRow)
+    const { rows: all } = await api
+      .get('/contracts/export-rows', { params: { ...params, page: undefined, limit: undefined } })
+      .then((r) => r.data as { rows: ExportRow[] })
+    return all.map((r): (string | number | null)[] => [
+      r.tenant, r.phone, r.email, r.contractNo, r.units, r.floor, r.sizeSqf,
+      r.checkIn ? formatDate(r.checkIn) : '',
+      r.checkOut ? formatDate(r.checkOut) : '',
+      r.weeks, r.daysLeft,
+      // Money goes as numbers, so it can be summed. A total nobody can add up
+      // in Excel is a picture of a number.
+      r.asking, r.leased, r.quotation, r.received, r.remaining,
+      statusLabel(r.status),
+      r.renewal ? r.renewal.replace(/_/g, ' ') : '',
+    ])
   }
 
   const exportSubtitle = [
@@ -354,7 +351,9 @@ export default function Contracts() {
               title="Tenants"
               subtitle={exportSubtitle}
               columns={exportColumns}
-              rows={rows.map(toExportRow)}
+              /* Only a "is there anything to export" signal — the file
+                 itself is fetched, and is every row the filters match. */
+              rows={rows.length ? [[]] : []}
               getRows={fetchAllForExport}
               total={data?.total ?? rows.length}
             />
