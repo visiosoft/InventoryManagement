@@ -513,25 +513,34 @@ router.get('/conversations', async (req, res) => {
     const total = visible.length;
     visible = visible.slice(0, limit);
 
-    // The chat someone has open must be in the response even if it sorts below
-    // the window, or opening an old thread from a lead shows a stranger.
-    if (keepPhone && !visible.some((r) => r._id === keepPhone)) {
-        const pinned = rows.find((r) => r._id === keepPhone);
-        if (pinned) visible = [pinned, ...visible];
-    }
+    /* The chat somebody has open has to come back whatever the filter says, or
+     * the thread they are reading empties while they read it. It must not be
+     * mixed into the list, though: pinned to the top of "My leads", a
+     * conversation belonging to another rep read as one of theirs — the tab
+     * counted 3 and showed 4, and the extra row was mohammed emad's lead
+     * sitting above Mahmoud Gohar's.
+     *
+     * So it travels separately. The page renders the list as the filter left
+     * it, and takes the open conversation from here when the filter excluded
+     * it. */
+    const inList = keepPhone ? visible.some((r) => r._id === keepPhone) : true;
+    const pinnedRow = !inList && keepPhone ? rows.find((r) => r._id === keepPhone) : null;
 
     // Who is working each lead. The inbox showed a bare "Lead" badge, which
     // told you somebody had saved this person but not who is meant to answer
     // them — so a thread with an owner looked exactly like an unclaimed one.
     /* Owners, and whoever handed a lead over — an admin who assigns but owns
        nothing is still a name the row has to print. */
+    // The pinned row is hydrated with the rest — it is rendered as the open
+    // conversation, so it needs its lead, owner and labels like any other.
+    const hydrate = pinnedRow ? [...visible, pinnedRow] : visible;
     const ownerIds = [...new Set(
-        visible.flatMap((r) => {
+        hydrate.flatMap((r) => {
             const lead = byLeadPhone.get(suffix(r._id));
             return [lead?.owner, lead?.assignedBy];
         }).filter(Boolean).map(String),
     )];
-    const phones = visible.map((r) => r._id);
+    const phones = hydrate.map((r) => r._id);
 
     // The second wave: these three need `visible`, but not each other.
     const [botThreads, owners, chatLabels] = await Promise.all([
@@ -553,7 +562,7 @@ router.get('/conversations', async (req, res) => {
     res.setHeader('X-Total-Conversations', String(rows.length));
     res.setHeader('X-Matched-Conversations', String(total));
 
-    const payload = visible.map((r) => {
+    const toRow = (r) => {
         const lead = byLeadPhone.get(suffix(r._id)) || null;
         const customer = byPhone.get(suffix(r._id)) || null;
         const leadName = isPlaceholderLeadName(lead?.fullName) ? '' : lead.fullName;
@@ -612,11 +621,20 @@ router.get('/conversations', async (req, res) => {
             botDraft: bot?.draftText || '',
             botEscalationReason: bot?.escalationReason || '',
         };
-    });
+    };
+
+    const payload = visible.map(toRow);
 
     /* An object, where it used to be a bare array. The client accepts either,
        so the two halves can be deployed in any order. */
-    res.json({ list: payload, total: rows.length, matched: total, ownerCounts });
+    res.json({
+        list: payload,
+        total: rows.length,
+        matched: total,
+        ownerCounts,
+        // The open conversation, when the filter excluded it. Null otherwise.
+        pinned: pinnedRow ? toRow(pinnedRow) : null,
+    });
 });
 
 // Link a chat to a lead. Inbound chats usually get one automatically from the

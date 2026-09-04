@@ -1935,7 +1935,13 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     return list
   }, [convoList, labelFilter, ownerFilter, serverKnowsOwner, me?.id])
 
-  const realConvo = convoList.find((c) => c.phoneNormalized === selectedPhone) ?? null
+  /* The open conversation, from the list where the filter kept it and from the
+     server's `pinned` where it did not. It used to be pushed into the list
+     itself, so a chat belonging to another rep appeared under "My leads" —
+     the tab counted 3 and rendered 4. */
+  const pinnedConvo = convoPage?.pinned ?? null
+  const realConvo = convoList.find((c) => c.phoneNormalized === selectedPhone)
+    ?? (pinnedConvo?.phoneNormalized === selectedPhone ? pinnedConvo : null)
   // A number typed into "New chat" behaves like an empty conversation so the
   // composer and the lead action keep working before the first message lands.
   const selectedConvo: WhatsAppConversation | null =

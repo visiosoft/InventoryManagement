@@ -393,7 +393,7 @@ export const whatsappApi = {
    * it sorts below that window.
    */
   conversations: (opts: { q?: string; phone?: string; limit?: number; owner?: string } = {}) =>
-    api.get<WhatsAppConversation[] | { list: WhatsAppConversation[]; total: number; matched: number; ownerCounts: OwnerCounts }>('/whatsapp/conversations', {
+    api.get<WhatsAppConversation[] | { list: WhatsAppConversation[]; total: number; matched: number; ownerCounts: OwnerCounts; pinned: WhatsAppConversation | null }>('/whatsapp/conversations', {
       params: {
         ...(opts.q ? { q: opts.q } : {}),
         ...(opts.phone ? { phone: opts.phone } : {}),
@@ -418,6 +418,7 @@ export const whatsappApi = {
           total: Number(r.headers['x-total-conversations']) || r.data.length,
           matched: Number(r.headers['x-matched-conversations']) || r.data.length,
           ownerCounts: null as OwnerCounts | null,
+          pinned: null as WhatsAppConversation | null,
           serverFiltered: false,
         }
       }
@@ -426,6 +427,10 @@ export const whatsappApi = {
         total: r.data.total,
         matched: r.data.matched,
         ownerCounts: r.data.ownerCounts ?? null,
+        /* The conversation being read, when the active filter excludes it.
+           Kept out of `list` so somebody else's lead is never rendered inside
+           "My leads" — see routes/whatsapp.js. */
+        pinned: r.data.pinned ?? null,
         serverFiltered: true,
       }
     }),
