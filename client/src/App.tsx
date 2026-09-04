@@ -67,6 +67,7 @@ import SignContract from './pages/SignContract'
 import SignMovingJob from './pages/SignMovingJob'
 import Dashboard from './pages/Dashboard'
 import MyDay from './pages/MyDay'
+import Platform from './pages/Platform'
 import Units from './pages/Units'
 import FloorMap from './pages/FloorMap'
 import Sites from './pages/Sites'
@@ -222,6 +223,11 @@ export default function App() {
             people it was built for and by an admin looking over a shoulder —
             and not by a role that has no leads at all. */}
         <Route path="/my-day" element={<PermGuard module="sales_board"><MyDay /></PermGuard>} />
+        {/* The customers themselves. Reachable by anybody signed in — the
+            server refuses it to everyone but the addresses in PLATFORM_OWNERS,
+            because a customer's own admin is an admin too. The page shows
+            whatever the server allows and nothing otherwise. */}
+        <Route path="/platform" element={<Platform />} />
         <Route path="/accounts" element={<RoleGuard roles={['admin', 'accounts']}><AccountsDashboard /></RoleGuard>} />
         <Route path="/settings/lead-distribution" element={<AdminGuard><LeadDistribution /></AdminGuard>} />
         <Route path="/account" element={<MyAccount />} />

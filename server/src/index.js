@@ -84,6 +84,7 @@ import taskRoutes from './routes/tasks.js';
 import salesGoalRoutes from './routes/salesGoals.js';
 import salesTeamRoutes from './routes/salesTeam.js';
 import leaderboardRoutes from './routes/leaderboard.js';
+import platformRoutes from './routes/platform.js';
 import myDayRoutes from './routes/myDay.js';
 import accountsDashboardRoutes from './routes/accountsDashboard.js';
 import exportRoutes from './routes/exports.js';
@@ -273,6 +274,10 @@ app.use('/api/sales-goals', requireAuth, salesGoalRoutes);
 app.use('/api/sales-team', requireAuth, salesTeamRoutes);
 // Signed in is enough: a board only the manager can see recognises nobody.
 app.use('/api/leaderboard', requireAuth, leaderboardRoutes);
+/* The customers themselves, not one customer's data. Guarded inside on an
+   explicit list of owner addresses, because every customer has admins and
+   theirs must never reach this. */
+app.use('/api/platform', requireAuth, platformRoutes);
 app.use('/api/my-day', requireAuth, myDayRoutes);
 // The invoicing day, on one page. Admin and accounts only, inside the router.
 app.use('/api/accounts-dashboard', requireAuth, accountsDashboardRoutes);
