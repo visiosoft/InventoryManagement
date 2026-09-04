@@ -211,6 +211,19 @@ router.delete('/organisations/:id/data', async (req, res) => {
          return res.status(409).json({ error: 'Close the account first. Deleting the data of a customer who is still active is not something to do in one click.' });
       }
 
+      /* Nothing outside our own databases is droppable from here.
+       *
+       * This drops whatever the row says, and a row is data: a mistyped,
+       * imported or hand-edited one naming the live database would take the
+       * company down with one click on a page whose whole job is deleting
+       * things. The prefix is set at creation and never changes, so anything
+       * without it is not a customer database and this refuses to touch it. */
+      if (!/^org_/.test(String(org.dbName || ''))) {
+         return res.status(409).json({
+            error: `"${org.dbName}" is not a customer database. Refusing to drop it.`,
+         });
+      }
+
       const connection = connectionFor(org.dbName);
       await connection.dropDatabase();
       forgetDatabase(org.dbName);

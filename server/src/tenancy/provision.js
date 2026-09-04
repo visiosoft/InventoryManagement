@@ -39,6 +39,54 @@ const RESERVED = new Set([
 ]);
 
 /**
+ * The name of a customer's database.
+ *
+ * Named after them, because somebody looking at a list of databases in Atlas
+ * at two in the morning needs to know whose is whose. `org_acme-storage` says
+ * it; a random string says nothing, and the only way back from it is a lookup
+ * in another database.
+ *
+ * The prefix stays. It groups our databases together among whatever else lives
+ * on the cluster, and it is what the destructive paths check before they drop
+ * anything — a guard that reads "this must start with org_" is worth more than
+ * a tidier name.
+ *
+ * The name is fixed at creation and never follows a rename: MongoDB cannot
+ * rename a database, so keeping the two in step would mean copying every
+ * collection to a new one. The stored name is the truth; the company's name is
+ * only where it came from.
+ */
+/**
+ * A web address nobody else is using.
+ *
+ * The slug is the subdomain, so it has to be unique whatever somebody typed.
+ * Suffixed rather than refused: two companies with similar names is our
+ * problem to solve, not theirs to work around at the point of signing up.
+ */
+async function freeSlug(wanted) {
+   if (!await Organisation().exists({ slug: wanted })) return wanted;
+   for (let n = 2; n <= 99; n += 1) {
+      const candidate = `${wanted.slice(0, 37)}-${n}`;
+      if (!await Organisation().exists({ slug: candidate })) return candidate;
+   }
+   return `${wanted.slice(0, 32)}-${crypto.randomBytes(3).toString('hex')}`;
+}
+
+async function databaseNameFor(slug) {
+   const base = `org_${slug}`.slice(0, 60);
+   if (!await Organisation().exists({ dbName: base })) return base;
+
+   /* Two customers who sanitise to the same name — "Acme Storage" and
+      "ACME storage" — must not land in the same database. Suffixed rather
+      than refused: it is our problem to solve, not theirs to work around. */
+   for (let n = 2; n <= 99; n += 1) {
+      const candidate = `${base.slice(0, 57)}-${n}`;
+      if (!await Organisation().exists({ dbName: candidate })) return candidate;
+   }
+   return `${base.slice(0, 50)}-${crypto.randomBytes(4).toString('hex')}`;
+}
+
+/**
  * The seed.
  *
  * Deliberately quiet. Distribution off, the assistant off, automation off,
@@ -129,17 +177,28 @@ export async function provisionOrganisation({ name, slug, ownerEmail, adminName,
    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('A real email address is needed for the first admin');
 
    const taken = await OrgUserIndex().findOne({ emailLower: email }).lean();
-   const existing = await Organisation().findOne({ slug: cleanSlug }).lean();
+
+   /* Resuming, or a different company that happens to sanitise the same way.
+    *
+    * "Acme Storage" and "ACME  storage" both reduce to acme-storage, and
+    * matching on the slug alone treated the second as a re-run of the first —
+    * so a second company was quietly given the first one's database. The owner
+    * has to match too: same slug and same owner is the interrupted setup this
+    * is meant to finish; same slug and a different owner is somebody else, and
+    * they get a name of their own. */
+   const bySlug = await Organisation().findOne({ slug: cleanSlug }).lean();
+   const existing = bySlug && bySlug.ownerEmail === email ? bySlug : null;
+
    if (taken && (!existing || String(taken.organisation) !== String(existing._id))) {
       throw new Error(`${email} already belongs to another customer`);
    }
 
-   /* A random database name, not the slug: renaming a customer must not mean
-      moving their data, and a slug is text somebody typed. */
+   const finalSlug = existing ? cleanSlug : await freeSlug(cleanSlug);
+
    const org = existing ?? (await Organisation().create({
       name: cleanName,
-      slug: cleanSlug,
-      dbName: `org_${crypto.randomBytes(6).toString('hex')}`,
+      slug: finalSlug,
+      dbName: await databaseNameFor(finalSlug),
       ownerEmail: email,
       status: 'provisioning',
       demo,
@@ -171,7 +230,7 @@ export async function provisionOrganisation({ name, slug, ownerEmail, adminName,
    await PlatformAudit().create({
       action: existing ? 'organisation.reprovisioned' : 'organisation.created',
       organisation: org._id,
-      detail: `${cleanName} (${cleanSlug}) → ${org.dbName}`,
+      detail: `${cleanName} (${org.slug}) → ${org.dbName}`,
    }).catch(() => {});
 
    return {
