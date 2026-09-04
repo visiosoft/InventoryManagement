@@ -340,6 +340,8 @@ export type WhatsAppLabel = {
  *  on the server rather than over the page that was loaded. */
 export type OwnerCounts = {
   all: number; mine: number; unassigned: number
+  /** Chats with somebody who has signed. Their own tab — see WhatsApp.tsx. */
+  tenants: number
   /** They wrote last and nobody has replied. */
   waiting: number
   /** We wrote last and nothing has come back — see chatFollowUp.js. */

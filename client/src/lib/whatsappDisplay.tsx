@@ -49,7 +49,26 @@ function initials(label: string) {
   return (words[0][0] + (words[1]?.[0] ?? '')).toUpperCase()
 }
 
-const AVATAR_COLORS = ['#5B2BC9', '#7C3AED', '#9333EA', '#C026D3', '#DB2777', '#E11D48', '#EA580C', '#0891B2', '#0D9488', '#16A34A']
+/* A tint and its ink, as a pair.
+ *
+ * Ten solid saturated discs down the side of the inbox competed with the names
+ * beside them and with every badge on the row — the loudest thing on screen was
+ * the one carrying the least information. A pale disc with the letter in the
+ * same hue identifies somebody just as well and lets the name be the thing you
+ * see. Each pair is checked for contrast in its own right, so the letter is
+ * readable rather than decorative. */
+const AVATAR_COLORS: { bg: string; fg: string }[] = [
+  { bg: '#EDE9FE', fg: '#6D28D9' },   // violet
+  { bg: '#FCE7F3', fg: '#BE185D' },   // pink
+  { bg: '#DBEAFE', fg: '#1D4ED8' },   // blue
+  { bg: '#D1FAE5', fg: '#047857' },   // green
+  { bg: '#E0E7FF', fg: '#4338CA' },   // indigo
+  { bg: '#FEE2E2', fg: '#B91C1C' },   // red
+  { bg: '#FEF3C7', fg: '#92400E' },   // amber
+  { bg: '#CCFBF1', fg: '#0F766E' },   // teal
+  { bg: '#F3E8FF', fg: '#7E22CE' },   // purple
+  { bg: '#FFE4E6', fg: '#BE123C' },   // rose
+]
 
 /** Stable per-contact colour, derived from the number so it never shifts. */
 function avatarColor(seed: string) {
@@ -59,10 +78,11 @@ function avatarColor(seed: string) {
 }
 
 export function Avatar({ seed, label, size = 40 }: { seed: string; label: string; size?: number }) {
+  const { bg, fg } = avatarColor(seed)
   return (
     <div
-      className="wa-avatar shrink-0 rounded-full flex items-center justify-center text-white font-bold"
-      style={{ width: size, height: size, background: avatarColor(seed), fontSize: size * 0.34 }}
+      className="wa-avatar shrink-0 rounded-full flex items-center justify-center font-bold"
+      style={{ width: size, height: size, background: bg, color: fg, fontSize: size * 0.34 }}
       aria-hidden
     >
       {initials(label)}

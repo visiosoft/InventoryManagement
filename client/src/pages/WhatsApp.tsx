@@ -19,7 +19,7 @@ import { cn } from '../lib/utils'
 
 /** Which slice of the inbox is on screen. 'waiting' is not a slice by owner
  *  like the others — it is everybody who is owed an answer. */
-type OwnerTab = 'all' | 'mine' | 'unassigned' | 'waiting' | 'quiet'
+type OwnerTab = 'all' | 'mine' | 'tenants' | 'unassigned' | 'waiting' | 'quiet'
 
 /** How long somebody has been waiting, said the way a person would say it. */
 function waitedFor(since: string): string {
@@ -1518,12 +1518,46 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
   const [ownerFilter, setOwnerFilter] = useState<OwnerTab>(() => {
     try {
       const saved = localStorage.getItem(OWNER_KEY)
-      if (saved === 'all' || saved === 'mine' || saved === 'unassigned' || saved === 'waiting' || saved === 'quiet') return saved
+      /* 'waiting' and 'quiet' are deliberately not restored: the control that
+         switched them off was taken off the sidebar, so somebody who had one
+         saved would open a filtered inbox with no way back to the whole of it.
+         Both states still show on the rows themselves, as chips. */
+      if (saved === 'all' || saved === 'mine' || saved === 'tenants') return saved
+      // 'unassigned' is not a rep's tab any more; an admin still has it.
+      if (saved === 'unassigned' && me?.role !== 'sales_rep' && me?.role !== 'accounts') return saved
     } catch { /* a private window has no storage, and that is fine */ }
     // Only a rep: accounts share the rep-ish role but own no leads, and would
     // land on an empty tab wondering where the inbox went.
     return me?.role === 'sales_rep' ? 'mine' : 'all'
   })
+  /* Who sees which.
+   *
+   * A rep works their own leads, the tenants who write in, and occasionally
+   * the whole inbox; handing chats out is not their job, so Unassigned is not
+   * on their screen at all. An admin is doing the handing out, so it is one of
+   * their three, and Tenants moves behind the dots. */
+  const ALL_TABS: [OwnerTab, string][] = [
+    ['mine', 'My leads'],
+    ['tenants', 'Tenants'],
+    ['all', 'All'],
+    ['unassigned', 'Unassigned'],
+  ]
+  const isRep = me?.role === 'sales_rep' || me?.role === 'accounts'
+  const visibleKeys: OwnerTab[] = isRep ? ['mine', 'tenants', 'all'] : ['mine', 'all', 'unassigned']
+  const ownerTabs = ALL_TABS.filter(([k]) => visibleKeys.includes(k))
+  const overflowTabs = isRep ? [] : ALL_TABS.filter(([k]) => k === 'tenants')
+
+  const [tabMenuOpen, setTabMenuOpen] = useState(false)
+  const tabMenuRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!tabMenuOpen) return
+    const away = (e: MouseEvent) => {
+      if (tabMenuRef.current && !tabMenuRef.current.contains(e.target as Node)) setTabMenuOpen(false)
+    }
+    document.addEventListener('mousedown', away)
+    return () => document.removeEventListener('mousedown', away)
+  }, [tabMenuOpen])
+
   function chooseOwnerFilter(v: OwnerTab) {
     setOwnerFilter(v)
     // Back to the first page: 200 of everybody's chats and 200 of your own are
@@ -1831,7 +1865,12 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     [conversations]
   )
 
-  const isMine = (c: WhatsAppConversation) => Boolean(me?.id) && String(c.lead?.ownerId ?? '') === String(me?.id)
+  /* Mine means leads I am working, not every chat I happen to own. A tenant
+     asking about a gate code is not a lead, and mixing them in buried the list
+     this tab exists for. A prospect stays here: they are still being won. */
+  const isMine = (c: WhatsAppConversation) => (
+    Boolean(me?.id) && String(c.lead?.ownerId ?? '') === String(me?.id) && !isTenant(c)
+  )
   /* A new enquiry nobody has picked up — not merely "no owner", which swept in
      every tenant who messages us. Somebody already on file is not a new chat. */
   const isUnowned = (c: WhatsAppConversation) => !c.lead?.ownerId && !c.customer
@@ -1867,11 +1906,8 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     unassigned: convoList.filter(isUnowned).length,
     waiting: convoList.filter(isWaiting).length,
     quiet: convoList.filter(isQuiet).length,
+    tenants: convoList.filter(isTenant).length,
   }
-  /* One number for the closed dropdown. The two queues never overlap — a chat
-     is either owed a reply or silent on us, never both — so adding them is
-     honest. */
-  const needsAttention = (ownerCounts.waiting ?? 0) + (ownerCounts.quiet ?? 0)
 
   /* The label filter always runs here. The owner runs here too when the server
      did not do it, so the tabs work against either version of the API. */
@@ -1879,6 +1915,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     let list = convoList
     if (!serverKnowsOwner) {
       if (ownerFilter === 'mine') list = list.filter(isMine)
+      else if (ownerFilter === 'tenants') list = list.filter(isTenant)
       else if (ownerFilter === 'unassigned') {
         list = list.filter(isUnowned)
           .slice()
@@ -2334,16 +2371,21 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
               />
             </div>
 
-            {/* Mine, everyone's, or the ones nobody has picked up yet. */}
+            {/* Three, always.
+                Four pills wrapped onto two lines and broke "My leads" across
+                them. Three is what fits, so the fourth lives behind the dots —
+                and which three depends on who is looking: a rep works their
+                own leads and never hands anything out, so Unassigned is not
+                theirs to see. */}
             <div className="flex items-center gap-1 p-1" style={{ background: '#F7F3FF', borderRadius: 999 }}>
-              {([['mine', 'My leads'], ['all', 'All'], ['unassigned', 'Unassigned']] as const).map(([key, label]) => {
+              {ownerTabs.map(([key, label]) => {
                 const active = ownerFilter === key
                 return (
                   <button
                     key={key}
                     type="button"
                     onClick={() => chooseOwnerFilter(key)}
-                    className="flex-1 cursor-pointer"
+                    className="flex-1 cursor-pointer truncate"
                     style={{
                       height: 28, borderRadius: 999, fontSize: 12, fontWeight: 600, border: 'none',
                       background: active ? '#fff' : 'transparent',
@@ -2358,33 +2400,48 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                   </button>
                 )
               })}
-            </div>
 
-            {/* The two queues that are not about ownership: who is owed an
-                answer, and what has gone silent on us. A dropdown rather than
-                two more bars — they were costing a third of the sidebar's
-                height before any chat was visible, and most of the day both
-                read as "nothing to do here". */}
-            <select
-              value={ownerFilter === 'waiting' || ownerFilter === 'quiet' ? ownerFilter : ''}
-              onChange={(e) => chooseOwnerFilter(
-                (e.target.value || (me?.role === 'sales_rep' ? 'mine' : 'all')) as OwnerTab,
+              {/* Whatever did not fit. Only rendered when there is something
+                  in it, so a rep never sees an empty control. */}
+              {overflowTabs.length > 0 && (
+                <div className="relative shrink-0" ref={tabMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setTabMenuOpen((v) => !v)}
+                    className="cursor-pointer flex items-center justify-center"
+                    style={{
+                      width: 26, height: 28, borderRadius: 999, border: 'none',
+                      background: overflowTabs.some(([k]) => k === ownerFilter) ? '#fff' : 'transparent',
+                      color: overflowTabs.some(([k]) => k === ownerFilter) ? INK : FAINT_INK,
+                      boxShadow: overflowTabs.some(([k]) => k === ownerFilter) ? '0 1px 2px rgba(20,8,31,.10)' : 'none',
+                    }}
+                    title="More"
+                    aria-label="More chat filters"
+                  >
+                    <MoreVertical size={14} />
+                  </button>
+                  {tabMenuOpen && (
+                    <div
+                      className="absolute right-0 z-20 rounded-xl overflow-hidden"
+                      style={{ top: 32, minWidth: 170, background: '#fff', border: `1px solid ${LINE}`, boxShadow: '0 8px 24px rgba(20,8,31,.12)' }}
+                    >
+                      {overflowTabs.map(([key, label]) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => { chooseOwnerFilter(key); setTabMenuOpen(false) }}
+                          className={MENU_ROW}
+                          style={{ color: ownerFilter === key ? '#4A1FA0' : INK }}
+                        >
+                          <span className="flex-1">{label}</span>
+                          <span style={{ fontWeight: 700, color: FAINT_INK }}>{ownerCounts[key]}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
-              className="w-full cursor-pointer"
-              style={{
-                height: 30, borderRadius: 10, fontSize: 12, fontWeight: 700, padding: '0 8px',
-                color: needsAttention > 0 ? '#9A3412' : FAINT_INK,
-                background: needsAttention > 0 ? '#FEF6F2' : '#F7F3FF',
-                border: `1px solid ${needsAttention > 0 ? '#F6C9B8' : '#EDE5FF'}`,
-              }}
-              title="Chats that need chasing, whoever owns them"
-            >
-              <option value="">
-                {needsAttention > 0 ? `Needs chasing · ${needsAttention}` : 'Nothing needs chasing'}
-              </option>
-              <option value="waiting">Waiting on us · {ownerCounts.waiting ?? 0}</option>
-              <option value="quiet">Went quiet · {ownerCounts.quiet ?? 0}</option>
-            </select>
+            </div>
 
             {/* Click a label to narrow the list to the chats carrying it. */}
             {waLabels.length > 0 && (
@@ -2432,8 +2489,10 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                   ? 'No conversations yet. Start a new chat.'
                   : ownerFilter === 'mine'
                     ? 'None of these chats are yours yet. Try All.'
-                    : ownerFilter === 'unassigned'
-                      ? 'Every chat has somebody on it.'
+                    : ownerFilter === 'tenants'
+                      ? 'No chats from anybody who has signed.'
+                      : ownerFilter === 'unassigned'
+                        ? 'Every new enquiry has somebody on it.'
                       : ownerFilter === 'waiting'
                         ? 'Nobody is waiting on a reply. Everything has been answered.'
                         : ownerFilter === 'quiet'
@@ -2457,81 +2516,36 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                     style={isSelected ? { background: '#F3EDFF' } : undefined}
                   >
                     <Avatar seed={c.phoneNormalized} label={label} />
-                    <div className="min-w-0 flex-1">
+
+                    {/* Three lines, in the order somebody reads them: who and
+                        when, what was last said, then what state it is in.
+                        The badges used to sit inline with the name and with
+                        the preview, so a row carrying two of them pushed the
+                        name out of view — the one thing being looked for. */}
+                    <div className="min-w-0 flex-1 flex flex-col" style={{ gap: 2 }}>
                       <div className="flex items-baseline gap-2">
-                        {isUnread && <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: '#5B2BC9' }} aria-hidden />}
                         <span
-                          className="truncate flex-1"
+                          className="truncate"
                           style={{ fontSize: 14, fontWeight: isUnread ? 800 : 600, color: INK }}
                         >
                           {label}
                         </span>
-                        {/* How long they have been owed an answer. Shown on
-                            every tab, not only the waiting one: the point is
-                            to notice it while scrolling past. */}
-                        {isWaiting(c) && (
-                          <span
-                            className="shrink-0 rounded-full px-1.5"
-                            style={{ fontSize: 10, fontWeight: 700, ...(() => { const t = waitTone(c.waitingSince || c.lastInboundAt || ''); return { background: t.bg, color: t.fg } })() }}
-                            title={`Waiting ${waitedFor(c.waitingSince || c.lastInboundAt || '')} for a reply`}
-                          >
-                            {waitedFor(c.waitingSince || c.lastInboundAt || '')}
-                          </span>
-                        )}
-                        {/* Silent on us. Muted next to the waiting chip: both
-                            need doing, one of them has somebody hanging. */}
-                        {!isWaiting(c) && isQuiet(c) && (
-                          <span
-                            className="shrink-0 rounded-full px-1.5"
-                            style={{ fontSize: 10, fontWeight: 700, background: '#F1F5F9', color: '#64748B' }}
-                            title={`No reply from them for ${waitedFor(c.quietSince || '')}`}
-                          >
-                            {waitedFor(c.quietSince || '')} quiet
-                          </span>
-                        )}
-                        {/* Somebody is on it, with a date. */}
-                        {c.lead?.followUpAt && new Date(c.lead.followUpAt) > new Date() && (
-                          <span
-                            className="shrink-0 rounded-full px-1.5"
-                            style={{ fontSize: 10, fontWeight: 700, background: '#EDE5FF', color: '#4A1FA0' }}
-                            title={`Follow-up set for ${new Date(c.lead.followUpAt).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}`}
-                          >
-                            <Bell size={9} style={{ display: 'inline', verticalAlign: 'middle' }} />
-                          </span>
-                        )}
-                        <span className="shrink-0" style={{ fontSize: 11, color: FAINT_INK }}>{formatListTime(c.lastAt)}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="truncate flex-1" style={{ fontSize: 12, color: MUTED_INK }}>
-                          {previewByPhone[c.phoneNormalized] ?? `${c.count} messages`}
+                        <span className="shrink-0" style={{ marginLeft: 'auto', fontSize: 11, color: '#A09AAA' }}>
+                          {formatListTime(c.lastAt)}
                         </span>
-                        {/* The assistant is waiting on someone, or has one
-                            ready to send — both need a person, so both are
-                            visible without opening the thread. */}
-                        {c.botStatus === 'escalated' ? (
-                          <span className="shrink-0 rounded-full px-1.5 py-0.5"
-                            style={{ fontSize: 10, fontWeight: 700, background: '#FFF1CC', color: '#8A5A00' }}
-                            title={c.botEscalationReason || 'The assistant handed this over'}>
-                            Needs you
-                          </span>
-                        ) : c.botDraft ? (
-                          <span className="shrink-0 rounded-full px-1.5 py-0.5"
-                            style={{ fontSize: 10, fontWeight: 700, background: '#EDE5FF', color: '#4A1FA0' }}
-                            title="A suggested reply is waiting">
-                            Reply ready
-                          </span>
-                        ) : null}
-                        {/* Customer is decided by whether a customer record
-                            exists for this number, not by a lead's status.
-                            Asking the lead marked 53 of 60 real customers as
-                            leads, because converting is not the only way
-                            somebody becomes one. */}
-                        {/* A chat somebody has been handed shows its owner even
-                            while the lead is still called "WhatsApp Contact
-                            5521" - it was assigned to Sales and the row said
-                            nothing. `assigned` rather than an owner: every
-                            auto-created contact is given one, so that would
-                            badge the whole inbox. */}
+                      </div>
+
+                      <div className="truncate" style={{ fontSize: 12.5, color: '#756E80' }}>
+                        {previewByPhone[c.phoneNormalized] ?? `${c.count} messages`}
+                      </div>
+
+                      {/* The state of the chat, on its own line. Only the owner
+                          truncates: the chips are a fixed width and carry the
+                          things worth noticing while scrolling past. */}
+                      <div
+                        className="flex items-center gap-1.5 overflow-hidden"
+                        style={{ fontSize: 11, color: '#A09AAA', whiteSpace: 'nowrap' }}
+                      >
                         {(c.customer || (c.lead && (!isPlaceholderName(c.lead.fullName) || c.lead.assigned))) && (
                           <span
                             className="shrink-0 rounded-full px-1.5 py-0.5"
@@ -2550,42 +2564,95 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                                   : { fontSize: 10, fontWeight: 700, background: '#F3EDFF', color: '#4A1FA0' }
                             }
                           >
-                            {isTenant(c)
-                              ? 'Customer'
-                              : c.customer
-                                ? 'Quoted'
-                                : c.lead?.ownerName
-                                  ? `Lead (${c.lead.ownerName})`
-                                  : 'Lead'}
-                            {/* How it came to be theirs. The rota hands out most
-                                of these now, and "why is this mine?" is a fair
-                                question to be able to answer from the row. */}
-                            {!c.customer && c.lead?.ownerName && c.lead?.autoAssigned && (
+                            {isTenant(c) ? 'Customer' : c.customer ? 'Quoted' : 'Lead'}
+                          </span>
+                        )}
+
+                        {/* The owner as a name beside the chip rather than
+                            inside it, so it is not one long "Lead (mohammed
+                            emad)" badge competing with everything else. */}
+                        {!c.customer && c.lead?.ownerName && (
+                          <span className="truncate min-w-0">
+                            {c.lead.ownerName}
+                            {/* How it came to be theirs. The rota hands out
+                                most of these now, and "why is this mine?" is a
+                                fair question to answer from the row. */}
+                            {c.lead.autoAssigned && (
                               <Sparkles size={9} style={{ display: 'inline', marginLeft: 3, verticalAlign: 'middle' }} />
                             )}
                           </span>
                         )}
-                        {/* Nobody has picked this up: no owner, not a customer,
-                            no label. One tap puts a name on it, rather than
-                            opening the chat to reach the menu. */}
+
+                        {/* How long they have been owed an answer. */}
+                        {isWaiting(c) && (
+                          <span
+                            className="shrink-0 rounded-full px-1.5"
+                            style={{ fontSize: 10, fontWeight: 700, ...(() => { const t = waitTone(c.waitingSince || c.lastInboundAt || ''); return { background: t.bg, color: t.fg } })() }}
+                            title={`Waiting ${waitedFor(c.waitingSince || c.lastInboundAt || '')} for a reply`}
+                          >
+                            {waitedFor(c.waitingSince || c.lastInboundAt || '')}
+                          </span>
+                        )}
+
+                        {/* Silent on us. Muted next to the waiting chip: both
+                            need doing, one of them has somebody hanging. */}
+                        {!isWaiting(c) && isQuiet(c) && (
+                          <span
+                            className="shrink-0 rounded-full px-1.5"
+                            style={{ fontSize: 10, fontWeight: 700, background: '#F1F5F9', color: '#64748B' }}
+                            title={`No reply from them for ${waitedFor(c.quietSince || '')}`}
+                          >
+                            {waitedFor(c.quietSince || '')} quiet
+                          </span>
+                        )}
+
+                        {/* Somebody is on it, with a date. */}
+                        {c.lead?.followUpAt && new Date(c.lead.followUpAt) > new Date() && (
+                          <span
+                            className="shrink-0 rounded-full px-1.5"
+                            style={{ fontSize: 10, fontWeight: 700, background: '#EDE5FF', color: '#4A1FA0' }}
+                            title={`Follow-up set for ${new Date(c.lead.followUpAt).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}`}
+                          >
+                            <Bell size={9} style={{ display: 'inline', verticalAlign: 'middle' }} />
+                          </span>
+                        )}
+
+                        {/* The assistant is waiting on someone, or has a reply
+                            ready to send — both need a person. */}
+                        {c.botStatus === 'escalated' ? (
+                          <span
+                            className="shrink-0 rounded-full px-1.5 py-0.5"
+                            style={{ fontSize: 10, fontWeight: 700, background: '#FFF1CC', color: '#8A5A00' }}
+                            title={c.botEscalationReason || 'The assistant handed this over'}
+                          >
+                            Needs you
+                          </span>
+                        ) : null}
+
+                        {/* Nobody has picked this up. One tap puts a name on
+                            it, rather than opening the chat to reach a menu. */}
                         {!c.customer && !c.lead?.ownerId && (
                           <QuickAssign convo={c} onChanged={() => refetchConvos()} />
                         )}
-                        {isUnread && (
-                          <span
-                            className="shrink-0 rounded-full px-1.5 py-0.5 text-white"
-                            style={{ fontSize: 10, fontWeight: 700, background: '#5B2BC9' }}
-                          >
-                            {unread > 99 ? '99+' : unread}
-                          </span>
-                        )}
                       </div>
+
                       {(c.labels || []).length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-1">
                           {c.labels.map((l) => <LabelChip key={l._id} label={l} />)}
                         </div>
                       )}
                     </div>
+
+                    {/* Unread, at the edge. A count rather than a dot: one
+                        message waiting and nine are different situations. */}
+                    {isUnread && (
+                      <span
+                        className="shrink-0 rounded-full text-white flex items-center justify-center"
+                        style={{ minWidth: 20, height: 20, padding: '0 6px', fontSize: 11, fontWeight: 700, background: '#5B2BC9' }}
+                      >
+                        {unread > 99 ? '99+' : unread}
+                      </span>
+                    )}
                   </button>
                 )
               })

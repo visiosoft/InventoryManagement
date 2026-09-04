@@ -462,11 +462,24 @@ router.get('/conversations', async (req, res) => {
      * not a new chat whoever owns the lead, so they are not in here. */
     const unassignedOn = (r) => !ownerOf(r) && !byPhone.get(suffix(r._id));
 
-    const ownerCounts = { all: visible.length, mine: 0, unassigned: 0, waiting: 0, quiet: 0 };
+    /* A tenant is somebody who has signed, and they are their own tab.
+     *
+     * "My leads" was showing every chat a rep owned, tenants included, so the
+     * list they came here to work — people still being won — was mixed in with
+     * everybody who already rents a unit and is asking about a gate code. A
+     * prospect is not a tenant and stays with the leads: they are still being
+     * won. Absent `stage` means tenant, as it does everywhere else. */
+    const tenantOn = (r) => {
+        const customer = byPhone.get(suffix(r._id));
+        return Boolean(customer) && customer.stage !== 'prospect';
+    };
+    const mineOn = (r) => ownerOf(r) === me && !tenantOn(r);
+
+    const ownerCounts = { all: visible.length, mine: 0, tenants: 0, unassigned: 0, waiting: 0, quiet: 0 };
     for (const r of visible) {
-        const owner = ownerOf(r);
         if (unassignedOn(r)) ownerCounts.unassigned += 1;
-        if (owner && owner === me) ownerCounts.mine += 1;
+        if (mineOn(r)) ownerCounts.mine += 1;
+        if (tenantOn(r)) ownerCounts.tenants += 1;
         if (waitingOn(r)) ownerCounts.waiting += 1;
         else if (quietOn(r)) ownerCounts.quiet += 1;
     }
@@ -480,7 +493,8 @@ router.get('/conversations', async (req, res) => {
     res.setHeader('X-Owner-Counts', JSON.stringify(ownerCounts));
 
     const ownerFilter = String(req.query.owner || '').trim();
-    if (ownerFilter === 'mine') visible = visible.filter((r) => ownerOf(r) === me);
+    if (ownerFilter === 'mine') visible = visible.filter(mineOn);
+    else if (ownerFilter === 'tenants') visible = visible.filter(tenantOn);
     else if (ownerFilter === 'unassigned') {
         // Newest first, like the ordinary inbox: an enquiry that arrived a
         // minute ago is the one to pick up.
