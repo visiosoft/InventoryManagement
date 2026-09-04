@@ -842,6 +842,24 @@ export default function Quotations() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['quotes'] }),
   })
 
+  /* Closing a quotation the customer did not take.
+   *
+   * A quotation holds its unit until it expires, converts, or is turned down —
+   * and until now nothing in the app could turn one down, so a unit somebody
+   * had decided against stayed held until its expiry date came round, weeks
+   * later. The endpoint existed and was never called from anywhere.
+   *
+   * The unit is released by the server the moment the status changes, so this
+   * is the whole action: no separate "free the unit" step to forget. */
+  const setQuoteStatus = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) => quoteApi.updateStatus(id, status),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['quotes'] })
+      // The unit list and the availability search both change with it.
+      qc.invalidateQueries({ queryKey: ['units'] })
+    },
+  })
+
   const stats = useMemo(() => {
     const all = quotes || []
     return {
@@ -1048,6 +1066,38 @@ export default function Quotations() {
                               <button onClick={() => navigate(`/quotes/new?quote=${q._id}`)} className="text-primary hover:underline cursor-pointer">
                                 Edit
                               </button>
+                              {/* Turning it down frees the unit immediately.
+                                  Not offered once it has been accepted or has
+                                  become a contract — that is a contract to
+                                  cancel, not a quote to close. */}
+                              {!['accepted', 'rejected', 'expired'].includes(q.status) && !q.contract && (
+                                <button
+                                  onClick={() => {
+                                    const units = (q.units || []).map((u) => u.unitNumber).filter(Boolean).join(', ')
+                                    if (confirm(
+                                      `Mark ${q.quoteNo} as not taken?`
+                                      + (units ? `
+
+This frees ${units} for somebody else straight away.` : ''),
+                                    )) setQuoteStatus.mutate({ id: q._id, status: 'rejected' })
+                                  }}
+                                  className="hover:underline cursor-pointer"
+                                  style={{ color: '#B45309' }}
+                                  title="The customer did not take it — release the unit"
+                                >
+                                  Not taken
+                                </button>
+                              )}
+                              {q.status === 'rejected' && (
+                                <button
+                                  onClick={() => setQuoteStatus.mutate({ id: q._id, status: 'draft' })}
+                                  className="hover:underline cursor-pointer"
+                                  style={{ color: '#4A1FA0' }}
+                                  title="They came back — put this quotation back in play"
+                                >
+                                  Reopen
+                                </button>
+                              )}
                               <button
                                 onClick={() => {
                                   if (confirm('Delete this quote?')) removeQuote.mutate(q._id)

@@ -46,7 +46,10 @@ type AvailState = 'free' | 'partial' | 'quoted' | 'taken' | 'maintenance'
 const STATE_STYLE: Record<AvailState, { bg: string; border: string; dot: string; text: string }> = {
   free: { bg: '#F3FBF6', border: '#BBEBCD', dot: GREEN, text: '#1D8A46' },
   partial: { bg: '#FEF9F0', border: '#F5DFB8', dot: AMBER, text: '#B45309' },
-  quoted: { bg: '#FEF9F0', border: '#F5DFB8', dot: AMBER, text: '#B45309' },
+  /* Its own colour, not the amber used for a partly-free window. A quotation
+     holding a unit is a different fact from a gap in the calendar, and sharing
+     a colour with one made the other unreadable at a glance. */
+  quoted: { bg: '#EFF5FF', border: '#C3D8F7', dot: '#2563EB', text: '#1D4ED8' },
   taken: { bg: '#F4F0FF', border: '#DDD0FF', dot: PURPLE, text: DEEP },
   maintenance: { bg: '#F5F4F6', border: 'rgba(20,8,31,.12)', dot: MUTED, text: MUTED },
 }
@@ -78,6 +81,22 @@ const shortDate = (s: string) => {
   return d.toLocaleDateString(undefined, sameYear
     ? { day: 'numeric', month: 'short' }
     : { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+/**
+ * How long ago something happened, in the words somebody would use.
+ *
+ * Recent holds are the ones worth acting on, and "2 Sept" does not say whether
+ * that was yesterday or last month. Past a fortnight the date itself is more
+ * use than a count of days.
+ */
+const agoOrDate = (s: string) => {
+  const then = fromISO(dayOnly(s)).getTime()
+  const days = Math.floor((Date.now() - then) / 86400000)
+  if (days <= 0) return 'today'
+  if (days === 1) return 'yesterday'
+  if (days < 14) return `${days} days ago`
+  return `on ${shortDate(dayOnly(s))}`
 }
 
 /* ── Plain-English phrase parser ────────────────────────────────────────
@@ -276,7 +295,11 @@ export default function Units() {
   const winFrom = rangeInvalid ? today : (availFrom || today)
   const winTo = rangeInvalid ? addDays(today, 28) : (availTo || addDays(availFrom || today, 28))
 
-  type Booking = { kind: string; ref: string; customer: string; startDate: string; endDate: string; status: string }
+  type Booking = {
+    kind: string; ref: string; customer: string; startDate: string; endDate: string; status: string
+    /** When the quotation was last worked on. Absent on contracts. */
+    quotedAt?: string | null
+  }
   type AvailUnit = { _id: string; bookedInPeriod?: boolean; bookings?: Booking[] }
   const availability = useQuery<AvailUnit[]>({
     queryKey: ['unit-availability', winFrom, winTo],
@@ -392,13 +415,22 @@ export default function Units() {
            quote number, so somebody can go and look at the thing doing the
            holding rather than hunting for a contract that does not exist. */
         if (spans.every((x) => x.b.kind === 'quote')) {
+          // Most recently quoted first: the live conversation is the one at
+          // the top, not whichever quote happens to run longest.
           const quotes = ranked.map((x) => x.b)
+            .sort((a, b) => String(b.quotedAt ?? '').localeCompare(String(a.quotedAt ?? '')))
           return {
             state: 'quoted',
             freeFrom: null,
             line: quotes.length > 1 ? `Quoted to ${quotes.length} people` : 'Quoted, not signed',
             detail: quotes
-              .map((q) => `${q.ref}${q.customer ? ` · ${q.customer}` : ''}${q.endDate ? ` · until ${shortDate(dayOnly(q.endDate))}` : ''}`)
+              .map((q) => [
+                q.ref,
+                q.customer,
+                q.endDate ? `until ${shortDate(dayOnly(q.endDate))}` : '',
+                // How long the hold has been sitting there.
+                q.quotedAt ? `quoted ${agoOrDate(q.quotedAt)}` : '',
+              ].filter(Boolean).join(' · '))
               .join('  ·  '),
           }
         }
@@ -887,10 +919,13 @@ export default function Units() {
                       return (
                         <div
                           key={`${b.ref}-${i}`}
-                          title={`${b.kind === 'quote' ? 'Quote' : 'Contract'} ${b.ref} · ${b.customer || 'no name'} · ${formatDate(b.startDate)} – ${formatDate(b.endDate)}`}
+                          title={`${b.kind === 'quote' ? 'Quote' : 'Contract'} ${b.ref} · ${b.customer || 'no name'} · ${formatDate(b.startDate)} – ${formatDate(b.endDate)}`
+                            + (b.quotedAt ? ` · quoted ${agoOrDate(b.quotedAt)}` : '')}
                           style={{
                             position: 'absolute', top: 6, bottom: 6, left: `${s}%`, width: `${Math.max(e - s, 1)}%`,
-                            background: b.kind === 'quote' ? AMBER : PURPLE,
+                            // Same blue the card uses, so the bar and the
+                            // label cannot disagree about what is holding it.
+                            background: b.kind === 'quote' ? '#2563EB' : PURPLE,
                             borderRadius: 6, opacity: 0.9,
                           }}
                         />
@@ -1010,7 +1045,8 @@ export default function Units() {
       {/* ── Legend ─────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center" style={{ gap: 16, fontSize: 12, color: MUTED }}>
         <span className="flex items-center gap-1.5"><span style={{ width: 10, height: 10, borderRadius: 999, background: GREEN }} /> Free entire window</span>
-        <span className="flex items-center gap-1.5"><span style={{ width: 10, height: 10, borderRadius: 999, background: AMBER }} /> Partly free, or held by a quotation</span>
+        <span className="flex items-center gap-1.5"><span style={{ width: 10, height: 10, borderRadius: 999, background: AMBER }} /> Partly free</span>
+        <span className="flex items-center gap-1.5"><span style={{ width: 10, height: 10, borderRadius: 999, background: '#2563EB' }} /> Quoted, not signed</span>
         <span className="flex items-center gap-1.5"><span style={{ width: 10, height: 10, borderRadius: 999, background: PURPLE }} /> Occupied entire window</span>
         <span className="flex items-center gap-1.5"><span style={{ width: 10, height: 10, borderRadius: 999, background: MUTED }} /> Maintenance</span>
       </div>

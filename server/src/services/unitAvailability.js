@@ -63,7 +63,7 @@ export async function computeUnitAvailability({ from = null, to = null, includeA
             'units.startDate': { $lte: to },
             'units.endDate': { $gte: from },
         })
-            .select('quoteNo customer units status contract')
+            .select('quoteNo customer units status contract quoteDate updatedAt')
             .populate('customer', 'fullName')
             .lean();
 
@@ -90,7 +90,20 @@ export async function computeUnitAvailability({ from = null, to = null, includeA
                 if (new Date(u.startDate) <= to && new Date(u.endDate) >= from) {
                     const uid = String(u.unit);
                     bookedUnitIds.add(uid);
-                    addBooking(uid, { kind: 'quote', ref: q.quoteNo, customer: q.customer?.fullName || '', startDate: u.startDate, endDate: u.endDate, status: q.status });
+                    addBooking(uid, {
+                        kind: 'quote',
+                        ref: q.quoteNo,
+                        customer: q.customer?.fullName || '',
+                        startDate: u.startDate,
+                        endDate: u.endDate,
+                        status: q.status,
+                        /* When the quotation was last worked on, so a hold can
+                           be judged by its age. A quote from this morning and
+                           one from three weeks ago are very different things to
+                           be holding a unit, and the card could not tell them
+                           apart. */
+                        quotedAt: q.updatedAt || q.quoteDate || null,
+                    });
                 }
             }
         }
