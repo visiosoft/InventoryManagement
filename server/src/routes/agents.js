@@ -231,7 +231,68 @@ router.get('/runs', async (req, res) => {
    }
 });
 
-/** The current findings for an agent, whichever run produced them. */
+/**
+ * Findings across every agent — the morning worklist.
+ *
+ * Kept separate from the per-agent list because this is how the work is
+ * actually done: somebody opens one page and deals with what is waiting,
+ * whichever agent noticed it. Which agent found something is a detail on the
+ * card, not a place to navigate to first.
+ */
+router.get('/findings', async (req, res) => {
+   try {
+      const defs = await AgentDefinition.find({}).select('_id key name type').lean();
+      const byId = new Map(defs.map((d) => [String(d._id), d]));
+
+      const filter = { definition: { $in: defs.map((d) => d._id) } };
+      if (req.query.agent) {
+         const one = defs.find((d) => d.key === req.query.agent);
+         if (!one) return res.status(404).json({ error: 'No such agent' });
+         filter.definition = one._id;
+      }
+      if (req.query.state) filter.state = req.query.state;
+      else filter.state = { $ne: 'dismissed' };
+      if (req.query.category) filter['data.category'] = req.query.category;
+
+      const found = await AgentFinding.find(filter).sort({ score: -1 })
+         .limit(Number(req.query.limit || 500)).lean();
+      const visible = found.filter((f) => stillHidden(f) === false);
+
+      const counts = { total: visible.length, byCategory: {}, byAgent: {} };
+      for (const f of visible) {
+         const c = f.data?.category || 'other';
+         counts.byCategory[c] = (counts.byCategory[c] || 0) + 1;
+         const a = byId.get(String(f.definition));
+         if (a) counts.byAgent[a.key] = (counts.byAgent[a.key] || 0) + 1;
+      }
+
+      res.json({
+         findings: (await withTemplateText(visible)).map((f) => ({
+            ...f,
+            agent: byId.get(String(f.definition)) || null,
+         })),
+         agents: defs.map((d) => ({ key: d.key, name: d.name })),
+         counts,
+      });
+   } catch (e) {
+      res.status(500).json({ error: e.message });
+   }
+});
+
+/**
+ * Whether a finding is still put away.
+ *
+ * A snooze runs out on its own, and a reply always wakes one: somebody who
+ * writes back is live again whatever was decided about them.
+ */
+function stillHidden(f, now = new Date()) {
+   if (f.state !== 'snoozed' || !f.snoozeUntil || new Date(f.snoozeUntil) <= now) return false;
+   const wroteSince = f.data?.lastInboundAt && f.stateAt
+      && new Date(f.data.lastInboundAt) > new Date(f.stateAt);
+   return !wroteSince;
+}
+
+/** The current findings for one agent, whichever run produced them. */
 router.get('/:key/findings', async (req, res) => {
    try {
       const def = await AgentDefinition.findOne({ key: req.params.key }).select('_id name').lean();
@@ -244,16 +305,7 @@ router.get('/:key/findings', async (req, res) => {
 
       const findings = await AgentFinding.find(filter).sort({ score: -1 }).limit(Number(req.query.limit || 500)).lean();
 
-      // Snoozed rows are hidden until their date, and a reply always wakes one:
-      // somebody who writes back is live again whatever was decided about them.
-      const now = new Date();
-      const visible = findings.filter((f) => {
-         if (f.state === 'snoozed' && f.snoozeUntil && f.snoozeUntil > now) {
-            const wroteSince = f.data?.lastInboundAt && f.stateAt && new Date(f.data.lastInboundAt) > new Date(f.stateAt);
-            return Boolean(wroteSince);
-         }
-         return true;
-      });
+      const visible = findings.filter((f) => stillHidden(f) === false);
 
       const byCategory = {};
       for (const f of visible) {

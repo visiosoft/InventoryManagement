@@ -35,7 +35,11 @@ type Sort = 'value' | 'silent' | 'score'
  * 24-hour rules already live.
  */
 export default function AgentFindings() {
-  const { key = '' } = useParams()
+  /* No key in the URL means every agent at once, which is how the work is
+     actually done: somebody opens one page in the morning and deals with what
+     is waiting, whichever agent noticed it. Which agent found something is a
+     detail on the card, not a place to navigate to first. */
+  const { key } = useParams()
   const qc = useQueryClient()
   const [tab, setTab] = useState('all')
   const [sort, setSort] = useState<Sort>('score')
@@ -44,14 +48,14 @@ export default function AgentFindings() {
   const [copied, setCopied] = useState('')
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['agent-findings', key],
+    queryKey: ['agent-findings', key ?? 'all'],
     queryFn: () => agentsApi.findings(key),
   })
 
   const act = useMutation({
     mutationFn: ({ id, action, days }: { id: string; action: 'dismiss' | 'done' | 'snooze'; days?: number }) =>
       agentsApi.act(id, action, days ? { days } : {}),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['agent-findings', key] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['agent-findings'] }),
   })
 
   const all = data?.findings ?? []
@@ -78,6 +82,10 @@ export default function AgentFindings() {
   if (isLoading) return <Spinner />
   if (error) return <p style={{ color: '#8A1C1C' }}>{apiError(error)}</p>
 
+  const agentName = key
+    ? (data?.agents.find((a) => a.key === key)?.name || key)
+    : 'Findings'
+
   const tabs = [
     { id: 'all', label: 'All', count: all.length },
     ...Object.entries(data?.counts.byCategory ?? {})
@@ -88,10 +96,12 @@ export default function AgentFindings() {
   return (
     <div style={{ maxWidth: 1240 }}>
       <div style={{ fontSize: 11.5, color: FAINT, fontWeight: 500 }}>
-        <Link to="/agents" style={{ color: FAINT }}>Agents</Link> · {key}
+        {key
+          ? <><Link to="/agents" style={{ color: FAINT }}>Agents</Link> · {agentName}</>
+          : 'Everything your agents have found, ranked'}
       </div>
       <h1 style={{ fontFamily: HEAD, fontWeight: 700, fontSize: 23, letterSpacing: '-.02em', margin: '2px 0 16px' }}>
-        Findings · {all.length} waiting
+        {key ? agentName : 'Findings'} · {all.length} waiting
       </h1>
 
       <div className="flex items-center gap-3.5 flex-wrap mb-4">
@@ -119,12 +129,20 @@ export default function AgentFindings() {
             <option value="value">Sort: estimated value</option>
             <option value="silent">Sort: longest silent</option>
           </select>
-          <a
-            href={agentsApi.exportUrl(key)}
+          {key && (
+            <a
+              href={agentsApi.exportUrl(key)}
+              style={{ border: `1px solid ${LINE_2}`, background: '#fff', borderRadius: 9, padding: '8px 13px', fontWeight: 600, fontSize: 12.5, color: INK }}
+            >
+              Export CSV
+            </a>
+          )}
+          <Link
+            to="/agents"
             style={{ border: `1px solid ${LINE_2}`, background: '#fff', borderRadius: 9, padding: '8px 13px', fontWeight: 600, fontSize: 12.5, color: INK }}
           >
-            Export CSV
-          </a>
+            Agents
+          </Link>
         </div>
       </div>
 
@@ -168,9 +186,14 @@ export default function AgentFindings() {
       </div>
 
       {shown.length === 0 && (
-        <p className="px-1 py-8" style={{ color: FAINT, fontSize: 13.5 }}>
-          Nothing here. Either the agent has not run yet, or everything it found has been dealt with.
-        </p>
+        <div className="px-1 py-10" style={{ color: FAINT, fontSize: 13.5 }}>
+          <p style={{ margin: 0 }}>
+            Nothing waiting. Either nothing has run yet, or everything found has been dealt with.
+          </p>
+          <Link to="/agents" style={{ display: 'inline-block', marginTop: 12, background: PURPLE, color: '#fff', borderRadius: 10, padding: '10px 16px', fontWeight: 600, fontSize: 13 }}>
+            Go to agents
+          </Link>
+        </div>
       )}
 
       <div className="flex flex-col gap-2.5">
@@ -214,6 +237,15 @@ export default function AgentFindings() {
                   <span style={{ fontFamily: HEAD, fontWeight: 700, fontSize: 16.5, letterSpacing: '-.01em' }}>
                     {f.title}
                   </span>
+                  {!key && f.agent && (
+                    <Link
+                      to={`/agents/${f.agent.key}/findings`}
+                      style={{ fontSize: 11.5, fontWeight: 600, color: MUTED, background: OFF_TINT, borderRadius: 999, padding: '2px 9px' }}
+                      title="Only this agent's findings"
+                    >
+                      {f.agent.name}
+                    </Link>
+                  )}
                   {f.data?.categoryLabel && (
                     <span style={{ fontSize: 11.5, fontWeight: 600, color: PURPLE_INK, background: BADGE, borderRadius: 999, padding: '2px 9px' }}>
                       {f.data.categoryLabel}
@@ -367,12 +399,14 @@ export default function AgentFindings() {
             >
               Clear
             </button>
-            <a
-              href={agentsApi.exportUrl(key)}
-              style={{ background: PURPLE, color: '#fff', borderRadius: 9, padding: '9px 16px', fontWeight: 600, fontSize: 12.5 }}
-            >
-              Export CSV
-            </a>
+            {key && (
+              <a
+                href={agentsApi.exportUrl(key)}
+                style={{ background: PURPLE, color: '#fff', borderRadius: 9, padding: '9px 16px', fontWeight: 600, fontSize: 12.5 }}
+              >
+                Export CSV
+              </a>
+            )}
           </div>
         </div>
       )}

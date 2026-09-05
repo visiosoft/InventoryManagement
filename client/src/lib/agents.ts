@@ -108,6 +108,12 @@ export type Finding = {
   }
 }
 
+export type FindingsResponse = {
+  findings: (Finding & { agent: { key: string; name: string } | null })[]
+  agents: { key: string; name: string }[]
+  counts: { total: number; byCategory: Record<string, number>; byAgent?: Record<string, number> }
+}
+
 export const agentsApi = {
   types: () => api.get<{ types: AgentType[] }>('/agents/types').then((r) => r.data.types),
 
@@ -138,10 +144,14 @@ export const agentsApi = {
   runs: (key: string) =>
     api.get<{ runs: AgentRunSummary[] }>('/agents/runs', { params: { agent: key } }).then((r) => r.data.runs),
 
-  findings: (key: string, params: { category?: string; state?: string } = {}) =>
-    api.get<{ findings: Finding[]; counts: { total: number; byCategory: Record<string, number> } }>(
-      `/agents/${key}/findings`, { params },
-    ).then((r) => r.data),
+  /**
+   * The worklist. Without an agent key this is every agent's findings in one
+   * list, which is how the work is actually done — somebody deals with what is
+   * waiting, whichever agent noticed it.
+   */
+  findings: (key?: string, params: { category?: string; state?: string } = {}) =>
+    api.get<FindingsResponse>('/agents/findings', { params: { ...params, ...(key ? { agent: key } : {}) } })
+      .then((r) => r.data),
 
   act: (id: string, action: 'dismiss' | 'done' | 'snooze' | 'reopen', body: { days?: number; reason?: string } = {}) =>
     api.post(`/agents/findings/${id}/${action}`, body).then((r) => r.data),

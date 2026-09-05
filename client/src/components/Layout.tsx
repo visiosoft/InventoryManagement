@@ -26,6 +26,17 @@ const navGroups = [
     ],
   },
   {
+    /* Its own group rather than a line in Reports. These are not reports —
+       nothing here is a number to read; every row is a person waiting for
+       somebody to do something about them. */
+    title: 'Intelligence',
+    adminOnly: true,
+    items: [
+      { to: '/findings', label: 'Findings', icon: Sparkles, perm: '' },
+      { to: '/agents', label: 'Agents', icon: Bot, perm: '' },
+    ],
+  },
+  {
     title: 'Sales',
     items: [
       { to: '/my-leads', label: 'My Leads', icon: UserPlus, perm: 'sales_board' },
@@ -93,10 +104,6 @@ const reportItems = [
      permission: it can reach revenue and every rep's numbers, and the server
      enforces the same rule. Accounts are in because the numbers they are asked
      for are the ones they already work from. */
-  /* Admin only, and by role rather than a permission module: a module key can
-     be granted to a rep, and these lists carry every lead's estimated value —
-     and, before long, an assessment of the reps themselves. */
-  { to: '/agents', label: 'Agents', icon: Bot, perm: '', roles: ['admin'] },
   { to: '/reports/ask', label: 'Ask for a report', icon: Sparkles, perm: '', roles: ['admin', 'accounts'] },
   { to: '/reports/rates', label: 'Actual vs Leased', icon: Wallet, perm: 'reports_units' },
   { to: '/reports/conversations', label: 'Daily Conversations', icon: MessageCircle, perm: 'reports_conversations' },
@@ -334,7 +341,10 @@ export default function Layout() {
   const hasMovingAccess = movingNavItems.some(({ perm }) => hasPermission(perm)) || hasPermission('moving_leads')
     || movingReportItems.some(({ perm }) => hasPermission(perm))
   const hasStorageAccess = navTop.some(({ perm }) => !perm || hasPermission(perm))
-    || navGroups.some(g => g.items.some(({ perm }) => !perm || hasPermission(perm)))
+    // An admin-only group must not hand a rep access to the storage nav: its
+    // items carry no permission key, so without this every role passes.
+    || navGroups.some(g => (!(g as { adminOnly?: boolean }).adminOnly || isAdmin)
+      && g.items.some(({ perm }) => !perm || hasPermission(perm)))
     || reportItems.some(({ perm, roles }) => (roles ? roles.includes(user?.role ?? '') : hasPermission(perm)))
     || navBottom.some(({ perm }) => !perm || hasPermission(perm))
   // Nothing to switch to → no switcher (moving-only users, storage-only users,
@@ -517,6 +527,10 @@ export default function Layout() {
           // 'units' permission also gated the editable unit list. It no longer
           // does — units are created and priced on Settings → Unit Pricing —
           // and a rep who cannot look up what is free cannot do their job.
+          /* Admin by role, not by a permission module: a module key can be
+             granted to a rep, and these lists carry every lead's estimated
+             value — and, before long, an assessment of the reps themselves. */
+          if ((group as { adminOnly?: boolean }).adminOnly && !isAdmin) return null
           const visibleItems = group.items
             .filter(({ perm }) => !perm || hasPermission(perm))
           if (visibleItems.length === 0) return null

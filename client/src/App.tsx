@@ -249,6 +249,9 @@ export default function App() {
             and the server enforces the same rule. */}
         <Route path="/reports/ask" element={<RoleGuard roles={['admin', 'accounts']}><AskReports /></RoleGuard>} />
         <Route path="/reports/conversations" element={<PermGuard module="reports_conversations"><DailyDigest /></PermGuard>} />
+        {/* The worklist across every agent — the page somebody opens in the
+            morning. Per-agent findings live under the agent itself. */}
+        <Route path="/findings" element={<AdminGuard><AgentFindings /></AdminGuard>} />
         <Route path="/agents" element={<AdminGuard><Agents /></AdminGuard>} />
         <Route path="/agents/new" element={<AdminGuard><AgentEdit /></AdminGuard>} />
         <Route path="/agents/:key/edit" element={<AdminGuard><AgentEdit /></AdminGuard>} />
