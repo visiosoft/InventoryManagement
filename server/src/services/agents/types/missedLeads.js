@@ -28,6 +28,20 @@ const CATEGORY_LABEL = {
    former_customer: 'Moved out',
 };
 
+/* Spelled out for the model, because the label alone is not enough.
+ *
+ * Given "Category: Never answered" it still wrote "they did not respond to our
+ * last messages" — the opposite of what happened, and the sort of confident
+ * wrongness a rep would act on. Whose silence it is is the single fact that
+ * decides how to re-approach somebody, so it is stated rather than labelled. */
+const CATEGORY_MEANS = {
+   never_answered: 'They wrote to us and nobody ever replied. The silence is ours, not theirs. Do not suggest that they failed to respond.',
+   quoted_unsigned: 'We sent them a price and they never signed.',
+   never_quoted: 'They asked about storage and we never sent them a price at all.',
+   went_quiet: 'We spoke last and they never came back to us.',
+   former_customer: 'They rented from us before and have moved out. This is a win-back, not a first sale.',
+};
+
 /** Values the model may name for a template's {{1}}, {{2}} — the server fills
  *  them. A free-text literal is the one opening through which an invented
  *  price or date would reach a customer, so it is not on the list. */
@@ -242,7 +256,7 @@ export default registerAgentType({
       }
 
       const facts = [
-         `Category: ${CATEGORY_LABEL[row.category]}`,
+         `What happened: ${CATEGORY_MEANS[row.category]}`,
          `Days since the last message: ${row.daysSince}`,
          `Messages from them: ${row.thread.inbound}; from us: ${row.thread.outbound}`,
          `Can we still send free text: ${open ? 'yes' : 'no, only an approved template'}`,
