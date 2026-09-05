@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, Link } from 'react-router-dom'
-import { agentsApi, scheduleLabel, when, took, type Agent } from '../lib/agents'
+import { agentsApi, scheduleLabel, when, took, money, type Agent } from '../lib/agents'
 import { PageHeader, Spinner } from '../components/ui'
 import { apiError } from '../lib/api'
 
@@ -16,6 +16,7 @@ const LINE = 'rgba(20,8,31,.10)'
 const LINE_2 = 'rgba(20,8,31,.16)'
 const ROW_LINE = 'rgba(20,8,31,.06)'
 const CANVAS = '#FBF9FD'
+const PURPLE_LINE = '#DDD0FF'
 
 const GRID = 'minmax(280px,2.5fr) 140px 130px 130px 108px'
 
@@ -23,12 +24,14 @@ export default function Agents() {
   const qc = useQueryClient()
   const navigate = useNavigate()
 
-  const { data: agents, isLoading, error } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ['agents'],
     queryFn: agentsApi.list,
-    // A run started elsewhere should show up here without a reload.
-    refetchInterval: 15_000,
+    // A run started elsewhere should show up here without a reload, and a
+    // running one should tick along.
+    refetchInterval: 5_000,
   })
+  const agents = data?.agents
 
   const start = useMutation({
     mutationFn: (key: string) => agentsApi.run(key),
@@ -45,6 +48,21 @@ export default function Agents() {
   return (
     <div>
       <PageHeader title="Agents" subtitle="They read your data and recommend. They never send." />
+
+      {/* Where the run is, from anywhere on the page. A sweep takes minutes
+          and somebody who started one and wandered off needs a way back. */}
+      {(agents ?? []).filter(running).map((a) => (
+        <Link
+          key={a.key}
+          to={`/agents/${a.key}/runs/${a.lastRun!._id}`}
+          className="inline-flex items-center gap-2.5 mb-4"
+          style={{ background: TINT, border: `1px solid ${PURPLE_LINE}`, borderRadius: 10, padding: '8px 13px', color: PURPLE_INK, fontWeight: 600, fontSize: 12.5 }}
+        >
+          <span className="animate-pulse" style={{ width: 7, height: 7, borderRadius: 999, background: PURPLE, display: 'block' }} />
+          {a.name} is running
+          {a.lastRun?.counts?.judged ? ` · ${a.lastRun.counts.judged} read` : ''}
+        </Link>
+      ))}
 
       <div className="flex flex-wrap items-end gap-5 mb-5">
         <p style={{ color: MUTED, maxWidth: '62ch', margin: 0 }}>
@@ -101,7 +119,7 @@ export default function Agents() {
                   {a.name}
                 </Link>
                 {/* Worth saying out loud: this one costs nothing to run. */}
-                {a.lastRun && !a.lastRun.estimateUsd && a.lastRun.status === 'done' && (
+                {!a.judges && (
                   <span style={{ fontSize: 10.5, fontWeight: 600, color: MUTED, background: OFF_TINT, borderRadius: 999, padding: '2px 8px' }}>
                     No AI · rules only
                   </span>
@@ -117,10 +135,13 @@ export default function Agents() {
                   </span>
                 )}
               </div>
-              <div style={{ color: MUTED, fontSize: 13, marginTop: 3 }}>{a.description || a.typeLabel}</div>
+              <div style={{ color: MUTED, fontSize: 13, marginTop: 3 }}>{a.describe}</div>
               <div style={{ color: FAINT, fontSize: 12, marginTop: 5 }}>
-                {a.typeLabel}
-                {a.extraInstructions ? ' · has extra instructions' : ''}
+                {[
+                  a.typeLabel,
+                  a.judges ? null : 'no AI',
+                  a.extraInstructions ? 'your own instructions' : null,
+                ].filter(Boolean).join(' · ')}
               </div>
             </div>
 
@@ -142,7 +163,13 @@ export default function Agents() {
                 {a.lastRunAt ? a.openFindings : '—'}
               </span>
               <div style={{ color: FAINT, fontSize: 11.5 }}>
-                {a.lastRunAt ? 'waiting for a person' : 'never run'}
+                {!a.lastRunAt
+                  ? 'never run'
+                  : a.openValueAed
+                    ? `${money(a.openValueAed)} est.`
+                    : a.windowClosed
+                      ? `${a.windowClosed} need a template`
+                      : 'waiting for a person'}
               </div>
             </div>
 
@@ -186,10 +213,7 @@ export default function Agents() {
             <span>
               {(agents ?? []).reduce((n, a) => n + a.openFindings, 0)} findings waiting across all agents
             </span>
-            <span>
-              Last runs cost{' '}
-              ${(agents ?? []).reduce((n, a) => n + (a.lastRun?.estimateUsd || 0), 0).toFixed(2)} in total
-            </span>
+            <span>Spend this month: ${(data?.spendThisMonthUsd ?? 0).toFixed(2)}</span>
             <span>Nothing here has messaged anybody</span>
           </div>
         )}

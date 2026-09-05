@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { validatePlan, estimateCost, shouldReuse, carriedState } from './engine.js';
 import { suffix, windowOpen, daysBetween, estimateValue, isPlaceholderName } from './shared.js';
 import { scoreUnanswered } from './types/unansweredChats.js';
+import { scoreRenewal } from './types/renewalsAtRisk.js';
+import { scoreDebt } from './types/debt.js';
+import { scoreRep } from './types/repCoaching.js';
 
 const NOW = new Date('2026-09-06T10:00:00.000Z');
 const hoursAgo = (h) => new Date(NOW.getTime() - h * 3600_000);
@@ -178,3 +181,53 @@ test('a snooze that has run out is over', () => {
 test('an open finding carries nothing — it is simply produced again', () => {
    assert.equal(carriedState({ state: 'open' }, {}, NOW), null);
 });
+
+/* ── the other agents' rankings ───────────────────────────────────────────── */
+
+test('a contract ending sooner outranks one ending later', () => {
+   const soon = scoreRenewal({ daysLeft: 5, monthly: 900, silentDays: 20, everSpoke: true, months: 6 })
+   const later = scoreRenewal({ daysLeft: 45, monthly: 900, silentDays: 20, everSpoke: true, months: 6 })
+   assert.ok(soon.score > later.score)
+   assert.match(soon.factors[0], /Ends in 5 days/)
+})
+
+test('a contract that has already ended reads as ended, not as negative days', () => {
+   const past = scoreRenewal({ daysLeft: -3, monthly: 900, silentDays: 30, everSpoke: true, months: 12 })
+   assert.match(past.factors[0], /Ended 3 days ago/)
+   // Past the date is the worst case, not a smaller number.
+   const future = scoreRenewal({ daysLeft: 5, monthly: 900, silentDays: 30, everSpoke: true, months: 12 })
+   assert.ok(past.score > future.score)
+})
+
+test('never having spoken to a renewing customer at all is called out', () => {
+   const never = scoreRenewal({ daysLeft: 20, monthly: 900, silentDays: null, everSpoke: false, months: 6 })
+   assert.ok(never.factors.some((f) => /no whatsapp conversation/i.test(f)))
+})
+
+test('a bigger debt outranks a smaller one, and silence adds to it', () => {
+   const big = scoreDebt({ owed: 8000, silentDays: 30, everSpoke: true, renting: true })
+   const small = scoreDebt({ owed: 300, silentDays: 30, everSpoke: true, renting: true })
+   assert.ok(big.score > small.score)
+   assert.match(big.factors[0], /8,000 outstanding/)
+})
+
+test('a debt nobody has ever mentioned is flagged as such', () => {
+   const unasked = scoreDebt({ owed: 1000, silentDays: null, everSpoke: false, renting: false })
+   assert.ok(unasked.factors.some((f) => /never mentioned/i.test(f)))
+   assert.ok(unasked.factors.some((f) => /no longer renting/i.test(f)))
+})
+
+test('a rep with people waiting needs attention before one without', () => {
+   const behind = scoreRep({ waiting: 9, medianMs: 4 * 3600_000, p90Ms: 26 * 3600_000, conversations: 40 })
+   const onTop = scoreRep({ waiting: 0, medianMs: 6 * 60_000, p90Ms: 20 * 60_000, conversations: 40 })
+   assert.ok(behind.score > onTop.score)
+   assert.match(behind.factors[0], /9 people are waiting/)
+})
+
+test('the coaching score always explains itself in plain terms', () => {
+   const out = scoreRep({ waiting: 2, medianMs: 90 * 60_000, p90Ms: 30 * 3600_000, conversations: 18 })
+   // A manager reads this about a named person; every point must be visible.
+   assert.ok(out.factors.length >= 3)
+   assert.ok(out.factors.some((f) => /conversations in the period/.test(f)))
+   assert.ok(!out.factors.some((f) => /bad|poor|lazy|careless/i.test(f)), 'never characterises the person')
+})

@@ -48,7 +48,12 @@ export type Agent = {
   schedule: AgentSchedule
   lastRunAt: string | null
   lastRun: AgentRunSummary | null
+  /** What it does, from the type — so a row never repeats its own name. */
+  describe: string
+  judges: boolean
   openFindings: number
+  openValueAed: number
+  windowClosed: number
 }
 
 export type AgentEvent = { at: string; text: string; level: 'info' | 'skip' | 'warn' | 'error' }
@@ -117,7 +122,8 @@ export type FindingsResponse = {
 export const agentsApi = {
   types: () => api.get<{ types: AgentType[] }>('/agents/types').then((r) => r.data.types),
 
-  list: () => api.get<{ agents: Agent[] }>('/agents').then((r) => r.data.agents),
+  list: () =>
+    api.get<{ agents: Agent[]; spendThisMonthUsd: number }>('/agents').then((r) => r.data),
 
   horizon: () =>
     api.get<{ earliestMessageAt: string | null; earliestLeadAt: string | null }>('/agents/horizon')

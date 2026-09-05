@@ -42,7 +42,8 @@ export default function AgentEdit() {
   const qc = useQueryClient()
 
   const { data: types, isLoading } = useQuery({ queryKey: ['agent-types'], queryFn: agentsApi.types })
-  const { data: agents } = useQuery({ queryKey: ['agents'], queryFn: agentsApi.list, enabled: editing })
+  const { data: list } = useQuery({ queryKey: ['agents'], queryFn: agentsApi.list, enabled: editing })
+  const agents = list?.agents
   const { data: horizon } = useQuery({ queryKey: ['agent-horizon'], queryFn: agentsApi.horizon })
 
   const existing = editing ? agents?.find((a) => a.key === key) : undefined

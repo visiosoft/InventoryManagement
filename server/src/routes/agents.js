@@ -73,22 +73,49 @@ router.get('/', async (_req, res) => {
       const [runs, open] = await Promise.all([
          AgentRun.find({ definition: { $in: ids } }).sort({ startedAt: -1 }).limit(200)
             .select('definition status startedAt finishedAt counts estimateUsd').lean(),
+         /* The count and what it is worth, together. A bare number does not
+            tell anybody which agent to open first; "128 · AED 61,400" does. */
          AgentFinding.aggregate([
             { $match: { definition: { $in: ids }, state: 'open' } },
-            { $group: { _id: '$definition', n: { $sum: 1 } } },
+            { $group: {
+               _id: '$definition',
+               n: { $sum: 1 },
+               value: { $sum: { $ifNull: ['$data.valueAed', 0] } },
+               urgent: { $sum: { $cond: [{ $eq: ['$data.windowOpen', false] }, 1, 0] } },
+            } },
          ]),
       ]);
       const lastRun = new Map();
       for (const r of runs) if (!lastRun.has(String(r.definition))) lastRun.set(String(r.definition), r);
-      const openBy = new Map(open.map((o) => [String(o._id), o.n]));
+      const openBy = new Map(open.map((o) => [String(o._id), o]));
+
+      // Spend since the first of the month, which is the number an owner asks
+      // about — not the cost of whichever run happened to be last.
+      const monthStart = new Date();
+      monthStart.setDate(1);
+      monthStart.setHours(0, 0, 0, 0);
+      const spend = runs
+         .filter((r) => new Date(r.startedAt) >= monthStart)
+         .reduce((n, r) => n + (r.estimateUsd || 0), 0);
 
       res.json({
-         agents: defs.map((d) => ({
-            ...d,
-            typeLabel: agentType(d.type)?.label || d.type,
-            lastRun: lastRun.get(String(d._id)) || null,
-            openFindings: openBy.get(String(d._id)) || 0,
-         })),
+         agents: defs.map((d) => {
+            const type = agentType(d.type);
+            const found = openBy.get(String(d._id));
+            return {
+               ...d,
+               typeLabel: type?.label || d.type,
+               // What the agent does, from the type, so the row never has to
+               // repeat its own name back at the reader.
+               describe: d.description || type?.describe || '',
+               judges: type?.judges !== false,
+               lastRun: lastRun.get(String(d._id)) || null,
+               openFindings: found?.n || 0,
+               openValueAed: found?.value || 0,
+               windowClosed: found?.urgent || 0,
+            };
+         }),
+         spendThisMonthUsd: Number(spend.toFixed(2)),
       });
    } catch (e) {
       res.status(500).json({ error: e.message });

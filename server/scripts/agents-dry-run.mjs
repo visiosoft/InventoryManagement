@@ -32,6 +32,9 @@ const top = Number(flag('top', 20));
 const EXPECTED = {
    unanswered_chats: { low: 40, high: 220, note: '113 when the plan was written' },
    missed_leads: { low: 100, high: 700, note: 'dominated by "never quoted"' },
+   renewals_at_risk: { low: 10, high: 200, note: '99 contracts end within 60 days' },
+   debt: { low: 1, high: 120, note: 'needs Zoho Books connected' },
+   rep_coaching: { low: 1, high: 20, note: 'one row per rep, not per customer' },
 };
 
 const money = (n) => (n == null ? '—' : `AED ${Number(n).toLocaleString('en-GB')}`);
