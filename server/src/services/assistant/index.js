@@ -117,7 +117,7 @@ export async function askAssistant({ question, history = [], siteId = null, user
          is not allowed to answer at all — it has to pick a question to ask
          the database. A question none of them fits still ends in "I can't
          see that", but through a tool that came back empty, not from memory. */
-      if (!turn.toolCalls.length && rounds === 0 && !/^\s*(hi|hello|hey|thanks|thank you|ok|okay)/i.test(text)) {
+      if (!turn.toolCalls.length && rounds === 0 && !/^\s*(hi|hello|hey|thanks|thank you|ok|okay)\b/i.test(text)) {
          turn = await chatWithTools({ system, messages, tools, model, maxTokens: 700, toolChoice: 'required' });
       }
 
