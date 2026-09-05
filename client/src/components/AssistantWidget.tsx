@@ -224,8 +224,8 @@ export default function AssistantWidget() {
                         Open the contract
                       </a>
                     ) : t.quoteId && (
-                      {/* The app has no /quotes/:id page — a quotation opens in the
-                          wizard, which is how every other screen links to one. */}
+                      // The app has no /quotes/:id page — a quotation opens in the
+                      // wizard, which is how every other screen links to one.
                       <a href={`/quotes/new?quote=${t.quoteId}`} style={{ fontSize: 12, fontWeight: 600, color: PURPLE_INK, background: BADGE, borderRadius: 8, padding: '5px 10px' }}>
                         Open the quotation
                       </a>
