@@ -25,10 +25,13 @@ Answer only from the tools. If no tool can answer, say plainly that you cannot s
 
 const RULES = `RULES YOU CANNOT BREAK:
 - Every figure you state must come from a tool result in this conversation. Do not compute, round, extrapolate or recall figures.
+- Never say that a person, contract, unit or message exists, or describe it, without having looked it up in this conversation.
+- If a question has several parts, look each part up before you answer. Never say you cannot see something you have not asked a tool for.
 - If the tools returned nothing useful, say you cannot see it in the system. Do not answer from general knowledge.
 - Dates you pass to tools are YYYY-MM-DD. "Today" and relative dates are worked out from the date given below.
 - Do not mention tools by name to the user. Speak as the system.
-- You can prepare a quotation or a contract for a person, but you cannot create or send either yourself. When you have prepared one, say so in a line and tell them to press Confirm in the card. Never say it has been created, booked, reserved, signed or sent — only a person's Confirm does that, and a contract is a draft until it is signed.`;
+- Buttons to the relevant pages — a customer, a contract, a chat — are attached to your answer automatically. You may say "open it below". Do not write URLs yourself.
+- You can draft an email to customers or leads, and prepare a quotation or a contract for a person — but you cannot create or send any of them yourself. When you have prepared one, say so in a line and tell them to press Confirm in the card. Never say it has been created, booked, reserved, signed or sent — only a person's Confirm does that, and a contract is a draft until it is signed.`;
 
 /** Any figure that could be mistaken for a fact: money, counts, sizes, dates. */
 const NUMBERS = /\d[\d,]*(?:\.\d+)?/g;
@@ -106,7 +109,18 @@ export async function askAssistant({ question, history = [], siteId = null, user
    let pending = null;
 
    for (; rounds < maxRounds; rounds += 1) {
-      const turn = await chatWithTools({ system, messages, tools, model, maxTokens: 700 });
+      let turn = await chatWithTools({ system, messages, tools, model, maxTokens: 700 });
+
+      /* It answered without looking. "Rikki is a lead" with no lookup is a
+         guess whether or not it happens to be true, and a guess with no
+         number in it slips past the figure check. So the first time round it
+         is not allowed to answer at all — it has to pick a question to ask
+         the database. A question none of them fits still ends in "I can't
+         see that", but through a tool that came back empty, not from memory. */
+      if (!turn.toolCalls.length && rounds === 0 && !/^\s*(hi|hello|hey|thanks|thank you|ok|okay)/i.test(text)) {
+         turn = await chatWithTools({ system, messages, tools, model, maxTokens: 700, toolChoice: 'required' });
+      }
+
       if (!turn.toolCalls.length) { content = turn.content; break; }
 
       messages.push(turn.message);
@@ -138,6 +152,24 @@ export async function askAssistant({ question, history = [], siteId = null, user
       return { answer: "I can't see that in the system — none of the questions I can ask the database covers it. Try asking about units, prices, contracts, customers, leads, WhatsApp, documents or tasks.", tools: used, model, rounds, grounded: false };
    }
 
+   /* A drafted email is the model's words too, and it will reach a customer.
+      Any figure in it must have come from a tool, exactly like an answer. */
+   const drafted = results.find((r) => r.tool === 'propose_email' && r.result?.proposalId);
+   if (drafted) {
+      const body = String(messages.find((m) => m.role === 'assistant' && m.tool_calls)?.tool_calls
+         ?.find((c) => c.function?.name === 'propose_email')?.function?.arguments || '');
+      const inDraft = figuresGrounded(body, results.filter((r) => r.tool !== 'propose_email'));
+      if (!inDraft.ok) {
+         const { dropProposal } = await import('./actions.js');
+         dropProposal(drafted.result.proposalId);
+         pending = null;
+         return {
+            answer: `I drafted it, but it stated figures the system did not give me (${inDraft.loose.slice(0, 3).join(', ')}), so I have not put it up for sending. Ask me for the exact figures first, then ask for the draft again.`,
+            tools: used, model, rounds, grounded: false, links: [],
+         };
+      }
+   }
+
    let check = figuresGrounded(content, results);
    if (!check.ok && results.length) {
       messages.push({ role: 'assistant', content });
@@ -156,5 +188,20 @@ export async function askAssistant({ question, history = [], siteId = null, user
       };
    }
 
-   return { answer: content, tools: used, model, rounds, grounded: true, pending };
+   /* Pages for what the tools returned, deduplicated, a handful at most.
+      Built from tool results rather than written by the model, so a button
+      always goes somewhere real. */
+   const seen = new Set();
+   const links = [];
+   for (const r of results) {
+      for (const l of (r.result?.links || [])) {
+         if (!l?.path || seen.has(l.path)) continue;
+         seen.add(l.path);
+         links.push({ label: String(l.label || l.path).slice(0, 60), path: String(l.path) });
+         if (links.length >= 6) break;
+      }
+      if (links.length >= 6) break;
+   }
+
+   return { answer: content, tools: used, model, rounds, grounded: true, pending, links };
 }

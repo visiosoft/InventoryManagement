@@ -23,7 +23,8 @@ import { registerTool } from './tools.js';
 
 export const PROPOSE_TOOL = 'propose_quotation';
 export const PROPOSE_CONTRACT_TOOL = 'propose_contract';
-export const PROPOSAL_TOOLS = [PROPOSE_TOOL, PROPOSE_CONTRACT_TOOL];
+export const PROPOSE_EMAIL_TOOL = 'propose_email';
+export const PROPOSAL_TOOLS = [PROPOSE_TOOL, PROPOSE_CONTRACT_TOOL, PROPOSE_EMAIL_TOOL];
 const TTL_MS = 15 * 60_000;
 const EXPIRY_DAYS = 30;
 
@@ -257,6 +258,71 @@ registerTool({
    },
 });
 
+/* An email the model drafted, to people the database knows.
+ *
+ * The draft is the model's words, so it is held to the same rule as an
+ * answer: any figure in it must have come from a tool. Recipients are
+ * resolved here, by name or number, to the email on record — the card says
+ * who will get it and who cannot be reached — and nothing goes until Confirm.
+ * {{name}} in the body becomes each person's first name. */
+registerTool({
+   name: PROPOSE_EMAIL_TOOL,
+   description: 'Draft an email to one or more customers or leads, to be sent from the company after the person asking confirms. Give the recipients by name or phone (or "the tenants whose contracts end this month" resolved from earlier results into names), a subject, and the body you drafted. Write {{name}} where the person\'s first name goes. Use only facts and figures that came from tools in this conversation. Use when asked to draft, write or send an email.',
+   parameters: {
+      type: 'object',
+      properties: {
+         recipients: { type: 'array', items: { type: 'string' }, description: 'Names or phone numbers of the people to email' },
+         subject: { type: 'string' },
+         body: { type: 'string', description: 'The email, plain text. {{name}} for the first name.' },
+      },
+      required: ['recipients', 'subject', 'body'],
+   },
+   async run({ recipients = [], subject, body }, { user }) {
+      sweep();
+      if (!recipients.length) return { error: 'Who should it go to?' };
+      if (!String(subject || '').trim() || !String(body || '').trim()) return { error: 'Need a subject and a body' };
+
+      const resolved = [];
+      const unreachable = [];
+      for (const r of recipients.slice(0, 50)) {
+         const q = String(r || '').trim();
+         if (!q) continue;
+         const digits = q.replace(/\D/g, '');
+         let person = null;
+         if (digits.length >= 7) {
+            const rx = new RegExp(`${suffix(digits)}$`);
+            person = await Customer.findOne({ $or: [{ phone: rx }, { phones: rx }] }).lean()
+               || await Lead.findOne({ phoneNormalized: rx }).lean();
+         } else if (/@/.test(q)) {
+            person = { fullName: q.split('@')[0], email: q };
+         } else {
+            const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+            person = await Customer.findOne({ fullName: rx }).lean() || await Lead.findOne({ fullName: rx }).lean();
+         }
+         if (!person) { unreachable.push(`${q} — not found`); continue; }
+         if (!person.email) { unreachable.push(`${person.fullName} — no email on record`); continue; }
+         if (person.unsubscribed) { unreachable.push(`${person.fullName} — unsubscribed`); continue; }
+         if (!resolved.some((x) => x.email === person.email)) resolved.push({ name: person.fullName, email: person.email });
+      }
+      if (!resolved.length) return { error: `Nobody to send to: ${unreachable.join('; ') || 'no recipients matched'}` };
+      if (!mailConfigured()) return { error: 'Email is not configured on the server' };
+
+      const summary = [
+         `Email to ${resolved.length} ${resolved.length === 1 ? 'person' : 'people'}: ${resolved.map((r) => `${r.name} <${r.email}>`).join(', ')}`,
+         ...(unreachable.length ? [`Cannot reach: ${unreachable.join('; ')}`] : []),
+         `Subject: ${subject}`,
+         `— ${String(body).trim()}`,
+         'Sent from the company address, one email per person, {{name}} filled in',
+      ];
+      const id = crypto.randomBytes(8).toString('hex');
+      proposals.set(id, { id, userId: String(user?.id || ''), kind: 'send_email', expiresAt: Date.now() + TTL_MS, summary, spec: { recipients: resolved, subject: String(subject), body: String(body) } });
+      return {
+         proposalId: id, kind: 'send_email', summary, recipients: resolved.length, unreachable,
+         instruction: 'Say the draft is ready for them to read on the card and that nothing is sent until they confirm. Do not repeat the whole email in your reply.',
+      };
+   },
+});
+
 export function takeProposal(id, userId) {
    sweep();
    const p = proposals.get(id);
@@ -296,6 +362,7 @@ export async function runAction(proposal, { authHeader }) {
    };
 
    if (proposal.kind === 'create_contract') return runContract(proposal, { call, base, authHeader });
+   if (proposal.kind === 'send_email') return runEmail(proposal);
 
    const s = proposal.spec;
    const steps = [];
@@ -461,5 +528,30 @@ async function runContract(proposal, { call, base, authHeader }) {
       contractId: String(made.contractId), contractNo: made.contractNo, invoiceNo: made.invoiceNo,
       pdfPath: `/contracts/${made.contractId}/pdf`,
       message: steps.join('. ') + '. It is a draft until it is signed.',
+   };
+}
+
+/** One email per person, the first name filled in. Sent through the same
+ *  mail service as everything else, so it lands in the Sent Emails log. */
+async function runEmail(proposal) {
+   const { recipients, subject, body } = proposal.spec;
+   const sent = [];
+   const failed = [];
+   for (const r of recipients) {
+      const first = String(r.name || '').trim().split(/\s+/)[0] || 'there';
+      const text = body.replace(/\{\{\s*name\s*\}\}/gi, first);
+      try {
+         await sendMail({ to: r.email, subject, text, html: text.replace(/\n/g, '<br/>') });
+         sent.push(r.name);
+      } catch (e) {
+         failed.push(`${r.name} (${e.message})`);
+      }
+   }
+   return {
+      ok: failed.length === 0,
+      message: [
+         sent.length ? `Sent to ${sent.join(', ')}` : 'Nothing was sent',
+         failed.length ? `Failed: ${failed.join('; ')}` : '',
+      ].filter(Boolean).join('. ') + '.',
    };
 }

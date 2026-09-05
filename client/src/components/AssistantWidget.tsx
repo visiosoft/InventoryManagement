@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { Sparkles, X, Send, RotateCcw } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -11,6 +12,7 @@ const PURPLE = '#5B2BC9'
 const PURPLE_INK = '#4A1FA0'
 const TINT = '#F7F3FF'
 const BADGE = '#EDE5FF'
+const PURPLE_LINE = '#DDD0FF'
 const LINE = 'rgba(20,8,31,.10)'
 const HEAD = "'Bricolage Grotesque', serif"
 
@@ -29,6 +31,9 @@ type Turn = {
   pdfPath?: string
   quoteId?: string
   contractId?: string
+  /* Pages for what the answer is about, from the server — never written by
+     the model, so a button always goes somewhere real. */
+  links?: { label: string; path: string }[]
 }
 
 const STORE = 'pb_assistant'
@@ -124,10 +129,10 @@ export default function AssistantWidget() {
     setTurns((t) => [...t, { role: 'user', content: q }])
     setBusy(true)
     try {
-      const { data } = await api.post<{ answer: string; tools: { name: string; ok: boolean }[]; grounded: boolean; pending?: Pending | null }>(
+      const { data } = await api.post<{ answer: string; tools: { name: string; ok: boolean }[]; grounded: boolean; pending?: Pending | null; links?: { label: string; path: string }[] }>(
         '/assistant/ask', { question: q, history },
       )
-      setTurns((t) => [...t, { role: 'assistant', content: data.answer, tools: data.tools, grounded: data.grounded, pending: data.pending || null }])
+      setTurns((t) => [...t, { role: 'assistant', content: data.answer, tools: data.tools, grounded: data.grounded, pending: data.pending || null, links: data.links || [] }])
     } catch (e) {
       setErr(apiError(e))
       setTurns((t) => t.slice(0, -1))
@@ -209,6 +214,20 @@ export default function AssistantWidget() {
                 >
                   {t.content}
                 </div>
+                {t.links && t.links.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {t.links.map((l) => (
+                      <Link
+                        key={l.path}
+                        to={l.path}
+                        onClick={() => setOpen(false)}
+                        style={{ fontSize: 12, fontWeight: 600, color: PURPLE_INK, background: BADGE, border: `1px solid ${PURPLE_LINE}`, borderRadius: 8, padding: '5px 10px' }}
+                      >
+                        {l.label} →
+                      </Link>
+                    ))}
+                  </div>
+                )}
                 {t.pdfPath && (
                   <div className="flex gap-2 mt-1.5">
                     <button

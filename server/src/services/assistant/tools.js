@@ -31,6 +31,11 @@ function siteOf(scope) {
 
 const tools = [];
 
+/** A page in the app for a thing a tool returned. The widget shows these as
+ *  buttons under the answer, so "which contract?" is one click, not a search. */
+const link = (label, path) => ({ label, path });
+const chatLink = (name, phoneNormalized) => link(`Chat with ${name}`, `/whatsapp?phone=${phoneNormalized}`);
+
 function tool(def) {
    tools.push(def);
    return def;
@@ -70,6 +75,7 @@ tool({
             unitNumber: u.unitNumber, floor: u.floor, sizeSqf: u.sizeSqf, monthlyPrice: money(u.price), status: u.status,
          })),
          truncated: units.length > 40,
+         links: [link('Search units', '/units')],
       };
    },
 });
@@ -129,6 +135,7 @@ tool({
          vatAmount: money(totals.vatAmount),
          total: money(totals.total),
          note: 'Security deposit and add-ons not included. The refundable advance is returned at move-out.',
+         links: [link(`Book ${unit.unitNumber}`, `/quotes/new?unit=${encodeURIComponent(unit.unitNumber)}`)],
       };
    },
 });
@@ -157,17 +164,24 @@ tool({
          : { fullName: rx }).populate('owner', 'name').limit(5).lean();
 
       const out = [];
+      const links = [];
       for (const c of customers) {
          const contracts = await Contract.find({ customer: c._id }).select('contractNo status startDate endDate rate leasedPrice unit').populate('unit', 'unitNumber sizeSqf').sort({ endDate: -1 }).lean();
          out.push({
             kind: 'customer', name: c.fullName, phone: c.phone, phones: c.phones, email: c.email,
             contracts: contracts.map((k) => ({ contractNo: k.contractNo, status: k.status, unit: k.unit?.unitNumber, sizeSqf: k.unit?.sizeSqf, start: iso(k.startDate), end: iso(k.endDate), monthly: money(k.leasedPrice || k.rate) })),
          });
+         links.push(link(`${c.fullName} (tenant)`, `/customers/${c._id}`));
+         const digits = String(c.phone || c.phones?.[0] || '').replace(/\D/g, '');
+         if (digits) links.push(chatLink(c.fullName, digits));
+         for (const k of contracts.slice(0, 3)) links.push(link(`Contract ${k.contractNo}`, `/contracts/${k._id}`));
       }
       for (const l of leads) {
          out.push({ kind: 'lead', name: l.fullName, phone: l.phone, email: l.email, status: l.status, owner: l.owner?.name || null, since: iso(l.leadDateTime), storageSizeSqf: l.storageSizeValue || null });
+         links.push(link(`${l.fullName} (lead)`, `/leads/${l._id}`));
+         if (l.phoneNormalized) links.push(chatLink(l.fullName, l.phoneNormalized));
       }
-      return { matches: out.length, people: out };
+      return { matches: out.length, people: out, links };
    },
 });
 
@@ -197,6 +211,7 @@ tool({
             unit: k.unit?.unitNumber, sizeSqf: k.unit?.sizeSqf, floor: k.unit?.floor,
             start: iso(k.startDate), end: iso(k.endDate), monthly: money(k.leasedPrice || k.rate),
          })),
+         links: contracts.slice(0, 5).map((k) => link(`Contract ${k.contractNo} — ${k.customer?.fullName || ''}`.trim(), `/contracts/${k._id}`)),
       };
    },
 });
@@ -223,6 +238,7 @@ tool({
       return {
          count: docs.length,
          documents: docs.map((d) => ({ name: d.name, type: d.type, customer: d.customer?.fullName, contract: d.contract?.contractNo, storage: d.storage, uploaded: iso(d.createdAt) })),
+         links: [link('Documents', '/documents')],
       };
    },
 });
@@ -249,6 +265,7 @@ tool({
       return {
          count: tasks.length,
          tasks: tasks.map((t) => ({ taskNo: t.taskNo, title: t.title, assignedTo: t.assignedTo?.name, due: iso(t.dueDate), priority: t.priority, status: t.status, about: t.leadName || null })),
+         links: [link('Task board', '/tasks')],
       };
    },
 });
@@ -318,6 +335,10 @@ tool({
          stillWaitingForReply: waiting.length,
          people: senders.slice(0, 40).map(named),
          waiting: waiting.slice(0, 40).map(named),
+         links: [
+            link('Open the WhatsApp inbox', '/whatsapp'),
+            ...waiting.slice(0, 5).map((p) => chatLink(named(p).name, p)),
+         ],
       };
    },
 });
@@ -352,6 +373,53 @@ tool({
       return {
          from, to, count: leads.length, byStatus, bySource, byOwner,
          newest: leads.slice(0, 25).map((l) => ({ name: l.fullName, status: l.status, owner: l.owner?.name || null, at: l.leadDateTime, sizeSqf: l.storageSizeValue || null })),
+         links: [link('Leads', '/leads'), ...leads.slice(0, 4).map((l) => link(l.fullName, `/leads/${l._id}`))],
+      };
+   },
+});
+
+tool({
+   name: 'whatsapp_messages',
+   description: 'The actual WhatsApp messages — what people wrote and what we replied — in a period (sinceMinutes) or for one person (phone or name). Use when asked what the messages say, what someone asked, or to read a conversation. Returns the text of each message, newest first.',
+   parameters: {
+      type: 'object',
+      properties: {
+         sinceMinutes: { type: 'number', description: 'Look back this many minutes, e.g. 60, 360, 1440' },
+         phone: { type: 'string', description: 'Or one person\'s phone number' },
+         name: { type: 'string', description: 'Or one person\'s name' },
+         limit: { type: 'number', description: 'Max messages, default 30' },
+      },
+   },
+   async run({ sinceMinutes, phone, name, limit = 30 }, { now }) {
+      const filter = { deletedAt: null, text: { $ne: '' } };
+      let who = '';
+      if (phone && suffix(phone).length >= 7) {
+         filter.phoneNormalized = new RegExp(`${suffix(phone)}$`);
+      } else if (name) {
+         const rx = new RegExp(String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+         const [c, l] = await Promise.all([Customer.findOne({ fullName: rx }).lean(), Lead.findOne({ fullName: rx }).lean()]);
+         const digits = c?.phone || c?.phones?.[0] || l?.phoneNormalized || '';
+         if (!digits) return { error: `No customer or lead called ${name}` };
+         filter.phoneNormalized = new RegExp(`${suffix(digits)}$`);
+         who = c?.fullName || l?.fullName || '';
+      }
+      if (sinceMinutes) filter.occurredAt = { $gte: new Date(new Date(now).getTime() - Number(sinceMinutes) * 60_000) };
+      if (!filter.phoneNormalized && !sinceMinutes) filter.occurredAt = { $gte: new Date(new Date(now).getTime() - 24 * 3600_000) };
+
+      const msgs = await WhatsAppMessage.find(filter).sort({ occurredAt: -1 }).limit(Math.min(80, Number(limit) || 30)).lean();
+      const phones = [...new Set(msgs.map((m) => m.phoneNormalized))];
+      const nameOf = await resolveNames(phones);
+      const label = (p) => nameOf(p)?.displayName || `+${p}`;
+
+      return {
+         count: msgs.length,
+         person: who || null,
+         messages: msgs.map((m) => ({
+            at: m.occurredAt, from: m.direction === 'inbound' ? label(m.phoneNormalized) : 'us',
+            to: m.direction === 'inbound' ? 'us' : label(m.phoneNormalized),
+            direction: m.direction, type: m.type, text: String(m.text || '').slice(0, 400),
+         })),
+         links: phones.slice(0, 5).map((p) => chatLink(label(p), p)),
       };
    },
 });
@@ -375,10 +443,15 @@ for (const b of blockCatalogue()) {
       parameters: { type: 'object', properties },
       async run(args, { scope }) {
          const out = await BLOCKS[b.name].run(args || {}, scope);
+         const page = /^contracts_/.test(b.name) ? link('Tenants', '/contracts')
+            : /^(occupancy|units_|unit_)/.test(b.name) ? link('Search units', '/units')
+            : /^leads_/.test(b.name) ? link('Leads', '/leads')
+            : /^rep_/.test(b.name) ? link('Leaderboard', '/leaderboard')
+            : link('Ask for a report', '/reports/ask');
          if (Array.isArray(out?.rows) && out.rows.length > 60) {
-            return { ...out, rows: out.rows.slice(0, 60), rowsTotal: out.rows.length, truncated: true };
+            return { ...out, rows: out.rows.slice(0, 60), rowsTotal: out.rows.length, truncated: true, links: [page] };
          }
-         return out;
+         return { ...out, links: [page] };
       },
    });
 }
