@@ -612,7 +612,7 @@ export default function Settings() {
             <div className="flex items-center gap-3 flex-wrap">
               <Button
                 size="sm"
-                disabled={waBusy || (!waPhoneNumberId && !waAccessToken && !waVerifyToken && !waAppSecret)}
+                disabled={waBusy || (!waPhoneNumberId && !waAccessToken && !waVerifyToken && !waAppSecret && !waWabaId)}
                 onClick={async () => {
                   setWaBusy(true); setWaMsg(null)
                   try {
