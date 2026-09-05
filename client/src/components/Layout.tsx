@@ -9,6 +9,7 @@ import LeadAlerts from './LeadAlerts'
 import { SiteSwitcher } from './SiteSwitcher'
 import { SiteGate } from './SiteGate'
 import AssistantWidget from './AssistantWidget'
+import AppFooter from './AppFooter'
 import { cn } from '../lib/utils'
 import { isSalesRepRole } from '../lib/roles'
 
@@ -970,6 +971,7 @@ export default function Layout() {
             <Outlet />
           </SiteGate>
         </div>
+        <AppFooter />
       </main>
 
       {/* Outside the page, so a rep is told about a new lead whichever screen

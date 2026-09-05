@@ -15,6 +15,9 @@ import 'dotenv/config';
 process.env.TZ = process.env.TZ || 'Asia/Dubai';
 
 import express from 'express';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import { execSync } from 'node:child_process';
 import cors from 'cors';
 
 import mongoose from 'mongoose';
@@ -102,6 +105,8 @@ import { runCampaignTick } from './services/campaignSender.js';
 import { inspectWhatsAppToken } from './services/whatsapp.js';
 import { runAutomationRules, getAutoSend } from './services/automationEngine.js';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 const app = express();
 // In production this server sits behind an nginx layer that already injects
 // Access-Control-Allow-Origin (and related headers) on every response, so Express
@@ -143,6 +148,32 @@ app.use('/api/stripe/webhook', stripeWebhookRoutes);
 
 // Public liveness probe — also proves which build is running after a deploy
 const STARTED_AT = new Date().toISOString();
+
+/* Which commit this process is running.
+ *
+ * The API host deploys with `git reset --hard origin/main` (server/deploy.sh),
+ * so the checkout two directories up knows. Read once at boot: it cannot
+ * change while the process lives, and asking git on every request would be
+ * silly. The footer compares this with the commit baked into the page, which
+ * is how "I pushed — is it live?" gets answered without opening two
+ * dashboards. */
+const VERSION = (() => {
+  const run = (args) => {
+    try {
+      return execSync(`git ${args}`, { cwd: path.resolve(__dirname, '../..'), stdio: ['ignore', 'pipe', 'ignore'] })
+        .toString().trim();
+    } catch { return ''; }
+  };
+  const sha = process.env.COMMIT_REF || process.env.GIT_SHA || run('rev-parse HEAD') || 'unknown';
+  return {
+    sha,
+    short: sha.slice(0, 7),
+    message: run(`show -s --format=%s ${sha}`),
+    committedAt: run(`show -s --format=%cI ${sha}`),
+    startedAt: STARTED_AT,
+  };
+})();
+app.get('/api/version', (_req, res) => res.json(VERSION));
 app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
