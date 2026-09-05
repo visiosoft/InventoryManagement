@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Sparkles, X, Send, RotateCcw } from 'lucide-react'
-import { api, apiError, apiUrl } from '../lib/api'
+import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 
 const INK = '#14081F'
@@ -28,6 +28,7 @@ type Turn = {
   done?: boolean
   pdfPath?: string
   quoteId?: string
+  contractId?: string
 }
 
 const STORE = 'pb_assistant'
@@ -65,15 +66,30 @@ export default function AssistantWidget() {
   const [err, setErr] = useState('')
   const [acting, setActing] = useState('')
 
+  /* Fetched with the login token and opened from memory, the way the quotes
+     page does it. A plain link to the API sends no token, so the browser is
+     told "Authentication required" — which is what happened the first time
+     somebody clicked one of these on the live site. */
+  async function openPdf(path: string) {
+    try {
+      const res = await api.get(path, { responseType: 'blob' })
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+      window.open(url, '_blank', 'noopener')
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch (e) {
+      setErr(apiError(e))
+    }
+  }
+
   async function decide(turnIndex: number, pending: Pending, go: boolean) {
     setActing(pending.id)
     setErr('')
     try {
-      const { data } = await api.post<{ ok: boolean; message: string; pdfPath?: string; quoteId?: string }>(
+      const { data } = await api.post<{ ok: boolean; message: string; pdfPath?: string; quoteId?: string; contractId?: string }>(
         `/assistant/${go ? 'confirm' : 'cancel'}`, { id: pending.id },
       )
       setTurns((t) => t.map((x, i) => (i === turnIndex ? { ...x, pending: null, done: true } : x))
-        .concat([{ role: 'assistant', content: data.message, tools: [], grounded: true, pdfPath: data.pdfPath, quoteId: data.quoteId }]))
+        .concat([{ role: 'assistant', content: data.message, tools: [], grounded: true, pdfPath: data.pdfPath, quoteId: data.quoteId, contractId: data.contractId }]))
     } catch (e) {
       setErr(apiError(e))
     } finally {
@@ -195,10 +211,19 @@ export default function AssistantWidget() {
                 </div>
                 {t.pdfPath && (
                   <div className="flex gap-2 mt-1.5">
-                    <a href={apiUrl(t.pdfPath)} target="_blank" rel="noreferrer" style={{ fontSize: 12, fontWeight: 600, color: '#fff', background: PURPLE, borderRadius: 8, padding: '5px 10px' }}>
+                    <button
+                      type="button"
+                      onClick={() => openPdf(t.pdfPath!)}
+                      className="cursor-pointer"
+                      style={{ fontSize: 12, fontWeight: 600, color: '#fff', background: PURPLE, border: 0, borderRadius: 8, padding: '5px 10px' }}
+                    >
                       Open the PDF
-                    </a>
-                    {t.quoteId && (
+                    </button>
+                    {t.contractId ? (
+                      <a href={`/contracts/${t.contractId}`} style={{ fontSize: 12, fontWeight: 600, color: PURPLE_INK, background: BADGE, borderRadius: 8, padding: '5px 10px' }}>
+                        Open the contract
+                      </a>
+                    ) : t.quoteId && (
                       <a href={`/quotes/${t.quoteId}`} style={{ fontSize: 12, fontWeight: 600, color: PURPLE_INK, background: BADGE, borderRadius: 8, padding: '5px 10px' }}>
                         Open the quotation
                       </a>

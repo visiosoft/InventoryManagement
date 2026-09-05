@@ -257,15 +257,26 @@ tool({
 
 tool({
    name: 'whatsapp_activity',
-   description: 'WhatsApp for a day: how many people messaged us, how many were new, how many messages in and out, and who is still waiting for a reply. Day is "today", "yesterday" or YYYY-MM-DD (Dubai time).',
+   description: 'WhatsApp activity in a period: who messaged us, how many were new, messages in and out, and who is still waiting for a reply. Give EITHER a day ("today", "yesterday", YYYY-MM-DD) OR sinceMinutes for "the last 5 minutes" / "last 2 hours" (120) / "last 3 days" (4320). Dubai time.',
    parameters: {
       type: 'object',
-      properties: { day: { type: 'string', description: '"today", "yesterday" or YYYY-MM-DD' } },
-      required: ['day'],
+      properties: {
+         day: { type: 'string', description: '"today", "yesterday" or YYYY-MM-DD' },
+         sinceMinutes: { type: 'number', description: 'Look back this many minutes from now, e.g. 5, 60, 1440' },
+      },
    },
-   async run({ day }, { now }) {
-      const key = day === 'yesterday' ? previousDay(dayKeyFor(now)) : day === 'today' ? dayKeyFor(now) : String(day);
-      const { from, to } = dayRange(key);
+   async run({ day, sinceMinutes }, { now }) {
+      let from;
+      let to;
+      let key;
+      if (sinceMinutes) {
+         to = new Date(now);
+         from = new Date(to.getTime() - Number(sinceMinutes) * 60_000);
+         key = `last ${Number(sinceMinutes)} minutes`;
+      } else {
+         key = day === 'yesterday' ? previousDay(dayKeyFor(now)) : (!day || day === 'today') ? dayKeyFor(now) : String(day);
+         ({ from, to } = dayRange(key));
+      }
       const msgs = await WhatsAppMessage.find({ occurredAt: { $gte: from, $lte: to }, deletedAt: null })
          .select('phoneNormalized direction occurredAt text').lean();
 
@@ -297,7 +308,9 @@ tool({
       const named = (p) => ({ phone: p, name: nameOf(p)?.displayName || `+${p}` });
 
       return {
-         day: key,
+         period: key,
+         from: from.toISOString(),
+         to: to.toISOString(),
          peopleWhoMessaged: senders.length,
          newPeople: newSenders.length,
          messagesIn: inbound.length,

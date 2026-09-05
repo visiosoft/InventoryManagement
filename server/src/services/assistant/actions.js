@@ -3,7 +3,7 @@ import { Customer, Lead, Quote, Unit, WhatsAppMessage } from '../../models/index
 import { computeUnitAvailability } from '../unitAvailability.js';
 import { quoteLines, quoteTotals, termWeeks } from '../quoteLines.js';
 import { uploadWhatsAppMedia, sendWhatsAppMedia, whatsappSendConfigured } from '../whatsapp.js';
-import { mailConfigured } from '../mail.js';
+import { mailConfigured, sendMail } from '../mail.js';
 import { pauseBotForHuman } from '../aiBot.js';
 import { registerTool } from './tools.js';
 
@@ -22,6 +22,8 @@ import { registerTool } from './tools.js';
  */
 
 export const PROPOSE_TOOL = 'propose_quotation';
+export const PROPOSE_CONTRACT_TOOL = 'propose_contract';
+export const PROPOSAL_TOOLS = [PROPOSE_TOOL, PROPOSE_CONTRACT_TOOL];
 const TTL_MS = 15 * 60_000;
 const EXPIRY_DAYS = 30;
 
@@ -157,6 +159,104 @@ registerTool({
    },
 });
 
+/* A contract is a bigger thing than a quotation, and the card says so.
+ *
+ * Converting a quotation is the Book Unit page's own path, and it does more
+ * than write one record: it generates the first draft invoice, marks the lead
+ * as won, turns the person into a tenant, and holds the unit. None of that
+ * is hidden from the person confirming — it is listed, line by line, on the
+ * card. The contract is created as a draft, because a contract nobody has
+ * signed is a draft; signing is the contract page's job, on paper or through
+ * e-signature, and this does not pretend otherwise. */
+registerTool({
+   name: PROPOSE_CONTRACT_TOOL,
+   description: 'Prepare a rental CONTRACT for a person — either from an existing quotation (give its number, e.g. QT-000159) or directly from a name, phone, unit or size and dates. Optionally send the contract PDF. This only PREPARES it; the person asking must confirm in the chat. Creating a contract also creates the first draft invoice, marks the lead as won and makes the person a tenant. Use when asked to create, make, issue or draw up a contract or agreement.',
+   parameters: {
+      type: 'object',
+      properties: {
+         quoteNo: { type: 'string', description: 'An existing quotation number to convert, e.g. QT-000159' },
+         customerName: { type: 'string' },
+         phone: { type: 'string' },
+         email: { type: 'string' },
+         unitNumber: { type: 'string' },
+         sizeSqf: { type: 'number' },
+         startDate: { type: 'string', description: 'YYYY-MM-DD' },
+         endDate: { type: 'string', description: 'YYYY-MM-DD' },
+         discountPct: { type: 'number' },
+         sendVia: { type: 'string', enum: ['whatsapp', 'email', 'none'], description: 'Send the contract PDF, or none to only create it' },
+      },
+      required: ['sendVia'],
+   },
+   async run(args, { user }) {
+      sweep();
+      const { quoteNo, customerName, phone = '', email = '', unitNumber, sizeSqf, startDate, endDate, discountPct = 0, sendVia } = args;
+      const summary = [];
+      let spec;
+
+      if (quoteNo) {
+         const quote = await Quote.findOne({ quoteNo: new RegExp(`^${String(quoteNo).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') })
+            .populate('customer', 'fullName phone email').lean();
+         if (!quote) return { error: `No quotation called ${quoteNo}` };
+         if (quote.contract) return { error: `${quote.quoteNo} has already been converted to a contract` };
+         if (!quote.units?.length) return { error: `${quote.quoteNo} has no unit on it` };
+         const u = quote.units[0];
+         const who = quote.customer;
+         summary.push(
+            `Contract from quotation ${quote.quoteNo} for ${who?.fullName || 'its customer'}${who?.phone ? ` (${who.phone})` : ''}`,
+            `Unit ${u.unitNumber}, ${u.sizeSqf} sq ft, ${new Date(u.startDate).toISOString().slice(0, 10)} to ${new Date(u.endDate).toISOString().slice(0, 10)}, at ${fmt(u.rate)} a month`,
+            `Quotation total ${fmt(quote.total)}`,
+         );
+         spec = {
+            quoteId: String(quote._id), quoteNo: quote.quoteNo,
+            customerName: who?.fullName || '', phone: who?.phone || '', email: email || who?.email || '',
+            sendVia,
+         };
+      } else {
+         if (!customerName || !startDate || !endDate) return { error: "Need the person's name and the start and end dates, or a quotation number" };
+         if (!unitNumber && !sizeSqf) return { error: 'Need a unit number or a size' };
+         if (new Date(endDate) <= new Date(startDate)) return { error: 'End date must be after the start date' };
+         let priced;
+         try { priced = await priceUnit({ unitNumber, sizeSqf, startDate, endDate, discountPct }); }
+         catch (e) { return { error: e.message }; }
+         const { customer, lead } = await findPerson({ phone, name: customerName });
+         const known = customer ? `existing customer ${customer.fullName}` : lead ? `existing lead ${lead.fullName}` : 'a new customer record';
+         summary.push(
+            `Contract for ${customerName}${phone ? ` (${phone})` : ''} — ${known}`,
+            `Unit ${priced.unit.unitNumber}, ${priced.unit.sizeSqf} sq ft, floor ${priced.unit.floor}, at ${fmt(priced.unit.price)} a month`,
+            `${startDate} to ${endDate} · ${priced.weeks} week(s)${discountPct ? ` · ${discountPct}% off the first 4 weeks` : ''}`,
+            `Quotation first, total ${fmt(priced.totals.total)}, then the contract from it`,
+         );
+         spec = {
+            customerName, phone, email: email || customer?.email || lead?.email || '',
+            unitNumber: priced.unit.unitNumber, startDate, endDate, discountPct,
+            customerId: customer?._id || null, leadId: lead?._id || null, sendVia,
+         };
+      }
+
+      summary.push(
+         'Creates the contract as a DRAFT — it still needs signing, from the contract page',
+         'Also: the first invoice as a draft, the lead marked won, the person made a tenant, the unit held',
+      );
+      if (sendVia === 'whatsapp') {
+         const open = await replyWindowOpen(spec.phone);
+         summary.push(open
+            ? `Send the contract PDF on WhatsApp to ${spec.phone}`
+            : `WhatsApp: they have not written in the last 24 hours${spec.email ? ` — the PDF will go by email to ${spec.email} instead` : ' and there is no email on record, so it will be created but not sent'}`);
+      } else if (sendVia === 'email') {
+         summary.push(spec.email ? `Send the contract PDF by email to ${spec.email}` : 'Email: no address on record, so it will be created but not sent');
+      } else {
+         summary.push('Create it only — nothing is sent');
+      }
+
+      const id = crypto.randomBytes(8).toString('hex');
+      proposals.set(id, { id, userId: String(user?.id || ''), kind: 'create_contract', expiresAt: Date.now() + TTL_MS, summary, spec });
+      return {
+         proposalId: id, kind: 'create_contract', summary,
+         instruction: 'Tell the user what you have prepared in one or two lines, including that the contract will be a draft needing signature, and that they must press Confirm in the card. Do not say it has been created or sent.',
+      };
+   },
+});
+
 export function takeProposal(id, userId) {
    sweep();
    const p = proposals.get(id);
@@ -194,6 +294,8 @@ export async function runAction(proposal, { authHeader }) {
       if (!r.ok) throw new Error(json.error || `${method} ${path} failed (${r.status})`);
       return json;
    };
+
+   if (proposal.kind === 'create_contract') return runContract(proposal, { call, base, authHeader });
 
    const s = proposal.spec;
    const steps = [];
@@ -273,5 +375,91 @@ export async function runAction(proposal, { authHeader }) {
       quoteNo: quote.quoteNo,
       pdfPath: `/quotes/${quote._id}/pdf`,
       message: steps.join('. ') + '.',
+   };
+}
+
+/**
+ * Quotation → accepted → contract, through the same three routes the page
+ * uses, then the PDF. Anything the convert route does — invoice, lead, tenant,
+ * unit — it does here too, because it is the same code.
+ */
+async function runContract(proposal, { call, base, authHeader }) {
+   const s = proposal.spec;
+   const steps = [];
+
+   let quoteId = s.quoteId;
+   let quoteNo = s.quoteNo;
+   if (!quoteId) {
+      let customerId = s.customerId;
+      if (!customerId) {
+         const created = await Customer.create({ fullName: s.customerName, phone: s.phone || '', phones: s.phone ? [s.phone] : [], email: s.email || '' });
+         customerId = created._id;
+         steps.push(`Created customer ${s.customerName}`);
+      }
+      const priced = await priceUnit({ unitNumber: s.unitNumber, startDate: s.startDate, endDate: s.endDate, discountPct: s.discountPct });
+      const expiry = new Date(Date.now() + EXPIRY_DAYS * 864e5).toISOString().slice(0, 10);
+      const quote = await call('POST', '/quotes', {
+         customer: String(customerId),
+         ...(s.leadId ? { lead: String(s.leadId) } : {}),
+         units: [{ unit: String(priced.unit._id), ...priced.line }],
+         addOns: [], items: [], expiryDate: expiry, holdAdvance: true, vatEnabled: true,
+         subject: `Storage quotation — ${priced.unit.sizeSqf} sq ft`, status: 'draft',
+      });
+      await call('PATCH', `/quotes/${quote._id}/flow-step`, { step: 3 });
+      quoteId = quote._id;
+      quoteNo = quote.quoteNo;
+      steps.push(`Created quotation ${quoteNo} for ${fmt(quote.total)}`);
+   }
+
+   // Accepted, because only an accepted quotation can become a contract —
+   // and the person confirming this card is the acceptance.
+   await call('PATCH', `/quotes/${quoteId}/status`, { status: 'accepted' });
+   const made = await call('POST', `/quotes/${quoteId}/convert-to-contract`, {});
+   steps.push(`Created contract ${made.contractNo} as a draft, with draft invoice ${made.invoiceNo}`);
+
+   let sent = '';
+   const wantsWhatsApp = s.sendVia === 'whatsapp';
+   const wantsEmail = s.sendVia === 'email';
+   if (wantsWhatsApp || wantsEmail) {
+      const pdfRes = await fetch(`${base}/contracts/${made.contractId}/pdf`, { headers: { Authorization: authHeader } });
+      if (!pdfRes.ok) throw new Error('Could not render the contract PDF');
+      const buffer = Buffer.from(await pdfRes.arrayBuffer());
+      const filename = `${made.contractNo}.pdf`;
+
+      if (wantsWhatsApp && whatsappSendConfigured() && await replyWindowOpen(s.phone)) {
+         const { id: mediaId } = await uploadWhatsAppMedia({ buffer, mimeType: 'application/pdf', filename });
+         const caption = `Hello ${s.customerName}, please find your storage agreement ${made.contractNo}. Thank you, PurpleBox.`;
+         const result = await sendWhatsAppMedia({ to: s.phone, mediaId, kind: 'document', caption, filename });
+         const phoneNormalized = String(s.phone).replace(/\D/g, '');
+         await WhatsAppMessage.create({
+            messageId: result?.messages?.[0]?.id || '', phone: s.phone, phoneNormalized,
+            direction: 'outbound', type: 'document', text: caption, status: 'sent', occurredAt: new Date(), sentByAi: false,
+            raw: { document: { id: mediaId, mime_type: 'application/pdf', filename, caption }, sendResult: result },
+         });
+         await pauseBotForHuman(phoneNormalized);
+         sent = `Sent on WhatsApp to ${s.phone}`;
+      } else if (s.email && mailConfigured()) {
+         await sendMail({
+            to: s.email,
+            subject: `Storage agreement ${made.contractNo} — PurpleBox`,
+            text: `Hello ${s.customerName},\n\nPlease find attached your storage agreement ${made.contractNo}.\n\nThank you,\nPurpleBox`,
+            html: `Hello ${s.customerName},<br/><br/>Please find attached your storage agreement ${made.contractNo}.<br/><br/>Thank you,<br/>PurpleBox`,
+            attachments: [{ filename, content: buffer, contentType: 'application/pdf' }],
+         });
+         sent = `Sent by email to ${s.email}${wantsWhatsApp ? ' (WhatsApp window was closed)' : ''}`;
+      } else {
+         sent = wantsWhatsApp
+            ? 'Not sent: they have not written on WhatsApp in the last 24 hours and there is no email on record'
+            : 'Not sent: no email address on record';
+      }
+      steps.push(sent);
+   }
+
+   return {
+      ok: true,
+      quoteId: String(quoteId), quoteNo,
+      contractId: String(made.contractId), contractNo: made.contractNo, invoiceNo: made.invoiceNo,
+      pdfPath: `/contracts/${made.contractId}/pdf`,
+      message: steps.join('. ') + '. It is a draft until it is signed.',
    };
 }

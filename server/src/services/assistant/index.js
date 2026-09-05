@@ -3,7 +3,7 @@ import { chatWithTools, openaiConfigured, openaiModel } from '../openai.js';
 import { siteScope } from '../../utils/siteScope.js';
 import { dayKeyFor } from '../dailyDigest.js';
 import { toolDefinitions, toolByName } from './tools.js';
-import { PROPOSE_TOOL } from './actions.js';
+import { PROPOSAL_TOOLS } from './actions.js';
 
 /**
  * The assistant in the corner of every page.
@@ -21,14 +21,14 @@ import { PROPOSE_TOOL } from './actions.js';
 
 export const DEFAULT_PROMPT = `You are the assistant inside PurpleBox Storage's office system in Dubai. Staff ask you questions about units, prices, contracts, customers, leads, WhatsApp, documents and tasks.
 
-Answer only from the tools. If no tool can answer, say plainly that you cannot see it in the system — never estimate, never fill a gap from general knowledge. Be brief and concrete: lead with the number or the name, then one line of context. Use AED for money. When a list is long, give the count and the first few, and offer the rest.`;
+Answer only from the tools. If no tool can answer, say plainly that you cannot see it in the system — never estimate, never fill a gap from general knowledge. When a question is close to something you can answer, answer the nearest thing and say what you did: "I can't see it by the hour, but today so far…". Be brief and concrete: lead with the number or the name, then one line of context. Use AED for money. When a list is long, give the count and the first few, and offer the rest.`;
 
 const RULES = `RULES YOU CANNOT BREAK:
 - Every figure you state must come from a tool result in this conversation. Do not compute, round, extrapolate or recall figures.
 - If the tools returned nothing useful, say you cannot see it in the system. Do not answer from general knowledge.
 - Dates you pass to tools are YYYY-MM-DD. "Today" and relative dates are worked out from the date given below.
 - Do not mention tools by name to the user. Speak as the system.
-- You can prepare a quotation for a person, but you cannot create or send it yourself. When you have prepared one, say so in a line and tell them to press Confirm in the card. Never say it has been created, booked, reserved or sent — only a person's Confirm does that.`;
+- You can prepare a quotation or a contract for a person, but you cannot create or send either yourself. When you have prepared one, say so in a line and tell them to press Confirm in the card. Never say it has been created, booked, reserved, signed or sent — only a person's Confirm does that, and a contract is a draft until it is signed.`;
 
 /** Any figure that could be mistaken for a fact: money, counts, sizes, dates. */
 const NUMBERS = /\d[\d,]*(?:\.\d+)?/g;
@@ -102,7 +102,7 @@ export async function askAssistant({ question, history = [], siteId = null, user
       tool is simply absent — the model cannot propose what it cannot see. */
    const mayAct = config.actionsEnabled !== false
       && (config.actionRoles?.length ? config.actionRoles : ['admin']).includes(user?.role);
-   const tools = toolDefinitions().filter((t) => mayAct || t.function.name !== PROPOSE_TOOL);
+   const tools = toolDefinitions().filter((t) => mayAct || !PROPOSAL_TOOLS.includes(t.function.name));
    let pending = null;
 
    for (; rounds < maxRounds; rounds += 1) {
@@ -120,8 +120,8 @@ export async function askAssistant({ question, history = [], siteId = null, user
          }
          used.push({ name: call.name, args: call.args, ok: !out?.error });
          results.push({ tool: call.name, result: out });
-         if (call.name === PROPOSE_TOOL && out?.proposalId) {
-            pending = { id: out.proposalId, kind: 'create_quotation', summary: out.summary, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() };
+         if (PROPOSAL_TOOLS.includes(call.name) && out?.proposalId) {
+            pending = { id: out.proposalId, kind: out.kind || 'create_quotation', summary: out.summary, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() };
          }
          messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(out).slice(0, 12000) });
       }
