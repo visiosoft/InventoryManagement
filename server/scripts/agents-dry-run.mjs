@@ -13,6 +13,7 @@
 import 'dotenv/config';
 import dns from 'node:dns';
 import mongoose from 'mongoose';
+import { estimateValue, windowOpen } from '../src/services/agents/shared.js';
 
 // Atlas' SRV lookup fails on some networks with the default resolver.
 dns.setServers(['8.8.8.8', '1.1.1.1']);
@@ -43,6 +44,7 @@ async function main() {
    console.log(`db: ${mongoose.connection.name}\n`);
 
    await import('../src/services/agents/types/unansweredChats.js');
+   await import('../src/services/agents/types/missedLeads.js');
    const { agentType } = await import('../src/services/agents/engine.js');
 
    const type = agentType(typeKey);
@@ -80,6 +82,27 @@ async function main() {
    if (band) {
       const ok = rows.length >= band.low && rows.length <= band.high;
       console.log(`expected:  ${band.low}–${band.high} (${band.note}) → ${ok ? 'in range' : 'OUT OF RANGE — check the predicate'}`);
+   }
+
+   /* The split is the number that matters. A predicate that has quietly
+      swallowed everything, or caught nothing, is obvious here and invisible in
+      a list of plausible-looking names. */
+   if (rows.some((r) => r.category)) {
+      const counts = {};
+      const value = {};
+      for (const r of rows) {
+         counts[r.category] = (counts[r.category] || 0) + 1;
+         const v = estimateValue({ lead: r.lead, quote: r.quote, contracts: r.contracts }, ctx.people.priceBySize);
+         if (v.aed) value[r.category] = (value[r.category] || 0) + v.aed;
+      }
+      console.log('\nby category:');
+      for (const [k, n] of Object.entries(counts).sort((a, b) => b[1] - a[1])) {
+         console.log(`  ${k.padEnd(18)} ${String(n).padStart(4)}   ${money(value[k] || null).padStart(14)} a month`);
+      }
+      const open = rows.filter((r) => windowOpen(r.thread?.lastInboundAt, ctx.now)).length;
+      const optIn = rows.filter((r) => r.lead?.whatsappOptIn?.at || r.customer?.whatsappOptIn?.at).length;
+      console.log(`\n  ${open} still inside the 24-hour window`);
+      console.log(`  ${optIn} have a recorded WhatsApp opt-in`);
    }
 
    if (type.judges !== false) {
