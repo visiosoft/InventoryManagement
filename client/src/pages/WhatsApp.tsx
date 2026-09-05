@@ -2948,7 +2948,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
 
                       <button type="button" onClick={() => setQrOpen(true)} className={MENU_ROW} style={{ color: INK }}>
                         <Zap size={15} style={{ color: '#4A1FA0' }} />
-                        <span className="flex-1">Quick replies</span>
+                        <span className="flex-1">Quick replies &amp; templates</span>
                       </button>
 
                       <div data-keep-open>
@@ -3433,7 +3433,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
             >
               <Paperclip size={16} />
             </IconButton>
-            <IconButton title="Quick replies" onClick={() => setQrOpen((v) => !v)} className="!h-10 !w-10 shrink-0">
+            <IconButton title="Quick replies and approved templates" onClick={() => setQrOpen((v) => !v)} className="!h-10 !w-10 shrink-0">
               <Zap size={16} />
             </IconButton>
             {/* Hidden while a recording is in progress — the strip above

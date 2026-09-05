@@ -381,6 +381,10 @@ export type WhatsAppCredentials = {
   accessToken?: string
   verifyToken?: string
   appSecret?: string
+  /* The Business Account the number sits under. Only approved templates need
+   * it — sending and receiving do not — which is why it can be left blank and
+   * worked out from the number instead. */
+  wabaId?: string
 }
 
 export const whatsappApi = {

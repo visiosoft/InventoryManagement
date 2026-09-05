@@ -230,6 +230,49 @@ export async function sendWhatsAppLocation({ to, latitude, longitude, name, addr
     return json;
 }
 
+/* Which Business Account this number belongs to.
+ *
+ * Templates are held against the account, not the number, so listing them
+ * needs an id that nothing else in the system uses — which is why it was never
+ * set here, and why the templates panel came up empty on an installation that
+ * was otherwise working perfectly.
+ *
+ * Meta knows the answer already, so it is asked before anybody is sent looking
+ * through Business Manager for it. The configured value still wins: an account
+ * with more than one number is a thing, and a stated answer beats a derived
+ * one. Cached for the life of the process — a number does not move between
+ * business accounts.
+ */
+let derivedWabaId = '';
+
+export async function resolveWabaId() {
+    const set = String(process.env.WHATSAPP_WABA_ID || '').trim();
+    if (set) return set;
+    if (derivedWabaId) return derivedWabaId;
+
+    const token = String(process.env.WHATSAPP_ACCESS_TOKEN || '').trim();
+    const phoneId = String(process.env.WHATSAPP_PHONE_NUMBER_ID || '').trim();
+    if (!token || !phoneId) return '';
+
+    try {
+        const url = `https://graph.facebook.com/v20.0/${encodeURIComponent(phoneId)}?fields=whatsapp_business_account`;
+        const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+        const body = await r.json().catch(() => ({}));
+        // Not an error worth raising: the token may simply lack the permission
+        // to read the account, and the caller has a clear message for that.
+        if (!r.ok) return '';
+        derivedWabaId = String(body?.whatsapp_business_account?.id || '').trim();
+        return derivedWabaId;
+    } catch {
+        return '';
+    }
+}
+
+/** After the credentials change, so a new number is not read off the old one. */
+export function forgetWabaId() {
+    derivedWabaId = '';
+}
+
 // Approved templates change rarely and the composer asks on every render.
 let templateCache = { at: 0, data: null };
 
@@ -242,10 +285,16 @@ let templateCache = { at: 0, data: null };
  * with status APPROVED.
  */
 export async function listWhatsAppTemplates({ force = false } = {}) {
-    const waba = String(process.env.WHATSAPP_WABA_ID || '').trim();
     const token = String(process.env.WHATSAPP_ACCESS_TOKEN || '').trim();
-    if (!waba) return { configured: false, error: 'WHATSAPP_WABA_ID is not set', templates: [] };
     if (!token) return { configured: false, error: 'WhatsApp is not configured', templates: [] };
+    const waba = await resolveWabaId();
+    if (!waba) {
+        return {
+            configured: false,
+            templates: [],
+            error: 'The WhatsApp Business Account ID is not set, and Meta would not say which account this number belongs to. Add it under Settings → Integrations → WhatsApp; it is the "WhatsApp Business Account ID" in Meta → WhatsApp → API Setup.',
+        };
+    }
     if (!force && templateCache.data && Date.now() - templateCache.at < 10 * 60 * 1000) return templateCache.data;
 
     const url = `https://graph.facebook.com/v20.0/${waba}/message_templates?limit=200`;

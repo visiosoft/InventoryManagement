@@ -170,6 +170,7 @@ export default function Settings() {
   const [waAccessToken, setWaAccessToken] = useState('')
   const [waVerifyToken, setWaVerifyToken] = useState('')
   const [waAppSecret, setWaAppSecret] = useState('')
+  const [waWabaId, setWaWabaId] = useState('')
   const [waProfile, setWaProfile] = useState('')
 
   // Asked for separately from /integrations/status so a call out to Meta never
@@ -598,6 +599,14 @@ export default function Settings() {
                 <Input type="password" placeholder="From Meta App → Settings → Basic" value={waAppSecret}
                   onChange={(e) => setWaAppSecret(e.target.value)} />
               </Field>
+              <Field label="Business Account ID (optional)">
+                <Input placeholder="Worked out from the number if left blank" value={waWabaId}
+                  onChange={(e) => setWaWabaId(e.target.value)} />
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Only the approved templates panel needs this. It is normally read from your
+                  number automatically — set it by hand if that panel says it could not be found.
+                </p>
+              </Field>
             </div>
 
             <div className="flex items-center gap-3 flex-wrap">
@@ -612,10 +621,11 @@ export default function Settings() {
                       accessToken: waAccessToken || undefined,
                       verifyToken: waVerifyToken || undefined,
                       appSecret: waAppSecret || undefined,
+                      wabaId: waWabaId || undefined,
                     })
                     setWaProfile([r.verifiedName, r.displayPhoneNumber].filter(Boolean).join(' · '))
                     setWaMsg({ ok: true, text: r.configured ? 'WhatsApp connected.' : `Saved. Still missing: ${r.missing.join(', ')}` })
-                    setWaPhoneNumberId(''); setWaAccessToken(''); setWaVerifyToken(''); setWaAppSecret('')
+                    setWaPhoneNumberId(''); setWaAccessToken(''); setWaVerifyToken(''); setWaAppSecret(''); setWaWabaId('')
                     qc.invalidateQueries({ queryKey: ['integrations-status'] })
                   } catch (e) {
                     setWaMsg({ ok: false, text: apiError(e) })

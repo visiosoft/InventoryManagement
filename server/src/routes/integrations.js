@@ -7,7 +7,7 @@ import { mailConfigured, mailFromAddress } from '../services/mail.js';
 import { zohoConfigured } from '../services/zoho.js';
 import { zohoBooksConfigured, listAllZohoContacts } from '../services/zohoBooks.js';
 import { Customer, Contract, WhatsAppWebhookHit } from '../models/index.js';
-import { whatsappConfigured, whatsappMissing, verifyWebhookChallenge, verifyWhatsAppSignature, verifyWhatsAppCredentials, inspectWhatsAppToken } from '../services/whatsapp.js';
+import { whatsappConfigured, whatsappMissing, verifyWebhookChallenge, verifyWhatsAppSignature, verifyWhatsAppCredentials, inspectWhatsAppToken, forgetWabaId } from '../services/whatsapp.js';
 import { getWhatsAppLabelSyncStatus, processWhatsAppWebhookPayload, runWhatsAppLabelReconciliation } from '../services/whatsappLeadSync.js';
 import { stripeConfigured, stripeWebhookConfigured, verifyStripeKey } from '../services/stripe.js';
 import { updateEnvFile } from '../utils/env.js';
@@ -140,7 +140,7 @@ router.post('/ai/parse-availability', async (req, res) => {
 });
 
 router.post('/whatsapp/connect', requireAdmin, async (req, res) => {
-    const { phoneNumberId, accessToken, verifyToken, appSecret } = req.body || {};
+    const { phoneNumberId, accessToken, verifyToken, appSecret, wabaId } = req.body || {};
     const updates = {};
     if (phoneNumberId) {
         const raw = String(phoneNumberId).trim();
@@ -157,6 +157,16 @@ router.post('/whatsapp/connect', requireAdmin, async (req, res) => {
             return res.status(400).json({ error: 'The Phone number ID should be digits only.' });
         }
         updates.WHATSAPP_PHONE_NUMBER_ID = raw;
+    }
+    if (wabaId) {
+        // Digits only, like the phone number id, and confused with it just as
+        // often — so the shape is checked rather than left to fail later on a
+        // call nobody makes until they open the templates panel.
+        const raw = String(wabaId).trim();
+        if (!/^\d+$/.test(raw)) {
+            return res.status(400).json({ error: 'The WhatsApp Business Account ID should be digits only. It is shown in Meta → WhatsApp → API Setup, above the phone number.' });
+        }
+        updates.WHATSAPP_WABA_ID = raw;
     }
     if (accessToken) updates.WHATSAPP_ACCESS_TOKEN = String(accessToken).trim();
     if (verifyToken) updates.WHATSAPP_VERIFY_TOKEN = String(verifyToken).trim();
@@ -190,6 +200,8 @@ router.post('/whatsapp/connect', requireAdmin, async (req, res) => {
 
     updateEnvFile(updates);
     Object.assign(process.env, updates);
+    // A different number may belong to a different business account.
+    forgetWabaId();
     res.json({
         ok: true,
         configured: whatsappConfigured(),
@@ -212,9 +224,11 @@ router.post('/whatsapp/disconnect', requireAdmin, async (_req, res) => {
         WHATSAPP_ACCESS_TOKEN: '',
         WHATSAPP_VERIFY_TOKEN: '',
         WHATSAPP_APP_SECRET: '',
+        WHATSAPP_WABA_ID: '',
     };
     updateEnvFile(blanks);
     Object.assign(process.env, blanks);
+    forgetWabaId();
     res.json({ ok: true });
 });
 
