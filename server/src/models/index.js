@@ -1908,6 +1908,8 @@ const agentFindingSchema = new Schema({
   state: { type: String, enum: ['open', 'snoozed', 'dismissed', 'done'], default: 'open' },
   snoozeUntil: { type: Date, default: null },
   stateAt: { type: Date, default: null },
+  // The task raised for it on the board, when one was.
+  taskId: { type: Schema.Types.ObjectId, ref: 'Task', default: null },
   handledBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
   history: [{
     state: String, at: Date, byName: String, reason: String, _id: false,
@@ -1916,6 +1918,33 @@ const agentFindingSchema = new Schema({
 agentFindingSchema.index({ run: 1, score: -1 });
 agentFindingSchema.index({ definition: 1, key: 1 });
 export const AgentFinding = model('AgentFinding', agentFindingSchema);
+
+/* What happened after an agent pointed at somebody.
+ *
+ * Findings are replaced on every run, so they cannot be where the answer to
+ * "did any of this matter" lives. This is: a task was raised, the person
+ * replied, they renewed, they signed. It is the only record that lets the
+ * Agents page say "14 of 62 renewed, AED 12,600 a month kept" — which is the
+ * number that decides whether an agent is worth running at all. */
+const agentOutcomeSchema = new Schema({
+  definition: { type: Schema.Types.ObjectId, ref: 'AgentDefinition', required: true },
+  agentType: { type: String, default: '' },
+  key: { type: String, required: true },
+  subjectKind: { type: String, default: '' },
+  subjectId: { type: Schema.Types.ObjectId, default: null },
+  title: { type: String, default: '' },
+  kind: { type: String, enum: ['tasked', 'replied', 'renewed', 'signed', 'paid'], required: true },
+  at: { type: Date, default: Date.now },
+  // What the finding said it was worth when it was found.
+  valueAed: { type: Number, default: 0 },
+  findingScore: { type: Number, default: 0 },
+  taskId: { type: Schema.Types.ObjectId, ref: 'Task', default: null },
+  detail: { type: String, default: '' },
+}, { timestamps: true });
+// One of each thing per person per agent — a renewal is recorded once.
+agentOutcomeSchema.index({ definition: 1, key: 1, kind: 1 }, { unique: true });
+agentOutcomeSchema.index({ definition: 1, at: -1 });
+export const AgentOutcome = model('AgentOutcome', agentOutcomeSchema);
 
 export const AiBotConfig = model('AiBotConfig', aiBotConfigSchema);
 export const AiBotThread = model('AiBotThread', aiBotThreadSchema);

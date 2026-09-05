@@ -81,6 +81,8 @@ export function agentTypes() {
       label: t.label,
       describe: t.describe,
       judges: t.judges !== false,
+      // Whether its findings can become tasks on the board.
+      raisesTasks: typeof t.taskFor === 'function',
       stages: t.stages,
       defaults: t.defaults || {},
    }));
@@ -274,6 +276,20 @@ export async function runAgent(definition, { startedBy = null, startedByName = '
          throw new Error('OpenAI is not configured, so this agent has nothing to judge with.');
       }
 
+      /* Before looking again, note what happened since last time — a reply, a
+         renewal — while the previous findings are still here to compare
+         against. This is what lets the page say how many of the last run's
+         people came back. */
+      try {
+         const { recordOutcomes } = await import('./loop.js');
+         const seen = await recordOutcomes(definition, { now: ctx.now });
+         if (seen.recorded) {
+            report.say(`Since last run: ${Object.entries(seen.byKind).map(([k, n]) => `${n} ${k}`).join(', ')}`);
+         }
+      } catch (e) {
+         report.say(`Could not check outcomes: ${e.message}`, 'warn');
+      }
+
       const rows = await type.collect(ctx);
       counts.collected = rows.length;
       report.say(`${rows.length} to look at`);
@@ -340,7 +356,15 @@ export async function runAgent(definition, { startedBy = null, startedByName = '
       }
 
       await AgentFinding.deleteMany({ definition: definition._id });
-      if (findings.length) await AgentFinding.insertMany(findings);
+      const written = findings.length ? await AgentFinding.insertMany(findings) : [];
+
+      /* The loop: the top few become tasks on the board, due today. A finding
+         on a page is a report; a task in somebody's My Day is work. */
+      if (!report.stopped && written.length) {
+         const { raiseTasks } = await import('./loop.js');
+         const out = await raiseTasks(definition, written.map((w) => w.toObject()), { report, now: ctx.now });
+         counts.tasked = out.raised || 0;
+      }
 
       const judged = counts.judged;
       await AgentRun.findByIdAndUpdate(run._id, {

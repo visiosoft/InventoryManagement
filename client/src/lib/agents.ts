@@ -18,6 +18,8 @@ export type AgentType = {
   describe: string
   /** false for a rules-only agent: no model calls, and so no cost. */
   judges: boolean
+  /** Whether its findings can be turned into tasks on the board. */
+  raisesTasks: boolean
   stages: { key: string; label: string }[]
   defaults: Record<string, unknown>
 }
@@ -54,7 +56,14 @@ export type Agent = {
   openFindings: number
   openValueAed: number
   windowClosed: number
+  raisesTasks: boolean
+  /** The scoreboard — what came of the people it pointed at. */
+  outcomes: Outcomes
 }
+
+export type Outcomes = { tasked: number; replied: number; renewed: number; signed: number; paid: number; keptAed: number }
+
+export type Outcome = { kind: 'tasked' | 'replied' | 'renewed' | 'signed' | 'paid'; at: string; detail: string; taskId: string | null }
 
 export type AgentEvent = { at: string; text: string; level: 'info' | 'skip' | 'warn' | 'error' }
 
@@ -94,6 +103,7 @@ export type Finding = {
   state: 'open' | 'snoozed' | 'dismissed' | 'done'
   snoozeUntil: string | null
   recommendation: Recommendation | null
+  taskId?: string | null
   data: {
     category?: string
     categoryLabel?: string
@@ -114,7 +124,7 @@ export type Finding = {
 }
 
 export type FindingsResponse = {
-  findings: (Finding & { agent: { key: string; name: string } | null })[]
+  findings: (Finding & { agent: { key: string; name: string } | null; outcomes: Outcome[] })[]
   agents: { key: string; name: string }[]
   counts: { total: number; byCategory: Record<string, number>; byAgent?: Record<string, number> }
 }
@@ -163,6 +173,10 @@ export const agentsApi = {
     api.post(`/agents/findings/${id}/${action}`, body).then((r) => r.data),
 
   exportUrl: (key: string) => apiUrl(`/agents/${key}/export.csv`),
+
+  /** Check now for replies and renewals, rather than waiting for the next run. */
+  recordOutcomes: (key: string) =>
+    api.post<{ recorded: number; byKind: Record<string, number> }>(`/agents/${key}/outcomes`).then((r) => r.data),
 }
 
 /* ── shared presentation helpers ──────────────────────────────────────────── */

@@ -4,6 +4,8 @@ import { AgentDefinition, AgentRun, AgentFinding } from '../models/index.js';
 import { agentTypes, agentType, runAgent, estimateCost } from '../services/agents/engine.js';
 import { loadThreads } from '../services/agents/shared.js';
 import { listWhatsAppTemplates } from '../services/whatsapp.js';
+import { outcomeSummary, recordOutcomes } from '../services/agents/loop.js';
+import { AgentOutcome } from '../models/index.js';
 import { WhatsAppMessage, Lead } from '../models/index.js';
 
 // Registers every agent type. Without it the catalogue is empty.
@@ -88,6 +90,8 @@ router.get('/', async (_req, res) => {
       const lastRun = new Map();
       for (const r of runs) if (!lastRun.has(String(r.definition))) lastRun.set(String(r.definition), r);
       const openBy = new Map(open.map((o) => [String(o._id), o]));
+      // What came of it — the scoreboard that says whether an agent pays.
+      const outcomes = await outcomeSummary(ids);
 
       // Spend since the first of the month, which is the number an owner asks
       // about — not the cost of whichever run happened to be last.
@@ -113,6 +117,8 @@ router.get('/', async (_req, res) => {
                openFindings: found?.n || 0,
                openValueAed: found?.value || 0,
                windowClosed: found?.urgent || 0,
+               raisesTasks: Boolean(type?.taskFor) && (d.config?.raiseTasks ?? type?.defaults?.raiseTasks) !== false,
+               outcomes: outcomes.get(String(d._id)) || { tasked: 0, replied: 0, renewed: 0, signed: 0, paid: 0, keptAed: 0 },
             };
          }),
          spendThisMonthUsd: Number(spend.toFixed(2)),
@@ -293,14 +299,40 @@ router.get('/findings', async (req, res) => {
          if (a) counts.byAgent[a.key] = (counts.byAgent[a.key] || 0) + 1;
       }
 
+      const seen = await outcomesByKey(defs.map((d) => d._id));
       res.json({
          findings: (await withTemplateText(visible)).map((f) => ({
             ...f,
             agent: byId.get(String(f.definition)) || null,
+            outcomes: seen.get(`${f.definition}|${f.key}`) || [],
          })),
          agents: defs.map((d) => ({ key: d.key, name: d.name })),
          counts,
       });
+   } catch (e) {
+      res.status(500).json({ error: e.message });
+   }
+});
+
+/** Every recorded outcome, keyed by agent and person, for stamping on cards. */
+async function outcomesByKey(definitionIds) {
+   const rows = await AgentOutcome.find({ definition: { $in: definitionIds } })
+      .select('definition key kind at detail taskId').lean();
+   const by = new Map();
+   for (const r of rows) {
+      const k = `${r.definition}|${r.key}`;
+      if (!by.has(k)) by.set(k, []);
+      by.get(k).push({ kind: r.kind, at: r.at, detail: r.detail, taskId: r.taskId });
+   }
+   return by;
+}
+
+/** Check for replies and renewals now, without waiting for the next run. */
+router.post('/:key/outcomes', async (req, res) => {
+   try {
+      const def = await AgentDefinition.findOne({ key: req.params.key });
+      if (!def) return res.status(404).json({ error: 'No such agent' });
+      res.json(await recordOutcomes(def));
    } catch (e) {
       res.status(500).json({ error: e.message });
    }

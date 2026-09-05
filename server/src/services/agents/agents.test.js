@@ -231,3 +231,54 @@ test('the coaching score always explains itself in plain terms', () => {
    assert.ok(out.factors.some((f) => /conversations in the period/.test(f)))
    assert.ok(!out.factors.some((f) => /bad|poor|lazy|careless/i.test(f)), 'never characterises the person')
 })
+
+/* ── the loop: findings → tasks → outcomes ────────────────────────────────── */
+
+import renewals from './types/renewalsAtRisk.js'
+
+test('a renewal finding becomes a task that says what to do, not what was noticed', () => {
+   const spec = renewals.taskFor({
+      title: 'Hind Al Suwaidi',
+      detail: 'Nobody has raised renewal with her.',
+      phoneNormalized: '971501234567',
+      recommendation: { angle: 'She asked about summer storage for garden furniture.' },
+      data: { contractNo: 'PB-2026-0301', daysLeft: 9, valueAed: 980, months: 11, daysSince: 21 },
+   })
+   assert.match(spec.title, /^Ask Hind Al Suwaidi about renewing/)
+   assert.match(spec.title, /PB-2026-0301 ends in 9 day/)
+   assert.equal(spec.leadType, 'contract')
+   assert.equal(spec.priority, 'medium')
+   assert.match(spec.description, /garden furniture/)
+   assert.match(spec.description, /\+971501234567/)
+})
+
+test('a contract ending this week is a high-priority task', () => {
+   const spec = renewals.taskFor({ title: 'A', data: { contractNo: 'X', daysLeft: 3 } })
+   assert.equal(spec.priority, 'high')
+   const gone = renewals.taskFor({ title: 'A', data: { contractNo: 'X', daysLeft: -2 } })
+   assert.match(gone.title, /ended 2 day/)
+})
+
+test('a renewal is recognised from a later contract, and only a later one', () => {
+   const since = new Date('2026-09-01T00:00:00Z')
+   const byCustomer = new Map([['c1', [
+      { contractNo: 'OLD', status: 'active', createdAt: new Date('2026-01-01'), leasedPrice: 900 },
+      { contractNo: 'NEW', status: 'active', createdAt: new Date('2026-09-05'), leasedPrice: 950 },
+   ]]])
+   const seen = renewals.outcomeFor({ subjectId: 'c1', since, valueAed: 900 }, { contractsByCustomer: byCustomer })
+   assert.equal(seen.kind, 'renewed')
+   assert.match(seen.detail, /NEW/)
+   // What was kept is what they now pay, not what the finding guessed.
+   assert.equal(seen.valueAed, 950)
+
+   // The same customer with only the old contract has not renewed.
+   byCustomer.set('c1', [byCustomer.get('c1')[0]])
+   assert.equal(renewals.outcomeFor({ subjectId: 'c1', since, valueAed: 900 }, { contractsByCustomer: byCustomer }), null)
+})
+
+test('a cancelled later contract is not a renewal', () => {
+   const byCustomer = new Map([['c1', [
+      { contractNo: 'NEW', status: 'cancelled', createdAt: new Date('2026-09-05'), leasedPrice: 950 },
+   ]]])
+   assert.equal(renewals.outcomeFor({ subjectId: 'c1', since: new Date('2026-09-01') }, { contractsByCustomer: byCustomer }), null)
+})

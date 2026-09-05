@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { agentsApi, CATEGORY_LABEL, type AgentSchedule } from '../lib/agents'
 import { Spinner } from '../components/ui'
-import { apiError } from '../lib/api'
+import { api, apiError } from '../lib/api'
 
 const INK = '#14081F'
 const MUTED = '#4A4357'
@@ -56,6 +56,14 @@ export default function AgentEdit() {
   const [categories, setCategories] = useState<string[]>(Object.keys(CATEGORY_LABEL))
   const [extra, setExtra] = useState('')
   const [schedule, setSchedule] = useState<AgentSchedule>({ mode: 'off', hour: 7, weekday: 1 })
+  const [raiseTasks, setRaiseTasks] = useState(true)
+  const [tasksPerRun, setTasksPerRun] = useState(5)
+  const [assignTo, setAssignTo] = useState('')
+
+  const { data: assignable } = useQuery<{ _id: string; name: string; role: string }[]>({
+    queryKey: ['users', 'assignable'],
+    queryFn: () => api.get('/users/assignable').then((r) => r.data),
+  })
 
   // Seed from the chosen type, or from the agent being edited.
   useEffect(() => {
@@ -68,6 +76,9 @@ export default function AgentEdit() {
       setCategories((cfg.categories as string[]) ?? Object.keys(CATEGORY_LABEL))
       setExtra(existing.extraInstructions || '')
       setSchedule(existing.schedule || { mode: 'off' })
+      setRaiseTasks(cfg.raiseTasks !== false)
+      setTasksPerRun(Number(cfg.tasksPerRun ?? 5))
+      setAssignTo(String(cfg.assignTo || ''))
     } else if (types?.length && !type) {
       setType(types[0].key)
       setName(types[0].label)
@@ -88,6 +99,7 @@ export default function AgentEdit() {
   const config = () => ({
     ...(from ? { from } : {}),
     ...(isMissedLeads ? { quietDays, minValueAed: minValue, categories } : {}),
+    ...(chosen?.raisesTasks ? { raiseTasks, tasksPerRun, assignTo } : {}),
   })
 
   const save = useMutation({
@@ -289,6 +301,41 @@ export default function AgentEdit() {
               ))}
             </div>
           </div>
+
+          {chosen?.raisesTasks && (
+            <div style={card}>
+              <div style={step}>
+                5 · Tasks <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>— the loop that makes it worth running</span>
+              </div>
+              <p style={{ color: MUTED, fontSize: 12.5, margin: '0 0 14px', maxWidth: '70ch' }}>
+                After each run the top few findings become tasks on the board, due today, in the
+                assignee's My Day. Whether the person then renews is recorded against the agent
+                automatically — so it can show what it actually kept.
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 14 }}>
+                <label style={{ display: 'block' }}>
+                  <span style={label}>Raise tasks</span>
+                  <select value={raiseTasks ? 'yes' : 'no'} onChange={(e) => setRaiseTasks(e.target.value === 'yes')} style={field}>
+                    <option value="yes">Yes — top findings become tasks</option>
+                    <option value="no">No — findings only</option>
+                  </select>
+                </label>
+                <label style={{ display: 'block' }}>
+                  <span style={label}>Tasks per run</span>
+                  <select value={tasksPerRun} onChange={(e) => setTasksPerRun(Number(e.target.value))} style={field} disabled={!raiseTasks}>
+                    {[3, 5, 8, 10].map((n) => <option key={n} value={n}>{n} — {n <= 5 ? 'gets done' : 'a full morning'}</option>)}
+                  </select>
+                </label>
+                <label style={{ display: 'block' }}>
+                  <span style={label}>Assign to</span>
+                  <select value={assignTo} onChange={(e) => setAssignTo(e.target.value)} style={field} disabled={!raiseTasks}>
+                    <option value="">Whoever the assistant escalates to</option>
+                    {(assignable ?? []).map((u) => <option key={u._id} value={u._id}>{u.name} ({u.role})</option>)}
+                  </select>
+                </label>
+              </div>
+            </div>
+          )}
 
           <div style={{ background: TINT, border: `1px solid ${PURPLE_LINE}`, borderRadius: 12, padding: '18px 22px' }} className="flex items-center gap-5 flex-wrap">
             <div>

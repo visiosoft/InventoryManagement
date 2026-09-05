@@ -256,6 +256,27 @@ export default function AgentFindings() {
                       24h window closed · template only
                     </span>
                   )}
+                  {/* What has happened since — the badges that turn a list into a
+                      record. A renewal outranks everything else on the card. */}
+                  {f.outcomes?.some((o) => o.kind === 'renewed' || o.kind === 'signed') && (
+                    <span style={{ fontSize: 11.5, fontWeight: 700, color: '#085041', background: '#E1F5EE', border: '1px solid #9FE1CB', borderRadius: 999, padding: '2px 9px' }}>
+                      {f.outcomes.find((o) => o.kind === 'renewed' || o.kind === 'signed')?.detail || 'Renewed'}
+                    </span>
+                  )}
+                  {f.outcomes?.some((o) => o.kind === 'replied') && (
+                    <span style={{ fontSize: 11.5, fontWeight: 600, color: PURPLE_INK, background: BADGE, borderRadius: 999, padding: '2px 9px' }}>
+                      Replied since
+                    </span>
+                  )}
+                  {f.outcomes?.some((o) => o.kind === 'tasked') && (
+                    <Link
+                      to="/tasks"
+                      style={{ fontSize: 11.5, fontWeight: 600, color: MUTED, background: OFF_TINT, borderRadius: 999, padding: '2px 9px' }}
+                      title="A task was raised for this on the board"
+                    >
+                      On the board
+                    </Link>
+                  )}
                   {f.state !== 'open' && (
                     <span style={{ fontSize: 11.5, fontWeight: 600, color: MUTED, background: OFF_TINT, borderRadius: 999, padding: '2px 9px' }}>
                       {f.state}

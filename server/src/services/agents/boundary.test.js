@@ -21,6 +21,9 @@ const SERVER = resolve(HERE, '../../..');
  * and 24-hour checks already live.
  */
 
+/* Not on the list: notifyTaskAssigned. That emails a member of staff about a
+ * task on their own board — the same thing a hand-made task does — and never
+ * reaches a customer. The promise is about customers. */
 const SENDERS = [
    'sendWhatsAppText',
    'sendWhatsAppMedia',

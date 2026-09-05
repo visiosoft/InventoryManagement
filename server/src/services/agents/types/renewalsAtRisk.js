@@ -78,7 +78,53 @@ export default registerAgentType({
    key: 'renewals_at_risk',
    label: 'Renewals at risk',
    describe: 'Contracts ending soon where nobody has had the renewal conversation. Reads the chat and says whether they sound like staying or leaving.',
-   defaults: { withinDays: DEFAULT_WITHIN_DAYS, quietDays: DEFAULT_QUIET_DAYS },
+   defaults: { withinDays: DEFAULT_WITHIN_DAYS, quietDays: DEFAULT_QUIET_DAYS, raiseTasks: true, tasksPerRun: 5 },
+
+   /**
+    * The task a finding becomes. Written as the thing to do, not the thing
+    * that was noticed — a rep opening My Day should not have to work out what
+    * "renewal at risk" means for them this morning.
+    */
+   taskFor(f) {
+      const d = f.data || {};
+      const when = d.daysLeft <= 0 ? `ended ${Math.abs(d.daysLeft)} day(s) ago` : `ends in ${d.daysLeft} day(s)`;
+      return {
+         title: `Ask ${f.title} about renewing — ${d.contractNo} ${when}`,
+         description: [
+            f.detail,
+            f.recommendation?.angle,
+            '',
+            `Contract ${d.contractNo} · AED ${(d.valueAed || 0).toLocaleString('en-GB')} a month · with us ${d.months || 0} months`,
+            d.daysSince != null ? `Nothing said on WhatsApp for ${d.daysSince} days.` : 'No WhatsApp conversation on record.',
+            f.phoneNormalized ? `Number: +${f.phoneNormalized}` : '',
+            '',
+            'Raised by the Renewals at risk agent. Whether they renew is recorded against it automatically.',
+         ].filter((x) => x != null).join('\n'),
+         leadType: 'contract',
+         priority: d.daysLeft <= 7 ? 'high' : 'medium',
+         reason: 'Contract ending with no renewal conversation',
+      };
+   },
+
+   /**
+    * Did they renew? A contract for the same customer that started after we
+    * pointed at them. Checked against the ledger, not against anything a
+    * person typed, so it cannot be forgotten and cannot be fudged.
+    */
+   outcomeFor(w, { contractsByCustomer }) {
+      if (!w.subjectId) return null;
+      const later = (contractsByCustomer.get(String(w.subjectId)) || [])
+         .filter((c) => ['active', 'pending_signature'].includes(c.status))
+         .filter((c) => new Date(c.createdAt || c.startDate) > new Date(w.since))
+         .sort((a, b) => new Date(b.createdAt || b.startDate) - new Date(a.createdAt || a.startDate))[0];
+      if (!later) return null;
+      return {
+         kind: 'renewed',
+         at: later.createdAt || later.startDate,
+         detail: `Renewed on ${later.contractNo}`,
+         valueAed: later.leasedPrice || later.rate || w.valueAed,
+      };
+   },
    stages: [
       { key: 'collect', label: 'Read contracts' },
       { key: 'match', label: 'Match chats' },
@@ -132,7 +178,9 @@ export default registerAgentType({
          if (latest && new Date(latest) > new Date(c.endDate)) continue;
 
          const key = phoneByCustomer.get(String(c.customer));
-         const customer = key ? people.byCustomer.get(key) : null;
+         // The customer by id, so one with no phone on record still has a
+         // name — a task called "Ask PB-2026-0341 about renewing" helps nobody.
+         const customer = people.customerById.get(String(c.customer)) || null;
          if (customer?.unsubscribed) continue;
 
          const thread = key ? threadByKey.get(key) : null;
@@ -149,7 +197,7 @@ export default registerAgentType({
          rows.push({
             key: key || `contract:${c.contractNo}`,
             phoneNormalized: thread?._id || '',
-            displayName: customer ? displayNameFor({ customer, phoneNormalized: thread?._id || '' }) : c.contractNo,
+            displayName: customer?.fullName || c.contractNo,
             contract: c, customer, thread,
             daysLeft, silentDays, months,
             monthly: c.leasedPrice || c.rate || 0,

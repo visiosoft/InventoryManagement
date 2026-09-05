@@ -92,6 +92,10 @@ export async function loadPeople() {
       if (!held || (isPlaceholderName(held.fullName) && !isPlaceholderName(l.fullName))) byLead.set(k, l);
    }
 
+   // By id as well as by phone: a contract knows its customer's id, and a
+   // customer with no phone on record is still somebody with a name.
+   const customerById = new Map(customers.map((c) => [String(c._id), c]));
+
    const byCustomer = new Map();
    for (const c of customers) {
       for (const p of [c.phone, ...(c.phones || [])].filter(Boolean)) {
@@ -130,7 +134,7 @@ export async function loadPeople() {
    const summaryByPhone = new Map();
    for (const s of summaries) summaryByPhone.set(s.phoneNormalized, s);
 
-   return { byLead, byCustomer, quotesByCustomer, quotesByLead, contractsByCustomer, priceBySize, summaryByPhone };
+   return { byLead, byCustomer, customerById, quotesByCustomer, quotesByLead, contractsByCustomer, priceBySize, summaryByPhone };
 }
 
 const LIVE_CONTRACT = ['active', 'pending_signature', 'draft'];

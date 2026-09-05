@@ -129,6 +129,11 @@ export default function Agents() {
                     Running
                   </span>
                 )}
+                {a.raisesTasks && (
+                  <span style={{ fontSize: 10.5, fontWeight: 600, color: PURPLE_INK, background: BADGE, borderRadius: 999, padding: '2px 8px' }} title="Its top findings become tasks on the board, due today">
+                    Raises tasks
+                  </span>
+                )}
                 {!a.enabled && (
                   <span style={{ fontSize: 10.5, fontWeight: 600, color: MUTED, background: OFF_TINT, borderRadius: 999, padding: '2px 8px' }}>
                     Paused
@@ -171,6 +176,21 @@ export default function Agents() {
                       ? `${a.windowClosed} need a template`
                       : 'waiting for a person'}
               </div>
+              {/* What came of it. This line is the whole argument for the
+                  agent: not what it found, but what happened next. */}
+              {(a.outcomes.tasked || a.outcomes.replied || a.outcomes.renewed || a.outcomes.signed) > 0 && (
+                <div style={{ marginTop: 6, fontSize: 11.5, fontVariantNumeric: 'tabular-nums' }}>
+                  {[
+                    a.outcomes.tasked && `${a.outcomes.tasked} tasked`,
+                    a.outcomes.replied && `${a.outcomes.replied} replied`,
+                    a.outcomes.renewed && `${a.outcomes.renewed} renewed`,
+                    a.outcomes.signed && `${a.outcomes.signed} signed`,
+                  ].filter(Boolean).join(' · ')}
+                  {a.outcomes.keptAed > 0 && (
+                    <span style={{ color: '#0F6E56', fontWeight: 600 }}> · {money(a.outcomes.keptAed)}/mo kept</span>
+                  )}
+                </div>
+              )}
             </div>
 
             <div>
