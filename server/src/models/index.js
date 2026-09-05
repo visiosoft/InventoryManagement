@@ -1946,6 +1946,23 @@ agentOutcomeSchema.index({ definition: 1, key: 1, kind: 1 }, { unique: true });
 agentOutcomeSchema.index({ definition: 1, at: -1 });
 export const AgentOutcome = model('AgentOutcome', agentOutcomeSchema);
 
+/* ── The assistant ─────────────────────────────────────────────────────────
+ *
+ * The chat in the corner of every page. It answers only from tools the
+ * server runs against this database; the prompt here steers tone and
+ * priorities, not facts. Same singleton shape as the WhatsApp assistant. */
+const assistantConfigSchema = new Schema({
+  enabled: { type: Boolean, default: true },
+  systemPrompt: { type: String, default: '' },
+  // '' follows the server's model. Tool calling needs a model that supports it.
+  model: { type: String, default: '' },
+  // How many tool rounds one question may take before it has to answer.
+  maxToolRounds: { type: Number, default: 4 },
+  // Who may use it. Reports are admin and accounts; this sees the same data.
+  roles: { type: [String], default: ['admin', 'accounts'] },
+}, { timestamps: true });
+export const AssistantConfig = model('AssistantConfig', assistantConfigSchema);
+
 export const AiBotConfig = model('AiBotConfig', aiBotConfigSchema);
 export const AiBotThread = model('AiBotThread', aiBotThreadSchema);
 

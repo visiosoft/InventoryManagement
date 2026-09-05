@@ -33,6 +33,7 @@ import documentRoutes from './routes/documents.js';
 import reportRoutes from './routes/reports.js';
 import aiReportRoutes from './routes/aiReports.js';
 import agentRoutes from './routes/agents.js';
+import assistantRoutes from './routes/assistant.js';
 import { runDueAgents } from './services/agents/schedule.js';
 import leadRoutes from './routes/leads.js';
 import integrationRoutes from './routes/integrations.js';
@@ -184,6 +185,7 @@ app.use('/api/reports', requireAuth, reportRoutes);
 // Asking for a report in plain English. Admin-only inside the router itself.
 app.use('/api/ai-reports', requireAuth, aiReportRoutes);
 app.use('/api/agents', requireAuth, agentRoutes);
+app.use('/api/assistant', requireAuth, assistantRoutes);
 // A lead is client information too, and accounts have no leads screen at all.
 app.use('/api/leads', requireAuth, accountsReadOnly, leadRoutes);
 app.use(

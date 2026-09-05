@@ -99,6 +99,39 @@ export async function chatJson({ system, messages = [], temperature = 0, maxToke
  * which reads as working code right up to the point where every field is
  * undefined.)
  */
+/**
+ * One turn of a conversation in which the model may ask for tools.
+ *
+ * The other calls in this file force JSON and never let the model do anything
+ * but answer. This one hands it a closed list of tools and returns either the
+ * calls it wants made or its final text. The caller runs the tools — the model
+ * never touches data itself, which is what makes "never guess" a property of
+ * the code rather than a line in a prompt.
+ *
+ * @returns {{ content: string, toolCalls: Array<{id, name, args}>, message: object, usage }}
+ */
+export async function chatWithTools({ system, messages = [], tools = [], model, temperature = 0, maxTokens = 700, timeout = 45000, toolChoice = 'auto' }) {
+    if (!openaiConfigured()) throw new Error('OpenAI is not configured');
+    const { data } = await axios.post(
+        `${API_BASE}/chat/completions`,
+        {
+            model: model || openaiModel(),
+            messages: [{ role: 'system', content: system }, ...messages],
+            ...(tools.length ? { tools, tool_choice: toolChoice } : {}),
+            temperature,
+            max_tokens: maxTokens,
+        },
+        { headers: headers(), timeout },
+    );
+    const message = data?.choices?.[0]?.message || {};
+    const toolCalls = (message.tool_calls || []).map((c) => {
+        let args = {};
+        try { args = JSON.parse(c.function?.arguments || '{}'); } catch { args = {}; }
+        return { id: c.id, name: c.function?.name || '', args };
+    });
+    return { content: String(message.content || ''), toolCalls, message, usage: data?.usage || null };
+}
+
 export async function visionJson({ system, imageBase64, mimeType, prompt = '', maxTokens = 500, timeout = 45000, model }) {
     const { data } = await axios.post(
         `${API_BASE}/chat/completions`,

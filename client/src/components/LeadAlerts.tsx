@@ -198,7 +198,8 @@ export default function LeadAlerts() {
   return (
     <div
       className="fixed z-50 flex flex-col gap-2"
-      style={{ right: 16, bottom: 16, maxWidth: 'calc(100vw - 32px)' }}
+      // Above the assistant's launcher, which owns the corner itself.
+         style={{ right: 16, bottom: 72, maxWidth: 'calc(100vw - 32px)' }}
       role="status"
       aria-live="polite"
     >

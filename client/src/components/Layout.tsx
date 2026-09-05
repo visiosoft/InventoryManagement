@@ -8,6 +8,7 @@ import GlobalSearch from './GlobalSearch'
 import LeadAlerts from './LeadAlerts'
 import { SiteSwitcher } from './SiteSwitcher'
 import { SiteGate } from './SiteGate'
+import AssistantWidget from './AssistantWidget'
 import { cn } from '../lib/utils'
 import { isSalesRepRole } from '../lib/roles'
 
@@ -78,6 +79,7 @@ const profileMenuGroups = [
       { to: '/settings/agreement', label: 'Agreement Template', icon: FileText, perm: 'settings', adminOnly: false },
       { to: '/settings/automation', label: 'Automation Rules', icon: RefreshCw, perm: 'settings', adminOnly: false },
       { to: '/settings/ai', label: 'AI Assistant', icon: Bot, perm: 'settings', adminOnly: false },
+      { to: '/settings/assistant', label: 'Ask the system', icon: Sparkles, perm: 'settings', adminOnly: true },
       { to: '/settings/lead-distribution', label: 'Lead Distribution', icon: Shuffle, perm: 'settings', adminOnly: true },
       { to: '/settings/sent-emails', label: 'Sent Emails', icon: Mail, perm: 'settings', adminOnly: true },
       { to: '/marketing', label: 'Marketing', icon: Megaphone, perm: 'settings', adminOnly: true },
@@ -973,6 +975,9 @@ export default function Layout() {
       {/* Outside the page, so a rep is told about a new lead whichever screen
           they happen to be on. */}
       <LeadAlerts />
+      {/* The corner assistant. A sibling of the alerts, not inside the page,
+          so it is on every screen and above every overlay. */}
+      <AssistantWidget />
     </div>
   )
 }

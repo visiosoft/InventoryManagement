@@ -29,6 +29,8 @@ const SITE_SCOPED_PATHS = [
   '/payments',
   '/reports',
   '/floor-plans',
+  // The assistant answers for the facility that is selected, like the reports do.
+  '/assistant',
 ]
 
 const isSiteScoped = (url = '') => {
