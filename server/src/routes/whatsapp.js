@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { mediaFromRaw } from './whatsappMedia.js';
 import { wentQuiet, remindAt, PRESETS } from '../services/chatFollowUp.js';
 import { WhatsAppMessage, Lead, Customer, User, AiBotThread, WhatsAppLabel, WhatsAppChatLabel, MessageTemplate } from '../models/index.js';
-import { sendWhatsAppText, sendWhatsAppMedia, sendWhatsAppLocation, uploadWhatsAppMedia, whatsappMediaKind, whatsappSendConfigured, whatsappSendMissing } from '../services/whatsapp.js';
+import { sendWhatsAppText, sendWhatsAppMedia, sendWhatsAppLocation, uploadWhatsAppMedia, whatsappMediaKind, whatsappSendConfigured, whatsappSendMissing, listWhatsAppTemplates, sendWhatsAppTemplate } from '../services/whatsapp.js';
 import { pauseBotForHuman } from '../services/aiBot.js';
 import { containerMismatch, needsRemux, webmToOggOpus } from '../services/audioRemux.js';
 import multer from 'multer';
@@ -943,6 +943,114 @@ router.post('/send', async (req, res) => {
  * to know whether a given reply carries a file, and so the URL is resolved
  * against what is actually stored rather than what the page happened to render.
  */
+/**
+ * The approved templates this account can send.
+ *
+ * Quick replies are free text, so outside the 24-hour window they bounce —
+ * which is exactly when a rep most wants to reach somebody. These are the only
+ * messages Meta will deliver to a chat that has gone cold, so the console
+ * offers them separately and only in their APPROVED state: anything still in
+ * review is rejected on send, and a greyed-out button is a kinder answer than
+ * an API error after the fact.
+ *
+ * `variables` names the {{1}}, {{2}} … the body expects, so the console can ask
+ * for them by position before sending rather than after Meta counts them.
+ */
+router.get('/templates', async (req, res) => {
+    try {
+        const out = await listWhatsAppTemplates({ force: req.query.refresh === '1' });
+        const approved = (out.templates || [])
+            .filter((t) => String(t.status).toUpperCase() === 'APPROVED')
+            .map((t) => ({
+                name: t.name,
+                language: t.language,
+                category: t.category,
+                bodyText: t.bodyText,
+                variableCount: t.variableCount,
+                // A friendlier label than the raw snake_case name, which is
+                // what Meta stores and what nobody wants to read in a list.
+                label: t.name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+            }))
+            .sort((a, b) => a.label.localeCompare(b.label));
+        res.json({ configured: out.configured, error: out.error || '', templates: approved });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * Send one approved template into a conversation.
+ *
+ * Recorded in the thread like any other outbound message. Campaigns send
+ * templates without doing this, which is why a campaign send never appears in
+ * the inbox — here it must, because the rep is standing in the conversation
+ * they just wrote into and the next person to open it needs to see what was
+ * already said.
+ */
+router.post('/send-template', async (req, res) => {
+    try {
+        if (!whatsappSendConfigured()) {
+            return res.status(400).json({ error: `WhatsApp not configured. Missing: ${whatsappSendMissing().join(', ')}` });
+        }
+        const to = String(req.body?.to || '').trim();
+        const name = String(req.body?.name || '').trim();
+        if (!to) return res.status(400).json({ error: 'to is required' });
+        if (!name) return res.status(400).json({ error: 'A template name is required' });
+
+        const language = String(req.body?.language || 'en').trim() || 'en';
+        const variables = Array.isArray(req.body?.variables)
+            ? req.body.variables.map((v) => String(v ?? '').trim())
+            : [];
+
+        // Checked here rather than left to Meta: "(#132000) number of
+        // parameters does not match" tells a rep nothing about which box they
+        // left empty.
+        const known = await listWhatsAppTemplates().catch(() => ({ templates: [] }));
+        const meta = (known.templates || []).find((t) => t.name === name);
+        if (meta) {
+            if (String(meta.status).toUpperCase() !== 'APPROVED') {
+                return res.status(400).json({ error: `"${name}" is ${String(meta.status).toLowerCase()}, not approved — Meta will not deliver it yet.` });
+            }
+            if (variables.length !== meta.variableCount) {
+                return res.status(400).json({ error: `"${name}" needs ${meta.variableCount} value(s); ${variables.length} given.` });
+            }
+            if (variables.some((v) => !v)) {
+                return res.status(400).json({ error: 'Every placeholder needs a value — Meta rejects a blank one.' });
+            }
+        }
+
+        const result = await sendWhatsAppTemplate({ to, name, language, variables });
+
+        /* What the customer will actually read, so the thread shows the words
+           rather than a template name nobody outside this office knows. */
+        const filled = variables.reduce(
+            (text, value, i) => text.replaceAll(`{{${i + 1}}}`, value),
+            String(meta?.bodyText || '')
+        );
+
+        const phoneNormalized = String(to).replace(/\D/g, '');
+        await WhatsAppMessage.create({
+            messageId: result?.messages?.[0]?.id || '',
+            phone: to,
+            phoneNormalized,
+            direction: 'outbound',
+            type: 'template',
+            text: filled || `Template: ${name}`,
+            status: 'sent',
+            occurredAt: new Date(),
+            sentByAi: false,
+            raw: { template: { name, language, variables }, sendResult: result },
+        });
+
+        // A person has taken this conversation on, the same as any typed send.
+        await pauseBotForHuman(phoneNormalized);
+
+        res.json({ ok: true, sent: name, text: filled });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 router.post('/send-quick-reply', async (req, res) => {
     try {
         if (!whatsappSendConfigured()) {

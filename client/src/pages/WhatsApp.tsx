@@ -65,6 +65,23 @@ type MessageTemplate = {
   mediaKind?: '' | 'image' | 'video' | 'audio' | 'document' | 'location'
 }
 
+/* One of the templates Meta has approved for this WhatsApp account.
+ *
+ * Not the same thing as a quick reply above: a quick reply is free text we
+ * compose, which Meta only delivers inside 24 hours of the customer's last
+ * message. A template is wording Meta has vetted in advance, and it is the
+ * only kind of message that reaches somebody who has gone quiet. */
+type ApprovedTemplate = {
+  name: string
+  label: string
+  language: string
+  category: string
+  bodyText: string
+  // How many {{1}}, {{2}} … the body expects. Meta rejects the send outright
+  // if the count is wrong, so the panel asks for them before sending.
+  variableCount: number
+}
+
 const MUTE_KEY = 'wa_inbox_muted'
 const BLINK_MS = 4000
 
@@ -1576,6 +1593,12 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     return () => document.removeEventListener('mousedown', away)
   }, [notifOpen])
   const [qrOpen, setQrOpen] = useState(false)
+  /* Which half of the side panel is showing.
+   *
+   * Quick replies are free text and templates are not, and which one a rep
+   * needs is decided entirely by whether the 24-hour window is still open —
+   * so they share one panel rather than competing for the same corner. */
+  const [panelTab, setPanelTab] = useState<'quick' | 'templates'>('quick')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [setupOpen, setSetupOpen] = useState(false)
   // Renaming the person this thread belongs to, without leaving the console.
@@ -1694,6 +1717,25 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     () => (templates ?? []).filter((t) => (t.whatsappBody ?? '').trim().length > 0),
     [templates]
   )
+
+  /* The templates Meta has approved.
+   *
+   * Fetched only while the panel is open — it is a live call out to Meta on a
+   * ten-minute cache, and most of the time nobody is looking at this list. */
+  const { data: waTemplates, isLoading: waTemplatesLoading, error: waTemplatesError } = useQuery<{
+    configured: boolean
+    error: string
+    templates: ApprovedTemplate[]
+  }>({
+    queryKey: ['whatsapp-templates'],
+    queryFn: () => api.get('/whatsapp/templates').then((r) => r.data),
+    enabled: qrOpen && panelTab === 'templates',
+    staleTime: 10 * 60_000,
+  })
+
+  // Which template is expanded to fill its {{1}}, {{2}} … in, and with what.
+  const [openTemplate, setOpenTemplate] = useState('')
+  const [templateVars, setTemplateVars] = useState<Record<string, string[]>>({})
 
   // Grouped for the panel, keeping the server's order inside each group.
   const quickReplyGroups = useMemo(() => {
@@ -2221,6 +2263,52 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     onSuccess: () => { setSendErr(''); stickToBottom.current = true; onSent() },
     onError: (e) => setSendErr(apiError(e)),
   })
+
+  /* Send an approved template.
+   *
+   * The one send that still works after the window has closed. Recorded in the
+   * thread by the server, so the next person to open the chat sees the wording
+   * that actually went out rather than a gap. */
+  const sendTemplate = useMutation({
+    mutationFn: (t: { name: string; language: string; variables: string[] }) =>
+      api.post('/whatsapp/send-template', { to: selectedPhone, ...t }).then((r) => r.data),
+    onSuccess: () => {
+      setSendErr('')
+      setOpenTemplate('')
+      stickToBottom.current = true
+      onSent()
+    },
+    onError: (e) => setSendErr(apiError(e)),
+  })
+
+  /* What to put in {{1}} before anybody types.
+   *
+   * Every template that takes a variable opens with the person's first name,
+   * and it is already on screen — asking a rep to retype it is the kind of
+   * friction that gets a template sent as "Hi {{1}}". Only a real name is
+   * used: the placeholder the sync invents would be worse than blank. */
+  const templatePrefill = useMemo(() => {
+    const full = (selectedConvo?.customer?.fullName || selectedConvo?.lead?.fullName || '').trim()
+    if (!full || isPlaceholderName(full)) return ''
+    return full.split(/\s+/)[0]
+  }, [selectedConvo?.customer?.fullName, selectedConvo?.lead?.fullName])
+
+  const varsFor = (t: ApprovedTemplate) => {
+    const held = templateVars[t.name]
+    if (held) return held
+    return Array.from({ length: t.variableCount }, (_, i) => (i === 0 ? templatePrefill : ''))
+  }
+
+  const setVar = (name: string, i: number, value: string, count: number) =>
+    setTemplateVars((prev) => {
+      const next = [...(prev[name] ?? Array.from({ length: count }, (_, n) => (n === 0 ? templatePrefill : '')))]
+      next[i] = value
+      return { ...prev, [name]: next }
+    })
+
+  /** The wording as the customer will read it, placeholders filled in. */
+  const previewOf = (t: ApprovedTemplate, values: string[]) =>
+    values.reduce((text, v, i) => text.replaceAll(`{{${i + 1}}}`, v || `{{${i + 1}}}`), t.bodyText)
 
   function sendText(body: string) {
     const text = body.trim()
@@ -3183,11 +3271,11 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                 or ask them to message first.
                 <button
                   type="button"
-                  onClick={() => setQrOpen(true)}
+                  onClick={() => { setPanelTab('templates'); setQrOpen(true) }}
                   className="ml-1 underline cursor-pointer"
-                  style={{ color: '#6B4500', background: 'none', border: 'none', font: 'inherit', padding: 0 }}
+                  style={{ color: '#6B4500', background: 'none', border: 'none', font: 'inherit', padding: 0, fontWeight: 700 }}
                 >
-                  Open quick replies
+                  Open approved templates
                 </button>
               </div>
             </div>
@@ -3398,17 +3486,69 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
             className="wa-qr flex flex-col min-h-0"
             style={{ flex: '0 0 320px', background: '#fff', borderLeft: `1px solid ${LINE}` }}
           >
-            <div className="shrink-0 flex items-start gap-2 px-4 py-3.5" style={{ borderBottom: `1px solid ${LINE}` }}>
-              <div className="min-w-0 flex-1">
-                <h2 style={{ fontFamily: "'Bricolage Grotesque', serif", fontWeight: 700, fontSize: 17, color: INK }}>Quick replies</h2>
-                <p style={{ fontSize: 11.5, color: FAINT_INK }}>Tap one to send it</p>
+            <div className="shrink-0 px-4 py-3.5" style={{ borderBottom: `1px solid ${LINE}` }}>
+              <div className="flex items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <h2 style={{ fontFamily: "'Bricolage Grotesque', serif", fontWeight: 700, fontSize: 17, color: INK }}>
+                    {panelTab === 'quick' ? 'Quick replies' : 'Approved templates'}
+                  </h2>
+                  <p style={{ fontSize: 11.5, color: FAINT_INK }}>
+                    {panelTab === 'quick'
+                      ? 'Tap one to send it'
+                      : replyWindow.open
+                        ? 'For chats outside the 24-hour window'
+                        : 'The only messages Meta will deliver now'}
+                  </p>
+                </div>
+                <button type="button" onClick={() => setQrOpen(false)} className="cursor-pointer p-1" style={{ color: FAINT_INK }} aria-label="Close panel">
+                  <X size={16} />
+                </button>
               </div>
-              <button type="button" onClick={() => setQrOpen(false)} className="cursor-pointer p-1" style={{ color: FAINT_INK }} aria-label="Close quick replies">
-                <X size={16} />
-              </button>
+
+              {/* Which list is the right one is not a preference — the window
+                  decides it, so the closed state is marked here rather than
+                  left for a rep to remember. */}
+              <div className="mt-2.5 flex gap-1 p-0.5" style={{ background: '#F3EEFB', borderRadius: 10 }}>
+                {([['quick', 'Quick replies'], ['templates', 'Templates']] as const).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setPanelTab(id)}
+                    className="flex-1 cursor-pointer py-1.5"
+                    style={{
+                      fontSize: 12, fontWeight: 700, borderRadius: 8,
+                      background: panelTab === id ? '#fff' : 'transparent',
+                      color: panelTab === id ? '#4A1FA0' : FAINT_INK,
+                      boxShadow: panelTab === id ? '0 1px 2px rgba(20,8,31,.12)' : undefined,
+                    }}
+                  >
+                    {label}
+                    {id === 'quick' && replyWindow.known && !replyWindow.open && (
+                      <span title="Free text will not be delivered right now" style={{ marginLeft: 4, color: '#B45309' }}>!</span>
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
 
+            {panelTab === 'quick' && (
             <div className="wa-scroll flex-1 min-h-0 px-3 py-3 space-y-3">
+              {replyWindow.known && !replyWindow.open && (
+                <p
+                  className="px-3 py-2"
+                  style={{ background: '#FFF7E6', border: '1px solid #F3DFB0', borderRadius: 10, fontSize: 11.5, color: '#6B4500' }}
+                >
+                  They last wrote over 24 hours ago, so none of these will be delivered.{' '}
+                  <button
+                    type="button"
+                    onClick={() => setPanelTab('templates')}
+                    className="underline cursor-pointer"
+                    style={{ color: '#6B4500', background: 'none', border: 'none', font: 'inherit', padding: 0, fontWeight: 700 }}
+                  >
+                    Use a template
+                  </button>
+                </p>
+              )}
               {quickReplies.length === 0 ? (
                 <p className="px-1 py-2" style={{ fontSize: 12, color: FAINT_INK }}>
                   No quick replies yet. Add them under{' '}
@@ -3523,6 +3663,107 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                 </div>
               </div>
             </div>
+            )}
+
+            {panelTab === 'templates' && (
+              <div className="wa-scroll flex-1 min-h-0 px-3 py-3 space-y-2.5">
+                {replyWindow.open && (
+                  <p className="px-1" style={{ fontSize: 11.5, color: FAINT_INK }}>
+                    They wrote within the last 24 hours, so an ordinary reply still reaches
+                    them — a template is not needed yet.
+                  </p>
+                )}
+
+                {waTemplatesLoading && (
+                  <p className="px-1 py-2" style={{ fontSize: 12, color: FAINT_INK }}>Loading templates from Meta…</p>
+                )}
+
+                {/* Meta is the authority on this list, not us: if it cannot be
+                    fetched, saying so beats an empty panel that reads like
+                    "there are no templates". */}
+                {!waTemplatesLoading && (waTemplatesError || waTemplates?.error) && (
+                  <p className="px-3 py-2" style={{ background: '#FEF2F2', border: '1px solid #FBD5D5', borderRadius: 10, fontSize: 11.5, color: '#8A1C1C' }}>
+                    Could not load templates: {waTemplatesError ? apiError(waTemplatesError) : waTemplates?.error}
+                  </p>
+                )}
+
+                {!waTemplatesLoading && !waTemplatesError && !waTemplates?.error && (waTemplates?.templates.length ?? 0) === 0 && (
+                  <p className="px-1 py-2" style={{ fontSize: 12, color: FAINT_INK }}>
+                    No approved templates on this WhatsApp account yet. They are written and
+                    approved in Meta Business Manager, then appear here.
+                  </p>
+                )}
+
+                {(waTemplates?.templates ?? []).map((t) => {
+                  const values = varsFor(t)
+                  const ready = values.every((v) => v.trim().length > 0)
+                  const expanded = openTemplate === t.name
+                  return (
+                    <div key={t.name} style={{ border: `1px solid ${LINE}`, borderRadius: 12, overflow: 'hidden' }}>
+                      <button
+                        type="button"
+                        onClick={() => setOpenTemplate(expanded ? '' : t.name)}
+                        className="w-full flex items-start gap-2 px-3 py-2.5 text-left cursor-pointer"
+                        style={{ background: expanded ? '#F7F3FF' : '#fff' }}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div style={{ fontSize: 12.5, fontWeight: 700, color: '#4A1FA0' }}>
+                            {t.label}
+                            {t.variableCount > 0 && (
+                              <span
+                                className="ml-1.5 inline-flex items-center rounded-full px-1.5"
+                                style={{ background: '#EDE5FF', fontSize: 9.5, fontWeight: 800 }}
+                                title={`Needs ${t.variableCount} value(s) before it can be sent`}
+                              >
+                                {t.variableCount} to fill
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-0.5" style={{ fontSize: 12, color: MUTED_INK, whiteSpace: 'pre-wrap' }}>
+                            {previewOf(t, values)}
+                          </p>
+                        </div>
+                        <ChevronDown
+                          size={15}
+                          className="shrink-0 mt-0.5"
+                          style={{ color: '#4A1FA0', transform: expanded ? 'rotate(180deg)' : undefined, transition: 'transform .15s' }}
+                        />
+                      </button>
+
+                      {expanded && (
+                        <div className="px-3 pb-3 pt-2 space-y-2" style={{ borderTop: `1px solid ${LINE}` }}>
+                          {values.map((v, i) => (
+                            <label key={i} className="block">
+                              <span style={{ fontSize: 11, fontWeight: 700, color: FAINT_INK }}>
+                                {`{{${i + 1}}}`}{i === 0 ? ' · their name' : ''}
+                              </span>
+                              <input
+                                value={v}
+                                onChange={(e) => setVar(t.name, i, e.target.value, t.variableCount)}
+                                className="mt-0.5 w-full px-3 py-1.5 text-[12.5px] focus:outline-none"
+                                style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', borderRadius: 10, color: INK }}
+                                placeholder={i === 0 ? 'Ahmed' : 'Value'}
+                              />
+                            </label>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => sendTemplate.mutate({ name: t.name, language: t.language, variables: values })}
+                            disabled={!selectedPhone || !ready || sendTemplate.isPending}
+                            className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-white cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed"
+                            style={{ fontSize: 12, fontWeight: 700, background: '#5B2BC9' }}
+                            title={ready ? 'Send this template now' : 'Fill every placeholder first — Meta rejects a blank one'}
+                          >
+                            <Send size={12} />
+                            {sendTemplate.isPending ? 'Sending…' : 'Send template'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </aside>
         )}
       </div>
