@@ -3,6 +3,7 @@ import { requireAdmin } from '../middleware/auth.js';
 import { AgentDefinition, AgentRun, AgentFinding } from '../models/index.js';
 import { agentTypes, agentType, runAgent, estimateCost } from '../services/agents/engine.js';
 import { loadThreads } from '../services/agents/shared.js';
+import { listWhatsAppTemplates } from '../services/whatsapp.js';
 import { WhatsAppMessage, Lead } from '../models/index.js';
 
 // Registers every agent type. Without it the catalogue is empty.
@@ -259,7 +260,87 @@ router.get('/:key/findings', async (req, res) => {
          const c = f.data?.category || 'all';
          byCategory[c] = (byCategory[c] || 0) + 1;
       }
-      res.json({ findings: visible, counts: { total: visible.length, byCategory } });
+      res.json({
+         findings: await withTemplateText(visible),
+         counts: { total: visible.length, byCategory },
+      });
+   } catch (e) {
+      res.status(500).json({ error: e.message });
+   }
+});
+
+/**
+ * The wording a finding's recommendation would actually produce.
+ *
+ * Resolved when the findings are read rather than stored on them, because the
+ * approved templates live at Meta and can change under us — a body stored at
+ * judging time would quietly drift from what would really be sent. The server
+ * fills the variables from its own data; the model only ever named which piece
+ * of data goes where.
+ */
+async function withTemplateText(findings) {
+   const wanted = new Set(findings.map((f) => f.recommendation?.template).filter(Boolean));
+   if (!wanted.size) return findings;
+
+   const wa = await listWhatsAppTemplates().catch(() => ({ templates: [] }));
+   const byName = new Map((wa.templates || []).map((t) => [t.name, t]));
+
+   return findings.map((f) => {
+      const name = f.recommendation?.template;
+      const meta = name ? byName.get(name) : null;
+      if (!meta) return f;
+
+      const firstName = String(f.title || '').trim().split(/\s+/)[0];
+      const fill = {
+         first_name: firstName && !firstName.startsWith('+') ? firstName : 'there',
+         offer_days: '7',
+         unit_size: f.data?.unitSize || '',
+         owner_name: f.data?.ownerName || '',
+      };
+      const values = (f.recommendation.variables || []).map((v) => fill[v.source] ?? '');
+      const text = values.reduce((body, v, i) => body.replaceAll(`{{${i + 1}}}`, v), meta.bodyText || '');
+
+      return { ...f, recommendation: { ...f.recommendation, text, templateBody: meta.bodyText } };
+   });
+}
+
+/**
+ * The findings as a spreadsheet.
+ *
+ * The escape hatch that makes this useful before anybody has built a workflow
+ * around it — and the honest answer to "can I just look at the list".
+ */
+router.get('/:key/export.csv', async (req, res) => {
+   try {
+      const def = await AgentDefinition.findOne({ key: req.params.key }).select('_id name').lean();
+      if (!def) return res.status(404).json({ error: 'No such agent' });
+
+      const findings = await AgentFinding.find({ definition: def._id, state: { $ne: 'dismissed' } })
+         .sort({ score: -1 }).lean();
+      const withText = await withTemplateText(findings);
+
+      const head = ['Rank', 'Name', 'Phone', 'Category', 'Score', 'Estimated AED/month', 'Value basis',
+         'Days silent', 'Reply window', 'What went wrong', 'Angle', 'Template', 'Owner', 'State'];
+      // Excel reads a leading = + - @ as a formula, so a cell never starts with one.
+      const cell = (v) => {
+         const text = String(v ?? '');
+         const safe = /^[=+\-@]/.test(text) ? `'${text}` : text;
+         return `"${safe.replace(/"/g, '""')}"`;
+      };
+      const rows = withText.map((f, i) => [
+         i + 1, f.title, f.phoneNormalized, f.data?.categoryLabel || '', f.score,
+         f.data?.valueAed ?? '', f.data?.valueBasis || '',
+         f.data?.daysSince ?? f.data?.waitedDays ?? '',
+         f.data?.windowOpen ? 'open' : 'closed',
+         f.detail || '', f.recommendation?.angle || '', f.recommendation?.template || '',
+         f.data?.ownerName || '', f.state,
+      ].map(cell).join(','));
+
+      const name = `${def.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-findings.csv`;
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+      // The BOM is what makes Excel read the Arabic names and the dirham sign.
+      res.send(`\uFEFF${[head.map(cell).join(','), ...rows].join('\r\n')}`);
    } catch (e) {
       res.status(500).json({ error: e.message });
    }

@@ -93,6 +93,10 @@ const reportItems = [
      permission: it can reach revenue and every rep's numbers, and the server
      enforces the same rule. Accounts are in because the numbers they are asked
      for are the ones they already work from. */
+  /* Admin only, and by role rather than a permission module: a module key can
+     be granted to a rep, and these lists carry every lead's estimated value —
+     and, before long, an assessment of the reps themselves. */
+  { to: '/agents', label: 'Agents', icon: Bot, perm: '', roles: ['admin'] },
   { to: '/reports/ask', label: 'Ask for a report', icon: Sparkles, perm: '', roles: ['admin', 'accounts'] },
   { to: '/reports/rates', label: 'Actual vs Leased', icon: Wallet, perm: 'reports_units' },
   { to: '/reports/conversations', label: 'Daily Conversations', icon: MessageCircle, perm: 'reports_conversations' },

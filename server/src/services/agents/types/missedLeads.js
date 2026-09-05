@@ -131,7 +131,14 @@ export default registerAgentType({
    key: 'missed_leads',
    label: 'Missed leads',
    describe: 'People who never became customers — never answered, quoted but never signed, asked but never quoted, went quiet, or moved out. Reads each conversation and says how to re-approach them.',
-   defaults: { quietDays: QUIET_DAYS, minInbound: 1 },
+   /* The scope the create screen offers. `categories` and `minValueAed` are
+    * applied in collect, before anything is judged, so narrowing the scope
+    * makes a run cheaper rather than just shorter. */
+   defaults: {
+      quietDays: QUIET_DAYS,
+      categories: ['never_answered', 'quoted_unsigned', 'never_quoted', 'went_quiet', 'former_customer'],
+      minValueAed: 0,
+   },
    stages: [
       { key: 'collect', label: 'Read conversations' },
       { key: 'match', label: 'Match people' },
@@ -141,6 +148,11 @@ export default registerAgentType({
 
    async collect(ctx) {
       const { config, report, now } = ctx;
+
+      const wanted = Array.isArray(config.categories) && config.categories.length
+         ? new Set(config.categories)
+         : null;
+      const minValue = Number(config.minValueAed || 0);
 
       const threads = await loadThreads({ from: config.from, to: config.to });
       report.stage('collect', { total: threads.length, done: threads.length });
@@ -194,7 +206,20 @@ export default registerAgentType({
 
          const category = categorise(row, { now, quietDays: Number(config.quietDays ?? QUIET_DAYS) });
          if (!category) continue;
+         if (wanted && !wanted.has(category)) continue;
          row.category = category;
+
+         /* Valued here rather than at judging time, so a minimum value can
+            drop somebody before a model is asked about them. An unknown value
+            is null, and null is not below a threshold — it is unknown, and
+            dropping those would silently hide every lead who never said what
+            size they needed, which is most of them. */
+         row.value = estimateValue(
+            { lead: row.lead, quote: row.quote, contracts: row.contracts },
+            people.priceBySize,
+         );
+         if (minValue > 0 && row.value.aed !== null && row.value.aed < minValue) continue;
+
          /* Only re-judged when the conversation moved, the category flipped, or
             the template catalogue changed under it. */
          row.cacheKey = [t.lastMessageId || t.lastAt, category, ctx.templates.length].join('|');
@@ -232,7 +257,7 @@ export default registerAgentType({
 
    async judge(row, ctx) {
       const { now, templates, definition } = ctx;
-      const value = estimateValue(
+      const value = row.value || estimateValue(
          { lead: row.lead, quote: row.quote, contracts: row.contracts },
          ctx.people.priceBySize,
       );
