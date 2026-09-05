@@ -33,6 +33,7 @@ import documentRoutes from './routes/documents.js';
 import reportRoutes from './routes/reports.js';
 import aiReportRoutes from './routes/aiReports.js';
 import agentRoutes from './routes/agents.js';
+import { runDueAgents } from './services/agents/schedule.js';
 import leadRoutes from './routes/leads.js';
 import integrationRoutes from './routes/integrations.js';
 import whatsappDiagnosticsRoutes from './routes/whatsappDiagnostics.js';
@@ -387,6 +388,24 @@ async function start() {
   // backup scheduler: a minute tick, a fixed local hour, and a stored row that
   // makes it idempotent — a restart at 08:30 cannot produce a second digest,
   // because the day is unique and ensureDigest returns the one already there.
+  /* Agents whose owner asked for them on a schedule.
+   *
+   * Every schedule is off until somebody switches it on, so this normally does
+   * nothing at all. Idempotent through each agent's lastScheduledDay, claimed
+   * before the sweep starts rather than after — a run takes minutes, and this
+   * tick would otherwise start it again while it was still going.
+   *
+   * When the multi-tenant work lands this is the line that becomes an everyOrg
+   * sweep; nothing else about an agent has to know. */
+  setInterval(async () => {
+    try {
+      const out = await runDueAgents();
+      if (out.ran.length) console.log(`[Agents] ran ${out.ran.join(', ')}`);
+    } catch (e) {
+      console.error('[Agents]', e.message);
+    }
+  }, 60_000);
+
   const DIGEST_HOUR = Number(process.env.DIGEST_HOUR ?? 8);
   setInterval(async () => {
     try {

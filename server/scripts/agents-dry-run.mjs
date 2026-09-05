@@ -43,8 +43,7 @@ async function main() {
    });
    console.log(`db: ${mongoose.connection.name}\n`);
 
-   await import('../src/services/agents/types/unansweredChats.js');
-   await import('../src/services/agents/types/missedLeads.js');
+   await import('../src/services/agents/types/index.js');
    const { agentType } = await import('../src/services/agents/engine.js');
 
    const type = agentType(typeKey);

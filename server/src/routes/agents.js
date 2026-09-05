@@ -5,10 +5,8 @@ import { agentTypes, agentType, runAgent, estimateCost } from '../services/agent
 import { loadThreads } from '../services/agents/shared.js';
 import { WhatsAppMessage, Lead } from '../models/index.js';
 
-// Registering a type is what puts it in the catalogue, so every one this
-// deployment offers has to be imported somewhere. Here is that somewhere.
-import '../services/agents/types/unansweredChats.js';
-import '../services/agents/types/missedLeads.js';
+// Registers every agent type. Without it the catalogue is empty.
+import '../services/agents/types/index.js';
 
 const router = Router();
 
