@@ -282,3 +282,11 @@ test('a cancelled later contract is not a renewal', () => {
    ]]])
    assert.equal(renewals.outcomeFor({ subjectId: 'c1', since: new Date('2026-09-01') }, { contractsByCustomer: byCustomer }), null)
 })
+
+test('never having been emailed about the expiry counts against us, not them', () => {
+   const told = scoreRenewal({ daysLeft: 10, monthly: 900, silentDays: 20, everSpoke: true, months: 6, emailedAt: new Date('2026-09-01') })
+   const untold = scoreRenewal({ daysLeft: 10, monthly: 900, silentDays: 20, everSpoke: true, months: 6, emailedAt: null })
+   assert.ok(untold.score > told.score)
+   assert.ok(untold.factors.some((f) => /never emailed/i.test(f)))
+   assert.ok(told.factors.some((f) => /expiry email sent 1 sept/i.test(f)))
+})

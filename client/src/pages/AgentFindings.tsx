@@ -305,6 +305,9 @@ export default function AgentFindings() {
                     f.data?.quoteNo && `quote ${f.data.quoteNo}`,
                     f.data?.ownerName && `owned by ${f.data.ownerName}`,
                     f.data?.whatsappOptIn === false && 'no WhatsApp opt-in recorded',
+                    f.data?.contractNo && (f.data.emailedAt
+                      ? `expiry email sent ${new Date(f.data.emailedAt as string).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
+                      : 'never emailed about the expiry'),
                     `+${f.phoneNormalized}`,
                   ].filter(Boolean).join(' · ')}
                 </div>

@@ -3,7 +3,7 @@ import { loadThreads, loadPeople, suffix, windowOpen, daysBetween, displayNameFo
 import { listWhatsAppTemplates } from '../../whatsapp.js';
 import { chatJson } from '../../openai.js';
 import { buildTranscript } from '../../conversationSummary.js';
-import { WhatsAppMessage, Contract } from '../../../models/index.js';
+import { WhatsAppMessage, Contract, AutomationLog } from '../../../models/index.js';
 
 /**
  * Contracts running out with nobody talking about it.
@@ -38,7 +38,7 @@ Reply with JSON only:
 
 whatWentWrong: one sentence on where the renewal conversation stands. angle: one sentence on what to raise with them, based on what they have actually said.`;
 
-export function scoreRenewal({ daysLeft, monthly, silentDays, everSpoke, months }) {
+export function scoreRenewal({ daysLeft, monthly, silentDays, everSpoke, months, emailedAt = null }) {
    let score = 0;
    const factors = [];
 
@@ -71,6 +71,17 @@ export function scoreRenewal({ daysLeft, monthly, silentDays, everSpoke, months 
       factors.push(`With us ${months} months`);
    }
 
+   /* Whether the expiry email ever reached them. Somebody who was emailed and
+      went quiet is a different conversation from somebody nobody told — and
+      on production the expiry automation has been switched off since late
+      August, so for most of them the honest answer is "never". */
+   if (emailedAt) {
+      factors.push(`Expiry email sent ${new Date(emailedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`);
+   } else {
+      score += 10;
+      factors.push('Never emailed about the expiry');
+   }
+
    return { score: Math.max(0, score), factors };
 }
 
@@ -96,6 +107,7 @@ export default registerAgentType({
             '',
             `Contract ${d.contractNo} · AED ${(d.valueAed || 0).toLocaleString('en-GB')} a month · with us ${d.months || 0} months`,
             d.daysSince != null ? `Nothing said on WhatsApp for ${d.daysSince} days.` : 'No WhatsApp conversation on record.',
+            d.emailedAt ? `Expiry email sent ${new Date(d.emailedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}.` : 'Never sent the expiry email.',
             f.phoneNormalized ? `Number: +${f.phoneNormalized}` : '',
             '',
             'Raised by the Renewals at risk agent. Whether they renew is recorded against it automatically.',
@@ -163,6 +175,26 @@ export default registerAgentType({
       const wa = await listWhatsAppTemplates().catch(() => ({ templates: [] }));
       ctx.templates = (wa.templates || []).filter((t) => String(t.status).toUpperCase() === 'APPROVED');
 
+      /* What the expiry automation already sent, per contract. Read from its
+         own log rather than assumed from the rule being on — the rule can be
+         off, the send can fail, and either way the person was not told. */
+      const emailed = new Map();
+      for (const log of await AutomationLog.find({
+         contract: { $in: contracts.map((c) => c._id) },
+         event: /^contract_expiry:/,
+         status: 'sent',
+      }).select('contract channel sentAt').sort({ sentAt: 1 }).lean()) {
+         const id = String(log.contract);
+         const held = emailed.get(id) || { emailAt: null, whatsappAt: null };
+         if (log.channel === 'email') held.emailAt = held.emailAt || log.sentAt;
+         if (log.channel === 'whatsapp') held.whatsappAt = held.whatsappAt || log.sentAt;
+         emailed.set(id, held);
+      }
+      const told = [...emailed.values()].filter((e) => e.emailAt).length;
+      report.say(told
+         ? `${told} of ${contracts.length} were sent the expiry email`
+         : `None of the ${contracts.length} has been sent the expiry email — the automation is off`, told ? 'info' : 'warn');
+
       /* Somebody who already has a later contract has renewed. Without this
          the agent would chase people who signed again last week. */
       const laterByCustomer = new Map();
@@ -201,6 +233,8 @@ export default registerAgentType({
             contract: c, customer, thread,
             daysLeft, silentDays, months,
             monthly: c.leasedPrice || c.rate || 0,
+            emailedAt: emailed.get(String(c._id))?.emailAt || null,
+            whatsappedAt: emailed.get(String(c._id))?.whatsappAt || null,
             /* Re-read when the conversation moves or the contract does. The
                day is in the key because urgency changes with it even when
                nothing else has. */
@@ -229,6 +263,9 @@ export default registerAgentType({
                : `Their agreement ends in ${row.daysLeft} days.`,
             `Nobody has spoken to them for ${row.silentDays} days.`,
             `They have rented from us for about ${row.months} months.`,
+            row.emailedAt
+               ? 'They were sent the expiry email with renew and vacate links.'
+               : 'They have not been sent the expiry email.',
             `Can we still send free text: ${open ? 'yes' : 'no, only an approved template'}`,
          ].join('\n');
 
@@ -259,6 +296,7 @@ export default registerAgentType({
          silentDays: row.silentDays,
          everSpoke: Boolean(row.thread),
          months: row.months,
+         emailedAt: row.emailedAt,
       });
 
       ctx.report.say(
@@ -289,6 +327,8 @@ export default registerAgentType({
             valueBasis: 'their current rate',
             reading: plan?.reading || 'not discussed',
             months: row.months,
+            emailedAt: row.emailedAt,
+            whatsappedAt: row.whatsappedAt,
             lastInboundAt: row.thread?.lastInboundAt,
          },
          recommendation: plan

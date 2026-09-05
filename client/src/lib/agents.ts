@@ -120,6 +120,10 @@ export type Finding = {
     whatsappOptIn?: boolean
     renting?: boolean
     lastInboundAt?: string
+    contractNo?: string
+    daysLeft?: number
+    emailedAt?: string | null
+    reading?: string
   }
 }
 
