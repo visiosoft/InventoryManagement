@@ -59,6 +59,30 @@ export const QUOTE_HOLD_DAYS = 2;
 
 export const HOLDING_STATUSES = ['sent', 'accepted'];
 
+/**
+ * Was this quotation really issued?
+ *
+ * The half of the hold rule that is about the quotation itself rather than
+ * about how long a unit may be held for — the paragraphs above explain why it
+ * cannot simply read `status`, and why `flowStep` is what separates a real
+ * quotation from a booking somebody abandoned on the Units step.
+ *
+ * Pulled out because the recovery agents ask a different question of the same
+ * fact: which quotations were issued and never signed, *however old*. They
+ * must not reuse `heldByQuoteFilter`, whose expiry and two-day clauses exist
+ * to let a unit go — those would exclude precisely the stale quotations a
+ * missed-lead sweep is looking for. One statement of "really issued", two
+ * callers with different windows around it.
+ */
+export function issuedQuoteFilter() {
+   return {
+      $or: [
+         { status: { $in: HOLDING_STATUSES } },
+         { status: 'draft', flowStep: { $gte: QUOTE_ISSUED_STEP } },
+      ],
+   };
+}
+
 export function heldByQuoteFilter(unitId, at = new Date()) {
    const heldSince = new Date(new Date(at).getTime() - QUOTE_HOLD_DAYS * 864e5);
    return {
@@ -69,10 +93,7 @@ export function heldByQuoteFilter(unitId, at = new Date()) {
       // card reads for "quoted 4 days ago", so the label and the hold can
       // never disagree about how old a quotation is.
       updatedAt: { $gte: heldSince },
-      $or: [
-         { status: { $in: HOLDING_STATUSES } },
-         { status: 'draft', flowStep: { $gte: QUOTE_ISSUED_STEP } },
-      ],
+      ...issuedQuoteFilter(),
    };
 }
 

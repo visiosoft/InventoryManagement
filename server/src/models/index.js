@@ -1793,6 +1793,130 @@ const dailyDigestSchema = new Schema({
 
 export const DailyDigest = model('DailyDigest', dailyDigestSchema);
 
+/* ── Agents ────────────────────────────────────────────────────────────────
+ *
+ * An agent reads some part of the business, judges what it finds, and produces
+ * ranked findings a person then acts on. Nothing an agent produces is sent to
+ * a customer — they recommend, and the sending happens in the console built
+ * for it, under the checks that already live there.
+ *
+ * Three collections, shared by every agent, because the alternative is five
+ * bespoke pages that drift apart: the definition someone configured, the run
+ * that executed it, and the findings it produced.
+ */
+
+const agentDefinitionSchema = new Schema({
+  // Stable and URL-safe, so a run can be linked to. Generated from the name.
+  key: { type: String, required: true, unique: true },
+  name: { type: String, required: true },
+  /* Which behaviour this is an instance of. Deliberately a closed list rather
+   * than free text: the type names real code, and an unknown one has nothing
+   * to run. Free-form agents get their own type here when they arrive, which
+   * is why nothing else in this schema is shaped around the built-in ones. */
+  type: { type: String, required: true },
+  description: { type: String, default: '' },
+  enabled: { type: Boolean, default: true },
+  /* Scope and thresholds, validated by the type rather than here — a renewals
+   * agent and a coaching agent have nothing in common to declare. */
+  config: { type: Schema.Types.Mixed, default: {} },
+  /* Appended to the system prompt. The honest limit of prompt authoring for
+   * now: the user can steer the judgement, not replace what is read. */
+  extraInstructions: { type: String, default: '' },
+  schedule: {
+    // Off by default. An agent that runs on its own before anybody has looked
+    // at what it produces is how a surprising bill arrives.
+    mode: { type: String, enum: ['off', 'daily', 'weekly'], default: 'off' },
+    hour: { type: Number, default: 7 },        // local, Asia/Dubai
+    weekday: { type: Number, default: 1 },     // 0 Sun … 6 Sat, weekly only
+  },
+  createdBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+  lastRunAt: { type: Date, default: null },
+  // The day a schedule last fired, so a restart cannot run it twice.
+  lastScheduledDay: { type: String, default: '' },
+}, { timestamps: true });
+export const AgentDefinition = model('AgentDefinition', agentDefinitionSchema);
+
+const agentRunSchema = new Schema({
+  definition: { type: Schema.Types.ObjectId, ref: 'AgentDefinition', required: true },
+  agentType: { type: String, default: '' },
+  status: { type: String, enum: ['queued', 'running', 'done', 'stopped', 'failed'], default: 'queued' },
+  startedAt: { type: Date, default: Date.now },
+  finishedAt: { type: Date, default: null },
+  startedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+  startedByName: { type: String, default: '' },
+  // '' when a schedule started it rather than a person.
+  trigger: { type: String, enum: ['manual', 'schedule'], default: 'manual' },
+  /* What the progress view draws. The stages are the agent's real ones, and
+   * most of them finish in about a second — the shape is honest about that
+   * rather than pacing five steps evenly to look busy. */
+  stages: [{
+    key: String, label: String,
+    total: { type: Number, default: 0 },
+    done: { type: Number, default: 0 },
+    _id: false,
+  }],
+  counts: { type: Schema.Types.Mixed, default: {} },
+  estimateUsd: { type: Number, default: 0 },
+  model: { type: String, default: '' },
+  /* The activity feed, capped. A run over every conversation would otherwise
+   * grow a document past what Mongo will hold — and nobody reads the
+   * five-hundredth line back. */
+  events: [{
+    at: { type: Date, default: Date.now },
+    text: String,
+    level: { type: String, default: 'info' },   // info | skip | warn | error
+    _id: false,
+  }],
+  // Set by a stop request; the run notices between items rather than mid-call.
+  stopRequested: { type: Boolean, default: false },
+  error: { type: String, default: '' },
+}, { timestamps: true });
+agentRunSchema.index({ definition: 1, startedAt: -1 });
+export const AgentRun = model('AgentRun', agentRunSchema);
+
+const agentFindingSchema = new Schema({
+  run: { type: Schema.Types.ObjectId, ref: 'AgentRun', required: true },
+  definition: { type: Schema.Types.ObjectId, ref: 'AgentDefinition', required: true },
+  /* Who or what this is about. `subjectKind` and `subjectId` are shaped to
+   * match CampaignRecipient's required `kind` and `refId`, so a set of
+   * findings can become a campaign audience later without a migration. A
+   * finding that resolves to neither a lead nor a customer says so up front
+   * rather than failing when somebody tries to build that campaign. */
+  subjectKind: { type: String, enum: ['lead', 'customer', 'contract', 'unit', 'user'], required: true },
+  subjectId: { type: Schema.Types.ObjectId, default: null },
+  campaignable: { type: Boolean, default: false },
+  // The identity this finding is about, so the same person is recognised
+  // across runs: the last nine digits, the rule used everywhere else.
+  key: { type: String, default: '' },
+  phoneNormalized: { type: String, default: '' },
+
+  title: { type: String, default: '' },
+  detail: { type: String, default: '' },
+  score: { type: Number, default: 0 },
+  /* Why it scored what it did, in sentences. Shown on every finding so a
+   * person can disagree with the order — the score is an opinion, and it is
+   * never written back onto the lead or customer it is about. */
+  factors: { type: [String], default: [] },
+  data: { type: Schema.Types.Mixed, default: {} },
+  recommendation: { type: Schema.Types.Mixed, default: null },
+
+  /* Changes only when the underlying thing moves — a new message, a different
+   * category, a newly approved template. A repeat run pays only for what has
+   * actually changed since the last one. */
+  cacheKey: { type: String, default: '' },
+
+  state: { type: String, enum: ['open', 'snoozed', 'dismissed', 'done'], default: 'open' },
+  snoozeUntil: { type: Date, default: null },
+  stateAt: { type: Date, default: null },
+  handledBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+  history: [{
+    state: String, at: Date, byName: String, reason: String, _id: false,
+  }],
+}, { timestamps: true });
+agentFindingSchema.index({ run: 1, score: -1 });
+agentFindingSchema.index({ definition: 1, key: 1 });
+export const AgentFinding = model('AgentFinding', agentFindingSchema);
+
 export const AiBotConfig = model('AiBotConfig', aiBotConfigSchema);
 export const AiBotThread = model('AiBotThread', aiBotThreadSchema);
 

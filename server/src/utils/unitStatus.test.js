@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { heldByQuoteFilter, QUOTE_ISSUED_STEP, QUOTE_HOLD_DAYS } from './unitStatus.js';
+import { heldByQuoteFilter, issuedQuoteFilter, QUOTE_ISSUED_STEP, QUOTE_HOLD_DAYS } from './unitStatus.js';
 
 /* The filter is the rule. Asserting it directly keeps the four conditions
    honest without a database — each one is here because dropping it puts a
@@ -70,4 +70,28 @@ test('the hold is read off the same field the card shows', () => {
    // measured from anything else the label and the rule could disagree.
    const f = heldByQuoteFilter(UNIT, AT);
    assert.ok(f.updatedAt, 'the hold window is on updatedAt');
+});
+
+/* The hold rule was split so the recovery agents could ask "was this really
+   issued?" without inheriting the two clauses that exist to let a unit go.
+   Splitting it must not have changed what holds a unit — that would quietly
+   put occupied units back on sale. */
+test('pulling issuedQuoteFilter out left the hold rule identical', () => {
+   const f = heldByQuoteFilter(UNIT, AT);
+   assert.deepEqual(f.$or, [
+      { status: { $in: ['sent', 'accepted'] } },
+      { status: 'draft', flowStep: { $gte: QUOTE_ISSUED_STEP } },
+   ]);
+   assert.deepEqual(f.contract, { $in: [null, undefined] });
+   assert.deepEqual(f.expiryDate, { $gte: AT });
+   assert.equal(f['units.unit'], UNIT);
+   assert.deepEqual(f.updatedAt, { $gte: new Date(AT.getTime() - QUOTE_HOLD_DAYS * 864e5) });
+});
+
+test('issued on its own carries no window, so an old quotation still counts', () => {
+   const f = issuedQuoteFilter();
+   // The whole point: a missed-lead sweep wants quotations from months ago.
+   assert.deepEqual(Object.keys(f), ['$or']);
+   assert.equal(f.expiryDate, undefined);
+   assert.equal(f.updatedAt, undefined);
 });
