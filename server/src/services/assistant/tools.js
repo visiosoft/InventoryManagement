@@ -372,6 +372,11 @@ for (const b of blockCatalogue()) {
 
 /* ── the catalogue, in the shape OpenAI wants ─────────────────────────────── */
 
+/** For the action module, which proposes rather than answers. */
+export function registerTool(def) {
+   return tool(def);
+}
+
 export function toolDefinitions() {
    return tools.map((t) => ({
       type: 'function',

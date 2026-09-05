@@ -16,6 +16,8 @@ type Config = {
   model: string
   maxToolRounds: number
   roles: string[]
+  actionsEnabled: boolean
+  actionRoles: string[]
   defaultPrompt: string
   promptLimit: number
   serverModel: string
@@ -118,6 +120,43 @@ export default function AssistantSettings() {
         </div>
 
         <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 12, padding: '20px 22px' }}>
+          <span style={label}>Doing things, not only answering</span>
+          <p style={{ fontSize: 12.5, color: MUTED, margin: '0 0 12px', maxWidth: '76ch' }}>
+            With this on it can create a quotation for a named person and send it — which reserves a unit
+            and messages a customer. It always proposes first; nothing happens until someone presses
+            Confirm in the chat. This decides who may see that Confirm button at all.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 14 }}>
+            <label style={{ display: 'block' }}>
+              <span style={label}>Allowed to act</span>
+              <select value={draft.actionsEnabled === false ? 'no' : 'yes'} onChange={(e) => setDraft({ ...draft, actionsEnabled: e.target.value === 'yes' })} style={field}>
+                <option value="yes">Yes — propose, then confirm</option>
+                <option value="no">No — answers only</option>
+              </select>
+            </label>
+            <div>
+              <span style={label}>Who may confirm an action</span>
+              <div className="flex gap-2 flex-wrap">
+                {ROLES.map((r) => {
+                  const on = (draft.actionRoles || []).includes(r)
+                  return (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setDraft({ ...draft, actionRoles: on ? (draft.actionRoles || []).filter((x) => x !== r) : [...(draft.actionRoles || []), r] })}
+                      className="cursor-pointer"
+                      style={{ fontSize: 12.5, fontWeight: 600, borderRadius: 999, padding: '6px 13px', border: `1px solid ${on ? PURPLE : LINE_2}`, background: on ? '#EDE5FF' : '#fff', color: on ? '#4A1FA0' : MUTED }}
+                    >
+                      {r.replace('_', ' ')}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 12, padding: '20px 22px' }}>
           <div className="flex items-baseline gap-3 flex-wrap mb-2">
             <span style={label}>How it should talk</span>
             <span style={{ fontSize: 11.5, color: FAINT, marginLeft: 'auto' }}>
@@ -157,7 +196,7 @@ export default function AssistantSettings() {
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => save.mutate({ enabled: draft.enabled, systemPrompt: draft.systemPrompt, model: draft.model, maxToolRounds: draft.maxToolRounds, roles: draft.roles })}
+            onClick={() => save.mutate({ enabled: draft.enabled, systemPrompt: draft.systemPrompt, model: draft.model, maxToolRounds: draft.maxToolRounds, roles: draft.roles, actionsEnabled: draft.actionsEnabled, actionRoles: draft.actionRoles })}
             disabled={save.isPending}
             className="cursor-pointer disabled:opacity-50"
             style={{ background: PURPLE, color: '#fff', border: 0, borderRadius: 10, padding: '11px 18px', fontWeight: 600, fontSize: 13.5 }}

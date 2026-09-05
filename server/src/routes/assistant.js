@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAdmin } from '../middleware/auth.js';
 import { askAssistant, getAssistantConfig, DEFAULT_PROMPT } from '../services/assistant/index.js';
 import { toolNames } from '../services/assistant/tools.js';
+import { takeProposal, dropProposal, runAction } from '../services/assistant/actions.js';
 import { openaiConfigured, openaiModel } from '../services/openai.js';
 
 const router = Router();
@@ -35,6 +36,36 @@ router.post('/ask', async (req, res) => {
    }
 });
 
+async function mayAct(req) {
+   const c = await getAssistantConfig();
+   if (c.actionsEnabled === false) return false;
+   return (c.actionRoles?.length ? c.actionRoles : ['admin']).includes(req.user?.role);
+}
+
+/**
+ * The person pressed Confirm.
+ *
+ * The proposal is the one the same person was shown, taken once so it cannot
+ * run twice, and executed with their own token so everything it creates is
+ * attributed to them exactly as if they had used the page.
+ */
+router.post('/confirm', async (req, res) => {
+   try {
+      if (!(await mayAct(req))) return res.status(403).json({ error: 'You are not allowed to confirm actions' });
+      const p = takeProposal(String(req.body?.id || ''), req.user?.id);
+      if (!p) return res.status(410).json({ error: 'That proposal has expired or was already used — ask again.' });
+      const out = await runAction(p, { authHeader: req.headers.authorization || '' });
+      res.json(out);
+   } catch (e) {
+      res.status(500).json({ ok: false, error: e.message, message: `Stopped: ${e.message}` });
+   }
+});
+
+router.post('/cancel', async (req, res) => {
+   dropProposal(String(req.body?.id || ''));
+   res.json({ ok: true, message: 'Cancelled — nothing was created or sent.' });
+});
+
 /** What it can ask the database, so the widget can say so honestly. */
 router.get('/capabilities', async (req, res) => {
    res.json({
@@ -49,6 +80,7 @@ router.get('/config', requireAdmin, async (_req, res) => {
       const c = await getAssistantConfig();
       res.json({
          enabled: c.enabled, systemPrompt: c.systemPrompt, model: c.model, maxToolRounds: c.maxToolRounds, roles: c.roles,
+         actionsEnabled: c.actionsEnabled !== false, actionRoles: c.actionRoles,
          defaultPrompt: DEFAULT_PROMPT, promptLimit: PROMPT_LIMIT, serverModel: openaiModel(),
          tools: toolNames(),
          openai: { configured: openaiConfigured() },
@@ -72,6 +104,8 @@ router.put('/config', requireAdmin, async (req, res) => {
       if (b.model !== undefined) c.model = String(b.model || '');
       if (b.maxToolRounds !== undefined) c.maxToolRounds = Math.min(8, Math.max(1, Number(b.maxToolRounds) || 4));
       if (Array.isArray(b.roles)) c.roles = b.roles.map(String);
+      if (b.actionsEnabled !== undefined) c.actionsEnabled = Boolean(b.actionsEnabled);
+      if (Array.isArray(b.actionRoles)) c.actionRoles = b.actionRoles.map(String);
       await c.save();
       res.json({ ok: true });
    } catch (e) {

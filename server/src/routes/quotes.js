@@ -420,12 +420,20 @@ router.patch('/:id/flow-step', async (req, res) => {
         quote.flowStepsDone = req.body.stepsDone.map(Boolean);
     }
     await quote.save();
+    /* Reaching the quotation step is what holds the unit, so the stored
+       status has to follow now rather than at the next hourly sweep — the
+       availability check was already right, but the badge on the unit read
+       "available" for up to an hour after somebody had been quoted it. */
+    await resyncQuoteUnits(quote.units.map((u) => u.unit));
     res.json({ ok: true });
 });
 
 router.delete('/:id', async (req, res) => {
     const quote = await Quote.findByIdAndDelete(req.params.id);
     if (!quote) return res.status(404).json({ error: 'Quote not found' });
+    // The hold went with the quote; the unit's badge should not wait an hour
+    // for the sweep to notice.
+    await resyncQuoteUnits(quote.units.map((u) => u.unit));
     res.json({ ok: true });
 });
 

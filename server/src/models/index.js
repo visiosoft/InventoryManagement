@@ -1960,6 +1960,13 @@ const assistantConfigSchema = new Schema({
   maxToolRounds: { type: Number, default: 4 },
   // Who may use it. Reports are admin and accounts; this sees the same data.
   roles: { type: [String], default: ['admin', 'accounts'] },
+  /* Whether it may do things — create a quotation, send it — as well as
+   * answer. Every action is proposed first and runs only when a person
+   * confirms it in the widget; this switch decides whether it may even
+   * propose. Admin only by default: an action here reserves a unit and
+   * messages a customer. */
+  actionsEnabled: { type: Boolean, default: true },
+  actionRoles: { type: [String], default: ['admin'] },
 }, { timestamps: true });
 export const AssistantConfig = model('AssistantConfig', assistantConfigSchema);
 

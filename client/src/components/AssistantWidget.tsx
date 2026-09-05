@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Sparkles, X, Send, RotateCcw } from 'lucide-react'
-import { api, apiError } from '../lib/api'
+import { api, apiError, apiUrl } from '../lib/api'
 import { useAuth } from '../lib/auth'
 
 const INK = '#14081F'
@@ -14,11 +14,20 @@ const BADGE = '#EDE5FF'
 const LINE = 'rgba(20,8,31,.10)'
 const HEAD = "'Bricolage Grotesque', serif"
 
+type Pending = { id: string; kind: string; summary: string[]; expiresAt: string }
+
 type Turn = {
   role: 'user' | 'assistant'
   content: string
   tools?: { name: string; ok: boolean }[]
   grounded?: boolean
+  /* An action it wants to take. Nothing happens until Confirm is pressed;
+     the card is the whole safeguard between "create a quote for Ahmed" and a
+     unit being held for the wrong Ahmed. */
+  pending?: Pending | null
+  done?: boolean
+  pdfPath?: string
+  quoteId?: string
 }
 
 const STORE = 'pb_assistant'
@@ -54,6 +63,23 @@ export default function AssistantWidget() {
   })
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [acting, setActing] = useState('')
+
+  async function decide(turnIndex: number, pending: Pending, go: boolean) {
+    setActing(pending.id)
+    setErr('')
+    try {
+      const { data } = await api.post<{ ok: boolean; message: string; pdfPath?: string; quoteId?: string }>(
+        `/assistant/${go ? 'confirm' : 'cancel'}`, { id: pending.id },
+      )
+      setTurns((t) => t.map((x, i) => (i === turnIndex ? { ...x, pending: null, done: true } : x))
+        .concat([{ role: 'assistant', content: data.message, tools: [], grounded: true, pdfPath: data.pdfPath, quoteId: data.quoteId }]))
+    } catch (e) {
+      setErr(apiError(e))
+    } finally {
+      setActing('')
+    }
+  }
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -82,10 +108,10 @@ export default function AssistantWidget() {
     setTurns((t) => [...t, { role: 'user', content: q }])
     setBusy(true)
     try {
-      const { data } = await api.post<{ answer: string; tools: { name: string; ok: boolean }[]; grounded: boolean }>(
+      const { data } = await api.post<{ answer: string; tools: { name: string; ok: boolean }[]; grounded: boolean; pending?: Pending | null }>(
         '/assistant/ask', { question: q, history },
       )
-      setTurns((t) => [...t, { role: 'assistant', content: data.answer, tools: data.tools, grounded: data.grounded }])
+      setTurns((t) => [...t, { role: 'assistant', content: data.answer, tools: data.tools, grounded: data.grounded, pending: data.pending || null }])
     } catch (e) {
       setErr(apiError(e))
       setTurns((t) => t.slice(0, -1))
@@ -99,7 +125,7 @@ export default function AssistantWidget() {
     'How many 10 sq ft units are free?',
     'Which contracts end this month?',
     'Who messaged us on WhatsApp today?',
-    'Price a 50 sq ft unit from the 15th for 3 months',
+    'Quote Ahmed Ali, 050 123 4567, a 50 sq ft unit from the 15th for 3 months, and send it on WhatsApp',
   ]
 
   return (
@@ -167,6 +193,51 @@ export default function AssistantWidget() {
                 >
                   {t.content}
                 </div>
+                {t.pdfPath && (
+                  <div className="flex gap-2 mt-1.5">
+                    <a href={apiUrl(t.pdfPath)} target="_blank" rel="noreferrer" style={{ fontSize: 12, fontWeight: 600, color: '#fff', background: PURPLE, borderRadius: 8, padding: '5px 10px' }}>
+                      Open the PDF
+                    </a>
+                    {t.quoteId && (
+                      <a href={`/quotes/${t.quoteId}`} style={{ fontSize: 12, fontWeight: 600, color: PURPLE_INK, background: BADGE, borderRadius: 8, padding: '5px 10px' }}>
+                        Open the quotation
+                      </a>
+                    )}
+                  </div>
+                )}
+                {t.pending && (
+                  <div style={{ marginTop: 8, background: '#fff', border: `1px solid ${PURPLE}`, borderRadius: 12, padding: '12px 14px', boxShadow: '0 2px 10px rgba(91,43,201,.10)' }}>
+                    <div style={{ fontFamily: HEAD, fontWeight: 700, fontSize: 13.5, color: INK, marginBottom: 6 }}>
+                      Do this?
+                    </div>
+                    <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12.5, color: MUTED, lineHeight: 1.6 }}>
+                      {t.pending.summary.map((line, n) => <li key={n}>{line}</li>)}
+                    </ul>
+                    <div className="flex gap-2 mt-3">
+                      <button
+                        type="button"
+                        onClick={() => decide(i, t.pending!, true)}
+                        disabled={acting === t.pending.id}
+                        className="cursor-pointer disabled:opacity-50"
+                        style={{ background: PURPLE, color: '#fff', border: 0, borderRadius: 9, padding: '8px 14px', fontWeight: 600, fontSize: 12.5 }}
+                      >
+                        {acting === t.pending.id ? 'Doing it…' : 'Confirm'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => decide(i, t.pending!, false)}
+                        disabled={acting === t.pending.id}
+                        className="cursor-pointer disabled:opacity-50"
+                        style={{ background: '#fff', color: MUTED, border: `1px solid rgba(20,8,31,.16)`, borderRadius: 9, padding: '8px 14px', fontWeight: 600, fontSize: 12.5 }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    <div style={{ fontSize: 11, color: FAINT, marginTop: 8 }}>
+                      Nothing is created or sent until you confirm.
+                    </div>
+                  </div>
+                )}
                 {/* Where it looked. A figure nobody can trace is a figure
                     nobody should act on, so the trail is always on show. */}
                 {t.role === 'assistant' && t.tools && t.tools.length > 0 && (

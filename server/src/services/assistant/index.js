@@ -3,6 +3,7 @@ import { chatWithTools, openaiConfigured, openaiModel } from '../openai.js';
 import { siteScope } from '../../utils/siteScope.js';
 import { dayKeyFor } from '../dailyDigest.js';
 import { toolDefinitions, toolByName } from './tools.js';
+import { PROPOSE_TOOL } from './actions.js';
 
 /**
  * The assistant in the corner of every page.
@@ -27,7 +28,7 @@ const RULES = `RULES YOU CANNOT BREAK:
 - If the tools returned nothing useful, say you cannot see it in the system. Do not answer from general knowledge.
 - Dates you pass to tools are YYYY-MM-DD. "Today" and relative dates are worked out from the date given below.
 - Do not mention tools by name to the user. Speak as the system.
-- Never claim to have sent a message, made a booking, or changed anything. You can only read.`;
+- You can prepare a quotation for a person, but you cannot create or send it yourself. When you have prepared one, say so in a line and tell them to press Confirm in the card. Never say it has been created, booked, reserved or sent — only a person's Confirm does that.`;
 
 /** Any figure that could be mistaken for a fact: money, counts, sizes, dates. */
 const NUMBERS = /\d[\d,]*(?:\.\d+)?/g;
@@ -97,8 +98,15 @@ export async function askAssistant({ question, history = [], siteId = null, user
    let rounds = 0;
    const maxRounds = Math.max(1, Number(config.maxToolRounds || 4));
 
+   /* Whether this person may even be offered an action. If not, the proposal
+      tool is simply absent — the model cannot propose what it cannot see. */
+   const mayAct = config.actionsEnabled !== false
+      && (config.actionRoles?.length ? config.actionRoles : ['admin']).includes(user?.role);
+   const tools = toolDefinitions().filter((t) => mayAct || t.function.name !== PROPOSE_TOOL);
+   let pending = null;
+
    for (; rounds < maxRounds; rounds += 1) {
-      const turn = await chatWithTools({ system, messages, tools: toolDefinitions(), model, maxTokens: 700 });
+      const turn = await chatWithTools({ system, messages, tools, model, maxTokens: 700 });
       if (!turn.toolCalls.length) { content = turn.content; break; }
 
       messages.push(turn.message);
@@ -112,6 +120,9 @@ export async function askAssistant({ question, history = [], siteId = null, user
          }
          used.push({ name: call.name, args: call.args, ok: !out?.error });
          results.push({ tool: call.name, result: out });
+         if (call.name === PROPOSE_TOOL && out?.proposalId) {
+            pending = { id: out.proposalId, kind: 'create_quotation', summary: out.summary, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() };
+         }
          messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(out).slice(0, 12000) });
       }
    }
@@ -145,5 +156,5 @@ export async function askAssistant({ question, history = [], siteId = null, user
       };
    }
 
-   return { answer: content, tools: used, model, rounds, grounded: true };
+   return { answer: content, tools: used, model, rounds, grounded: true, pending };
 }
