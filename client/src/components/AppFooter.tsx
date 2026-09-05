@@ -11,7 +11,13 @@ const LINE = 'rgba(20,8,31,.10)'
 const OK = '#0F6E56'
 const WARN = '#8A5A00'
 
-type Stamp = { sha: string; short: string; committedAt?: string; message?: string; builtAt?: string; startedAt?: string }
+type Stamp = {
+  sha: string; short: string; committedAt?: string; message?: string; builtAt?: string; startedAt?: string
+  /* From the API: is its server code the server code at this page's commit?
+     The API only redeploys when server/ changes, so a client-only push
+     leaves it on an older commit on purpose — that is not "behind". */
+  serverInSync?: boolean | null
+}
 
 /**
  * The footer: who built it, and whether what you are looking at is live.
@@ -35,15 +41,18 @@ export default function AppFooter() {
   })
   const { data: apiVersion } = useQuery<Stamp>({
     queryKey: ['version', 'api'],
-    queryFn: () => api.get('/version').then((r) => r.data),
+    queryFn: () => api.get('/version', { params: { client: BUILD.sha } }).then((r) => r.data),
     refetchInterval: 2 * 60_000,
     retry: false,
   })
 
   const pageBehind = Boolean(latest?.sha && latest.sha !== 'unknown' && BUILD.sha !== 'unknown' && latest.sha !== BUILD.sha)
   const apiKnown = Boolean(apiVersion?.sha && apiVersion.sha !== 'unknown')
-  const apiInSync = apiKnown && apiVersion!.sha === BUILD.sha
-  const apiBehind = apiKnown && !apiInSync
+  // The API's own answer wins; raw commit equality is the fallback when it
+  // could not compare (a commit it has not fetched yet).
+  const apiInSync = apiKnown && (apiVersion!.serverInSync === true || (apiVersion!.serverInSync == null && apiVersion!.sha === BUILD.sha))
+  const apiBehind = apiKnown && apiVersion!.serverInSync === false
+  const apiUnsure = apiKnown && !apiInSync && !apiBehind
 
   const ago = (iso?: string) => {
     if (!iso) return ''
@@ -58,10 +67,12 @@ export default function AppFooter() {
   const status = pageBehind
     ? { tone: WARN, text: 'A newer version is live' }
     : apiBehind
-      ? { tone: WARN, text: `API is on ${apiVersion!.short}` }
+      ? { tone: WARN, text: `API not yet updated (on ${apiVersion!.short})` }
       : apiInSync
         ? { tone: OK, text: 'Live and in sync' }
-        : { tone: FAINT, text: 'Checking…' }
+        : apiUnsure
+          ? { tone: FAINT, text: `API on ${apiVersion!.short}` }
+          : { tone: FAINT, text: 'Checking…' }
 
   return (
     <footer

@@ -173,7 +173,35 @@ const VERSION = (() => {
     startedAt: STARTED_AT,
   };
 })();
-app.get('/api/version', (_req, res) => res.json(VERSION));
+/* The API only redeploys when server/ changes (see .github/workflows), so a
+ * client-only push leaves it on an older commit on purpose. "In sync" is
+ * therefore not "same commit" but "my server code is the server code at the
+ * commit this page was built from" — which git can answer exactly, from the
+ * checkout this process runs in. Commits it has not seen yet are fetched, at
+ * most once every few minutes, and if that is not possible the answer is
+ * null rather than a guess. */
+const REPO = path.resolve(__dirname, '../..');
+const gitq = (args) => {
+  try { return execSync(`git ${args}`, { cwd: REPO, stdio: ['ignore', 'pipe', 'ignore'], timeout: 8000 }).toString().trim(); }
+  catch { return null; }
+};
+let lastFetch = 0;
+function serverSync(clientSha) {
+  if (!clientSha || !/^[0-9a-f]{7,40}$/i.test(clientSha) || VERSION.sha === 'unknown') return { serverInSync: null };
+  if (clientSha === VERSION.sha || VERSION.sha.startsWith(clientSha)) return { serverInSync: true };
+  const known = () => gitq(`cat-file -e ${clientSha}^{commit}`) !== null;
+  if (!known() && Date.now() - lastFetch > 5 * 60_000) {
+    lastFetch = Date.now();
+    gitq('fetch --quiet origin main');
+  }
+  if (!known()) return { serverInSync: null };
+  // Exit 0 = no difference under server/ between the two commits.
+  const same = gitq(`diff --quiet ${VERSION.sha} ${clientSha} -- server`) !== null;
+  return { serverInSync: same };
+}
+app.get('/api/version', (req, res) => {
+  res.json({ ...VERSION, ...serverSync(String(req.query.client || '')) });
+});
 app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
