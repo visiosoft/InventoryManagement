@@ -143,6 +143,43 @@ export function validatePlan(raw, { templates = [], allowedSources = [], prose =
    return { ok: true, plan: raw };
 }
 
+/* ── what carries over between runs ───────────────────────────────────────── */
+
+/**
+ * Can last run's finding stand, or must this one be judged again?
+ *
+ * Only when the agent said what "unchanged" means for it. An agent that costs
+ * nothing to run leaves `cacheKey` empty and is simply redone — caching a free
+ * answer buys nothing and risks serving a stale one.
+ */
+export function shouldReuse(held, row) {
+   if (!held || !row?.cacheKey) return false;
+   return held.cacheKey === row.cacheKey;
+}
+
+/**
+ * What a person decided about somebody, carried across runs.
+ *
+ * Findings are replaced wholesale each run, because somebody who no longer
+ * qualifies should stop appearing. But a dismissal is a human judgement and
+ * must survive that — otherwise every run resurrects everything anybody had
+ * already dealt with, and the list becomes impossible to keep on top of.
+ *
+ * The exception is a reply. Somebody who writes back is live again whatever
+ * was decided about them, so their state is spent.
+ */
+export function carriedState(held, row, now = new Date()) {
+   if (!held || !held.state || held.state === 'open') return null;
+
+   const wroteSince = row?.lastInboundAt && held.stateAt
+      && new Date(row.lastInboundAt) > new Date(held.stateAt);
+   if (wroteSince) return null;
+
+   if (held.state === 'snoozed' && held.snoozeUntil && new Date(held.snoozeUntil) <= new Date(now)) return null;
+
+   return held;
+}
+
 /* ── running one ──────────────────────────────────────────────────────────── */
 
 async function inBatches(items, size, work) {
@@ -260,7 +297,7 @@ export async function runAgent(definition, { startedBy = null, startedByName = '
          if (report.stopped) return;
          try {
             const held = previous.get(row.key);
-            if (held && row.cacheKey && held.cacheKey === row.cacheKey) {
+            if (shouldReuse(held, row)) {
                findings.push({ ...held, _id: undefined, run: run._id, definition: definition._id });
                counts.cached += 1;
                report.say(`${row.displayName} · unchanged since the last run`, 'skip');
@@ -292,7 +329,7 @@ export async function runAgent(definition, { startedBy = null, startedByName = '
          if (f.state && f.state !== 'open') states.set(f.key, f);
       }
       for (const f of findings) {
-         const held = states.get(f.key);
+         const held = carriedState(states.get(f.key), f.data, ctx.now);
          if (held) {
             f.state = held.state;
             f.snoozeUntil = held.snoozeUntil;

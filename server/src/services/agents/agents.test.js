@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validatePlan, estimateCost } from './engine.js';
+import { validatePlan, estimateCost, shouldReuse, carriedState } from './engine.js';
 import { suffix, windowOpen, daysBetween, estimateValue, isPlaceholderName } from './shared.js';
 import { scoreUnanswered } from './types/unansweredChats.js';
 
@@ -135,4 +135,46 @@ test('days between is whole days and never negative', () => {
    assert.equal(daysBetween(new Date('2026-09-01T10:00:00Z'), NOW), 5);
    assert.equal(daysBetween(new Date('2026-09-09T10:00:00Z'), NOW), 0);
    assert.equal(daysBetween(null), null);
+});
+
+/* ── what survives between runs ───────────────────────────────────────────── */
+
+test('an unchanged item is reused; a moved one is judged again', () => {
+   const held = { cacheKey: 'msg-9|never_quoted|13' };
+   assert.equal(shouldReuse(held, { cacheKey: 'msg-9|never_quoted|13' }), true);
+   // A new message, a flipped category, or a new template all move the key.
+   assert.equal(shouldReuse(held, { cacheKey: 'msg-10|never_quoted|13' }), false);
+   assert.equal(shouldReuse(held, { cacheKey: 'msg-9|went_quiet|13' }), false);
+   assert.equal(shouldReuse(null, { cacheKey: 'msg-9' }), false);
+});
+
+test('a free agent caches nothing, so it is never served a stale answer', () => {
+   assert.equal(shouldReuse({ cacheKey: '' }, { cacheKey: '' }), false);
+});
+
+test('a dismissal survives the next run', () => {
+   // Otherwise every run resurrects everything anybody has already dealt with.
+   const held = { state: 'dismissed', stateAt: new Date('2026-09-01T00:00:00Z') };
+   assert.equal(carriedState(held, { lastInboundAt: null }, NOW)?.state, 'dismissed');
+});
+
+test('but a reply wakes it, whatever was decided', () => {
+   const held = { state: 'dismissed', stateAt: new Date('2026-09-01T00:00:00Z') };
+   const wrote = { lastInboundAt: new Date('2026-09-04T00:00:00Z') };
+   assert.equal(carriedState(held, wrote, NOW), null, 'someone who writes back is live again');
+});
+
+test('a snooze that has run out is over', () => {
+   const held = {
+      state: 'snoozed',
+      stateAt: new Date('2026-09-01T00:00:00Z'),
+      snoozeUntil: new Date('2026-09-05T00:00:00Z'),
+   };
+   assert.equal(carriedState(held, {}, NOW), null);
+   held.snoozeUntil = new Date('2026-09-20T00:00:00Z');
+   assert.equal(carriedState(held, {}, NOW)?.state, 'snoozed');
+});
+
+test('an open finding carries nothing — it is simply produced again', () => {
+   assert.equal(carriedState({ state: 'open' }, {}, NOW), null);
 });
