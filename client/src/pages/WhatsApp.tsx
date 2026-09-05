@@ -3674,6 +3674,17 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                   </p>
                 )}
 
+                {/* Asked by every rep who opens this panel, so answered
+                    before they ask. The wording is fixed at approval — that is
+                    what buys a template the right to be delivered at all. */}
+                {!waTemplatesLoading && (waTemplates?.templates.length ?? 0) > 0 && (
+                  <p className="px-1" style={{ fontSize: 11, color: FAINT_INK, lineHeight: 1.5 }}>
+                    Meta approves the wording, so it cannot be changed here — only the
+                    highlighted blanks. Their reply reopens the 24-hour window and you can
+                    type freely again.
+                  </p>
+                )}
+
                 {waTemplatesLoading && (
                   <p className="px-1 py-2" style={{ fontSize: 12, color: FAINT_INK }}>Loading templates from Meta…</p>
                 )}
