@@ -517,6 +517,8 @@ export interface QuietLead {
   temperature: 'hot' | 'warm' | 'cold' | null
   lastNudgedAt: string | null
   lastNudgedBy: string
+  /** Their own last few messages, newest first — inbound only. */
+  recentMessages: { text: string; at: string }[]
 }
 
 export const leadFollowUpApi = {

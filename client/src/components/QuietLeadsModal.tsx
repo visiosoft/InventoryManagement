@@ -312,6 +312,16 @@ export default function QuietLeadsModal({
                         <span className="block text-xs mt-0.5" style={{ color: '#4A4357' }}>
                           {l.reason || 'No summary available for this conversation yet.'}
                         </span>
+                        {l.recentMessages.length > 0 && (
+                          <span className="block mt-1 pl-2" style={{ borderLeft: '2px solid rgba(20,8,31,.10)' }}>
+                            {l.recentMessages.map((m, i) => (
+                              <span key={i} className="flex items-baseline gap-1.5 text-xs" style={{ color: MUTED }}>
+                                <span className="truncate" style={{ maxWidth: 280 }}>&ldquo;{m.text}&rdquo;</span>
+                                <span className="shrink-0" style={{ opacity: 0.75 }}>{agoText(m.at)}</span>
+                              </span>
+                            ))}
+                          </span>
+                        )}
                         {l.lastNudgedAt && (
                           <span
                             className="inline-block text-xs mt-1 px-1.5 py-0.5 rounded"

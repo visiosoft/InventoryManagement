@@ -5,7 +5,7 @@ import { requireAdmin } from '../middleware/auth.js';
 import { listWhatsAppTemplates } from '../services/whatsapp.js';
 import {
     quietThreshold, setQuietThreshold, quietLeads, attachReasons, attachLastNudge,
-    quietSummary, sendQuietFollowUp,
+    attachRecentMessages, quietSummary, sendQuietFollowUp,
 } from '../services/leadFollowUp.js';
 
 const router = Router();
@@ -41,6 +41,7 @@ router.get('/quiet', async (req, res) => {
         let leads = await quietLeads({ ownerId, days });
         leads = await attachReasons(leads);
         leads = await attachLastNudge(leads);
+        leads = await attachRecentMessages(leads);
         res.json({ leads, threshold: days || await quietThreshold() });
     } catch (e) {
         res.status(500).json({ error: e.message });

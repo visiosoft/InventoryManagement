@@ -124,6 +124,46 @@ export async function attachReasons(leads) {
 }
 
 /**
+ * Their own last few messages, newest first — the AI's one-sentence reason
+ * read faster, but a rep who wants the actual words should not have to open
+ * the chat first to get them.
+ *
+ * Inbound only: what THEY said, not our side of it — this is "why did the
+ * customer go quiet", and our own messages do not answer that. One query for
+ * the whole batch, not one per lead: a $group after a $sort keeps each
+ * phone's messages in newest-first order, and $slice takes the 3 most recent
+ * without a second round trip.
+ */
+export async function attachRecentMessages(leads, limit = 3) {
+    const phones = [...new Set(leads.map((l) => l.phoneNormalized).filter(Boolean))];
+    if (!phones.length) return leads;
+
+    const rows = await WhatsAppMessage.aggregate([
+        { $match: { phoneNormalized: { $in: phones }, direction: 'inbound' } },
+        { $sort: { occurredAt: -1 } },
+        {
+            $group: {
+                _id: '$phoneNormalized',
+                messages: { $push: { text: '$text', transcript: '$transcript', type: '$type', at: '$occurredAt' } },
+            },
+        },
+        { $project: { messages: { $slice: ['$messages', limit] } } },
+    ]);
+    const byPhone = new Map(rows.map((r) => [r._id, r.messages]));
+
+    return leads.map((l) => ({
+        ...l,
+        recentMessages: (byPhone.get(l.phoneNormalized) || []).map((m) => ({
+            // A voice note has no text until the assistant has transcribed it;
+            // any other non-text type (image, document, location) has neither —
+            // named by its kind rather than shown as a blank line.
+            text: m.text || m.transcript || (m.type && m.type !== 'text' ? `[${m.type}]` : ''),
+            at: m.at,
+        })).filter((m) => m.text),
+    }));
+}
+
+/**
  * When each one was last sent a quiet-follow-up, and by whom — the fact
  * behind the "already messaged 5 hours ago" warning. Only the most recent
  * send matters for the warning, found with one grouped query rather than one
