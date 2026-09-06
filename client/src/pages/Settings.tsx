@@ -159,6 +159,10 @@ export default function Settings() {
   const [stripeMsg, setStripeMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [stripeSecretKey, setStripeSecretKey] = useState('')
   const [stripeWebhookSecret, setStripeWebhookSecret] = useState('')
+  // Needed only by the tenant renewal page, which renders Stripe's own card
+  // form rather than redirecting. Public by design — it is the one Stripe
+  // credential the server will hand to a browser.
+  const [stripePublishableKey, setStripePublishableKey] = useState('')
   const [stripeBusy, setStripeBusy] = useState(false)
   const [waMsg, setWaMsg] = useState<{ ok: boolean; text: string } | null>(null)
   // OpenAI — only used to read plain-English availability requests.
@@ -357,9 +361,13 @@ export default function Settings() {
                 </div>
               </div>
               <span className={integrations?.stripe?.configured ? 'text-xs text-emerald-600 font-medium' : 'text-xs text-amber-600 font-medium'}>
-                {integrations?.stripe?.configured
-                  ? (integrations.stripe.webhookConfigured ? 'Connected' : 'Connected — webhook secret missing')
-                  : 'Not connected'}
+                {!integrations?.stripe?.configured
+                  ? 'Not connected'
+                  : !integrations.stripe.webhookConfigured
+                    ? 'Connected — webhook secret missing'
+                    : !integrations.stripe.publishableKey
+                      ? 'Connected — publishable key missing'
+                      : 'Connected'}
               </span>
             </div>
 
@@ -374,6 +382,10 @@ export default function Settings() {
                     <Input type="password" placeholder="whsec_…" value={stripeWebhookSecret}
                       onChange={(e) => setStripeWebhookSecret(e.target.value)} />
                   </Field>
+                  <Field label="Publishable key (needed for the tenant renewal page)">
+                    <Input placeholder="pk_live_… or pk_test_…" value={stripePublishableKey}
+                      onChange={(e) => setStripePublishableKey(e.target.value)} />
+                  </Field>
                 </div>
                 <Button
                   size="sm"
@@ -382,10 +394,15 @@ export default function Settings() {
                     setStripeBusy(true)
                     setStripeMsg(null)
                     try {
-                      await integrationApi.connectStripe({ secretKey: stripeSecretKey, webhookSecret: stripeWebhookSecret || undefined })
+                      await integrationApi.connectStripe({
+                        secretKey: stripeSecretKey,
+                        webhookSecret: stripeWebhookSecret || undefined,
+                        publishableKey: stripePublishableKey || undefined,
+                      })
                       setStripeMsg({ ok: true, text: 'Stripe connected.' })
                       setStripeSecretKey('')
                       setStripeWebhookSecret('')
+                      setStripePublishableKey('')
                       qc.invalidateQueries({ queryKey: ['integrations-status'] })
                     } catch (e) {
                       setStripeMsg({ ok: false, text: apiError(e) })
@@ -404,7 +421,35 @@ export default function Settings() {
                 </p>
               </>
             ) : (
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                {!integrations.stripe.publishableKey && (
+                  <>
+                    <Field label="Publishable key — tenant renewal page needs it" className="flex-1 max-w-sm">
+                      <Input placeholder="pk_live_… or pk_test_…" value={stripePublishableKey}
+                        onChange={(e) => setStripePublishableKey(e.target.value)} />
+                    </Field>
+                    <Button
+                      size="sm"
+                      disabled={stripeBusy || !stripePublishableKey}
+                      onClick={async () => {
+                        setStripeBusy(true)
+                        setStripeMsg(null)
+                        try {
+                          await integrationApi.connectStripe({ publishableKey: stripePublishableKey })
+                          setStripeMsg({ ok: true, text: 'Publishable key saved — tenants can now pay by card when renewing.' })
+                          setStripePublishableKey('')
+                          qc.invalidateQueries({ queryKey: ['integrations-status'] })
+                        } catch (e) {
+                          setStripeMsg({ ok: false, text: apiError(e) })
+                        } finally {
+                          setStripeBusy(false)
+                        }
+                      }}
+                    >
+                      {stripeBusy ? 'Saving…' : 'Save publishable key'}
+                    </Button>
+                  </>
+                )}
                 {!integrations.stripe.webhookConfigured && (
                   <Field label="Webhook signing secret" className="flex-1 max-w-sm">
                     <Input type="password" placeholder="whsec_…" value={stripeWebhookSecret}

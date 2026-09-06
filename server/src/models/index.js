@@ -2002,6 +2002,80 @@ const leadRoutingConfigSchema = new Schema({
   slaReassignMinutes: { type: Number, default: 30, min: 0 },
 }, { timestamps: true });
 
+/* ── Contract renewals ──────────────────────────────────────────────────────
+ *
+ * A tenant renewing from the expiry link chooses a date on Monday and may pay
+ * on Thursday. This is what is agreed in between: without it the Stripe webhook
+ * arrives holding a session id and nothing that says what it was for.
+ *
+ * It also freezes the price. Renewals are quoted at the unit's current list
+ * price, so a price rise between choosing and paying would otherwise change
+ * what the tenant is charged after they agreed it. Every figure is stored, not
+ * recomputed on the way out.
+ *
+ * The contract is NOT extended when this is created. It is extended when the
+ * money is real — the webhook for a card, a colleague confirming receipt for a
+ * bank transfer — because a tenant who opens the page and wanders off must not
+ * end up with six free months.
+ */
+const contractRenewalSchema = new Schema({
+  contract: { type: Schema.Types.ObjectId, ref: 'Contract', required: true },
+  customer: { type: Schema.Types.ObjectId, ref: 'Customer', required: true },
+
+  /* What the contract's end date was when this was quoted. If it has moved
+     since — somebody extended by hand, or an earlier renewal landed — applying
+     this one would extend from the wrong place, so it is checked before use
+     rather than trusted. */
+  currentEndDate: { type: Date, required: true },
+  newEndDate: { type: Date, required: true },
+
+  weeks: { type: Number, required: true },
+  monthlyRate: { type: Number, required: true },
+  weeklyRate: { type: Number, required: true },
+  // 'list' — today's unit price; 'contract' — fell back to the signed rate
+  // because a unit carries no price. Kept so a surprising figure can be
+  // explained without re-deriving it.
+  rateSource: { type: String, enum: ['list', 'contract'], default: 'list' },
+
+  subTotal: { type: Number, required: true },
+  vatPct: { type: Number, default: 5 },
+  vatAmount: { type: Number, default: 0 },
+  // Rent plus VAT. The card fee is deliberately not in here: what is owed does
+  // not depend on how it is paid.
+  total: { type: Number, required: true },
+  cardFeePct: { type: Number, default: 0 },
+  cardFeeAmount: { type: Number, default: 0 },
+
+  method: { type: String, enum: ['card', 'bank_transfer'], required: true },
+  /* pending        — card session opened, not yet paid
+     awaiting_transfer — bank details shown, waiting on the money
+     paid           — money confirmed, not yet applied to the contract
+     applied        — contract extended and the tenant told
+     cancelled      — abandoned or superseded */
+  status: {
+    type: String,
+    enum: ['pending', 'awaiting_transfer', 'paid', 'applied', 'cancelled'],
+    default: 'pending',
+  },
+
+  stripeCheckoutSessionId: { type: String, default: '' },
+  stripePaidAt: { type: Date, default: null },
+
+  invoice: { type: Schema.Types.ObjectId, ref: 'Invoice', default: null },
+  appliedAt: { type: Date, default: null },
+  // '' when the Stripe webhook applied it rather than a person.
+  appliedByName: { type: String, default: '' },
+  // Anything that needed a human afterwards — a moved end date, a unit held by
+  // someone else's quote. Surfaced on the contract rather than only logged.
+  reviewNote: { type: String, default: '' },
+
+  error: { type: String, default: '' },
+}, { timestamps: true });
+// The renewal panel on a contract, newest first.
+contractRenewalSchema.index({ contract: 1, createdAt: -1 });
+contractRenewalSchema.index({ stripeCheckoutSessionId: 1 });
+export const ContractRenewal = model('ContractRenewal', contractRenewalSchema);
+
 export const LeadRoutingRule = model('LeadRoutingRule', leadRoutingRuleSchema);
 export const LeadRoutingConfig = model('LeadRoutingConfig', leadRoutingConfigSchema);
 export const Contract = model('Contract', contractSchema);

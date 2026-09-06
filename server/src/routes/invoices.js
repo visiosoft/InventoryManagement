@@ -12,6 +12,7 @@ import { mailConfigured, sendMail } from '../services/mail.js';
 import { zohoBooksConfigured, createZohoInvoice, recordZohoPayment } from '../services/zohoBooks.js';
 import { applyInvoicePayment, syncLinkedPayment } from '../services/invoicePayments.js';
 import { stripeConfigured, createCheckoutSession } from '../services/stripe.js';
+import { DEFAULT_BANK_INFORMATION } from '../services/bankDetails.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -33,11 +34,6 @@ function archiveInvoicePdf(invoice, pdf) {
     };
     run().catch(() => { });
 }
-
-const DEFAULT_BANK_INFORMATION =
-    'Account Number: 019101745789\n' +
-    'IBAN Number: AE500330000019101745789\n' +
-    'Address: Unit 12, ABA Avenue Al Quoz 2, Dubai';
 
 function toNumber(v, d = 0) {
     const n = Number(v);

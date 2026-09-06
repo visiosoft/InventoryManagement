@@ -12,6 +12,18 @@ export function stripeWebhookConfigured() {
   return Boolean(process.env.STRIPE_WEBHOOK_SECRET);
 }
 
+/* The publishable key, needed by any page that renders Stripe's own card form
+ * rather than redirecting to Stripe. Unlike the secret key this one is meant to
+ * be public — it identifies the account and can do nothing on its own — so it
+ * is the only Stripe credential this server will hand to a browser. */
+export function stripePublishableKey() {
+  return String(process.env.STRIPE_PUBLISHABLE_KEY || '');
+}
+
+export function stripeEmbeddedConfigured() {
+  return Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_PUBLISHABLE_KEY);
+}
+
 let cachedClient = null;
 let cachedKey = null;
 
@@ -54,8 +66,16 @@ export function computeFeeFils(amountFils, feePct) {
  * fee excluded) so a webhook can credit only that portion, never the fee on
  * top of it. `metadata` is merged in on top — callers add whichever id
  * (invoice, quote, storage or moving) the webhook needs to find the record.
+ *
+ * embedded (optional): renders Stripe's card form inside one of our own pages
+ * instead of sending the payer to Stripe's. Used by the tenant renewal page,
+ * where bouncing somebody out to a different domain mid-decision loses them.
+ * Stripe rejects success_url/cancel_url in this mode and takes a single
+ * return_url instead, so the two shapes cannot simply be merged — and the
+ * caller gets back a clientSecret rather than a url, since there is nowhere to
+ * send them.
  */
-export async function createCheckoutSession({ amountAed, description, productName, metadata = {}, customerEmail, successUrl, cancelUrl, feePct = 0 }) {
+export async function createCheckoutSession({ amountAed, description, productName, metadata = {}, customerEmail, successUrl, cancelUrl, feePct = 0, embedded = false, returnUrl }) {
   const client = getClient();
   const amountFils = Math.round(Number(amountAed) * 100);
   if (!Number.isFinite(amountFils) || amountFils <= 0) {
@@ -86,6 +106,8 @@ export async function createCheckoutSession({ amountAed, description, productNam
     });
   }
 
+  if (embedded && !returnUrl) throw new Error('An embedded checkout needs a returnUrl');
+
   const session = await client.checkout.sessions.create({
     mode: 'payment',
     payment_method_types: ['card'],
@@ -97,10 +119,16 @@ export async function createCheckoutSession({ amountAed, description, productNam
       feeFils: String(feeFils),
       feePct: String(pct),
     },
-    success_url: successUrl,
-    cancel_url: cancelUrl,
+    ...(embedded
+      ? { ui_mode: 'embedded', return_url: returnUrl }
+      : { success_url: successUrl, cancel_url: cancelUrl }),
   });
-  return { id: session.id, url: session.url, feeAmount: feeFils / 100 };
+  return {
+    id: session.id,
+    url: session.url,
+    clientSecret: session.client_secret || '',
+    feeAmount: feeFils / 100,
+  };
 }
 
 // Thin wrapper kept for the one existing caller (moving invoices) so its

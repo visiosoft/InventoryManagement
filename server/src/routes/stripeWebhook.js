@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { MovingInvoice, Invoice, Quote, MovingQuote, Customer } from '../models/index.js';
+import { MovingInvoice, Invoice, Quote, MovingQuote, Customer, ContractRenewal } from '../models/index.js';
+import { applyRenewal } from '../services/renewalApply.js';
 import { constructWebhookEvent, stripeWebhookConfigured } from '../services/stripe.js';
 import { applyMovingInvoicePayment } from '../services/movingInvoicePayments.js';
 import { applyInvoicePayment, syncLinkedPayment } from '../services/invoicePayments.js';
@@ -110,6 +111,31 @@ router.post('/', aw(async (req, res) => {
         quote.timeline.push({ type: 'accepted', text: `Paid online via Stripe Checkout (${session.id})${feeNote}` });
         await quote.save();
         thankYouEmail({ to: quote.customer?.email, name: quote.customer?.fullName || 'there', docNo: `Quotation ${quote.quoteNo}`, amount });
+      }
+    }
+
+    /* A tenant renewing their own contract from the expiry message.
+     *
+     * This is the only branch here that changes a contract rather than just
+     * recording a payment, so it is also the only one that must be exactly
+     * once — applyRenewal owns that, and returns early on a repeat delivery
+     * rather than extending twice. Everything it does (extend, invoice, email)
+     * is deliberately behind that one call, because a bank transfer confirmed
+     * by a colleague has to do the identical thing. */
+    if (meta.contractRenewalId) {
+      const renewal = await ContractRenewal.findById(meta.contractRenewalId);
+      if (renewal && renewal.status !== 'applied') {
+        renewal.status = 'paid';
+        renewal.stripePaidAt = new Date();
+        if (!renewal.stripeCheckoutSessionId) renewal.stripeCheckoutSessionId = session.id;
+        await renewal.save();
+
+        const out = await applyRenewal(renewal._id, { paid: true });
+        if (!out.ok) {
+          // The money is in; only the extension failed. Left as 'paid' with a
+          // note so it shows up needing a person rather than looking finished.
+          console.error('[StripeWebhook] renewal not applied:', out.error);
+        }
       }
     }
 

@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Download, FileText, Mail, MessageSquare, PenLine, Pin, ShieldCheck, Trash2, Upload, X, XCircle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
-import type { AppDocument, Contract, Invoice, Payment, Unit, UnitLine } from '../lib/types'
+import type { AppDocument, Contract, ContractRenewal, Invoice, Payment, Unit, UnitLine } from '../lib/types'
 import {
   Badge, Button, Card, CardBody, CardHeader, EmptyState,
   Field, Input, Modal, Select, Spinner,
@@ -775,6 +775,33 @@ export default function ContractDetail() {
     queryFn: () => api.get(`/contracts/${id}`).then((r) => r.data),
   })
 
+  /* Renewals the tenant started themselves from the expiry message. A card one
+     has usually applied itself before anyone looks; a bank transfer waits here
+     until somebody confirms the money arrived. */
+  const { data: renewals = [] } = useQuery<ContractRenewal[]>({
+    queryKey: ['contract-renewals', id],
+    queryFn: () => api.get(`/contracts/${id}/renewals`).then((r) => r.data),
+    enabled: Boolean(id),
+    staleTime: 30_000,
+  })
+
+  const confirmTransfer = useMutation({
+    mutationFn: (renewalId: string) =>
+      api.post(`/contracts/${id}/renewals/${renewalId}/confirm-transfer`).then((r) => r.data),
+    onSuccess: () => {
+      // The contract's end date, its invoices and the renewal row all moved.
+      qc.invalidateQueries({ queryKey: ['contract', id] })
+      qc.invalidateQueries({ queryKey: ['contract-renewals', id] })
+      qc.invalidateQueries({ queryKey: ['invoices'] })
+    },
+  })
+
+  const cancelRenewal = useMutation({
+    mutationFn: (renewalId: string) =>
+      api.post(`/contracts/${id}/renewals/${renewalId}/cancel`).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['contract-renewals', id] }),
+  })
+
   // Step to the next/previous unit's contract without going back to the list.
   // Ordered by unit number the same way the Units page orders them, and only
   // units that actually have an active contract are stops — landing on a unit
@@ -1533,6 +1560,66 @@ export default function ContractDetail() {
                               ))}
                             </div>
                           </div>
+                          {/* What the tenant did on the renewal page. A bank
+                              transfer sits here until somebody confirms it —
+                              nothing else in the system knows the money came. */}
+                          {renewals.filter((r) => r.status !== 'cancelled').slice(0, 3).map((r) => {
+                            const waiting = r.status === 'awaiting_transfer'
+                            const applied = r.status === 'applied'
+                            return (
+                              <div
+                                key={r._id}
+                                className={`mt-2 rounded-lg px-2.5 py-2 ${
+                                  applied ? 'bg-emerald-100/70 dark:bg-emerald-900/40'
+                                    : waiting ? 'bg-amber-100/70 dark:bg-amber-900/30'
+                                      : 'bg-black/5 dark:bg-white/5'
+                                }`}
+                              >
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <span className="text-xs font-medium">
+                                    {applied
+                                      ? `Renewed online to ${formatDate(r.newEndDate)}`
+                                      : waiting
+                                        ? `Renewing to ${formatDate(r.newEndDate)} — waiting on a bank transfer`
+                                        : `Renewal started to ${formatDate(r.newEndDate)} — not paid yet`}
+                                    {' · '}AED {Number(r.total).toLocaleString()}
+                                    {r.method === 'card' ? ' by card' : ' by transfer'}
+                                  </span>
+                                  <div className="flex items-center gap-3 shrink-0">
+                                    {waiting && (
+                                      <button
+                                        type="button"
+                                        disabled={confirmTransfer.isPending}
+                                        onClick={() => {
+                                          if (!confirm(`Confirm AED ${Number(r.total).toLocaleString()} received? This extends the contract to ${formatDate(r.newEndDate)}, raises the invoice and emails the tenant.`)) return
+                                          confirmTransfer.mutate(r._id)
+                                        }}
+                                        className="text-xs font-bold text-amber-900 dark:text-amber-300 hover:underline cursor-pointer disabled:opacity-50"
+                                      >
+                                        {confirmTransfer.isPending ? 'Applying…' : 'Confirm transfer received'}
+                                      </button>
+                                    )}
+                                    {!applied && (
+                                      <button
+                                        type="button"
+                                        disabled={cancelRenewal.isPending}
+                                        onClick={() => cancelRenewal.mutate(r._id)}
+                                        className="text-xs text-muted-foreground hover:underline cursor-pointer disabled:opacity-50"
+                                      >
+                                        Cancel
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                                {r.reviewNote && (
+                                  <p className="mt-1 text-[11px] text-amber-800 dark:text-amber-300">{r.reviewNote}</p>
+                                )}
+                              </div>
+                            )
+                          })}
+                          {confirmTransfer.isError && (
+                            <p className="mt-1 text-[11px] text-destructive">{apiError(confirmTransfer.error)}</p>
+                          )}
                           {renewalIntent === 'renewing' && (
                             <div className="mt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg bg-emerald-100/70 dark:bg-emerald-900/40 px-2.5 py-1.5">
                               <span className="text-xs font-medium text-emerald-800 dark:text-emerald-300">Tenant is renewing — update the new Check Out date</span>

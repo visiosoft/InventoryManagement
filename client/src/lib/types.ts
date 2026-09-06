@@ -122,7 +122,42 @@ export interface IntegrationStatus {
   openai?: { configured: boolean; model: string; keyHint: string }
   whatsapp: { configured: boolean; missing?: string[] }
   googleContacts: { configured: boolean; missing?: string[] }
-  stripe: { configured: boolean; webhookConfigured: boolean }
+  /** publishableKey is returned in full — it is designed to be public and the
+   *  tenant renewal page needs it to render Stripe's own card form.
+   *  embeddedConfigured means both keys are present, so that form can load. */
+  stripe: {
+    configured: boolean
+    webhookConfigured: boolean
+    publishableKey?: string
+    embeddedConfigured?: boolean
+  }
+}
+
+/** A renewal a tenant started themselves from the expiry message. */
+export interface ContractRenewal {
+  _id: string
+  contract: string
+  currentEndDate: string
+  newEndDate: string
+  weeks: number
+  monthlyRate: number
+  weeklyRate: number
+  rateSource: 'list' | 'contract'
+  subTotal: number
+  vatPct: number
+  vatAmount: number
+  total: number
+  cardFeePct: number
+  cardFeeAmount: number
+  method: 'card' | 'bank_transfer'
+  status: 'pending' | 'awaiting_transfer' | 'paid' | 'applied' | 'cancelled'
+  stripePaidAt?: string | null
+  invoice?: { _id: string; invoiceNo: string; total: number; paymentMade?: number; status: string } | string | null
+  appliedAt?: string | null
+  appliedByName?: string
+  /** Anything that needed a person — a moved end date, a closed contract. */
+  reviewNote?: string
+  createdAt?: string
 }
 
 export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired'

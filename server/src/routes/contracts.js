@@ -2,7 +2,8 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { isValidObjectId, Types } from 'mongoose';
 import { stampSignature } from '../services/stampSignature.js';
-import { Contract, Customer, Unit, Payment, Document, Invoice, Quote, AgreementTemplate, nextContractNo, nextInvoiceNo, MessageTemplate } from '../models/index.js';
+import { Contract, Customer, Unit, Payment, Document, Invoice, Quote, AgreementTemplate, nextContractNo, nextInvoiceNo, MessageTemplate, ContractRenewal } from '../models/index.js';
+import { applyRenewal } from '../services/renewalApply.js';
 import { creditFor, markLeadWon } from '../services/dealCredit.js';
 import { contractExportRows } from '../services/contractExportRows.js';
 import { promoteToCustomer } from '../services/customerStage.js';
@@ -1274,6 +1275,76 @@ router.post('/:id/extend', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+/* ── Renewals the tenant started themselves ─────────────────────────────────
+ *
+ * What the contract page shows in its renewal panel. A card renewal is usually
+ * already 'applied' by the time anyone looks; a bank transfer sits at
+ * 'awaiting_transfer' until somebody confirms the money landed.
+ */
+router.get('/:id/renewals', async (req, res) => {
+  if (!isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Bad contract id' });
+  const renewals = await ContractRenewal.find({ contract: req.params.id })
+    .populate('invoice', 'invoiceNo total paymentMade status')
+    .sort({ createdAt: -1 })
+    .limit(20)
+    .lean();
+  res.json(renewals);
+});
+
+/**
+ * The money for a bank-transfer renewal has arrived.
+ *
+ * This is the one manual step in the whole flow, and it exists because nothing
+ * tells us a transfer landed — a card tells us through the webhook, a bank does
+ * not. Pressing this does exactly what the webhook does, through the same
+ * function, so the two cannot drift into meaning different things.
+ */
+router.post('/:id/renewals/:renewalId/confirm-transfer', async (req, res) => {
+  const { id, renewalId } = req.params;
+  if (!isValidObjectId(id) || !isValidObjectId(renewalId)) {
+    return res.status(400).json({ error: 'Bad id' });
+  }
+  const renewal = await ContractRenewal.findOne({ _id: renewalId, contract: id });
+  if (!renewal) return res.status(404).json({ error: 'Renewal not found' });
+  if (renewal.method !== 'bank_transfer') {
+    return res.status(409).json({ error: 'This renewal was paid by card — it applies itself' });
+  }
+  if (renewal.status === 'applied') {
+    return res.status(409).json({ error: 'This renewal has already been applied' });
+  }
+  if (renewal.status === 'cancelled') {
+    return res.status(409).json({ error: 'This renewal was cancelled' });
+  }
+
+  const byName = req.user?.name || req.user?.email || 'staff';
+  const out = await applyRenewal(renewal._id, { byName, paid: true });
+  if (!out.ok) return res.status(out.needsReview ? 409 : 500).json({ error: out.error });
+
+  res.json({
+    applied: true,
+    extended: out.extended,
+    invoiceId: out.invoiceId,
+    notified: out.notified,
+    reviewNote: out.reviewNote || '',
+  });
+});
+
+/** Drop a renewal the tenant started and never paid for. */
+router.post('/:id/renewals/:renewalId/cancel', async (req, res) => {
+  const { id, renewalId } = req.params;
+  if (!isValidObjectId(id) || !isValidObjectId(renewalId)) {
+    return res.status(400).json({ error: 'Bad id' });
+  }
+  const renewal = await ContractRenewal.findOne({ _id: renewalId, contract: id });
+  if (!renewal) return res.status(404).json({ error: 'Renewal not found' });
+  if (renewal.status === 'applied') {
+    return res.status(409).json({ error: 'This renewal has already been applied' });
+  }
+  renewal.status = 'cancelled';
+  await renewal.save();
+  res.json({ cancelled: true });
 });
 
 router.post('/bulk-delete', requireAdmin, async (req, res) => {
