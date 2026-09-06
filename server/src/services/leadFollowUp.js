@@ -35,8 +35,22 @@ export async function quietThreshold() {
 export async function setQuietThreshold(days) {
     const n = Math.max(1, Math.min(30, Number(days) || QUIET_DAYS));
     await LeadRoutingConfig.findOneAndUpdate({}, { $set: { quietFollowUpDays: n } }, { upsert: true });
+    summaryCache = { at: 0, data: null }; // the threshold just changed under it
     return n;
 }
+
+/**
+ * The company-wide rollup (ownerId null) is the one every admin's dashboard
+ * loads on every visit, and it is also the expensive one: no owner to narrow
+ * it, so it reads every open lead's phone number and asks WhatsApp's whole
+ * history who spoke to whom last. A per-rep call stays a few dozen phones and
+ * is cheap enough to just run.
+ *
+ * Same shape as listWhatsAppTemplates' own cache — a short TTL, not
+ * correctness-sensitive: a quiet-lead count nine minutes stale is still the
+ * right number to act on. */
+let summaryCache = { at: 0, data: null };
+const SUMMARY_CACHE_MS = 10 * 60_000;
 
 /**
  * The quiet leads themselves — scoped to one owner, or every open lead when
@@ -194,8 +208,17 @@ export function bucketOf(daysQuiet) {
 }
 
 /** Counts by how-long-quiet bucket, for the dashboard chart — and per owner,
- *  so admin can see it is not evenly spread. */
+ *  so admin can see it is not evenly spread.
+ *
+ *  The admin-wide call (no ownerId) is cached: it is the one every admin's
+ *  dashboard loads on every visit, and the one with no owner to narrow the
+ *  underlying scan — every open lead in the company, not one rep's few dozen.
+ *  A per-rep call is cheap enough on its own and always runs fresh. */
 export async function quietSummary({ ownerId = null } = {}) {
+    if (!ownerId && summaryCache.data && Date.now() - summaryCache.at < SUMMARY_CACHE_MS) {
+        return summaryCache.data;
+    }
+
     const leads = await quietLeads({ ownerId });
     const buckets = new Map();
     const byOwner = new Map();
@@ -207,11 +230,14 @@ export async function quietSummary({ ownerId = null } = {}) {
         row.count += 1;
         byOwner.set(key, row);
     }
-    return {
+    const result = {
         total: leads.length,
         buckets: [...buckets.entries()].map(([bucket, count]) => ({ bucket, count })),
         byOwner: [...byOwner.values()].sort((a, b) => b.count - a.count),
     };
+
+    if (!ownerId) summaryCache = { at: Date.now(), data: result };
+    return result;
 }
 
 /**

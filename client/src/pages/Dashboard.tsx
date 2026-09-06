@@ -44,9 +44,26 @@ function safeLoadLayout() {
     if (!raw) return DEFAULT_LAYOUT
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return DEFAULT_LAYOUT
-    const filtered = parsed.filter((x): x is WidgetId => DEFAULT_LAYOUT.includes(x as WidgetId))
-    const missing = DEFAULT_LAYOUT.filter((x) => !filtered.includes(x))
-    return [...filtered, ...missing]
+    const result = parsed.filter((x): x is WidgetId => DEFAULT_LAYOUT.includes(x as WidgetId))
+
+    /* A widget added to DEFAULT_LAYOUT after somebody already saved a custom
+       order used to be appended at the very end, past everything else on the
+       page — which for a widget added last (quiet-leads) meant the bottom of
+       a long dashboard, easy to miss and easy to mistake for "not there".
+       Placed instead right after whichever of its default-order neighbours
+       the person still has, so a new widget lands near where it was designed
+       to sit rather than always at the tail. */
+    for (const id of DEFAULT_LAYOUT) {
+      if (result.includes(id)) continue
+      const defaultIdx = DEFAULT_LAYOUT.indexOf(id)
+      let insertAt = result.length
+      for (let i = defaultIdx - 1; i >= 0; i--) {
+        const afterIdx = result.indexOf(DEFAULT_LAYOUT[i])
+        if (afterIdx !== -1) { insertAt = afterIdx + 1; break }
+      }
+      result.splice(insertAt, 0, id)
+    }
+    return result
   } catch {
     return DEFAULT_LAYOUT
   }
