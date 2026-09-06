@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
@@ -972,15 +973,41 @@ function QuickAssign({ convo, onChanged }: { convo: WhatsAppConversation; onChan
   const [open, setOpen] = useState(false)
   const [err, setErr] = useState('')
   const boxRef = useRef<HTMLDivElement | null>(null)
+  const btnRef = useRef<HTMLButtonElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  // Where to put the portalled menu, measured from the button when it opens.
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null)
   const leadId = convo.lead?._id
+
+  function toggle() {
+    if (open) { setOpen(false); return }
+    const r = btnRef.current?.getBoundingClientRect()
+    if (r) setPos({ top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) })
+    setOpen(true)
+  }
 
   useEffect(() => {
     if (!open) return
+    // The menu is in <body>, so "outside" has to mean outside both it and the
+    // button — a click inside the portal is not inside boxRef.
     const away = (e: MouseEvent) => {
-      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false)
+      const t = e.target as Node
+      if (boxRef.current?.contains(t) || menuRef.current?.contains(t)) return
+      setOpen(false)
     }
+    /* A fixed menu does not travel with the list, so scrolling would leave it
+       stranded beside the wrong row. Closing is the honest response — the
+       alternative is recomputing the position on every scroll frame for a menu
+       nobody is looking at. */
+    const close = () => setOpen(false)
     document.addEventListener('mousedown', away)
-    return () => document.removeEventListener('mousedown', away)
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    return () => {
+      document.removeEventListener('mousedown', away)
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+    }
   }, [open])
 
   const { data: people = [], isLoading: loadingPeople, error: peopleError } = useQuery<{ _id: string; name: string; email: string; role?: string }[]>({
@@ -1013,8 +1040,9 @@ function QuickAssign({ convo, onChanged }: { convo: WhatsAppConversation; onChan
   return (
     <span ref={boxRef} className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
       <button
+        ref={btnRef}
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggle}
         title="Nobody has this yet — assign it"
         className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 cursor-pointer"
         style={{ fontSize: 10, fontWeight: 700, background: '#FFF7E6', color: '#B45309', border: 'none' }}
@@ -1025,10 +1053,25 @@ function QuickAssign({ convo, onChanged }: { convo: WhatsAppConversation; onChan
         {assign.isPending ? 'Assigning…' : 'Assign'}
       </button>
 
-      {open && (
+      {/* Rendered into <body>, not beside the button.
+       *
+       * The inbox list is a scroll container (.wa-scroll sets overflow-y, and
+       * CSS then clips the other axis too), and the row itself has been a
+       * clipping box at least once already. A menu positioned inside all that
+       * gets cut down to whatever space is left — which is why this looked like
+       * an empty white sliver rather than a list of names. A portal has no
+       * ancestor to be clipped by, so it cannot happen again wherever the row
+       * sits or however the list is restyled. */}
+      {open && pos && createPortal(
         <div
-          className="absolute right-0 mt-1 z-40 rounded-xl overflow-hidden"
-          style={{ background: '#fff', border: `1px solid ${LINE}`, boxShadow: '0 10px 30px rgba(20,8,31,.16)', minWidth: 170 }}
+          ref={menuRef}
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: 'fixed', top: pos.top, right: pos.right, zIndex: 60,
+            background: '#fff', border: `1px solid ${LINE}`, borderRadius: 12,
+            boxShadow: '0 10px 30px rgba(20,8,31,.16)', minWidth: 190,
+            maxHeight: 320, overflowY: 'auto',
+          }}
         >
           {err && <p className="px-3 py-1.5" style={{ fontSize: 11, color: '#B91C1C' }}>{err}</p>}
           {/* Say which of the three it is. This used to read "Loading…"
@@ -1063,7 +1106,8 @@ function QuickAssign({ convo, onChanged }: { convo: WhatsAppConversation; onChan
               {u.name || u.email}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </span>
   )
