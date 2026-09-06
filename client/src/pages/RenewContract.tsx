@@ -475,7 +475,7 @@ export default function RenewContract() {
         <Panel>
           <h1 style={{ fontFamily: HEAD, fontSize: 22, color: INK, margin: '0 0 4px' }}>Pay by card</h1>
           <p style={{ fontSize: 14, color: MUTED, margin: '0 0 18px' }}>
-            Renewing to {fmtDate(endDate)} · AED {money(price?.totalWithCardFee ?? 0)} including the {options.cardFeePct}% card fee.
+            Renewing to {fmtDate(endDate)} · AED {money(price?.totalWithCardFee ?? 0)} including the {options.cardFeePct}% admin fee.
           </p>
           <EmbeddedCheckoutProvider stripe={stripePromise} options={{ clientSecret }}>
             <EmbeddedCheckout />
@@ -610,7 +610,7 @@ export default function RenewContract() {
               <Row label={`Storage · ${price?.weeks ?? weeks} week${(price?.weeks ?? weeks) === 1 ? '' : 's'}`} value={price ? `AED ${money(price.subTotal)}` : '—'} />
               <Row label={`VAT (${price?.vatPct ?? options.vatPct}%)`} value={price ? `AED ${money(price.vatAmount)}` : '—'} />
               {method === 'card' && price && price.cardFeeAmount > 0 && (
-                <Row label={`Card fee (${price.cardFeePct}%)`} value={`AED ${money(price.cardFeeAmount)}`} />
+                <Row label={`Admin fee (${price.cardFeePct}%)`} value={`AED ${money(price.cardFeeAmount)}`} />
               )}
             </div>
 
