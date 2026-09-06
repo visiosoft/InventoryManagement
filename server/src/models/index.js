@@ -671,6 +671,11 @@ const quoteSchema = new Schema(
     notes: { type: String, default: '' },
     status: { type: String, enum: ['draft', 'sent', 'accepted', 'rejected', 'expired'], default: 'draft' },
     shareToken: { type: String, default: null },
+    // A Stripe Checkout session for paying this quote online, and when it
+    // actually cleared — the webhook sets stripePaidAt, nothing else does.
+    stripeCheckoutSessionId: { type: String, default: null },
+    stripePaymentLinkUrl: { type: String, default: null },
+    stripePaidAt: { type: Date, default: null },
     contract: { type: Schema.Types.ObjectId, ref: 'Contract' },
     flowStep: { type: Number, default: 0, min: 0, max: 5 },
     /* The terms as they stood when this quote was made. A copy, not a
@@ -748,6 +753,12 @@ const invoiceSchema = new Schema(
     attachments: { type: [invoiceAttachmentSchema], default: [] },
     status: { type: String, enum: ['draft', 'sent', 'paid', 'partial', 'overdue', 'cancelled'], default: 'draft' },
     shareToken: { type: String, default: null },
+    // The current Stripe Checkout link for the outstanding balance — kept
+    // rather than regenerated on every request, so a link already sent stays
+    // valid (the short /pay/link/:id redirect always points at whatever is
+    // stored here).
+    stripeCheckoutSessionId: { type: String, default: null },
+    stripePaymentLinkUrl: { type: String, default: null },
     source: { type: String, enum: ['manual', 'import_csv'], default: 'manual' },
     importBatch: { type: String, default: null },
     // Zoho Books sync
@@ -1297,6 +1308,9 @@ const movingQuoteSchema = new Schema(
     termsAndConditions: { type: String, default: '' },
     salesperson: { type: String, default: '' },
     shareToken: { type: String, default: null },
+    stripeCheckoutSessionId: { type: String, default: null },
+    stripePaymentLinkUrl: { type: String, default: null },
+    stripePaidAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
@@ -1969,6 +1983,17 @@ const assistantConfigSchema = new Schema({
   actionRoles: { type: [String], default: ['admin'] },
 }, { timestamps: true });
 export const AssistantConfig = model('AssistantConfig', assistantConfigSchema);
+
+/* One switch, one number, shared by every payment link the system creates —
+ * storage and moving, quotes and invoices. There is one Stripe account, so
+ * one fee makes sense; a customer should not see 3% on an invoice and a
+ * different figure on a quote from the same company. Off by default, same as
+ * the manual per-send checkbox this replaces. */
+const paymentFeeConfigSchema = new Schema({
+  enabled: { type: Boolean, default: false },
+  pct: { type: Number, default: 3, min: 0, max: 15 },
+}, { timestamps: true });
+export const PaymentFeeConfig = model('PaymentFeeConfig', paymentFeeConfigSchema);
 
 export const AiBotConfig = model('AiBotConfig', aiBotConfigSchema);
 export const AiBotThread = model('AiBotThread', aiBotThreadSchema);

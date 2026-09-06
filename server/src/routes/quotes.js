@@ -10,6 +10,8 @@ import { companyForQuote } from '../services/companyIdentity.js';
 import { isRefundableRow, vatBase, vatOn } from '../services/quoteVat.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { archivePdf } from '../utils/archivePdf.js';
+import { stripeConfigured, createCheckoutSession } from '../services/stripe.js';
+import { resolveFeePct } from '../services/paymentFee.js';
 
 const router = Router();
 
@@ -267,6 +269,105 @@ router.post('/:id/send-email', async (req, res) => {
     await quote.save();
     await resyncQuoteUnits(quote.units.map((u) => u.unit));
     res.json({ sent: true, to });
+});
+
+// Short redirect to the current Stripe payment link for this quote — same
+// pattern as the moving-invoices and storage-invoices versions. Public: a
+// customer clicks this from an email or a WhatsApp message, not logged in.
+router.get('/pay/link/:id', async (req, res) => {
+    try {
+        const quote = await Quote.findById(req.params.id).select('stripePaymentLinkUrl');
+        if (!quote?.stripePaymentLinkUrl) return res.status(404).send('Payment link not found or expired');
+        res.redirect(302, quote.stripePaymentLinkUrl);
+    } catch {
+        res.status(404).send('Payment link not found');
+    }
+});
+
+// Create a Stripe Checkout session for this quotation's total — a "pay
+// online to confirm" link, priced exactly as the quote itself. Paying it
+// marks the quote accepted; it does not convert it to a contract on its own,
+// the same way accepting a quote never has — that step still asks for
+// authorized persons and payment method, which a webhook cannot supply.
+router.post('/:id/payment-link', async (req, res) => {
+    try {
+        if (!stripeConfigured()) {
+            return res.status(400).json({ error: 'Stripe is not connected — add a secret key in Settings → Payments' });
+        }
+        const channel = req.body?.channel;
+        if (!['whatsapp', 'email', 'link'].includes(channel)) {
+            return res.status(400).json({ error: 'Pick a channel: whatsapp, email or link' });
+        }
+        const quote = await Quote.findById(req.params.id).populate('customer', 'fullName email phone address');
+        if (!quote) return res.status(404).json({ error: 'Quote not found' });
+        if (['rejected', 'expired'].includes(quote.status)) {
+            return res.status(409).json({ error: `Cannot pay a ${quote.status} quote` });
+        }
+        if (quote.contract) return res.status(409).json({ error: 'This quote has already become a contract' });
+        if (!(quote.total > 0)) return res.status(400).json({ error: 'This quote has nothing to charge' });
+
+        const customer = quote.customer;
+        if (channel === 'whatsapp' && !customer?.phone) {
+            return res.status(400).json({ error: 'This customer has no phone number on file' });
+        }
+        if (channel === 'email' && !customer?.email) {
+            return res.status(400).json({ error: 'This customer has no email on file' });
+        }
+
+        const feePct = await resolveFeePct();
+        const clientOrigin = process.env.CLIENT_ORIGIN || 'https://office.purplebox.ae';
+        const session = await createCheckoutSession({
+            amountAed: quote.total,
+            productName: `Quotation ${quote.quoteNo}`,
+            description: 'Storage quotation — PurpleBox',
+            metadata: { storageQuoteId: String(quote._id), quoteNo: quote.quoteNo },
+            customerEmail: customer?.email,
+            successUrl: `${clientOrigin}/pay/success?quote=${quote.quoteNo}`,
+            cancelUrl: `${clientOrigin}/quotes/new?quote=${quote._id}`,
+            feePct,
+        });
+
+        quote.stripeCheckoutSessionId = session.id;
+        quote.stripePaymentLinkUrl = session.url;
+        await quote.save();
+
+        const apiBase = (process.env.API_PUBLIC_URL || process.env.APP_URL || req.headers.origin || 'https://api.purplebox.ae').replace(/\/$/, '');
+        const payUrl = `${apiBase}/api/quotes/pay/link/${quote._id}`;
+        const totalCharged = quote.total + session.feeAmount;
+
+        // Same convention as storage invoices: WhatsApp here is a client-side
+        // wa.me deep link the page opens itself, not a server-initiated send.
+        if (channel === 'email') {
+            if (!mailConfigured()) return res.status(400).json({ error: 'Email is not connected — connect Gmail in Settings' });
+            const feeLine = session.feeAmount > 0
+                ? `<br/>Card processing fee (${feePct}%): <strong>AED ${session.feeAmount.toLocaleString()}</strong><br/>Total to pay: <strong>AED ${totalCharged.toLocaleString()}</strong>`
+                : '';
+            const html = [
+                `<p>Hi ${customer.fullName},</p>`,
+                `<p>Your storage quotation <strong>${quote.quoteNo}</strong> — <strong>AED ${quote.total.toLocaleString()}</strong>.${feeLine}</p>`,
+                `<p><a href="${payUrl}" style="display:inline-block;background:#5B2BC9;color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;font-weight:bold;">Pay Online →</a></p>`,
+                `<p>Thank you!<br/>PurpleBox</p>`,
+            ].join('\n');
+            const text = `Hi ${customer.fullName},\n\nYour storage quotation ${quote.quoteNo} — AED ${quote.total.toLocaleString()}.${session.feeAmount > 0 ? `\nCard processing fee (${feePct}%): AED ${session.feeAmount.toLocaleString()}\nTotal to pay: AED ${totalCharged.toLocaleString()}` : ''}\n\nPay online: ${payUrl}\n\nThank you! — PurpleBox`;
+            const pdf = await renderQuotePdf({ quote, co: await companyForQuote(quote) }).catch(() => null);
+            await sendMail({
+                to: customer.email,
+                subject: `Payment link — Quotation ${quote.quoteNo} — PurpleBox`,
+                text, html,
+                attachments: pdf ? [{ filename: `${quote.quoteNo}.pdf`, content: pdf, contentType: 'application/pdf' }] : [],
+            });
+        }
+
+        if (quote.status === 'draft') {
+            quote.status = 'sent';
+            quote.timeline.push({ type: 'sent', text: `Payment link created (${channel})`, user: req.user.id });
+            await quote.save();
+        }
+
+        res.json({ payUrl, total: quote.total, channel, feePct, feeAmount: session.feeAmount, totalCharged });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 router.get('/available-units', async (req, res) => {

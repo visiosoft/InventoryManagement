@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Plus, ChevronRight, ChevronLeft, Check, User, Box, FileText, Briefcase, Search, Trash2, CalendarRange, Loader2, CheckCircle2, Send, Mail, Download,
-  Upload, X, Eye, } from 'lucide-react'
+  Upload, X, Eye, CreditCard, Copy, } from 'lucide-react'
 import { api, apiError, quoteApi, type AvailableUnit } from '../lib/api'
 import type { AccessPerson, Customer, Invoice, Lead, Quote } from '../lib/types'
 import { useAuth } from '../lib/auth'
@@ -761,6 +761,35 @@ export default function NewQuote() {
     onError: (e) => setErr(apiError(e)),
   })
 
+  // A real Stripe card-payment link for this quotation's total. Fee is
+  // decided by the global Settings switch, never chosen here. Saves the
+  // quote first if it hasn't been (same pattern sendQuote/downloadQuote use)
+  // — a payment link needs a real, priced quote to point at.
+  const [payLinkResult, setPayLinkResult] = useState<{ payUrl: string; total: number; feePct: number; feeAmount: number; totalCharged: number } | null>(null)
+  const [payLinkCopied, setPayLinkCopied] = useState(false)
+  const paymentLinkQuote = useMutation({
+    mutationFn: async () => {
+      let qId = quoteId
+      if (!(quoteLocked && qId)) {
+        const body = buildQuoteBody()
+        const q = qId ? await quoteApi.update(qId, body) : await quoteApi.create(body)
+        qId = q._id
+        setQuoteId(q._id)
+      }
+      const res = await api.post(`/quotes/${qId}/payment-link`, { channel: 'link' })
+      return res.data as { payUrl: string; total: number; feePct: number; feeAmount: number; totalCharged: number }
+    },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['quotes'] })
+      qc.invalidateQueries({ queryKey: ['flow-resume'] })
+      setErr('')
+      setPayLinkResult(data)
+      setPayLinkCopied(false)
+      navigator.clipboard?.writeText(data.payUrl).then(() => setPayLinkCopied(true)).catch(() => {})
+    },
+    onError: (e) => setErr(apiError(e)),
+  })
+
   const contractOptionsBody = () => ({
     authorizedPersons: authorizedPersons.filter((p) => p.name?.trim()),
     paymentMethod,
@@ -1432,10 +1461,52 @@ export default function NewQuote() {
                         >
                           <Download size={13} /> PDF
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => paymentLinkQuote.mutate()}
+                          disabled={paymentLinkQuote.isPending}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors disabled:opacity-60"
+                          style={{ color: PURPLE }}
+                        >
+                          <CreditCard size={13} /> {paymentLinkQuote.isPending ? 'Creating…' : 'Pay Link'}
+                        </button>
                       </div>
                     </div>
                     {sentMsg && <DoneBanner text={sentMsg} />}
                     {quoteEmailSent && <DoneBanner text={quoteEmailSent} />}
+                    {payLinkResult && (
+                      <div className="p-3 rounded-xl space-y-2" style={{ background: CHIP_BG }}>
+                        <p className="text-xs" style={{ color: MUTED }}>
+                          {payLinkCopied ? 'Payment link copied to clipboard.' : 'Payment link ready — copy below.'} Total: <strong style={{ color: INK }}>{formatMoney(payLinkResult.total)} AED</strong>
+                          {payLinkResult.feePct > 0 && (
+                            <> · card fee <strong style={{ color: INK }}>{formatMoney(payLinkResult.feeAmount)} AED</strong> ({payLinkResult.feePct}%) · customer pays <strong style={{ color: INK }}>{formatMoney(payLinkResult.totalCharged)} AED</strong></>
+                          )}
+                        </p>
+                        <p className="text-xs break-all" style={{ color: INK }}>{payLinkResult.payUrl}</p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => navigator.clipboard?.writeText(payLinkResult.payUrl).then(() => setPayLinkCopied(true))}
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium border hover:bg-gray-50 inline-flex items-center gap-1.5"
+                            style={{ color: INK, borderColor: 'rgba(20,8,31,0.15)' }}
+                          >
+                            <Copy size={12} /> {payLinkCopied ? 'Copied!' : 'Copy'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const phone = customerPhone.replace(/\D/g, '').replace(/^00/, '')
+                              const msg = `Hello ${customerName},\n\nYour storage quotation is ready — ${formatMoney(payLinkResult.total)} AED${payLinkResult.feePct > 0 ? ` (+ ${payLinkResult.feePct}% card fee, ${formatMoney(payLinkResult.totalCharged)} AED total)` : ''}.\n\nPay online: ${payLinkResult.payUrl}\n\nThank you — PurpleBox`
+                              window.open(phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
+                            }}
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium text-white"
+                            style={{ background: '#25D366' }}
+                          >
+                            Send via WhatsApp
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <>

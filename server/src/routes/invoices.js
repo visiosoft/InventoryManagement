@@ -10,6 +10,9 @@ import { uploadFile } from '../services/drive.js';
 import { sendWhatsAppText, whatsappSendConfigured, whatsappSendMissing } from '../services/whatsapp.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { zohoBooksConfigured, createZohoInvoice, recordZohoPayment } from '../services/zohoBooks.js';
+import { applyInvoicePayment, syncLinkedPayment } from '../services/invoicePayments.js';
+import { stripeConfigured, createCheckoutSession } from '../services/stripe.js';
+import { resolveFeePct } from '../services/paymentFee.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -91,38 +94,9 @@ function normalizeBody(body) {
     };
 }
 
-async function syncLinkedPayment(invoice) {
-    // An invoice may have multiple linked payment records (e.g. rent + deposit on invoice 1).
-    // Update ALL of them so the payment schedule group reflects the correct status.
-    const payments = await Payment.find({ invoice: invoice._id });
-    if (!payments.length) return;
-
-    const fullyPaid = Number(invoice.paymentMade || 0) >= Number(invoice.total || 0);
-    const latest = (invoice.paymentHistory || []).at(-1);
-
-    if (invoice.status === 'paid' || fullyPaid) {
-        await Payment.updateMany(
-            { invoice: invoice._id },
-            {
-                $set: {
-                    status: 'paid',
-                    paidDate: latest?.date ? new Date(latest.date) : new Date(),
-                    method: latest?.method || 'other',
-                },
-            }
-        );
-        return;
-    }
-
-    // Unpaid — reset all linked records to pending/overdue based on due date.
-    const now = new Date();
-    for (const p of payments) {
-        p.status = new Date(p.dueDate) < now ? 'overdue' : 'pending';
-        p.paidDate = undefined;
-        p.method = '';
-        await p.save();
-    }
-}
+// syncLinkedPayment moved to services/invoicePayments.js — the Stripe
+// webhook needed it too, and two copies of "when is an invoice paid" is
+// exactly the kind of thing that quietly drifts apart.
 
 async function detachLinkedPayment(invoiceId) {
     const linked = await Payment.findOne({ invoice: invoiceId });
@@ -394,6 +368,108 @@ router.post('/:id/share', async (req, res) => {
     res.json({ token: invoice.shareToken, url });
 });
 
+// Short redirect to the current Stripe payment link — see the identical
+// comment on moving-invoices' version of this route. Public: a customer
+// clicks this from WhatsApp or email with no login.
+router.get('/pay/link/:id', async (req, res) => {
+    try {
+        const invoice = await Invoice.findById(req.params.id).select('stripePaymentLinkUrl');
+        if (!invoice?.stripePaymentLinkUrl) return res.status(404).send('Payment link not found or expired');
+        res.redirect(302, invoice.stripePaymentLinkUrl);
+    } catch {
+        res.status(404).send('Payment link not found');
+    }
+});
+
+// Create (or reuse) a Stripe Checkout session for the outstanding balance.
+// The card fee, if any, comes only from the global Settings switch — never
+// from the request — so switching it off genuinely stops it everywhere.
+router.post('/:id/payment-link', async (req, res) => {
+    try {
+        if (!stripeConfigured()) {
+            return res.status(400).json({ error: 'Stripe is not connected — add a secret key in Settings → Payments' });
+        }
+        const channel = req.body?.channel;
+        if (!['whatsapp', 'email', 'link'].includes(channel)) {
+            return res.status(400).json({ error: 'Pick a channel: whatsapp, email or link' });
+        }
+        const invoice = await Invoice.findById(req.params.id).populate('customer', 'fullName email phone address');
+        if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+        if (invoice.status === 'cancelled') return res.status(409).json({ error: 'This invoice is cancelled' });
+        const balanceDue = Math.max(0, Number(invoice.total || 0) - Number(invoice.paymentMade || 0));
+        if (balanceDue <= 0) return res.status(400).json({ error: 'Invoice already fully paid' });
+
+        const customer = invoice.customer;
+        if (channel === 'whatsapp' && !customer?.phone) {
+            return res.status(400).json({ error: 'This customer has no phone number on file' });
+        }
+        if (channel === 'email' && !customer?.email) {
+            return res.status(400).json({ error: 'This customer has no email on file' });
+        }
+
+        const feePct = await resolveFeePct();
+        const clientOrigin = process.env.CLIENT_ORIGIN || 'https://office.purplebox.ae';
+        const session = await createCheckoutSession({
+            amountAed: balanceDue,
+            productName: `Invoice ${invoice.invoiceNo}`,
+            description: 'Storage invoice balance due — PurpleBox',
+            metadata: { storageInvoiceId: String(invoice._id), invoiceNo: invoice.invoiceNo },
+            customerEmail: customer?.email,
+            successUrl: `${clientOrigin}/pay/success?invoice=${invoice.invoiceNo}`,
+            cancelUrl: `${clientOrigin}/invoices/${invoice._id}`,
+            feePct,
+        });
+
+        invoice.stripeCheckoutSessionId = session.id;
+        invoice.stripePaymentLinkUrl = session.url;
+        await invoice.save();
+
+        const apiBase = (process.env.API_PUBLIC_URL || process.env.APP_URL || req.headers.origin || 'https://api.purplebox.ae').replace(/\/$/, '');
+        const payUrl = `${apiBase}/api/invoices/pay/link/${invoice._id}`;
+        const totalCharged = balanceDue + session.feeAmount;
+
+        // Storage's own convention for WhatsApp is a client-side wa.me deep
+        // link (see the invoice detail page's Share button) rather than a
+        // server-initiated Cloud API send — kept the same way here, so this
+        // route only ever emails, and 'whatsapp'/'link' both just hand the
+        // URL back for the client to deliver.
+        if (channel === 'email') {
+            if (!mailConfigured()) return res.status(400).json({ error: 'Email is not connected — connect Gmail in Settings' });
+            const feeLine = session.feeAmount > 0
+                ? `<br/>Card processing fee (${feePct}%): <strong>AED ${session.feeAmount.toLocaleString()}</strong><br/>Total to pay: <strong>AED ${totalCharged.toLocaleString()}</strong>`
+                : '';
+            const html = [
+                `<p>Hi ${customer.fullName},</p>`,
+                `<p>Your invoice <strong>${invoice.invoiceNo}</strong> is ready.<br/>`,
+                `Balance due: <strong>AED ${balanceDue.toLocaleString()}</strong>${feeLine}</p>`,
+                `<p><a href="${payUrl}" style="display:inline-block;background:#5B2BC9;color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;font-weight:bold;">Pay Online →</a></p>`,
+                `<p>Thank you!<br/>PurpleBox</p>`,
+            ].join('\n');
+            const text = `Hi ${customer.fullName},
+
+Your invoice ${invoice.invoiceNo} is ready.
+Balance due: AED ${balanceDue.toLocaleString()}${session.feeAmount > 0 ? `
+Card processing fee (${feePct}%): AED ${session.feeAmount.toLocaleString()}
+Total to pay: AED ${totalCharged.toLocaleString()}` : ''}
+
+Pay online: ${payUrl}
+
+Thank you! — PurpleBox`;
+            const invoicePdf = await renderInvoicePdf({ invoice, co: {} }).catch(() => null);
+            await sendMail({
+                to: customer.email,
+                subject: `Payment due — Invoice ${invoice.invoiceNo} — PurpleBox`,
+                text, html,
+                attachments: invoicePdf ? [{ filename: `${invoice.invoiceNo}.pdf`, content: invoicePdf, contentType: 'application/pdf' }] : [],
+            });
+        }
+
+        res.json({ payUrl, balanceDue, channel, feePct, feeAmount: session.feeAmount, totalCharged });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 router.get('/', async (req, res) => {
     const filter = {};
     if (req.query.status) filter.status = String(req.query.status);
@@ -579,16 +655,7 @@ router.post('/:id/record-payment', async (req, res) => {
         return res.status(409).json({ error: 'Cannot record payment for a cancelled invoice' });
     }
 
-    invoice.paymentHistory.push({
-        date: date ? new Date(date) : new Date(),
-        amount: n,
-        method: method || 'cash',
-        notes: notes || '',
-    });
-    invoice.paymentMade = Number(invoice.paymentHistory.reduce((s, p) => s + p.amount, 0).toFixed(2));
-    if (invoice.paymentMade >= invoice.total && invoice.status !== 'paid') {
-        invoice.status = 'paid';
-    }
+    applyInvoicePayment(invoice, { amount: n, method, date, notes });
 
     await invoice.save();
     await syncLinkedPayment(invoice);

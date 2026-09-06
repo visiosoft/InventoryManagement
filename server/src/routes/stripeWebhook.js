@@ -1,7 +1,8 @@
 import { Router } from 'express';
-import { MovingInvoice, Customer } from '../models/index.js';
+import { MovingInvoice, Invoice, Quote, MovingQuote, Customer } from '../models/index.js';
 import { constructWebhookEvent, stripeWebhookConfigured } from '../services/stripe.js';
 import { applyMovingInvoicePayment } from '../services/movingInvoicePayments.js';
+import { applyInvoicePayment, syncLinkedPayment } from '../services/invoicePayments.js';
 import { notifyPaymentReceived } from '../services/movingNotifications.js';
 import { sendMail, mailConfigured } from '../services/mail.js';
 
@@ -14,6 +15,30 @@ const aw = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch
   console.error('[StripeWebhook]', e.message);
   if (!res.headersSent) res.status(500).json({ error: e.message });
 });
+
+/** The amount actually owed, in AED — the fee line (when present) was
+ *  collected from the customer to cover Stripe's cut, not extra rent or
+ *  storage, and must never count toward what a record was paid down by. */
+function amountOwed(session) {
+  const amountFils = Number(session.metadata?.amountFils);
+  if (Number.isFinite(amountFils)) return amountFils / 100;
+  // Older sessions (created before the metadata key was renamed) still carry
+  // this — kept so an in-flight checkout at deploy time is not left stranded.
+  const legacy = Number(session.metadata?.invoiceAmountFils);
+  return Number.isFinite(legacy) ? legacy / 100 : (session.amount_total ?? 0) / 100;
+}
+
+function thankYouEmail({ to, name, docNo, amount, businessName = 'PurpleBox' }) {
+  if (!to || !mailConfigured()) return;
+  const html = [
+    `<p>Hi ${name},</p>`,
+    `<p>We've received your payment of <strong>AED ${amount.toLocaleString()}</strong> for <strong>${docNo}</strong>. ✅</p>`,
+    `<p>Thank you for choosing ${businessName}!</p>`,
+  ].join('\n');
+  const text = `Hi ${name},\n\nWe've received your payment of AED ${amount.toLocaleString()} for ${docNo}. Thank you!\n\n— ${businessName}`;
+  sendMail({ to, subject: `Payment received — ${docNo} — ${businessName}`, text, html })
+    .catch((e) => console.error('[StripeWebhook] thank-you email failed:', e.message));
+}
 
 router.post('/', aw(async (req, res) => {
   if (!stripeWebhookConfigured()) {
@@ -33,40 +58,69 @@ router.post('/', aw(async (req, res) => {
 
   if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
     const session = event.data.object;
-    const invoiceId = session.metadata?.movingInvoiceId;
-    if (invoiceId) {
-      const invoice = await MovingInvoice.findById(invoiceId);
-      // Idempotent: Stripe may deliver the same event more than once
+    const meta = session.metadata || {};
+    const feePct = Number(meta.feePct) || 0;
+    const amount = amountOwed(session);
+    const feeNote = feePct > 0 ? ` incl. ${feePct}% card fee paid separately` : '';
+
+    // Moving invoice — unchanged behaviour, just reading the renamed field.
+    if (meta.movingInvoiceId) {
+      const invoice = await MovingInvoice.findById(meta.movingInvoiceId);
       const already = invoice?.paymentHistory?.some((p) => p.notes?.includes(session.id));
       if (invoice && invoice.balanceDue > 0 && !already) {
-        // Credit only the invoice-owed portion — a card-fee line item (when
-        // present) was collected from the customer to cover Stripe's cut,
-        // not extra rent, and must not count toward the balance.
-        const invoiceAmountFils = Number(session.metadata?.invoiceAmountFils);
-        const amount = Number.isFinite(invoiceAmountFils) ? invoiceAmountFils / 100 : (session.amount_total ?? 0) / 100;
-        const feePct = Number(session.metadata?.feePct) || 0;
         applyMovingInvoicePayment(invoice, {
-          amount,
-          method: 'online',
-          notes: `Paid via Stripe Checkout (${session.id})${feePct > 0 ? ` incl. ${feePct}% card fee paid separately` : ''}`,
-          receivedBy: 'Stripe',
+          amount, method: 'online', receivedBy: 'Stripe',
+          notes: `Paid via Stripe Checkout (${session.id})${feeNote}`,
         });
         await invoice.save();
         const customer = await Customer.findById(invoice.customer).select('fullName phone email');
         if (customer) {
           notifyPaymentReceived(customer, invoice.invoiceNo, amount);
-          if (customer.email && mailConfigured()) {
-            const html = [
-              `<p>Hi ${customer.fullName},</p>`,
-              `<p>We've received your payment of <strong>AED ${amount.toLocaleString()}</strong> for invoice <strong>${invoice.invoiceNo}</strong>. ✅</p>`,
-              `<p>Thank you for choosing PurpleBox Moving!</p>`,
-            ].join('\n');
-            const text = `Hi ${customer.fullName},\n\nWe've received your payment of AED ${amount.toLocaleString()} for invoice ${invoice.invoiceNo}. Thank you!\n\n— PurpleBox Moving`;
-            try {
-              await sendMail({ to: customer.email, subject: `Payment received — Invoice ${invoice.invoiceNo} — PurpleBox Moving`, text, html });
-            } catch (e) { console.error('[StripeWebhook] thank-you email failed:', e.message); }
-          }
+          thankYouEmail({ to: customer.email, name: customer.fullName, docNo: `Invoice ${invoice.invoiceNo}`, amount, businessName: 'PurpleBox Moving' });
         }
+      }
+    }
+
+    // Storage invoice — the same "when is this paid" rule the manual Record
+    // Payment button uses, via services/invoicePayments.js.
+    if (meta.storageInvoiceId) {
+      const invoice = await Invoice.findById(meta.storageInvoiceId).populate('customer', 'fullName email');
+      const already = invoice?.paymentHistory?.some((p) => p.notes?.includes(session.id));
+      const balanceDue = invoice ? Math.max(0, Number(invoice.total || 0) - Number(invoice.paymentMade || 0)) : 0;
+      if (invoice && balanceDue > 0 && !already) {
+        applyInvoicePayment(invoice, {
+          amount, method: 'card',
+          notes: `Paid via Stripe Checkout (${session.id})${feeNote}`,
+        });
+        await invoice.save();
+        await syncLinkedPayment(invoice);
+        thankYouEmail({ to: invoice.customer?.email, name: invoice.customer?.fullName || 'there', docNo: `Invoice ${invoice.invoiceNo}`, amount });
+      }
+    }
+
+    // Storage quote — paying it is treated as acceptance, on the same
+    // timeline every other "quote sent/accepted" event uses. It does not
+    // convert to a contract by itself: that step asks for authorized persons
+    // and a payment method a webhook has no way to supply.
+    if (meta.storageQuoteId) {
+      const quote = await Quote.findById(meta.storageQuoteId).populate('customer', 'fullName email');
+      if (quote && !quote.stripePaidAt) {
+        quote.stripePaidAt = new Date();
+        if (['draft', 'sent'].includes(quote.status)) quote.status = 'accepted';
+        quote.timeline.push({ type: 'accepted', text: `Paid online via Stripe Checkout (${session.id})${feeNote}` });
+        await quote.save();
+        thankYouEmail({ to: quote.customer?.email, name: quote.customer?.fullName || 'there', docNo: `Quotation ${quote.quoteNo}`, amount });
+      }
+    }
+
+    // Moving quote — same idea as the storage quote above.
+    if (meta.movingQuoteId) {
+      const quote = await MovingQuote.findById(meta.movingQuoteId).populate('customer', 'fullName email');
+      if (quote && !quote.stripePaidAt) {
+        quote.stripePaidAt = new Date();
+        if (['draft', 'sent'].includes(quote.status)) quote.status = 'accepted';
+        await quote.save();
+        thankYouEmail({ to: quote.customer?.email, name: quote.customer?.fullName || 'there', docNo: `Quotation ${quote.quoteNo}`, amount, businessName: 'PurpleBox Moving' });
       }
     }
   }

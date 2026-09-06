@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Download, Plus, Trash2, Edit, Receipt, Pencil } from 'lucide-react'
+import { ArrowLeft, Download, Plus, Trash2, Edit, Receipt, Pencil, CreditCard, Mail, Link as LinkIcon, Share2 } from 'lucide-react'
 import { api, apiError, apiUrl } from '../../lib/api'
 import { movingTotals } from '../../lib/movingTotals'
 import { EditCustomerModalLoader } from '../../components/AddCustomerModal'
+import { usePaymentFee } from '../../lib/paymentFee'
 import type { MovingQuote, MovingQuoteStatus } from '../../lib/types'
 import { Badge, Button, Field, Input, Modal, Spinner, Textarea } from '../../components/ui'
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
 const INK = '#14081F'
@@ -57,6 +58,12 @@ export default function MovingQuoteDetail() {
   const [items, setItems] = useState<Array<{ description: string; subDescription?: string; qty: number; rate: number; amount: number }>>([])
   const [_editIdx, setEditIdx] = useState<number | null>(null)
   const [shareToken, setShareToken] = useState<string>('')
+  const { data: paymentFee } = usePaymentFee()
+  const [payLinkModal, setPayLinkModal] = useState(false)
+  const [payLinkBusy, setPayLinkBusy] = useState<'' | 'whatsapp' | 'email' | 'link'>('')
+  const [payLinkResult, setPayLinkResult] = useState<{ payUrl: string; total: number; channel: string; feePct: number; feeAmount: number; totalCharged: number } | null>(null)
+  const [payLinkCopied, setPayLinkCopied] = useState(false)
+  const payLinkInputRef = useRef<HTMLInputElement | null>(null)
   const [notesEdit, setNotesEdit] = useState(false)
   const [notesVal, setNotesVal] = useState('')
   const [termsEdit, setTermsEdit] = useState(false)
@@ -109,6 +116,22 @@ export default function MovingQuoteDetail() {
     onSuccess: (invoice) => navigate(`/moving/invoices/${invoice._id}`),
     onError: (e) => setErr(apiError(e)),
   })
+
+  async function sendStripePaymentLink(channel: 'whatsapp' | 'email' | 'link') {
+    setPayLinkBusy(channel)
+    try {
+      const res = await api.post(`/moving-quotes/${id}/payment-link`, { channel })
+      setErr('')
+      setPayLinkModal(false)
+      if (channel === 'link') {
+        try { await navigator.clipboard.writeText(res.data.payUrl); setPayLinkCopied(true) } catch { setPayLinkCopied(false) }
+      }
+      setPayLinkResult({
+        payUrl: res.data.payUrl, total: res.data.total, channel: res.data.channel,
+        feePct: res.data.feePct, feeAmount: res.data.feeAmount, totalCharged: res.data.totalCharged,
+      })
+    } catch (e) { setErr(apiError(e)) } finally { setPayLinkBusy('') }
+  }
 
   if (isLoading) return <div className="p-8"><Spinner /></div>
   if (!quote) return <div className="p-8" style={{ color: MUTED }}>Quote not found</div>
@@ -168,6 +191,16 @@ export default function MovingQuoteDetail() {
         >
           <Download size={13} className="mr-1" />PDF
         </Button>
+        {!['rejected', 'expired'].includes(quote.status) && quote.total > 0 && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-purple-600 border-purple-300 hover:bg-purple-50"
+            onClick={() => setPayLinkModal(true)}
+          >
+            <CreditCard size={13} className="mr-1" />Payment Link
+          </Button>
+        )}
         <Button
           size="sm"
           variant="outline"
@@ -485,6 +518,62 @@ export default function MovingQuoteDetail() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      {/* Send Stripe Payment Link */}
+      <Modal open={payLinkModal} title="Send Stripe Payment Link" onClose={() => setPayLinkModal(false)}>
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Quote total: <strong>AED {quote.total.toLocaleString()}</strong>
+          </p>
+          <p className="text-xs" style={{ color: MUTED }}>
+            {paymentFee?.enabled
+              ? `A ${paymentFee.pct}% card processing fee applies — the customer pays it, on top of the total above.`
+              : 'No card processing fee is set — turn it on in Settings → Payments if you want one.'}
+          </p>
+          {err && <p className="text-sm text-red-600">{err}</p>}
+          <div className="flex flex-wrap justify-end gap-2 pt-2 border-t">
+            <Button variant="outline" disabled={!!payLinkBusy} onClick={() => sendStripePaymentLink('link')}>
+              <LinkIcon size={14} className="mr-1.5" />{payLinkBusy === 'link' ? 'Creating…' : 'Copy Link'}
+            </Button>
+            <Button variant="outline" disabled={!!payLinkBusy} onClick={() => sendStripePaymentLink('whatsapp')}>
+              <Share2 size={14} className="mr-1.5" />{payLinkBusy === 'whatsapp' ? 'Sending…' : 'Send via WhatsApp'}
+            </Button>
+            <Button disabled={!!payLinkBusy} onClick={() => sendStripePaymentLink('email')}>
+              <Mail size={14} className="mr-1.5" />{payLinkBusy === 'email' ? 'Sending…' : 'Send via Email'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Stripe Payment Link result */}
+      <Modal open={!!payLinkResult} title={payLinkResult?.channel === 'link' ? 'Link copied' : 'Payment link sent'} onClose={() => { setPayLinkResult(null); setPayLinkCopied(false) }}>
+        {payLinkResult && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              {payLinkResult.channel === 'link' ? (payLinkCopied ? 'Copied to clipboard.' : 'Tap Copy below to copy it.') : `Sent via ${payLinkResult.channel === 'whatsapp' ? 'WhatsApp' : 'email'}.`} Total: <strong>AED {payLinkResult.total.toLocaleString()}</strong>
+              {payLinkResult.feePct > 0 && (
+                <> · card fee <strong>AED {payLinkResult.feeAmount.toLocaleString()}</strong> ({payLinkResult.feePct}%) · customer pays <strong>AED {payLinkResult.totalCharged.toLocaleString()}</strong> total</>
+              )}
+            </p>
+            <div className="flex items-center gap-2">
+              <Input readOnly value={payLinkResult.payUrl} onFocus={(e) => e.currentTarget.select()}
+                ref={(el) => { payLinkInputRef.current = el }} />
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  try { await navigator.clipboard.writeText(payLinkResult.payUrl); setPayLinkCopied(true) }
+                  catch { payLinkInputRef.current?.select(); document.execCommand('copy'); setPayLinkCopied(true) }
+                }}
+              >
+                {payLinkCopied ? 'Copied ✓' : 'Copy'}
+              </Button>
+            </div>
+            <div className="flex justify-end">
+              <Button onClick={() => { setPayLinkResult(null); setPayLinkCopied(false) }}>Done</Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   )

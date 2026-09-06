@@ -123,6 +123,9 @@ export interface IntegrationStatus {
   whatsapp: { configured: boolean; missing?: string[] }
   googleContacts: { configured: boolean; missing?: string[] }
   stripe: { configured: boolean; webhookConfigured: boolean }
+  /** The one admin-fee switch behind every Stripe payment link — storage and
+   *  moving, quotes and invoices alike. */
+  paymentFee: { enabled: boolean; pct: number }
 }
 
 export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired'

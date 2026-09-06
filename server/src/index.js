@@ -249,12 +249,14 @@ app.use('/api/assistant', requireAuth, assistantRoutes);
 app.use('/api/leads', requireAuth, accountsReadOnly, leadRoutes);
 app.use(
   '/api/quotes',
-  (req, res, next) => req.path.startsWith('/public/') ? next() : requireAuth(req, res, next),
+  // /pay/link/:id is the short Stripe-payment redirect — a customer reaches
+  // it from WhatsApp or email with no login, same as /public/ already was.
+  (req, res, next) => (req.path.startsWith('/public/') || req.path.startsWith('/pay/')) ? next() : requireAuth(req, res, next),
   quoteRoutes
 );
 app.use(
   '/api/invoices',
-  (req, res, next) => req.path.startsWith('/public/') ? next() : requireAuth(req, res, next),
+  (req, res, next) => (req.path.startsWith('/public/') || req.path.startsWith('/pay/')) ? next() : requireAuth(req, res, next),
   invoiceRoutes
 );
 app.use('/api/vendors', vendorRoutes);
@@ -267,7 +269,7 @@ app.use('/api/moving-jobs', requireAuth, movingJobRoutes);
 app.use('/api/moving-leads', requireAuth, movingLeadRoutes);
 app.use(
   '/api/moving-quotes',
-  (req, res, next) => (req.path.endsWith('/pdf') && req.query.token) ? next() : requireAuth(req, res, next),
+  (req, res, next) => (req.path.startsWith('/pay/') || (req.path.endsWith('/pdf') && req.query.token)) ? next() : requireAuth(req, res, next),
   movingQuoteRoutes
 );
 app.use(

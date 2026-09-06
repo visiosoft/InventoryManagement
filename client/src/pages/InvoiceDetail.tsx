@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Download, AlertCircle, CheckCircle2, Clock, Pencil, MessageCircle, RefreshCw, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Download, AlertCircle, CheckCircle2, Clock, Pencil, MessageCircle, RefreshCw, Trash2, X, CreditCard, Copy } from 'lucide-react'
 import { api, apiError, invoiceApi } from '../lib/api'
 import type { Invoice, InvoicePaymentEntry, InvoiceStatus } from '../lib/types'
 import {
@@ -476,6 +476,8 @@ export default function InvoiceDetail() {
     const [editing, setEditing] = useState(false)
     const [editingPayment, setEditingPayment] = useState<{ idx: number; amount: string; method: string; date: string; notes: string } | null>(null)
     const [deletingPaymentIdx, setDeletingPaymentIdx] = useState<number | null>(null)
+    const [payLinkResult, setPayLinkResult] = useState<{ payUrl: string; balanceDue: number; feePct: number; feeAmount: number; totalCharged: number } | null>(null)
+    const [payLinkCopied, setPayLinkCopied] = useState(false)
 
     const { data: invoice, isLoading } = useQuery<Invoice>({
         queryKey: ['invoice', id],
@@ -517,6 +519,21 @@ export default function InvoiceDetail() {
                 ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
                 : `https://wa.me/?text=${encodeURIComponent(text)}`
             window.open(waUrl, '_blank', 'noopener,noreferrer')
+        },
+    })
+
+    // A real Stripe card-payment link for the outstanding balance. The link
+    // itself is generated server-side (fee decided by the global Settings
+    // switch, never by this page); delivering it is client-side, the same
+    // wa.me deep-link convention the button above already uses for the PDF.
+    const paymentLink = useMutation({
+        mutationFn: () => api.post(`/invoices/${id}/payment-link`, { channel: 'link' }).then((r) => r.data as {
+            payUrl: string; balanceDue: number; feePct: number; feeAmount: number; totalCharged: number
+        }),
+        onSuccess: (data) => {
+            setPayLinkResult(data)
+            setPayLinkCopied(false)
+            navigator.clipboard?.writeText(data.payUrl).then(() => setPayLinkCopied(true)).catch(() => {})
         },
     })
 
@@ -630,7 +647,21 @@ export default function InvoiceDetail() {
                         Record Payment
                     </Button>
                 )}
+                {canPay && Math.max(0, invoice.total - (invoice.paymentMade ?? 0)) > 0 && (
+                    <Button
+                        size="sm" variant="outline"
+                        onClick={() => paymentLink.mutate()}
+                        disabled={paymentLink.isPending}
+                        className="text-purple-600 border-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/30"
+                    >
+                        <CreditCard size={13} />
+                        {paymentLink.isPending ? 'Creating…' : 'Payment Link'}
+                    </Button>
+                )}
             </div>
+            {paymentLink.error && (
+                <p className="text-xs text-destructive mb-4">{apiError(paymentLink.error)}</p>
+            )}
 
             {/* Zoho sync error */}
             {(syncZoho.error || (invoice.zohoBooksSyncError && !invoice.zohoBooksSyncId)) && (
@@ -922,6 +953,43 @@ export default function InvoiceDetail() {
                         {deletePayment.isPending ? 'Deleting…' : 'Delete'}
                     </Button>
                 </div>
+            </Modal>
+
+            {/* Stripe Payment Link result */}
+            <Modal open={!!payLinkResult} onClose={() => setPayLinkResult(null)} title="Payment link created">
+                {payLinkResult && (
+                    <div className="space-y-4">
+                        <p className="text-sm text-muted-foreground">
+                            {payLinkCopied ? 'Copied to clipboard.' : 'Copy it below to share it.'} Balance: <strong>AED {payLinkResult.balanceDue.toLocaleString()}</strong>
+                            {payLinkResult.feePct > 0 && (
+                                <> · card fee <strong>AED {payLinkResult.feeAmount.toLocaleString()}</strong> ({payLinkResult.feePct}%) · customer pays <strong>AED {payLinkResult.totalCharged.toLocaleString()}</strong> total</>
+                            )}
+                        </p>
+                        <div className="flex items-center gap-2">
+                            <Input readOnly value={payLinkResult.payUrl} onFocus={(e) => e.currentTarget.select()} />
+                            <Button
+                                variant="outline"
+                                onClick={() => navigator.clipboard?.writeText(payLinkResult.payUrl).then(() => setPayLinkCopied(true))}
+                            >
+                                <Copy size={13} className="mr-1" />{payLinkCopied ? 'Copied ✓' : 'Copy'}
+                            </Button>
+                        </div>
+                        <div className="flex justify-end gap-2 pt-2 border-t">
+                            <Button
+                                variant="outline"
+                                onClick={() => {
+                                    const phone = (invoice.customer as any)?.phone?.replace(/\D/g, '') || ''
+                                    const text = `Hi ${(invoice.customer as any)?.fullName ?? 'there'},\n\nYour invoice ${invoice.invoiceNo} is ready — AED ${payLinkResult.balanceDue.toLocaleString()}${payLinkResult.feePct > 0 ? ` (+ ${payLinkResult.feePct}% card fee, AED ${payLinkResult.totalCharged.toLocaleString()} total)` : ''}.\n\nPay online: ${payLinkResult.payUrl}\n\nThank you — PurpleBox`
+                                    const url = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}` : `https://wa.me/?text=${encodeURIComponent(text)}`
+                                    window.open(url, '_blank', 'noopener,noreferrer')
+                                }}
+                            >
+                                Share via WhatsApp
+                            </Button>
+                            <Button onClick={() => setPayLinkResult(null)}>Done</Button>
+                        </div>
+                    </div>
+                )}
             </Modal>
 
             {/* Record Payment modal */}

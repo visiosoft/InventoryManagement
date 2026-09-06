@@ -160,6 +160,12 @@ export default function Settings() {
   const [stripeSecretKey, setStripeSecretKey] = useState('')
   const [stripeWebhookSecret, setStripeWebhookSecret] = useState('')
   const [stripeBusy, setStripeBusy] = useState(false)
+  // The admin-fee switch — one on/off and one percentage, behind every
+  // payment link the system creates (storage and moving, quotes and
+  // invoices). Seeded from the server once, then edited locally until Save.
+  const [feeDraft, setFeeDraft] = useState<{ enabled: boolean; pct: string } | null>(null)
+  const [feeMsg, setFeeMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [feeBusy, setFeeBusy] = useState(false)
   const [waMsg, setWaMsg] = useState<{ ok: boolean; text: string } | null>(null)
   // OpenAI — only used to read plain-English availability requests.
   const [aiKey, setAiKey] = useState('')
@@ -212,6 +218,14 @@ export default function Settings() {
     queryKey: ['integrations-status'],
     queryFn: () => integrationApi.status(),
   })
+
+  // Seeded once the server value arrives, never overwritten after — so
+  // editing the field doesn't get clobbered by a background refetch.
+  useEffect(() => {
+    if (integrations?.paymentFee && !feeDraft) {
+      setFeeDraft({ enabled: integrations.paymentFee.enabled, pct: String(integrations.paymentFee.pct) })
+    }
+  }, [integrations, feeDraft])
 
   return (
     <div className={activeTab !== 'general' ? 'max-w-6xl space-y-4' : 'max-w-3xl space-y-4'}>
@@ -451,6 +465,73 @@ export default function Settings() {
             {stripeMsg && (
               <p className={`text-xs ${stripeMsg.ok ? 'text-emerald-700 dark:text-emerald-400' : 'text-destructive'}`}>
                 {stripeMsg.text}
+              </p>
+            )}
+          </div>
+          <div className="rounded-lg border px-4 py-3 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="font-medium">Admin fee (Payment Links)</div>
+                <div className="text-xs text-muted-foreground">
+                  One switch for every payment link — storage and moving, quotes and invoices. The customer pays it as a separate line, on top of what's owed.
+                </div>
+              </div>
+              <span className={integrations?.paymentFee?.enabled ? 'text-xs text-emerald-600 font-medium' : 'text-xs text-muted-foreground font-medium'}>
+                {integrations?.paymentFee?.enabled ? `On — ${integrations.paymentFee.pct}%` : 'Off'}
+              </span>
+            </div>
+            {feeDraft && (
+              <>
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded"
+                      checked={feeDraft.enabled}
+                      onChange={(e) => setFeeDraft({ ...feeDraft, enabled: e.target.checked })}
+                    />
+                    Add this fee to payment links
+                  </label>
+                  <Field label="Fee %" className="w-28">
+                    <Input
+                      type="number" min={0} max={15} step="0.1"
+                      value={feeDraft.pct}
+                      disabled={!feeDraft.enabled}
+                      onChange={(e) => setFeeDraft({ ...feeDraft, pct: e.target.value })}
+                    />
+                  </Field>
+                  <Button
+                    size="sm"
+                    disabled={feeBusy}
+                    onClick={async () => {
+                      setFeeBusy(true)
+                      setFeeMsg(null)
+                      try {
+                        const saved = await integrationApi.setPaymentFee({ enabled: feeDraft.enabled, pct: Number(feeDraft.pct) })
+                        setFeeDraft({ enabled: saved.enabled, pct: String(saved.pct) })
+                        setFeeMsg({ ok: true, text: 'Saved.' })
+                        qc.invalidateQueries({ queryKey: ['integrations-status'] })
+                        qc.invalidateQueries({ queryKey: ['payment-fee'] })
+                      } catch (e) {
+                        setFeeMsg({ ok: false, text: apiError(e) })
+                      } finally {
+                        setFeeBusy(false)
+                      }
+                    }}
+                  >
+                    {feeBusy ? 'Saving…' : 'Save'}
+                  </Button>
+                </div>
+                {feeDraft.enabled && Number(feeDraft.pct) > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Example: on a AED 1,000 balance the customer would pay AED {(1000 * (1 + Number(feeDraft.pct) / 100)).toFixed(2)} — AED {(1000 * Number(feeDraft.pct) / 100).toFixed(2)} of that is the fee, shown as its own line on checkout.
+                  </p>
+                )}
+              </>
+            )}
+            {feeMsg && (
+              <p className={`text-xs ${feeMsg.ok ? 'text-emerald-700 dark:text-emerald-400' : 'text-destructive'}`}>
+                {feeMsg.text}
               </p>
             )}
           </div>

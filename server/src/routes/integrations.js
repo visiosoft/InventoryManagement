@@ -10,13 +10,16 @@ import { Customer, Contract, WhatsAppWebhookHit } from '../models/index.js';
 import { whatsappConfigured, whatsappMissing, verifyWebhookChallenge, verifyWhatsAppSignature, verifyWhatsAppCredentials, inspectWhatsAppToken, forgetWabaId } from '../services/whatsapp.js';
 import { getWhatsAppLabelSyncStatus, processWhatsAppWebhookPayload, runWhatsAppLabelReconciliation } from '../services/whatsappLeadSync.js';
 import { stripeConfigured, stripeWebhookConfigured, verifyStripeKey } from '../services/stripe.js';
+import { getPaymentFeeConfig } from '../services/paymentFee.js';
 import { updateEnvFile } from '../utils/env.js';
 import { openaiConfigured, openaiModel, openaiKeyHint, verifyOpenAIKey, parseAvailabilityQuery } from '../services/openai.js';
 
 const router = Router();
 
-router.get('/status', (_req, res) => {
+router.get('/status', async (_req, res) => {
+    const paymentFee = await getPaymentFeeConfig();
     res.json({
+        paymentFee: { enabled: paymentFee.enabled, pct: paymentFee.pct },
         zoho: { configured: zohoConfigured() },
         drive: {
             configured: driveConfigured(),
@@ -78,6 +81,30 @@ router.post('/stripe/disconnect', requireAdmin, async (_req, res) => {
     process.env.STRIPE_SECRET_KEY = '';
     process.env.STRIPE_WEBHOOK_SECRET = '';
     res.json({ ok: true });
+});
+
+// The admin-fee switch — one on/off and one percentage, applied to every
+// Stripe payment link the system creates (storage and moving, quotes and
+// invoices). Readable by anyone signed in, since the quote/invoice pages need
+// it to show the fee before a link is sent; only an admin may change it.
+router.get('/payment-fee', async (_req, res) => {
+    const config = await getPaymentFeeConfig();
+    res.json({ enabled: config.enabled, pct: config.pct });
+});
+
+router.put('/payment-fee', requireAdmin, async (req, res) => {
+    const { enabled, pct } = req.body || {};
+    const config = await getPaymentFeeConfig();
+    if (enabled !== undefined) config.enabled = Boolean(enabled);
+    if (pct !== undefined) {
+        const n = Number(pct);
+        if (!Number.isFinite(n) || n < 0 || n > 15) {
+            return res.status(400).json({ error: 'Fee must be a number between 0 and 15' });
+        }
+        config.pct = n;
+    }
+    await config.save();
+    res.json({ enabled: config.enabled, pct: config.pct });
 });
 
 // Save (and validate) WhatsApp Cloud API credentials, so the number can be
