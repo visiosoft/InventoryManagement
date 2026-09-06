@@ -211,7 +211,7 @@ export default function Dashboard() {
       if (!data) return {} as Record<WidgetId, React.ReactNode>
       return ({
         stats: (
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-[18px]">
+          <div className="grid grid-cols-2 lg:grid-cols-6 gap-[18px]">
             {/* Occupancy - dark card */}
             <div style={{ padding: 24, borderRadius: 22, background: '#1A0B33', color: '#FFF', display: 'flex', flexDirection: 'column', gap: 16, boxShadow: '0 8px 24px rgba(20,8,31,.10)' }}>
               <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#A78BFA' }}>Occupancy</div>
@@ -272,6 +272,27 @@ export default function Dashboard() {
               <div style={{ fontSize: 11, color: '#4A4357', marginTop: 'auto' }}>
                 still in, leaving in {data.monthLabel ?? 'this month'}
                 {data.moveOutsThisMonth > 0 && ` · ${data.moveOutsThisMonth} already out`}
+              </div>
+            </div>
+
+            {/* Leads gone quiet — pinned here rather than left as a
+                draggable/removable widget. That system reads its order from
+                a layout array saved in each browser's own localStorage, and
+                for an admin who already had a saved dashboard layout before
+                this existed, a widget added later could end up anywhere in
+                it, or effectively invisible without scrolling past
+                everything else. A KPI tile in this fixed row has no such
+                array to be missing from — it is exactly as visible as
+                Occupancy or Vacant, every time, for every admin. */}
+            <div
+              onClick={() => { setQuietOwner(undefined); setShowQuiet(true) }}
+              style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 1px 2px rgba(20,8,31,.05)', cursor: 'pointer' }}
+              className="hover:shadow-md transition-shadow"
+            >
+              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Leads gone quiet</div>
+              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{quiet?.total ?? '—'}</div>
+              <div style={{ fontSize: 11, color: '#4A4357', marginTop: 'auto' }}>
+                {quiet === undefined ? 'loading…' : quiet.total > 0 ? 'we spoke last, nothing came back — review & send →' : 'nobody, good sign'}
               </div>
             </div>
           </div>
@@ -536,7 +557,7 @@ export default function Dashboard() {
         ),
       })
     },
-    [data, latestNotes, overdueAging, onDrop, teamTasks, totalUnits]
+    [data, latestNotes, overdueAging, onDrop, teamTasks, totalUnits, quiet]
   )
 
   // Early returns come AFTER all hooks so hook call order is always stable
