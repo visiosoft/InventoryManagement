@@ -8,7 +8,7 @@ import {
     renewalChoices,
     validateNewEndDate,
 } from '../services/renewalPricing.js';
-import { createCheckoutSession, stripePublishableKey, stripeEmbeddedConfigured } from '../services/stripe.js';
+import { createCheckoutSession, stripeConfigured, stripePublishableKey, stripeEmbeddedConfigured } from '../services/stripe.js';
 import { bankTransferDetails } from '../services/bankDetails.js';
 
 /**
@@ -304,7 +304,14 @@ router.get('/renewal/:contractId/:token/options', async (req, res) => {
         // Publishable key only — it identifies the account and can do nothing
         // on its own. The secret key never leaves this server.
         stripePublishableKey: stripePublishableKey(),
-        cardAvailable: stripeEmbeddedConfigured(),
+        /* Card payment needs only the secret key. The publishable key decides
+         * how it is drawn, not whether it works: with one, Stripe's form is
+         * rendered inside our page; without, the tenant is sent to Stripe's own
+         * hosted page and back. Tying availability to the publishable key would
+         * hide card payment entirely from an account that can take cards
+         * perfectly well — which is exactly what it did. */
+        cardAvailable: stripeConfigured(),
+        cardMode: stripeEmbeddedConfigured() ? 'embedded' : 'redirect',
         bank: bankTransferDetails(),
     });
 });
@@ -349,7 +356,7 @@ router.post('/renewal/:contractId/:token/checkout', async (req, res) => {
             newEndDate: req.body?.newEndDate,
         });
         if (!check.ok) return res.status(400).json({ error: check.error });
-        if (method === 'card' && !stripeEmbeddedConfigured()) {
+        if (method === 'card' && !stripeConfigured()) {
             return res.status(400).json({ error: 'Card payment is not available right now — please choose bank transfer.' });
         }
 
@@ -404,6 +411,12 @@ router.post('/renewal/:contractId/:token/checkout', async (req, res) => {
 
         const origin = String(process.env.CLIENT_ORIGIN || 'https://office.purplebox.ae').replace(/\/+$/, '');
         const unitNo = units.map((u) => u.unitNumber).join(', ') || contract.contractNo;
+        const pageUrl = `${origin}/renew/${contract._id}/${req.params.token}`;
+        const embedded = stripeEmbeddedConfigured();
+
+        /* Both modes come back to the same page carrying the session id, so the
+         * "did it work" polling is identical either way and only the rendering
+         * differs. Stripe substitutes {CHECKOUT_SESSION_ID} itself. */
         const session = await createCheckoutSession({
             amountAed: priced.total,
             productName: `Storage renewal — ${contract.contractNo}`,
@@ -411,8 +424,12 @@ router.post('/renewal/:contractId/:token/checkout', async (req, res) => {
             metadata: { contractRenewalId: String(renewal._id), contractNo: contract.contractNo },
             customerEmail: contract.customer?.email || undefined,
             feePct,
-            embedded: true,
-            returnUrl: `${origin}/renew/${contract._id}/${req.params.token}?done={CHECKOUT_SESSION_ID}`,
+            ...(embedded
+                ? { embedded: true, returnUrl: `${pageUrl}?done={CHECKOUT_SESSION_ID}` }
+                : {
+                    successUrl: `${pageUrl}?done={CHECKOUT_SESSION_ID}`,
+                    cancelUrl: pageUrl,
+                }),
         });
 
         renewal.stripeCheckoutSessionId = session.id;
@@ -422,7 +439,10 @@ router.post('/renewal/:contractId/:token/checkout', async (req, res) => {
             renewalId: renewal._id,
             method,
             status: renewal.status,
-            clientSecret: session.clientSecret,
+            cardMode: embedded ? 'embedded' : 'redirect',
+            // Exactly one of these is set, and it decides what the page does.
+            clientSecret: embedded ? session.clientSecret : '',
+            payUrl: embedded ? '' : session.url,
             total: priced.total,
             cardFeeAmount: session.feeAmount,
             totalCharged: Number((priced.total + session.feeAmount).toFixed(2)),

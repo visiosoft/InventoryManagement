@@ -44,6 +44,8 @@ interface Options {
   choices: Choice[]
   stripePublishableKey: string
   cardAvailable: boolean
+  /** 'embedded' renders Stripe's form here; 'redirect' sends them to Stripe. */
+  cardMode: 'embedded' | 'redirect'
   bank: { accountName: string; accountNumber: string; iban: string; address: string }
 }
 
@@ -67,6 +69,28 @@ const money = (n: number) =>
 
 /** yyyy-mm-dd, which is what a date input wants and the API expects. */
 const isoDay = (d: Date) => d.toISOString().slice(0, 10)
+
+/** The same durations the booking screen offers, so a renewal reads like a
+ *  booking rather than a different product. Mirrors WEEK_OPTIONS in NewQuote. */
+const WEEK_OPTIONS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 20, 24, 36, 52]
+
+const addWeeksISO = (from: string | Date, weeks: number) =>
+  isoDay(new Date(new Date(from).getTime() + weeks * 7 * 86400000))
+
+/**
+ * The whole number of weeks between two dates, or null if it isn't one.
+ *
+ * Deliberately exact rather than rounded: it decides whether the dropdown can
+ * show a duration or has to say "custom". Rounding here would let the dropdown
+ * read "11 weeks" for a date that is ten and a half weeks out, and then
+ * re-selecting that same 11 would silently move the date the tenant chose.
+ */
+function exactWeeks(from: string | Date, to: string): number | null {
+  if (!to) return null
+  const days = Math.round((new Date(to).getTime() - new Date(from).getTime()) / 86400000)
+  if (days <= 0 || days % 7 !== 0) return null
+  return days / 7
+}
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
@@ -214,6 +238,15 @@ export default function RenewContract() {
     }
   }, [options])
 
+  /* Which duration the dropdown shows for the date currently chosen. A date
+     that is not a listed whole number of weeks reads as "custom" rather than
+     snapping to the nearest option, which would move the tenant's own date. */
+  const durationValue = useMemo(() => {
+    if (!options || !endDate) return ''
+    const w = exactWeeks(options.currentEndDate, endDate)
+    return w !== null && WEEK_OPTIONS.includes(w) ? String(w) : 'custom'
+  }, [options, endDate])
+
   async function start() {
     if (!endDate || !price) return
     setBusy(true)
@@ -229,6 +262,12 @@ export default function RenewContract() {
       setRenewalId(body.renewalId)
       if (body.method === 'bank_transfer') {
         setBankShown({ total: body.total, reference: body.reference })
+      } else if (body.payUrl) {
+        /* No publishable key on this account, so Stripe hosts the form. The
+           success_url brings them back here with the session id, which is the
+           same thing the embedded flow returns with — so everything after this
+           point is identical. */
+        window.location.href = body.payUrl
       } else {
         setClientSecret(body.clientSecret)
       }
@@ -359,47 +398,64 @@ export default function RenewContract() {
 
       <Card>
         <p style={{ fontFamily: HEAD, fontSize: 15, fontWeight: 700, color: INK, margin: '0 0 12px' }}>How long?</p>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-          {options.choices.map((c) => {
-            const on = c.endDate === endDate
-            return (
-              <button
-                key={c.weeks}
-                type="button"
-                onClick={() => setEndDate(c.endDate)}
-                style={{
-                  flex: '1 1 120px', cursor: 'pointer', textAlign: 'left',
-                  background: on ? PURPLE : 'transparent',
-                  color: on ? '#fff' : INK,
-                  border: `1px solid ${on ? PURPLE : 'rgba(20,8,31,.16)'}`,
-                  borderRadius: 12, padding: '10px 14px',
-                }}
-              >
-                <span style={{ display: 'block', fontWeight: 700, fontSize: 14 }}>
-                  {c.weeks === 52 ? '1 year' : `${c.weeks} weeks`}
-                </span>
-                <span style={{ display: 'block', fontSize: 12.5, opacity: 0.85, fontVariantNumeric: 'tabular-nums' }}>
-                  AED {money(c.total)}
-                </span>
-              </button>
-            )
-          })}
+
+        {/* The two are one choice seen from either end: pick weeks and the date
+            follows, pick a date and the weeks follow. Both stay on screen so a
+            tenant thinking in months and one thinking in dates each see the
+            answer to the other. */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+          <div style={{ flex: '1 1 200px' }}>
+            <label style={{ display: 'block', fontSize: 13, color: MUTED, marginBottom: 6 }}>Duration</label>
+            <select
+              value={durationValue}
+              onChange={(e) => {
+                const v = e.target.value
+                // 'custom' only ever describes the date already chosen — it is
+                // not itself a choice, so it changes nothing.
+                if (v === 'custom' || !v) return
+                setEndDate(addWeeksISO(options.currentEndDate, parseInt(v, 10)))
+              }}
+              style={{
+                width: '100%', padding: '10px 12px', fontSize: 15, color: INK, cursor: 'pointer',
+                border: '1px solid rgba(20,8,31,.16)', borderRadius: 10, background: '#fff',
+              }}
+            >
+              <option value="">— Select —</option>
+              {WEEK_OPTIONS.map((w) => (
+                <option key={w} value={w}>{w} week{w !== 1 ? 's' : ''}</option>
+              ))}
+              <option value="custom">Custom end date</option>
+            </select>
+          </div>
+
+          <div style={{ flex: '1 1 200px' }}>
+            <label style={{ display: 'block', fontSize: 13, color: MUTED, marginBottom: 6 }}>Move-out date</label>
+            <input
+              type="date"
+              value={endDate}
+              min={dateBounds.min}
+              max={dateBounds.max}
+              onChange={(e) => setEndDate(e.target.value)}
+              style={{
+                width: '100%', padding: '10px 12px', fontSize: 15, color: INK,
+                border: '1px solid rgba(20,8,31,.16)', borderRadius: 10, background: '#fff',
+              }}
+            />
+          </div>
         </div>
 
-        <label style={{ display: 'block', fontSize: 13, color: MUTED, marginBottom: 6 }}>
-          Or pick your own move-out date
-        </label>
-        <input
-          type="date"
-          value={endDate}
-          min={dateBounds.min}
-          max={dateBounds.max}
-          onChange={(e) => setEndDate(e.target.value)}
-          style={{
-            width: '100%', padding: '10px 12px', fontSize: 15, color: INK,
-            border: '1px solid rgba(20,8,31,.16)', borderRadius: 10, background: '#fff',
-          }}
-        />
+        {endDate && price && (
+          <p style={{ fontSize: 13, color: MUTED, margin: '12px 0 0' }}>
+            <strong style={{ color: INK }}>
+              {price.weeks} week{price.weeks === 1 ? '' : 's'}
+            </strong>
+            {' · you move out on '}
+            <strong style={{ color: INK }}>{fmtDate(endDate)}</strong>
+            {/* Only said when it actually happened, so it reads as an
+                explanation of the figure rather than boilerplate. */}
+            {exactWeeks(options.currentEndDate, endDate) === null && ' — part weeks are charged as a full week'}
+          </p>
+        )}
       </Card>
 
       {price && (
@@ -437,8 +493,10 @@ export default function RenewContract() {
                 borderRadius: 12, padding: '12px 16px',
               }}
             >
-              <span style={{ display: 'block', fontWeight: 700, fontSize: 14 }}>Credit card</span>
-              <span style={{ display: 'block', fontSize: 12.5, opacity: 0.85 }}>Renews straight away · {options.cardFeePct}% fee</span>
+              <span style={{ display: 'block', fontWeight: 700, fontSize: 14 }}>Pay online by card</span>
+              <span style={{ display: 'block', fontSize: 12.5, opacity: 0.85 }}>
+                Secure payment via Stripe · renews straight away · {options.cardFeePct}% fee
+              </span>
             </button>
           )}
           <button
@@ -472,7 +530,7 @@ export default function RenewContract() {
           {busy
             ? 'One moment…'
             : method === 'card'
-              ? `Pay AED ${money(price?.totalWithCardFee ?? 0)}`
+              ? `Pay AED ${money(price?.totalWithCardFee ?? 0)}${options.cardMode === 'redirect' ? ' with Stripe' : ''}`
               : 'Get the bank details'}
         </button>
       </Card>
