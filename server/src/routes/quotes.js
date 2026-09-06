@@ -11,7 +11,6 @@ import { isRefundableRow, vatBase, vatOn } from '../services/quoteVat.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { archivePdf } from '../utils/archivePdf.js';
 import { stripeConfigured, createCheckoutSession } from '../services/stripe.js';
-import { resolveFeePct } from '../services/paymentFee.js';
 
 const router = Router();
 
@@ -152,6 +151,12 @@ function normalizeBody(body, { holdAdvance = true } = {}) {
      * Absent from an older quote's body means on, which is the standing rule. */
     const vatEnabled = body.vatEnabled === undefined ? true : Boolean(body.vatEnabled);
     const vatRate = vatEnabled ? 5 : 0;
+    /* Same on/off-on-the-document idea as VAT above — decided per quote, not
+     * from a site-wide switch. Kept out of `total` below: it only applies if
+     * the customer actually pays by Stripe card. */
+    const cardFeeEnabled = Boolean(body.cardFeeEnabled);
+    const cardFeePctRaw = toNumber(body.cardFeePct, 3);
+    const cardFeePct = Math.min(15, Math.max(0, cardFeePctRaw));
     /* Charged on the sale, which is not the same as the sub total: an add-on
        or line item named as refundable is money held, not sold, and taxing it
        bills the customer 5% of what they are owed. Two live quotes carry an
@@ -183,6 +188,8 @@ function normalizeBody(body, { holdAdvance = true } = {}) {
         vatEnabled,
         vatRate,
         vatAmount,
+        cardFeeEnabled,
+        cardFeePct,
         total,
         notes: String(body.notes || ''),
         /* Undefined leaves the schema default in place on a new quote and the
@@ -314,7 +321,7 @@ router.post('/:id/payment-link', async (req, res) => {
             return res.status(400).json({ error: 'This customer has no email on file' });
         }
 
-        const feePct = await resolveFeePct();
+        const feePct = quote.cardFeeEnabled ? quote.cardFeePct : 0;
         const clientOrigin = process.env.CLIENT_ORIGIN || 'https://office.purplebox.ae';
         const session = await createCheckoutSession({
             amountAed: quote.total,

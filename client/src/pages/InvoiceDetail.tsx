@@ -337,6 +337,11 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
     const [items, setItems] = useState(() =>
         consolidateItems(invoice.items).map((it, i) => ({ ...it, sortOrder: it.sortOrder ?? i, discountPct: it.discountPct ?? 0 }))
     )
+    // Off by default — only applies if the customer chooses to pay this
+    // invoice by Stripe card, so it stays out of the invoiced total. Same
+    // on/off-per-document idea as vatEnabled on a quote, not a site switch.
+    const [cardFeeEnabled, setCardFeeEnabled] = useState(Boolean(invoice.cardFeeEnabled))
+    const [cardFeePct, setCardFeePct] = useState(invoice.cardFeePct ?? 3)
     const [err, setErr] = useState('')
 
     function updateDiscount(idx: number, pct: number) {
@@ -384,6 +389,8 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
             paymentMade: invoice.paymentMade ?? 0,
             status: invoice.status,
             total: items.reduce((s, it) => s + Number(it.amount || 0), 0),
+            cardFeeEnabled,
+            cardFeePct,
         }),
         onSuccess: () => onSaved(),
         onError: (e) => setErr(apiError(e)),
@@ -451,6 +458,38 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
                             <div className="border-t pt-2 space-y-1 text-sm">
                                 <div className="flex justify-between"><span className="text-muted-foreground">Total</span><span className="font-bold">{formatMoney(subTotal)} AED</span></div>
                             </div>
+                        </div>
+
+                        {/* Card-processing fee — decided on this invoice, like VAT on a
+                            quote, not a site-wide switch. Never added to the total above:
+                            it only applies if the customer pays by Stripe card. */}
+                        <div className="rounded-xl border bg-muted/30 p-4 space-y-2">
+                            <div className="flex items-center justify-between gap-3">
+                                <label className="flex items-center gap-2 text-sm font-medium cursor-pointer select-none">
+                                    <input
+                                        type="checkbox"
+                                        className="h-4 w-4 rounded"
+                                        checked={cardFeeEnabled}
+                                        onChange={e => setCardFeeEnabled(e.target.checked)}
+                                    />
+                                    Card fee if paid online
+                                </label>
+                                <div className="flex items-center gap-1">
+                                    <Input
+                                        type="number" min={0} max={15} step="0.1"
+                                        value={cardFeePct}
+                                        disabled={!cardFeeEnabled}
+                                        onChange={e => setCardFeePct(Number(e.target.value))}
+                                        className="w-16 text-sm text-right"
+                                    />
+                                    <span className="text-sm text-muted-foreground">%</span>
+                                </div>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                                {cardFeeEnabled
+                                    ? `Adds ${cardFeePct}% on top of the balance, but only if paid via the Stripe payment link — never part of the invoiced total.`
+                                    : 'No surcharge is added if this invoice is paid by card.'}
+                            </p>
                         </div>
 
                         {err && <p className="text-xs text-destructive">{err}</p>}
@@ -758,6 +797,12 @@ export default function InvoiceDetail() {
                             <span style={{ fontSize: 14, fontWeight: 700, color: INK }}>Balance Due</span>
                             <span style={{ fontSize: 14, fontWeight: 700, color: balance > 0 ? '#EF4444' : '#059669' }}>AED {formatMoney(balance)}</span>
                         </div>
+                    </div>
+                    {/* Read-only — the toggle itself lives in Edit. */}
+                    <div className="mt-2" style={{ fontSize: 11, color: MUTED }}>
+                        {invoice.cardFeeEnabled
+                            ? `Card fee: ${invoice.cardFeePct ?? 3}% added if paid via the Stripe payment link`
+                            : 'Card fee: off'}
                     </div>
                     {canPay && (
                         <Button variant="success" className="w-full mt-4" size="sm" onClick={() => setPaying(true)}>

@@ -116,12 +116,6 @@ export const integrationApi = {
     api.post<{ ok: true; configured: boolean; webhookConfigured: boolean }>('/integrations/stripe/connect', body).then((r) => r.data),
   disconnectStripe: () =>
     api.post<{ ok: true }>('/integrations/stripe/disconnect').then((r) => r.data),
-  // The admin-fee on/off switch — one place, used by every quote and invoice
-  // payment link, storage and moving alike.
-  getPaymentFee: () =>
-    api.get<{ enabled: boolean; pct: number }>('/integrations/payment-fee').then((r) => r.data),
-  setPaymentFee: (body: { enabled?: boolean; pct?: number }) =>
-    api.put<{ enabled: boolean; pct: number }>('/integrations/payment-fee', body).then((r) => r.data),
 }
 
 export type QuoteQuery = { search?: string; status?: string; customer?: string; lead?: string }

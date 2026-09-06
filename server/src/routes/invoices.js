@@ -12,7 +12,6 @@ import { mailConfigured, sendMail } from '../services/mail.js';
 import { zohoBooksConfigured, createZohoInvoice, recordZohoPayment } from '../services/zohoBooks.js';
 import { applyInvoicePayment, syncLinkedPayment } from '../services/invoicePayments.js';
 import { stripeConfigured, createCheckoutSession } from '../services/stripe.js';
-import { resolveFeePct } from '../services/paymentFee.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -74,6 +73,12 @@ function normalizeBody(body) {
         .filter((it) => it.itemDetails && it.quantity >= 0 && it.rate >= 0);
     const subTotal = Number(items.reduce((s, it) => s + it.amount, 0).toFixed(2));
     const total = Number(toNumber(body.total, subTotal).toFixed(2));
+    /* Same on/off-on-the-document idea as the quote's — decided per invoice,
+     * not from a site-wide switch. Kept out of `total` above: it only applies
+     * if the customer actually pays by Stripe card. */
+    const cardFeeEnabled = Boolean(body.cardFeeEnabled);
+    const cardFeePctRaw = toNumber(body.cardFeePct, 3);
+    const cardFeePct = Math.min(15, Math.max(0, cardFeePctRaw));
 
     return {
         orderNumber: String(body.orderNumber || ''),
@@ -88,6 +93,8 @@ function normalizeBody(body) {
         customerNotes: String(body.customerNotes || ''),
         subTotal,
         total,
+        cardFeeEnabled,
+        cardFeePct,
         paymentMade: toNumber(body.paymentMade, 0),
         termsAndConditions: String(body.termsAndConditions || ''),
         status: String(body.status || 'draft'),
@@ -382,8 +389,8 @@ router.get('/pay/link/:id', async (req, res) => {
 });
 
 // Create (or reuse) a Stripe Checkout session for the outstanding balance.
-// The card fee, if any, comes only from the global Settings switch — never
-// from the request — so switching it off genuinely stops it everywhere.
+// The card fee, if any, is decided on the invoice itself (cardFeeEnabled /
+// cardFeePct), the same way vatEnabled is on a quote — not a global switch.
 router.post('/:id/payment-link', async (req, res) => {
     try {
         if (!stripeConfigured()) {
@@ -407,7 +414,7 @@ router.post('/:id/payment-link', async (req, res) => {
             return res.status(400).json({ error: 'This customer has no email on file' });
         }
 
-        const feePct = await resolveFeePct();
+        const feePct = invoice.cardFeeEnabled ? invoice.cardFeePct : 0;
         const clientOrigin = process.env.CLIENT_ORIGIN || 'https://office.purplebox.ae';
         const session = await createCheckoutSession({
             amountAed: balanceDue,

@@ -200,6 +200,11 @@ export default function NewQuote() {
   const [holdAdvance, setHoldAdvance] = useState(true)
   // On for every quote; a rare zero-rated one can turn it off.
   const [vatEnabled, setVatEnabled] = useState(true)
+  // Off by default — only applies if the customer chooses to pay by Stripe
+  // card, so it stays out of the quoted total. Same on/off-per-document idea
+  // as VAT above, not a site-wide switch.
+  const [cardFeeEnabled, setCardFeeEnabled] = useState(false)
+  const [cardFeePct, setCardFeePct] = useState(3)
   const [notes, setNotes] = useState('')
   /* Empty until a quote is loaded or saved: the server fills in the standard
      terms, so sending '' from here would blank them. */
@@ -320,6 +325,9 @@ export default function NewQuote() {
     setHoldAdvance((q as { holdAdvance?: boolean }).holdAdvance !== false)
     // Quotes made before VAT existed have no flag; they are taxed too.
     setVatEnabled((q as { vatEnabled?: boolean }).vatEnabled !== false)
+    // Off unless the quote itself says otherwise — no site-wide default to fall back to.
+    setCardFeeEnabled(Boolean((q as { cardFeeEnabled?: boolean }).cardFeeEnabled))
+    setCardFeePct((q as { cardFeePct?: number }).cardFeePct ?? 3)
     setNotes(q.notes || '')
     setTerms(q.termsAndConditions || '')
     setAdjustment(q.adjustment || 0)
@@ -603,6 +611,9 @@ export default function NewQuote() {
   // Grand total = rent + add-ons + VAT + held advance (short terms) + security
   // deposit — identical to what the server stores for the quote.
   const total = subTotal + adjustment + vatAmount + (holdAdvance ? advanceExtra : 0) + (Number(deposit) || 0)
+  // Informational only — never added to `total`. It only applies if the
+  // customer chooses to pay this quote by Stripe card.
+  const cardFeeAmount = cardFeeEnabled ? Number((total * (cardFeePct / 100)).toFixed(2)) : 0
 
   useEffect(() => { setErr(''); setSentMsg('') }, [step])
 
@@ -620,6 +631,8 @@ export default function NewQuote() {
       deposit: Number(deposit) || 0,
       holdAdvance,
       vatEnabled,
+      cardFeeEnabled,
+      cardFeePct,
       adjustment,
       // No total sent — the server computes it from units/add-ons/deposit
       units: unitRows.map((u) => ({
@@ -1703,6 +1716,29 @@ export default function NewQuote() {
                           <button type="button" disabled={patchQuote.isPending}
                             onClick={() => { setVatEnabled(true); if (quoteId) patchQuote.mutate({ vatEnabled: true }) }}
                             className="font-bold cursor-pointer disabled:opacity-50" style={{ color: PURPLE }}>+ Add back</button>
+                        </div>
+                      )}
+                      {/* Informational only — never folded into Total below.
+                          It only applies if the customer chooses to pay this
+                          quote by Stripe card. */}
+                      {cardFeeEnabled ? (
+                        <InfoRow
+                          label={`Card fee if paid online (${cardFeePct}%)`}
+                          value={
+                            <span className="inline-flex items-center gap-2">
+                              +{formatMoney(cardFeeAmount)} AED
+                              <button type="button" title="Turn off the card fee for this quote" disabled={patchQuote.isPending}
+                                onClick={() => { setCardFeeEnabled(false); if (quoteId) patchQuote.mutate({ cardFeeEnabled: false }) }}
+                                className="text-destructive font-bold cursor-pointer leading-none disabled:opacity-50">×</button>
+                            </span>
+                          }
+                        />
+                      ) : (
+                        <div className="flex items-center justify-between text-[12px] py-1" style={{ color: MUTED }}>
+                          <span>Card fee off — no surcharge if paid online</span>
+                          <button type="button" disabled={patchQuote.isPending}
+                            onClick={() => { setCardFeeEnabled(true); if (quoteId) patchQuote.mutate({ cardFeeEnabled: true, cardFeePct }) }}
+                            className="font-bold cursor-pointer disabled:opacity-50" style={{ color: PURPLE }}>+ Turn on (3%)</button>
                         </div>
                       )}
                       <div style={{ borderTop: `1px solid ${PURPLE}20` }} className="mt-1 pt-1">

@@ -123,9 +123,6 @@ export interface IntegrationStatus {
   whatsapp: { configured: boolean; missing?: string[] }
   googleContacts: { configured: boolean; missing?: string[] }
   stripe: { configured: boolean; webhookConfigured: boolean }
-  /** The one admin-fee switch behind every Stripe payment link — storage and
-   *  moving, quotes and invoices alike. */
-  paymentFee: { enabled: boolean; pct: number }
 }
 
 export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired'
@@ -187,6 +184,13 @@ export interface Quote {
   deposit?: number
   subTotal: number
   adjustment: number
+  vatEnabled?: boolean
+  vatRate?: number
+  vatAmount?: number
+  /** Card-processing surcharge if paid by Stripe — decided on this quote,
+   *  same as vatEnabled, not from a site-wide switch. Excluded from `total`. */
+  cardFeeEnabled?: boolean
+  cardFeePct?: number
   total: number
   notes?: string
   /** One clause per line; the server fills the standard set on a new quote. */
@@ -243,6 +247,10 @@ export interface Invoice {
   vatEnabled?: boolean
   vatPct?: number
   vatAmount?: number
+  /** Card-processing surcharge if paid by Stripe — decided on this invoice,
+   *  same as vatEnabled, not from a site-wide switch. Excluded from `total`. */
+  cardFeeEnabled?: boolean
+  cardFeePct?: number
   total: number
   paymentMade?: number
   paymentHistory?: InvoicePaymentEntry[]
