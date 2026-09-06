@@ -6,6 +6,7 @@ import { getAiBotConfig, noteInboundForBot, pauseBotForHuman } from './aiBot.js'
 import { sendFirstContactVideo } from './firstContact.js';
 import { mediaFromRaw } from '../routes/whatsappMedia.js';
 import { cancelFollowUpOnReply } from './chatFollowUp.js';
+import { buttonReplyText, handleRenewalButtonReply } from './renewalReply.js';
 
 const DEFAULT_STATUS_BY_LABEL = {
     lead: 'new',
@@ -211,7 +212,12 @@ export function extractMessagesFromPayload(payload) {
             }
 
             for (const msg of [...messages, ...echoes]) {
-                const text = msg?.text?.body || '';
+                /* A button tap carries no text.body — a template's quick reply
+                   arrives under `button`, an interactive one under
+                   `interactive.button_reply`. Without this every tap was stored
+                   as a blank message, so the chat showed nothing and nobody
+                   could tell what the customer had answered. */
+                const text = msg?.text?.body || buttonReplyText(msg) || '';
                 const messageId = msg?.id || '';
                 const type = msg?.type || 'text';
                 const ts = msg?.timestamp ? new Date(Number(msg.timestamp) * 1000) : new Date();
@@ -458,17 +464,39 @@ async function persistMessages(messages) {
             sendFirstContactVideo({ phoneNormalized: msg.phoneNormalized, config: await getAiBotConfig() })
                 .catch((e) => console.error('[FirstContact]', e.message));
 
+            /* Yes/No on the contract-expiry template.
+             *
+             * Handled before the assistant is told anything, and when it is
+             * handled the assistant is not told at all — otherwise a tenant who
+             * taps "Yes" gets the renewal link and a chatbot reply about the
+             * word "yes", which reads as two different people answering. Only
+             * an actual button tap on a number with an active contract is taken
+             * this way; everything else falls through untouched. */
+            let handledAsRenewal = false;
             try {
-                await noteInboundForBot({
+                const out = await handleRenewalButtonReply({
                     phoneNormalized: msg.phoneNormalized,
-                    messageId: msg.messageId,
                     text: msg.text,
                     type: msg.type,
-                    occurredAt: msg.occurredAt,
-                    // So the assistant can fetch and read it.
-                    mediaId: mediaFromRaw(msg.raw)?.id || '',
+                    raw: msg.raw,
                 });
-            } catch { /* the assistant must never break message delivery */ }
+                handledAsRenewal = out.handled;
+            } catch (e) {
+                console.error('[RenewalReply]', e.message);
+            }
+            if (!handledAsRenewal) {
+                try {
+                    await noteInboundForBot({
+                        phoneNormalized: msg.phoneNormalized,
+                        messageId: msg.messageId,
+                        text: msg.text,
+                        type: msg.type,
+                        occurredAt: msg.occurredAt,
+                        // So the assistant can fetch and read it.
+                        mediaId: mediaFromRaw(msg.raw)?.id || '',
+                    });
+                } catch { /* the assistant must never break message delivery */ }
+            }
         } else {
             // A new outbound message we did not send ourselves is a colleague
             // replying from the WhatsApp Business app, so the assistant stands
