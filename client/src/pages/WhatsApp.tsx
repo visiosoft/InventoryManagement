@@ -1036,10 +1036,14 @@ function QuickAssign({ convo, onChanged }: { convo: WhatsAppConversation; onChan
               request failing outright — so a broken menu and a slow one looked
               identical, and neither said anything worth acting on. */}
           {choices.length === 0 && (
-            <p className="px-3 py-2" style={{ fontSize: 12, color: peopleError ? '#B91C1C' : FAINT_INK }}>
+            <p className="px-3 py-2" style={{ fontSize: 12, fontWeight: 600, color: peopleError ? '#B91C1C' : '#B45309' }}>
               {loadingPeople ? 'Loading…'
                 : peopleError ? `Could not load the team: ${apiError(peopleError)}`
-                  : 'Nobody on the team can take this — check Users.'}
+                  /* Says the count, not just "nobody". An empty menu that only
+                     says it is empty leaves you unable to tell a failed request
+                     from a team with no reps set up — which is exactly the loop
+                     this got stuck in. */
+                  : `/users/assignable returned ${people.length} — nobody can take this. Check Users.`}
             </p>
           )}
           {reps.length === 0 && people.length > 0 && (

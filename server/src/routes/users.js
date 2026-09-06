@@ -51,7 +51,12 @@ router.get('/', requireAdmin, async (_req, res) => {
 router.get('/assignable', async (_req, res) => {
   // Staff are included: accounts and ops sit in this role, and tasks are
   // routed to them (e.g. "raise this invoice in Zoho Books").
-  const users = await User.find({ isActive: true, role: { $in: ['admin', 'sales_rep', 'accounts', 'staff'] } })
+  /* `$ne: false`, not `true`. A Mongoose default is applied when a document is
+     created, never retroactively — so any user made before isActive existed
+     carries no such field, and `isActive: true` silently drops them. Only
+     somebody explicitly deactivated should be excluded, which is the idiom
+     used everywhere else this question is asked. */
+  const users = await User.find({ isActive: { $ne: false }, role: { $in: ['admin', 'sales_rep', 'accounts', 'staff'] } })
     .select('name email role')
     .sort({ name: 1 })
     .lean();

@@ -34,7 +34,9 @@ router.get('/', async (_req, res) => {
       const [config, rules, people, counts, subscribed] = await Promise.all([
          loadConfig(),
          LeadRoutingRule.find({}).populate('user', 'name email role isActive').populate('fallbackUser', 'name').lean(),
-         User.find({ isActive: true, role: { $in: ROLES } }).select('name email role').sort({ name: 1 }).lean(),
+         // `$ne: false` — a user created before isActive existed has no such
+         // field, and `true` would quietly leave them out of the rota.
+         User.find({ isActive: { $ne: false }, role: { $in: ROLES } }).select('name email role').sort({ name: 1 }).lean(),
          countsForToday(),
          /* Who would actually hear about it.
           *
