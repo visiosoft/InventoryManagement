@@ -129,6 +129,15 @@ export default function QuietLeadsModal({
   const extraFilled = extraVars.every((v) => v.trim().length > 0)
   const sendDisabled = selected.size === 0 || !templateName || !extraFilled || send.isPending
 
+  // One real example, not a generic mock-up: whichever selected lead is
+  // shown first, so what you read here is exactly what that person gets —
+  // never invented copy standing in for the actual approved wording.
+  const previewLead = leads.find((l) => selected.has(l.leadId)) ?? leads[0]
+  const previewText = selectedTemplate && previewLead
+    ? [previewLead.name.split(/\s+/)[0] || 'there', ...extraVars.map((v) => v || `{{?}}`)]
+      .reduce((text, v, i) => text.replaceAll(`{{${i + 1}}}`, v), selectedTemplate.bodyText)
+    : ''
+
   return (
     <Modal open onClose={onClose} title={scope === 'mine' ? 'Leads that went quiet' : 'Quiet leads — all reps'} wide>
       {result ? (
@@ -239,6 +248,19 @@ export default function QuietLeadsModal({
                     style={{ borderColor: 'rgba(20,8,31,.14)' }}
                   />
                 ))}
+              </div>
+            )}
+            {selectedTemplate && previewLead && (
+              <div className="mt-2 rounded-lg p-3" style={{ background: PURPLE_TINT, border: '1px solid rgba(91,43,201,.16)' }}>
+                <p className="text-[11px] font-semibold mb-1" style={{ color: PURPLE_DEEP }}>
+                  Message preview — as {previewLead.name.split(/\s+/)[0]} will read it
+                </p>
+                <p className="text-sm whitespace-pre-wrap" style={{ color: INK }}>{previewText}</p>
+                {selected.size > 1 && (
+                  <p className="text-[11px] mt-1.5" style={{ color: MUTED }}>
+                    Everyone else selected gets the same wording, with their own name in place of &ldquo;{previewLead.name.split(/\s+/)[0]}&rdquo;.
+                  </p>
+                )}
               </div>
             )}
           </div>
