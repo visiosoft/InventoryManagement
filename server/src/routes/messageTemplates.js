@@ -9,6 +9,13 @@ const DEFAULT_TEMPLATES = [
   { key: 'payment_received', label: 'Payment Received', subject: 'Payment Received – @invoiceNo', emailBody: 'Dear @name,\n\nWe have received your payment of AED @amount for invoice @invoiceNo.\n\nContract: @contractNo\nPayment Method: @method\nDate: @paidDate\n\nThank you,\nPurpleBox Team', whatsappBody: 'Hi @name ✅\n\nPayment of *AED @amount* received for invoice *@invoiceNo*.\n\nThank you – PurpleBox', variables: ['@name', '@contractNo', '@invoiceNo', '@amount', '@method', '@paidDate'] },
   { key: 'payment_reminder', label: 'Payment Pending Reminder', subject: 'Payment Reminder – @invoiceNo', emailBody: 'Dear @name,\n\nThis is a reminder that your payment of AED @amount for invoice @invoiceNo is due on @dueDate.\n\nContract: @contractNo\nUnit: @unit\n\nPlease arrange payment at your earliest convenience.\n\nThank you,\nPurpleBox Team', whatsappBody: 'Hello @name,\n\nThis is a reminder that your payment of *AED @amount* is due on *@dueDate*.\n\nContract: @contractNo\n\nPlease get in touch with us.\n\nThank you – PurpleBox', variables: ['@name', '@contractNo', '@invoiceNo', '@amount', '@dueDate', '@unit'] },
   { key: 'contract_expiring', label: 'Contract Expiring Reminder', subject: 'Your Contract @contractNo is Expiring Soon', emailBody: 'Dear @name,\n\nYour storage contract @contractNo for Unit @unit is expiring on @endDate.\n\nIf you wish to renew, please contact us.\n\nThank you,\nPurpleBox Team', whatsappBody: 'Hello @name,\n\nYour contract *@contractNo* (Unit @unit) expires on *@endDate*.\n\nPlease contact us to renew.\n\nThank you – PurpleBox', variables: ['@name', '@contractNo', '@unit', '@endDate', '@daysLeft'] },
+  /* Sent on or after the expiry date itself, to a tenant who neither renewed
+   * nor gave notice — a different moment from contract_expiring above, which
+   * is the earlier "let us know your plans" nudge. Kept as its own template
+   * rather than an edit to that one so the two can be sent independently. The
+   * fee figures (AED 250 / AED 500 / 7 days) are fixed policy wording, not
+   * per-contract data, so they are written in rather than templated. */
+  { key: 'contract_auto_renewed', label: 'Contract Auto-Renewed (No Notice)', subject: 'Your contract @contractNo has renewed automatically', emailBody: 'Dear @name,\n\nYour storage contract with PurpleBox Storage for unit @unit reached its renewal date today, @endDate.\n\nAs we did not receive a vacate notice, your contract has renewed automatically for a further 4 weeks at your current monthly rate of AED @rate, running until @newEndDate.\n\nPayment due\nPlease make your payment of AED @rate today, @endDate, if you have not already done so.\n\nChanged your mind?\nIf you intended to vacate, please contact us immediately so we can arrange your move-out and return of the key/access device.\n\nLate payment and default fees\nIf the renewal payment is not received by @endDate, a late fee of @lateFee will apply from that date until the outstanding balance is settled.\n\nIf payment remains unpaid for seven (7) calendar days after the due date, PurpleBox may charge a further late/default administrative fee of AED 250. Where the default requires enhanced collection, inventory, access-control, account administration or enforcement work, PurpleBox may charge an additional default administration fee of up to AED 500, reflecting reasonable administrative costs actually associated with the default. Any agreed compensation remains subject to adjustment by a competent court where required by mandatory UAE law.\n\nThank you for storing with PurpleBox.', whatsappBody: 'Dear @name,\n\nYour contract *@contractNo* (Unit @unit) reached its renewal date today, @endDate, and has renewed automatically for 4 more weeks at AED @rate, running until @newEndDate.\n\nPlease pay AED @rate today if you have not already. A late fee of @lateFee applies from @endDate if unpaid.\n\nIntended to vacate instead? Contact us immediately.\n\nThank you – PurpleBox', variables: ['@name', '@contractNo', '@unit', '@endDate', '@newEndDate', '@rate', '@lateFee'] },
   { key: 'contract_ended', label: 'Contract Ended', subject: 'Contract @contractNo Has Ended', emailBody: 'Dear @name,\n\nYour contract @contractNo for Unit @unit has ended as of @endDate.\n\nPlease ensure all belongings have been removed. Your deposit will be processed as per terms.\n\nThank you for storing with us.\n\nBest regards,\nPurpleBox Team', whatsappBody: 'Hello @name,\n\nYour contract *@contractNo* has ended.\nUnit @unit is now released.\n\nThank you for choosing PurpleBox!', variables: ['@name', '@contractNo', '@unit', '@endDate'] },
 ];
 
@@ -44,28 +51,40 @@ const DEFAULT_QUICK_REPLIES = [
     whatsappBody: 'We can also arrange packing and moving. Tell us the pickup address and roughly what needs moving, and we will send a quote.' },
 ];
 
+/**
+ * Add whichever DEFAULT rows this database is still missing, by key.
+ *
+ * Not "insert the defaults if the collection is empty" — that only ever ran
+ * once, on a fresh install, so a template added to the code later (like
+ * contract_auto_renewed) would never reach a database that already had rows
+ * in it. This runs every time and only ever adds what is missing: an
+ * existing row, including one somebody has since edited, is never touched.
+ */
+async function ensureDefaults(defaults, extra) {
+  const existingKeys = new Set((await MessageTemplate.find({}).select('key').lean()).map((t) => t.key));
+  const missing = defaults.filter((t) => !existingKeys.has(t.key));
+  if (missing.length) {
+    await MessageTemplate.insertMany(missing.map((t) => ({ ...extra, ...t })));
+  }
+}
+
 // Get templates. ?kind=quick_reply returns the WhatsApp canned replies;
 // anything else returns the contract/automation ones. Each set seeds itself
-// on first request so a fresh install is not empty.
+// on first request so a fresh install is not empty, and stays seeded as new
+// defaults are added later.
 router.get('/', async (req, res) => {
   const kind = req.query.kind === 'quick_reply' ? 'quick_reply' : 'automation';
 
   if (kind === 'quick_reply') {
-    let quick = await MessageTemplate.find({ kind: 'quick_reply' }).sort({ sortOrder: 1, label: 1 });
-    if (quick.length === 0) {
-      quick = await MessageTemplate.insertMany(
-        DEFAULT_QUICK_REPLIES.map((t) => ({ ...t, kind: 'quick_reply', subject: '', emailBody: '', variables: [] })),
-      );
-    }
+    await ensureDefaults(DEFAULT_QUICK_REPLIES, { kind: 'quick_reply', subject: '', emailBody: '', variables: [] });
+    const quick = await MessageTemplate.find({ kind: 'quick_reply' }).sort({ sortOrder: 1, label: 1 });
     return res.json(quick);
   }
 
+  await ensureDefaults(DEFAULT_TEMPLATES, {});
   // Existing rows predate the kind field, so treat a missing value as
   // 'automation' rather than hiding them.
-  let templates = await MessageTemplate.find({ kind: { $ne: 'quick_reply' } }).sort({ key: 1 });
-  if (templates.length === 0) {
-    templates = await MessageTemplate.insertMany(DEFAULT_TEMPLATES);
-  }
+  const templates = await MessageTemplate.find({ kind: { $ne: 'quick_reply' } }).sort({ key: 1 });
   res.json(templates);
 });
 
