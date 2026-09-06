@@ -12,6 +12,7 @@ import AssistantWidget from './AssistantWidget'
 import AppFooter from './AppFooter'
 import { cn } from '../lib/utils'
 import { isSalesRepRole } from '../lib/roles'
+import { WalkthroughProvider } from '../walkthroughs/WalkthroughProvider'
 
 const navTop = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard' as string | undefined },
@@ -725,6 +726,15 @@ export default function Layout() {
   )
 
   return (
+    // Only the signed-in app reads walkthrough progress — moved here from
+    // wrapping every <Routes> in App.tsx, where it also sat around the public
+    // share-link pages (renewal, contract signing, moving job sharing) that
+    // never mount Layout. `useQuery` fired GET /walkthroughs/me the instant
+    // any of those pages mounted with a stale token still in localStorage —
+    // which a signed-in admin's own browser is exactly the case for — and the
+    // 401 interceptor wiped the session and bounced a tenant clicking their
+    // renewal link straight to the login screen, no login needed or wanted.
+    <WalkthroughProvider>
     <div className="flex min-h-screen bg-background">
 
       {/* ── Desktop sidebar ─────────────────────────────────────── */}
@@ -970,5 +980,6 @@ export default function Layout() {
           so it is on every screen and above every overlay. */}
       <AssistantWidget />
     </div>
+    </WalkthroughProvider>
   )
 }

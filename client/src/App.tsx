@@ -89,7 +89,6 @@ import AssistantSettings from './pages/AssistantSettings'
 import Marketing from './pages/Marketing'
 import SentEmails from './pages/SentEmails'
 import Walkthroughs from './pages/Walkthroughs'
-import { WalkthroughProvider } from './walkthroughs/WalkthroughProvider'
 import ZohoComparison from './pages/ZohoComparison'
 import Backup from './pages/Backup'
 import Leads from './pages/Leads'
@@ -198,7 +197,6 @@ export default function App() {
   }
 
   return (
-    <WalkthroughProvider>
     <Routes>
       <Route path="/login" element={<Navigate to="/" replace />} />
       <Route path="/sign/:token" element={<SignContract />} />
@@ -306,6 +304,5 @@ export default function App() {
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
-    </WalkthroughProvider>
   )
 }
