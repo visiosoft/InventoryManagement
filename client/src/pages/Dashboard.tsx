@@ -7,6 +7,7 @@ import { api, apiError } from '../lib/api'
 import type { Summary } from '../lib/types'
 import { Spinner, EmptyState, Table, Th, Td, Button, Badge } from '../components/ui'
 import { formatDate } from '../lib/utils'
+import DashboardAsk from '../components/DashboardAsk'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
 const INK = '#14081F'
@@ -478,6 +479,7 @@ export default function Dashboard() {
   return (
     <div style={{ background: '#fff', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
 
+      <div className="mb-5"><DashboardAsk /></div>
 
       <div className="space-y-5">
         {layout.map((id) => {
