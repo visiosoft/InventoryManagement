@@ -252,15 +252,54 @@ export async function applyRenewal(renewalId, { byName = '', paid = true } = {})
         await syncLinkedPayment(invoice);
     }
 
+    /* Who the activity feed credits. A card renewal was genuinely done by the
+     * tenant with nobody involved; a bank transfer was done by them and then
+     * confirmed by a named colleague, and the feed should say both. */
+    const author = renewal.method === 'card'
+        ? 'Tenant (online renewal)'
+        : `${byName || 'Staff'} (confirmed tenant transfer)`;
+
     contract.renewalIntent = 'renewing';
+
+    /* Three separate rows rather than one long sentence: somebody scanning the
+     * feed later is usually answering one specific question — did they pay,
+     * what were they invoiced, did the invoice actually go out — and a single
+     * combined line makes all three harder to find. */
     contract.timeline.push({
-        type: 'renewal_intent',
+        at: new Date(),
+        author,
         text: [
-            `Renewed online by the tenant to ${fmtDate(newEnd)}`,
-            `(${renewal.weeks} week${renewal.weeks === 1 ? '' : 's'}, AED ${money(renewal.total)}`,
-            renewal.method === 'card' ? 'paid by card).' : `paid by bank transfer, confirmed by ${byName || 'staff'}).`,
+            `Renewed online to ${fmtDate(newEnd)}`,
+            `— ${renewal.weeks} week${renewal.weeks === 1 ? '' : 's'},`,
+            `AED ${money(renewal.subTotal)} + AED ${money(renewal.vatAmount)} VAT`,
+            `= AED ${money(renewal.total)},`,
+            renewal.method === 'card'
+                ? `paid by card via Stripe${renewal.stripeCheckoutSessionId ? ` (${renewal.stripeCheckoutSessionId})` : ''}.`
+                : 'paid by bank transfer.',
         ].join(' '),
     });
+    contract.timeline.push({
+        at: new Date(),
+        author,
+        text: `Invoice ${invoice.invoiceNo} raised for the renewal — AED ${money(renewal.total)}${paid ? ', marked paid in full.' : '.'}`,
+    });
+    if (!extends_ || notes.length) {
+        // A renewal that could not move the date must be impossible to miss.
+        contract.timeline.push({ at: new Date(), author, text: `Needs a look: ${notes.join(' ')}` });
+    }
+
+    /* The dedicated renewal record, which is what the contract's Renewal
+     * History table reads — the general timeline is not enough. Same shape a
+     * manual Check Out change writes, so an online renewal and one typed in by
+     * a colleague sit in the same list rather than only one of them showing. */
+    if (extends_) {
+        contract.renewalHistory.push({
+            at: new Date(),
+            previousEndDate: renewal.currentEndDate,
+            newEndDate: newEnd,
+            author,
+        });
+    }
     await contract.save();
 
     renewal.status = 'applied';
@@ -276,6 +315,32 @@ export async function applyRenewal(renewalId, { byName = '', paid = true } = {})
         renewal,
         invoice,
     });
+
+    /* Record where the invoice actually went, after the fact.
+     *
+     * Written separately because it is the only part that cannot be known in
+     * advance, and it is the difference between "we think they got it" and
+     * knowing. A failure is recorded just as plainly — an invoice that silently
+     * never sent is the thing that turns into "I was never told" three weeks
+     * later. Pushed rather than re-saving the whole document so it cannot
+     * clobber anything changed in between. */
+    const delivery = [];
+    if (notified.email === 'sent') delivery.push(`emailed to ${contract.customer?.email}`);
+    else if (notified.email.startsWith('failed')) delivery.push(`email FAILED (${notified.email.slice(8)})`);
+    if (notified.whatsapp === 'sent') delivery.push('sent on WhatsApp');
+    else if (notified.whatsapp.startsWith('failed')) delivery.push('WhatsApp not delivered (no open 24h window)');
+
+    await Contract.findByIdAndUpdate(contract._id, {
+        $push: {
+            timeline: {
+                at: new Date(),
+                author,
+                text: delivery.length
+                    ? `Renewal invoice ${invoice.invoiceNo} ${delivery.join(', ')}.`
+                    : `Renewal invoice ${invoice.invoiceNo} was NOT sent — no email address on file and WhatsApp unavailable.`,
+            },
+        },
+    }).catch((e) => console.error('[Renewal] delivery note failed:', e.message));
 
     return { ok: true, renewal, invoiceId: invoice._id, extended: extends_, notified, reviewNote: renewal.reviewNote };
 }

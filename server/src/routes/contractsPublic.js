@@ -202,8 +202,9 @@ router.get('/renewal/:contractId/:token', async (req, res) => {
      * acknowledgement. */
     if (intent === 'renewing' && !['ended', 'cancelled'].includes(contract.status)) {
         contract.timeline.push({
-            type: 'renewal_intent',
-            text: 'Tenant opened the renewal page from the expiry message',
+            at: new Date(),
+            author: 'Tenant (expiry message)',
+            text: 'Opened the renewal page from the expiry message',
         });
         await contract.save();
         if (changed) await raiseTask(contract, intent);
@@ -212,9 +213,13 @@ router.get('/renewal/:contractId/:token', async (req, res) => {
     }
     // Recorded on the timeline so it is clear the tenant said this themselves,
     // rather than a colleague setting it after a call.
+    /* `type` used to be set here and was silently dropped — the contract
+     * timeline has no such field — which also left every one of these rows with
+     * no author in the activity feed. */
     contract.timeline.push({
-        type: 'renewal_intent',
-        text: `Tenant answered the expiry email: ${intent === 'renewing' ? 'Renewing' : 'Not renewing'}${before !== 'undecided' && before !== intent ? ` (was ${before})` : ''}`,
+        at: new Date(),
+        author: 'Tenant (expiry message)',
+        text: `Answered the expiry email: ${intent === 'renewing' ? 'Renewing' : 'Not renewing'}${before !== 'undecided' && before !== intent ? ` (was ${before})` : ''}`,
     });
     await contract.save();
 
