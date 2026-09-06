@@ -28,17 +28,6 @@ const navGroups = [
     ],
   },
   {
-    /* Its own group rather than a line in Reports. These are not reports —
-       nothing here is a number to read; every row is a person waiting for
-       somebody to do something about them. */
-    title: 'Intelligence',
-    adminOnly: true,
-    items: [
-      { to: '/findings', label: 'Findings', icon: Sparkles, perm: '' },
-      { to: '/agents', label: 'Agents', icon: Bot, perm: '' },
-    ],
-  },
-  {
     title: 'Sales',
     items: [
       { to: '/my-leads', label: 'My Leads', icon: UserPlus, perm: 'sales_board' },

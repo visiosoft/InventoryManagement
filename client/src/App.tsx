@@ -79,10 +79,6 @@ import Documents from './pages/Documents'
 import Reports from './pages/Reports'
 import AskReports from './pages/reports/AskReports'
 import DailyDigest from './pages/DailyDigest'
-import Agents from './pages/Agents'
-import AgentEdit from './pages/AgentEdit'
-import AgentRun from './pages/AgentRun'
-import AgentFindings from './pages/AgentFindings'
 import RatesReport from './pages/reports/RatesReport'
 import Settings from './pages/Settings'
 import MessageTemplates from './pages/MessageTemplates'
@@ -250,14 +246,6 @@ export default function App() {
             and the server enforces the same rule. */}
         <Route path="/reports/ask" element={<RoleGuard roles={['admin', 'accounts']}><AskReports /></RoleGuard>} />
         <Route path="/reports/conversations" element={<PermGuard module="reports_conversations"><DailyDigest /></PermGuard>} />
-        {/* The worklist across every agent — the page somebody opens in the
-            morning. Per-agent findings live under the agent itself. */}
-        <Route path="/findings" element={<AdminGuard><AgentFindings /></AdminGuard>} />
-        <Route path="/agents" element={<AdminGuard><Agents /></AdminGuard>} />
-        <Route path="/agents/new" element={<AdminGuard><AgentEdit /></AdminGuard>} />
-        <Route path="/agents/:key/edit" element={<AdminGuard><AgentEdit /></AdminGuard>} />
-        <Route path="/agents/:key/runs/:runId" element={<AdminGuard><AgentRun /></AdminGuard>} />
-        <Route path="/agents/:key/findings" element={<AdminGuard><AgentFindings /></AdminGuard>} />
         <Route path="/reports/rates" element={<PermGuard module="reports_units"><RatesReport /></PermGuard>} />
         <Route path="/approvals" element={<AdminGuard><Approvals /></AdminGuard>} />
         <Route path="/users" element={<AdminGuard><UserManagement /></AdminGuard>} />
