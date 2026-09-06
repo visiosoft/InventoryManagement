@@ -118,19 +118,25 @@ export default function Dashboard() {
   const [showQuiet, setShowQuiet] = useState(false)
   const [quietOwner, setQuietOwner] = useState<string | undefined>(undefined)
 
-  // Every rep's quiet-lead backlog, rolled up — the count and the chart. Its
-  // own query, not part of the reports/summary payload, so this card can be
-  // added or removed without that endpoint needing to know about it.
-  const { data: quiet } = useQuery({
-    queryKey: ['lead-follow-up-summary'],
-    queryFn: () => leadFollowUpApi.summary(),
-    staleTime: 60_000,
-  })
-
   const { data, isLoading, isError, error, refetch } = useQuery<Summary>({
     queryKey: ['summary'],
     queryFn: () => api.get('/reports/summary').then((r) => r.data),
     staleTime: 5 * 60_000,
+  })
+
+  /* Every rep's quiet-lead backlog, rolled up — the count and the chart. It is
+   * the heaviest thing this page asks for (every open lead in the company,
+   * not one rep's few dozen), and it used to fire the instant the page did,
+   * racing everything else in the page's opening burst of requests for the
+   * same handful of browser connections and the same database. Held back
+   * with `enabled` until the page's own critical data is in, so it loads a
+   * beat later, in the background, instead of competing with the numbers
+   * somebody actually opened the dashboard to see. */
+  const { data: quiet } = useQuery({
+    queryKey: ['lead-follow-up-summary'],
+    queryFn: () => leadFollowUpApi.summary(),
+    enabled: !isLoading,
+    staleTime: 60_000,
   })
 
   type LatestNote = { contractId: string; contractNo: string; customerName: string; at: string; text: string; author: string }
