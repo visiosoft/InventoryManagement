@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { useVoiceRecorder, recordingSupported, formatDuration } from '../lib/voiceRecorder'
 import { api, whatsappApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel } from '../lib/api'
+import { isSalesRepRole } from '../lib/roles'
 import { useAuth } from '../lib/auth'
 import { TaskComposer } from '../components/TaskComposer'
 import { playPing, primePing } from '../lib/ping'
@@ -982,12 +983,20 @@ function QuickAssign({ convo, onChanged }: { convo: WhatsAppConversation; onChan
     return () => document.removeEventListener('mousedown', away)
   }, [open])
 
-  const { data: people = [] } = useQuery<{ _id: string; name: string; email: string; role?: string }[]>({
+  const { data: people = [], isLoading: loadingPeople, error: peopleError } = useQuery<{ _id: string; name: string; email: string; role?: string }[]>({
     queryKey: ['assignable-users'],
     queryFn: () => api.get('/users/assignable').then((r) => r.data ?? []),
     staleTime: 30 * 60_000,
   })
-  const reps = people.filter((u) => u.role === 'sales_rep')
+  /* Whoever can carry a lead. Asked through isSalesRepRole rather than
+     `role === 'sales_rep'`, which is the rule lib/roles.ts states and this
+     used to break: 'accounts' is the same role under another name, so a team
+     set up that way got an empty menu and a button that looked dead. */
+  const reps = people.filter((u) => isSalesRepRole(u.role))
+  /* An empty menu is a dead end, so when there are no reps at all the list
+     falls back to everyone the server will let hold a lead. Better to hand it
+     to an admin than to leave the chat unowned because nobody fits. */
+  const choices = reps.length > 0 ? reps : people
 
   const assign = useMutation({
     mutationFn: async (owner: string) => {
@@ -1022,12 +1031,23 @@ function QuickAssign({ convo, onChanged }: { convo: WhatsAppConversation; onChan
           style={{ background: '#fff', border: `1px solid ${LINE}`, boxShadow: '0 10px 30px rgba(20,8,31,.16)', minWidth: 170 }}
         >
           {err && <p className="px-3 py-1.5" style={{ fontSize: 11, color: '#B91C1C' }}>{err}</p>}
-          {reps.length === 0 && (
-            <p className="px-3 py-2" style={{ fontSize: 12, color: FAINT_INK }}>
-              {people.length === 0 ? 'Loading…' : 'No sales reps to assign to.'}
+          {/* Say which of the three it is. This used to read "Loading…"
+              whenever the list came back empty for ANY reason, including the
+              request failing outright — so a broken menu and a slow one looked
+              identical, and neither said anything worth acting on. */}
+          {choices.length === 0 && (
+            <p className="px-3 py-2" style={{ fontSize: 12, color: peopleError ? '#B91C1C' : FAINT_INK }}>
+              {loadingPeople ? 'Loading…'
+                : peopleError ? `Could not load the team: ${apiError(peopleError)}`
+                  : 'Nobody on the team can take this — check Users.'}
             </p>
           )}
-          {reps.map((u) => (
+          {reps.length === 0 && people.length > 0 && (
+            <p className="px-3 pt-2" style={{ fontSize: 10.5, color: FAINT_INK }}>
+              No sales reps set up — showing everyone
+            </p>
+          )}
+          {choices.map((u) => (
             <button
               key={u._id}
               type="button"
@@ -1079,10 +1099,14 @@ function AssignRep({ convo, onChanged }: { convo: WhatsAppConversation; onChange
   })
 
   /* Sales reps only. The endpoint is shared with task assignment, which wants
-     accounts and ops too, so the narrowing belongs here — a lead goes to a rep.
-     Whoever holds it now stays on the list even if they are not a rep, or an
-     admin-owned lead would read as unassigned and get handed away by mistake. */
-  const reps = people.filter((u) => u.role === 'sales_rep' || u._id === ownerId)
+     ops too, so the narrowing belongs here — a lead goes to a rep. Whoever
+     holds it now stays on the list even if they are not a rep, or an
+     admin-owned lead would read as unassigned and get handed away by mistake.
+
+     Asked through isSalesRepRole, per lib/roles.ts: 'accounts' is the same
+     role under another name, and testing `role === 'sales_rep'` here left a
+     team set up that way with nothing to pick. */
+  const reps = people.filter((u) => isSalesRepRole(u.role) || u._id === ownerId)
 
   /* The click closes the menu and moves the tick straight away, and the list
      is put right from the server afterwards.
