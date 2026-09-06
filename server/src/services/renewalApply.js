@@ -1,8 +1,11 @@
+import crypto from 'node:crypto';
 import { Contract, ContractRenewal, Invoice, Payment, nextInvoiceNo } from '../models/index.js';
 import { applyInvoicePayment, syncLinkedPayment } from './invoicePayments.js';
 import { sendMail, mailConfigured } from './mail.js';
 import { sendWhatsAppText, whatsappSendConfigured } from './whatsapp.js';
 import { renderInvoicePdf } from './invoicePdf.js';
+
+const clientOrigin = () => String(process.env.CLIENT_ORIGIN || 'https://office.purplebox.ae').replace(/\/+$/, '');
 
 /**
  * Turning a paid renewal into an extended contract.
@@ -25,6 +28,29 @@ const fmtDate = (d) => new Date(d).toLocaleDateString('en-GB', {
 const money = (n) => Number(n || 0).toLocaleString('en-AE', {
     minimumFractionDigits: 2, maximumFractionDigits: 2,
 });
+
+/**
+ * Open a fresh signing link for the renewed term.
+ *
+ * The contract stays active — this is a re-sign, not a new agreement, the
+ * same shape as the admin's own "Send agreement" button on the contract page
+ * (routes/contracts.js `create-signing-link`), so an online renewal and one a
+ * colleague sends by hand read identically to a tenant. Signing regenerates
+ * the contract PDF from the contract's own live fields, and `contract.endDate`
+ * has already been moved by the time this runs, so what they sign carries the
+ * renewed date, not the old one.
+ *
+ * Same 7-day expiry as the manual button. A renewal already paid for does not
+ * hinge on the signature — the money and the invoice stand regardless — so a
+ * tenant who lets the window lapse is a reminder to chase, not a renewal to
+ * undo.
+ */
+function openSigningLink(contract) {
+    const token = crypto.randomBytes(32).toString('hex');
+    contract.signingToken = token;
+    contract.signingTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    return `${clientOrigin()}/sign/${token}`;
+}
 
 /**
  * Raise the invoice for the renewed period.
@@ -97,7 +123,7 @@ async function raiseRenewalInvoice(renewal, contract, unitNo) {
  * that has already been paid for — the money is in, the contract is extended,
  * and a bounced email is a support problem, not a reason to roll back.
  */
-export async function notifyRenewalApplied({ contract, customer, renewal, invoice }) {
+export async function notifyRenewalApplied({ contract, customer, renewal, invoice, signingUrl = '' }) {
     const results = { email: 'skipped', whatsapp: 'skipped' };
     const name = customer?.fullName || 'there';
     const endsOn = fmtDate(renewal.newEndDate);
@@ -126,13 +152,26 @@ export async function notifyRenewalApplied({ contract, customer, renewal, invoic
                     `<strong>Total: AED ${money(renewal.total)}</strong>`,
                 ].join('<br/>') + '</p>',
                 attachments.length ? `<p>Your invoice ${invoice.invoiceNo} is attached.</p>` : '',
+                /* The paperwork still needs their signature on the new term —
+                 * the invoice being paid does not stand in for it. Put after
+                 * the money, since that is the part they came here to confirm. */
+                signingUrl
+                    ? `<p>One more thing — please re-sign your agreement for the renewed term: <a href="${signingUrl}">${signingUrl}</a></p>`
+                    : '',
                 '<p>Thank you for staying with PurpleBox.</p>',
             ].filter(Boolean).join('\n');
 
             await sendMail({
                 to: customer.email,
                 subject: `Renewed — ${contract.contractNo} now runs to ${endsOn}`,
-                text: `Hi ${name},\n\nYour storage contract ${contract.contractNo} has been renewed and now runs until ${endsOn}.\n\nTotal paid: AED ${money(renewal.total)}\nInvoice: ${invoice.invoiceNo}\n\nThank you for staying with PurpleBox.`,
+                text: [
+                    `Hi ${name},`,
+                    `Your storage contract ${contract.contractNo} has been renewed and now runs until ${endsOn}.`,
+                    `Total paid: AED ${money(renewal.total)}`,
+                    `Invoice: ${invoice.invoiceNo}`,
+                    signingUrl ? `Please re-sign your agreement for the renewed term: ${signingUrl}` : '',
+                    'Thank you for staying with PurpleBox.',
+                ].filter(Boolean).join('\n\n'),
                 html,
                 attachments,
             });
@@ -145,10 +184,13 @@ export async function notifyRenewalApplied({ contract, customer, renewal, invoic
 
     if (customer?.phone && whatsappSendConfigured()) {
         try {
-            await sendWhatsAppText({
-                to: customer.phone,
-                body: `Hi ${name}, your storage contract ${contract.contractNo} has been renewed and now runs until ${endsOn}. Total AED ${money(renewal.total)} — invoice ${invoice.invoiceNo}. Thank you for staying with PurpleBox.`,
-            });
+            const body = [
+                `Hi ${name}, your storage contract ${contract.contractNo} has been renewed and now runs until ${endsOn}.`,
+                `Total AED ${money(renewal.total)} — invoice ${invoice.invoiceNo}.`,
+                signingUrl ? `Please re-sign your agreement for the renewed term: ${signingUrl}` : '',
+                'Thank you for staying with PurpleBox.',
+            ].filter(Boolean).join(' ');
+            await sendWhatsAppText({ to: customer.phone, body });
             results.whatsapp = 'sent';
         } catch (e) {
             /* Outside Meta's 24-hour window a plain text message is refused and
@@ -235,7 +277,12 @@ export async function applyRenewal(renewalId, { byName = '', paid = true } = {})
         quotedEndDate: renewal.currentEndDate,
         newEndDate: renewal.newEndDate,
     });
-    if (extends_) contract.endDate = newEnd;
+    let signingUrl = '';
+    if (extends_) {
+        contract.endDate = newEnd;
+        // Nothing to re-sign when the date did not move — see decideExtension.
+        signingUrl = openSigningLink(contract);
+    }
 
     const unitNo = contract.unit?.unitNumber || '-';
     const invoice = await raiseRenewalInvoice(renewal, contract, unitNo);
@@ -283,6 +330,13 @@ export async function applyRenewal(renewalId, { byName = '', paid = true } = {})
         author,
         text: `Invoice ${invoice.invoiceNo} raised for the renewal — AED ${money(renewal.total)}${paid ? ', marked paid in full.' : '.'}`,
     });
+    if (signingUrl) {
+        contract.timeline.push({
+            at: new Date(),
+            author,
+            text: `Sent to re-sign for the renewed term (expires ${fmtDate(contract.signingTokenExpiry)}).`,
+        });
+    }
     if (!extends_ || notes.length) {
         // A renewal that could not move the date must be impossible to miss.
         contract.timeline.push({ at: new Date(), author, text: `Needs a look: ${notes.join(' ')}` });
@@ -314,6 +368,7 @@ export async function applyRenewal(renewalId, { byName = '', paid = true } = {})
         customer: contract.customer,
         renewal,
         invoice,
+        signingUrl,
     });
 
     /* Record where the invoice actually went, after the fact.
