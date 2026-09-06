@@ -8,7 +8,6 @@ import { notifyInvoiceReady, notifyPaymentReceived } from '../services/movingNot
 import { zohoBooksConfigured, createZohoInvoice } from '../services/zohoBooks.js';
 import { stripeConfigured, createInvoiceCheckoutSession } from '../services/stripe.js';
 import { applyMovingInvoicePayment } from '../services/movingInvoicePayments.js';
-import { resolveFeePct } from '../services/paymentFee.js';
 
 const router = Router();
 
@@ -322,10 +321,10 @@ router.post('/:id/payment-link', async (req, res) => {
     if (!['whatsapp', 'email', 'link'].includes(channel)) {
       return res.status(400).json({ error: 'Pick a channel: whatsapp, email or link' });
     }
-    // The fee comes only from the global Settings switch now, never from the
-    // request — the point of "on/off in one place" is that it is actually
-    // one place. See services/paymentFee.js.
-    const feePct = await resolveFeePct();
+    // Decided right here on the moving invoice, per send — not a global
+    // switch. Whoever is sending the link chooses whether this particular
+    // customer covers the card fee.
+    const feePct = Math.min(15, Math.max(0, Number(req.body?.feePct) || 0));
     const invoice = await MovingInvoice.findById(req.params.id).populate(POPULATE_INV);
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
     if (invoice.balanceDue <= 0) return res.status(400).json({ error: 'Invoice already fully paid' });

@@ -7,7 +7,6 @@ import { useAuth } from '../../lib/auth'
 import { EditCustomerModalLoader } from '../../components/AddCustomerModal'
 import type { MovingInvoice, MovingInvoiceStatus } from '../../lib/types'
 import { movingTotals } from '../../lib/movingTotals'
-import { usePaymentFee } from '../../lib/paymentFee'
 import { Badge, Button, Field, Input, Modal, Select, Spinner, Textarea } from '../../components/ui'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
@@ -83,14 +82,15 @@ export default function MovingInvoiceDetail() {
   const [payLinkBusy, setPayLinkBusy] = useState<'' | 'whatsapp' | 'email' | 'link'>('')
   const [payLinkModal, setPayLinkModal] = useState(false)
   const [editCustomerModal, setEditCustomerModal] = useState(false)
-  const { data: paymentFee } = usePaymentFee()
+  // Decided right here, per send — not a global switch. Off by default.
+  const [addStripeFee, setAddStripeFee] = useState(false)
+  const [stripeFeePct, setStripeFeePct] = useState('3')
 
   async function sendStripePaymentLink(channel: 'whatsapp' | 'email' | 'link') {
     setPayLinkBusy(channel)
     try {
-      // The fee is decided by the global Settings switch now, never here —
-      // see services/paymentFee.js. The server ignores anything sent for it.
-      const res = await api.post(`/moving-invoices/${id}/payment-link`, { channel })
+      const feePct = addStripeFee ? Number(stripeFeePct) || 0 : 0
+      const res = await api.post(`/moving-invoices/${id}/payment-link`, { channel, feePct })
       setErr('')
       setPayLinkModal(false)
       // Auto-copy is best-effort here (no input element exists yet to fall
@@ -876,11 +876,23 @@ export default function MovingInvoiceDetail() {
           <p className="text-sm text-muted-foreground">
             Balance due: <strong>AED {invoice.balanceDue.toLocaleString()}</strong>
           </p>
-          <p className="text-xs" style={{ color: 'var(--muted-foreground)' }}>
-            {paymentFee?.enabled
-              ? <>A <strong>{paymentFee.pct}%</strong> card processing fee applies — the customer pays it, on top of the balance above (AED {(invoice.balanceDue * (paymentFee.pct / 100)).toFixed(2)} · total AED {(invoice.balanceDue * (1 + paymentFee.pct / 100)).toFixed(2)}).</>
-              : 'No card processing fee is set — turn it on in Settings → Payments if you want one.'}
-          </p>
+          <label className="flex items-center gap-2.5 cursor-pointer">
+            <input type="checkbox" checked={addStripeFee} onChange={(e) => setAddStripeFee(e.target.checked)} className="h-4 w-4 rounded" />
+            <span className="text-sm">Add card processing fee — customer pays it, not you</span>
+          </label>
+          {addStripeFee && (
+            <div className="flex items-center gap-3 pl-6">
+              <Field label="Fee %">
+                <Input type="number" min={0} max={15} step="0.1" value={stripeFeePct} onChange={(e) => setStripeFeePct(e.target.value)} className="w-24" />
+              </Field>
+              {Number(stripeFeePct) > 0 && (
+                <p className="text-xs text-muted-foreground pt-5">
+                  +AED {(invoice.balanceDue * (Number(stripeFeePct) / 100)).toFixed(2)} fee ·{' '}
+                  customer pays <strong>AED {(invoice.balanceDue * (1 + Number(stripeFeePct) / 100)).toFixed(2)}</strong> total
+                </p>
+              )}
+            </div>
+          )}
           {err && <p className="text-sm text-red-600">{err}</p>}
           <div className="flex flex-wrap justify-end gap-2 pt-2 border-t">
             <Button variant="outline" disabled={!!payLinkBusy} onClick={() => sendStripePaymentLink('link')}>

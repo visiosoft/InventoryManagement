@@ -4,7 +4,6 @@ import { MovingQuote, MovingInvoice, MovingJob, nextMovingQuoteNo, nextMovingInv
 import { generateMovingQuotePdf } from '../services/movingQuotePdf.js';
 import { chargesVat, movingTotals } from '../services/movingTotals.js';
 import { stripeConfigured, createCheckoutSession } from '../services/stripe.js';
-import { resolveFeePct } from '../services/paymentFee.js';
 
 const router = Router();
 
@@ -281,7 +280,8 @@ router.post('/:id/payment-link', async (req, res) => {
       return res.status(400).json({ error: 'This customer has no email on file' });
     }
 
-    const feePct = await resolveFeePct();
+    // Decided right here on the moving quote, per send — not a global switch.
+    const feePct = Math.min(15, Math.max(0, Number(req.body?.feePct) || 0));
     const clientOrigin = process.env.CLIENT_ORIGIN || 'https://office.purplebox.ae';
     const session = await createCheckoutSession({
       amountAed: quote.total,

@@ -4,7 +4,6 @@ import { ArrowLeft, Download, Plus, Trash2, Edit, Receipt, Pencil, CreditCard, M
 import { api, apiError, apiUrl } from '../../lib/api'
 import { movingTotals } from '../../lib/movingTotals'
 import { EditCustomerModalLoader } from '../../components/AddCustomerModal'
-import { usePaymentFee } from '../../lib/paymentFee'
 import type { MovingQuote, MovingQuoteStatus } from '../../lib/types'
 import { Badge, Button, Field, Input, Modal, Spinner, Textarea } from '../../components/ui'
 import { useState, useRef } from 'react'
@@ -58,12 +57,14 @@ export default function MovingQuoteDetail() {
   const [items, setItems] = useState<Array<{ description: string; subDescription?: string; qty: number; rate: number; amount: number }>>([])
   const [_editIdx, setEditIdx] = useState<number | null>(null)
   const [shareToken, setShareToken] = useState<string>('')
-  const { data: paymentFee } = usePaymentFee()
   const [payLinkModal, setPayLinkModal] = useState(false)
   const [payLinkBusy, setPayLinkBusy] = useState<'' | 'whatsapp' | 'email' | 'link'>('')
   const [payLinkResult, setPayLinkResult] = useState<{ payUrl: string; total: number; channel: string; feePct: number; feeAmount: number; totalCharged: number } | null>(null)
   const [payLinkCopied, setPayLinkCopied] = useState(false)
   const payLinkInputRef = useRef<HTMLInputElement | null>(null)
+  // Decided right here, per send — not a global switch. Off by default.
+  const [addStripeFee, setAddStripeFee] = useState(false)
+  const [stripeFeePct, setStripeFeePct] = useState('3')
   const [notesEdit, setNotesEdit] = useState(false)
   const [notesVal, setNotesVal] = useState('')
   const [termsEdit, setTermsEdit] = useState(false)
@@ -120,7 +121,8 @@ export default function MovingQuoteDetail() {
   async function sendStripePaymentLink(channel: 'whatsapp' | 'email' | 'link') {
     setPayLinkBusy(channel)
     try {
-      const res = await api.post(`/moving-quotes/${id}/payment-link`, { channel })
+      const feePct = addStripeFee ? Number(stripeFeePct) || 0 : 0
+      const res = await api.post(`/moving-quotes/${id}/payment-link`, { channel, feePct })
       setErr('')
       setPayLinkModal(false)
       if (channel === 'link') {
@@ -526,11 +528,23 @@ export default function MovingQuoteDetail() {
           <p className="text-sm text-muted-foreground">
             Quote total: <strong>AED {quote.total.toLocaleString()}</strong>
           </p>
-          <p className="text-xs" style={{ color: MUTED }}>
-            {paymentFee?.enabled
-              ? `A ${paymentFee.pct}% card processing fee applies — the customer pays it, on top of the total above.`
-              : 'No card processing fee is set — turn it on in Settings → Payments if you want one.'}
-          </p>
+          <label className="flex items-center gap-2.5 cursor-pointer">
+            <input type="checkbox" checked={addStripeFee} onChange={(e) => setAddStripeFee(e.target.checked)} className="h-4 w-4 rounded" />
+            <span className="text-sm">Add card processing fee — customer pays it, not you</span>
+          </label>
+          {addStripeFee && (
+            <div className="flex items-center gap-3 pl-6">
+              <Field label="Fee %">
+                <Input type="number" min={0} max={15} step="0.1" value={stripeFeePct} onChange={(e) => setStripeFeePct(e.target.value)} className="w-24" />
+              </Field>
+              {Number(stripeFeePct) > 0 && (
+                <p className="text-xs" style={{ color: MUTED }}>
+                  +AED {(quote.total * (Number(stripeFeePct) / 100)).toFixed(2)} fee ·{' '}
+                  customer pays <strong>AED {(quote.total * (1 + Number(stripeFeePct) / 100)).toFixed(2)}</strong> total
+                </p>
+              )}
+            </div>
+          )}
           {err && <p className="text-sm text-red-600">{err}</p>}
           <div className="flex flex-wrap justify-end gap-2 pt-2 border-t">
             <Button variant="outline" disabled={!!payLinkBusy} onClick={() => sendStripePaymentLink('link')}>
