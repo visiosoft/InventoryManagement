@@ -216,6 +216,137 @@ tool({
    },
 });
 
+/**
+ * Who is coming up for renewal — and, separately, the audience the email
+ * composer will open with.
+ *
+ * These are two tools rather than one because they answer to different people:
+ * the first is a question, the second is a handoff to a screen. Splitting them
+ * also means the model never has to carry a list of customer ids between turns,
+ * which matters — a 24-character ObjectId is exactly the kind of thing a model
+ * will helpfully "correct" into an id belonging to somebody else.
+ */
+const expiringWindow = (days) => {
+   const n = Math.max(1, Math.min(365, Number(days) || 30));
+   const from = new Date();
+   const to = new Date(Date.now() + n * 86400000);
+   return { n, from, to };
+};
+
+/** Same filter the contracts_expiring report block uses, so the assistant and
+ *  the report cannot give different answers to the same question. */
+async function expiringContracts(days, scope) {
+   const { n, from, to } = expiringWindow(days);
+   const rows = await Contract.find({
+      ...(scope?.contractFilter || {}), status: 'active', endDate: { $gte: from, $lt: to },
+   }).populate('customer', 'fullName email phone').populate('unit', 'unitNumber').sort({ endDate: 1 }).limit(500).lean();
+   return { days: n, rows };
+}
+
+tool({
+   name: 'contracts_expiring',
+   description: 'Tenants whose contracts expire within the next N days: name, unit, end date, days left, and whether we hold an email address. Use for "whose contract is expiring", "who is up for renewal".',
+   parameters: {
+      type: 'object',
+      properties: { days: { type: 'number', description: 'How many days ahead to look. Defaults to 30.' } },
+   },
+   async run({ days }, { scope }) {
+      const { days: n, rows } = await expiringContracts(days, scope);
+      const today = new Date().setHours(0, 0, 0, 0);
+      return {
+         days: n,
+         count: rows.length,
+         /* Said explicitly because it decides whether emailing them is even
+            possible, and the model would otherwise have to infer it from a
+            missing field — which it reports as "no data" rather than "we have
+            no address for four of them". */
+         withEmail: rows.filter((r) => r.customer?.email).length,
+         withoutEmail: rows.filter((r) => !r.customer?.email).length,
+         contracts: rows.slice(0, 60).map((k) => ({
+            contractNo: k.contractNo,
+            tenant: k.customer?.fullName,
+            email: k.customer?.email || null,
+            unit: k.unit?.unitNumber,
+            end: iso(k.endDate),
+            daysLeft: Math.round((new Date(k.endDate).setHours(0, 0, 0, 0) - today) / 86400000),
+            renewalIntent: k.renewalIntent || 'undecided',
+         })),
+         links: [link('Tenants', '/contracts')],
+      };
+   },
+});
+
+tool({
+   name: 'compose_email',
+   description: 'Open the email composer with a group already selected and a template chosen — for example everyone whose contract expires in 10 days. This SENDS NOTHING: it opens the composer so the user can review and press send themselves. Use whenever asked to email, message or contact a group of tenants by email.',
+   parameters: {
+      type: 'object',
+      properties: {
+         audience: {
+            type: 'string',
+            enum: ['expiring_contracts', 'active_tenants'],
+            description: 'expiring_contracts for tenants coming up for renewal; active_tenants for everyone currently renting.',
+         },
+         days: { type: 'number', description: 'For expiring_contracts: how many days ahead. Defaults to 30.' },
+         template: {
+            type: 'string',
+            description: 'Key of the email template to preselect, e.g. contract_expiring. Omit to let the user choose.',
+         },
+      },
+      required: ['audience'],
+   },
+   async run({ audience, days, template }, { scope }) {
+      /* The server works out who, from the audience the model named. The model
+         never passes ids: it says "the people expiring in 10 days" and this
+         re-runs that query, so the composer cannot open with somebody the
+         question never covered. */
+      let rows = [];
+      let label = '';
+      let window = null;
+      if (audience === 'active_tenants') {
+         rows = await Contract.find({ ...(scope?.contractFilter || {}), status: 'active' })
+            .populate('customer', 'fullName email').limit(2000).lean();
+         label = 'active tenants';
+      } else {
+         const out = await expiringContracts(days, scope);
+         rows = out.rows;
+         window = out.days;
+         label = `tenants whose contract expires within ${out.days} days`;
+      }
+
+      // One entry per person: a tenant with two units must not be emailed twice.
+      const byCustomer = new Map();
+      for (const r of rows) {
+         const c = r.customer;
+         if (!c?._id) continue;
+         if (!byCustomer.has(String(c._id))) byCustomer.set(String(c._id), c);
+      }
+      const people = [...byCustomer.values()];
+      const mailable = people.filter((c) => c.email);
+
+      return {
+         audience, label, days: window,
+         people: people.length,
+         withEmail: mailable.length,
+         withoutEmail: people.length - mailable.length,
+         // Named so it is obvious in the answer who will silently be left out.
+         noEmail: people.filter((c) => !c.email).map((c) => c.fullName).slice(0, 10),
+         /* Lifted out of the tool result by the assistant service and handed to
+            the widget, which opens the composer. Ids only travel server → UI,
+            never through the model. */
+         compose: {
+            kind: 'email_customers',
+            label,
+            customerIds: mailable.map((c) => String(c._id)),
+            template: template ? String(template) : '',
+            // These templates are full of @contractNo and @endDate, which only
+            // resolve when each person gets their own copy.
+            personalise: true,
+         },
+      };
+   },
+});
+
 tool({
    name: 'documents_for',
    description: 'The documents on file for a customer or contract — contracts, Emirates ID, passport, visa, trade licence. Search by customer name or contract number.',

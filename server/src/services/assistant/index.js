@@ -203,5 +203,15 @@ export async function askAssistant({ question, history = [], siteId = null, user
       if (links.length >= 6) break;
    }
 
-   return { answer: content, tools: used, model, rounds, grounded: true, pending, links };
+   /* A screen the answer wants opened, with what it should open with.
+      Built from the tool result, never from the model — so the people the
+      composer selects are the ones the server's own query returned, not a list
+      the model retyped. Nothing is sent by opening it; the composer's own Send
+      button is still the only thing that mails anybody. */
+   let compose = null;
+   for (const r of results) {
+      if (r.result?.compose?.customerIds?.length) { compose = r.result.compose; break; }
+   }
+
+   return { answer: content, tools: used, model, rounds, grounded: true, pending, links, compose };
 }

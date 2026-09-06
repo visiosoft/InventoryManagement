@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Sparkles, X, Send, RotateCcw } from 'lucide-react'
+import { Sparkles, X, Send, RotateCcw, Mail } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import EmailCustomersModal from '../pages/customers/EmailCustomersModal'
 
 const INK = '#14081F'
 const MUTED = '#4A4357'
@@ -34,6 +35,19 @@ type Turn = {
   /* Pages for what the answer is about, from the server — never written by
      the model, so a button always goes somewhere real. */
   links?: { label: string; path: string }[]
+  /* A screen the answer wants opened, already filled in. The ids are the
+     server's own query result, not a list the model retyped, and opening the
+     composer sends nothing — its Send button is still the only thing that
+     mails anybody. */
+  compose?: Compose | null
+}
+
+type Compose = {
+  kind: 'email_customers'
+  label: string
+  customerIds: string[]
+  template?: string
+  personalise?: boolean
 }
 
 const STORE = 'pb_assistant'
@@ -48,6 +62,8 @@ const TOOL_LABEL: Record<string, string> = {
   tasks_due: 'read the task board',
   whatsapp_activity: 'read WhatsApp activity',
   leads_recent: 'counted leads',
+  contracts_expiring: 'checked which contracts are expiring',
+  compose_email: 'worked out who to email',
 }
 const labelFor = (name: string) =>
   TOOL_LABEL[name] || `read the ${name.replace(/^report_/, '').replace(/_/g, ' ')} report`
@@ -70,6 +86,8 @@ export default function AssistantWidget() {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [acting, setActing] = useState('')
+  // The email composer, when an answer has one to open.
+  const [compose, setCompose] = useState<Compose | null>(null)
 
   /* Fetched with the login token and opened from memory, the way the quotes
      page does it. A plain link to the API sends no token, so the browser is
@@ -129,10 +147,14 @@ export default function AssistantWidget() {
     setTurns((t) => [...t, { role: 'user', content: q }])
     setBusy(true)
     try {
-      const { data } = await api.post<{ answer: string; tools: { name: string; ok: boolean }[]; grounded: boolean; pending?: Pending | null; links?: { label: string; path: string }[] }>(
+      const { data } = await api.post<{ answer: string; tools: { name: string; ok: boolean }[]; grounded: boolean; pending?: Pending | null; links?: { label: string; path: string }[]; compose?: Compose | null }>(
         '/assistant/ask', { question: q, history },
       )
-      setTurns((t) => [...t, { role: 'assistant', content: data.answer, tools: data.tools, grounded: data.grounded, pending: data.pending || null, links: data.links || [] }])
+      setTurns((t) => [...t, { role: 'assistant', content: data.answer, tools: data.tools, grounded: data.grounded, pending: data.pending || null, links: data.links || [], compose: data.compose || null }])
+      /* Asking to email a group IS asking for the composer, so it opens rather
+         than offering a button to open it. Closing it leaves the button in the
+         thread, so a composer dismissed by accident is one click back. */
+      if (data.compose?.customerIds?.length) setCompose(data.compose)
     } catch (e) {
       setErr(apiError(e))
       setTurns((t) => t.slice(0, -1))
@@ -214,6 +236,19 @@ export default function AssistantWidget() {
                 >
                   {t.content}
                 </div>
+                {t.compose && t.compose.customerIds.length > 0 && (
+                  <div className="mt-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setCompose(t.compose!)}
+                      className="cursor-pointer inline-flex items-center gap-1.5"
+                      style={{ fontSize: 12, fontWeight: 600, color: PURPLE_INK, background: BADGE, border: `1px solid ${PURPLE_LINE}`, borderRadius: 8, padding: '5px 10px' }}
+                    >
+                      <Mail size={13} />
+                      Email {t.compose.customerIds.length} {t.compose.customerIds.length === 1 ? 'person' : 'people'}
+                    </button>
+                  </div>
+                )}
                 {t.links && t.links.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mt-1.5">
                     {t.links.map((l) => (
@@ -348,6 +383,19 @@ export default function AssistantWidget() {
         <Sparkles size={17} />
         {!open && 'Ask'}
       </button>
+
+      {/* The ordinary Email customers composer, opened with the audience the
+          server worked out. Nothing about it is special-cased for the
+          assistant: the same review, the same recipient list, the same Send —
+          which is why opening it automatically is safe. */}
+      {compose && (
+        <EmailCustomersModal
+          onClose={() => setCompose(null)}
+          preselectIds={compose.customerIds}
+          preselectTemplateKey={compose.template}
+          defaultPersonalise={compose.personalise !== false}
+        />
+      )}
     </>
   )
 }
