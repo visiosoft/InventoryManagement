@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Sparkles, X, Send, RotateCcw, Mail } from 'lucide-react'
+import { Sparkles, X, Send, RotateCcw, Mail, MessageCircle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import EmailCustomersModal from '../pages/customers/EmailCustomersModal'
+import WhatsAppContractsModal, { type WhatsAppContractRow } from '../pages/customers/WhatsAppContractsModal'
 
 const INK = '#14081F'
 const MUTED = '#4A4357'
@@ -42,13 +43,20 @@ type Turn = {
   compose?: Compose | null
 }
 
-type Compose = {
-  kind: 'email_customers'
-  label: string
-  customerIds: string[]
-  template?: string
-  personalise?: boolean
-}
+type Compose =
+  | {
+      kind: 'email_customers'
+      label: string
+      customerIds: string[]
+      template?: string
+      personalise?: boolean
+    }
+  | {
+      kind: 'whatsapp_contracts'
+      label: string
+      template?: string
+      contracts: WhatsAppContractRow[]
+    }
 
 const STORE = 'pb_assistant'
 
@@ -64,9 +72,21 @@ const TOOL_LABEL: Record<string, string> = {
   leads_recent: 'counted leads',
   contracts_expiring: 'checked which contracts are expiring',
   compose_email: 'worked out who to email',
+  compose_whatsapp: 'worked out who to WhatsApp',
 }
 const labelFor = (name: string) =>
   TOOL_LABEL[name] || `read the ${name.replace(/^report_/, '').replace(/_/g, ' ')} report`
+
+/** Whichever shape a compose directive is, does it actually have someone to
+ *  send to? An empty audience (everyone filtered out, e.g. nobody with a
+ *  phone number) should not pop a composer with nothing in it. */
+function composeHasRecipients(c: Compose): boolean {
+  return c.kind === 'email_customers' ? c.customerIds.length > 0 : c.contracts.length > 0
+}
+
+function composeCount(c: Compose): number {
+  return c.kind === 'email_customers' ? c.customerIds.length : c.contracts.length
+}
 
 /**
  * The assistant in the corner of every page.
@@ -151,10 +171,11 @@ export default function AssistantWidget() {
         '/assistant/ask', { question: q, history },
       )
       setTurns((t) => [...t, { role: 'assistant', content: data.answer, tools: data.tools, grounded: data.grounded, pending: data.pending || null, links: data.links || [], compose: data.compose || null }])
-      /* Asking to email a group IS asking for the composer, so it opens rather
-         than offering a button to open it. Closing it leaves the button in the
-         thread, so a composer dismissed by accident is one click back. */
-      if (data.compose?.customerIds?.length) setCompose(data.compose)
+      /* Asking to message a group IS asking for the composer, so it opens
+         rather than offering a button to open it. Closing it leaves the
+         button in the thread, so a composer dismissed by accident is one
+         click back. */
+      if (data.compose && composeHasRecipients(data.compose)) setCompose(data.compose)
     } catch (e) {
       setErr(apiError(e))
       setTurns((t) => t.slice(0, -1))
@@ -236,7 +257,7 @@ export default function AssistantWidget() {
                 >
                   {t.content}
                 </div>
-                {t.compose && t.compose.customerIds.length > 0 && (
+                {t.compose && composeHasRecipients(t.compose) && (
                   <div className="mt-1.5">
                     <button
                       type="button"
@@ -244,8 +265,8 @@ export default function AssistantWidget() {
                       className="cursor-pointer inline-flex items-center gap-1.5"
                       style={{ fontSize: 12, fontWeight: 600, color: PURPLE_INK, background: BADGE, border: `1px solid ${PURPLE_LINE}`, borderRadius: 8, padding: '5px 10px' }}
                     >
-                      <Mail size={13} />
-                      Email {t.compose.customerIds.length} {t.compose.customerIds.length === 1 ? 'person' : 'people'}
+                      {t.compose.kind === 'email_customers' ? <Mail size={13} /> : <MessageCircle size={13} />}
+                      {t.compose.kind === 'email_customers' ? 'Email' : 'WhatsApp'} {composeCount(t.compose)} {composeCount(t.compose) === 1 ? 'person' : 'people'}
                     </button>
                   </div>
                 )}
@@ -384,16 +405,23 @@ export default function AssistantWidget() {
         {!open && 'Ask'}
       </button>
 
-      {/* The ordinary Email customers composer, opened with the audience the
-          server worked out. Nothing about it is special-cased for the
-          assistant: the same review, the same recipient list, the same Send —
-          which is why opening it automatically is safe. */}
-      {compose && (
+      {/* The ordinary Email or WhatsApp composer, opened with the audience
+          the server worked out. Nothing about either is special-cased for the
+          assistant: the same review, the same recipient list, the same
+          Send — which is why opening one automatically is safe. */}
+      {compose?.kind === 'email_customers' && (
         <EmailCustomersModal
           onClose={() => setCompose(null)}
           preselectIds={compose.customerIds}
           preselectTemplateKey={compose.template}
           defaultPersonalise={compose.personalise !== false}
+        />
+      )}
+      {compose?.kind === 'whatsapp_contracts' && (
+        <WhatsAppContractsModal
+          onClose={() => setCompose(null)}
+          contracts={compose.contracts}
+          preselectTemplateKey={compose.template}
         />
       )}
     </>

@@ -347,6 +347,71 @@ tool({
    },
 });
 
+/**
+ * The WhatsApp equivalent of compose_email — with one real difference the
+ * description says plainly, because it changes what this can and cannot do.
+ *
+ * WhatsApp has no bulk broadcast: every message is sent to one number, and
+ * outside the 24-hour reply window it must be an approved template — there is
+ * no "compose a body" step for the model to help with, only which template
+ * and who. And it is scoped to CONTRACTS, not customers, because the
+ * placeholders (@endDate, @renewLink, a specific unit) belong to one contract
+ * — a tenant with two units gets two messages, one per contract, not one
+ * message that cannot say which unit it means.
+ */
+tool({
+   name: 'compose_whatsapp',
+   description: 'Open the WhatsApp composer with a group already selected and a template chosen — for example everyone whose contract expires in 3 days. This SENDS NOTHING: it opens the composer so the user can review and press send themselves. WhatsApp has no bulk/broadcast send — this queues one templated message per contract, each personalised, which is the only way WhatsApp allows it. Use whenever asked to WhatsApp, message on WhatsApp, or contact a group of tenants by WhatsApp — do not say this is unsupported.',
+   parameters: {
+      type: 'object',
+      properties: {
+         audience: {
+            type: 'string',
+            enum: ['expiring_contracts'],
+            description: 'expiring_contracts for tenants coming up for renewal.',
+         },
+         days: { type: 'number', description: 'How many days ahead to look. Defaults to 30.' },
+         template: {
+            type: 'string',
+            description: 'Key of the message template to preselect, e.g. contract_expiring. Omit to let the user choose.',
+         },
+      },
+      required: ['audience'],
+   },
+   async run({ days, template }, { scope }) {
+      const { days: n, rows } = await expiringContracts(days, scope);
+      const withPhone = rows.filter((r) => r.customer?.phone);
+      const noPhone = rows.filter((r) => !r.customer?.phone);
+      const label = `tenants whose contract expires within ${n} days`;
+
+      return {
+         audience: 'expiring_contracts', label, days: n,
+         contracts: rows.length,
+         withPhone: withPhone.length,
+         withoutPhone: noPhone.length,
+         // Named so it is obvious in the answer who will silently be left out.
+         noPhone: noPhone.map((r) => r.customer?.fullName).filter(Boolean).slice(0, 10),
+         /* Lifted out of the tool result by the assistant service and handed to
+            the widget, which opens the composer. Ids only travel server → UI,
+            never through the model — the same rule compose_email follows and
+            for the same reason. */
+         compose: {
+            kind: 'whatsapp_contracts',
+            label,
+            template: template ? String(template) : '',
+            contracts: withPhone.map((r) => ({
+               contractId: String(r._id),
+               contractNo: r.contractNo,
+               customerName: r.customer?.fullName || '',
+               phone: r.customer?.phone,
+               unit: r.unit?.unitNumber || '',
+               endDate: iso(r.endDate),
+            })),
+         },
+      };
+   },
+});
+
 tool({
    name: 'documents_for',
    description: 'The documents on file for a customer or contract — contracts, Emirates ID, passport, visa, trade licence. Search by customer name or contract number.',

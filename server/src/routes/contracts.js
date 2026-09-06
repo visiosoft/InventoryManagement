@@ -1946,6 +1946,84 @@ router.post('/:id/whatsapp-template', async (req, res) => {
   }
 });
 
+/**
+ * The same approved WhatsApp template, sent to several tenants at once —
+ * everyone whose contract expires in the next few days, say.
+ *
+ * There is no bulk send on WhatsApp itself: this is that one-contract route
+ * above, called once per contract, not a single broadcast API call. It exists
+ * as its own endpoint (rather than the client just looping the single route)
+ * so one slow evening's six sends are one request the page can show progress
+ * for, and so a phone number missing on tenant three cannot silently abort
+ * tenants four through six — every contract gets its own attempt and its own
+ * place in the result, sent or failed with why.
+ */
+router.post('/bulk-whatsapp-template', async (req, res) => {
+  if (!whatsappSendConfigured()) return res.status(400).json({ error: 'WhatsApp is not configured' });
+
+  const contractIds = (Array.isArray(req.body?.contractIds) ? req.body.contractIds : [])
+    .filter((id) => isValidObjectId(id));
+  if (!contractIds.length) return res.status(400).json({ error: 'No contracts selected' });
+
+  const tpl = await MessageTemplate.findById(req.body?.templateId).lean();
+  if (!tpl) return res.status(404).json({ error: 'Template not found' });
+  if (!String(tpl.whatsappTemplate || '').trim()) {
+    return res.status(400).json({ error: `"${tpl.label}" has no approved WhatsApp template. Add one in Settings → Message Templates.` });
+  }
+
+  const contracts = await populateAll(Contract.find({ _id: { $in: contractIds } }));
+  const actor = req.user?.name || req.user?.email || '';
+  const fmt = (d) => (d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '');
+  // Same names the reminder engine and the single-contract route use, so a
+  // template written for either works unchanged here.
+  const name = String(tpl.whatsappTemplate).trim();
+  const lang = String(tpl.whatsappTemplateLang || 'en').trim() || 'en';
+
+  const sent = [];
+  const failed = [];
+  for (const contract of contracts) {
+    try {
+      const phone = contract.customer?.phone || contract.customer?.phones?.[0];
+      if (!phone) throw new Error('No phone number on file');
+      const units = (contract.units?.length ? contract.units : contract.unit ? [contract.unit] : [])
+        .map((u) => u?.unitNumber).filter(Boolean);
+      const vars = {
+        name: contract.customer?.fullName || '',
+        contractNo: contract.contractNo || '',
+        unit: units.join(', '),
+        endDate: fmt(contract.endDate),
+        startDate: fmt(contract.startDate),
+        dueDate: fmt(contract.endDate),
+        rate: contract.rate != null ? Number(contract.rate).toFixed(2) : '',
+        renewLink: renewLink(contract._id),
+        moveOutLink: moveOutLink(contract._id),
+      };
+      const variables = (tpl.whatsappTemplateVars || []).map((k) => String(vars[k] ?? ''));
+
+      await sendWhatsAppTemplate({ to: phone, name, language: lang, variables });
+
+      await Contract.findByIdAndUpdate(contract._id, {
+        $push: { timeline: { at: new Date(), text: `WhatsApp "${tpl.label}" sent to ${phone}`, author: actor } },
+      });
+      await AutomationLog.create({
+        ruleName: 'Sent by hand', channel: 'whatsapp', contract: contract._id,
+        customer: contract.customer?._id, event: `manual:${name}:${contract._id}:${Date.now()}`,
+        message: `${name}(${variables.join(', ')})`, status: 'sent',
+      });
+      sent.push({ contractId: String(contract._id), contractNo: contract.contractNo, to: phone });
+    } catch (e) {
+      failed.push({
+        contractId: String(contract._id),
+        contractNo: contract.contractNo,
+        customerName: contract.customer?.fullName || '',
+        reason: e.message,
+      });
+    }
+  }
+
+  res.json({ sent, failed, template: name });
+});
+
 router.post('/:id/send-email', async (req, res) => {
   const contract = await populateAll(Contract.findById(req.params.id));
   if (!contract) return res.status(404).json({ error: 'Contract not found' });

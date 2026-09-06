@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Sparkles, ArrowRight, Mail, X } from 'lucide-react'
+import { Sparkles, ArrowRight, Mail, MessageCircle, X } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import EmailCustomersModal from '../pages/customers/EmailCustomersModal'
+import WhatsAppContractsModal, { type WhatsAppContractRow } from '../pages/customers/WhatsAppContractsModal'
 
 const INK = '#14081F'
 const MUTED = '#756E80'
@@ -17,7 +18,9 @@ const LINE = 'rgba(20,8,31,.08)'
 const HEAD = "'Bricolage Grotesque', sans-serif"
 
 type Pending = { id: string; kind: string; summary: string[]; expiresAt: string }
-type Compose = { kind: 'email_customers'; label: string; customerIds: string[]; template?: string; personalise?: boolean }
+type Compose =
+  | { kind: 'email_customers'; label: string; customerIds: string[]; template?: string; personalise?: boolean }
+  | { kind: 'whatsapp_contracts'; label: string; template?: string; contracts: WhatsAppContractRow[] }
 type Answer = {
   content: string
   tools: { name: string; ok: boolean }[]
@@ -44,8 +47,15 @@ const TOOL_LABEL: Record<string, string> = {
   leads_recent: 'counted leads',
   contracts_expiring: 'checked which contracts are expiring',
   compose_email: 'worked out who to email',
+  compose_whatsapp: 'worked out who to WhatsApp',
 }
 const labelFor = (name: string) => TOOL_LABEL[name] || `read the ${name.replace(/^report_/, '').replace(/_/g, ' ')} report`
+
+/** Whichever shape a compose directive is, does it actually have someone to
+ *  send to? An empty audience should not pop a composer with nothing in it. */
+function composeCount(c: Compose): number {
+  return c.kind === 'email_customers' ? c.customerIds.length : c.contracts.length
+}
 
 const STARTERS = [
   'Which contracts expire in the next 15 days?',
@@ -94,10 +104,10 @@ export default function DashboardAsk() {
       )
       setAnswer({ content: data.answer, tools: data.tools, grounded: data.grounded, pending: data.pending || null, links: data.links || [] })
       setQ(question)
-      // Asking to email a group IS asking for the composer, so it opens
+      // Asking to message a group IS asking for the composer, so it opens
       // rather than waiting for a second click — same rule the corner
       // widget follows for the same reason.
-      if (data.compose?.customerIds?.length) setCompose(data.compose)
+      if (data.compose && composeCount(data.compose) > 0) setCompose(data.compose)
     } catch (e) {
       setErr(apiError(e))
     } finally {
@@ -237,15 +247,15 @@ export default function DashboardAsk() {
             </div>
           )}
 
-          {compose && compose.customerIds.length > 0 && (
+          {compose && composeCount(compose) > 0 && (
             <div style={{ marginTop: 12 }}>
               <button
                 type="button" onClick={() => setCompose(compose)}
                 className="cursor-pointer inline-flex items-center gap-1.5"
                 style={{ fontSize: 12.5, fontWeight: 600, color: PURPLE_INK, background: BADGE, border: `1px solid ${PURPLE_LINE}`, borderRadius: 8, padding: '6px 12px' }}
               >
-                <Mail size={13} />
-                Email {compose.customerIds.length} {compose.customerIds.length === 1 ? 'person' : 'people'}
+                {compose.kind === 'email_customers' ? <Mail size={13} /> : <MessageCircle size={13} />}
+                {compose.kind === 'email_customers' ? 'Email' : 'WhatsApp'} {composeCount(compose)} {composeCount(compose) === 1 ? 'person' : 'people'}
               </button>
             </div>
           )}
@@ -300,12 +310,19 @@ export default function DashboardAsk() {
 
       {err && <p style={{ fontSize: 12.5, color: '#8A1C1C', marginTop: 8 }}>{err}</p>}
 
-      {compose && (
+      {compose?.kind === 'email_customers' && (
         <EmailCustomersModal
           onClose={() => setCompose(null)}
           preselectIds={compose.customerIds}
           preselectTemplateKey={compose.template}
           defaultPersonalise={compose.personalise !== false}
+        />
+      )}
+      {compose?.kind === 'whatsapp_contracts' && (
+        <WhatsAppContractsModal
+          onClose={() => setCompose(null)}
+          contracts={compose.contracts}
+          preselectTemplateKey={compose.template}
         />
       )}
     </div>

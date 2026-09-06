@@ -204,13 +204,17 @@ export async function askAssistant({ question, history = [], siteId = null, user
    }
 
    /* A screen the answer wants opened, with what it should open with.
-      Built from the tool result, never from the model — so the people the
-      composer selects are the ones the server's own query returned, not a list
-      the model retyped. Nothing is sent by opening it; the composer's own Send
-      button is still the only thing that mails anybody. */
+      Built from the tool result, never from the model — so the recipients the
+      composer selects are the ones the server's own query returned, not a
+      list the model retyped. Nothing is sent by opening it; the composer's
+      own Send button is still the only thing that mails or messages anybody.
+      Two shapes travel through here: email's `customerIds` and WhatsApp's
+      `contracts` — checked by whichever one the tool that ran actually
+      filled in. */
    let compose = null;
    for (const r of results) {
-      if (r.result?.compose?.customerIds?.length) { compose = r.result.compose; break; }
+      const c = r.result?.compose;
+      if (c?.customerIds?.length || c?.contracts?.length) { compose = c; break; }
    }
 
    return { answer: content, tools: used, model, rounds, grounded: true, pending, links, compose };
