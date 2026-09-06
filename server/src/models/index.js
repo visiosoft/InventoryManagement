@@ -2205,7 +2205,10 @@ const leadFollowUpSchema = new Schema({
   phoneNormalized: { type: String, default: '' },
   sentBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
   sentByName: { type: String, default: '' },
-  template: { type: Schema.Types.ObjectId, ref: 'MessageTemplate' },
+  // Meta's own template name (e.g. contract_expiry_notification) — the real
+  // approved-template list, not the smaller set anyone has separately mapped
+  // into a MessageTemplate row. That mapping is not required for this to work.
+  templateName: { type: String, default: '' },
   templateLabel: { type: String, default: '' },
   reason: { type: String, default: '' },
   daysQuietAtSend: { type: Number, default: 0 },

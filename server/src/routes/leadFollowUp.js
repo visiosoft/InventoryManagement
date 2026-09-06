@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { isValidObjectId } from 'mongoose';
-import { Lead, LeadFollowUp, MessageTemplate } from '../models/index.js';
+import { Lead, LeadFollowUp } from '../models/index.js';
 import { requireAdmin } from '../middleware/auth.js';
+import { listWhatsAppTemplates } from '../services/whatsapp.js';
 import {
     quietThreshold, setQuietThreshold, quietLeads, attachReasons, attachLastNudge,
     quietSummary, sendQuietFollowUp,
@@ -62,6 +63,11 @@ router.get('/summary', async (req, res) => {
 /**
  * Send an approved template to a batch of quiet leads.
  *
+ * The template is looked up server-side by name against Meta's own approved
+ * list — the client's dropdown is a convenience, never trusted for what the
+ * template actually requires. That is also where variableCount comes from,
+ * which decides how many extraVars a send actually needs.
+ *
  * A rep may only send to their own; admin may send to anyone's — the same
  * split as viewing them. The reason shown for each lead when the client asked
  * for the list is sent back here so it can be frozen onto the log record
@@ -72,9 +78,19 @@ router.post('/send', async (req, res) => {
         const leadIds = (Array.isArray(req.body?.leadIds) ? req.body.leadIds : []).filter(isValidObjectId);
         if (!leadIds.length) return res.status(400).json({ error: 'No leads selected' });
 
-        const templateId = req.body?.templateId;
-        if (!templateId || !isValidObjectId(templateId)) return res.status(400).json({ error: 'Choose a template' });
-        const template = await MessageTemplate.findById(templateId).lean();
+        const templateName = String(req.body?.templateName || '').trim();
+        if (!templateName) return res.status(400).json({ error: 'Choose a template' });
+
+        const known = await listWhatsAppTemplates().catch(() => ({ templates: [] }));
+        const meta = (known.templates || []).find((t) => t.name === templateName && String(t.status).toUpperCase() === 'APPROVED');
+        if (!meta) return res.status(404).json({ error: 'That template is no longer approved — refresh and pick another.' });
+        const template = {
+            name: meta.name,
+            label: meta.name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+            language: meta.language,
+            variableCount: meta.variableCount,
+        };
+        const extraVars = Array.isArray(req.body?.extraVars) ? req.body.extraVars.map((v) => String(v ?? '')) : [];
 
         // What the client already knows about each lead — reason and days
         // quiet — passed back rather than recomputed, so a send is not a
@@ -92,7 +108,7 @@ router.post('/send', async (req, res) => {
         }
 
         const out = await sendQuietFollowUp({
-            leadIds, template, reasons,
+            leadIds, template, extraVars, reasons,
             byUser: { id: req.user.id, name: req.user.name, email: req.user.email },
         });
         res.json(out);

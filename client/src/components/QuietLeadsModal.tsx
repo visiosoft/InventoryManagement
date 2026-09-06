@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Check, MessageCircle } from 'lucide-react'
-import { api, apiError, leadFollowUpApi, type QuietLead } from '../lib/api'
+import { apiError, leadFollowUpApi, whatsappApi, type QuietLead } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { Modal, Spinner } from '../components/ui'
 
@@ -10,8 +10,6 @@ const MUTED = '#756E80'
 const PURPLE = '#5B2BC9'
 const PURPLE_DEEP = '#4A1FA0'
 const PURPLE_TINT = '#F7F3FF'
-
-type EmailTemplate = { _id: string; key?: string; label: string; whatsappTemplate?: string }
 
 function initialsOf(name: string) {
   const parts = (name || '').trim().split(/\s+/)
@@ -59,7 +57,11 @@ export default function QuietLeadsModal({
   const isAdmin = user?.role === 'admin'
   const [days, setDays] = useState<number | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [templateId, setTemplateId] = useState('')
+  const [templateName, setTemplateName] = useState('')
+  // Any variable beyond {{1}} — filled once, sent identically to everyone in
+  // the batch. {{1}} itself is never asked for here: it is always each
+  // lead's own first name, filled per person by the server.
+  const [extraVars, setExtraVars] = useState<string[]>([])
   const [result, setResult] = useState<{ sent: { leadId: string; name: string }[]; failed: { leadId: string; name: string; reason: string }[] } | null>(null)
   const [error, setError] = useState('')
 
@@ -87,13 +89,19 @@ export default function QuietLeadsModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data])
 
-  const { data: templates = [] } = useQuery<EmailTemplate[]>({
-    queryKey: ['message-templates', 'automation'],
-    queryFn: () => api.get('/message-templates', { params: { kind: 'automation' } }).then((r) => r.data ?? []),
-    staleTime: 60_000,
+  // Meta's own approved list — the same one the chat composer's Templates
+  // tab reads, so this offers everything you can actually send, not a
+  // smaller separately-maintained subset of it.
+  const { data: waData, isLoading: templatesLoading } = useQuery({
+    queryKey: ['whatsapp-templates'],
+    queryFn: () => whatsappApi.approvedTemplates(),
+    staleTime: 10 * 60_000,
   })
-  const waTemplates = useMemo(() => templates.filter((t) => t.whatsappTemplate), [templates])
-  useEffect(() => { if (!templateId && waTemplates.length) setTemplateId(waTemplates[0]._id) }, [waTemplates, templateId])
+  const waTemplates = waData?.templates ?? []
+  useEffect(() => { if (!templateName && waTemplates.length) setTemplateName(waTemplates[0].name) }, [waTemplates, templateName])
+  const selectedTemplate = waTemplates.find((t) => t.name === templateName)
+  const extraCount = Math.max(0, (selectedTemplate?.variableCount ?? 1) - 1)
+  useEffect(() => { setExtraVars(Array(extraCount).fill('')) }, [templateName, extraCount])
 
   const saveThreshold = useMutation({
     mutationFn: (n: number) => leadFollowUpApi.setConfig(n),
@@ -103,7 +111,8 @@ export default function QuietLeadsModal({
   const send = useMutation({
     mutationFn: () => leadFollowUpApi.send({
       leadIds: [...selected],
-      templateId,
+      templateName,
+      extraVars,
       reasons: leads.filter((l) => selected.has(l.leadId)).map((l) => ({ leadId: l.leadId, reason: l.reason || '', daysQuiet: l.daysQuiet })),
     }),
     onSuccess: (r) => { setError(''); setResult(r) },
@@ -117,8 +126,8 @@ export default function QuietLeadsModal({
     setSelected((s) => (s.size === leads.length ? new Set() : new Set(leads.map((l) => l.leadId))))
   }
 
-  const selectedTemplate = waTemplates.find((t) => t._id === templateId)
-  const sendDisabled = selected.size === 0 || !templateId || send.isPending
+  const extraFilled = extraVars.every((v) => v.trim().length > 0)
+  const sendDisabled = selected.size === 0 || !templateName || !extraFilled || send.isPending
 
   return (
     <Modal open onClose={onClose} title={scope === 'mine' ? 'Leads that went quiet' : 'Quiet leads — all reps'} wide>
@@ -193,24 +202,44 @@ export default function QuietLeadsModal({
 
           <div>
             <label className="block text-xs font-semibold mb-1.5" style={{ color: MUTED }}>Template</label>
-            {waTemplates.length === 0 ? (
+            {templatesLoading ? (
+              <Spinner />
+            ) : waTemplates.length === 0 ? (
               <p className="text-xs rounded-lg px-3 py-2" style={{ background: '#FFF7E6', color: '#8A5A00' }}>
-                No template has an approved WhatsApp version yet. Add one in Settings → Message Templates.
+                {waData?.error || 'No approved WhatsApp templates found.'}
               </p>
             ) : (
               <select
-                value={templateId} onChange={(e) => setTemplateId(e.target.value)}
+                value={templateName} onChange={(e) => setTemplateName(e.target.value)}
                 className="w-full rounded-lg border px-3 py-2 text-sm"
                 style={{ borderColor: 'rgba(20,8,31,.14)' }}
               >
-                {waTemplates.map((t) => <option key={t._id} value={t._id}>{t.label}</option>)}
+                {waTemplates.map((t) => <option key={t.name} value={t.name}>{t.label}</option>)}
               </select>
             )}
             {selectedTemplate && (
               <p className="text-xs mt-1.5" style={{ color: MUTED }}>
-                Sends as the approved template <strong style={{ color: INK }}>{selectedTemplate.whatsappTemplate}</strong>. Pick
-                whichever of your templates fits — the reason below is there to help you choose.
+                {'{{1}}'} is always filled with each person&rsquo;s own first name. Pick whichever of your templates
+                fits — the reason below each name is there to help you choose.
               </p>
+            )}
+            {extraCount > 0 && (
+              <div className="mt-2 space-y-2 rounded-lg border p-3" style={{ borderColor: 'rgba(20,8,31,.12)', background: '#FAFAFA' }}>
+                <p className="text-xs" style={{ color: MUTED }}>
+                  This template needs {extraCount} more detail{extraCount === 1 ? '' : 's'}, sent the same to everyone
+                  selected below — for something that should differ per person, pick a template with only one blank.
+                </p>
+                {extraVars.map((v, i) => (
+                  <input
+                    key={i}
+                    value={v}
+                    onChange={(e) => setExtraVars((prev) => prev.map((x, n) => (n === i ? e.target.value : x)))}
+                    placeholder={`{{${i + 2}}}`}
+                    className="w-full rounded-lg border px-3 py-1.5 text-sm"
+                    style={{ borderColor: 'rgba(20,8,31,.14)' }}
+                  />
+                ))}
+              </div>
             )}
           </div>
 

@@ -177,22 +177,39 @@ export async function quietSummary({ ownerId = null } = {}) {
 /**
  * Send an approved template to a batch of quiet leads.
  *
- * Each is independent — one bad number does not stop the other five — and
- * every attempt is logged, sent or failed, which is what lets the warning and
- * the report both work off the same record rather than two that can drift.
+ * Uses Meta's own approved-template list — the same one the chat composer's
+ * Templates tab offers — rather than the small separately-maintained set of
+ * MessageTemplate rows somebody has explicitly mapped for automation. A
+ * business with thirty approved templates and one automation mapping should
+ * not be offered only that one.
+ *
+ * {{1}} is always the lead's own first name, filled per person the same way
+ * the chat composer prefills it — never left blank, never guessed at from a
+ * placeholder profile name. Any variable beyond that (2, 3, …) is one value
+ * typed once and sent identically to everyone in the batch, because a
+ * genuinely different value per person, per slot, is a form the size of the
+ * recipient list — at that point the right answer is a template with a
+ * single variable.
+ *
+ * Each send is independent — one bad number does not stop the other five —
+ * and every attempt is logged, sent or failed, which is what lets the warning
+ * and the report both work off the same record rather than two that can
+ * drift.
  */
-export async function sendQuietFollowUp({ leadIds, templateId, byUser, template, reasons = new Map() }) {
+export async function sendQuietFollowUp({ leadIds, template, extraVars = [], byUser, reasons = new Map() }) {
     if (!whatsappSendConfigured()) return { sent: [], failed: leadIds.map((id) => ({ leadId: id, reason: 'WhatsApp is not configured' })) };
-    if (!template) return { sent: [], failed: leadIds.map((id) => ({ leadId: id, reason: 'Template not found' })) };
-    if (!String(template.whatsappTemplate || '').trim()) {
-        return { sent: [], failed: leadIds.map((id) => ({ leadId: id, reason: `"${template.label}" has no approved WhatsApp template` })) };
+    const name = String(template?.name || '').trim();
+    if (!name) return { sent: [], failed: leadIds.map((id) => ({ leadId: id, reason: 'Choose a template' })) };
+
+    const needed = Math.max(0, (Number(template.variableCount) || 0) - 1);
+    if (extraVars.length < needed) {
+        const msg = `"${template.label}" needs ${needed} more detail${needed === 1 ? '' : 's'} filled in before sending`;
+        return { sent: [], failed: leadIds.map((id) => ({ leadId: id, reason: msg })) };
     }
 
     const leads = await Lead.find({ _id: { $in: leadIds } }).select('fullName phone phoneNormalized whatsappProfileName').lean();
     const byId = new Map(leads.map((l) => [String(l._id), l]));
-    const name = String(template.whatsappTemplate).trim();
-    const lang = String(template.whatsappTemplateLang || 'en').trim() || 'en';
-    const threshold = await quietThreshold();
+    const lang = String(template.language || 'en').trim() || 'en';
     const sentBy = byUser?.id || null;
     const sentByName = byUser?.name || byUser?.email || '';
 
@@ -205,14 +222,14 @@ export async function sendQuietFollowUp({ leadIds, templateId, byUser, template,
             const phone = lead.phone || lead.phoneNormalized;
             if (!phone) throw new Error('No phone number on file');
             const reasonRow = reasons.get(leadId);
-            const vars = { name: lead.fullName || lead.whatsappProfileName || '', reason: reasonRow?.reason || '' };
-            const variables = (template.whatsappTemplateVars || []).map((k) => String(vars[k] ?? ''));
+            const firstName = String(lead.fullName || lead.whatsappProfileName || '').trim().split(/\s+/)[0] || '';
+            const variables = [firstName, ...extraVars.map((v) => String(v ?? ''))];
 
             await sendWhatsAppTemplate({ to: phone, name, language: lang, variables });
 
             await LeadFollowUp.create({
                 lead: leadId, phoneNormalized: lead.phoneNormalized, sentBy, sentByName,
-                template: template._id, templateLabel: template.label,
+                templateName: name, templateLabel: template.label,
                 reason: reasonRow?.reason || '', daysQuietAtSend: reasonRow?.daysQuiet ?? 0,
                 status: 'sent',
             });
@@ -223,7 +240,7 @@ export async function sendQuietFollowUp({ leadIds, templateId, byUser, template,
         } catch (e) {
             await LeadFollowUp.create({
                 lead: leadId, phoneNormalized: lead?.phoneNormalized || '', sentBy, sentByName,
-                template: template._id, templateLabel: template.label,
+                templateName: name, templateLabel: template.label,
                 daysQuietAtSend: reasons.get(leadId)?.daysQuiet ?? 0,
                 status: 'failed', error: e.message,
             }).catch(() => { });
@@ -231,7 +248,7 @@ export async function sendQuietFollowUp({ leadIds, templateId, byUser, template,
         }
     }
 
-    return { sent, failed, template: name, threshold };
+    return { sent, failed, template: name };
 }
 
 /**

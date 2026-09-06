@@ -389,7 +389,25 @@ export type WhatsAppCredentials = {
   wabaId?: string
 }
 
+export interface ApprovedTemplate {
+  name: string
+  label: string
+  language: string
+  category: string
+  bodyText: string
+  /** How many {{1}}, {{2}} … the body expects. Meta rejects the send
+   *  outright if the count sent does not match. */
+  variableCount: number
+}
+
 export const whatsappApi = {
+  /** Meta's own approved template list — the same source the chat
+   *  composer's Templates tab reads, so anywhere that offers "pick a
+   *  template" offers the templates that actually exist, not a small
+   *  separately-maintained subset of them. */
+  approvedTemplates: () =>
+    api.get<{ configured: boolean; error: string; templates: ApprovedTemplate[] }>('/whatsapp/templates').then((r) => r.data),
+
   /**
    * The conversation list.
    *
@@ -511,7 +529,7 @@ export const leadFollowUpApi = {
     api.get<{ total: number; buckets: { bucket: string; count: number }[]; byOwner: { ownerId: string | null; ownerName: string; count: number }[] }>(
       '/lead-follow-up/summary', { params },
     ).then((r) => r.data),
-  send: (body: { leadIds: string[]; templateId: string; reasons: { leadId: string; reason: string; daysQuiet: number }[] }) =>
+  send: (body: { leadIds: string[]; templateName: string; extraVars: string[]; reasons: { leadId: string; reason: string; daysQuiet: number }[] }) =>
     api.post<{ sent: { leadId: string; name: string; to: string }[]; failed: { leadId: string; name: string; reason: string }[]; template: string }>(
       '/lead-follow-up/send', body,
     ).then((r) => r.data),
