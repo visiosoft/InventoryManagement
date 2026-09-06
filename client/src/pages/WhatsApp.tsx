@@ -2635,9 +2635,15 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
 
                       {/* The state of the chat, on its own line. Only the owner
                           truncates: the chips are a fixed width and carry the
-                          things worth noticing while scrolling past. */}
+                          things worth noticing while scrolling past.
+
+                          No overflow-hidden here. The owner name below clips
+                          itself with `truncate min-w-0`, so it was never needed
+                          for that — but this row is one line tall, and Assign
+                          opens its menu underneath, so hiding the overflow made
+                          that menu invisible and the button look broken. */}
                       <div
-                        className="flex items-center gap-1.5 overflow-hidden"
+                        className="flex items-center gap-1.5 min-w-0"
                         style={{ fontSize: 11, color: '#A09AAA', whiteSpace: 'nowrap' }}
                       >
                         {(c.customer || (c.lead && (!isPlaceholderName(c.lead.fullName) || c.lead.assigned))) && (
