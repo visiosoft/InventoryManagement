@@ -6,6 +6,7 @@ import { getAiBotConfig, noteInboundForBot, pauseBotForHuman } from './aiBot.js'
 import { sendFirstContactVideo } from './firstContact.js';
 import { mediaFromRaw } from '../routes/whatsappMedia.js';
 import { cancelFollowUpOnReply } from './chatFollowUp.js';
+import { markQuietFollowUpReplied } from './leadFollowUp.js';
 import { buttonReplyText, handleRenewalButtonReply } from './renewalReply.js';
 
 const DEFAULT_STATUS_BY_LABEL = {
@@ -451,6 +452,14 @@ async function persistMessages(messages) {
          * text one: a voice note is them getting back to us too. */
         if (lead && msg.direction === 'inbound') {
             await cancelFollowUpOnReply(lead, { at: msg.occurredAt || new Date() });
+        }
+
+        /* Same idea, for a quiet-lead nudge rather than a manually-set
+         * reminder: they wrote back, so it is no longer "still quiet" on the
+         * follow-up report. Keyed on the phone number alone — a lead record
+         * is not required for this to mean something. */
+        if (msg.direction === 'inbound') {
+            await markQuietFollowUpReplied(msg.phoneNormalized, msg.occurredAt || new Date());
         }
 
         // Hand the message to the AI assistant's queue. Inbound only — noting

@@ -5,6 +5,7 @@ import { AlertTriangle, AlarmClock, Check, ChevronsRight, MessageCircle, Plus, X
 import { api } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import WhatsApp from './WhatsApp'
+import QuietLeadsModal from '../components/QuietLeadsModal'
 
 /**
  * A rep's morning, on one screen.
@@ -124,6 +125,7 @@ export default function MyDay() {
   const [snoozeFor, setSnoozeFor] = useState<string | null>(null)
   /** The chat open in the slide-over, by number. */
   const [chatPhone, setChatPhone] = useState<string | null>(null)
+  const [showQuiet, setShowQuiet] = useState(false)
 
   const { data, isLoading } = useQuery<MyDayData>({
     queryKey: ['my-day'],
@@ -192,7 +194,7 @@ export default function MyDay() {
       { label: `Leads given to you ${window}`, value: String(counter.leads), sub: `${data?.fresh.length ?? 0} not opened yet`, tone: 'neutral' as const },
       { label: `Units booked ${window}`, value: String(counter.booked), sub: counter.value ? `AED ${money(counter.value)} monthly value` : 'nothing signed yet', tone: 'good' as const },
       { label: 'Waiting on a reply', value: String(waiting.length), sub: waiting.length ? `longest ${waitLabel(waiting[0].since)}` : 'everyone has been answered', tone: waiting.length ? 'warn' as const : 'good' as const },
-      { label: `Quiet ${data?.quietAfterDays ?? 3}+ days`, value: String(data?.quiet.length ?? 0), sub: 'we spoke last, nothing came back', tone: 'neutral' as const },
+      { label: `Quiet ${data?.quietAfterDays ?? 3}+ days`, value: String(data?.quiet.length ?? 0), sub: data?.quiet.length ? 'review & send a follow-up →' : 'we spoke last, nothing came back', tone: 'neutral' as const, key: 'quiet' as const },
     ]
   }, [counter, range, waiting, data])
 
@@ -430,7 +432,11 @@ export default function MyDay() {
       {/* ── KPI row ──────────────────────────────────────────────────────── */}
       <div className="grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', marginBottom: 20 }}>
         {kpis.map((k) => (
-          <div key={k.label} style={{ ...CARD, borderRadius: 18, padding: '18px 18px 20px' }}>
+          <div
+            key={k.label}
+            onClick={k.key === 'quiet' && data?.quiet.length ? () => setShowQuiet(true) : undefined}
+            style={{ ...CARD, borderRadius: 18, padding: '18px 18px 20px', cursor: k.key === 'quiet' && data?.quiet.length ? 'pointer' : undefined }}
+          >
             <div className="flex items-center gap-2.5">
               <div style={{ fontSize: 12.5, fontWeight: 600, color: INK2 }}>{k.label}</div>
               <div style={{
@@ -623,6 +629,8 @@ export default function MyDay() {
           </div>
         </div>
       )}
+
+      {showQuiet && <QuietLeadsModal onClose={() => setShowQuiet(false)} scope="mine" />}
     </div>
   )
 }

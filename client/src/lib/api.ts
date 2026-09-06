@@ -485,3 +485,39 @@ export const reminderConfigApi = {
     ).then((r) => r.data),
   runNow: () => api.post<{ ok: boolean; sent: number; skipped: number; errors: number }>('/reminder-config/run', {}).then((r) => r.data),
 }
+
+export interface QuietLead {
+  leadId: string
+  name: string
+  phone: string
+  phoneNormalized: string
+  ownerId: string | null
+  ownerName: string
+  since: string
+  daysQuiet: number
+  reason: string | null
+  temperature: 'hot' | 'warm' | 'cold' | null
+  lastNudgedAt: string | null
+  lastNudgedBy: string
+}
+
+export const leadFollowUpApi = {
+  config: () => api.get<{ quietFollowUpDays: number }>('/lead-follow-up/config').then((r) => r.data),
+  setConfig: (quietFollowUpDays: number) =>
+    api.put<{ quietFollowUpDays: number }>('/lead-follow-up/config', { quietFollowUpDays }).then((r) => r.data),
+  quiet: (params?: { days?: number; owner?: string }) =>
+    api.get<{ leads: QuietLead[]; threshold: number }>('/lead-follow-up/quiet', { params }).then((r) => r.data),
+  summary: (params?: { owner?: string }) =>
+    api.get<{ total: number; buckets: { bucket: string; count: number }[]; byOwner: { ownerId: string | null; ownerName: string; count: number }[] }>(
+      '/lead-follow-up/summary', { params },
+    ).then((r) => r.data),
+  send: (body: { leadIds: string[]; templateId: string; reasons: { leadId: string; reason: string; daysQuiet: number }[] }) =>
+    api.post<{ sent: { leadId: string; name: string; to: string }[]; failed: { leadId: string; name: string; reason: string }[]; template: string }>(
+      '/lead-follow-up/send', body,
+    ).then((r) => r.data),
+  log: (params?: { owner?: string }) =>
+    api.get<{
+      counts: { sent: number; replied: number; stillQuiet: number; failed: number }
+      rows: { id: string; leadId: string | null; leadName: string; phone: string; sentByName: string; templateLabel: string; reason: string; daysQuietAtSend: number; status: string; error: string; sentAt: string; repliedAt: string | null }[]
+    }>('/lead-follow-up/log', { params }).then((r) => r.data),
+}

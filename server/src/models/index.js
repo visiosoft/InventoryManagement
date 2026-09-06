@@ -2000,6 +2000,11 @@ const leadRoutingConfigSchema = new Schema({
      to being taken back and given to somebody else. 0 turns either off. */
   slaNudgeMinutes: { type: Number, default: 15, min: 0 },
   slaReassignMinutes: { type: Number, default: 30, min: 0 },
+  /* How many days silent, with us having spoken last, before a lead counts as
+     "gone quiet" — see services/chatFollowUp.js's QUIET_DAYS for the reasoning
+     behind the default. Admin-configurable because the right number is a
+     judgement about how big a backlog is still clearable, not a fact. */
+  quietFollowUpDays: { type: Number, default: 3, min: 1, max: 30 },
 }, { timestamps: true });
 
 /* ── Contract renewals ──────────────────────────────────────────────────────
@@ -2177,6 +2182,44 @@ automationLogSchema.index({ customer: 1, sentAt: -1 });
 
 export const AutomationRule = model('AutomationRule', automationRuleSchema);
 export const AutomationLog = model('AutomationLog', automationLogSchema);
+
+/* ── Quiet-lead follow-ups ────────────────────────────────────────────────
+ *
+ * One row per approved-template message sent to a lead that had gone quiet.
+ * Exists for two things a single "last contacted" field on Lead cannot give:
+ *
+ *   the warning     "already messaged 5 hours ago" needs the most recent
+ *                   send, found by querying this rather than trusting a
+ *                   field that could drift out of sync with what actually
+ *                   went out
+ *   the report      sent / replied / still quiet, per rep, over time — a
+ *                   single timestamp only ever answers "when was the last
+ *                   one", never "how many, and how many came back"
+ *
+ * `reason` is the AI's read of the conversation, frozen at send time. The
+ * conversation moves on after this; the record of why somebody judged this
+ * lead worth a nudge should not silently change under them.
+ */
+const leadFollowUpSchema = new Schema({
+  lead: { type: Schema.Types.ObjectId, ref: 'Lead', required: true },
+  phoneNormalized: { type: String, default: '' },
+  sentBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+  sentByName: { type: String, default: '' },
+  template: { type: Schema.Types.ObjectId, ref: 'MessageTemplate' },
+  templateLabel: { type: String, default: '' },
+  reason: { type: String, default: '' },
+  daysQuietAtSend: { type: Number, default: 0 },
+  status: { type: String, enum: ['sent', 'failed'], default: 'sent' },
+  error: { type: String, default: '' },
+  sentAt: { type: Date, default: Date.now },
+  // Filled in the first time an inbound message arrives on this number after
+  // sentAt — see whatsappLeadSync.js. Null means still quiet.
+  repliedAt: { type: Date, default: null },
+}, { timestamps: true });
+leadFollowUpSchema.index({ lead: 1, sentAt: -1 });
+leadFollowUpSchema.index({ phoneNormalized: 1, sentAt: -1 });
+leadFollowUpSchema.index({ sentBy: 1, sentAt: -1 });
+export const LeadFollowUp = model('LeadFollowUp', leadFollowUpSchema);
 
 const messageTemplateSchema = new Schema({
   key: { type: String, required: true, unique: true },

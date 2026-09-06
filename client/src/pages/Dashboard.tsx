@@ -3,11 +3,12 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { GripVertical, X } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
-import { api, apiError } from '../lib/api'
+import { api, apiError, leadFollowUpApi } from '../lib/api'
 import type { Summary } from '../lib/types'
 import { Spinner, EmptyState, Table, Th, Td, Button, Badge } from '../components/ui'
 import { formatDate } from '../lib/utils'
 import DashboardAsk from '../components/DashboardAsk'
+import QuietLeadsModal from '../components/QuietLeadsModal'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
 const INK = '#14081F'
@@ -19,6 +20,7 @@ type WidgetId =
   | 'units-by-size'
   | 'floor-occupancy'
   | 'overdue-aging'
+  | 'quiet-leads'
   | 'expiring-contracts'
   | 'team-tasks'
   | 'latest-notes'
@@ -30,6 +32,7 @@ const DEFAULT_LAYOUT: WidgetId[] = [
   'units-by-size',
   'floor-occupancy',
   'overdue-aging',
+  'quiet-leads',
   'expiring-contracts',
   'team-tasks',
   'latest-notes',
@@ -95,6 +98,17 @@ export default function Dashboard() {
   const [dragged, setDragged] = useState<WidgetId | null>(null)
   const [movePanel, setMovePanel] = useState<'in' | 'out' | 'available' | null>(null)
   const [sizeFilter, setSizeFilter] = useState<number | null>(null)
+  const [showQuiet, setShowQuiet] = useState(false)
+  const [quietOwner, setQuietOwner] = useState<string | undefined>(undefined)
+
+  // Every rep's quiet-lead backlog, rolled up — the count and the chart. Its
+  // own query, not part of the reports/summary payload, so this card can be
+  // added or removed without that endpoint needing to know about it.
+  const { data: quiet } = useQuery({
+    queryKey: ['lead-follow-up-summary'],
+    queryFn: () => leadFollowUpApi.summary(),
+    staleTime: 60_000,
+  })
 
   const { data, isLoading, isError, error, refetch } = useQuery<Summary>({
     queryKey: ['summary'],
@@ -303,6 +317,59 @@ export default function Dashboard() {
                 <Bar dataKey="amount" name="amount" fill="#f59e0b" radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
+          </WidgetShell>
+        ),
+        'quiet-leads': (
+          <WidgetShell
+            id="quiet-leads"
+            title="Leads gone quiet"
+            subtitle="We spoke last, nothing came back"
+            onDragStart={onDragStart}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+          >
+            {!quiet || quiet.total === 0 ? (
+              <p style={{ fontSize: 12.5, color: MUTED_CLR, padding: '8px 0' }}>Nobody&rsquo;s been quiet. Good sign.</p>
+            ) : (
+              <>
+                <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+                  <div style={{ ...HEADING, fontWeight: 700, fontSize: 28, letterSpacing: '-0.02em' }}>{quiet.total}</div>
+                  <button
+                    type="button"
+                    onClick={() => { setQuietOwner(undefined); setShowQuiet(true) }}
+                    className="cursor-pointer"
+                    style={{ fontSize: 12, fontWeight: 600, color: '#4A1FA0', background: PURPLE_LIGHT, border: 'none', borderRadius: 8, padding: '6px 12px' }}
+                  >
+                    Review & send
+                  </button>
+                </div>
+                <ResponsiveContainer width="100%" height={160}>
+                  <BarChart data={quiet.buckets} barGap={6}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="bucket" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={28} />
+                    <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
+                    <Bar dataKey="count" name="quiet leads" fill="#A78BFA" radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+                {/* Per rep, so it is visible when the backlog is really one
+                    person's — the number that started this whole feature. */}
+                <div style={{ marginTop: 10, display: 'grid', gap: 4 }}>
+                  {quiet.byOwner.slice(0, 5).map((o) => (
+                    <button
+                      key={o.ownerId ?? 'unassigned'}
+                      type="button"
+                      onClick={() => { setQuietOwner(o.ownerId ?? undefined); setShowQuiet(true) }}
+                      className="flex items-center justify-between cursor-pointer hover:opacity-80"
+                      style={{ fontSize: 12, padding: '3px 0', background: 'none', border: 'none', textAlign: 'left' }}
+                    >
+                      <span style={{ color: INK }}>{o.ownerName}</span>
+                      <span style={{ color: MUTED_CLR, fontWeight: 600 }}>{o.count}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </WidgetShell>
         ),
         'expiring-contracts': (
@@ -594,6 +661,8 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {showQuiet && <QuietLeadsModal onClose={() => setShowQuiet(false)} scope="all" ownerId={quietOwner} />}
     </div>
   )
 }
