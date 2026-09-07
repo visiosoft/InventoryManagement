@@ -1,6 +1,7 @@
 import { Types } from 'mongoose';
 import { Lead, LeadFollowUp, LeadRoutingConfig, WhatsAppMessage } from '../models/index.js';
 import { QUIET_DAYS, wentQuiet, quietDays } from './chatFollowUp.js';
+import { resolvePlaceholderNames } from './leadNames.js';
 import { summariseConversation } from './conversationSummary.js';
 import { sendWhatsAppTemplate, whatsappSendConfigured } from './whatsapp.js';
 
@@ -66,7 +67,7 @@ export async function quietLeads({ ownerId = null, days = null } = {}) {
     if (ownerId) leadFilter.owner = ownerId;
 
     const leads = await Lead.find(leadFilter)
-        .select('fullName phone phoneNormalized whatsappProfileName status owner followUpAt')
+        .select('fullName phone phoneNormalized whatsappProfileName status owner followUpAt quietNudgedAt')
         .populate('owner', 'name')
         .lean();
     if (!leads.length) return [];
@@ -108,8 +109,14 @@ export async function quietLeads({ ownerId = null, days = null } = {}) {
             ownerName: lead.owner?.name || 'Unassigned',
             since: c.lastOutboundAt,
             daysQuiet: quietDays(c.lastOutboundAt, now),
+            // When the owner was last told THIS silence had gone on too long —
+            // see services/quietNudge.js. Not meaningful on its own; a caller
+            // compares it against `since` to tell an old nudge from a fresh one.
+            quietNudgedAt: lead.quietNudgedAt || null,
         });
     }
+
+    await resolvePlaceholderNames(out, 'name');
 
     out.sort((a, b) => new Date(a.since) - new Date(b.since));
     return out;

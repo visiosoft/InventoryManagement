@@ -99,6 +99,7 @@ import { summariseRecent } from './services/conversationSummary.js';
 import { ensureDigest, dayKeyFor, previousDay, localHour } from './services/dailyDigest.js';
 import { runDayBriefs } from './services/dayBrief.js';
 import { runLeadSla } from './services/leadSla.js';
+import { runQuietNudge } from './services/quietNudge.js';
 import { releaseLapsedHolds } from './utils/unitStatus.js';
 import { runCampaignTick } from './services/campaignSender.js';
 import { inspectWhatsAppToken } from './services/whatsapp.js';
@@ -533,6 +534,19 @@ async function start() {
       console.error('[LeadSLA]', e.message);
     }
   }, 60_000), 60_000);
+
+  /* The other direction: a lead the rep spoke to last, gone quiet on THEM,
+     for as little as a few hours — the moment before it becomes next week's
+     quiet-lead backlog (services/leadFollowUp.js). Off until admin turns it
+     on; every 15 minutes is plenty for an hours-scale threshold. */
+  setTimeout(() => setInterval(async () => {
+    try {
+      const out = await runQuietNudge({ appUrl: process.env.CLIENT_ORIGIN || 'https://office.purplebox.ae' });
+      if (out.nudged) console.log(`[QuietNudge] reminded ${out.nudged}`);
+    } catch (e) {
+      console.error('[QuietNudge]', e.message);
+    }
+  }, 15 * 60_000), 90_000);
 
   /* Units held by a quotation that has since expired.
      A quote holds its unit until its expiry date, and nothing else sweeps

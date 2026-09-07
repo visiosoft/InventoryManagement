@@ -108,6 +108,21 @@ export default function QuietLeadsModal({
     onSuccess: () => refetch(),
   })
 
+  // The earlier, hours-scale reminder — admin-only, fetched only when this
+  // control can actually be shown.
+  const { data: nudgeConfig, refetch: refetchNudge } = useQuery({
+    queryKey: ['lead-follow-up-nudge-config'],
+    queryFn: () => leadFollowUpApi.nudgeConfig(),
+    enabled: isAdmin,
+    staleTime: 60_000,
+  })
+  const [nudgeHours, setNudgeHours] = useState(6)
+  useEffect(() => { if (nudgeConfig) setNudgeHours(nudgeConfig.hours) }, [nudgeConfig])
+  const saveNudge = useMutation({
+    mutationFn: (body: { enabled?: boolean; hours?: number }) => leadFollowUpApi.setNudgeConfig(body),
+    onSuccess: () => refetchNudge(),
+  })
+
   const send = useMutation({
     mutationFn: () => leadFollowUpApi.send({
       leadIds: [...selected],
@@ -208,6 +223,35 @@ export default function QuietLeadsModal({
               </div>
             )}
           </div>
+
+          {/* A different, earlier reminder from the days-scale one above: a
+              push straight to the rep within hours, while the conversation is
+              still warm enough that a plain message from them — no approved
+              template needed yet — has a real chance of an answer. Admin-only,
+              off by default. */}
+          {isAdmin && (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg p-3" style={{ background: PURPLE_TINT }}>
+              <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer select-none" style={{ color: INK }}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(nudgeConfig?.enabled)}
+                  onChange={(e) => saveNudge.mutate({ enabled: e.target.checked })}
+                />
+                Push a reminder to the rep if a lead goes quiet for
+              </label>
+              <input
+                type="number" min={1} max={72}
+                value={nudgeHours}
+                onChange={(e) => setNudgeHours(Math.max(1, Math.min(72, Number(e.target.value) || 6)))}
+                onBlur={() => { if (nudgeHours !== nudgeConfig?.hours) saveNudge.mutate({ hours: nudgeHours }) }}
+                className="w-14 rounded border px-2 py-1 text-xs text-center"
+                style={{ borderColor: 'rgba(20,8,31,.16)' }}
+              />
+              <span className="text-xs" style={{ color: MUTED }}>
+                hours — needs push notifications turned on (My Account → Notifications) to actually reach a rep.
+              </span>
+            </div>
+          )}
 
           <div>
             <label className="block text-xs font-semibold mb-1.5" style={{ color: MUTED }}>Template</label>

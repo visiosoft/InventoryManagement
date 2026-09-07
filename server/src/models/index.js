@@ -287,6 +287,12 @@ const leadSchema = new Schema(
        itself — see services/leadSla.js. */
     slaNudgedAt: { type: Date, default: null },
     slaReassignedAt: { type: Date, default: null },
+    /* When the owner was last told this particular silence had gone on too
+       long — see services/quietNudge.js. Compared against the conversation's
+       own last-outbound time, not just "is it set": once the rep speaks again
+       and it goes quiet a second time, that is a new silence and earns a new
+       nudge, so this is never explicitly cleared on reply. */
+    quietNudgedAt: { type: Date, default: null },
 
     /* When somebody was put on this lead.
      *
@@ -2005,6 +2011,13 @@ const leadRoutingConfigSchema = new Schema({
      behind the default. Admin-configurable because the right number is a
      judgement about how big a backlog is still clearable, not a fact. */
   quietFollowUpDays: { type: Number, default: 3, min: 1, max: 30 },
+  /* A much earlier, much smaller warning than the one above: not a backlog to
+     batch-review in a few days, a nudge to the rep themselves within hours,
+     while there is still a good chance of catching the conversation warm.
+     Off by default — a fresh deploy should not start pushing notifications
+     nobody asked for onto everyone's phone. */
+  quietNudgeEnabled: { type: Boolean, default: false },
+  quietNudgeHours: { type: Number, default: 6, min: 1, max: 72 },
 }, { timestamps: true });
 
 /* ── Contract renewals ──────────────────────────────────────────────────────

@@ -7,6 +7,7 @@ import {
     quietThreshold, setQuietThreshold, quietLeads, attachReasons, attachLastNudge,
     attachRecentMessages, quietSummary, sendQuietFollowUp,
 } from '../services/leadFollowUp.js';
+import { quietNudgeConfig, setQuietNudgeConfig } from '../services/quietNudge.js';
 
 const router = Router();
 
@@ -22,6 +23,20 @@ router.get('/config', async (req, res) => {
 
 router.put('/config', requireAdmin, async (req, res) => {
     res.json({ quietFollowUpDays: await setQuietThreshold(req.body?.quietFollowUpDays) });
+});
+
+/**
+ * The earlier, hours-scale reminder to the rep themselves — a different
+ * setting from the days-scale one above, because it is a different feature:
+ * a nudge to catch a lead while it is still warm, not a backlog to batch
+ * review. Off until admin turns it on.
+ */
+router.get('/nudge-config', async (_req, res) => {
+    res.json(await quietNudgeConfig());
+});
+
+router.put('/nudge-config', requireAdmin, async (req, res) => {
+    res.json(await setQuietNudgeConfig({ enabled: req.body?.enabled, hours: req.body?.hours }));
 });
 
 /**

@@ -525,6 +525,11 @@ export const leadFollowUpApi = {
   config: () => api.get<{ quietFollowUpDays: number }>('/lead-follow-up/config').then((r) => r.data),
   setConfig: (quietFollowUpDays: number) =>
     api.put<{ quietFollowUpDays: number }>('/lead-follow-up/config', { quietFollowUpDays }).then((r) => r.data),
+  /** The earlier, hours-scale reminder to the rep themselves — a separate
+   *  setting from the days-scale backlog threshold above. */
+  nudgeConfig: () => api.get<{ enabled: boolean; hours: number }>('/lead-follow-up/nudge-config').then((r) => r.data),
+  setNudgeConfig: (body: { enabled?: boolean; hours?: number }) =>
+    api.put<{ enabled: boolean; hours: number }>('/lead-follow-up/nudge-config', body).then((r) => r.data),
   quiet: (params?: { days?: number; owner?: string }) =>
     api.get<{ leads: QuietLead[]; threshold: number }>('/lead-follow-up/quiet', { params }).then((r) => r.data),
   summary: (params?: { owner?: string }) =>
