@@ -445,8 +445,14 @@ async function pendingChannelsFor({ rule, contract, eventKey, waAllowed }) {
  * already sent on one shows only the one still outstanding.
  */
 export async function pendingExpiryQueue({ now = new Date() } = {}) {
-  const rules = (await AutomationRule.find({ triggerEvent: 'contract_expiry', enabled: true }).lean())
-    .filter((r) => r.steps?.length);
+  // rule.enabled gates the *automatic* run — reviewing what would be sent
+  // is exactly what lets an admin approve individually while leaving that
+  // switch off, so it is deliberately not filtered on here. A contract's own
+  // reminderOverrides still wins either way (effectiveEnabled() reads that
+  // first), so a specific mute stays respected.
+  const rules = (await AutomationRule.find({ triggerEvent: 'contract_expiry' }).lean())
+    .filter((r) => r.steps?.length)
+    .map((r) => ({ ...r, enabled: true }));
   if (!rules.length) return { groups: [], total: 0 };
 
   const waAllowed = await getWhatsAppAutomation();
