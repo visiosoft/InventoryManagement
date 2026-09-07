@@ -741,10 +741,20 @@ export default function SalesBoard() {
   // for a hot lead called Ahmed in Quotation Sent is asking one question.
   const filtered = useMemo(() => {
     const q = leadSearch.trim().toLowerCase()
+    // A number pasted out of WhatsApp brings "+971 56 798 4387" — matched
+    // against `r.phone` raw, that found nothing, because the stored number
+    // has none of those spaces or the +. `digits` was already computed per
+    // row for exactly this and never used. Compared digit-to-digit instead,
+    // the same way the server's own search already does.
+    const qDigits = q.replace(/\D/g, '')
     return rows.filter((r) => {
       if (statusFilter && r.status !== statusFilter) return false
       if (tempFilter && r.temperature !== tempFilter) return false
-      if (q && !r.name.toLowerCase().includes(q) && !r.phone.includes(q)) return false
+      if (q) {
+        const nameMatch = r.name.toLowerCase().includes(q)
+        const phoneMatch = qDigits.length >= 4 && r.digits.includes(qDigits)
+        if (!nameMatch && !phoneMatch) return false
+      }
       return true
     })
   }, [rows, statusFilter, tempFilter, leadSearch])

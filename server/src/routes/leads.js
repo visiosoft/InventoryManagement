@@ -114,6 +114,51 @@ function applyChaseFilter(filter, { chase, attemptBy }) {
     return filter;
 }
 
+const PLACEHOLDER_NAME = /^whatsapp\s*contact/i;
+const tailOf = (phone) => String(phone || '').replace(/\D/g, '').slice(-9);
+
+/**
+ * A lead auto-created from an inbound WhatsApp message is named
+ * "WhatsApp Contact 4387" until somebody types a real one in. That name
+ * survives even after the same person becomes a Customer under their own
+ * name elsewhere — nothing links the two records, so the lead never learns
+ * it. A rep handed exactly this lead saw a stranger's placeholder sitting
+ * next to a real customer they already know, and searching for that
+ * customer's actual name found nothing, because the name was never on the
+ * lead to begin with.
+ *
+ * Resolved by the same rule the rest of the app already uses to decide two
+ * phone numbers are the same person — the last nine digits — matched
+ * against every phone Customer holds. Read-only: this reshapes what the
+ * list response says, it does not rewrite the lead. A name typed in later,
+ * by a rep or by the sync that created it, is left alone rather than
+ * fought over.
+ *
+ * Skipped entirely unless at least one lead on the page still carries a
+ * placeholder — the common case pays nothing for this.
+ */
+async function resolvePlaceholderNames(leads) {
+    const placeholders = leads.filter((l) => PLACEHOLDER_NAME.test(l.fullName || ''));
+    if (!placeholders.length) return;
+
+    const tails = new Set(placeholders.map((l) => tailOf(l.phoneNormalized)).filter((t) => t.length === 9));
+    if (!tails.size) return;
+
+    const customers = await Customer.find({}).select('fullName phone phones').lean();
+    const nameByTail = new Map();
+    for (const c of customers) {
+        for (const p of [...(c.phones || []), c.phone]) {
+            const t = tailOf(p);
+            if (t.length === 9 && tails.has(t) && !nameByTail.has(t)) nameByTail.set(t, c.fullName);
+        }
+    }
+
+    for (const l of placeholders) {
+        const name = nameByTail.get(tailOf(l.phoneNormalized));
+        if (name) l.fullName = name;
+    }
+}
+
 router.get('/', async (req, res) => {
     const filter = {};
     applyChaseFilter(filter, { chase: String(req.query.chase || ''), attemptBy: req.query.attemptBy ? String(req.query.attemptBy) : '' });
@@ -221,6 +266,9 @@ router.get('/', async (req, res) => {
             .allowDiskUse(true),
         Lead.countDocuments(filter),
     ]);
+
+    await resolvePlaceholderNames(leads);
+
     res.json({ data: leads, total, page, pages: Math.ceil(total / limit), limit });
 });
 
