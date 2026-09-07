@@ -61,10 +61,20 @@ router.get('/', async (req, res) => {
     if (statuses.length) filter.status = { $in: statuses };
   }
 
-  const tasks = await Task.find(filter)
+  // Newest-first, capped — the dashboard's "latest activity" card wants the
+  // 5 most recently created tasks across the whole team, not every task
+  // ever raised sorted by due date; without a limit that was ~4s and every
+  // row the app would never show. Opt-in via ?sort=createdAt so every other
+  // caller (the board, a lead's own task list) keeps its existing order.
+  const latest = req.query.sort === 'createdAt';
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 0)) || null;
+
+  let query = Task.find(filter)
     .populate('assignedTo', 'name email')
-    .sort({ dueDate: 1, createdAt: -1 })
-    .lean();
+    .sort(latest ? { createdAt: -1 } : { dueDate: 1, createdAt: -1 });
+  if (limit) query = query.limit(limit);
+
+  const tasks = await query.lean();
   res.json(tasks);
 });
 

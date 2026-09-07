@@ -2204,6 +2204,14 @@ const automationLogSchema = new Schema({
 }, { timestamps: true });
 automationLogSchema.index({ sentAt: -1 });
 automationLogSchema.index({ customer: 1, sentAt: -1 });
+// alreadySent() in services/automationEngine.js — "has this exact rule +
+// step + channel already gone out". Without this, that findOne was a full
+// collection scan, run once per channel per candidate contract; this is
+// most of why /automation-rules/pending was slow.
+automationLogSchema.index({ rule: 1, event: 1, channel: 1, status: 1 });
+// alreadySentToday() — the same-day guard rail, matched on contract rather
+// than the per-step event key.
+automationLogSchema.index({ rule: 1, contract: 1, channel: 1, status: 1, sentAt: 1 });
 
 export const AutomationRule = model('AutomationRule', automationRuleSchema);
 export const AutomationLog = model('AutomationLog', automationLogSchema);
@@ -2374,6 +2382,9 @@ const taskSchema = new Schema(
   { timestamps: true }
 );
 taskSchema.index({ assignedTo: 1, status: 1, dueDate: 1 });
+// Backs GET /tasks?sort=createdAt — the dashboard's "latest 5" card, sorted
+// newest-first rather than by the assignedTo-scoped index above.
+taskSchema.index({ createdAt: -1 });
 export const Task = model('Task', taskSchema);
 
 /* One browser that has agreed to be interrupted.

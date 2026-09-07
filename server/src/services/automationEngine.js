@@ -440,13 +440,19 @@ async function pendingChannelsFor({ rule, contract, eventKey, waAllowed }) {
   const eligible = pickChannels({
     rule, waAllowed, waConfigured: whatsappSendConfigured(), mailReady: mailConfigured(), phone, email,
   });
-  const out = [];
-  for (const channel of eligible) {
-    if (await alreadySent({ rule, eventKey, channel, recurring: rule.recurring })) continue;
-    if (await alreadySentToday({ rule, contract, channel })) continue;
-    out.push(channel);
-  }
-  return out;
+  // Each channel's two checks are independent reads — run every channel's
+  // pair concurrently rather than one round trip at a time. Sequential here
+  // was most of why building the queue took seconds: with a dozen candidate
+  // contracts on two channels each, that was two dozen-plus round trips in
+  // a row before anything came back.
+  const checked = await Promise.all(eligible.map(async (channel) => {
+    const [sent, sentToday] = await Promise.all([
+      alreadySent({ rule, eventKey, channel, recurring: rule.recurring }),
+      alreadySentToday({ rule, contract, channel }),
+    ]);
+    return sent || sentToday ? null : channel;
+  }));
+  return checked.filter(Boolean);
 }
 
 /**
@@ -484,12 +490,15 @@ export async function pendingExpiryQueue({ now = new Date() } = {}) {
   const approved = await listWhatsAppTemplates().catch(() => ({ templates: [] }));
   const approvedByName = new Map((approved.templates || []).map((t) => [t.name, t]));
 
+  // Same principle as pendingChannelsFor above, one level up: every
+  // candidate contract's channel-eligibility work is independent of every
+  // other candidate's, so it all runs at once instead of one contract at a
+  // time. resolveMessages() itself does no I/O, so it costs nothing extra
+  // to also do it here rather than only for the ones that turn out pending.
   const candidates = await expiryCandidates({ rules, now });
-  const groups = new Map();
-  let alreadyHandled = 0;
-  for (const c of candidates) {
+  const computed = await Promise.all(candidates.map(async (c) => {
     const channels = await pendingChannelsFor({ rule: c.rule, contract: c.contract, eventKey: c.eventKey, waAllowed });
-    if (!channels.length) { alreadyHandled++; continue; }
+    if (!channels.length) return null;
 
     const messages = await resolveMessages(c.picked.s, templatesByName, 'contract_expiry', c.vars);
     let whatsappPreview = messages.whatsapp;
@@ -499,6 +508,14 @@ export async function pendingExpiryQueue({ now = new Date() } = {}) {
         ? messages.whatsappTemplateVars.reduce((text, v, i) => text.replaceAll(`{{${i + 1}}}`, v || ''), approvedTpl.bodyText)
         : `[Approved template "${messages.whatsappTemplate}" not found in Meta's current list — check it is still approved]`;
     }
+    return { c, channels, messages, whatsappPreview };
+  }));
+
+  const groups = new Map();
+  let alreadyHandled = 0;
+  for (const item of computed) {
+    if (!item) { alreadyHandled++; continue; }
+    const { c, channels, messages, whatsappPreview } = item;
 
     const groupKey = `${c.rule._id}:${c.picked.idx}`;
     if (!groups.has(groupKey)) {

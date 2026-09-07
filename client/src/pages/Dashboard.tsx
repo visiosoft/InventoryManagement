@@ -159,16 +159,17 @@ export default function Dashboard() {
     assignedTo?: { name?: string; email?: string } | null
     createdAt?: string
   }
-  const { data: allTeamTasks = [] } = useQuery<TeamTask[]>({
+  // Newest-first, capped server-side — this used to fetch every task in the
+  // system (no limit) just to re-sort and keep 6 of them client-side, which
+  // was most of a 4s dashboard load on its own. enabled: !isLoading defers
+  // it the same way the pending-approvals summary above is, so it never
+  // races the page's own numbers either.
+  const { data: teamTasks = [] } = useQuery<TeamTask[]>({
     queryKey: ['team-tasks-latest'],
-    queryFn: () => api.get('/tasks').then((r) => r.data),
+    queryFn: () => api.get('/tasks', { params: { limit: 5, sort: 'createdAt' } }).then((r) => r.data),
+    enabled: !isLoading,
     staleTime: 60_000,
   })
-  // The endpoint sorts by due date; this card is about what was raised most
-  // recently, so re-sort on createdAt.
-  const teamTasks = [...allTeamTasks]
-    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
-    .slice(0, 6)
 
   // ── All derived values must be computed before any early return so hooks
   //    (useMemo below) are always called in the same order every render. ──────
