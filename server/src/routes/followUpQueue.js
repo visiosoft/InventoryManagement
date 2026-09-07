@@ -89,6 +89,7 @@ router.post('/bulk/validate', async (req, res) => {
             template, extraVars,
             snapshotAt: req.body?.snapshotAt || null,
             confirmResend: Boolean(req.body?.confirmResend),
+            allowCustomers: Boolean(req.body?.allowCustomers),
             ownerId: isSalesRep(req) ? req.user.id : null,
         });
         res.json({
@@ -119,6 +120,7 @@ router.post('/bulk/send', async (req, res) => {
             template, extraVars,
             snapshotAt: req.body?.snapshotAt || null,
             confirmResend: Boolean(req.body?.confirmResend),
+            allowCustomers: Boolean(req.body?.allowCustomers),
             ownerId: isSalesRep(req) ? req.user.id : null,
         });
         const eligible = rows.filter((r) => r.ok).map((r) => r.leadId);
@@ -171,6 +173,7 @@ router.post('/:leadId/send', async (req, res) => {
             template, extraVars,
             snapshotAt: req.body?.snapshotAt || null,
             confirmResend: Boolean(req.body?.confirmResend),
+            allowCustomers: Boolean(req.body?.allowCustomers),
             ownerId: isSalesRep(req) ? req.user.id : null,
         });
         if (!row?.ok) {

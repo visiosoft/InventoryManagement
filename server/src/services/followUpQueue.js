@@ -1,9 +1,9 @@
 import { Types } from 'mongoose';
-import { Lead, LeadFollowUp, LeadRoutingConfig, WhatsAppMessage } from '../models/index.js';
+import { Contract, Customer, Lead, LeadFollowUp, LeadRoutingConfig, WhatsAppMessage } from '../models/index.js';
 import { isWaitingOnUs } from './chatFollowUp.js';
 import { windowOpenFor } from './whatsapp.js';
 import { attachLastNudge, attachRecentMessages, greetingNameFor } from './leadFollowUp.js';
-import { resolvePlaceholderNames } from './leadNames.js';
+import { resolvePlaceholderNames, phoneTail } from './leadNames.js';
 import { summariseConversation } from './conversationSummary.js';
 import { getFollowUpPlan, sequenceState } from './followUpSequence.js';
 
@@ -228,10 +228,68 @@ export function summarise(items = []) {
 }
 
 /**
+ * Who, in our own records, is behind each phone number.
+ *
+ * A "lead" whose number belongs to a tenant with a live contract is not a
+ * lead — and a new-enquiry or promo template sent to them is the kind of
+ * wrong message that costs trust. Matched on the last nine digits, the
+ * same rule every other phone match in the app uses. Returns a Map of
+ * tail → { id, name, status: 'active' | 'former', contracts[] }; a number
+ * nobody in Customers has is simply absent.
+ */
+export async function customersByTail(tails) {
+    const wanted = new Set([...tails].filter((t) => t && t.length === 9));
+    if (!wanted.size) return new Map();
+
+    // Small collection, one read — the same trade leadNames.js makes.
+    const customers = await Customer.find({}).select('fullName phone phones phoneNormalized').lean();
+    const byTail = new Map();
+    for (const c of customers) {
+        for (const p of [c.phoneNormalized, c.phone, ...(c.phones || [])]) {
+            const t = phoneTail(p);
+            if (t.length === 9 && wanted.has(t) && !byTail.has(t)) byTail.set(t, c);
+        }
+    }
+    if (!byTail.size) return new Map();
+
+    const ids = [...new Set([...byTail.values()].map((c) => String(c._id)))];
+    const contracts = await Contract.find({ customer: { $in: ids }, status: { $in: ['active', 'ended'] }, archived: { $ne: true } })
+        .select('customer contractNo status endDate unit units')
+        .populate('unit', 'unitNumber').populate('units', 'unitNumber')
+        .lean();
+    const byCustomer = new Map();
+    for (const k of contracts) {
+        const id = String(k.customer);
+        if (!byCustomer.has(id)) byCustomer.set(id, []);
+        byCustomer.get(id).push({
+            contractNo: k.contractNo || '',
+            status: k.status,
+            endDate: k.endDate || null,
+            unit: k.units?.length ? k.units.map((u) => u?.unitNumber).filter(Boolean).join(', ') : (k.unit?.unitNumber || ''),
+        });
+    }
+
+    const out = new Map();
+    for (const [tail, c] of byTail) {
+        const list = byCustomer.get(String(c._id)) || [];
+        const active = list.filter((k) => k.status === 'active');
+        out.set(tail, {
+            id: String(c._id),
+            name: c.fullName || '',
+            status: active.length ? 'active' : 'former',
+            contracts: (active.length ? active : list).slice(0, 3),
+        });
+    }
+    return out;
+}
+
+/**
  * May this lead be sent a template right now? Pure — the route gathers the
  * facts, this decides. Every reason is a string the UI can show back.
  *
  *   closed_lead             won / lost / already a customer
+ *   active_customer         the number belongs to a tenant with a live
+ *                           contract — a lead template would be wrong
  *   no_phone                nothing to send to
  *   opted_out               asked not to be contacted
  *   replied_since_snapshot  they wrote back after the list was drawn
@@ -240,16 +298,18 @@ export function summarise(items = []) {
  *   exhausted               every stage has been sent; a person decides
  *   template_required       no approved template chosen
  *
- * `confirmResend` overrides sent_recently and not_due_yet — never the rest.
- * The same check runs for a single send, a bulk preview, and again at the
- * moment of a bulk send.
+ * `confirmResend` overrides sent_recently, not_due_yet and exhausted;
+ * `allowCustomers` overrides active_customer — each is its own deliberate
+ * tick, and nothing overrides the rest. The same check runs for a single
+ * send, a bulk preview, and again at the moment of a bulk send.
  */
 export function validateForSend(item = {}, {
     template = null, now = new Date(), snapshotAt = null,
-    lastSentAt = null, latestInboundAt = null, confirmResend = false,
+    lastSentAt = null, latestInboundAt = null, confirmResend = false, allowCustomers = false,
     nextContactAt = null, exhausted = false,
 } = {}) {
     if (!item.leadStatus || CLOSED_STATUSES.includes(item.leadStatus)) return { ok: false, reason: 'closed_lead' };
+    if (item.customer?.status === 'active' && !allowCustomers) return { ok: false, reason: 'active_customer' };
     if (!item.phone && !item.phoneNormalized) return { ok: false, reason: 'no_phone' };
     if (item.optedOut) return { ok: false, reason: 'opted_out' };
 
@@ -271,9 +331,13 @@ export function validateForSend(item = {}, {
 }
 
 /** Plain-English version of a validation reason, for the review table. */
-export function explainReason(code, { lastSentAt = null, nextContactAt = null, now = new Date() } = {}) {
+export function explainReason(code, { lastSentAt = null, nextContactAt = null, now = new Date(), customer = null } = {}) {
     switch (code) {
         case 'closed_lead': return 'Lead is closed';
+        case 'active_customer': {
+            const k = customer?.contracts?.[0];
+            return `Active tenant${k ? ` — ${k.contractNo}${k.unit ? `, unit ${k.unit}` : ''}` : ''}; a lead template would be wrong`;
+        }
         case 'no_phone': return 'No phone number on file';
         case 'opted_out': return 'Asked not to be contacted';
         case 'replied_since_snapshot': return 'Customer replied since this list was drawn';
@@ -390,7 +454,10 @@ export async function buildQueue({ ownerId = null, leadIds = null, now = new Dat
     if (!leads.length) return [];
 
     const phones = [...new Set(leads.map((l) => l.phoneNormalized).filter(Boolean))];
-    const times = await conversationTimes(phones);
+    const [times, customers] = await Promise.all([
+        conversationTimes(phones),
+        customersByTail(phones.map(phoneTail)),
+    ]);
     const lastInboundByLead = new Map(leads.map((l) => {
         const c = times.get(l.phoneNormalized);
         return [String(l._id), c?.lastInboundAt ? new Date(c.lastInboundAt).getTime() : 0];
@@ -401,6 +468,7 @@ export async function buildQueue({ ownerId = null, leadIds = null, now = new Dat
     for (const lead of leads) {
         const c = times.get(lead.phoneNormalized) || {};
         const h = history.get(String(lead._id)) || { lastSentAt: null, sentSinceReply: 0 };
+        const customer = customers.get(phoneTail(lead.phoneNormalized)) || null;
         const verdict = classify({
             lastInboundAt: c.lastInboundAt || null,
             lastOutboundAt: c.lastOutboundAt || null,
@@ -423,6 +491,10 @@ export async function buildQueue({ ownerId = null, leadIds = null, now = new Dat
             leadStatus: lead.status,
             source: lead.source || '',
             temperature: lead.temperature || null,
+            // Who this number is in Customers, if anyone: an active tenant, a
+            // former one, or nobody (null). Shown on the row and on the
+            // drawer, and it blocks a bulk send unless deliberately included.
+            customer,
             lastInboundAt: c.lastInboundAt || null,
             lastOutboundAt: c.lastOutboundAt || null,
             lastSentAt: h.lastSentAt,
@@ -466,7 +538,7 @@ export async function detailFor({ leadId, ownerId = null, now = new Date() }) {
     if (!lead) return null;
     if (ownerId && String(lead.owner?._id || '') !== String(ownerId)) return null;
 
-    const [items, sends, messages] = await Promise.all([
+    const [items, sends, messages, customers] = await Promise.all([
         buildQueue({ ownerId, leadIds: [leadId], now }),
         LeadFollowUp.find({ lead: leadId }).sort({ sentAt: -1 }).limit(20).lean(),
         lead.phoneNormalized
@@ -474,8 +546,10 @@ export async function detailFor({ leadId, ownerId = null, now = new Date() }) {
                 .sort({ occurredAt: -1 }).limit(30)
                 .select('direction text transcript type status occurredAt').lean()
             : [],
+        customersByTail([phoneTail(lead.phoneNormalized)]),
     ]);
     const item = items[0] || null;
+    const customer = customers.get(phoneTail(lead.phoneNormalized)) || null;
     const lastInboundAt = item?.lastInboundAt
         || messages.find((m) => m.direction === 'inbound')?.occurredAt
         || null;
@@ -506,6 +580,7 @@ export async function detailFor({ leadId, ownerId = null, now = new Date() }) {
             ownerName: lead.owner?.name || 'Unassigned',
             source: lead.source || '',
             followUpAt: lead.followUpAt || null,
+            customer,
         },
         windowOpen: windowOpenFor({ lastInboundAt, now }),
         lastInboundAt,
@@ -519,7 +594,7 @@ export async function detailFor({ leadId, ownerId = null, now = new Date() }) {
  * id, in order, whether or not the lead was found.
  */
 export async function eligibilityFor(leadIds, {
-    template = null, extraVars = [], snapshotAt = null, confirmResend = false, ownerId = null, now = new Date(),
+    template = null, extraVars = [], snapshotAt = null, confirmResend = false, allowCustomers = false, ownerId = null, now = new Date(),
 } = {}) {
     const ids = leadIds.filter((id) => Types.ObjectId.isValid(id));
     const filter = { _id: { $in: ids } };
@@ -531,7 +606,10 @@ export async function eligibilityFor(leadIds, {
     const byId = new Map(leads.map((l) => [String(l._id), l]));
 
     const phones = [...new Set(leads.map((l) => l.phoneNormalized).filter(Boolean))];
-    const times = await conversationTimes(phones);
+    const [times, customers] = await Promise.all([
+        conversationTimes(phones),
+        customersByTail(phones.map(phoneTail)),
+    ]);
     const lastInboundByLead = new Map(leads.map((l) => {
         const c = times.get(l.phoneNormalized);
         return [String(l._id), c?.lastInboundAt ? new Date(c.lastInboundAt).getTime() : 0];
@@ -543,6 +621,7 @@ export async function eligibilityFor(leadIds, {
         if (!lead) return { leadId, ok: false, reason: 'not_found', explanation: 'Lead not found or not yours', name: '', phone: '', lastSentAt: null, preview: '' };
         const c = times.get(lead.phoneNormalized) || {};
         const h = history.get(String(lead._id)) || { lastSentAt: null, sentSinceReply: 0 };
+        const customer = customers.get(phoneTail(lead.phoneNormalized)) || null;
         const firstName = greetingNameFor(lead);
 
         const lastFromUs = [c.lastOutboundAt, h.lastSentAt].filter(Boolean).map((d) => new Date(d)).sort((a, b) => b - a)[0] || null;
@@ -555,12 +634,13 @@ export async function eligibilityFor(leadIds, {
             leadStatus: lead.status,
             phone: lead.phone,
             phoneNormalized: lead.phoneNormalized,
+            customer,
             reason: waiting ? 'sales_response_overdue' : 'customer_quiet',
             since: [c.lastOutboundAt, h.lastSentAt].filter(Boolean).sort().pop() || null,
         };
         const verdict = validateForSend(item, {
             template, now, snapshotAt,
-            lastSentAt: h.lastSentAt, latestInboundAt: c.lastInboundAt || null, confirmResend,
+            lastSentAt: h.lastSentAt, latestInboundAt: c.lastInboundAt || null, confirmResend, allowCustomers,
             // A date somebody set wins over the cadence.
             nextContactAt: lead.followUpAt || q.nextContactAt, exhausted: q.exhausted,
         });
@@ -574,8 +654,9 @@ export async function eligibilityFor(leadIds, {
             phone: lead.phone || lead.phoneNormalized,
             ok: verdict.ok,
             reason: verdict.reason,
-            explanation: verdict.ok ? '' : explainReason(verdict.reason, { lastSentAt: h.lastSentAt, nextContactAt: lead.followUpAt || q.nextContactAt, now }),
+            explanation: verdict.ok ? '' : explainReason(verdict.reason, { lastSentAt: h.lastSentAt, nextContactAt: lead.followUpAt || q.nextContactAt, now, customer }),
             lastSentAt: h.lastSentAt,
+            customer,
             preview,
         };
     });

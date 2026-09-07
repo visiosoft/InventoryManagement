@@ -556,6 +556,13 @@ export type FollowUpPriority = 'high' | 'medium' | 'low'
 /** Which day a lead is due — the cards. 'now' is a customer waiting on us;
  *  'exhausted' is a cadence fully sent, waiting on a decision. */
 export type FollowUpWindow = 'now' | 'today' | 'tomorrow' | 'in_3_days' | 'in_7_days' | 'later' | 'exhausted'
+/** Who this phone number is in Customers, if anyone. */
+export interface FollowUpCustomer {
+  id: string
+  name: string
+  status: 'active' | 'former'
+  contracts: { contractNo: string; status: string; endDate: string | null; unit: string }[]
+}
 
 export interface FollowUpQueueItem {
   leadId: string
@@ -567,6 +574,7 @@ export interface FollowUpQueueItem {
   leadStatus: string
   source: string
   temperature: 'hot' | 'warm' | 'cold' | null
+  customer: FollowUpCustomer | null
   lastInboundAt: string | null
   lastOutboundAt: string | null
   followUpAt: string | null
@@ -621,6 +629,7 @@ export interface FollowUpDetail {
   lead: {
     leadId: string; name: string; phone: string; phoneNormalized: string; status: string
     temperature: 'hot' | 'warm' | 'cold' | null; ownerName: string; source: string; followUpAt: string | null
+    customer: FollowUpCustomer | null
   }
   windowOpen: boolean
   lastInboundAt: string | null
@@ -635,6 +644,7 @@ export interface FollowUpEligibilityRow {
   reason: string | null
   explanation: string
   lastSentAt: string | null
+  customer?: FollowUpCustomer | null
   preview: string
 }
 
@@ -644,15 +654,15 @@ export const followUpQueueApi = {
       '/follow-up-queue', { params },
     ).then((r) => r.data),
   detail: (leadId: string) => api.get<FollowUpDetail>(`/follow-up-queue/${leadId}`).then((r) => r.data),
-  send: (leadId: string, body: { templateName: string; extraVars: string[]; snapshotAt?: string; confirmResend?: boolean; reason?: string; daysWaiting?: number }) =>
+  send: (leadId: string, body: { templateName: string; extraVars: string[]; snapshotAt?: string; confirmResend?: boolean; allowCustomers?: boolean; reason?: string; daysWaiting?: number }) =>
     api.post<{ sent: { leadId: string; name: string; to: string }[]; failed: { leadId: string; name: string; reason: string }[]; template: string }>(
       `/follow-up-queue/${leadId}/send`, body,
     ).then((r) => r.data),
-  bulkValidate: (body: { leadIds: string[]; templateName: string; extraVars: string[]; snapshotAt?: string; confirmResend?: boolean }) =>
+  bulkValidate: (body: { leadIds: string[]; templateName: string; extraVars: string[]; snapshotAt?: string; confirmResend?: boolean; allowCustomers?: boolean }) =>
     api.post<{ rows: FollowUpEligibilityRow[]; eligible: number; excluded: number; templateApproved: boolean }>(
       '/follow-up-queue/bulk/validate', body,
     ).then((r) => r.data),
-  bulkSend: (body: { leadIds: string[]; templateName: string; extraVars: string[]; snapshotAt?: string; confirmResend?: boolean; reasons: { leadId: string; reason: string; daysWaiting: number }[] }) =>
+  bulkSend: (body: { leadIds: string[]; templateName: string; extraVars: string[]; snapshotAt?: string; confirmResend?: boolean; allowCustomers?: boolean; reasons: { leadId: string; reason: string; daysWaiting: number }[] }) =>
     api.post<{
       sent: { leadId: string; name: string; to: string }[]
       failed: { leadId: string; name: string; reason: string }[]

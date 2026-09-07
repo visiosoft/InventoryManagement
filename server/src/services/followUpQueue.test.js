@@ -214,6 +214,16 @@ test('a spent cadence is refused until somebody decides', () => {
     assert.equal(validateForSend(OPEN, { template: TPL, now: NOW, lastSentAt: daysAgo(20), exhausted: true, confirmResend: true }).ok, true);
 });
 
+test('an active tenant is not a lead: refused by default, allowed only by its own explicit tick', () => {
+    const tenant = { ...OPEN, customer: { status: 'active', contracts: [{ contractNo: 'PB-2026-0369', unit: 'F3-112' }] } };
+    assert.equal(validateForSend(tenant, { template: TPL, now: NOW }).reason, 'active_customer');
+    // The cadence override is a different decision and does not cover this.
+    assert.equal(validateForSend(tenant, { template: TPL, now: NOW, confirmResend: true }).reason, 'active_customer');
+    assert.equal(validateForSend(tenant, { template: TPL, now: NOW, allowCustomers: true }).ok, true);
+    // A former tenant is a real lead again.
+    assert.equal(validateForSend({ ...OPEN, customer: { status: 'former', contracts: [] } }, { template: TPL, now: NOW }).ok, true);
+});
+
 test('closed, phoneless and opted-out leads are never sent to, override or not', () => {
     assert.equal(validateForSend({ ...OPEN, leadStatus: 'won' }, { template: TPL, now: NOW, confirmResend: true }).reason, 'closed_lead');
     assert.equal(validateForSend({ ...OPEN, phone: '', phoneNormalized: '' }, { template: TPL, now: NOW }).reason, 'no_phone');

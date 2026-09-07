@@ -10,7 +10,7 @@ import { useAuth } from '../lib/auth'
 import { Skeleton } from '../components/ui'
 import FollowUpDrawer from '../components/FollowUpDrawer'
 import FollowUpBulkModal from '../components/FollowUpBulkModal'
-import { REASON_UI, whyFor, agoText, initialsOf } from '../lib/followUpUi'
+import { REASON_UI, whyFor, agoText, initialsOf, customerBadge } from '../lib/followUpUi'
 
 /* ── The design reference's palette, copied ──────────────────────────────── */
 const FONT = "'Plus Jakarta Sans', 'Inter', system-ui, sans-serif"
@@ -134,6 +134,7 @@ export default function FollowUps() {
   const [priority, setPriority] = useState<'' | FollowUpPriority>('')
   const [intent, setIntent] = useState<'' | 'hot' | 'warm' | 'cold'>('')
   const [reasonF, setReasonF] = useState<'' | FollowUpReason>('')
+  const [customerF, setCustomerF] = useState<'' | 'tenant' | 'not_customer'>('')
   const [owner, setOwner] = useState('')
   const [filterOpen, setFilterOpen] = useState(false)
   const [openId, setOpenId] = useState<string | null>(null)
@@ -198,6 +199,8 @@ export default function FollowUps() {
       if (priority && it.priority !== priority) return false
       if (intent && it.temperature !== intent) return false
       if (reasonF && it.reason !== reasonF) return false
+      if (customerF === 'tenant' && it.customer?.status !== 'active') return false
+      if (customerF === 'not_customer' && it.customer) return false
       if (q) {
         const nameHit = it.name.toLowerCase().includes(q)
         const phoneHit = qDigits.length >= 4 && (it.phoneNormalized || '').includes(qDigits)
@@ -205,11 +208,12 @@ export default function FollowUps() {
       }
       return true
     })
-  }, [inCardItems, tab, priority, intent, reasonF, search])
+  }, [inCardItems, tab, priority, intent, reasonF, customerF, search])
 
   const openIndex = openId ? visible.findIndex((it) => it.leadId === openId) : -1
   const nextId = openIndex >= 0 && openIndex + 1 < visible.length ? visible[openIndex + 1].leadId : null
-  const activeFilters = [priority, intent, reasonF, owner].filter(Boolean).length
+  const activeFilters = [priority, intent, reasonF, customerF, owner].filter(Boolean).length
+  const tenantsInView = visible.filter((it) => it.customer?.status === 'active').length
   const dueCard = card === 'now' || card === 'today'
 
   function toggle(id: string) {
@@ -328,6 +332,13 @@ export default function FollowUps() {
                     <option value="manual_followup_due">Scheduled follow-up</option>
                   </select>
                 </label>
+                <label className="block text-[11px] font-semibold uppercase" style={{ color: SUB, letterSpacing: '.06em' }}>In our system
+                  <select value={customerF} onChange={(e) => setCustomerF(e.target.value as '' | 'tenant' | 'not_customer')} className="mt-1 w-full h-9 border rounded-lg px-2 text-[13px] font-normal normal-case bg-white" style={{ borderColor: LINE }}>
+                    <option value="">Anyone</option>
+                    <option value="tenant">Active tenants only</option>
+                    <option value="not_customer">Not a customer yet</option>
+                  </select>
+                </label>
                 {isAdmin && (
                   <label className="block text-[11px] font-semibold uppercase" style={{ color: SUB, letterSpacing: '.06em' }}>Salesperson
                     <select value={owner} onChange={(e) => setOwner(e.target.value)} className="mt-1 w-full h-9 border rounded-lg px-2 text-[13px] font-normal normal-case bg-white" style={{ borderColor: LINE }}>
@@ -337,7 +348,7 @@ export default function FollowUps() {
                   </label>
                 )}
                 {activeFilters > 0 && (
-                  <button type="button" onClick={() => { setPriority(''); setIntent(''); setReasonF(''); setOwner('') }} className="text-[12px] font-semibold cursor-pointer" style={{ color: BRAND }}>Clear filters</button>
+                  <button type="button" onClick={() => { setPriority(''); setIntent(''); setReasonF(''); setCustomerF(''); setOwner('') }} className="text-[12px] font-semibold cursor-pointer" style={{ color: BRAND }}>Clear filters</button>
                 )}
               </div>
             )}
@@ -352,6 +363,11 @@ export default function FollowUps() {
       {!dueCard && tab !== 'completed' && (
         <p className="text-[12.5px] mt-2" style={{ color: SUB }}>
           These were contacted recently and are not due yet. They will move to <b>Contact today</b> on their day — sending earlier needs a deliberate override.
+        </p>
+      )}
+      {tenantsInView > 0 && tab !== 'completed' && (
+        <p className="text-[12.5px] mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg" style={{ background: '#DCFCE7', color: '#15803D' }}>
+          <b>{tenantsInView}</b> of these {tenantsInView === 1 ? 'is an active tenant' : 'are active tenants'} — marked in green. A lead template would be wrong for them; they are left out of bulk sends unless you include them deliberately.
         </p>
       )}
 
@@ -433,8 +449,11 @@ export default function FollowUps() {
                         <button type="button" onClick={() => { if (!selecting) setSelecting(true); toggle(it.leadId) }} className="cursor-pointer align-middle" style={{ color: on ? BRAND : '#D1D5DB' }}>{on ? <CheckSquare size={16} /> : <Square size={16} />}</button>
                       </td>
                       <td className="px-2 py-3">{pill(p.bg, p.fg, p.label, p.dot)}</td>
-                      <td className="px-2 py-3 min-w-[170px]">
-                        <div className="text-[13.5px] font-bold">{it.name}</div>
+                      <td className="px-2 py-3 min-w-[190px]">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[13.5px] font-bold">{it.name}</span>
+                          {(() => { const b = customerBadge(it.customer); return b ? <span title={b.title} className="px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap" style={{ background: b.bg, color: b.fg }}>{b.label}</span> : null })()}
+                        </div>
                         <div className="text-[12px] mt-0.5" style={{ color: SUB }}>{customerSub(it)}</div>
                       </td>
                       <td className="px-2 py-3 whitespace-nowrap">

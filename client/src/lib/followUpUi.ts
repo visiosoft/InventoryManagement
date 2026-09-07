@@ -58,6 +58,16 @@ export function agoText(iso: string | null | undefined): string {
   return `${Math.round(hours / 24)}d ago`
 }
 
+/** The badge for who this number is in Customers, or null for nobody. */
+export function customerBadge(c: { status: 'active' | 'former'; contracts: { unit: string; contractNo: string }[] } | null | undefined) {
+  if (!c) return null
+  if (c.status === 'active') {
+    const k = c.contracts[0]
+    return { label: `Active tenant${k?.unit ? ` · ${k.unit}` : ''}`, bg: '#DCFCE7', fg: '#15803D', title: k ? `${k.contractNo}${k.unit ? ` — unit ${k.unit}` : ''}` : 'Has a live contract' }
+  }
+  return { label: 'Former tenant', bg: '#F3F4F6', fg: '#6B7280', title: 'Had a contract before; none live now' }
+}
+
 export function initialsOf(name: string): string {
   const parts = (name || '').trim().split(/\s+/)
   return ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase() || '?'

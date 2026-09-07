@@ -24,6 +24,8 @@ export default function FollowUpBulkModal({ items, snapshotAt, onClose, onDone }
   const [templateName, setTemplateName] = useState('')
   const [extraVars, setExtraVars] = useState<string[]>([])
   const [confirmResend, setConfirmResend] = useState(false)
+  const [allowCustomers, setAllowCustomers] = useState(false)
+  const tenants = items.filter((it) => it.customer?.status === 'active').length
   const [rows, setRows] = useState<FollowUpEligibilityRow[] | null>(null)
   const [error, setError] = useState('')
   const [result, setResult] = useState<Awaited<ReturnType<typeof followUpQueueApi.bulkSend>> | null>(null)
@@ -42,7 +44,7 @@ export default function FollowUpBulkModal({ items, snapshotAt, onClose, onDone }
 
   const validate = useMutation({
     mutationFn: () => followUpQueueApi.bulkValidate({
-      leadIds: items.map((it) => it.leadId), templateName, extraVars, snapshotAt, confirmResend,
+      leadIds: items.map((it) => it.leadId), templateName, extraVars, snapshotAt, confirmResend, allowCustomers,
     }),
     onSuccess: (d) => { setError(''); setRows(d.rows) },
     onError: (e) => setError(apiError(e)),
@@ -51,7 +53,7 @@ export default function FollowUpBulkModal({ items, snapshotAt, onClose, onDone }
   const send = useMutation({
     mutationFn: () => followUpQueueApi.bulkSend({
       leadIds: (rows ?? []).filter((r) => r.ok).map((r) => r.leadId),
-      templateName, extraVars, snapshotAt, confirmResend,
+      templateName, extraVars, snapshotAt, confirmResend, allowCustomers,
       reasons: items.map((it) => ({ leadId: it.leadId, reason: it.aiSummary || REASON_UI[it.reason].label, daysWaiting: it.daysWaiting })),
     }),
     onSuccess: (d) => { setError(''); rememberTemplate(templateName); setResult(d) },
@@ -126,6 +128,12 @@ export default function FollowUpBulkModal({ items, snapshotAt, onClose, onDone }
                   <input type="checkbox" checked={confirmResend} onChange={(e) => { setConfirmResend(e.target.checked); setRows(null) }} style={{ accentColor: PURPLE }} />
                   Override the cadence — include people messaged in the last 12 hours or not due yet
                 </label>
+                {tenants > 0 && (
+                  <label className="flex items-start gap-2 text-xs mt-2 cursor-pointer select-none rounded-lg px-3 py-2" style={{ background: '#DCFCE7', color: '#15803D' }}>
+                    <input type="checkbox" checked={allowCustomers} onChange={(e) => { setAllowCustomers(e.target.checked); setRows(null) }} className="mt-0.5" style={{ accentColor: '#15803D' }} />
+                    <span><b>{tenants} active tenant{tenants === 1 ? '' : 's'}</b> in this selection are left out by default — a lead template would be wrong for them. Tick to include only if this template suits a tenant.</span>
+                  </label>
+                )}
               </div>
 
               <div style={{ background: '#0B141A', borderRadius: 18, padding: 12 }}>

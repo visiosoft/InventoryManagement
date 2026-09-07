@@ -6,7 +6,7 @@ import { api, apiError, followUpQueueApi, whatsappApi, type FollowUpTimelineEntr
 import { SlideOver, Skeleton } from './ui'
 import {
   INK, MUTED, PURPLE, PURPLE_DEEP, PURPLE_TINT, HAIRLINE, CREAM, DISPLAY,
-  REASON_UI, PRIORITY_UI, TEMP_UI, whyFor, agoText, firstNameOf, initialsOf, defaultTemplate, rememberTemplate,
+  REASON_UI, PRIORITY_UI, TEMP_UI, whyFor, agoText, firstNameOf, initialsOf, defaultTemplate, rememberTemplate, customerBadge,
 } from '../lib/followUpUi'
 
 const SNOOZES = [['tomorrow', 'Tomorrow'], ['three_days', 'In 3 days'], ['next_week', 'Next week']] as const
@@ -41,12 +41,16 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
   const [pickerOpen, setPickerOpen] = useState(false)
   const [extraVars, setExtraVars] = useState<string[]>([])
   const [confirmResend, setConfirmResend] = useState(false)
+  const [allowCustomers, setAllowCustomers] = useState(false)
   const [showTemplate, setShowTemplate] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [error, setError] = useState('')
   const [sentTo, setSentTo] = useState('')
 
-  useEffect(() => { setError(''); setSentTo(''); setConfirmResend(false); setShowTemplate(false); setPickerOpen(false); setHistoryOpen(false) }, [leadId])
+  useEffect(() => { setError(''); setSentTo(''); setConfirmResend(false); setAllowCustomers(false); setShowTemplate(false); setPickerOpen(false); setHistoryOpen(false) }, [leadId])
+
+  const tenant = lead?.customer?.status === 'active' ? lead.customer : null
+  const badge = customerBadge(lead?.customer)
 
   const { data: waData, isLoading: templatesLoading } = useQuery({
     queryKey: ['whatsapp-templates'],
@@ -81,14 +85,14 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
 
   const send = useMutation({
     mutationFn: () => followUpQueueApi.send(leadId, {
-      templateName, extraVars, snapshotAt, confirmResend,
+      templateName, extraVars, snapshotAt, confirmResend, allowCustomers,
       reason: item?.aiSummary || (item ? REASON_UI[item.reason].label : ''),
       daysWaiting: item?.daysWaiting ?? 0,
     }),
     onSuccess: (d) => { setError(''); rememberTemplate(templateName); setSentTo(d.sent[0]?.to || lead?.phone || ''); onChanged(); refetch() },
     onError: (e: unknown) => {
       const reason = (e as { response?: { data?: { reason?: string } } })?.response?.data?.reason
-      const overridable = reason === 'sent_recently' || reason === 'not_due_yet' || reason === 'exhausted'
+      const overridable = reason === 'sent_recently' || reason === 'not_due_yet' || reason === 'exhausted' || reason === 'active_customer'
       setError(overridable ? `${apiError(e)} — tick the override to send anyway.` : apiError(e))
     },
   })
@@ -99,6 +103,13 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
   })
   const markLost = useMutation({
     mutationFn: () => api.patch(`/leads/${leadId}/status`, { status: 'lost' }),
+    onSuccess: () => { onChanged(); nextLeadId ? onAdvance(nextLeadId) : onClose() },
+    onError: (e) => setError(apiError(e)),
+  })
+  // The existing closed status for exactly this case — takes the lead out
+  // of every queue without pretending it was won or lost.
+  const markCustomer = useMutation({
+    mutationFn: () => api.patch(`/leads/${leadId}/status`, { status: 'already_customer' }),
     onSuccess: () => { onChanged(); nextLeadId ? onAdvance(nextLeadId) : onClose() },
     onError: (e) => setError(apiError(e)),
   })
@@ -128,8 +139,22 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
                 {item && <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: REASON_UI[item.reason].bg, color: REASON_UI[item.reason].fg }}>{REASON_UI[item.reason].label}</span>}
                 {item && <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: PRIORITY_UI[item.priority].bg, color: PRIORITY_UI[item.priority].fg, letterSpacing: '.06em' }}>{PRIORITY_UI[item.priority].label}</span>}
                 {lead.temperature && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full uppercase" style={{ background: TEMP_UI[lead.temperature].bg, color: TEMP_UI[lead.temperature].fg }}>{lead.temperature}</span>}
+                {badge && <span title={badge.title} className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: badge.bg, color: badge.fg }}>{badge.label}</span>}
                 {!item && <span className="text-xs" style={{ color: MUTED }}>Not in the queue right now</span>}
               </div>
+              {tenant && (
+                <div className="rounded-xl mt-2 p-3 text-xs" style={{ background: '#DCFCE7', color: '#14532D' }}>
+                  <div className="font-bold text-[13px]">Already a tenant — {tenant.name || lead.name}</div>
+                  {tenant.contracts.map((k) => (
+                    <div key={k.contractNo} className="mt-0.5">
+                      <Link to={`/contracts`} className="font-semibold underline">{k.contractNo}</Link>{k.unit ? ` · unit ${k.unit}` : ''}{k.endDate ? ` · ends ${new Date(k.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
+                    </div>
+                  ))}
+                  <div className="mt-1.5" style={{ color: '#166534' }}>A new-enquiry or promo template would be wrong here. Reply in the chat, or if this lead record is just a duplicate of the tenant, close it:</div>
+                  <button type="button" disabled={markCustomer.isPending} onClick={() => { if (confirm(`Mark ${lead.name} as already a customer? It leaves the lead queue for good.`)) markCustomer.mutate() }}
+                    className="mt-2 cursor-pointer font-semibold px-3 py-1.5 rounded-lg" style={{ background: '#15803D', color: '#fff' }}>Mark as already customer</button>
+                </div>
+              )}
               {item && (
                 <div className="rounded-xl mt-2 p-3" style={{ background: PURPLE_TINT }}>
                   <div className="text-[11px] font-semibold uppercase" style={{ letterSpacing: '.08em', color: PURPLE }}>Why now</div>
@@ -269,8 +294,14 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
                       <span>{overrideText}</span>
                     </label>
                   )}
+                  {tenant && (
+                    <label className="flex items-start gap-2 text-xs rounded-lg px-3 py-2 cursor-pointer select-none" style={{ background: '#DCFCE7', color: '#166534' }}>
+                      <input type="checkbox" checked={allowCustomers} onChange={(e) => setAllowCustomers(e.target.checked)} className="mt-0.5" style={{ accentColor: '#15803D' }} />
+                      <span>This is an active tenant. I&rsquo;ve checked that <b>{template?.label || 'this template'}</b> is right for an existing customer — send it.</span>
+                    </label>
+                  )}
                   {error && <p className="text-xs" style={{ color: '#B91C1C' }}>{error}</p>}
-                  <button type="button" disabled={!templateName || !extraFilled || send.isPending || (needsOverride && !confirmResend)} onClick={() => send.mutate()}
+                  <button type="button" disabled={!templateName || !extraFilled || send.isPending || (needsOverride && !confirmResend) || (Boolean(tenant) && !allowCustomers)} onClick={() => send.mutate()}
                     className="inline-flex items-center gap-1.5 h-10 px-5 rounded-lg text-sm font-bold cursor-pointer disabled:opacity-40"
                     style={{ background: '#16A34A', color: '#fff' }}>
                     <MessageCircle size={15} /> {send.isPending ? 'Sending…' : 'Send via WhatsApp'}
