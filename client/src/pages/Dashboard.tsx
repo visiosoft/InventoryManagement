@@ -20,7 +20,6 @@ type WidgetId =
   | 'stats'
   | 'units-by-size'
   | 'floor-occupancy'
-  | 'overdue-aging'
   | 'quiet-leads'
   | 'expiring-contracts'
   | 'team-tasks'
@@ -31,7 +30,6 @@ const DEFAULT_LAYOUT: WidgetId[] = [
   'stats',
   'units-by-size',
   'floor-occupancy',
-  'overdue-aging',
   'quiet-leads',
   'expiring-contracts',
   'team-tasks',
@@ -179,22 +177,6 @@ export default function Dashboard() {
     ? data.byStatus.available + data.byStatus.occupied + data.byStatus.reserved + data.byStatus.maintenance
     : 0
 
-  const now = Date.now()
-  const overdueAging = [
-    { bucket: '1-7d', count: 0, amount: 0 },
-    { bucket: '8-30d', count: 0, amount: 0 },
-    { bucket: '30+d', count: 0, amount: 0 },
-  ]
-  for (const p of data?.overduePayments ?? []) {
-    const days = Math.max(1, Math.floor((now - new Date(p.dueDate).getTime()) / 86400000))
-    if (days <= 7) {
-      overdueAging[0].count += 1; overdueAging[0].amount += p.amount || 0
-    } else if (days <= 30) {
-      overdueAging[1].count += 1; overdueAging[1].amount += p.amount || 0
-    } else {
-      overdueAging[2].count += 1; overdueAging[2].amount += p.amount || 0
-    }
-  }
 
 
   const onDragStart = (id: WidgetId) => setDragged(id)
@@ -342,29 +324,6 @@ export default function Dashboard() {
                 <Bar dataKey="available" name="Available" fill="#10b981" radius={[3, 3, 0, 0]} />
                 <Bar dataKey="occupied" name="Occupied" fill="#4C8CE4" radius={[3, 3, 0, 0]} />
                 <Bar dataKey="maintenance" name="Maintenance" fill="#94a3b8" radius={[3, 3, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </WidgetShell>
-        ),
-        'overdue-aging': (
-          <WidgetShell
-            id="overdue-aging"
-            title="Overdue aging"
-            subtitle="How old current overdues are"
-            onDragStart={onDragStart}
-            onDragOver={onDragOver}
-            onDrop={onDrop}
-          >
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={overdueAging} barGap={6}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="bucket" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={28} />
-                <Tooltip
-                  contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
-                />
-                <Bar dataKey="count" name="count" fill="#ef4444" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="amount" name="amount" fill="#f59e0b" radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </WidgetShell>
@@ -520,7 +479,7 @@ export default function Dashboard() {
         ),
       })
     },
-    [data, overdueAging, onDrop, teamTasks, totalUnits, quiet]
+    [data, onDrop, teamTasks, totalUnits, quiet]
   )
 
   // Early returns come AFTER all hooks so hook call order is always stable
@@ -584,12 +543,12 @@ export default function Dashboard() {
             )
           }
 
-          if (id === 'units-by-size' || id === 'floor-occupancy' || id === 'overdue-aging') {
-            const peerIds: WidgetId[] = ['units-by-size', 'floor-occupancy', 'overdue-aging']
+          if (id === 'units-by-size' || id === 'floor-occupancy') {
+            const peerIds: WidgetId[] = ['units-by-size', 'floor-occupancy']
             const first = peerIds.find((x) => layout.includes(x))
             if (id !== first) return null
             return (
-              <div key="charts-grid" className="grid gap-4 lg:grid-cols-3">
+              <div key="charts-grid" className="grid gap-4 lg:grid-cols-2">
                 {peerIds.filter((x) => layout.includes(x)).map((x) => (
                   <div key={x}>{widgets[x]}</div>
                 ))}
