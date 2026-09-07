@@ -102,11 +102,27 @@ function pickStep(steps, daysLeft) {
   return applicable[0];
 }
 
+/**
+ * How far back a 'sent' log still counts against a step — two independent
+ * lower bounds, a recurring rule's own window and an admin's deliberate
+ * "start fresh" reset (AutomationRule.remindersResetAt), both of which must
+ * hold, so the later of the two wins. `null` means no bound: any prior send
+ * blocks forever, the default for a non-recurring, never-reset rule. Pure
+ * and exported so the "both must hold" logic is checkable without a
+ * database.
+ */
+export function sentCutoff({ recurring, remindersResetAt, now = new Date() }) {
+  const cutoffs = [];
+  if (recurring?.enabled) cutoffs.push(new Date(now.getTime() - Math.max(1, recurring.everyDays) * DAY));
+  if (remindersResetAt) cutoffs.push(new Date(remindersResetAt));
+  if (!cutoffs.length) return null;
+  return new Date(Math.max(...cutoffs.map((d) => d.getTime())));
+}
+
 async function alreadySent({ rule, eventKey, channel, recurring }) {
   const filter = { rule: rule._id, event: eventKey, channel, status: 'sent' };
-  if (recurring?.enabled) {
-    filter.sentAt = { $gte: new Date(Date.now() - Math.max(1, recurring.everyDays) * DAY) };
-  }
+  const cutoff = sentCutoff({ recurring, remindersResetAt: rule.remindersResetAt });
+  if (cutoff) filter.sentAt = { $gte: cutoff };
   return !!(await AutomationLog.findOne(filter).select('_id').lean());
 }
 

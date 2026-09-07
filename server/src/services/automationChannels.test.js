@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pickChannels, templateFor, dubaiDayRange } from './automationEngine.js';
+import { pickChannels, templateFor, dubaiDayRange, sentCutoff } from './automationEngine.js';
 
 // The rule as the built-in Contract Expiry rule actually ships: WhatsApp on,
 // email off. Turning this rule on to get its email is what once put messages
@@ -168,4 +168,41 @@ test('a run just before Dubai midnight is inside today\'s range, not already tom
 test('the range is exactly one day wide, so a second run 6 hours later is still caught', () => {
   const { start, end } = dubaiDayRange(new Date('2026-03-05T08:00:00.000Z'));
   assert.equal(end.getTime() - start.getTime(), 24 * 60 * 60 * 1000);
+});
+
+/* ── sentCutoff: "start fresh" resets vs. a recurring window ────────────────
+   alreadySent() uses this to decide how far back a log still blocks a step.
+   Getting "both must hold" wrong in either direction either lets a reset
+   silently un-block a send nobody asked to reset, or leaves a reset unable
+   to do anything at all — both are the kind of bug that only shows up as an
+   unexplained double-send or a permanently stuck queue. */
+
+test('neither recurring nor reset: no bound, so any past send blocks forever', () => {
+  assert.equal(sentCutoff({ recurring: { enabled: false, everyDays: 3 }, remindersResetAt: null }), null);
+});
+
+test('a reset with no recurring window: the cutoff is exactly the reset moment', () => {
+  const resetAt = new Date('2026-03-01T00:00:00.000Z');
+  const cutoff = sentCutoff({ recurring: { enabled: false, everyDays: 3 }, remindersResetAt: resetAt });
+  assert.equal(cutoff.getTime(), resetAt.getTime());
+});
+
+test('recurring with no reset: the cutoff is everyDays back from now', () => {
+  const now = new Date('2026-03-10T00:00:00.000Z');
+  const cutoff = sentCutoff({ recurring: { enabled: true, everyDays: 5 }, remindersResetAt: null, now });
+  assert.equal(cutoff.getTime(), now.getTime() - 5 * 24 * 60 * 60 * 1000);
+});
+
+test('a reset older than the recurring window changes nothing — the window still wins', () => {
+  const now = new Date('2026-03-10T00:00:00.000Z');
+  const oldReset = new Date('2026-01-01T00:00:00.000Z');
+  const cutoff = sentCutoff({ recurring: { enabled: true, everyDays: 5 }, remindersResetAt: oldReset, now });
+  assert.equal(cutoff.getTime(), now.getTime() - 5 * 24 * 60 * 60 * 1000);
+});
+
+test('a reset newer than the recurring window wins — the whole point of resetting', () => {
+  const now = new Date('2026-03-10T00:00:00.000Z');
+  const freshReset = new Date('2026-03-09T00:00:00.000Z');
+  const cutoff = sentCutoff({ recurring: { enabled: true, everyDays: 5 }, remindersResetAt: freshReset, now });
+  assert.equal(cutoff.getTime(), freshReset.getTime());
 });

@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
     AlertTriangle, Bell, CalendarClock, ChevronDown, ChevronRight, CreditCard, Eye, Mail, MessageCircle,
-    Pencil, Plus, PlusCircle, Repeat, Search, Trash2, X,
+    Pencil, Plus, PlusCircle, Repeat, RotateCcw, Search, Trash2, X,
 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { Badge, Button, Modal, Spinner, Textarea } from '../components/ui'
@@ -44,6 +44,7 @@ type AutomationRule = {
     recurring: { enabled: boolean; everyDays: number }
     custom: boolean
     order: number
+    remindersResetAt?: string | null
 }
 
 type AutomationLogEntry = {
@@ -153,6 +154,21 @@ export default function AutomationRules() {
         mutationFn: ({ id, body }: { id: string; body: Partial<AutomationRule> }) =>
             api.put(`/automation-rules/${id}`, body),
         onSuccess: () => qc.invalidateQueries({ queryKey: ['automation-rules'] }),
+        onError: (e) => setError(apiError(e)),
+    })
+
+    // A contract already messaged under a step keeps counting as "already
+    // sent" for that step forever, even after its day count is edited —
+    // steps are tracked by position, not by day number. This is the
+    // deliberate escape hatch: it can put reminders straight back out to
+    // people who already got one, so it asks for a name-typed confirmation
+    // rather than a plain OK.
+    const resetHistory = useMutation({
+        mutationFn: (id: string) => api.post(`/automation-rules/${id}/reset-history`),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['automation-rules'] })
+            qc.invalidateQueries({ queryKey: ['automation-rules-pending'] })
+        },
         onError: (e) => setError(apiError(e)),
     })
 
@@ -338,6 +354,11 @@ export default function AutomationRules() {
                         onEditTemplate={(stepIdx) => setEditingTemplate({ ruleId: rule._id, stepIdx })}
                         onChangeRecurringDays={(days) => patchRule(rule._id, { recurring: { ...rule.recurring, everyDays: days } })}
                         onDelete={() => { if (confirm(`Delete "${rule.name}" automation?`)) deleteRule.mutate(rule._id) }}
+                        onResetHistory={() => {
+                            if (confirm(`Reset "${rule.name}"'s send history?\n\nAnyone already messaged under one of its steps becomes eligible for that same step again — this can send a reminder to someone who already got one, if a step's day count changed since they were messaged.`)) {
+                                resetHistory.mutate(rule._id)
+                            }
+                        }}
                     />
                 ))}
 
@@ -664,7 +685,7 @@ function PendingApprovals({ data, isLoading, onSent }: {
 }
 
 // ── Rule Card ────────────────────────────────────────────────────────────────
-function RuleCard({ rule, templates: _templates, onToggleEnabled, onToggleEmail, onToggleWhatsApp, onAddStep, onRemoveStep, onUpdateStep, onEditTemplate, onChangeRecurringDays, onDelete }: {
+function RuleCard({ rule, templates: _templates, onToggleEnabled, onToggleEmail, onToggleWhatsApp, onAddStep, onRemoveStep, onUpdateStep, onEditTemplate, onChangeRecurringDays, onDelete, onResetHistory }: {
     rule: AutomationRule
     templates: MessageTemplate[]
     onToggleEnabled: () => void
@@ -676,6 +697,7 @@ function RuleCard({ rule, templates: _templates, onToggleEnabled, onToggleEmail,
     onEditTemplate: (stepIdx: number) => void
     onChangeRecurringDays: (days: number) => void
     onDelete: () => void
+    onResetHistory: () => void
 }) {
     const Icon = ICON_MAP[rule.icon] || Bell
 
@@ -691,8 +713,25 @@ function RuleCard({ rule, templates: _templates, onToggleEnabled, onToggleEmail,
                 </div>
                 <div className="flex-1 min-w-[180px]">
                     <div className="font-bold text-[15px]">{rule.name}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5">{rule.triggerLabel}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                        {rule.triggerLabel}
+                        {rule.remindersResetAt && (
+                            <span> · history reset {formatDate(rule.remindersResetAt)}</span>
+                        )}
+                    </div>
                 </div>
+
+                {/* Retiming a step doesn't make someone eligible again on its own
+                    — steps are tracked by position, not by day count. This is
+                    the deliberate way to clear that. */}
+                <button
+                    type="button"
+                    onClick={onResetHistory}
+                    title="Let contracts already messaged under a step become eligible for it again"
+                    className="flex items-center gap-1.5 text-xs font-medium rounded-full px-3 py-1.5 border transition-colors cursor-pointer bg-muted text-muted-foreground border-transparent hover:text-foreground"
+                >
+                    <RotateCcw size={12} /> Reset send history
+                </button>
 
                 {/* Channel pills */}
                 <div className="flex items-center gap-2 flex-wrap">

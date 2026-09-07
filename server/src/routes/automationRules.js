@@ -101,6 +101,31 @@ router.put('/whatsapp', async (req, res) => {
     }
 });
 
+/**
+ * "Start fresh" for one rule: a contract already messaged under a step,
+ * back before that step's day count was last changed, becomes eligible
+ * again — steps are tracked by position, not by day number, so retiming a
+ * step alone never does this on its own. The old AutomationLog rows are
+ * left exactly as they are; this only changes what counts as "already
+ * sent" from this moment forward, so Recent Activity still shows the full
+ * history. Admin-only: it can put reminders straight back out to clients
+ * who already got one.
+ */
+router.post('/:id/reset-history', async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
+    try {
+        const rule = await AutomationRule.findByIdAndUpdate(
+            req.params.id,
+            { remindersResetAt: new Date() },
+            { new: true },
+        );
+        if (!rule) return res.status(404).json({ error: 'Rule not found' });
+        res.json(rule);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // PUT /api/automation-rules/:id
 router.put('/:id', async (req, res) => {
     try {

@@ -2178,6 +2178,15 @@ const automationRuleSchema = new Schema({
   },
   custom: { type: Boolean, default: false },
   order: { type: Number, default: 0 },
+  /* A 'sent' AutomationLog row older than this no longer counts against a
+   * step — set when an admin deliberately resets this rule's history (see
+   * services/automationEngine.js), so a contract already messaged before a
+   * step was retimed becomes eligible again under its new schedule. Steps
+   * are tracked by position, not by day count, so retiming alone never
+   * clears this on its own — an admin has to choose to. Never cleared
+   * automatically, and the old log rows themselves are left alone: this
+   * only changes what counts as "already sent" from this moment forward. */
+  remindersResetAt: { type: Date, default: null },
 }, { timestamps: true });
 
 const automationLogSchema = new Schema({
