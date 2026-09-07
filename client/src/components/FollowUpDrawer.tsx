@@ -230,8 +230,8 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
                   )}
                   {error && <p className="text-xs" style={{ color: '#B91C1C' }}>{error}</p>}
                   <button type="button" disabled={!templateName || !extraFilled || send.isPending || (Boolean(recentSend) && !confirmResend)} onClick={() => send.mutate()}
-                    className="inline-flex items-center gap-1.5 h-10 px-5 rounded-full text-sm font-bold cursor-pointer disabled:opacity-40"
-                    style={{ background: PURPLE, color: '#fff', boxShadow: '0 8px 24px rgba(91,43,201,.22)' }}>
+                    className="inline-flex items-center gap-1.5 h-10 px-5 rounded-lg text-sm font-bold cursor-pointer disabled:opacity-40"
+                    style={{ background: '#16A34A', color: '#fff' }}>
                     <MessageCircle size={15} /> {send.isPending ? 'Sending…' : 'Send via WhatsApp'}
                   </button>
                 </div>

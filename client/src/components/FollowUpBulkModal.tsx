@@ -184,7 +184,7 @@ export default function FollowUpBulkModal({ items, snapshotAt, onClose, onDone }
                   </button>
                 ) : (
                   <button type="button" disabled={!ready.length || send.isPending} onClick={() => send.mutate()}
-                    className="cursor-pointer text-sm font-semibold px-5 py-2.5 rounded-full disabled:opacity-40" style={{ background: PURPLE, color: '#fff', boxShadow: '0 8px 24px rgba(91,43,201,.28)' }}>
+                    className="cursor-pointer text-sm font-semibold px-5 py-2.5 rounded-lg disabled:opacity-40" style={{ background: '#16A34A', color: '#fff' }}>
                     {send.isPending ? 'Sending…' : `Send ${ready.length} message${ready.length === 1 ? '' : 's'}`}
                   </button>
                 )}
