@@ -602,6 +602,16 @@ export interface Summary {
   availableUnitsList: { _id: string; unitNumber: string; floor: string; sizeSqf: number; monthlyRent: number }[]
 }
 
+/** GET /reports/stats — the dashboard's KPI row and units-by-size chart,
+ *  split out of Summary so they can load independently of floor occupancy
+ *  and the expiring-contracts list. */
+export type DashboardStats = Omit<Summary, 'byFloor' | 'expiringContracts' | 'overduePayments'>
+
+/** GET /reports/floor-occupancy */
+export interface FloorOccupancy {
+  byFloor: Summary['byFloor']
+}
+
 // ── Moving Business Types ────────────────────────────────────────────────────
 
 export type WorkerRole = 'driver' | 'helper' | 'supervisor' | 'packer'
