@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
-  AlertTriangle, ArrowRight, CalendarDays, CheckSquare, Eye, Filter, Flame, MessageCircle,
+  AlertTriangle, ArrowRight, CalendarDays, CheckSquare, Eye, Filter, MessageCircle,
   Search, Square, X, Clock, CalendarClock, CalendarRange, Hourglass,
 } from 'lucide-react'
 import { followUpQueueApi, leadFollowUpApi, type FollowUpPriority, type FollowUpQueueItem, type FollowUpReason, type FollowUpWindow } from '../lib/api'
