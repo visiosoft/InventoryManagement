@@ -79,6 +79,25 @@ async function migrateContractExpiring() {
 }
 
 /**
+ * Drop the stray `emailHtml` an automation template row may be carrying.
+ *
+ * The editor here only ever writes `subject` and `emailBody` — there has
+ * never been a way to see or set `emailHtml` from this UI. But
+ * automationEngine.resolveMessages() prefers emailHtml over emailBody
+ * whenever it is non-empty, so a row that picked up an emailHtml value some
+ * other way (an old import, a direct edit) keeps sending that instead of
+ * whatever an admin types into Subject/Body here, with nothing on screen to
+ * explain why. That is the reported bug. Idempotent: once clear, this is a
+ * no-op scan of one field.
+ */
+async function clearStaleEmailHtml() {
+  await MessageTemplate.updateMany(
+    { kind: { $ne: 'quick_reply' }, emailHtml: { $ne: '' } },
+    { $set: { emailHtml: '' } },
+  );
+}
+
+/**
  * Add whichever DEFAULT rows this database is still missing, by key.
  *
  * Not "insert the defaults if the collection is empty" — that only ever ran
@@ -109,6 +128,7 @@ router.get('/', async (req, res) => {
   }
 
   await migrateContractExpiring();
+  await clearStaleEmailHtml();
   await ensureDefaults(DEFAULT_TEMPLATES, {});
   // Existing rows predate the kind field, so treat a missing value as
   // 'automation' rather than hiding them.
