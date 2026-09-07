@@ -50,6 +50,28 @@ test('never spoken to at all → not in the queue', () => {
     assert.equal(classify({ leadStatus: 'new' }, { now: NOW }), null);
 });
 
+test('what happens when today\'s row is followed up: it leaves today and lands in 7 days', () => {
+    // A customer waiting on us. We reply with a template — the send log
+    // records it even if the chat log does not.
+    const before = classify({ lastInboundAt: daysAgo(2), leadStatus: 'contacted' }, { now: NOW });
+    assert.equal(before.window, 'now');
+    const after = classify({ lastInboundAt: daysAgo(2), lastSentAt: NOW, sentSinceReply: 1, leadStatus: 'contacted' }, { now: NOW });
+    assert.equal(after.reason, 'customer_quiet');
+    assert.equal(after.window, 'in_7_days');
+    // Same for a quiet lead due today for its first follow-up.
+    const quietDue = classify({ lastOutboundAt: daysAgo(3), leadStatus: 'contacted' }, { now: NOW });
+    assert.equal(quietDue.window, 'today');
+    const quietAfter = classify({ lastOutboundAt: daysAgo(3), lastSentAt: NOW, sentSinceReply: 1, leadStatus: 'contacted' }, { now: NOW });
+    assert.equal(quietAfter.window, 'in_7_days');
+});
+
+test('a chat left unanswered for years is history, not "needs reply now"', () => {
+    // Nothing from us, ever, and their message is far outside the 30-day bound.
+    assert.equal(classify({ lastInboundAt: daysAgo(400), leadStatus: 'contacted' }, { now: NOW }), null);
+    // Inside the bound it is exactly the reply-needed case.
+    assert.equal(classify({ lastInboundAt: daysAgo(20), leadStatus: 'contacted' }, { now: NOW }).window, 'now');
+});
+
 test('waiting-on-us wins over everything else when both apply', () => {
     const v = classify({
         lastInboundAt: hoursAgo(3), lastOutboundAt: daysAgo(6), leadStatus: 'contacted',

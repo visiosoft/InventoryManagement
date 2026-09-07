@@ -38,6 +38,10 @@ import { getFollowUpPlan, sequenceState } from './followUpSequence.js';
 export const REASONS = ['sales_response_overdue', 'manual_followup_due', 'customer_quiet'];
 export const CLOSED_STATUSES = ['won', 'lost', 'already_customer'];
 export const DEFAULT_STAGES = [{ afterDays: 3 }, { afterDays: 7 }, { afterDays: 14 }];
+/** A customer who wrote more than this long ago and never got a reply is
+ *  history, not today's work — the same bound the inbox's waiting tab
+ *  uses (routes/whatsapp.js). Meta's window closed on them long ago. */
+export const WAITING_MAX_DAYS = 30;
 export const WINDOWS = ['now', 'today', 'tomorrow', 'in_3_days', 'in_7_days', 'later', 'exhausted'];
 /** A second send to the same lead inside this window needs an explicit
  *  "yes, again" even when the cadence says it is due. */
@@ -112,7 +116,15 @@ export function classify(signals = {}, { now = new Date(), stages = DEFAULT_STAG
     let nextContactAt = null;
     let window = null;
 
-    if (isWaitingOnUs(signals)) {
+    // A follow-up template we sent is us speaking, whether or not the chat
+    // log recorded it — so a customer we just replied to by template is no
+    // longer waiting on us, and the cadence counts from that send.
+    const lastFromUs = [signals.lastOutboundAt, signals.lastSentAt].filter(Boolean)
+        .map((d) => new Date(d)).sort((a, b) => b - a)[0] || null;
+    const waiting = isWaitingOnUs({ lastInboundAt: signals.lastInboundAt, lastOutboundAt: lastFromUs })
+        && (nowT - new Date(signals.lastInboundAt).getTime()) <= WAITING_MAX_DAYS * DAY;
+
+    if (waiting) {
         reason = 'sales_response_overdue';
         since = signals.lastInboundAt;
         nextContactAt = new Date(now);
@@ -129,14 +141,14 @@ export function classify(signals = {}, { now = new Date(), stages = DEFAULT_STAG
         since = signals.followUpAt;
         nextContactAt = new Date(signals.followUpAt);
         window = windowFor(nextContactAt, now);
-    } else if (signals.lastOutboundAt) {
+    } else if (lastFromUs) {
         // We spoke last. Where they are in the cadence decides the day.
         const q = nextQuietContact({
             lastOutboundAt: signals.lastOutboundAt, lastSentAt: signals.lastSentAt,
             sentSinceReply: signals.sentSinceReply || 0, stages,
         });
         reason = 'customer_quiet';
-        since = [signals.lastOutboundAt, signals.lastSentAt].filter(Boolean).sort().pop();
+        since = lastFromUs;
         if (q.exhausted) {
             reasonDetail = 'exhausted';
             nextContactAt = null;
@@ -533,7 +545,9 @@ export async function eligibilityFor(leadIds, {
         const h = history.get(String(lead._id)) || { lastSentAt: null, sentSinceReply: 0 };
         const firstName = String(lead.fullName || lead.whatsappProfileName || '').trim().split(/\s+/)[0] || '';
 
-        const waiting = isWaitingOnUs(c);
+        const lastFromUs = [c.lastOutboundAt, h.lastSentAt].filter(Boolean).map((d) => new Date(d)).sort((a, b) => b - a)[0] || null;
+        const waiting = isWaitingOnUs({ lastInboundAt: c.lastInboundAt, lastOutboundAt: lastFromUs })
+            && (new Date(now) - new Date(c.lastInboundAt)) <= WAITING_MAX_DAYS * DAY;
         const q = waiting ? { nextContactAt: null, exhausted: false } : nextQuietContact({
             lastOutboundAt: c.lastOutboundAt, lastSentAt: h.lastSentAt, sentSinceReply: h.sentSinceReply, stages,
         });
