@@ -1,7 +1,20 @@
 import { Types } from 'mongoose';
 import { Lead, LeadFollowUp, LeadRoutingConfig, WhatsAppMessage } from '../models/index.js';
 import { QUIET_DAYS, wentQuiet, quietDays } from './chatFollowUp.js';
-import { resolvePlaceholderNames } from './leadNames.js';
+import { resolvePlaceholderNames, PLACEHOLDER_NAME } from './leadNames.js';
+
+/**
+ * The name that fills {{1}}. A lead still called "WhatsApp Contact 2003"
+ * has no real name on file, and "Hello WhatsApp," is worse than "Hello
+ * there," — so a placeholder is skipped, the profile name is tried, and
+ * "there" is the floor. Never empty: "Hello ," reads as broken.
+ */
+export function greetingNameFor(lead = {}) {
+    const real = [lead.fullName, lead.whatsappProfileName]
+        .map((n) => String(n || '').trim())
+        .find((n) => n && !PLACEHOLDER_NAME.test(n));
+    return real ? real.split(/\s+/)[0] : 'there';
+}
 import { summariseConversation } from './conversationSummary.js';
 import { sendWhatsAppTemplate, whatsappSendConfigured } from './whatsapp.js';
 
@@ -295,8 +308,7 @@ export async function sendQuietFollowUp({ leadIds, template, extraVars = [], byU
             const phone = lead.phone || lead.phoneNormalized;
             if (!phone) throw new Error('No phone number on file');
             const reasonRow = reasons.get(leadId);
-            const firstName = String(lead.fullName || lead.whatsappProfileName || '').trim().split(/\s+/)[0] || '';
-            const variables = [firstName, ...extraVars.map((v) => String(v ?? ''))];
+            const variables = [greetingNameFor(lead), ...extraVars.map((v) => String(v ?? ''))];
 
             await sendWhatsAppTemplate({ to: phone, name, language: lang, variables });
 

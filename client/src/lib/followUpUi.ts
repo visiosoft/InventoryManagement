@@ -63,8 +63,28 @@ export function initialsOf(name: string): string {
   return ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase() || '?'
 }
 
+/** The name {{1}} will carry. A placeholder like "WhatsApp Contact 2003"
+ *  is not a name — "Hello WhatsApp," would go out — so it becomes "there",
+ *  matching greetingNameFor() on the server. */
 export function firstNameOf(name: string): string {
-  return (name || '').trim().split(/\s+/)[0] || 'there'
+  const n = (name || '').trim()
+  if (!n || /^whatsapp\s*contact/i.test(n)) return 'there'
+  return n.split(/\s+/)[0]
+}
+
+const LAST_TEMPLATE_KEY = 'pb_followup_last_template'
+export function rememberTemplate(name: string) {
+  try { localStorage.setItem(LAST_TEMPLATE_KEY, name) } catch { /* private mode */ }
+}
+/** The template to start on: the one used last, else the first whose name
+ *  says follow-up, else the first. Never "Contract Expiry" by accident. */
+export function defaultTemplate<T extends { name: string; label: string }>(templates: T[]): T | undefined {
+  if (!templates.length) return undefined
+  let last = ''
+  try { last = localStorage.getItem(LAST_TEMPLATE_KEY) || '' } catch { /* private mode */ }
+  return templates.find((t) => t.name === last)
+    || templates.find((t) => /follow/i.test(t.name) || /follow/i.test(t.label))
+    || templates[0]
 }
 
 /** The stage line under a name: the quiet-send stage, else the manual chase. */

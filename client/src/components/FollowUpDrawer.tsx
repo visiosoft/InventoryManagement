@@ -1,26 +1,26 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { ArrowRight, Check, MessageCircle, Phone } from 'lucide-react'
+import { ArrowRight, Check, ChevronDown, ChevronUp, MessageCircle, Phone } from 'lucide-react'
 import { api, apiError, followUpQueueApi, whatsappApi, type FollowUpTimelineEntry } from '../lib/api'
 import { SlideOver, Skeleton } from './ui'
 import {
   INK, MUTED, PURPLE, PURPLE_DEEP, PURPLE_TINT, HAIRLINE, CREAM, DISPLAY,
-  REASON_UI, PRIORITY_UI, TEMP_UI, whyFor, agoText, firstNameOf, initialsOf,
+  REASON_UI, PRIORITY_UI, TEMP_UI, whyFor, agoText, firstNameOf, initialsOf, defaultTemplate, rememberTemplate,
 } from '../lib/followUpUi'
 
 const SNOOZES = [['tomorrow', 'Tomorrow'], ['three_days', 'In 3 days'], ['next_week', 'Next week']] as const
+const THREAD_LENGTH = 10
 
 /**
- * One lead, ready to act on: why it is in the queue, what has already been
- * said and sent, and the one thing to do next.
+ * One lead, ready to act on: why it is in the queue, the last few things
+ * said either way, and the one thing to do next.
  *
  * Inside Meta's 24-hour window a customer who is waiting on us gets a plain
  * reply — the drawer sends the rep to the chat. Outside it, only an approved
- * template can go, and the drawer says so rather than letting a free-text
- * send fail at Meta's end. The send is refused server-side if this person
- * was messaged in the last 12 hours or has since replied; the drawer shows
- * that reason and asks before trying again.
+ * template can go. The send is refused server-side if this person was
+ * messaged in the last 12 hours, is not yet due in the cadence, or has
+ * since replied; the drawer shows that reason and asks before trying again.
  */
 export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose, onAdvance, onChanged }: {
   leadId: string
@@ -38,13 +38,15 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
   const lead = data?.lead
 
   const [templateName, setTemplateName] = useState('')
+  const [pickerOpen, setPickerOpen] = useState(false)
   const [extraVars, setExtraVars] = useState<string[]>([])
   const [confirmResend, setConfirmResend] = useState(false)
   const [showTemplate, setShowTemplate] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [error, setError] = useState('')
   const [sentTo, setSentTo] = useState('')
 
-  useEffect(() => { setError(''); setSentTo(''); setConfirmResend(false); setShowTemplate(false) }, [leadId])
+  useEffect(() => { setError(''); setSentTo(''); setConfirmResend(false); setShowTemplate(false); setPickerOpen(false); setHistoryOpen(false) }, [leadId])
 
   const { data: waData, isLoading: templatesLoading } = useQuery({
     queryKey: ['whatsapp-templates'],
@@ -52,7 +54,7 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
     staleTime: 10 * 60_000,
   })
   const templates = waData?.templates ?? []
-  useEffect(() => { if (!templateName && templates.length) setTemplateName(templates[0].name) }, [templates, templateName])
+  useEffect(() => { if (!templateName && templates.length) setTemplateName(defaultTemplate(templates)?.name || '') }, [templates, templateName])
   const template = templates.find((t) => t.name === templateName)
   const extraCount = Math.max(0, (template?.variableCount ?? 1) - 1)
   useEffect(() => { setExtraVars(Array(extraCount).fill('')) }, [templateName, extraCount])
@@ -60,8 +62,6 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
 
   const canReplyInChat = Boolean(item && item.reason === 'sales_response_overdue' && data?.windowOpen)
   const recentSend = Boolean(item?.lastNudgedAt && Date.now() - new Date(item.lastNudgedAt).getTime() < 12 * 3600_000)
-  // Not due yet per the cadence, or the cadence is spent: the server refuses
-  // unless the person explicitly overrides, and the drawer says why first.
   const notDue = Boolean(item && item.window !== 'now' && item.window !== 'today')
   const needsOverride = recentSend || notDue
   const overrideText = !item ? '' : recentSend
@@ -70,26 +70,33 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
       ? '⚠ Every follow-up in the cadence has gone out with no reply. Send one more anyway.'
       : `⚠ Not due until ${item.nextContactAt ? new Date(item.nextContactAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : 'later'} — messaging sooner risks annoying them. Send now anyway.`
 
+  // The conversation, oldest first, last THREAD_LENGTH turns — with our
+  // template sends dropped in as system lines so "what did we last send"
+  // is answered in the same place.
+  const thread = useMemo(() => {
+    const entries = (data?.timeline ?? []).filter((t) => t.kind === 'message' || t.kind === 'send')
+    return entries.slice(0, THREAD_LENGTH).reverse()
+  }, [data])
+  const attempts = (data?.timeline ?? []).filter((t) => t.kind === 'attempt')
+
   const send = useMutation({
     mutationFn: () => followUpQueueApi.send(leadId, {
       templateName, extraVars, snapshotAt, confirmResend,
       reason: item?.aiSummary || (item ? REASON_UI[item.reason].label : ''),
       daysWaiting: item?.daysWaiting ?? 0,
     }),
-    onSuccess: (d) => { setError(''); setSentTo(d.sent[0]?.to || lead?.phone || ''); onChanged(); refetch() },
+    onSuccess: (d) => { setError(''); rememberTemplate(templateName); setSentTo(d.sent[0]?.to || lead?.phone || ''); onChanged(); refetch() },
     onError: (e: unknown) => {
       const reason = (e as { response?: { data?: { reason?: string } } })?.response?.data?.reason
       const overridable = reason === 'sent_recently' || reason === 'not_due_yet' || reason === 'exhausted'
       setError(overridable ? `${apiError(e)} — tick the override to send anyway.` : apiError(e))
     },
   })
-
   const snooze = useMutation({
     mutationFn: (when: string) => api.post(`/whatsapp/${lead?.phoneNormalized}/remind`, { when }),
     onSuccess: () => { onChanged(); nextLeadId ? onAdvance(nextLeadId) : onClose() },
     onError: (e) => setError(apiError(e)),
   })
-
   const markLost = useMutation({
     mutationFn: () => api.patch(`/leads/${leadId}/status`, { status: 'lost' }),
     onSuccess: () => { onChanged(); nextLeadId ? onAdvance(nextLeadId) : onClose() },
@@ -100,6 +107,11 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
     ? [firstNameOf(lead.name), ...extraVars.map((v) => v || '{{?}}')]
       .reduce((text, v, i) => text.replaceAll(`{{${i + 1}}}`, v), template.bodyText)
     : ''
+  const nextContactText = !item ? '—'
+    : item.window === 'now' ? 'Now'
+      : item.window === 'today' ? 'Today'
+        : item.window === 'exhausted' ? 'Decide'
+          : item.nextContactAt ? new Date(item.nextContactAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : 'Today'
 
   return (
     <SlideOver open onClose={onClose} title={lead?.name || 'Follow-up'} subtitle={lead ? `${lead.phone} · ${lead.ownerName}${lead.source ? ` · ${lead.source}` : ''}` : ''} width="max-w-2xl">
@@ -108,7 +120,7 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
       ) : (
         <div className="p-5 space-y-4" style={{ color: INK }}>
 
-          {/* ── Who & why ────────────────────────────────────────────────── */}
+          {/* ── Why now ──────────────────────────────────────────────────── */}
           <div className="flex items-start gap-3">
             <span className="grid place-items-center rounded-full shrink-0 text-xs font-bold" style={{ width: 40, height: 40, background: '#EDE5FF', color: PURPLE_DEEP }}>{initialsOf(lead.name)}</span>
             <div className="min-w-0 flex-1">
@@ -122,23 +134,18 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
                 <div className="rounded-xl mt-2 p-3" style={{ background: PURPLE_TINT }}>
                   <div className="text-[11px] font-semibold uppercase" style={{ letterSpacing: '.08em', color: PURPLE }}>Why now</div>
                   <p className="text-sm mt-1">{whyFor(item)}</p>
-                  {item.aiReason && item.aiReason !== item.aiSummary && <p className="text-xs mt-1" style={{ color: '#4A4357' }}>{item.aiReason}</p>}
                   {item.nextAction && <p className="text-xs mt-1.5 font-semibold" style={{ color: PURPLE_DEEP }}>Suggested next step: {item.nextAction}</p>}
-                  {item.openQuestions.length > 0 && (
-                    <p className="text-xs mt-1" style={{ color: MUTED }}>Unanswered: {item.openQuestions.slice(0, 2).join(' · ')}</p>
-                  )}
                 </div>
               )}
             </div>
           </div>
 
-          {/* ── Stage ────────────────────────────────────────────────────── */}
           {item && (
             <div className="grid grid-cols-3 gap-2 text-center">
               {[
                 ['Last from them', item.lastInboundAt ? agoText(item.lastInboundAt) : 'never'],
-                ['Last from us', item.lastOutboundAt ? agoText(item.lastOutboundAt) : 'never'],
-                ['Next contact', item.window === 'now' ? 'Now' : item.window === 'exhausted' ? 'Decide' : item.nextContactAt ? new Date(item.nextContactAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : 'Today'],
+                ['Last from us', item.lastOutboundAt || item.lastSentAt ? agoText([item.lastOutboundAt, item.lastSentAt].filter(Boolean).sort().pop()!) : 'never'],
+                ['Next contact', nextContactText],
               ].map(([k, v]) => (
                 <div key={k} className="rounded-xl border px-2 py-2" style={{ borderColor: HAIRLINE }}>
                   <div className="text-[10px] font-semibold uppercase" style={{ letterSpacing: '.06em', color: MUTED }}>{k}</div>
@@ -148,22 +155,35 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
             </div>
           )}
           {item && item.reason === 'customer_quiet' && (
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap text-xs">
               {Array.from({ length: item.quietStage.total }).map((_, i) => {
                 const n = i + 1
                 const done = item.quietStage.exhausted || n < item.quietStage.next
                 const current = !item.quietStage.exhausted && n === item.quietStage.next
                 return (
-                  <div key={n} className="flex items-center gap-2">
-                    <span className="grid place-items-center rounded-full text-[10px] font-bold" style={{ width: 22, height: 22, background: done ? '#DCFCE7' : current ? PURPLE : '#EEE9F6', color: done ? '#047857' : current ? '#fff' : MUTED }}>{done ? <Check size={12} /> : n}</span>
-                    <span className="text-xs" style={{ color: current ? INK : MUTED, fontWeight: current ? 600 : 400 }}>Follow-up {n}</span>
-                    {n < item.quietStage.total && <span style={{ width: 16, height: 1, background: HAIRLINE }} />}
+                  <div key={n} className="flex items-center gap-1.5">
+                    <span className="grid place-items-center rounded-full text-[10px] font-bold" style={{ width: 20, height: 20, background: done ? '#DCFCE7' : current ? PURPLE : '#EEE9F6', color: done ? '#047857' : current ? '#fff' : MUTED }}>{done ? <Check size={11} /> : n}</span>
+                    <span style={{ color: current ? INK : MUTED, fontWeight: current ? 600 : 400 }}>Follow-up {n}</span>
+                    {n < item.quietStage.total && <span style={{ width: 12, height: 1, background: HAIRLINE }} />}
                   </div>
                 )
               })}
-              {item.quietStage.exhausted && <span className="text-xs font-semibold" style={{ color: '#8A5A00' }}>· all sent, no reply — decide</span>}
+              {item.quietStage.exhausted && <span className="font-semibold" style={{ color: '#8A5A00' }}>· all sent, no reply — decide</span>}
             </div>
           )}
+
+          {/* ── The conversation ─────────────────────────────────────────── */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[11px] font-semibold uppercase" style={{ letterSpacing: '.08em', color: MUTED }}>Last {Math.min(thread.length, THREAD_LENGTH) || ''} messages</div>
+              <Link to={`/whatsapp?phone=${lead.phoneNormalized}`} className="text-xs font-semibold" style={{ color: PURPLE_DEEP }}>Open full chat →</Link>
+            </div>
+            <div className="rounded-xl p-3 space-y-2" style={{ background: '#ECE5DD' }}>
+              {thread.length === 0 ? (
+                <p className="text-xs text-center py-3" style={{ color: MUTED }}>No messages on record yet.</p>
+              ) : thread.map((t, i) => <ThreadRow key={i} t={t} />)}
+            </div>
+          </div>
 
           {/* ── Message ──────────────────────────────────────────────────── */}
           {sentTo ? (
@@ -172,19 +192,19 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
                 <span className="grid place-items-center rounded-full" style={{ width: 28, height: 28, background: '#DCFCE7', color: '#047857' }}><Check size={15} /></span>
                 <p className="text-sm font-semibold">Sent to {sentTo}</p>
               </div>
-              <p className="text-xs mt-1" style={{ color: MUTED }}>Logged. If they reply, this drops out of the queue on its own; if not, the next follow-up is due in a few days.</p>
+              <p className="text-xs mt-1" style={{ color: MUTED }}>Logged. They move to their next day in the cadence; if they reply, they come straight back under Needs reply.</p>
               <div className="flex gap-2 mt-3">
                 {nextLeadId
-                  ? <button type="button" onClick={() => onAdvance(nextLeadId)} className="inline-flex items-center gap-1.5 h-9 px-4 rounded-full text-sm font-bold cursor-pointer" style={{ background: PURPLE, color: '#fff' }}>Next lead <ArrowRight size={14} /></button>
-                  : <button type="button" onClick={onClose} className="h-9 px-4 rounded-full text-sm font-bold cursor-pointer" style={{ background: PURPLE, color: '#fff' }}>Done</button>}
+                  ? <button type="button" onClick={() => onAdvance(nextLeadId)} className="inline-flex items-center gap-1.5 h-9 px-4 rounded-lg text-sm font-bold cursor-pointer" style={{ background: PURPLE, color: '#fff' }}>Next lead <ArrowRight size={14} /></button>
+                  : <button type="button" onClick={onClose} className="h-9 px-4 rounded-lg text-sm font-bold cursor-pointer" style={{ background: PURPLE, color: '#fff' }}>Done</button>}
               </div>
             </div>
           ) : item ? (
             <div className="rounded-2xl border" style={{ borderColor: HAIRLINE, background: '#fff' }}>
               <div className="px-4 py-3 border-b flex items-center justify-between gap-2 flex-wrap" style={{ borderColor: HAIRLINE }}>
-                <div style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 16, letterSpacing: '-.02em' }}>WhatsApp message</div>
+                <div style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 16, letterSpacing: '-.02em' }}>Send a WhatsApp message</div>
                 <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: data?.windowOpen ? '#DCFCE7' : '#FEF3C7', color: data?.windowOpen ? '#047857' : '#92400E' }}>
-                  {data?.windowOpen ? '24-hour window open' : 'Outside the 24-hour window — approved template required'}
+                  {data?.windowOpen ? '24-hour window open' : 'Outside 24-hour window — template only'}
                 </span>
               </div>
 
@@ -192,25 +212,37 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
                 <div className="p-4">
                   <p className="text-sm">They wrote {agoText(item.since)} and are still inside the 24-hour window — the right move is a plain reply in the chat.</p>
                   <div className="flex gap-2 mt-3 flex-wrap">
-                    <Link to={`/whatsapp?phone=${lead.phoneNormalized}`} className="inline-flex items-center gap-1.5 h-10 px-5 rounded-full text-sm font-bold" style={{ background: '#25D366', color: '#fff' }}>
+                    <Link to={`/whatsapp?phone=${lead.phoneNormalized}`} className="inline-flex items-center gap-1.5 h-10 px-5 rounded-lg text-sm font-bold" style={{ background: '#25D366', color: '#fff' }}>
                       <MessageCircle size={15} /> Reply in chat
                     </Link>
-                    <button type="button" onClick={() => setShowTemplate(true)} className="h-10 px-4 rounded-full border text-sm font-semibold cursor-pointer" style={{ borderColor: HAIRLINE }}>Send a template instead</button>
+                    <button type="button" onClick={() => setShowTemplate(true)} className="h-10 px-4 rounded-lg border text-sm font-semibold cursor-pointer" style={{ borderColor: HAIRLINE }}>Send a template instead</button>
                   </div>
                 </div>
               ) : (
                 <div className="p-4 space-y-3">
+                  {/* Template: one row, expandable */}
                   {templatesLoading ? <Skeleton className="h-[40px]" /> : templates.length === 0 ? (
                     <p className="text-xs rounded-lg px-3 py-2" style={{ background: '#FFF7E6', color: '#8A5A00' }}>{waData?.error || 'No approved WhatsApp templates found.'}</p>
                   ) : (
-                    <div className="flex flex-wrap gap-1.5">
-                      {templates.map((t) => (
-                        <button key={t.name} type="button" onClick={() => setTemplateName(t.name)}
-                          className="cursor-pointer text-xs font-semibold px-3 py-1.5 rounded-full"
-                          style={{ background: templateName === t.name ? PURPLE : PURPLE_TINT, color: templateName === t.name ? '#fff' : PURPLE_DEEP, border: `1px solid ${templateName === t.name ? PURPLE : 'rgba(91,43,201,.18)'}` }}>
-                          {t.label}
-                        </button>
-                      ))}
+                    <div className="rounded-xl border" style={{ borderColor: HAIRLINE }}>
+                      <button type="button" onClick={() => setPickerOpen((v) => !v)} className="w-full flex items-center justify-between gap-2 px-3 py-2.5 cursor-pointer text-left">
+                        <span className="text-xs" style={{ color: MUTED }}>Template</span>
+                        <span className="flex-1 text-sm font-semibold truncate">{template?.label || 'Choose a template'}</span>
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold shrink-0" style={{ color: PURPLE_DEEP }}>
+                          Change {pickerOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        </span>
+                      </button>
+                      {pickerOpen && (
+                        <div className="px-3 pb-3 flex flex-wrap gap-1.5 border-t pt-3" style={{ borderColor: HAIRLINE }}>
+                          {templates.map((t) => (
+                            <button key={t.name} type="button" onClick={() => { setTemplateName(t.name); setPickerOpen(false) }}
+                              className="cursor-pointer text-xs font-semibold px-3 py-1.5 rounded-full"
+                              style={{ background: templateName === t.name ? PURPLE : PURPLE_TINT, color: templateName === t.name ? '#fff' : PURPLE_DEEP, border: `1px solid ${templateName === t.name ? PURPLE : 'rgba(91,43,201,.18)'}` }}>
+                              {t.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                   {extraCount > 0 && (
@@ -224,12 +256,10 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
                     </div>
                   )}
                   {template && (
-                    <div style={{ background: '#0B141A', borderRadius: 16, padding: 10 }}>
-                      <div style={{ background: '#ECE5DD', borderRadius: 10, padding: '12px 10px' }}>
-                        <div className="ml-auto" style={{ maxWidth: '92%', background: '#DCF8C6', borderRadius: '10px 10px 2px 10px', padding: '9px 11px' }}>
-                          <p className="text-[13px] whitespace-pre-wrap" style={{ color: INK, lineHeight: 1.5 }}>{preview}</p>
-                          <div className="text-right text-[10px] mt-1" style={{ color: '#6B7B60' }}>✓✓</div>
-                        </div>
+                    <div className="rounded-xl p-3" style={{ background: '#ECE5DD' }}>
+                      <div className="ml-auto" style={{ maxWidth: '92%', background: '#DCF8C6', borderRadius: '10px 10px 2px 10px', padding: '9px 11px' }}>
+                        <p className="text-[13px] whitespace-pre-wrap" style={{ color: INK, lineHeight: 1.5 }}>{preview}</p>
+                        <div className="text-right text-[10px] mt-1" style={{ color: '#6B7B60' }}>preview ✓✓</div>
                       </div>
                     </div>
                   )}
@@ -264,20 +294,45 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
             </div>
           )}
 
-          {/* ── Timeline ─────────────────────────────────────────────────── */}
-          <div>
-            <div className="text-[11px] font-semibold uppercase mb-2" style={{ letterSpacing: '.08em', color: MUTED }}>History</div>
-            {data?.timeline.length === 0 ? (
-              <p className="text-xs" style={{ color: MUTED }}>No messages, attempts or follow-ups on record yet.</p>
-            ) : (
-              <ol className="space-y-2">
-                {data?.timeline.slice(0, 25).map((t, i) => <TimelineRow key={i} t={t} />)}
-              </ol>
-            )}
-          </div>
+          {/* ── Attempts / full history, collapsed ───────────────────────── */}
+          {(attempts.length > 0 || (data?.timeline.length ?? 0) > thread.length) && (
+            <div>
+              <button type="button" onClick={() => setHistoryOpen((v) => !v)} className="inline-flex items-center gap-1 text-xs font-semibold cursor-pointer" style={{ color: MUTED }}>
+                {historyOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />} Full history ({data?.timeline.length}{attempts.length ? `, ${attempts.length} call attempt${attempts.length === 1 ? '' : 's'}` : ''})
+              </button>
+              {historyOpen && (
+                <ol className="space-y-2 mt-2">
+                  {data?.timeline.map((t, i) => <TimelineRow key={i} t={t} />)}
+                </ol>
+              )}
+            </div>
+          )}
         </div>
       )}
     </SlideOver>
+  )
+}
+
+function ThreadRow({ t }: { t: FollowUpTimelineEntry }) {
+  const when = new Date(t.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+  if (t.kind === 'send') {
+    return (
+      <div className="text-center">
+        <span className="inline-block text-[11px] px-2.5 py-1 rounded-lg" style={{ background: 'rgba(255,255,255,.75)', color: t.status === 'sent' ? '#4A4357' : '#B91C1C' }}>
+          Follow-up {t.status === 'sent' ? 'sent' : 'failed'}: {t.label}{t.by ? ` · ${t.by}` : ''} · {when}
+        </span>
+      </div>
+    )
+  }
+  if (t.kind !== 'message') return null
+  const inbound = t.direction === 'inbound'
+  return (
+    <div className={`flex ${inbound ? 'justify-start' : 'justify-end'}`}>
+      <div style={{ maxWidth: '85%', background: inbound ? '#fff' : '#DCF8C6', borderRadius: inbound ? '10px 10px 10px 2px' : '10px 10px 2px 10px', padding: '7px 10px', boxShadow: '0 1px 1px rgba(0,0,0,.06)' }}>
+        <p className="text-[13px] whitespace-pre-wrap" style={{ color: INK, lineHeight: 1.45 }}>{t.text || '—'}</p>
+        <div className="text-[10px] mt-0.5 text-right" style={{ color: '#6B7B60' }}>{when}{!inbound && t.status ? ` · ${t.status}` : ''}</div>
+      </div>
+    </div>
   )
 }
 
@@ -315,7 +370,6 @@ function TimelineRow({ t }: { t: FollowUpTimelineEntry }) {
       <span className="min-w-0 flex-1">
         <span className="px-1.5 py-0.5 rounded text-[10px] font-bold mr-1.5" style={{ background: inbound ? '#DCFCE7' : PURPLE_TINT, color: inbound ? '#047857' : PURPLE_DEEP }}>{inbound ? 'THEM' : 'US'}</span>
         <span style={{ color: '#4A4357' }}>{t.text || '—'}</span>
-        {!inbound && t.status && <span className="ml-1.5" style={{ color: MUTED }}>· {t.status}</span>}
       </span>
     </li>
   )

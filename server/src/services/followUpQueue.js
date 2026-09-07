@@ -2,7 +2,7 @@ import { Types } from 'mongoose';
 import { Lead, LeadFollowUp, LeadRoutingConfig, WhatsAppMessage } from '../models/index.js';
 import { isWaitingOnUs } from './chatFollowUp.js';
 import { windowOpenFor } from './whatsapp.js';
-import { quietThreshold, attachLastNudge, attachRecentMessages } from './leadFollowUp.js';
+import { attachLastNudge, attachRecentMessages, greetingNameFor } from './leadFollowUp.js';
 import { resolvePlaceholderNames } from './leadNames.js';
 import { summariseConversation } from './conversationSummary.js';
 import { getFollowUpPlan, sequenceState } from './followUpSequence.js';
@@ -471,7 +471,7 @@ export async function detailFor({ leadId, ownerId = null, now = new Date() }) {
         LeadFollowUp.find({ lead: leadId }).sort({ sentAt: -1 }).limit(20).lean(),
         lead.phoneNormalized
             ? WhatsAppMessage.find({ phoneNormalized: lead.phoneNormalized })
-                .sort({ occurredAt: -1 }).limit(20)
+                .sort({ occurredAt: -1 }).limit(30)
                 .select('direction text transcript type status occurredAt').lean()
             : [],
     ]);
@@ -543,7 +543,7 @@ export async function eligibilityFor(leadIds, {
         if (!lead) return { leadId, ok: false, reason: 'not_found', explanation: 'Lead not found or not yours', name: '', phone: '', lastSentAt: null, preview: '' };
         const c = times.get(lead.phoneNormalized) || {};
         const h = history.get(String(lead._id)) || { lastSentAt: null, sentSinceReply: 0 };
-        const firstName = String(lead.fullName || lead.whatsappProfileName || '').trim().split(/\s+/)[0] || '';
+        const firstName = greetingNameFor(lead);
 
         const lastFromUs = [c.lastOutboundAt, h.lastSentAt].filter(Boolean).map((d) => new Date(d)).sort((a, b) => b - a)[0] || null;
         const waiting = isWaitingOnUs({ lastInboundAt: c.lastInboundAt, lastOutboundAt: lastFromUs })
@@ -565,7 +565,7 @@ export async function eligibilityFor(leadIds, {
             nextContactAt: lead.followUpAt || q.nextContactAt, exhausted: q.exhausted,
         });
         const preview = template?.bodyText
-            ? [firstName || 'there', ...extraVars.map((v) => String(v ?? ''))]
+            ? [firstName, ...extraVars.map((v) => String(v ?? ''))]
                 .reduce((text, v, i) => text.replaceAll(`{{${i + 1}}}`, v), template.bodyText)
             : '';
         return {

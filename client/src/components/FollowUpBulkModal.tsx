@@ -3,7 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { Check } from 'lucide-react'
 import { apiError, followUpQueueApi, whatsappApi, type FollowUpEligibilityRow, type FollowUpQueueItem } from '../lib/api'
 import { Modal, Spinner } from './ui'
-import { INK, MUTED, PURPLE, PURPLE_DEEP, PURPLE_TINT, HAIRLINE, CREAM, DISPLAY, REASON_UI, firstNameOf } from '../lib/followUpUi'
+import { INK, MUTED, PURPLE, PURPLE_DEEP, PURPLE_TINT, HAIRLINE, CREAM, DISPLAY, REASON_UI, firstNameOf, defaultTemplate, rememberTemplate } from '../lib/followUpUi'
 
 /**
  * Bulk follow-up: one approved template to a hand-picked batch, with every
@@ -34,7 +34,7 @@ export default function FollowUpBulkModal({ items, snapshotAt, onClose, onDone }
     staleTime: 10 * 60_000,
   })
   const templates = waData?.templates ?? []
-  useEffect(() => { if (!templateName && templates.length) setTemplateName(templates[0].name) }, [templates, templateName])
+  useEffect(() => { if (!templateName && templates.length) setTemplateName(defaultTemplate(templates)?.name || '') }, [templates, templateName])
   const template = templates.find((t) => t.name === templateName)
   const extraCount = Math.max(0, (template?.variableCount ?? 1) - 1)
   useEffect(() => { setExtraVars(Array(extraCount).fill('')); setRows(null) }, [templateName, extraCount])
@@ -54,7 +54,7 @@ export default function FollowUpBulkModal({ items, snapshotAt, onClose, onDone }
       templateName, extraVars, snapshotAt, confirmResend,
       reasons: items.map((it) => ({ leadId: it.leadId, reason: it.aiSummary || REASON_UI[it.reason].label, daysWaiting: it.daysWaiting })),
     }),
-    onSuccess: (d) => { setError(''); setResult(d) },
+    onSuccess: (d) => { setError(''); rememberTemplate(templateName); setResult(d) },
     onError: (e) => setError(apiError(e)),
   })
 
