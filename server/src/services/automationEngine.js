@@ -468,10 +468,12 @@ export async function pendingExpiryQueue({ now = new Date() } = {}) {
   const approved = await listWhatsAppTemplates().catch(() => ({ templates: [] }));
   const approvedByName = new Map((approved.templates || []).map((t) => [t.name, t]));
 
+  const candidates = await expiryCandidates({ rules, now });
   const groups = new Map();
-  for (const c of await expiryCandidates({ rules, now })) {
+  let alreadyHandled = 0;
+  for (const c of candidates) {
     const channels = await pendingChannelsFor({ rule: c.rule, contract: c.contract, eventKey: c.eventKey, waAllowed });
-    if (!channels.length) continue;
+    if (!channels.length) { alreadyHandled++; continue; }
 
     const messages = await resolveMessages(c.picked.s, templatesByName, 'contract_expiry', c.vars);
     let whatsappPreview = messages.whatsapp;
@@ -510,7 +512,19 @@ export async function pendingExpiryQueue({ now = new Date() } = {}) {
   }
 
   const list = [...groups.values()].sort((a, b) => a.step - b.step);
-  return { groups: list, total: list.reduce((n, g) => n + g.rows.length, 0) };
+  return {
+    groups: list,
+    total: list.reduce((n, g) => n + g.rows.length, 0),
+    // So an empty queue can say *why* rather than just "nothing here": how
+    // many active contracts currently sit inside one of the configured
+    // windows at all, and of those, how many are excluded because that
+    // exact step already has a 'sent' log. A step is tracked by its
+    // position (1st, 2nd, 3rd…), not by its day count — editing a step's
+    // number of days does not reset what has already gone out under that
+    // position, which is the usual reason a freshly-retimed step shows zero.
+    matched: candidates.length,
+    alreadyHandled,
+  };
 }
 
 /**

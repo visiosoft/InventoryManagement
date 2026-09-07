@@ -118,7 +118,7 @@ export default function AutomationRules() {
         queryFn: () => api.get('/automation-rules/channels').then(r => r.data),
     })
 
-    const { data: pending, isLoading: pendingLoading } = useQuery<{ groups: PendingGroup[]; total: number }>({
+    const { data: pending, isLoading: pendingLoading } = useQuery<{ groups: PendingGroup[]; total: number; matched: number; alreadyHandled: number }>({
         queryKey: ['automation-rules-pending'],
         queryFn: () => api.get('/automation-rules/pending').then(r => r.data),
         enabled: tab === 'pending',
@@ -454,7 +454,7 @@ export default function AutomationRules() {
 // reminders aren't part of this queue — this is scoped to the contract-expiry
 // rule the spec was written against.
 function PendingApprovals({ data, isLoading, onSent }: {
-    data?: { groups: PendingGroup[]; total: number }
+    data?: { groups: PendingGroup[]; total: number; matched: number; alreadyHandled: number }
     isLoading: boolean
     onSent: () => void
 }) {
@@ -508,13 +508,24 @@ function PendingApprovals({ data, isLoading, onSent }: {
     if (isLoading) return <div className="mt-10"><Spinner /></div>
 
     if (!groups.length) {
+        const matched = data?.matched ?? 0
         return (
             <div className="mt-10 border border-dashed rounded-xl p-10 text-center">
                 <p className="text-sm font-semibold">Nothing waiting on approval.</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                    Every contract-expiry reminder that&rsquo;s due has already gone out, or none is due right now.
-                    This queue only fills up while Automatic sending is off — see the toggle above.
-                </p>
+                {matched === 0 ? (
+                    <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
+                        No active contract currently falls inside one of your configured windows (the day counts on
+                        each step, above). Check back as contracts get closer to their expiry date.
+                    </p>
+                ) : (
+                    <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
+                        {matched} contract{matched === 1 ? '' : 's'} currently match{matched === 1 ? 'es' : ''} a step,
+                        but each already has that exact reminder logged as sent. If you just changed a step&rsquo;s
+                        day count, that&rsquo;s expected: a step is tracked by its position (1st, 2nd, 3rd…), not by
+                        its day number, so retiming a step doesn&rsquo;t bring back contracts that step already
+                        messaged under its old timing.
+                    </p>
+                )}
             </div>
         )
     }
