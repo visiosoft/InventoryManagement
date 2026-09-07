@@ -23,10 +23,15 @@ function escapeHtml(s) {
 // A bare URL in an admin-written template (like the one-click renew/move-out
 // links) turned into a clickable, on-brand link — the alternative is a
 // customer copy-pasting a long link out of plain text.
+// word-break/overflow-wrap so a long renewal link wraps onto a new line
+// instead of extending the whole email past its column — the exact link
+// this template sends is long enough on its own to trigger this.
+const LINK_STYLE = 'color:#5B2BC9;font-weight:600;word-break:break-all;overflow-wrap:anywhere;';
+
 function linkify(escapedText) {
   return escapedText.replace(
     /(https?:\/\/[^\s<]+)/g,
-    (url) => `<a href="${url}" style="color:#5B2BC9;font-weight:600;">${url}</a>`,
+    (url) => `<a href="${url}" style="${LINK_STYLE}">${url}</a>`,
   );
 }
 
@@ -35,7 +40,7 @@ function paragraphsHtml(bodyText) {
   return blocks
     .map((block) => {
       const html = linkify(escapeHtml(block)).replace(/\n/g, '<br>');
-      return `<p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.6;color:#4A4357;">${html}</p>`;
+      return `<p style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.6;color:#4A4357;word-break:break-word;overflow-wrap:anywhere;">${html}</p>`;
     })
     .join('');
 }
@@ -49,7 +54,7 @@ export function brandedEmailHtml({ bodyText }) {
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#EDE3CF;padding:32px 0;">
   <tr>
     <td align="center">
-      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:#FFFFFF;border-radius:18px;overflow:hidden;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#FFFFFF;border-radius:18px;overflow:hidden;">
 
         <tr>
           <td style="padding:28px 40px;background:#FFFFFF;border-bottom:1px solid rgba(20,8,31,0.10);">
