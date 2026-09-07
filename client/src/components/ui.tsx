@@ -373,6 +373,14 @@ export function Spinner() {
   )
 }
 
+/** A shimmering placeholder the size and shape of the content still loading
+ *  — for a page shell that should appear instantly, with individual pieces
+ *  filling in as their own data arrives, instead of one blocking spinner
+ *  hiding the whole page until every request is back. */
+export function Skeleton({ className }: { className?: string }) {
+  return <div className={cn('animate-pulse rounded-lg bg-muted', className)} />
+}
+
 export function Pagination({
   page, pages, total, limit, onPage, onLimit,
 }: {

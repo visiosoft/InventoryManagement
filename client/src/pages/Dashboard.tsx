@@ -5,7 +5,7 @@ import { GripVertical, X } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { api, apiError, leadFollowUpApi } from '../lib/api'
 import type { Summary } from '../lib/types'
-import { Spinner, EmptyState, Table, Th, Td, Button, Badge } from '../components/ui'
+import { EmptyState, Skeleton, Table, Th, Td, Button, Badge } from '../components/ui'
 import { formatDate } from '../lib/utils'
 import DashboardAsk from '../components/DashboardAsk'
 import QuietLeadsModal from '../components/QuietLeadsModal'
@@ -100,6 +100,42 @@ function WidgetShell({
           {subtitle && <div style={{ color: MUTED_CLR, fontSize: 12, marginTop: 2, paddingLeft: 22 }}>{subtitle}</div>}
         </div>
         <div style={{ padding: '12px 20px 20px' }}>{children}</div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The page shell, shown the instant the page opens rather than after
+ * /reports/summary answers — that request alone can take several seconds,
+ * and a blank page with a spinner on it for that whole time reads as
+ * broken. Shaped like the real dashboard (same KPI row, same chart and
+ * list proportions) so nothing jumps around when the real content swaps in.
+ */
+function DashboardSkeleton() {
+  return (
+    <div style={{ background: '#fff', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+      <div className="mb-7">
+        <div style={{ ...HEADING, fontSize: 26, fontWeight: 700, color: INK }}>Dashboard</div>
+        <div style={{ fontSize: 14, color: MUTED_CLR, marginTop: 4 }}>Facility overview at a glance</div>
+      </div>
+
+      <Skeleton className="h-[54px] rounded-2xl mb-5" />
+
+      <div className="space-y-5">
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-[18px]">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-[150px] rounded-[22px]" />
+          ))}
+        </div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Skeleton className="h-[280px]" />
+          <Skeleton className="h-[280px]" />
+        </div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Skeleton className="h-[340px]" />
+          <Skeleton className="h-[340px]" />
+        </div>
       </div>
     </div>
   )
@@ -487,7 +523,7 @@ export default function Dashboard() {
 
   // Tasks lives above the data guards: a failing /reports/summary shouldn't
   // take the task board down with it.
-  if (isLoading) return <Spinner />
+  if (isLoading) return <DashboardSkeleton />
   if (isError || !data) {
     return (
       <div style={{ background: '#fff', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
