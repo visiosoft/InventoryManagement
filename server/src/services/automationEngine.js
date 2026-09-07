@@ -3,6 +3,7 @@ import { AutomationRule, AutomationLog, MessageTemplate, Payment, Contract } fro
 import { sendWhatsAppText, sendWhatsAppTemplate, whatsappSendConfigured } from './whatsapp.js';
 import { sendMail, mailConfigured } from './mail.js';
 import { renewLink, moveOutLink } from './renewalLink.js';
+import { brandedEmailHtml } from './emailLayout.js';
 
 // Master switch for the scheduled runs — OFF until it is turned on from the
 // Automation Rules page, so a fresh deploy can never blast the whole backlog
@@ -114,10 +115,16 @@ async function resolveMessages(step, templatesByName, event, vars) {
   const whatsappBody = step.whatsappBody?.trim() || tpl?.whatsappBody || FALLBACK_MESSAGES[event];
   const emailBody = step.emailBody?.trim() || tpl?.emailBody || FALLBACK_MESSAGES[event];
   const emailSubject = step.emailSubject?.trim() || tpl?.subject || 'PurpleBox Storage — Reminder';
+  const emailText = interpolate(emailBody, vars);
+  // A step or template can still carry its own designed emailHtml, but
+  // nothing writes one any more — every automated email now goes out in the
+  // standard branded shell, built from the same Subject/Body an admin can
+  // actually see and edit.
+  const customHtml = interpolate(step.emailHtml?.trim() || tpl?.emailHtml || '', vars);
   return {
     whatsapp: interpolate(whatsappBody, vars),
-    emailText: interpolate(emailBody, vars),
-    emailHtml: interpolate(step.emailHtml?.trim() || tpl?.emailHtml || '', vars),
+    emailText,
+    emailHtml: customHtml || brandedEmailHtml({ bodyText: emailText }),
     emailSubject: interpolate(emailSubject, vars),
     ...templateFor(step, tpl, vars),
   };

@@ -18,6 +18,7 @@ import { sendWhatsAppTemplate, whatsappSendConfigured } from '../services/whatsa
 import { AutomationLog } from '../models/index.js';
 import { buildContractPdf } from '../services/contractDocument.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
+import { brandedEmailHtml } from '../services/emailLayout.js';
 import { siteScope } from '../utils/siteScope.js';
 import { phoneClauses } from '../utils/phoneSearch.js';
 
@@ -1754,20 +1755,21 @@ router.get('/:id/message-template/:templateId', async (req, res) => {
     if (!template) return res.status(404).json({ error: 'Template not found' });
 
     const vars = await contractTemplateVars(contract);
+    const bodyText = interpolateVars(template.emailBody, vars);
     res.json({
       to: contract.customer?.email || '',
       label: template.label || '',
       subject: interpolateVars(template.subject, vars),
-      // The designed version when the template has one. This was reading
-      // emailBody — the plain-text alternative — so a template with a full
-      // HTML design went out as a wall of unformatted text.
-      html: interpolateVars(template.emailHtml || template.emailBody, vars),
+      // Always the standard branded shell — logo header, the template's own
+      // Subject/Body, footer — built from what the admin actually edited,
+      // not a separate design nobody can see. See services/emailLayout.js.
+      html: brandedEmailHtml({ bodyText }),
       whatsapp: interpolateVars(template.whatsappBody, vars),
       // Named so the composer can flag placeholders this contract cannot fill.
-      unfilled: findUnfilled([template.subject, template.emailHtml || template.emailBody].join(' '), vars),
-      // So the composer can tell a designed email from a plain one, and not
-      // present raw HTML in a plain-text box.
-      isHtml: Boolean(template.emailHtml),
+      unfilled: findUnfilled([template.subject, template.emailBody].join(' '), vars),
+      // The composer always gets designed HTML now, so it always shows the
+      // rendered preview rather than a plain-text box.
+      isHtml: true,
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1823,15 +1825,12 @@ router.post('/:id/notice-email', async (req, res) => {
       ? await renderAgreementHtmlPdf({ html, contract, title: title.toUpperCase(), header: false, signature: false })
       : await renderAgreementTextPdf({ text: html, contract, header: false, signature: false });
 
+    const noticeText = `Dear ${contract.customer?.fullName || ''},\n\nPlease find the attached ${title.toLowerCase()} regarding your storage contract ${contract.contractNo}.\n\nPurpleBox Storage`;
     await sendMail({
       to,
       subject: `${title} — ${contract.contractNo} · PurpleBox Storage`,
-      text: `Dear ${contract.customer?.fullName || ''},
-
-Please find the attached ${title.toLowerCase()} regarding your storage contract ${contract.contractNo}.
-
-PurpleBox Storage`,
-      html: `Dear ${contract.customer?.fullName || ''},<br/><br/>Please find the attached ${title.toLowerCase()} regarding your storage contract ${contract.contractNo}.<br/><br/>PurpleBox Storage`,
+      text: noticeText,
+      html: brandedEmailHtml({ bodyText: noticeText }),
       attachments: [{ filename: `${title}-${contract.contractNo}.pdf`, content: pdf, contentType: 'application/pdf' }],
     });
 
@@ -2031,11 +2030,12 @@ router.post('/:id/send-email', async (req, res) => {
   const email = contract.customer?.email;
   if (!email) return res.status(400).json({ error: 'Customer has no email address' });
   const pdf = await buildContractPdf(contract);
+  const text = `Dear ${contract.customer.fullName},\n\nPlease find your storage contract ${contract.contractNo} attached.\n\nThank you,\nPurpleBox`;
   await sendMail({
     to: email,
     subject: `Your Storage Contract ${contract.contractNo} — PurpleBox`,
-    text: `Dear ${contract.customer.fullName},\n\nPlease find your storage contract ${contract.contractNo} attached.\n\nThank you,\nPurpleBox`,
-    html: `<p>Dear ${contract.customer.fullName},</p><p>Please find your storage contract <strong>${contract.contractNo}</strong> attached.</p><p>Thank you,<br/>PurpleBox</p>`,
+    text,
+    html: brandedEmailHtml({ bodyText: text }),
     attachments: [{ filename: `${contract.contractNo}.pdf`, content: pdf, contentType: 'application/pdf' }],
   });
 
