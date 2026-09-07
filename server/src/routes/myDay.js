@@ -186,6 +186,13 @@ router.get('/', async (req, res) => {
 
       const overdue = (d) => new Date(d) < startOfLocalDay(now);
 
+      /* Only reminders whose lead has also actually gone quiet — the same
+       * quiet computed just above, not a second definition of it. A reminder
+       * set from a chat that is still being answered normally is not the
+       * "needs follow-up because they went silent" case this card is for. */
+      const quietPhones = new Set(quiet.map((q) => q.phoneNormalized));
+      const dueReminders = reminders.filter((l) => quietPhones.has(l.phoneNormalized));
+
       /* The pipeline, counted for every temperature at once.
        *
        * Four small counts rather than a query per click: the filter is then
@@ -280,7 +287,7 @@ router.get('/', async (req, res) => {
             // Days left in the month, so the pace line can be written honestly.
             daysLeft: daysLeftInMonth(now),
          },
-         reminders: reminders.map((l) => ({
+         reminders: dueReminders.map((l) => ({
             leadId: String(l._id),
             name: leadName(l),
             phone: l.phone || l.phoneNormalized,

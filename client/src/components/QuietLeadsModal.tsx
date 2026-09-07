@@ -10,6 +10,9 @@ const MUTED = '#756E80'
 const PURPLE = '#5B2BC9'
 const PURPLE_DEEP = '#4A1FA0'
 const PURPLE_TINT = '#F7F3FF'
+const HAIRLINE = 'rgba(20,8,31,.10)'
+const CREAM = '#FBF8F2'
+const DISPLAY = "'Bricolage Grotesque', 'Plus Jakarta Sans', system-ui, sans-serif"
 
 function initialsOf(name: string) {
   const parts = (name || '').trim().split(/\s+/)
@@ -154,25 +157,28 @@ export default function QuietLeadsModal({
     : ''
 
   return (
-    <Modal open onClose={onClose} title={scope === 'mine' ? 'Leads that went quiet' : 'Quiet leads — all reps'} wide>
+    <Modal open onClose={onClose} title={scope === 'mine' ? 'Leads that went quiet' : 'Quiet leads — all reps'} wide className="w-full sm:max-w-4xl">
       {result ? (
-        <div className="p-5 space-y-4">
-          <div className="flex items-center gap-2">
-            <span className="grid place-items-center rounded-full" style={{ width: 32, height: 32, background: '#DCFCE7', color: '#047857' }}>
-              <Check size={17} />
+        <div style={{ background: CREAM, margin: -20, padding: 28 }}>
+          <div className="flex items-center gap-3">
+            <span className="grid place-items-center rounded-full shrink-0" style={{ width: 40, height: 40, background: '#DCFCE7', color: '#047857' }}>
+              <Check size={20} />
             </span>
-            <p className="text-sm font-semibold" style={{ color: INK }}>
-              Sent to {result.sent.length} of {result.sent.length + result.failed.length}
-            </p>
+            <div>
+              <p style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 20, letterSpacing: '-.02em', color: INK }}>
+                Sent to {result.sent.length} of {result.sent.length + result.failed.length}
+              </p>
+              <p className="text-xs" style={{ color: MUTED }}>Everyone else keeps their place in the list until the next review.</p>
+            </div>
           </div>
           {result.failed.length > 0 && (
-            <div className="rounded-lg border" style={{ borderColor: 'rgba(20,8,31,.1)' }}>
-              <div className="px-3 py-2 text-xs font-semibold border-b" style={{ color: '#B45309', borderColor: 'rgba(20,8,31,.1)' }}>
+            <div className="rounded-2xl border mt-4" style={{ borderColor: HAIRLINE, background: '#fff' }}>
+              <div className="px-4 py-2.5 text-xs font-semibold border-b rounded-t-2xl" style={{ color: '#B45309', borderColor: HAIRLINE, background: '#FFF7E6' }}>
                 Not sent — {result.failed.length}
               </div>
               <div className="divide-y" style={{ borderColor: 'rgba(20,8,31,.06)' }}>
                 {result.failed.map((f) => (
-                  <div key={f.leadId} className="px-3 py-2 text-xs flex items-center justify-between gap-3">
+                  <div key={f.leadId} className="px-4 py-2.5 text-xs flex items-center justify-between gap-3">
                     <span style={{ color: INK }}>{f.name}</span>
                     <span style={{ color: '#B91C1C' }}>{f.reason}</span>
                   </div>
@@ -180,22 +186,48 @@ export default function QuietLeadsModal({
               </div>
             </div>
           )}
-          <div className="flex justify-end">
-            <button type="button" onClick={onClose} className="cursor-pointer text-sm font-semibold px-4 py-2 rounded-lg" style={{ background: PURPLE, color: '#fff' }}>
+          <div className="flex justify-end mt-5">
+            <button type="button" onClick={onClose} className="cursor-pointer text-sm font-semibold px-5 py-2.5 rounded-full" style={{ background: PURPLE, color: '#fff', boxShadow: '0 8px 24px rgba(91,43,201,.28)' }}>
               Done
             </button>
           </div>
         </div>
       ) : (
-        <div className="p-5 space-y-4">
-          <div className="flex flex-wrap items-end justify-between gap-3">
+        <div style={{ background: CREAM, margin: -20 }}>
+          {/* ── Header ─────────────────────────────────────────────────── */}
+          <div className="flex flex-wrap items-start justify-between gap-4" style={{ padding: '22px 24px 18px', borderBottom: `1px solid ${HAIRLINE}` }}>
+            <div style={{ maxWidth: 440 }}>
+              <div className="text-[11px] font-semibold uppercase" style={{ letterSpacing: '.1em', color: PURPLE }}>
+                {scope === 'mine' ? 'Your leads' : 'All reps'} · quiet {effectiveDays}+ days
+              </div>
+              <h1 style={{ fontFamily: DISPLAY, fontWeight: 700, letterSpacing: '-.02em', fontSize: 26, margin: '6px 0 0', color: INK, lineHeight: 1.1 }}>
+                Bring back the leads that went quiet
+              </h1>
+              <p className="text-xs mt-1.5" style={{ color: MUTED }}>
+                Nothing sends until you review it. Pick a template you already use, check who it fits, send.
+              </p>
+            </div>
+            <div className="flex gap-6 shrink-0">
+              <div>
+                <div style={{ fontFamily: DISPLAY, fontSize: 26, fontWeight: 700, letterSpacing: '-.02em', color: INK, lineHeight: 1 }}>{leads.length}</div>
+                <div className="text-[11px] mt-1" style={{ color: MUTED }}>quiet {effectiveDays}+ days</div>
+              </div>
+              <div>
+                <div style={{ fontFamily: DISPLAY, fontSize: 26, fontWeight: 700, letterSpacing: '-.02em', color: PURPLE, lineHeight: 1 }}>{selected.size}</div>
+                <div className="text-[11px] mt-1" style={{ color: MUTED }}>selected</div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Thresholds & admin settings ───────────────────────────── */}
+          <div className="flex flex-wrap items-end justify-between gap-3" style={{ padding: '16px 24px 0' }}>
             <div>
-              <label className="block text-xs font-semibold mb-1" style={{ color: MUTED }}>Quiet for at least</label>
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: MUTED }}>Quiet for at least</label>
               <div className="flex items-center gap-1.5">
                 {[3, 5, 7].map((d) => (
                   <button
                     key={d} type="button" onClick={() => setDays(d)}
-                    className="cursor-pointer text-xs font-semibold px-2.5 py-1 rounded-full"
+                    className="cursor-pointer text-xs font-semibold px-3 py-1.5 rounded-full"
                     style={{
                       background: effectiveDays === d ? PURPLE : '#fff', color: effectiveDays === d ? '#fff' : INK,
                       border: `1px solid ${effectiveDays === d ? PURPLE : 'rgba(20,8,31,.16)'}`,
@@ -208,7 +240,7 @@ export default function QuietLeadsModal({
             </div>
             {isAdmin && (
               <div className="text-right">
-                <label className="block text-xs font-semibold mb-1" style={{ color: MUTED }}>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: MUTED }}>
                   Default for everyone (currently {config?.quietFollowUpDays ?? 3}d)
                 </label>
                 <button
@@ -230,12 +262,13 @@ export default function QuietLeadsModal({
               template needed yet — has a real chance of an answer. Admin-only,
               off by default. */}
           {isAdmin && (
-            <div className="flex flex-wrap items-center gap-3 rounded-lg p-3" style={{ background: PURPLE_TINT }}>
+            <div className="flex flex-wrap items-center gap-3 rounded-2xl p-3.5" style={{ background: PURPLE_TINT, margin: '14px 24px 0' }}>
               <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer select-none" style={{ color: INK }}>
                 <input
                   type="checkbox"
                   checked={Boolean(nudgeConfig?.enabled)}
                   onChange={(e) => saveNudge.mutate({ enabled: e.target.checked })}
+                  style={{ accentColor: PURPLE }}
                 />
                 Push a reminder to the rep if a lead goes quiet for
               </label>
@@ -244,8 +277,8 @@ export default function QuietLeadsModal({
                 value={nudgeHours}
                 onChange={(e) => setNudgeHours(Math.max(1, Math.min(72, Number(e.target.value) || 6)))}
                 onBlur={() => { if (nudgeHours !== nudgeConfig?.hours) saveNudge.mutate({ hours: nudgeHours }) }}
-                className="w-14 rounded border px-2 py-1 text-xs text-center"
-                style={{ borderColor: 'rgba(20,8,31,.16)' }}
+                className="w-14 rounded-lg border px-2 py-1 text-xs text-center"
+                style={{ borderColor: 'rgba(20,8,31,.16)', background: '#fff' }}
               />
               <span className="text-xs" style={{ color: MUTED }}>
                 hours — needs push notifications turned on (My Account → Notifications) to actually reach a rep.
@@ -253,149 +286,191 @@ export default function QuietLeadsModal({
             </div>
           )}
 
-          <div>
-            <label className="block text-xs font-semibold mb-1.5" style={{ color: MUTED }}>Template</label>
-            {templatesLoading ? (
-              <Spinner />
-            ) : waTemplates.length === 0 ? (
-              <p className="text-xs rounded-lg px-3 py-2" style={{ background: '#FFF7E6', color: '#8A5A00' }}>
-                {waData?.error || 'No approved WhatsApp templates found.'}
-              </p>
-            ) : (
-              <select
-                value={templateName} onChange={(e) => setTemplateName(e.target.value)}
-                className="w-full rounded-lg border px-3 py-2 text-sm"
-                style={{ borderColor: 'rgba(20,8,31,.14)' }}
-              >
-                {waTemplates.map((t) => <option key={t.name} value={t.name}>{t.label}</option>)}
-              </select>
-            )}
-            {selectedTemplate && (
-              <p className="text-xs mt-1.5" style={{ color: MUTED }}>
-                {'{{1}}'} is always filled with each person&rsquo;s own first name. Pick whichever of your templates
-                fits — the reason below each name is there to help you choose.
-              </p>
-            )}
-            {extraCount > 0 && (
-              <div className="mt-2 space-y-2 rounded-lg border p-3" style={{ borderColor: 'rgba(20,8,31,.12)', background: '#FAFAFA' }}>
-                <p className="text-xs" style={{ color: MUTED }}>
-                  This template needs {extraCount} more detail{extraCount === 1 ? '' : 's'}, sent the same to everyone
-                  selected below — for something that should differ per person, pick a template with only one blank.
-                </p>
-                {extraVars.map((v, i) => (
-                  <input
-                    key={i}
-                    value={v}
-                    onChange={(e) => setExtraVars((prev) => prev.map((x, n) => (n === i ? e.target.value : x)))}
-                    placeholder={`{{${i + 2}}}`}
-                    className="w-full rounded-lg border px-3 py-1.5 text-sm"
-                    style={{ borderColor: 'rgba(20,8,31,.14)' }}
-                  />
-                ))}
-              </div>
-            )}
-            {selectedTemplate && previewLead && (
-              <div className="mt-2 rounded-lg p-3" style={{ background: PURPLE_TINT, border: '1px solid rgba(91,43,201,.16)' }}>
-                <p className="text-[11px] font-semibold mb-1" style={{ color: PURPLE_DEEP }}>
-                  Message preview — as {previewLead.name.split(/\s+/)[0]} will read it
-                </p>
-                <p className="text-sm whitespace-pre-wrap" style={{ color: INK }}>{previewText}</p>
-                {selected.size > 1 && (
-                  <p className="text-[11px] mt-1.5" style={{ color: MUTED }}>
-                    Everyone else selected gets the same wording, with their own name in place of &ldquo;{previewLead.name.split(/\s+/)[0]}&rdquo;.
-                  </p>
+          {/* ── Two columns: audience list, then template + live preview ─ */}
+          <div className="grid gap-5" style={{ padding: '20px 24px', gridTemplateColumns: 'minmax(0,1.15fr) minmax(0,1fr)', alignItems: 'start' }}>
+
+            {/* Audience */}
+            <section className="rounded-2xl border" style={{ borderColor: HAIRLINE, background: '#fff' }}>
+              <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: HAIRLINE }}>
+                <label className="text-xs font-semibold" style={{ color: MUTED }}>
+                  {isLoading ? 'Loading…' : `${selected.size} of ${leads.length} selected`}
+                </label>
+                {leads.length > 0 && (
+                  <button type="button" onClick={toggleAll} className="cursor-pointer text-xs font-semibold" style={{ color: PURPLE_DEEP }}>
+                    {selected.size === leads.length ? 'Clear all' : 'Select all'}
+                  </button>
                 )}
               </div>
-            )}
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-semibold" style={{ color: MUTED }}>
-                {isLoading ? 'Loading…' : `${selected.size} of ${leads.length} selected`}
-              </label>
-              {leads.length > 0 && (
-                <button type="button" onClick={toggleAll} className="cursor-pointer text-xs font-semibold" style={{ color: PURPLE_DEEP }}>
-                  {selected.size === leads.length ? 'Clear all' : 'Select all'}
-                </button>
-              )}
-            </div>
-            {isLoading ? (
-              <Spinner />
-            ) : leads.length === 0 ? (
-              <p className="text-sm py-6 text-center" style={{ color: MUTED }}>
-                Nobody&rsquo;s been quiet {effectiveDays}+ days{scope === 'mine' ? ' on your leads' : ''}. Good sign.
-              </p>
-            ) : (
-              <div className="rounded-lg border max-h-72 overflow-y-auto" style={{ borderColor: 'rgba(20,8,31,.14)' }}>
-                {leads.map((l) => {
-                  const on = selected.has(l.leadId)
-                  const tone = l.temperature ? TEMP_TONE[l.temperature] : null
-                  const recent = l.lastNudgedAt && Date.now() - new Date(l.lastNudgedAt).getTime() < 24 * 3600_000
-                  return (
-                    <label
-                      key={l.leadId}
-                      className="flex items-start gap-3 px-3 py-2.5 border-b last:border-b-0 cursor-pointer"
-                      style={{ borderColor: 'rgba(20,8,31,.06)', background: on ? PURPLE_TINT : 'transparent' }}
-                    >
-                      <input type="checkbox" checked={on} onChange={() => toggleOne(l.leadId)} className="mt-1" />
-                      <span className="grid place-items-center rounded-full shrink-0 text-xs font-bold" style={{ width: 28, height: 28, background: '#EDE5FF', color: PURPLE_DEEP }}>
-                        {initialsOf(l.name)}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-sm font-medium truncate" style={{ color: INK }}>{l.name}</span>
-                          <span className="text-xs" style={{ color: MUTED }}>· {l.daysQuiet}d quiet</span>
-                          {scope === 'all' && <span className="text-xs" style={{ color: MUTED }}>· {l.ownerName}</span>}
-                          {tone && (
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full uppercase" style={{ background: tone.bg, color: tone.fg }}>
-                              {l.temperature}
+              {isLoading ? (
+                <div className="p-4"><Spinner /></div>
+              ) : leads.length === 0 ? (
+                <p className="text-sm py-8 text-center px-4" style={{ color: MUTED }}>
+                  Nobody&rsquo;s been quiet {effectiveDays}+ days{scope === 'mine' ? ' on your leads' : ''}. Good sign.
+                </p>
+              ) : (
+                <div className="max-h-[420px] overflow-y-auto">
+                  {leads.map((l) => {
+                    const on = selected.has(l.leadId)
+                    const tone = l.temperature ? TEMP_TONE[l.temperature] : null
+                    const recent = l.lastNudgedAt && Date.now() - new Date(l.lastNudgedAt).getTime() < 24 * 3600_000
+                    return (
+                      <label
+                        key={l.leadId}
+                        className="flex items-start gap-3 px-4 py-3 border-b last:border-b-0 cursor-pointer"
+                        style={{ borderColor: 'rgba(20,8,31,.06)', background: on ? PURPLE_TINT : 'transparent' }}
+                      >
+                        <input type="checkbox" checked={on} onChange={() => toggleOne(l.leadId)} className="mt-1" style={{ accentColor: PURPLE }} />
+                        <span className="grid place-items-center rounded-full shrink-0 text-xs font-bold" style={{ width: 30, height: 30, background: '#EDE5FF', color: PURPLE_DEEP }}>
+                          {initialsOf(l.name)}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-sm font-semibold truncate" style={{ color: INK }}>{l.name}</span>
+                            <span className="text-xs" style={{ color: MUTED }}>· {l.daysQuiet}d quiet</span>
+                            {scope === 'all' && <span className="text-xs" style={{ color: MUTED }}>· {l.ownerName}</span>}
+                            {tone && (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full uppercase" style={{ background: tone.bg, color: tone.fg }}>
+                                {l.temperature}
+                              </span>
+                            )}
+                          </span>
+                          <span className="block text-xs mt-0.5" style={{ color: '#4A4357' }}>
+                            {l.reason || 'No summary available for this conversation yet.'}
+                          </span>
+                          {l.recentMessages.length > 0 && (
+                            <span className="block mt-1.5 pl-2.5" style={{ borderLeft: `2px solid ${HAIRLINE}` }}>
+                              {l.recentMessages.map((m, i) => (
+                                <span key={i} className="flex items-baseline gap-1.5 text-xs" style={{ color: MUTED }}>
+                                  <span className="truncate" style={{ maxWidth: 220 }}>&ldquo;{m.text}&rdquo;</span>
+                                  <span className="shrink-0" style={{ opacity: 0.75 }}>{agoText(m.at)}</span>
+                                </span>
+                              ))}
+                            </span>
+                          )}
+                          {l.lastNudgedAt && (
+                            <span
+                              className="inline-block text-xs mt-1.5 px-1.5 py-0.5 rounded"
+                              style={{ background: recent ? '#FFF1CC' : 'transparent', color: recent ? '#8A5A00' : MUTED }}
+                            >
+                              {recent ? '⚠ ' : ''}Already messaged {agoText(l.lastNudgedAt)}{l.lastNudgedBy ? ` by ${l.lastNudgedBy}` : ''}
                             </span>
                           )}
                         </span>
-                        <span className="block text-xs mt-0.5" style={{ color: '#4A4357' }}>
-                          {l.reason || 'No summary available for this conversation yet.'}
-                        </span>
-                        {l.recentMessages.length > 0 && (
-                          <span className="block mt-1 pl-2" style={{ borderLeft: '2px solid rgba(20,8,31,.10)' }}>
-                            {l.recentMessages.map((m, i) => (
-                              <span key={i} className="flex items-baseline gap-1.5 text-xs" style={{ color: MUTED }}>
-                                <span className="truncate" style={{ maxWidth: 280 }}>&ldquo;{m.text}&rdquo;</span>
-                                <span className="shrink-0" style={{ opacity: 0.75 }}>{agoText(m.at)}</span>
-                              </span>
-                            ))}
-                          </span>
-                        )}
-                        {l.lastNudgedAt && (
-                          <span
-                            className="inline-block text-xs mt-1 px-1.5 py-0.5 rounded"
-                            style={{ background: recent ? '#FFF1CC' : 'transparent', color: recent ? '#8A5A00' : MUTED }}
-                          >
-                            {recent ? '⚠ ' : ''}Already messaged {agoText(l.lastNudgedAt)}{l.lastNudgedBy ? ` by ${l.lastNudgedBy}` : ''}
-                          </span>
-                        )}
-                      </span>
-                    </label>
-                  )
-                })}
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+            </section>
+
+            {/* Template + preview */}
+            <section className="flex flex-col gap-4">
+              <div className="rounded-2xl border p-4" style={{ borderColor: HAIRLINE, background: '#fff' }}>
+                <label className="block text-xs font-semibold mb-2" style={{ color: MUTED }}>Template</label>
+                {templatesLoading ? (
+                  <Spinner />
+                ) : waTemplates.length === 0 ? (
+                  <p className="text-xs rounded-lg px-3 py-2" style={{ background: '#FFF7E6', color: '#8A5A00' }}>
+                    {waData?.error || 'No approved WhatsApp templates found.'}
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {waTemplates.map((t) => (
+                      <button
+                        key={t.name} type="button" onClick={() => setTemplateName(t.name)}
+                        className="cursor-pointer text-xs font-semibold px-3 py-1.5 rounded-full text-left"
+                        style={{
+                          background: templateName === t.name ? PURPLE : PURPLE_TINT,
+                          color: templateName === t.name ? '#fff' : PURPLE_DEEP,
+                          border: `1px solid ${templateName === t.name ? PURPLE : 'rgba(91,43,201,.18)'}`,
+                        }}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {selectedTemplate && (
+                  <p className="text-xs mt-2" style={{ color: MUTED }}>
+                    {'{{1}}'} is always filled with each person&rsquo;s own first name. Pick whichever template fits —
+                    the reason under each name on the left is there to help you choose.
+                  </p>
+                )}
+                {extraCount > 0 && (
+                  <div className="mt-3 space-y-2 rounded-xl border p-3" style={{ borderColor: 'rgba(20,8,31,.12)', background: CREAM }}>
+                    <p className="text-xs" style={{ color: MUTED }}>
+                      This template needs {extraCount} more detail{extraCount === 1 ? '' : 's'}, sent the same to
+                      everyone selected — for something that should differ per person, pick a template with only one blank.
+                    </p>
+                    {extraVars.map((v, i) => (
+                      <input
+                        key={i}
+                        value={v}
+                        onChange={(e) => setExtraVars((prev) => prev.map((x, n) => (n === i ? e.target.value : x)))}
+                        placeholder={`{{${i + 2}}}`}
+                        className="w-full rounded-lg border px-3 py-1.5 text-sm"
+                        style={{ borderColor: 'rgba(20,8,31,.14)' }}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
+
+              {/* WhatsApp-style live preview — exactly what the first selected
+                  person reads, never invented copy standing in for it. */}
+              {selectedTemplate && previewLead ? (
+                <div style={{ background: '#0B141A', borderRadius: 18, padding: 12 }}>
+                  <div style={{ background: '#ECE5DD', borderRadius: 12, overflow: 'hidden' }}>
+                    <div className="flex items-center gap-2.5" style={{ background: '#075E54', padding: '10px 12px' }}>
+                      <span className="grid place-items-center rounded-full text-[10px] font-bold shrink-0" style={{ width: 26, height: 26, background: 'rgba(255,255,255,.22)', color: '#fff' }}>
+                        {initialsOf(previewLead.name)}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold truncate" style={{ color: '#fff' }}>{previewLead.name}</div>
+                        <div className="text-[10px] truncate" style={{ color: 'rgba(255,255,255,.7)' }}>{previewLead.phone}</div>
+                      </div>
+                    </div>
+                    <div style={{ padding: '14px 10px', minHeight: 120 }}>
+                      <div className="ml-auto" style={{ maxWidth: '90%', background: '#DCF8C6', borderRadius: '10px 10px 2px 10px', padding: '9px 11px', boxShadow: '0 1px 1px rgba(0,0,0,.08)' }}>
+                        <p className="text-[13px] whitespace-pre-wrap" style={{ color: '#14081F', lineHeight: 1.5 }}>{previewText}</p>
+                        <div className="text-right text-[10px] mt-1" style={{ color: '#6B7B60' }}>✓✓</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-2xl border p-4 text-xs text-center" style={{ borderColor: HAIRLINE, background: '#fff', color: MUTED }}>
+                  Pick a template to see exactly what gets sent.
+                </div>
+              )}
+              {selectedTemplate && previewLead && selected.size > 1 && (
+                <p className="text-[11px] -mt-2" style={{ color: MUTED }}>
+                  Everyone else selected gets the same wording, with their own name in place of &ldquo;{previewLead.name.split(/\s+/)[0]}&rdquo;.
+                </p>
+              )}
+            </section>
           </div>
 
-          {error && <p className="text-xs" style={{ color: '#B91C1C' }}>{error}</p>}
+          {error && <p className="text-xs px-6" style={{ color: '#B91C1C' }}>{error}</p>}
 
-          <div className="flex justify-end gap-2 pt-1">
-            <button type="button" onClick={onClose} className="cursor-pointer text-sm font-semibold px-4 py-2 rounded-lg" style={{ color: MUTED }}>
-              Cancel
-            </button>
-            <button
-              type="button" onClick={() => send.mutate()} disabled={sendDisabled}
-              className="cursor-pointer inline-flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
-              style={{ background: PURPLE, color: '#fff' }}
-            >
-              <MessageCircle size={15} />
-              {send.isPending ? 'Sending…' : `Send to ${selected.size}`}
-            </button>
+          {/* ── Sticky send bar ───────────────────────────────────────── */}
+          <div className="flex items-center justify-between gap-3 flex-wrap" style={{ padding: '16px 24px', borderTop: `1px solid ${HAIRLINE}`, background: 'rgba(251,248,242,.9)' }}>
+            <div className="text-xs" style={{ color: MUTED }}>
+              {selected.size === 0 ? 'Select at least one lead to send.' : `Sending ${selectedTemplate?.label || 'a template'} to ${selected.size} lead${selected.size === 1 ? '' : 's'}.`}
+            </div>
+            <div className="flex gap-2">
+              <button type="button" onClick={onClose} className="cursor-pointer text-sm font-semibold px-4 py-2.5 rounded-full" style={{ color: MUTED }}>
+                Cancel
+              </button>
+              <button
+                type="button" onClick={() => send.mutate()} disabled={sendDisabled}
+                className="cursor-pointer inline-flex items-center gap-1.5 text-sm font-semibold px-5 py-2.5 rounded-full disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ background: PURPLE, color: '#fff', boxShadow: sendDisabled ? 'none' : '0 8px 24px rgba(91,43,201,.28)' }}
+              >
+                <MessageCircle size={15} />
+                {send.isPending ? 'Sending…' : `Send to ${selected.size}`}
+              </button>
+            </div>
           </div>
         </div>
       )}

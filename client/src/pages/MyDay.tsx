@@ -263,7 +263,7 @@ export default function MyDay() {
               <AlarmClock size={17} />
             </div>
             <div>
-              <div style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 19, letterSpacing: '-.02em' }}>Reminders due today</div>
+              <div style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 19, letterSpacing: '-.02em' }}>Quiet leads needing follow-up</div>
               <div style={{ fontSize: 12.5, color: INK3, marginTop: 1 }}>
                 {overdueReminders} overdue · {Math.max(0, reminders.length - overdueReminders)} later today
               </div>
@@ -276,7 +276,7 @@ export default function MyDay() {
           <div className="flex flex-col" style={{ gap: 8, marginTop: 18 }}>
             {reminders.length === 0 && (
               <div style={{ fontSize: 13, color: INK3, padding: '10px 2px 14px' }}>
-                Nothing promised for today. Reminders you set from a chat land here.
+                Nothing here. A reminder shows up once its lead has also gone quiet.
               </div>
             )}
             {reminders.slice(0, 4).map((r) => (
