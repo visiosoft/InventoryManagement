@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { AutomationRule, AutomationLog } from '../models/index.js';
-import { runAutomationRules, getAutoSend, setAutoSend, getWhatsAppAutomation, setWhatsAppAutomation } from '../services/automationEngine.js';
+import { runAutomationRules, getAutoSend, setAutoSend, getWhatsAppAutomation, setWhatsAppAutomation, pendingExpiryQueue, sendApprovedReminders } from '../services/automationEngine.js';
 import { sendWhatsAppTemplate, whatsappSendConfigured } from '../services/whatsapp.js';
 import { mailConfigured } from '../services/mail.js';
 
@@ -236,6 +236,43 @@ router.post('/test-template', async (req, res) => {
             message: `${name}(${variables.join(', ')})`, status: 'failed', error: e.message,
         });
         res.status(502).json({ error: e.message });
+    }
+});
+
+/**
+ * The approval queue: contract-expiry reminders that are due but have not
+ * gone out yet, grouped by which step matched, each with the real message
+ * that contract's tenant would receive already rendered. Read-only — never
+ * sends, never logs.
+ */
+router.get('/pending', async (_req, res) => {
+    try {
+        res.json(await pendingExpiryQueue());
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * Send exactly the reminders an admin checked in the queue above. Every
+ * message is re-derived from the contract, not trusted from the client, and
+ * goes through the same guards (per-step, same-day) the automatic engine
+ * itself uses — so approving something the automatic run already sent in
+ * the meantime is a no-op, not a duplicate.
+ */
+router.post('/pending/send', async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
+    try {
+        const selections = Array.isArray(req.body?.selections)
+            ? req.body.selections
+                .filter((s) => s && typeof s.contractId === 'string' && typeof s.ruleId === 'string')
+                .map((s) => ({ contractId: s.contractId, ruleId: s.ruleId }))
+            : [];
+        if (!selections.length) return res.status(400).json({ error: 'Nothing selected' });
+        const result = await sendApprovedReminders({ selections });
+        res.json({ ok: true, ...result });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     }
 });
 

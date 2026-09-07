@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
-    AlertTriangle, Bell, CalendarClock, CreditCard, Mail, MessageCircle,
+    AlertTriangle, Bell, CalendarClock, ChevronDown, ChevronRight, CreditCard, Eye, Mail, MessageCircle,
     Pencil, Plus, PlusCircle, Repeat, Search, Trash2, X,
 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
-import { Badge, Button, Spinner, Textarea } from '../components/ui'
+import { Badge, Button, Modal, Spinner, Textarea } from '../components/ui'
 import { formatDate } from '../lib/utils'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -58,6 +58,26 @@ type AutomationLogEntry = {
     message: string
 }
 
+type PendingRow = {
+    contractId: string
+    ruleId: string
+    contractNo: string
+    customerName: string
+    unit: string
+    endDate: string
+    daysLeft: number
+    channels: ('email' | 'whatsapp')[]
+    preview: { emailSubject: string; emailHtml: string; whatsapp: string }
+}
+
+type PendingGroup = {
+    ruleId: string
+    ruleName: string
+    step: number
+    stepLabel: string
+    rows: PendingRow[]
+}
+
 const ICON_MAP: Record<string, typeof Bell> = {
     'credit-card': CreditCard,
     'calendar-clock': CalendarClock,
@@ -73,6 +93,10 @@ export default function AutomationRules() {
     const [newGroupName, setNewGroupName] = useState('')
     const [error, setError] = useState('')
     const [editingTemplate, setEditingTemplate] = useState<{ ruleId: string; stepIdx: number } | null>(null)
+    // Deep-linkable from the dashboard's "Contracts Expiring Soon" banner
+    // (?tab=pending) — read once on load, same as any other tab default.
+    const [searchParams] = useSearchParams()
+    const [tab, setTab] = useState<'rules' | 'pending'>(searchParams.get('tab') === 'pending' ? 'pending' : 'rules')
 
     const { data: rules = [], isLoading } = useQuery<AutomationRule[]>({
         queryKey: ['automation-rules'],
@@ -92,6 +116,13 @@ export default function AutomationRules() {
     const { data: channels } = useQuery<{ whatsapp: boolean; email: boolean; autoSend: boolean; whatsappAutomation: boolean }>({
         queryKey: ['automation-channels'],
         queryFn: () => api.get('/automation-rules/channels').then(r => r.data),
+    })
+
+    const { data: pending, isLoading: pendingLoading } = useQuery<{ groups: PendingGroup[]; total: number }>({
+        queryKey: ['automation-rules-pending'],
+        queryFn: () => api.get('/automation-rules/pending').then(r => r.data),
+        enabled: tab === 'pending',
+        refetchInterval: 60_000,
     })
 
     const toggleAutoSend = useMutation({
@@ -254,16 +285,43 @@ export default function AutomationRules() {
             {error && <p className="text-xs text-destructive mt-3">{error}</p>}
 
             {/* Tabs */}
-            <div className="flex gap-1 mt-6 border-b">
+            <div className="flex gap-1 mt-6 border-b items-end">
                 <Link to="/settings/templates"
                     className="px-1 pb-3 text-sm font-semibold text-muted-foreground hover:text-foreground mr-5">
                     Message Templates
                 </Link>
-                <span className="px-1 pb-3 text-sm font-bold text-primary border-b-2 border-primary -mb-px">
+                <button
+                    type="button"
+                    onClick={() => setTab('rules')}
+                    className={`px-1 pb-3 text-sm font-bold cursor-pointer mr-5 -mb-px ${tab === 'rules' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground border-b-2 border-transparent'}`}
+                >
                     Automation Rules
-                </span>
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setTab('pending')}
+                    className={`flex items-center gap-1.5 px-1 pb-3 text-sm font-bold cursor-pointer -mb-px ${tab === 'pending' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground border-b-2 border-transparent'}`}
+                >
+                    Pending Approvals
+                    {Boolean(pending?.total) && (
+                        <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-amber-100 text-amber-700 text-[10.5px] font-bold">
+                            {pending!.total}
+                        </span>
+                    )}
+                </button>
             </div>
 
+            {tab === 'pending' ? (
+                <PendingApprovals
+                    data={pending}
+                    isLoading={pendingLoading}
+                    onSent={() => {
+                        qc.invalidateQueries({ queryKey: ['automation-rules-pending'] })
+                        qc.invalidateQueries({ queryKey: ['automation-logs'] })
+                    }}
+                />
+            ) : (
+            <>
             {/* Rules */}
             <div className="flex flex-col gap-4 mt-6">
                 {rules.map(rule => (
@@ -365,6 +423,8 @@ export default function AutomationRules() {
                   </div>
                 </div>
             </div>
+            </>
+            )}
 
             {/* Template Editor Modal */}
             {editingTemplate && (() => {
@@ -383,6 +443,211 @@ export default function AutomationRules() {
                     />
                 )
             })()}
+        </div>
+    )
+}
+
+// ── Pending Approvals ────────────────────────────────────────────────────────
+// Contract-expiry reminders that are due but have not gone out — nothing here
+// sends on its own. An admin checks who to message and presses "Approve &
+// Send Selected"; everything else waits for the next review. Payment
+// reminders aren't part of this queue — this is scoped to the contract-expiry
+// rule the spec was written against.
+function PendingApprovals({ data, isLoading, onSent }: {
+    data?: { groups: PendingGroup[]; total: number }
+    isLoading: boolean
+    onSent: () => void
+}) {
+    const [selected, setSelected] = useState<Set<string>>(new Set())
+    const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+    const [preview, setPreview] = useState<PendingRow | null>(null)
+    const [previewTab, setPreviewTab] = useState<'email' | 'whatsapp'>('email')
+    const [sendError, setSendError] = useState('')
+    const [sendResult, setSendResult] = useState('')
+
+    const groups = data?.groups ?? []
+    const rowKey = (r: PendingRow) => `${r.contractId}:${r.ruleId}`
+
+    const send = useMutation({
+        mutationFn: (selections: { contractId: string; ruleId: string }[]) =>
+            api.post('/automation-rules/pending/send', { selections }).then(r => r.data),
+        onSuccess: (d) => {
+            setSendError('')
+            setSendResult(`Sent ${d.sent}${d.skipped ? `, ${d.skipped} skipped` : ''}${d.errors ? `, ${d.errors} failed` : ''}.`)
+            setSelected(new Set())
+            onSent()
+        },
+        onError: (e) => setSendError(apiError(e)),
+    })
+
+    function toggleRow(r: PendingRow) {
+        setSelected(s => {
+            const n = new Set(s)
+            const k = rowKey(r)
+            n.has(k) ? n.delete(k) : n.add(k)
+            return n
+        })
+    }
+    function toggleGroup(g: PendingGroup) {
+        const keys = g.rows.map(rowKey)
+        const allOn = keys.every(k => selected.has(k))
+        setSelected(s => {
+            const n = new Set(s)
+            keys.forEach(k => allOn ? n.delete(k) : n.add(k))
+            return n
+        })
+    }
+    function toggleCollapsed(key: string) {
+        setCollapsed(c => {
+            const n = new Set(c)
+            n.has(key) ? n.delete(key) : n.add(key)
+            return n
+        })
+    }
+
+    if (isLoading) return <div className="mt-10"><Spinner /></div>
+
+    if (!groups.length) {
+        return (
+            <div className="mt-10 border border-dashed rounded-xl p-10 text-center">
+                <p className="text-sm font-semibold">Nothing waiting on approval.</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                    Every contract-expiry reminder that&rsquo;s due has already gone out, or none is due right now.
+                    This queue only fills up while Automatic sending is off — see the toggle above.
+                </p>
+            </div>
+        )
+    }
+
+    return (
+        <div className="mt-6">
+            <p className="text-sm text-muted-foreground">
+                Contracts due a reminder, grouped by which step matched. Check who should get one, review the exact
+                message, then approve — nothing sends until you do.
+            </p>
+
+            {sendError && <p className="text-xs text-destructive mt-3">{sendError}</p>}
+            {sendResult && <p className="text-xs text-emerald-700 mt-3 font-medium">{sendResult}</p>}
+
+            <div className="flex flex-col gap-4 mt-4">
+                {groups.map(g => {
+                    const groupKey = `${g.ruleId}:${g.step}`
+                    const isCollapsed = collapsed.has(groupKey)
+                    const keys = g.rows.map(rowKey)
+                    const allOn = keys.every(k => selected.has(k))
+                    const someOn = keys.some(k => selected.has(k))
+                    return (
+                        <div key={groupKey} className="border rounded-xl bg-card overflow-hidden">
+                            <button
+                                type="button"
+                                onClick={() => toggleCollapsed(groupKey)}
+                                className="w-full flex items-center gap-2.5 px-4 py-3 cursor-pointer hover:bg-muted/40"
+                            >
+                                {isCollapsed ? <ChevronRight size={15} className="text-muted-foreground shrink-0" /> : <ChevronDown size={15} className="text-muted-foreground shrink-0" />}
+                                <span className="text-sm font-bold">{g.rows.length} contract{g.rows.length === 1 ? '' : 's'} · {g.stepLabel}</span>
+                                <span className="text-xs text-muted-foreground">({g.ruleName})</span>
+                                <span
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={(e) => { e.stopPropagation(); toggleGroup(g) }}
+                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); toggleGroup(g) } }}
+                                    className="ml-auto text-xs font-semibold text-primary hover:underline cursor-pointer"
+                                >
+                                    {allOn ? 'Clear all' : someOn ? 'Select rest' : 'Select all'}
+                                </span>
+                            </button>
+
+                            {!isCollapsed && (
+                                <div className="border-t overflow-x-auto">
+                                    <div className="min-w-[720px]">
+                                        <div className="grid grid-cols-[28px_1.3fr_1fr_0.8fr_1fr_0.7fr_1.1fr_44px] px-4 py-2 text-[11px] font-bold tracking-wider text-muted-foreground uppercase border-b bg-muted/30">
+                                            <div />
+                                            <div>Client</div><div>Contract No</div><div>Unit</div><div>Expiry Date</div><div>Days Left</div><div>Channel</div><div />
+                                        </div>
+                                        {g.rows.map(r => {
+                                            const on = selected.has(rowKey(r))
+                                            return (
+                                                <div key={rowKey(r)} className={`grid grid-cols-[28px_1.3fr_1fr_0.8fr_1fr_0.7fr_1.1fr_44px] px-4 py-2.5 text-sm border-b items-center last:border-b-0 ${on ? 'bg-primary/5' : ''}`}>
+                                                    <input type="checkbox" checked={on} onChange={() => toggleRow(r)} className="cursor-pointer" />
+                                                    <div className="font-semibold truncate pr-2">{r.customerName}</div>
+                                                    <div className="text-muted-foreground">{r.contractNo}</div>
+                                                    <div className="text-muted-foreground">{r.unit}</div>
+                                                    <div className="text-muted-foreground">{formatDate(r.endDate)}</div>
+                                                    <div className="text-muted-foreground">{r.daysLeft}</div>
+                                                    <div className="text-muted-foreground capitalize">{r.channels.join(' + ')}</div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => { setPreview(r); setPreviewTab(r.channels[0] ?? 'email') }}
+                                                        title="Preview the message"
+                                                        className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 cursor-pointer"
+                                                    >
+                                                        <Eye size={15} />
+                                                    </button>
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )
+                })}
+            </div>
+
+            {/* Sticky approve bar */}
+            <div className="sticky bottom-0 mt-5 -mx-2 px-2 py-3 bg-background/95 backdrop-blur border-t flex items-center justify-between gap-3 flex-wrap">
+                <span className="text-sm text-muted-foreground">
+                    {selected.size === 0 ? 'Nothing selected.' : `${selected.size} of ${data?.total ?? 0} selected.`}
+                </span>
+                <button
+                    type="button"
+                    disabled={selected.size === 0 || send.isPending}
+                    onClick={() => {
+                        const selections = [...selected].map(k => {
+                            const [contractId, ruleId] = k.split(':')
+                            return { contractId, ruleId }
+                        })
+                        if (confirm(`Send ${selections.length} reminder${selections.length === 1 ? '' : 's'} now?`)) send.mutate(selections)
+                    }}
+                    className="h-9 px-5 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 cursor-pointer disabled:opacity-50"
+                >
+                    {send.isPending ? 'Sending…' : `Approve & Send Selected${selected.size ? ` (${selected.size})` : ''}`}
+                </button>
+            </div>
+
+            {/* Preview modal */}
+            {preview && (
+                <Modal open onClose={() => setPreview(null)} title={`${preview.customerName} — ${preview.contractNo}`} wide>
+                    <div className="flex gap-1 border-b mb-3">
+                        {(['email', 'whatsapp'] as const).filter(c => preview.channels.includes(c)).map(c => (
+                            <button
+                                key={c}
+                                type="button"
+                                onClick={() => setPreviewTab(c)}
+                                className={`flex items-center gap-1.5 px-3 pb-2 text-sm font-semibold cursor-pointer ${previewTab === c ? 'text-primary border-b-2 border-primary -mb-px' : 'text-muted-foreground'}`}
+                            >
+                                {c === 'email' ? <Mail size={13} /> : <MessageCircle size={13} />}
+                                {c === 'email' ? 'Email' : 'WhatsApp'}
+                            </button>
+                        ))}
+                    </div>
+                    {previewTab === 'email' ? (
+                        <div>
+                            <p className="text-xs text-muted-foreground mb-2"><b>Subject:</b> {preview.preview.emailSubject}</p>
+                            <iframe
+                                title="Email preview"
+                                srcDoc={preview.preview.emailHtml}
+                                sandbox=""
+                                style={{ width: '100%', height: '55vh', minHeight: 380, border: '1px solid rgba(20,8,31,.12)', borderRadius: 10, background: '#fff' }}
+                            />
+                        </div>
+                    ) : (
+                        <div className="rounded-lg border p-4 bg-muted/20 text-sm whitespace-pre-wrap">
+                            {preview.preview.whatsapp || 'This step has no WhatsApp message configured.'}
+                        </div>
+                    )}
+                </Modal>
+            )}
         </div>
     )
 }

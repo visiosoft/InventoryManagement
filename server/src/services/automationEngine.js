@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { AutomationRule, AutomationLog, MessageTemplate, Payment, Contract } from '../models/index.js';
-import { sendWhatsAppText, sendWhatsAppTemplate, whatsappSendConfigured } from './whatsapp.js';
+import { sendWhatsAppText, sendWhatsAppTemplate, whatsappSendConfigured, listWhatsAppTemplates } from './whatsapp.js';
 import { sendMail, mailConfigured } from './mail.js';
 import { renewLink, moveOutLink } from './renewalLink.js';
 import { brandedEmailHtml } from './emailLayout.js';
@@ -268,6 +268,53 @@ async function dispatch({ rule, contract, eventKey, stepIdx, messages, dryRun, r
   }
 }
 
+/**
+ * Every active contract that currently matches one of `rules`' steps, with
+ * vars resolved — the shared "who is due, and for which step" computation
+ * behind both the automatic engine and the pending-approval queue below.
+ * Does not check alreadySent/alreadySentToday: the automatic path filters
+ * that in dispatch(), the queue filters it itself so it can also report
+ * *why* a contract isn't shown.
+ */
+async function expiryCandidates({ rules, now = new Date(), skipCounter } = {}) {
+  const maxBefore = Math.max(0, ...rules.flatMap((r) => r.steps.map((s) => s.value)));
+  const contracts = await Contract.find({
+    status: 'active',
+    endDate: { $gte: now, $lte: new Date(now.getTime() + (maxBefore + 1) * DAY) },
+  }).populate([{ path: 'customer' }, { path: 'unit' }, { path: 'units' }]).lean();
+
+  const out = [];
+  for (const contract of contracts) {
+    if (!contract.customer) continue;
+    if (contract.remindersMuted) { if (skipCounter) skipCounter.skipped++; continue; }
+
+    const daysLeft = Math.ceil((new Date(contract.endDate).getTime() - now.getTime()) / DAY);
+    const vars = {
+      name: contract.customer.fullName,
+      amount: '',
+      unit: unitLabel(contract),
+      dueDate: fmtDate(contract.endDate),
+      daysLeft: String(Math.max(0, daysLeft)),
+      contractNo: contract.contractNo || '',
+      endDate: fmtDate(contract.endDate),
+      rate: contract.rate != null ? Number(contract.rate).toFixed(2) : '',
+      // One-click answers to "are you staying?", so the tenant can settle it
+      // without a phone call from us.
+      renewLink: renewLink(contract._id),
+      moveOutLink: moveOutLink(contract._id),
+      lateFee: process.env.LATE_FEE_AMOUNT || 'AED 100',
+    };
+
+    for (const rule of rules) {
+      if (!effectiveEnabled(contract, rule)) continue;
+      const picked = pickStep(rule.steps, daysLeft);
+      if (!picked) continue;
+      out.push({ contract, rule, picked, daysLeft, vars, eventKey: `contract_expiry:${contract._id}:step${picked.idx}` });
+    }
+  }
+  return out;
+}
+
 export async function runAutomationRules({ dryRun = false } = {}) {
   // Read once per run rather than per contract.
   const waAllowed = await getWhatsAppAutomation();
@@ -355,44 +402,145 @@ export async function runAutomationRules({ dryRun = false } = {}) {
   }
 
   if (expiryRules.length) {
-    const maxBefore = Math.max(0, ...expiryRules.flatMap((r) => r.steps.map((s) => s.value)));
-    const contracts = await Contract.find({
-      status: 'active',
-      endDate: { $gte: new Date(now), $lte: new Date(now + (maxBefore + 1) * DAY) },
-    }).populate([{ path: 'customer' }, { path: 'unit' }, { path: 'units' }]).lean();
-
-    for (const contract of contracts) {
-      if (!contract.customer) continue;
-      if (contract.remindersMuted) { results.skipped++; continue; }
-
-      const daysLeft = Math.ceil((new Date(contract.endDate).getTime() - now) / DAY);
-      const vars = {
-        name: contract.customer.fullName,
-        amount: '',
-        unit: unitLabel(contract),
-        dueDate: fmtDate(contract.endDate),
-        daysLeft: String(Math.max(0, daysLeft)),
-        contractNo: contract.contractNo || '',
-        endDate: fmtDate(contract.endDate),
-        rate: contract.rate != null ? Number(contract.rate).toFixed(2) : '',
-        // One-click answers to "are you staying?", so the tenant can settle it
-        // without a phone call from us.
-        renewLink: renewLink(contract._id),
-        moveOutLink: moveOutLink(contract._id),
-        lateFee: process.env.LATE_FEE_AMOUNT || 'AED 100',
-      };
-
-      for (const rule of expiryRules) {
-        if (!effectiveEnabled(contract, rule)) continue;
-        const picked = pickStep(rule.steps, daysLeft);
-        if (!picked) continue;
-        const eventKey = `contract_expiry:${contract._id}:step${picked.idx}`;
-        const messages = await resolveMessages(picked.s, templatesByName, 'contract_expiry', vars);
-        await dispatch({ rule, contract, eventKey, stepIdx: picked.idx, messages, dryRun, results, waAllowed });
-      }
+    for (const c of await expiryCandidates({ rules: expiryRules, now: new Date(now), skipCounter: results })) {
+      const messages = await resolveMessages(c.picked.s, templatesByName, 'contract_expiry', c.vars);
+      await dispatch({ rule: c.rule, contract: c.contract, eventKey: c.eventKey, stepIdx: c.picked.idx, messages, dryRun, results, waAllowed });
     }
   }
 
   if (!dryRun) console.log(`[Automation] sent=${results.sent} skipped=${results.skipped} errors=${results.errors}`);
+  return results;
+}
+
+/** Which of a candidate's eligible channels are still actually pending —
+ *  eligible per pickChannels(), and not already covered by either of
+ *  dispatch()'s own guards. Shared by the queue (to decide what to show) and
+ *  implicitly re-checked by dispatch() itself (to decide what to send), so
+ *  the two can never disagree about what "still pending" means. */
+async function pendingChannelsFor({ rule, contract, eventKey, waAllowed }) {
+  const customer = contract.customer;
+  const phone = (customer.phones?.[0] || customer.phone || '').replace(/\s+/g, '');
+  const email = customer.email || '';
+  const eligible = pickChannels({
+    rule, waAllowed, waConfigured: whatsappSendConfigured(), mailReady: mailConfigured(), phone, email,
+  });
+  const out = [];
+  for (const channel of eligible) {
+    if (await alreadySent({ rule, eventKey, channel, recurring: rule.recurring })) continue;
+    if (await alreadySentToday({ rule, contract, channel })) continue;
+    out.push(channel);
+  }
+  return out;
+}
+
+/**
+ * The approval queue: every contract currently due a contract-expiry
+ * reminder that has NOT already gone out, grouped by which step matched —
+ * "6 days before", "3 days before" and so on — with the actual message each
+ * client would receive already rendered, so an admin reviews the real thing
+ * rather than a guess at it.
+ *
+ * Reads only — building this list never sends anything and never writes an
+ * AutomationLog row. A contract due on two channels (email + WhatsApp) but
+ * already sent on one shows only the one still outstanding.
+ */
+export async function pendingExpiryQueue({ now = new Date() } = {}) {
+  const rules = (await AutomationRule.find({ triggerEvent: 'contract_expiry', enabled: true }).lean())
+    .filter((r) => r.steps?.length);
+  if (!rules.length) return { groups: [], total: 0 };
+
+  const waAllowed = await getWhatsAppAutomation();
+  const templates = await MessageTemplate.find().lean();
+  const templatesByName = new Map();
+  for (const t of templates) {
+    templatesByName.set(String(t.label || '').trim().toLowerCase(), t);
+    templatesByName.set(String(t.key || '').trim().toLowerCase(), t);
+  }
+  // An approved-template WhatsApp send's real wording lives on Meta's side,
+  // not in our own templates collection — resolved here the same way the
+  // quiet-leads composer does, so the preview shows what actually goes out.
+  const approved = await listWhatsAppTemplates().catch(() => ({ templates: [] }));
+  const approvedByName = new Map((approved.templates || []).map((t) => [t.name, t]));
+
+  const groups = new Map();
+  for (const c of await expiryCandidates({ rules, now })) {
+    const channels = await pendingChannelsFor({ rule: c.rule, contract: c.contract, eventKey: c.eventKey, waAllowed });
+    if (!channels.length) continue;
+
+    const messages = await resolveMessages(c.picked.s, templatesByName, 'contract_expiry', c.vars);
+    let whatsappPreview = messages.whatsapp;
+    if (messages.whatsappTemplate) {
+      const approvedTpl = approvedByName.get(messages.whatsappTemplate);
+      whatsappPreview = approvedTpl
+        ? messages.whatsappTemplateVars.reduce((text, v, i) => text.replaceAll(`{{${i + 1}}}`, v || ''), approvedTpl.bodyText)
+        : `[Approved template "${messages.whatsappTemplate}" not found in Meta's current list — check it is still approved]`;
+    }
+
+    const groupKey = `${c.rule._id}:${c.picked.idx}`;
+    if (!groups.has(groupKey)) {
+      groups.set(groupKey, {
+        ruleId: String(c.rule._id),
+        ruleName: c.rule.name,
+        step: c.picked.idx,
+        stepLabel: `${c.picked.s.value} day${c.picked.s.value === 1 ? '' : 's'} ${c.picked.s.direction === 'after' ? 'after' : 'before'} expiry`,
+        rows: [],
+      });
+    }
+    groups.get(groupKey).rows.push({
+      contractId: String(c.contract._id),
+      ruleId: String(c.rule._id),
+      contractNo: c.contract.contractNo,
+      customerName: c.contract.customer.fullName,
+      unit: unitLabel(c.contract),
+      endDate: c.contract.endDate,
+      daysLeft: c.daysLeft,
+      channels,
+      preview: {
+        emailSubject: messages.emailSubject,
+        emailHtml: messages.emailHtml,
+        whatsapp: whatsappPreview,
+      },
+    });
+  }
+
+  const list = [...groups.values()].sort((a, b) => a.step - b.step);
+  return { groups: list, total: list.reduce((n, g) => n + g.rows.length, 0) };
+}
+
+/**
+ * Send exactly the reminders an admin checked and approved, and nothing
+ * else — `selections` is a list of {contractId, ruleId} pairs from the
+ * queue above. Everything about the message is re-derived here from the
+ * contract and rule, the same way the automatic run would, rather than
+ * trusting whatever the client last rendered: a stale preview cannot become
+ * a stale send. Every one of dispatch()'s guards (per-step, and the
+ * same-day rail) still applies — approving something already sent by the
+ * automatic run in the meantime is a no-op, not a duplicate.
+ */
+export async function sendApprovedReminders({ selections = [] } = {}) {
+  const results = { sent: 0, skipped: 0, errors: 0 };
+  const wanted = new Set(
+    selections.filter((s) => s?.contractId && s?.ruleId).map((s) => `${s.contractId}:${s.ruleId}`),
+  );
+  if (!wanted.size) return results;
+
+  const ruleIds = [...new Set(selections.map((s) => s.ruleId))];
+  const rules = (await AutomationRule.find({ _id: { $in: ruleIds }, triggerEvent: 'contract_expiry' }).lean())
+    .filter((r) => r.steps?.length);
+  if (!rules.length) return results;
+
+  const waAllowed = await getWhatsAppAutomation();
+  const templates = await MessageTemplate.find().lean();
+  const templatesByName = new Map();
+  for (const t of templates) {
+    templatesByName.set(String(t.label || '').trim().toLowerCase(), t);
+    templatesByName.set(String(t.key || '').trim().toLowerCase(), t);
+  }
+
+  for (const c of await expiryCandidates({ rules })) {
+    if (!wanted.has(`${c.contract._id}:${c.rule._id}`)) continue;
+    const messages = await resolveMessages(c.picked.s, templatesByName, 'contract_expiry', c.vars);
+    await dispatch({ rule: c.rule, contract: c.contract, eventKey: c.eventKey, stepIdx: c.picked.idx, messages, dryRun: false, results, waAllowed });
+  }
   return results;
 }

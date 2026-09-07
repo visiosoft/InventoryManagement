@@ -9,6 +9,7 @@ import { Spinner, EmptyState, Table, Th, Td, Button, Badge } from '../components
 import { formatDate } from '../lib/utils'
 import DashboardAsk from '../components/DashboardAsk'
 import QuietLeadsModal from '../components/QuietLeadsModal'
+import { useAuth } from '../lib/auth'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
 const INK = '#14081F'
@@ -23,7 +24,6 @@ type WidgetId =
   | 'quiet-leads'
   | 'expiring-contracts'
   | 'team-tasks'
-  | 'latest-notes'
 
 const DASHBOARD_LAYOUT_KEY = 'pb_dashboard_layout_v2'
 
@@ -35,7 +35,6 @@ const DEFAULT_LAYOUT: WidgetId[] = [
   'quiet-leads',
   'expiring-contracts',
   'team-tasks',
-  'latest-notes',
 ]
 
 function safeLoadLayout() {
@@ -109,6 +108,9 @@ function WidgetShell({
 }
 
 export default function Dashboard() {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+
   // Tasks is an admin/sales-rep tool and the server blocks staff outright, so
   // don't offer a tab that would only 403.
   const [layout, setLayout] = useState<WidgetId[]>(() => safeLoadLayout())
@@ -139,11 +141,15 @@ export default function Dashboard() {
     staleTime: 60_000,
   })
 
-  type LatestNote = { contractId: string; contractNo: string; customerName: string; at: string; text: string; author: string }
-  const { data: latestNotes = [] } = useQuery<LatestNote[]>({
-    queryKey: ['latest-notes'],
-    queryFn: () => api.get('/contracts/latest-notes?limit=30').then((r) => r.data),
-    staleTime: 5 * 60_000,
+  // Contract-expiry reminders waiting on approval — admin-only, same deferred
+  // loading as the quiet-lead summary above so it never races the numbers
+  // this page was actually opened for.
+  type PendingExpiryGroup = { step: number; stepLabel: string; rows: unknown[] }
+  const { data: pendingExpiry } = useQuery<{ groups: PendingExpiryGroup[]; total: number }>({
+    queryKey: ['automation-rules-pending'],
+    queryFn: () => api.get('/automation-rules/pending').then((r) => r.data),
+    enabled: !isLoading && isAdmin,
+    staleTime: 60_000,
   })
 
   // Latest tasks across everyone. Admins get the whole team from this
@@ -512,52 +518,9 @@ export default function Dashboard() {
             )}
           </WidgetShell>
         ),
-        'latest-notes': (
-          <WidgetShell
-            id="latest-notes"
-            title="Latest notes & follow-ups"
-            subtitle="30 most recent notes across all contracts"
-            onDragStart={onDragStart}
-            onDragOver={onDragOver}
-            onDrop={onDrop}
-          >
-            {latestNotes.length === 0 ? (
-              <EmptyState message="No notes yet. Add follow-up notes from any contract page." />
-            ) : (
-              <div className="divide-y divide-border">
-                {latestNotes.map((n, i) => {
-                  const fmtAt = (d: string) => {
-                    const dt = new Date(d)
-                    return dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-                      + ' · ' + dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-                  }
-                  return (
-                    <div key={i} className="flex gap-3 py-3 hover:bg-muted/40 px-1">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                          <Link to={`/contracts/${n.contractId}`} className="text-xs font-semibold text-primary hover:underline shrink-0">
-                            {n.contractNo}
-                          </Link>
-                          {n.customerName && (
-                            <span className="text-xs text-muted-foreground truncate">{n.customerName}</span>
-                          )}
-                          {n.author && (
-                            <span className="text-[10px] text-muted-foreground/70">· {n.author}</span>
-                          )}
-                        </div>
-                        <p className="text-sm leading-snug line-clamp-2">{n.text}</p>
-                      </div>
-                      <time className="text-[10px] text-muted-foreground whitespace-nowrap shrink-0 pt-0.5">{fmtAt(n.at)}</time>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </WidgetShell>
-        ),
       })
     },
-    [data, latestNotes, overdueAging, onDrop, teamTasks, totalUnits, quiet]
+    [data, overdueAging, onDrop, teamTasks, totalUnits, quiet]
   )
 
   // Early returns come AFTER all hooks so hook call order is always stable
@@ -591,6 +554,24 @@ export default function Dashboard() {
     <div style={{ background: '#fff', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
 
       <div className="mb-5"><DashboardAsk /></div>
+
+      {isAdmin && Boolean(pendingExpiry?.total) && (
+        <Link
+          to="/settings/automation?tab=pending"
+          className="mb-5 flex items-center gap-3 flex-wrap rounded-2xl border px-5 py-3.5 hover:bg-amber-100/60 transition-colors"
+          style={{ background: '#FFF7E6', borderColor: '#F5D896' }}
+        >
+          <span style={{ fontSize: 20 }}>⚠️</span>
+          <div className="flex-1 min-w-[220px]">
+            <div style={{ ...HEADING, fontWeight: 700, fontSize: 14.5, color: '#8A5A00' }}>Contracts Expiring Soon</div>
+            <div className="text-xs mt-0.5" style={{ color: '#8A5A00', opacity: 0.85 }}>
+              {pendingExpiry!.groups.map((g) => `${g.rows.length} · ${g.stepLabel}`).join('  ·  ')}
+              {' — reminders waiting on your approval'}
+            </div>
+          </div>
+          <span className="text-xs font-bold shrink-0" style={{ color: '#8A5A00' }}>Review &amp; Approve →</span>
+        </Link>
+      )}
 
       <div className="space-y-5">
         {layout.map((id) => {
@@ -627,10 +608,6 @@ export default function Dashboard() {
                 ))}
               </div>
             )
-          }
-
-          if (id === 'latest-notes') {
-            return <div key={id}>{widgets[id]}</div>
           }
 
           return null
