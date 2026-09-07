@@ -32,7 +32,9 @@ const navGroups = [
     title: 'Sales',
     items: [
       { to: '/my-leads', label: 'My Leads', icon: UserPlus, perm: 'sales_board' },
-      { to: '/follow-ups', label: 'Follow-Ups', icon: CalendarCheck, perm: 'sales_board' },
+      /* Either permission: an admin whose list has 'leads' but not
+         'sales_board' works leads too, and this is where that work is. */
+      { to: '/follow-ups', label: 'Follow-Ups', icon: CalendarCheck, perm: ['sales_board', 'leads'] },
       { to: '/moving-estimator', label: 'Moving Estimator', icon: Calculator, perm: 'sales_board' },
       { to: '/my-performance', label: 'Reports', icon: BarChart3, perm: 'sales_board' },
       { to: '/leaderboard', label: 'Leaderboard', icon: Trophy, perm: 'sales_board' },

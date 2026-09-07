@@ -2,7 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './lib/auth'
 
 /** Renders children only if the user has the given module permission (or is admin). Otherwise redirects home. */
-function PermGuard({ module, orSalesRep, children }: { module: string; orSalesRep?: boolean; children: React.ReactNode }) {
+function PermGuard({ module, orSalesRep, children }: { module: string | string[]; orSalesRep?: boolean; children: React.ReactNode }) {
   const { hasPermission, user } = useAuth()
   // Booking a unit is a rep's core job, but 'quotes' is not one of the
   // permissions reps are created with, so the role opens the door instead.
@@ -230,7 +230,7 @@ export default function App() {
         <Route path="/my-day" element={<PermGuard module="sales_board"><MyDay /></PermGuard>} />
         {/* The follow-up queue. Same gate as My Day: reps and admins; the
             server scopes a rep to their own leads regardless. */}
-        <Route path="/follow-ups" element={<PermGuard module="sales_board"><FollowUps /></PermGuard>} />
+        <Route path="/follow-ups" element={<PermGuard module={['sales_board', 'leads']} orSalesRep><FollowUps /></PermGuard>} />
         <Route path="/accounts" element={<RoleGuard roles={['admin', 'accounts']}><AccountsDashboard /></RoleGuard>} />
         <Route path="/settings/lead-distribution" element={<AdminGuard><LeadDistribution /></AdminGuard>} />
         <Route path="/account" element={<MyAccount />} />
