@@ -326,6 +326,26 @@ function countTemplateVariables(components) {
     return found.size;
 }
 
+/** Meta's customer-service window: free text is allowed only within this
+ *  long of the customer's last message. Outside it, only an approved
+ *  template can be sent. */
+export const SERVICE_WINDOW_MS = 24 * 3600_000;
+
+/**
+ * Is a free-text message still allowed to this customer?
+ *
+ * True only while their most recent inbound message is under 24 hours old.
+ * Before this, nothing in the app checked — a free-text send outside the
+ * window simply went to Meta and came back rejected, which the person sending
+ * it saw as a failure with no explanation. Pure, so the boundary is testable.
+ */
+export function windowOpenFor({ lastInboundAt = null, now = new Date() } = {}) {
+    if (!lastInboundAt) return false;
+    const at = new Date(lastInboundAt).getTime();
+    if (Number.isNaN(at)) return false;
+    return (new Date(now).getTime() - at) < SERVICE_WINDOW_MS;
+}
+
 /**
  * Send one approved template.
  *

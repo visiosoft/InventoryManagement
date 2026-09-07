@@ -32,6 +32,7 @@ const navGroups = [
     title: 'Sales',
     items: [
       { to: '/my-leads', label: 'My Leads', icon: UserPlus, perm: 'sales_board' },
+      { to: '/follow-ups', label: 'Follow-Ups', icon: CalendarCheck, perm: 'sales_board' },
       { to: '/moving-estimator', label: 'Moving Estimator', icon: Calculator, perm: 'sales_board' },
       { to: '/my-performance', label: 'Reports', icon: BarChart3, perm: 'sales_board' },
       { to: '/leaderboard', label: 'Leaderboard', icon: Trophy, perm: 'sales_board' },
@@ -130,6 +131,9 @@ const salesRepNavGroups = [
        * Leads stays: the full board is still where you go to search, filter by
        * temperature and work the whole pipeline. */
       { key: 'my-day', to: '/my-day', label: 'My Day', icon: Sun, perm: 'sales_board', notFor: 'accounts' },
+      /* The queue itself: who to contact today and why, ranked. My Day is
+         the morning glance; this is where the work gets done. */
+      { key: 'follow-ups', to: '/follow-ups', label: 'Follow-Ups', icon: CalendarCheck, perm: 'sales_board', notFor: 'accounts' },
       { key: 'leads', to: '/my-leads', label: 'Leads', icon: UserPlus, perm: 'sales_board', notFor: 'accounts' },
       { key: 'tasks', to: '/tasks', label: 'Tasks', icon: ListTodo, perm: 'sales_board' },
       { key: 'whatsapp', to: '/whatsapp', label: 'WhatsApp', icon: MessageCircle, perm: 'sales_board' },

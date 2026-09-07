@@ -80,6 +80,7 @@ import salesTeamRoutes from './routes/salesTeam.js';
 import leaderboardRoutes from './routes/leaderboard.js';
 import myDayRoutes from './routes/myDay.js';
 import leadFollowUpRoutes from './routes/leadFollowUp.js';
+import followUpQueueRoutes from './routes/followUpQueue.js';
 import accountsDashboardRoutes from './routes/accountsDashboard.js';
 import exportRoutes from './routes/exports.js';
 import leadRoutingRoutes from './routes/leadRouting.js';
@@ -322,6 +323,9 @@ app.use('/api/sales-team', requireAuth, salesTeamRoutes);
 app.use('/api/leaderboard', requireAuth, leaderboardRoutes);
 app.use('/api/my-day', requireAuth, myDayRoutes);
 app.use('/api/lead-follow-up', requireAuth, leadFollowUpRoutes);
+// The unified follow-up queue: waiting-on-us, gone-quiet and scheduled
+// follow-ups in one ranked list — services/followUpQueue.js.
+app.use('/api/follow-up-queue', requireAuth, followUpQueueRoutes);
 // The invoicing day, on one page. Admin and accounts only, inside the router.
 app.use('/api/accounts-dashboard', requireAuth, accountsDashboardRoutes);
 // Downloading the table you are looking at, in any format, from any page.

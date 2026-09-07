@@ -23,7 +23,7 @@
 import { Router } from 'express';
 import { Types } from 'mongoose';
 import { Contract, Lead, SalesGoal, Task, Unit, WhatsAppMessage } from '../models/index.js';
-import { QUIET_DAYS, wentQuiet, quietDays } from '../services/chatFollowUp.js';
+import { QUIET_DAYS, wentQuiet, quietDays, isWaitingOnUs } from '../services/chatFollowUp.js';
 
 const router = Router();
 
@@ -136,7 +136,7 @@ router.get('/', async (req, res) => {
          const c = byPhone.get(lead.phoneNormalized);
          if (!c) continue;
 
-         const owed = Boolean(c.lastInboundAt) && (!c.lastOutboundAt || c.lastInboundAt > c.lastOutboundAt);
+         const owed = isWaitingOnUs(c);
          if (owed) {
             waiting.push({
                leadId: String(lead._id),

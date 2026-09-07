@@ -291,7 +291,7 @@ export default function Dashboard() {
               style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 1px 2px rgba(20,8,31,.05)', cursor: 'pointer' }}
               className="hover:shadow-md transition-shadow"
             >
-              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Leads gone quiet</div>
+              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Dormant leads</div>
               <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{quiet?.total ?? '—'}</div>
               <div style={{ fontSize: 11, color: '#4A4357', marginTop: 'auto' }}>
                 {quiet === undefined ? 'loading…' : quiet.total > 0 ? 'we spoke last, nothing came back — review & send →' : 'nobody, good sign'}
@@ -356,7 +356,7 @@ export default function Dashboard() {
         'quiet-leads': (
           <WidgetShell
             id="quiet-leads"
-            title="Leads gone quiet"
+            title="Dormant leads"
             subtitle="We spoke last, nothing came back"
             onDragStart={onDragStart}
             onDragOver={onDragOver}

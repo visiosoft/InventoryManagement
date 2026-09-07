@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { mediaFromRaw } from './whatsappMedia.js';
-import { wentQuiet, remindAt, PRESETS } from '../services/chatFollowUp.js';
+import { wentQuiet, remindAt, PRESETS, isWaitingOnUs } from '../services/chatFollowUp.js';
 import { WhatsAppMessage, Lead, Customer, User, AiBotThread, WhatsAppLabel, WhatsAppChatLabel, MessageTemplate } from '../models/index.js';
 import { sendWhatsAppText, sendWhatsAppMedia, sendWhatsAppLocation, uploadWhatsAppMedia, whatsappMediaKind, whatsappSendConfigured, whatsappSendMissing, listWhatsAppTemplates, sendWhatsAppTemplate } from '../services/whatsapp.js';
 import { pauseBotForHuman } from '../services/aiBot.js';
@@ -437,7 +437,7 @@ router.get('/conversations', async (req, res) => {
     const waitingCutoff = new Date(Date.now() - 30 * 864e5);
     const waitingOn = (r) => Boolean(r.lastInboundAt)
         && r.lastInboundAt > waitingCutoff
-        && (!r.lastOutboundAt || r.lastInboundAt > r.lastOutboundAt);
+        && isWaitingOnUs(r);
 
     /* Gone quiet: we spoke last and nothing has come back.
      *

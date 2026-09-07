@@ -2017,6 +2017,15 @@ const leadRoutingConfigSchema = new Schema({
      behind the default. Admin-configurable because the right number is a
      judgement about how big a backlog is still clearable, not a fact. */
   quietFollowUpDays: { type: Number, default: 3, min: 1, max: 30 },
+  /* The escalating cadence for the automated WhatsApp quiet-lead path —
+     "Follow-up 1 / 2 / 3", each so many days after we last spoke. Distinct
+     from FollowUpPlan.steps, which is the rep's manual chase (call, voice
+     note) before first contact; this only labels and recommends the
+     template sends. Read by services/followUpQueue.js. */
+  quietFollowUpStages: {
+    type: [{ afterDays: { type: Number, min: 1, max: 90 } }],
+    default: () => [{ afterDays: 3 }, { afterDays: 7 }, { afterDays: 14 }],
+  },
   /* A much earlier, much smaller warning than the one above: not a backlog to
      batch-review in a few days, a nudge to the rep themselves within hours,
      while there is still a good chance of catching the conversation warm.

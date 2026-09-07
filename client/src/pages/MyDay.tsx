@@ -194,7 +194,7 @@ export default function MyDay() {
       { label: `Leads given to you ${window}`, value: String(counter.leads), sub: `${data?.fresh.length ?? 0} not opened yet`, tone: 'neutral' as const },
       { label: `Units booked ${window}`, value: String(counter.booked), sub: counter.value ? `AED ${money(counter.value)} monthly value` : 'nothing signed yet', tone: 'good' as const },
       { label: 'Waiting on a reply', value: String(waiting.length), sub: waiting.length ? `longest ${waitLabel(waiting[0].since)}` : 'everyone has been answered', tone: waiting.length ? 'warn' as const : 'good' as const },
-      { label: `Quiet ${data?.quietAfterDays ?? 3}+ days`, value: String(data?.quiet.length ?? 0), sub: data?.quiet.length ? 'review & send a follow-up →' : 'we spoke last, nothing came back', tone: 'neutral' as const, key: 'quiet' as const },
+      { label: `Dormant ${data?.quietAfterDays ?? 3}+ days`, value: String(data?.quiet.length ?? 0), sub: data?.quiet.length ? 'review & send a follow-up →' : 'we spoke last, nothing came back', tone: 'neutral' as const, key: 'quiet' as const },
     ]
   }, [counter, range, waiting, data])
 
@@ -266,6 +266,8 @@ export default function MyDay() {
               <div style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 19, letterSpacing: '-.02em' }}>Quiet leads needing follow-up</div>
               <div style={{ fontSize: 12.5, color: INK3, marginTop: 1 }}>
                 {overdueReminders} overdue · {Math.max(0, reminders.length - overdueReminders)} later today
+                {' · '}
+                <Link to="/follow-ups" style={{ color: PURPLE, fontWeight: 600 }}>See full Follow-Ups queue →</Link>
               </div>
             </div>
             <div style={{ marginLeft: 'auto', fontFamily: DISPLAY, fontSize: 32, fontWeight: 700, letterSpacing: '-.03em', color: PURPLE }}>

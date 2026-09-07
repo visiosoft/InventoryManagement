@@ -67,6 +67,7 @@ import SignContract from './pages/SignContract'
 import SignMovingJob from './pages/SignMovingJob'
 import Dashboard from './pages/Dashboard'
 import MyDay from './pages/MyDay'
+import FollowUps from './pages/FollowUps'
 import Units from './pages/Units'
 import FloorMap from './pages/FloorMap'
 import Sites from './pages/Sites'
@@ -227,6 +228,9 @@ export default function App() {
             people it was built for and by an admin looking over a shoulder —
             and not by a role that has no leads at all. */}
         <Route path="/my-day" element={<PermGuard module="sales_board"><MyDay /></PermGuard>} />
+        {/* The follow-up queue. Same gate as My Day: reps and admins; the
+            server scopes a rep to their own leads regardless. */}
+        <Route path="/follow-ups" element={<PermGuard module="sales_board"><FollowUps /></PermGuard>} />
         <Route path="/accounts" element={<RoleGuard roles={['admin', 'accounts']}><AccountsDashboard /></RoleGuard>} />
         <Route path="/settings/lead-distribution" element={<AdminGuard><LeadDistribution /></AdminGuard>} />
         <Route path="/account" element={<MyAccount />} />

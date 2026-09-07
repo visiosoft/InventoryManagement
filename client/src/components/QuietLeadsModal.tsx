@@ -157,7 +157,7 @@ export default function QuietLeadsModal({
     : ''
 
   return (
-    <Modal open onClose={onClose} title={scope === 'mine' ? 'Leads that went quiet' : 'Quiet leads — all reps'} wide className="w-full sm:max-w-4xl">
+    <Modal open onClose={onClose} title={scope === 'mine' ? 'Dormant leads' : 'Dormant leads — all reps'} wide className="w-full sm:max-w-4xl">
       {result ? (
         <div style={{ background: CREAM, margin: -20, padding: 28 }}>
           <div className="flex items-center gap-3">
@@ -201,7 +201,7 @@ export default function QuietLeadsModal({
                 {scope === 'mine' ? 'Your leads' : 'All reps'} · quiet {effectiveDays}+ days
               </div>
               <h1 style={{ fontFamily: DISPLAY, fontWeight: 700, letterSpacing: '-.02em', fontSize: 26, margin: '6px 0 0', color: INK, lineHeight: 1.1 }}>
-                Bring back the leads that went quiet
+                Bring back your dormant leads
               </h1>
               <p className="text-xs mt-1.5" style={{ color: MUTED }}>
                 Nothing sends until you review it. Pick a template you already use, check who it fits, send.

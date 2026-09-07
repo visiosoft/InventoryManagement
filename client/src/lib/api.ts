@@ -546,3 +546,109 @@ export const leadFollowUpApi = {
       rows: { id: string; leadId: string | null; leadName: string; phone: string; sentByName: string; templateLabel: string; reason: string; daysQuietAtSend: number; status: string; error: string; sentAt: string; repliedAt: string | null }[]
     }>('/lead-follow-up/log', { params }).then((r) => r.data),
 }
+
+/* ── The follow-up queue ─────────────────────────────────────────────────────
+   One ranked list of who to contact and why. Three reasons, kept strictly
+   apart on every row — see server/src/services/followUpQueue.js. */
+
+export type FollowUpReason = 'sales_response_overdue' | 'customer_quiet' | 'manual_followup_due'
+export type FollowUpPriority = 'high' | 'medium' | 'low'
+
+export interface FollowUpQueueItem {
+  leadId: string
+  name: string
+  phone: string
+  phoneNormalized: string
+  ownerId: string | null
+  ownerName: string
+  leadStatus: string
+  source: string
+  temperature: 'hot' | 'warm' | 'cold' | null
+  lastInboundAt: string | null
+  lastOutboundAt: string | null
+  followUpAt: string | null
+  /** The rep's manual chase, when any attempt has been logged. */
+  sequence: { made: number; total: number; label: string; exhausted: boolean; nextChannel: string } | null
+  reason: FollowUpReason
+  reasonDetail: 'exhausted' | 'overdue_date' | null
+  /** What the wait is measured from. */
+  since: string
+  daysWaiting: number
+  priorityScore: number
+  priority: FollowUpPriority
+  /** Inside Meta's 24-hour window — a plain reply is still allowed. */
+  windowOpen: boolean
+  aiSummary: string | null
+  aiReason: string | null
+  nextAction: string | null
+  openQuestions: string[]
+  lastNudgedAt: string | null
+  lastNudgedBy: string
+  recentMessages: { text: string; at: string }[]
+  /** Which numbered template send comes next — only for a quiet lead. */
+  quietStage: { next: number; total: number; label: string } | null
+  sentSinceReply: number
+}
+
+export interface FollowUpQueueSummary {
+  total: number
+  needsReply: number
+  customerQuiet: number
+  manualDue: number
+  hot: number
+  aiSuggested: number
+  overdue: number
+}
+
+export type FollowUpTimelineEntry =
+  | { kind: 'send'; at: string; status: string; error: string; label: string; by: string; repliedAt: string | null }
+  | { kind: 'attempt'; at: string; channel: string; outcome: string; note: string; no: number }
+  | { kind: 'message'; at: string; direction: 'inbound' | 'outbound'; status: string; text: string }
+
+export interface FollowUpDetail {
+  item: FollowUpQueueItem | null
+  lead: {
+    leadId: string; name: string; phone: string; phoneNormalized: string; status: string
+    temperature: 'hot' | 'warm' | 'cold' | null; ownerName: string; source: string; followUpAt: string | null
+  }
+  windowOpen: boolean
+  lastInboundAt: string | null
+  timeline: FollowUpTimelineEntry[]
+}
+
+export interface FollowUpEligibilityRow {
+  leadId: string
+  name: string
+  phone: string
+  ok: boolean
+  reason: string | null
+  explanation: string
+  lastSentAt: string | null
+  preview: string
+}
+
+export const followUpQueueApi = {
+  list: (params?: { owner?: string }) =>
+    api.get<{ items: FollowUpQueueItem[]; summary: FollowUpQueueSummary; threshold: number; stages: { afterDays: number }[]; snapshotAt: string }>(
+      '/follow-up-queue', { params },
+    ).then((r) => r.data),
+  detail: (leadId: string) => api.get<FollowUpDetail>(`/follow-up-queue/${leadId}`).then((r) => r.data),
+  send: (leadId: string, body: { templateName: string; extraVars: string[]; snapshotAt?: string; confirmResend?: boolean; reason?: string; daysWaiting?: number }) =>
+    api.post<{ sent: { leadId: string; name: string; to: string }[]; failed: { leadId: string; name: string; reason: string }[]; template: string }>(
+      `/follow-up-queue/${leadId}/send`, body,
+    ).then((r) => r.data),
+  bulkValidate: (body: { leadIds: string[]; templateName: string; extraVars: string[]; snapshotAt?: string; confirmResend?: boolean }) =>
+    api.post<{ rows: FollowUpEligibilityRow[]; eligible: number; excluded: number; templateApproved: boolean }>(
+      '/follow-up-queue/bulk/validate', body,
+    ).then((r) => r.data),
+  bulkSend: (body: { leadIds: string[]; templateName: string; extraVars: string[]; snapshotAt?: string; confirmResend?: boolean; reasons: { leadId: string; reason: string; daysWaiting: number }[] }) =>
+    api.post<{
+      sent: { leadId: string; name: string; to: string }[]
+      failed: { leadId: string; name: string; reason: string }[]
+      excluded: { leadId: string; name: string; reason: string; explanation: string }[]
+      template?: string
+    }>('/follow-up-queue/bulk/send', body).then((r) => r.data),
+  config: () => api.get<{ quietFollowUpDays: number; stages: { afterDays: number }[] }>('/follow-up-queue/config').then((r) => r.data),
+  setConfig: (stages: number[]) =>
+    api.put<{ quietFollowUpDays: number; stages: { afterDays: number }[] }>('/follow-up-queue/config', { stages }).then((r) => r.data),
+}
