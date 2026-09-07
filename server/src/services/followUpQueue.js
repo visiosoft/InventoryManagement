@@ -1,6 +1,6 @@
 import { Types } from 'mongoose';
 import { Lead, LeadFollowUp, LeadRoutingConfig, WhatsAppMessage } from '../models/index.js';
-import { wentQuiet, isWaitingOnUs } from './chatFollowUp.js';
+import { isWaitingOnUs } from './chatFollowUp.js';
 import { windowOpenFor } from './whatsapp.js';
 import { quietThreshold, attachLastNudge, attachRecentMessages } from './leadFollowUp.js';
 import { resolvePlaceholderNames } from './leadNames.js';
@@ -8,99 +8,143 @@ import { summariseConversation } from './conversationSummary.js';
 import { getFollowUpPlan, sequenceState } from './followUpSequence.js';
 
 /**
- * The follow-up queue: one ranked list of who a rep should contact today,
- * and why.
+ * The follow-up queue: who to contact, and when.
  *
- * Nothing here detects anything new. Three signals already existed, each
- * computed in its own corner of the app and shown in its own place:
+ * Every open lead we are still talking to gets one next-contact date, and
+ * the queue is those dates sorted into days: now, today, tomorrow, in three
+ * days, in a week, later. A lead is never in front of a rep on a day it is
+ * not due — the thing that made the earlier version annoying for customers
+ * was that somebody messaged yesterday was back on the list this morning.
  *
- *   waiting on us     they wrote last, nobody answered  — the inbox's tab
- *   went quiet        we wrote last, they went silent   — the quiet-leads modal
- *   follow-up due     a date somebody set has arrived   — the rep's board
+ * The date comes from one of three places, kept strictly apart on every row:
  *
- * This merges them into one queue with one order, so a rep opens one page
- * and works down it. The three are kept strictly apart on every row —
- * "customer went quiet" and "we have not replied" are different failures
- * with different urgency, and a list that blurred them would teach people
- * to ignore both. A lead appears once, under whichever applies most.
+ *   waiting on us     they wrote last, nobody answered  → now
+ *   scheduled         a date somebody set               → that date
+ *   went quiet        we wrote last, they went silent   → the cadence:
+ *                     3 days after we last spoke, then 7 after the first
+ *                     follow-up, then 14 after the second, then a person
+ *                     decides (LeadRoutingConfig.quietFollowUpStages)
+ *
+ * The cadence is arithmetic on the send log — which follow-up this is, is
+ * counted from what actually went out since they last spoke, never stored,
+ * so it cannot drift. A send before the date is refused server-side.
  *
  * Priority is arithmetic on facts already on file (how long, how warm, is
  * there a live question), never a fresh model call — the AI's read is
  * attached from conversationSummary's own cache, and the queue still works
- * with it absent. See classify().
+ * with it absent.
  */
 
 export const REASONS = ['sales_response_overdue', 'manual_followup_due', 'customer_quiet'];
 export const CLOSED_STATUSES = ['won', 'lost', 'already_customer'];
 export const DEFAULT_STAGES = [{ afterDays: 3 }, { afterDays: 7 }, { afterDays: 14 }];
+export const WINDOWS = ['now', 'today', 'tomorrow', 'in_3_days', 'in_7_days', 'later', 'exhausted'];
 /** A second send to the same lead inside this window needs an explicit
- *  "yes, again" — the same 12 hours the quiet-leads modal warns at. */
+ *  "yes, again" even when the cadence says it is due. */
 export const RESEND_GUARD_HOURS = 12;
 
 const DAY = 864e5;
 const TZ_OFFSET_MS = 4 * 3600_000;
 
-/** Dubai midnight tonight — a follow-up dated today is due today, whatever
- *  hour it was set for. Same arithmetic as routes/myDay.js. */
+/** Dubai midnight tonight — same arithmetic as routes/myDay.js. */
 export function endOfLocalDay(now = new Date()) {
     const local = new Date(new Date(now).getTime() + TZ_OFFSET_MS);
     local.setUTCHours(23, 59, 59, 999);
     return new Date(local.getTime() - TZ_OFFSET_MS);
 }
+function localDayIndex(d) {
+    return Math.floor((new Date(d).getTime() + TZ_OFFSET_MS) / DAY);
+}
 
 /**
- * Which queue a lead belongs in, if any, and how urgently. Pure.
- *
- * `signals` is everything known about one lead and its conversation:
- *   { lastInboundAt, lastOutboundAt, leadStatus, followUpAt, sequenceExhaustedAt,
- *     temperature, nextAction, openQuestions }
- *
- * Returns null when there is nothing to do — closed lead, or a conversation
- * that is simply fine — otherwise { reason, reasonDetail, since, daysWaiting,
- * priorityScore, priority, windowOpen }.
- *
- * Precedence when more than one applies: waiting-on-us beats everything,
- * because it is the customer's time being wasted, not ours. Then a follow-up
- * somebody scheduled, then the silence nobody scheduled anything for.
- *
- * The score is deliberately not just time. A hot lead quiet for two days
- * outranks a cold one quiet for ten: base by reason, plus a capped amount
- * for how long, plus the temperature the AI read, plus a little for a live
- * unanswered question. All of those are already on file; none of this asks
- * the model anything.
+ * Which day-bucket a next-contact date falls in, seen from `now`, in Dubai
+ * days. Anything already past is today's work.
  */
-export function classify(signals = {}, { now = new Date(), quietAfterDays = 3, dueBefore = null } = {}) {
+export function windowFor(nextContactAt, now = new Date()) {
+    if (!nextContactAt) return 'today';
+    const diff = localDayIndex(nextContactAt) - localDayIndex(now);
+    if (diff <= 0) return 'today';
+    if (diff === 1) return 'tomorrow';
+    if (diff <= 3) return 'in_3_days';
+    if (diff <= 7) return 'in_7_days';
+    return 'later';
+}
+
+/**
+ * When a quiet lead is next due, from the cadence.
+ *
+ * `sentSinceReply` follow-ups have gone out since they last spoke; the gap
+ * to the next one is that stage's afterDays, counted from whichever was
+ * later — our last message in the chat, or our last follow-up send. Past
+ * the last stage there is no next date: a person decides.
+ */
+export function nextQuietContact({ lastOutboundAt, lastSentAt, sentSinceReply = 0, stages = DEFAULT_STAGES }) {
+    const list = stages?.length ? stages : DEFAULT_STAGES;
+    if (sentSinceReply >= list.length) return { nextContactAt: null, exhausted: true };
+    const base = [lastOutboundAt, lastSentAt].filter(Boolean).map((d) => new Date(d).getTime());
+    if (!base.length) return { nextContactAt: null, exhausted: false };
+    const gap = Number(list[sentSinceReply]?.afterDays) || DEFAULT_STAGES[Math.min(sentSinceReply, 2)].afterDays;
+    return { nextContactAt: new Date(Math.max(...base) + gap * DAY), exhausted: false };
+}
+
+/**
+ * Where one lead sits, if anywhere, and how urgently. Pure.
+ *
+ * `signals`: { lastInboundAt, lastOutboundAt, leadStatus, followUpAt,
+ * sequenceExhaustedAt, temperature, nextAction, openQuestions,
+ * lastSentAt, sentSinceReply }
+ *
+ * Returns null for a closed lead or one there is nothing to do about
+ * (never spoken to), otherwise { reason, reasonDetail, since, daysWaiting,
+ * nextContactAt, window, priorityScore, priority, windowOpen }.
+ *
+ * Precedence: waiting-on-us beats everything — it is the customer's time
+ * being wasted. Then a date somebody set, then the cadence.
+ */
+export function classify(signals = {}, { now = new Date(), stages = DEFAULT_STAGES } = {}) {
     const status = signals.leadStatus || '';
     if (!status || CLOSED_STATUSES.includes(status)) return null;
 
     const nowT = new Date(now).getTime();
-    const dueT = dueBefore ? new Date(dueBefore).getTime() : endOfLocalDay(now).getTime();
-
     let reason = null;
     let reasonDetail = null;
     let since = null;
+    let nextContactAt = null;
+    let window = null;
 
     if (isWaitingOnUs(signals)) {
         reason = 'sales_response_overdue';
         since = signals.lastInboundAt;
+        nextContactAt = new Date(now);
+        window = 'now';
     } else if (signals.sequenceExhaustedAt) {
         reason = 'manual_followup_due';
         reasonDetail = 'exhausted';
         since = signals.sequenceExhaustedAt;
-    } else if (signals.followUpAt && new Date(signals.followUpAt).getTime() <= dueT) {
+        nextContactAt = new Date(now);
+        window = 'today';
+    } else if (signals.followUpAt) {
         reason = 'manual_followup_due';
-        reasonDetail = 'overdue_date';
+        reasonDetail = new Date(signals.followUpAt).getTime() <= endOfLocalDay(now).getTime() ? 'overdue_date' : 'scheduled';
         since = signals.followUpAt;
-    } else if (wentQuiet({
-        lastInboundAt: signals.lastInboundAt,
-        lastOutboundAt: signals.lastOutboundAt,
-        leadStatus: status,
-        followUpAt: signals.followUpAt,
-        now,
-        days: quietAfterDays,
-    })) {
+        nextContactAt = new Date(signals.followUpAt);
+        window = windowFor(nextContactAt, now);
+    } else if (signals.lastOutboundAt) {
+        // We spoke last. Where they are in the cadence decides the day.
+        const q = nextQuietContact({
+            lastOutboundAt: signals.lastOutboundAt, lastSentAt: signals.lastSentAt,
+            sentSinceReply: signals.sentSinceReply || 0, stages,
+        });
         reason = 'customer_quiet';
-        since = signals.lastOutboundAt;
+        since = [signals.lastOutboundAt, signals.lastSentAt].filter(Boolean).sort().pop();
+        if (q.exhausted) {
+            reasonDetail = 'exhausted';
+            nextContactAt = null;
+            window = 'exhausted';
+        } else {
+            nextContactAt = q.nextContactAt;
+            window = windowFor(nextContactAt, now);
+        }
     }
     if (!reason) return null;
 
@@ -119,6 +163,8 @@ export function classify(signals = {}, { now = new Date(), quietAfterDays = 3, d
         reasonDetail,
         since,
         daysWaiting,
+        nextContactAt,
+        window,
         priorityScore: score,
         priority: priorityOf(score),
         windowOpen: windowOpenFor({ lastInboundAt: signals.lastInboundAt, now }),
@@ -131,36 +177,38 @@ export function priorityOf(score) {
 }
 
 /**
- * Which numbered follow-up the next template send would be, from how many
- * have gone out since the customer last spoke — derived, never stored, so it
- * cannot drift from what was actually sent. Capped at the last stage: a rep
- * who sends a fourth should not read "Follow-up 4 of 3".
+ * Which numbered follow-up the next send would be. Past the last stage it
+ * says so rather than counting on.
  */
 export function stageFor(sentSinceReply, stages = DEFAULT_STAGES) {
-    const total = stages.length || DEFAULT_STAGES.length;
-    const next = Math.min((Number(sentSinceReply) || 0) + 1, total);
-    return { next, total, label: `Follow-up ${next} of ${total}` };
+    const total = stages?.length || DEFAULT_STAGES.length;
+    const sent = Number(sentSinceReply) || 0;
+    if (sent >= total) return { next: total, total, label: `All ${total} follow-ups sent`, exhausted: true };
+    return { next: sent + 1, total, label: `Follow-up ${sent + 1} of ${total}`, exhausted: false };
 }
 
-/** The counts the page's tiles and tab badges show. Pure. */
+/** The counts the page's cards and tabs show. Pure. */
 export function summarise(items = []) {
     const out = {
         total: items.length,
+        due: 0,          // now + today: the work in front of you
         needsReply: 0,
         customerQuiet: 0,
         manualDue: 0,
         hot: 0,
         aiSuggested: 0,
-        // Past its day, not merely due today: a scheduled follow-up whose date
-        // has gone by, or a customer left waiting for more than a day.
         overdue: 0,
+        windows: { now: 0, today: 0, tomorrow: 0, in_3_days: 0, in_7_days: 0, later: 0, exhausted: 0 },
     };
     for (const it of items) {
+        if (it.window in out.windows) out.windows[it.window] += 1;
+        const dueNow = it.window === 'now' || it.window === 'today' || it.window === 'exhausted';
+        if (dueNow) out.due += 1;
         if (it.reason === 'sales_response_overdue') out.needsReply += 1;
-        else if (it.reason === 'customer_quiet') out.customerQuiet += 1;
-        else if (it.reason === 'manual_followup_due') out.manualDue += 1;
-        if (it.temperature === 'hot') out.hot += 1;
-        if (it.nextAction) out.aiSuggested += 1;
+        else if (it.reason === 'customer_quiet' && dueNow) out.customerQuiet += 1;
+        else if (it.reason === 'manual_followup_due' && dueNow) out.manualDue += 1;
+        if (it.temperature === 'hot' && dueNow) out.hot += 1;
+        if (it.nextAction && dueNow) out.aiSuggested += 1;
         if ((it.reason === 'manual_followup_due' && it.reasonDetail === 'overdue_date' && it.daysWaiting >= 1)
             || (it.reason === 'sales_response_overdue' && it.daysWaiting >= 1)) out.overdue += 1;
     }
@@ -176,16 +224,18 @@ export function summarise(items = []) {
  *   opted_out               asked not to be contacted
  *   replied_since_snapshot  they wrote back after the list was drawn
  *   sent_recently           a send went out within RESEND_GUARD_HOURS
- *   template_required       no approved template chosen (free text is never
- *                           sent from here)
+ *   not_due_yet             the cadence says a later day
+ *   exhausted               every stage has been sent; a person decides
+ *   template_required       no approved template chosen
  *
- * The same check runs for a single send, for a bulk preview, and again at
- * the moment of a bulk send — so the review screen and the send can never
- * disagree, and a click on an excluded row does nothing.
+ * `confirmResend` overrides sent_recently and not_due_yet — never the rest.
+ * The same check runs for a single send, a bulk preview, and again at the
+ * moment of a bulk send.
  */
 export function validateForSend(item = {}, {
     template = null, now = new Date(), snapshotAt = null,
     lastSentAt = null, latestInboundAt = null, confirmResend = false,
+    nextContactAt = null, exhausted = false,
 } = {}) {
     if (!item.leadStatus || CLOSED_STATUSES.includes(item.leadStatus)) return { ok: false, reason: 'closed_lead' };
     if (!item.phone && !item.phoneNormalized) return { ok: false, reason: 'no_phone' };
@@ -195,20 +245,21 @@ export function validateForSend(item = {}, {
     if (latestInboundAt) {
         const inT = new Date(latestInboundAt).getTime();
         if (snapshotAt && inT > new Date(snapshotAt).getTime()) return { ok: false, reason: 'replied_since_snapshot' };
-        // A quiet lead is only quiet while we spoke last.
         if (item.reason === 'customer_quiet' && item.since && inT > new Date(item.since).getTime()) {
             return { ok: false, reason: 'replied_since_snapshot' };
         }
     }
-    if (lastSentAt && !confirmResend) {
-        if (nowT - new Date(lastSentAt).getTime() < RESEND_GUARD_HOURS * 3600_000) return { ok: false, reason: 'sent_recently' };
+    if (!confirmResend) {
+        if (lastSentAt && nowT - new Date(lastSentAt).getTime() < RESEND_GUARD_HOURS * 3600_000) return { ok: false, reason: 'sent_recently' };
+        if (exhausted) return { ok: false, reason: 'exhausted' };
+        if (nextContactAt && new Date(nextContactAt).getTime() > endOfLocalDay(now).getTime()) return { ok: false, reason: 'not_due_yet' };
     }
     if (!template?.name) return { ok: false, reason: 'template_required' };
     return { ok: true, reason: null };
 }
 
 /** Plain-English version of a validation reason, for the review table. */
-export function explainReason(code, { lastSentAt = null, now = new Date() } = {}) {
+export function explainReason(code, { lastSentAt = null, nextContactAt = null, now = new Date() } = {}) {
     switch (code) {
         case 'closed_lead': return 'Lead is closed';
         case 'no_phone': return 'No phone number on file';
@@ -218,6 +269,11 @@ export function explainReason(code, { lastSentAt = null, now = new Date() } = {}
             const h = lastSentAt ? Math.max(1, Math.round((new Date(now) - new Date(lastSentAt)) / 3600_000)) : null;
             return h ? `Already messaged ${h}h ago` : 'Already messaged recently';
         }
+        case 'not_due_yet': {
+            const d = nextContactAt ? new Date(nextContactAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Dubai' }) : '';
+            return d ? `Not due until ${d}` : 'Not due yet';
+        }
+        case 'exhausted': return 'Every follow-up in the cadence has been sent';
         case 'template_required': return 'An approved template is required';
         default: return code || '';
     }
@@ -234,8 +290,7 @@ export async function setQuietStages(input) {
     const days = (Array.isArray(input) ? input : [])
         .map((s) => Math.round(Number(typeof s === 'object' ? s?.afterDays : s)))
         .filter((n) => Number.isFinite(n) && n >= 1 && n <= 90)
-        .slice(0, 6)
-        .sort((a, b) => a - b);
+        .slice(0, 6);
     const stages = days.length ? days.map((afterDays) => ({ afterDays })) : DEFAULT_STAGES;
     await LeadRoutingConfig.findOneAndUpdate({}, { $set: { quietFollowUpStages: stages } }, { upsert: true });
     return stages;
@@ -259,17 +314,37 @@ async function conversationTimes(phones) {
 }
 
 /**
- * The AI's read, from conversationSummary's own cache — the same call the
- * quiet-leads modal makes, exposing a little more of what it already
- * returns. A thread the model has never seen, or one it cannot read right
- * now, gets nulls: the queue never waits on the model and never fails
- * because of it.
+ * Per lead: when we last sent a follow-up, and how many have gone out since
+ * the customer last spoke. One query for the batch. `lastInboundByLead` is
+ * a Map of leadId → time, so "since they last spoke" is per lead.
+ */
+async function sendHistoryByLead(leadIds, lastInboundByLead) {
+    if (!leadIds.length) return new Map();
+    const rows = await LeadFollowUp.find({ lead: { $in: leadIds.map((id) => new Types.ObjectId(id)) }, status: 'sent' })
+        .select('lead sentAt').lean();
+    const out = new Map();
+    for (const r of rows) {
+        const id = String(r.lead);
+        const row = out.get(id) || { lastSentAt: null, sentSinceReply: 0 };
+        const t = new Date(r.sentAt).getTime();
+        if (!row.lastSentAt || t > new Date(row.lastSentAt).getTime()) row.lastSentAt = r.sentAt;
+        if (t > (lastInboundByLead.get(id) || 0)) row.sentSinceReply += 1;
+        out.set(id, row);
+    }
+    return out;
+}
+
+/**
+ * The AI's read, from conversationSummary's own cache — nulls when the
+ * model has never seen the thread or cannot read it now. The queue never
+ * waits on the model and never fails because of it.
  */
 async function attachAi(items) {
     return Promise.all(items.map(async (it) => {
+        const blank = { aiSummary: null, aiReason: null, nextAction: null, openQuestions: [], temperature: it.temperature || null };
         try {
             const s = await summariseConversation(it.phoneNormalized);
-            if (!s?.configured || s.empty || s.error) return { ...it, aiSummary: null, aiReason: null, nextAction: null, openQuestions: [], temperature: it.temperature || null };
+            if (!s?.configured || s.empty || s.error) return { ...it, ...blank };
             return {
                 ...it,
                 aiSummary: s.headline || null,
@@ -279,32 +354,18 @@ async function attachAi(items) {
                 temperature: s.temperature || it.temperature || null,
             };
         } catch {
-            return { ...it, aiSummary: null, aiReason: null, nextAction: null, openQuestions: [], temperature: it.temperature || null };
+            return { ...it, ...blank };
         }
     }));
 }
 
-/** How many template sends have gone out to each lead since the customer
- *  last spoke — the derived "which follow-up is next". One grouped query. */
-async function sentSinceReplyByLead(items) {
-    if (!items.length) return new Map();
-    const ids = items.map((it) => new Types.ObjectId(it.leadId));
-    const rows = await LeadFollowUp.find({ lead: { $in: ids }, status: 'sent' }).select('lead sentAt').lean();
-    const lastIn = new Map(items.map((it) => [it.leadId, it.lastInboundAt ? new Date(it.lastInboundAt).getTime() : 0]));
-    const counts = new Map();
-    for (const r of rows) {
-        const id = String(r.lead);
-        if (new Date(r.sentAt).getTime() > (lastIn.get(id) || 0)) counts.set(id, (counts.get(id) || 0) + 1);
-    }
-    return counts;
-}
-
 /**
- * The queue itself. One owner's, or everybody's for admin (ownerId null).
- * `leadIds` narrows it to specific leads — the detail view asks for one.
+ * The queue itself — every open lead we are still in contact with, each
+ * with its next-contact date and day-bucket. One owner's, or everybody's
+ * for admin (ownerId null). `leadIds` narrows it to specific leads.
  */
 export async function buildQueue({ ownerId = null, leadIds = null, now = new Date() } = {}) {
-    const [threshold, stages, plan] = await Promise.all([quietThreshold(), quietStages(), getFollowUpPlan().catch(() => null)]);
+    const [stages, plan] = await Promise.all([quietStages(), getFollowUpPlan().catch(() => null)]);
 
     const filter = { status: { $nin: CLOSED_STATUSES } };
     if (ownerId) filter.owner = ownerId;
@@ -318,18 +379,26 @@ export async function buildQueue({ ownerId = null, leadIds = null, now = new Dat
 
     const phones = [...new Set(leads.map((l) => l.phoneNormalized).filter(Boolean))];
     const times = await conversationTimes(phones);
+    const lastInboundByLead = new Map(leads.map((l) => {
+        const c = times.get(l.phoneNormalized);
+        return [String(l._id), c?.lastInboundAt ? new Date(c.lastInboundAt).getTime() : 0];
+    }));
+    const history = await sendHistoryByLead(leads.map((l) => String(l._id)), lastInboundByLead);
 
     let items = [];
     for (const lead of leads) {
         const c = times.get(lead.phoneNormalized) || {};
+        const h = history.get(String(lead._id)) || { lastSentAt: null, sentSinceReply: 0 };
         const verdict = classify({
             lastInboundAt: c.lastInboundAt || null,
             lastOutboundAt: c.lastOutboundAt || null,
+            lastSentAt: h.lastSentAt,
+            sentSinceReply: h.sentSinceReply,
             leadStatus: lead.status,
             followUpAt: lead.followUpAt,
             sequenceExhaustedAt: lead.sequenceExhaustedAt,
             temperature: lead.temperature || null,
-        }, { now, quietAfterDays: threshold });
+        }, { now, stages });
         if (!verdict) continue;
 
         items.push({
@@ -344,8 +413,11 @@ export async function buildQueue({ ownerId = null, leadIds = null, now = new Dat
             temperature: lead.temperature || null,
             lastInboundAt: c.lastInboundAt || null,
             lastOutboundAt: c.lastOutboundAt || null,
+            lastSentAt: h.lastSentAt,
+            sentSinceReply: h.sentSinceReply,
             followUpAt: lead.followUpAt || null,
             sequence: (lead.attempts || []).length && plan ? sequenceState(lead, plan) : null,
+            quietStage: stageFor(h.sentSinceReply, stages),
             ...verdict,
         });
     }
@@ -353,31 +425,26 @@ export async function buildQueue({ ownerId = null, leadIds = null, now = new Dat
 
     await resolvePlaceholderNames(items, 'name');
     items = await attachAi(items);
-    // The AI's temperature and open questions change the score, so re-run the
-    // arithmetic now that they are on the row.
+    // The AI's temperature and open questions change the score, so re-run
+    // the arithmetic now that they are on the row.
     for (const it of items) {
-        const again = classify(it, { now, quietAfterDays: threshold });
+        const again = classify(it, { now, stages });
         if (again) { it.priorityScore = again.priorityScore; it.priority = again.priority; }
     }
     items = await attachLastNudge(items);
     items = await attachRecentMessages(items);
 
-    const sentCounts = await sentSinceReplyByLead(items);
-    for (const it of items) {
-        const sent = sentCounts.get(it.leadId) || 0;
-        it.quietStage = it.reason === 'customer_quiet' ? stageFor(sent, stages) : null;
-        it.sentSinceReply = sent;
-    }
-
-    items.sort((a, b) => b.priorityScore - a.priorityScore || new Date(a.since) - new Date(b.since));
+    const order = { now: 0, today: 1, exhausted: 2, tomorrow: 3, in_3_days: 4, in_7_days: 5, later: 6 };
+    items.sort((a, b) => (order[a.window] - order[b.window])
+        || (b.priorityScore - a.priorityScore)
+        || (new Date(a.since) - new Date(b.since)));
     return items;
 }
 
 /**
- * Everything the drawer shows for one lead: the queue row if it is in the
- * queue (it may not be — a lead just sent to drops out), the lead itself
- * either way, and a merged timeline of what was sent, what was tried and
- * what was said.
+ * Everything the drawer shows for one lead: the queue row if it has one,
+ * the lead itself either way, and a merged timeline of what was sent,
+ * what was tried and what was said.
  */
 export async function detailFor({ leadId, ownerId = null, now = new Date() }) {
     const lead = await Lead.findById(leadId)
@@ -436,9 +503,8 @@ export async function detailFor({ leadId, ownerId = null, now = new Date() }) {
 
 /**
  * Per-lead eligibility for a send — single or bulk — with the facts the
- * check needs gathered in two grouped queries rather than two per lead. The
- * caller passes the template it resolved (or null), and gets back one row
- * per requested id, in order, whether or not the lead was found.
+ * check needs gathered in grouped queries. Returns one row per requested
+ * id, in order, whether or not the lead was found.
  */
 export async function eligibilityFor(leadIds, {
     template = null, extraVars = [], snapshotAt = null, confirmResend = false, ownerId = null, now = new Date(),
@@ -446,37 +512,43 @@ export async function eligibilityFor(leadIds, {
     const ids = leadIds.filter((id) => Types.ObjectId.isValid(id));
     const filter = { _id: { $in: ids } };
     if (ownerId) filter.owner = ownerId;
-    const leads = await Lead.find(filter)
-        .select('fullName phone phoneNormalized whatsappProfileName status owner')
-        .lean();
+    const [leads, stages] = await Promise.all([
+        Lead.find(filter).select('fullName phone phoneNormalized whatsappProfileName status owner followUpAt').lean(),
+        quietStages(),
+    ]);
     const byId = new Map(leads.map((l) => [String(l._id), l]));
 
     const phones = [...new Set(leads.map((l) => l.phoneNormalized).filter(Boolean))];
-    const [times, lastSends] = await Promise.all([
-        conversationTimes(phones),
-        LeadFollowUp.aggregate([
-            { $match: { lead: { $in: leads.map((l) => l._id) }, status: 'sent' } },
-            { $sort: { sentAt: -1 } },
-            { $group: { _id: '$lead', sentAt: { $first: '$sentAt' } } },
-        ]),
-    ]);
-    const lastSentByLead = new Map(lastSends.map((r) => [String(r._id), r.sentAt]));
+    const times = await conversationTimes(phones);
+    const lastInboundByLead = new Map(leads.map((l) => {
+        const c = times.get(l.phoneNormalized);
+        return [String(l._id), c?.lastInboundAt ? new Date(c.lastInboundAt).getTime() : 0];
+    }));
+    const history = await sendHistoryByLead(leads.map((l) => String(l._id)), lastInboundByLead);
 
     return leadIds.map((leadId) => {
         const lead = byId.get(String(leadId));
-        if (!lead) return { leadId, ok: false, reason: 'not_found', explanation: 'Lead not found or not yours', name: '', preview: '' };
+        if (!lead) return { leadId, ok: false, reason: 'not_found', explanation: 'Lead not found or not yours', name: '', phone: '', lastSentAt: null, preview: '' };
         const c = times.get(lead.phoneNormalized) || {};
+        const h = history.get(String(lead._id)) || { lastSentAt: null, sentSinceReply: 0 };
         const firstName = String(lead.fullName || lead.whatsappProfileName || '').trim().split(/\s+/)[0] || '';
+
+        const waiting = isWaitingOnUs(c);
+        const q = waiting ? { nextContactAt: null, exhausted: false } : nextQuietContact({
+            lastOutboundAt: c.lastOutboundAt, lastSentAt: h.lastSentAt, sentSinceReply: h.sentSinceReply, stages,
+        });
         const item = {
             leadStatus: lead.status,
             phone: lead.phone,
             phoneNormalized: lead.phoneNormalized,
-            reason: isWaitingOnUs(c) ? 'sales_response_overdue' : 'customer_quiet',
-            since: c.lastOutboundAt || null,
+            reason: waiting ? 'sales_response_overdue' : 'customer_quiet',
+            since: [c.lastOutboundAt, h.lastSentAt].filter(Boolean).sort().pop() || null,
         };
-        const lastSentAt = lastSentByLead.get(String(lead._id)) || null;
         const verdict = validateForSend(item, {
-            template, now, snapshotAt, lastSentAt, latestInboundAt: c.lastInboundAt || null, confirmResend,
+            template, now, snapshotAt,
+            lastSentAt: h.lastSentAt, latestInboundAt: c.lastInboundAt || null, confirmResend,
+            // A date somebody set wins over the cadence.
+            nextContactAt: lead.followUpAt || q.nextContactAt, exhausted: q.exhausted,
         });
         const preview = template?.bodyText
             ? [firstName || 'there', ...extraVars.map((v) => String(v ?? ''))]
@@ -488,8 +560,8 @@ export async function eligibilityFor(leadIds, {
             phone: lead.phone || lead.phoneNormalized,
             ok: verdict.ok,
             reason: verdict.reason,
-            explanation: verdict.ok ? '' : explainReason(verdict.reason, { lastSentAt, now }),
-            lastSentAt,
+            explanation: verdict.ok ? '' : explainReason(verdict.reason, { lastSentAt: h.lastSentAt, nextContactAt: lead.followUpAt || q.nextContactAt, now }),
+            lastSentAt: h.lastSentAt,
             preview,
         };
     });

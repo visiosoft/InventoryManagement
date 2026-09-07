@@ -59,7 +59,16 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
   const extraFilled = extraVars.every((v) => v.trim().length > 0)
 
   const canReplyInChat = Boolean(item && item.reason === 'sales_response_overdue' && data?.windowOpen)
-  const recentSend = item?.lastNudgedAt && Date.now() - new Date(item.lastNudgedAt).getTime() < 12 * 3600_000
+  const recentSend = Boolean(item?.lastNudgedAt && Date.now() - new Date(item.lastNudgedAt).getTime() < 12 * 3600_000)
+  // Not due yet per the cadence, or the cadence is spent: the server refuses
+  // unless the person explicitly overrides, and the drawer says why first.
+  const notDue = Boolean(item && item.window !== 'now' && item.window !== 'today')
+  const needsOverride = recentSend || notDue
+  const overrideText = !item ? '' : recentSend
+    ? `⚠ Already messaged ${agoText(item.lastNudgedAt)}${item.lastNudgedBy ? ` by ${item.lastNudgedBy}` : ''}. Send again anyway.`
+    : item.window === 'exhausted'
+      ? '⚠ Every follow-up in the cadence has gone out with no reply. Send one more anyway.'
+      : `⚠ Not due until ${item.nextContactAt ? new Date(item.nextContactAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : 'later'} — messaging sooner risks annoying them. Send now anyway.`
 
   const send = useMutation({
     mutationFn: () => followUpQueueApi.send(leadId, {
@@ -70,7 +79,8 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
     onSuccess: (d) => { setError(''); setSentTo(d.sent[0]?.to || lead?.phone || ''); onChanged(); refetch() },
     onError: (e: unknown) => {
       const reason = (e as { response?: { data?: { reason?: string } } })?.response?.data?.reason
-      setError(reason === 'sent_recently' ? `${apiError(e)} — tick "send again anyway" to override.` : apiError(e))
+      const overridable = reason === 'sent_recently' || reason === 'not_due_yet' || reason === 'exhausted'
+      setError(overridable ? `${apiError(e)} — tick the override to send anyway.` : apiError(e))
     },
   })
 
@@ -128,7 +138,7 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
               {[
                 ['Last from them', item.lastInboundAt ? agoText(item.lastInboundAt) : 'never'],
                 ['Last from us', item.lastOutboundAt ? agoText(item.lastOutboundAt) : 'never'],
-                ['Stage', item.quietStage?.label || item.sequence?.label || (item.reason === 'sales_response_overdue' ? 'Awaiting our reply' : '—')],
+                ['Next contact', item.window === 'now' ? 'Now' : item.window === 'exhausted' ? 'Decide' : item.nextContactAt ? new Date(item.nextContactAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : 'Today'],
               ].map(([k, v]) => (
                 <div key={k} className="rounded-xl border px-2 py-2" style={{ borderColor: HAIRLINE }}>
                   <div className="text-[10px] font-semibold uppercase" style={{ letterSpacing: '.06em', color: MUTED }}>{k}</div>
@@ -137,20 +147,21 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
               ))}
             </div>
           )}
-          {item?.quietStage && (
-            <div className="flex items-center gap-2">
+          {item && item.reason === 'customer_quiet' && (
+            <div className="flex items-center gap-2 flex-wrap">
               {Array.from({ length: item.quietStage.total }).map((_, i) => {
                 const n = i + 1
-                const done = n < item.quietStage!.next
-                const current = n === item.quietStage!.next
+                const done = item.quietStage.exhausted || n < item.quietStage.next
+                const current = !item.quietStage.exhausted && n === item.quietStage.next
                 return (
                   <div key={n} className="flex items-center gap-2">
                     <span className="grid place-items-center rounded-full text-[10px] font-bold" style={{ width: 22, height: 22, background: done ? '#DCFCE7' : current ? PURPLE : '#EEE9F6', color: done ? '#047857' : current ? '#fff' : MUTED }}>{done ? <Check size={12} /> : n}</span>
                     <span className="text-xs" style={{ color: current ? INK : MUTED, fontWeight: current ? 600 : 400 }}>Follow-up {n}</span>
-                    {n < item.quietStage!.total && <span style={{ width: 16, height: 1, background: HAIRLINE }} />}
+                    {n < item.quietStage.total && <span style={{ width: 16, height: 1, background: HAIRLINE }} />}
                   </div>
                 )
               })}
+              {item.quietStage.exhausted && <span className="text-xs font-semibold" style={{ color: '#8A5A00' }}>· all sent, no reply — decide</span>}
             </div>
           )}
 
@@ -222,14 +233,14 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
                       </div>
                     </div>
                   )}
-                  {recentSend && (
+                  {needsOverride && (
                     <label className="flex items-start gap-2 text-xs rounded-lg px-3 py-2 cursor-pointer select-none" style={{ background: '#FFF1CC', color: '#8A5A00' }}>
                       <input type="checkbox" checked={confirmResend} onChange={(e) => setConfirmResend(e.target.checked)} className="mt-0.5" style={{ accentColor: PURPLE }} />
-                      <span>⚠ Already messaged {agoText(item.lastNudgedAt)}{item.lastNudgedBy ? ` by ${item.lastNudgedBy}` : ''}. Send again anyway.</span>
+                      <span>{overrideText}</span>
                     </label>
                   )}
                   {error && <p className="text-xs" style={{ color: '#B91C1C' }}>{error}</p>}
-                  <button type="button" disabled={!templateName || !extraFilled || send.isPending || (Boolean(recentSend) && !confirmResend)} onClick={() => send.mutate()}
+                  <button type="button" disabled={!templateName || !extraFilled || send.isPending || (needsOverride && !confirmResend)} onClick={() => send.mutate()}
                     className="inline-flex items-center gap-1.5 h-10 px-5 rounded-lg text-sm font-bold cursor-pointer disabled:opacity-40"
                     style={{ background: '#16A34A', color: '#fff' }}>
                     <MessageCircle size={15} /> {send.isPending ? 'Sending…' : 'Send via WhatsApp'}

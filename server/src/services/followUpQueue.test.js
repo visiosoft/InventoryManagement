@@ -1,41 +1,42 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classify, summarise, validateForSend, stageFor, priorityOf } from './followUpQueue.js';
+import { classify, summarise, validateForSend, stageFor, priorityOf, windowFor, nextQuietContact } from './followUpQueue.js';
 import { isWaitingOnUs } from './chatFollowUp.js';
 import { windowOpenFor } from './whatsapp.js';
 
 /**
  * The queue's decisions, pinned against the scenarios the spec was written
  * around. No database: classify() and validateForSend() are pure on purpose,
- * because whether a customer gets messaged should be checkable by reading a
- * test, not by watching production.
+ * because whether — and when — a customer gets messaged should be checkable
+ * by reading a test, not by watching production.
  */
 
-const NOW = new Date('2026-09-07T10:00:00.000Z');
+const NOW = new Date('2026-09-07T10:00:00.000Z'); // 14:00 Dubai
 const hoursAgo = (h) => new Date(NOW.getTime() - h * 3600_000);
 const daysAgo = (d) => hoursAgo(d * 24);
+const daysAhead = (d) => hoursAgo(-d * 24);
 
-test('scenario 1: they asked, we answered, they went quiet → customer_quiet', () => {
+test('scenario 1: they asked, we answered, they went quiet → customer_quiet, due today', () => {
     const v = classify({ lastInboundAt: daysAgo(4), lastOutboundAt: daysAgo(3), leadStatus: 'contacted' }, { now: NOW });
     assert.equal(v.reason, 'customer_quiet');
+    assert.equal(v.window, 'today');
     assert.equal(v.daysWaiting, 3);
 });
 
-test('scenario 2: they asked, nobody answered → sales_response_overdue, never customer_quiet', () => {
+test('scenario 2: they asked, nobody answered → sales_response_overdue, now — never customer_quiet', () => {
     const v = classify({ lastInboundAt: hoursAgo(2), lastOutboundAt: daysAgo(5), leadStatus: 'contacted' }, { now: NOW });
     assert.equal(v.reason, 'sales_response_overdue');
-    // Two hours is still inside Meta's window: the right move is a plain reply.
+    assert.equal(v.window, 'now');
     assert.equal(v.windowOpen, true);
 });
 
-test('scenario 3: they replied → out of the queue entirely', () => {
-    // Replied an hour ago to our message from yesterday — nothing is owed and nothing is quiet.
-    const v = classify({ lastInboundAt: hoursAgo(1), lastOutboundAt: daysAgo(1), leadStatus: 'contacted' }, { now: NOW });
-    // They wrote last, so this is waiting-on-us — the queue does show it, as the reply-needed case.
-    assert.equal(v.reason, 'sales_response_overdue');
-    // But once WE reply, it is gone.
+test('scenario 3: once we reply, a waiting customer is no longer waiting', () => {
+    const before = classify({ lastInboundAt: hoursAgo(1), lastOutboundAt: daysAgo(1), leadStatus: 'contacted' }, { now: NOW });
+    assert.equal(before.reason, 'sales_response_overdue');
     const after = classify({ lastInboundAt: hoursAgo(1), lastOutboundAt: hoursAgo(0.5), leadStatus: 'contacted' }, { now: NOW });
-    assert.equal(after, null);
+    // We spoke last half an hour ago: not waiting, not due — first follow-up is 3 days out.
+    assert.equal(after.reason, 'customer_quiet');
+    assert.equal(after.window, 'in_3_days');
 });
 
 test('scenarios 5 & 6: converted or lost → nothing, whatever the conversation looks like', () => {
@@ -43,6 +44,10 @@ test('scenarios 5 & 6: converted or lost → nothing, whatever the conversation 
         assert.equal(classify({ lastInboundAt: daysAgo(10), lastOutboundAt: daysAgo(9), leadStatus }, { now: NOW }), null);
         assert.equal(classify({ lastInboundAt: hoursAgo(1), leadStatus }, { now: NOW }), null);
     }
+});
+
+test('never spoken to at all → not in the queue', () => {
+    assert.equal(classify({ leadStatus: 'new' }, { now: NOW }), null);
 });
 
 test('waiting-on-us wins over everything else when both apply', () => {
@@ -53,26 +58,71 @@ test('waiting-on-us wins over everything else when both apply', () => {
     assert.equal(v.reason, 'sales_response_overdue');
 });
 
-test('a scheduled follow-up that has arrived outranks plain silence', () => {
-    const v = classify({ lastOutboundAt: daysAgo(10), leadStatus: 'contacted', followUpAt: daysAgo(1) }, { now: NOW });
-    assert.equal(v.reason, 'manual_followup_due');
-    assert.equal(v.reasonDetail, 'overdue_date');
+/* ── the cadence: the thing that stops a customer being messaged daily ─── */
+
+test('messaged yesterday: not today — first follow-up is 3 days after we last spoke', () => {
+    const v = classify({ lastOutboundAt: daysAgo(1), leadStatus: 'contacted' }, { now: NOW });
+    assert.equal(v.reason, 'customer_quiet');
+    assert.equal(v.window, 'in_3_days');
+    assert.equal(windowFor(v.nextContactAt, NOW), 'in_3_days');
 });
 
-test('a follow-up set for later today counts as due today', () => {
-    const laterToday = new Date('2026-09-07T14:00:00.000Z');
-    const v = classify({ lastOutboundAt: daysAgo(1), leadStatus: 'contacted', followUpAt: laterToday }, { now: NOW });
-    assert.equal(v?.reason, 'manual_followup_due');
+test('after the first follow-up went out, the next is 7 days after it — not tomorrow', () => {
+    const v = classify({ lastOutboundAt: daysAgo(10), lastSentAt: daysAgo(1), sentSinceReply: 1, leadStatus: 'contacted' }, { now: NOW });
+    assert.equal(v.window, 'in_7_days');
+    assert.equal(Math.round((v.nextContactAt - daysAgo(1)) / 864e5), 7);
 });
 
-test('a future follow-up means somebody already dealt with it — not quiet', () => {
-    const v = classify({ lastOutboundAt: daysAgo(6), leadStatus: 'contacted', followUpAt: daysAgo(-3) }, { now: NOW });
-    assert.equal(v, null);
+test('after the second, 14 days; after the third, nobody is messaged automatically again', () => {
+    const second = classify({ lastOutboundAt: daysAgo(20), lastSentAt: daysAgo(2), sentSinceReply: 2, leadStatus: 'contacted' }, { now: NOW });
+    assert.equal(second.window, 'later');
+    const third = classify({ lastOutboundAt: daysAgo(40), lastSentAt: daysAgo(15), sentSinceReply: 3, leadStatus: 'contacted' }, { now: NOW });
+    assert.equal(third.window, 'exhausted');
+    assert.equal(third.reasonDetail, 'exhausted');
+    assert.equal(third.nextContactAt, null);
 });
 
-test('priority is not time alone: a hot lead quiet 2 days beats a cold one quiet 10', () => {
-    const hot = classify({ lastOutboundAt: daysAgo(4), leadStatus: 'contacted', temperature: 'hot', nextAction: 'Send availability' }, { now: NOW, quietAfterDays: 3 });
-    const cold = classify({ lastOutboundAt: daysAgo(10), leadStatus: 'contacted', temperature: 'cold' }, { now: NOW, quietAfterDays: 3 });
+test('the follow-up that is due lands on today, and an overdue one is still today, not lost', () => {
+    const due = classify({ lastOutboundAt: daysAgo(10), lastSentAt: daysAgo(7), sentSinceReply: 1, leadStatus: 'contacted' }, { now: NOW });
+    assert.equal(due.window, 'today');
+    const overdue = classify({ lastOutboundAt: daysAgo(30), lastSentAt: daysAgo(12), sentSinceReply: 1, leadStatus: 'contacted' }, { now: NOW });
+    assert.equal(overdue.window, 'today');
+});
+
+test('a customer reply resets the count: the cadence starts again from our next message', () => {
+    // Two follow-ups went out, then they replied, then we replied yesterday. sentSinceReply is 0 again.
+    const v = classify({ lastInboundAt: daysAgo(2), lastOutboundAt: daysAgo(1), lastSentAt: daysAgo(5), sentSinceReply: 0, leadStatus: 'contacted' }, { now: NOW });
+    assert.equal(v.window, 'in_3_days');
+});
+
+test('nextQuietContact counts from whichever was later — the chat or the follow-up send', () => {
+    const fromSend = nextQuietContact({ lastOutboundAt: daysAgo(9), lastSentAt: daysAgo(2), sentSinceReply: 1 });
+    assert.equal(Math.round((fromSend.nextContactAt - daysAgo(2)) / 864e5), 7);
+    const fromChat = nextQuietContact({ lastOutboundAt: daysAgo(1), lastSentAt: daysAgo(6), sentSinceReply: 1 });
+    assert.equal(Math.round((fromChat.nextContactAt - daysAgo(1)) / 864e5), 7);
+});
+
+test('a scheduled follow-up appears on its day: past or today → today, else its own bucket', () => {
+    assert.equal(classify({ lastOutboundAt: daysAgo(10), leadStatus: 'contacted', followUpAt: daysAgo(1) }, { now: NOW }).window, 'today');
+    assert.equal(classify({ lastOutboundAt: daysAgo(1), leadStatus: 'contacted', followUpAt: daysAhead(1) }, { now: NOW }).window, 'tomorrow');
+    const wk = classify({ lastOutboundAt: daysAgo(1), leadStatus: 'contacted', followUpAt: daysAhead(6) }, { now: NOW });
+    assert.equal(wk.window, 'in_7_days');
+    assert.equal(wk.reasonDetail, 'scheduled');
+});
+
+test('windowFor buckets by Dubai day, not by 24-hour spans', () => {
+    // 23:30 Dubai tonight is still today; 00:30 Dubai is tomorrow.
+    const dubai = (h) => new Date(Date.UTC(2026, 8, 7, h - 4, 30));
+    assert.equal(windowFor(dubai(23), NOW), 'today');
+    assert.equal(windowFor(dubai(24), NOW), 'tomorrow');
+    assert.equal(windowFor(daysAhead(3), NOW), 'in_3_days');
+    assert.equal(windowFor(daysAhead(7), NOW), 'in_7_days');
+    assert.equal(windowFor(daysAhead(8), NOW), 'later');
+});
+
+test('priority is not time alone: a hot lead quiet 3 days beats a cold one quiet 10', () => {
+    const hot = classify({ lastOutboundAt: daysAgo(3), leadStatus: 'contacted', temperature: 'hot', nextAction: 'Send availability' }, { now: NOW });
+    const cold = classify({ lastOutboundAt: daysAgo(10), leadStatus: 'contacted', temperature: 'cold' }, { now: NOW });
     assert.ok(hot.priorityScore > cold.priorityScore, `${hot.priorityScore} should beat ${cold.priorityScore}`);
 });
 
@@ -88,21 +138,29 @@ test('priority badge thresholds', () => {
     assert.equal(priorityOf(59), 'low');
 });
 
-test('the counts the tiles show', () => {
+test('the counts the cards show: only what is due counts as work; the rest is by day', () => {
     const s = summarise([
-        { reason: 'sales_response_overdue', daysWaiting: 2, temperature: 'hot', nextAction: 'x' },
-        { reason: 'sales_response_overdue', daysWaiting: 0 },
-        { reason: 'customer_quiet', daysWaiting: 5 },
-        { reason: 'manual_followup_due', reasonDetail: 'overdue_date', daysWaiting: 3 },
-        { reason: 'manual_followup_due', reasonDetail: 'overdue_date', daysWaiting: 0 },
+        { reason: 'sales_response_overdue', window: 'now', daysWaiting: 2, temperature: 'hot', nextAction: 'x' },
+        { reason: 'customer_quiet', window: 'today', daysWaiting: 5, temperature: 'hot' },
+        { reason: 'customer_quiet', window: 'tomorrow', daysWaiting: 2, temperature: 'hot', nextAction: 'y' },
+        { reason: 'customer_quiet', window: 'in_3_days', daysWaiting: 1 },
+        { reason: 'customer_quiet', window: 'in_7_days', daysWaiting: 1 },
+        { reason: 'manual_followup_due', reasonDetail: 'overdue_date', window: 'today', daysWaiting: 3 },
+        { reason: 'customer_quiet', reasonDetail: 'exhausted', window: 'exhausted', daysWaiting: 20 },
     ]);
-    assert.deepEqual(s, { total: 5, needsReply: 2, customerQuiet: 1, manualDue: 2, hot: 1, aiSuggested: 1, overdue: 2 });
+    assert.equal(s.total, 7);
+    assert.equal(s.due, 4);
+    assert.deepEqual(s.windows, { now: 1, today: 2, tomorrow: 1, in_3_days: 1, in_7_days: 1, later: 0, exhausted: 1 });
+    assert.equal(s.needsReply, 1);
+    assert.equal(s.hot, 2);        // the tomorrow one is not today's work
+    assert.equal(s.aiSuggested, 1);
+    assert.equal(s.overdue, 2);
 });
 
-test('stage is derived from sends since they last spoke, and never reads past the last stage', () => {
+test('stage is derived from sends since they last spoke, and says when the cadence is spent', () => {
     assert.equal(stageFor(0).label, 'Follow-up 1 of 3');
     assert.equal(stageFor(2).label, 'Follow-up 3 of 3');
-    assert.equal(stageFor(7).label, 'Follow-up 3 of 3');
+    assert.equal(stageFor(3).exhausted, true);
 });
 
 /* ── the send guard ─────────────────────────────────────────────────────── */
@@ -115,24 +173,29 @@ test('scenario 8: a customer who replied after the list was drawn is excluded', 
     assert.deepEqual(v, { ok: false, reason: 'replied_since_snapshot' });
 });
 
-test('a quiet lead who has since written is no longer quiet, snapshot or not', () => {
-    const v = validateForSend(OPEN, { template: TPL, now: NOW, latestInboundAt: daysAgo(1) });
-    assert.equal(v.reason, 'replied_since_snapshot');
-});
-
 test('scenario 9: the same lead sent to an hour ago is refused — one click, one message', () => {
-    const v = validateForSend(OPEN, { template: TPL, now: NOW, lastSentAt: hoursAgo(1) });
-    assert.deepEqual(v, { ok: false, reason: 'sent_recently' });
-    // Only an explicit "yes, again" gets past it.
+    assert.deepEqual(validateForSend(OPEN, { template: TPL, now: NOW, lastSentAt: hoursAgo(1) }), { ok: false, reason: 'sent_recently' });
     assert.equal(validateForSend(OPEN, { template: TPL, now: NOW, lastSentAt: hoursAgo(1), confirmResend: true }).ok, true);
-    // And it lapses after the guard window.
-    assert.equal(validateForSend(OPEN, { template: TPL, now: NOW, lastSentAt: hoursAgo(13) }).ok, true);
 });
 
-test('closed, phoneless and opted-out leads are never sent to', () => {
-    assert.equal(validateForSend({ ...OPEN, leadStatus: 'won' }, { template: TPL, now: NOW }).reason, 'closed_lead');
+test('not due yet is refused too — the cadence is enforced, not just displayed', () => {
+    const v = validateForSend(OPEN, { template: TPL, now: NOW, lastSentAt: daysAgo(1), nextContactAt: daysAhead(6) });
+    assert.deepEqual(v, { ok: false, reason: 'not_due_yet' });
+    // Due later today is fine.
+    assert.equal(validateForSend(OPEN, { template: TPL, now: NOW, lastSentAt: daysAgo(3), nextContactAt: hoursAgo(-2) }).ok, true);
+    // An explicit override still gets through — a person decided.
+    assert.equal(validateForSend(OPEN, { template: TPL, now: NOW, lastSentAt: daysAgo(1), nextContactAt: daysAhead(6), confirmResend: true }).ok, true);
+});
+
+test('a spent cadence is refused until somebody decides', () => {
+    assert.equal(validateForSend(OPEN, { template: TPL, now: NOW, lastSentAt: daysAgo(20), exhausted: true }).reason, 'exhausted');
+    assert.equal(validateForSend(OPEN, { template: TPL, now: NOW, lastSentAt: daysAgo(20), exhausted: true, confirmResend: true }).ok, true);
+});
+
+test('closed, phoneless and opted-out leads are never sent to, override or not', () => {
+    assert.equal(validateForSend({ ...OPEN, leadStatus: 'won' }, { template: TPL, now: NOW, confirmResend: true }).reason, 'closed_lead');
     assert.equal(validateForSend({ ...OPEN, phone: '', phoneNormalized: '' }, { template: TPL, now: NOW }).reason, 'no_phone');
-    assert.equal(validateForSend({ ...OPEN, optedOut: true }, { template: TPL, now: NOW }).reason, 'opted_out');
+    assert.equal(validateForSend({ ...OPEN, optedOut: true }, { template: TPL, now: NOW, confirmResend: true }).reason, 'opted_out');
 });
 
 test('scenario 7: no approved template, no send — free text is never sent from here', () => {

@@ -124,7 +124,7 @@ export default function FollowUpBulkModal({ items, snapshotAt, onClose, onDone }
                 )}
                 <label className="flex items-center gap-2 text-xs mt-3 cursor-pointer select-none" style={{ color: INK }}>
                   <input type="checkbox" checked={confirmResend} onChange={(e) => { setConfirmResend(e.target.checked); setRows(null) }} style={{ accentColor: PURPLE }} />
-                  Include people already messaged in the last 12 hours
+                  Override the cadence — include people messaged in the last 12 hours or not due yet
                 </label>
               </div>
 

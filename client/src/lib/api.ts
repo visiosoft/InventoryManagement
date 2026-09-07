@@ -553,6 +553,9 @@ export const leadFollowUpApi = {
 
 export type FollowUpReason = 'sales_response_overdue' | 'customer_quiet' | 'manual_followup_due'
 export type FollowUpPriority = 'high' | 'medium' | 'low'
+/** Which day a lead is due — the cards. 'now' is a customer waiting on us;
+ *  'exhausted' is a cadence fully sent, waiting on a decision. */
+export type FollowUpWindow = 'now' | 'today' | 'tomorrow' | 'in_3_days' | 'in_7_days' | 'later' | 'exhausted'
 
 export interface FollowUpQueueItem {
   leadId: string
@@ -570,10 +573,15 @@ export interface FollowUpQueueItem {
   /** The rep's manual chase, when any attempt has been logged. */
   sequence: { made: number; total: number; label: string; exhausted: boolean; nextChannel: string } | null
   reason: FollowUpReason
-  reasonDetail: 'exhausted' | 'overdue_date' | null
+  reasonDetail: 'exhausted' | 'overdue_date' | 'scheduled' | null
   /** What the wait is measured from. */
   since: string
   daysWaiting: number
+  /** When this lead is next due, from the cadence or a set date; null once
+   *  the cadence is spent. */
+  nextContactAt: string | null
+  window: FollowUpWindow
+  lastSentAt: string | null
   priorityScore: number
   priority: FollowUpPriority
   /** Inside Meta's 24-hour window — a plain reply is still allowed. */
@@ -585,19 +593,22 @@ export interface FollowUpQueueItem {
   lastNudgedAt: string | null
   lastNudgedBy: string
   recentMessages: { text: string; at: string }[]
-  /** Which numbered template send comes next — only for a quiet lead. */
-  quietStage: { next: number; total: number; label: string } | null
+  /** Which numbered template send comes next. */
+  quietStage: { next: number; total: number; label: string; exhausted: boolean }
   sentSinceReply: number
 }
 
 export interface FollowUpQueueSummary {
   total: number
+  /** now + today + exhausted — the work in front of you. */
+  due: number
   needsReply: number
   customerQuiet: number
   manualDue: number
   hot: number
   aiSuggested: number
   overdue: number
+  windows: Record<FollowUpWindow, number>
 }
 
 export type FollowUpTimelineEntry =
