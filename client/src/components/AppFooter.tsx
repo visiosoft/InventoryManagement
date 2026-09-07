@@ -4,12 +4,18 @@ import { Coffee, Heart, RefreshCw } from 'lucide-react'
 import { api } from '../lib/api'
 import { BUILD } from '../version'
 
-const FAINT = '#756E80'
-const MUTED = '#4A4357'
-const PURPLE_INK = '#4A1FA0'
-const LINE = 'rgba(20,8,31,.10)'
-const OK = '#0F6E56'
-const WARN = '#8A5A00'
+const INK = '#1A0B33'
+const HAIRLINE = 'rgba(255,255,255,.14)'
+const FAINT_TEXT = 'rgba(255,255,255,.62)'
+const DIM_TEXT = 'rgba(255,255,255,.45)'
+const CHIP_BG = 'rgba(255,255,255,.08)'
+const CHIP_HOVER = 'rgba(255,255,255,.16)'
+const ACCENT = '#A78BFA'
+const OK_DOT = '#22c55e'
+const OK_TEXT = '#86efac'
+const WARN_DOT = '#FBBF24'
+const WARN_TEXT = '#FDE68A'
+const UNSURE_DOT = 'rgba(255,255,255,.4)'
 
 type Stamp = {
   sha: string; short: string; committedAt?: string; message?: string; builtAt?: string; startedAt?: string
@@ -65,61 +71,86 @@ export default function AppFooter() {
   }
 
   const status = pageBehind
-    ? { tone: WARN, text: 'A newer version is live' }
+    ? { dot: WARN_DOT, text: 'A newer version is live', tone: WARN_TEXT }
     : apiBehind
-      ? { tone: WARN, text: `API not yet updated (on ${apiVersion!.short})` }
+      ? { dot: WARN_DOT, text: `API not yet updated (on ${apiVersion!.short})`, tone: WARN_TEXT }
       : apiInSync
-        ? { tone: OK, text: 'Live and in sync' }
+        ? { dot: OK_DOT, text: 'Live and in sync', tone: OK_TEXT }
         : apiUnsure
-          ? { tone: FAINT, text: `API on ${apiVersion!.short}` }
-          : { tone: FAINT, text: 'Checking…' }
+          ? { dot: UNSURE_DOT, text: `API on ${apiVersion!.short}`, tone: FAINT_TEXT }
+          : { dot: UNSURE_DOT, text: 'Checking…', tone: FAINT_TEXT }
 
   return (
-    <footer
-      className="flex items-center gap-3 flex-wrap px-4 sm:px-6"
-      style={{ borderTop: `1px solid ${LINE}`, padding: '10px 0', marginTop: 24, fontSize: 11.5, color: FAINT }}
-    >
-      <span className="inline-flex items-center gap-1.5">
-        Built by <span style={{ color: MUTED, fontWeight: 600 }}>Zulfiqar</span> with
-        <Coffee size={12} aria-label="coffee" /> and <Heart size={12} aria-label="love" style={{ color: '#D4537E' }} />
-      </span>
-
-      <span aria-hidden="true">·</span>
-
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1.5 cursor-pointer"
-        style={{ background: 'none', border: 0, padding: 0, color: FAINT, fontSize: 11.5, fontVariantNumeric: 'tabular-nums' }}
-        title={BUILD.message ? `${BUILD.short} — ${BUILD.message}` : BUILD.short}
+    <footer style={{ background: INK, marginTop: 24 }}>
+      <div
+        className="flex flex-wrap items-center justify-between gap-4 px-5 sm:px-7"
+        style={{ padding: '18px 20px' }}
       >
-        <span style={{ width: 7, height: 7, borderRadius: 999, background: status.tone, display: 'inline-block' }} />
-        <span style={{ fontFamily: 'ui-monospace, Menlo, monospace' }}>{BUILD.short}</span>
-        <span style={{ color: status.tone }}>{status.text}</span>
-      </button>
+        <div className="flex flex-wrap items-center gap-3.5">
+          <span style={{ fontFamily: "'Bricolage Grotesque', serif", fontSize: 15, fontWeight: 700, letterSpacing: '-0.01em', color: '#fff' }}>
+            Zulfiqar
+          </span>
+          <span aria-hidden="true" style={{ width: 1, height: 16, background: HAIRLINE }} />
+          <span className="inline-flex items-center gap-1.5" style={{ fontSize: 13, color: FAINT_TEXT }}>
+            <span>Built with</span>
+            <Coffee size={14} aria-label="coffee" />
+            <span>and</span>
+            <Heart size={14} aria-label="love" fill={ACCENT} stroke={ACCENT} />
+          </span>
+        </div>
 
-      {pageBehind && (
-        <button
-          type="button"
-          onClick={() => window.location.reload()}
-          className="inline-flex items-center gap-1 cursor-pointer"
-          style={{ background: '#EDE5FF', color: PURPLE_INK, border: 0, borderRadius: 999, padding: '3px 9px', fontSize: 11, fontWeight: 600 }}
-        >
-          <RefreshCw size={11} /> Reload for {latest!.short}
-        </button>
-      )}
+        <div className="flex flex-wrap items-center gap-3.5">
+          {pageBehind && (
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="inline-flex items-center gap-1.5 cursor-pointer"
+              style={{ background: ACCENT, color: INK, border: 0, borderRadius: 999, padding: '6px 12px', fontSize: 12.5, fontWeight: 700 }}
+            >
+              <RefreshCw size={12} /> Reload for {latest!.short}
+            </button>
+          )}
 
-      <span className="ml-auto" style={{ fontVariantNumeric: 'tabular-nums' }}>
-        {BUILD.committedAt ? `pushed ${ago(BUILD.committedAt)}` : ''}
-      </span>
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            className="inline-flex items-center gap-2 cursor-pointer"
+            style={{ background: 'none', border: 0, padding: 0, fontSize: 13, fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: status.tone }}
+            title={BUILD.message ? `${BUILD.short} — ${BUILD.message}` : BUILD.short}
+          >
+            <span style={{ width: 7, height: 7, borderRadius: 999, background: status.dot, display: 'inline-block', animation: status.dot === OK_DOT ? 'pb-footer-pulse 2.4s ease-out infinite' : undefined }} />
+            {status.text}
+          </button>
+
+          <span
+            style={{
+              fontFamily: "'JetBrains Mono', ui-monospace, Menlo, monospace",
+              fontSize: 12.5, color: '#DDD0FF', background: CHIP_BG, padding: '6px 11px', borderRadius: 8,
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = CHIP_HOVER }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = CHIP_BG }}
+          >
+            {BUILD.short}
+          </span>
+
+          <span style={{ fontSize: 13, color: DIM_TEXT, fontVariantNumeric: 'tabular-nums' }}>
+            {BUILD.committedAt ? `pushed ${ago(BUILD.committedAt)}` : ''}
+          </span>
+        </div>
+      </div>
 
       {open && (
-        <div className="basis-full" style={{ color: MUTED, fontSize: 11.5, lineHeight: 1.7, fontVariantNumeric: 'tabular-nums' }}>
-          <div><b>This page</b> · {BUILD.short} · {BUILD.message || ''} · built {ago(BUILD.builtAt)}</div>
-          <div><b>Published</b> · {latest?.short || '—'} {latest?.message ? `· ${latest.message}` : ''} {latest?.builtAt ? `· built ${ago(latest.builtAt)}` : ''}</div>
-          <div><b>API</b> · {apiVersion?.short || 'unreachable'} {apiVersion?.message ? `· ${apiVersion.message}` : ''} {apiVersion?.startedAt ? `· started ${ago(apiVersion.startedAt)}` : ''}</div>
+        <div
+          className="px-5 sm:px-7"
+          style={{ borderTop: `1px solid ${HAIRLINE}`, padding: '12px 20px', color: FAINT_TEXT, fontSize: 11.5, lineHeight: 1.7, fontVariantNumeric: 'tabular-nums' }}
+        >
+          <div><b style={{ color: '#fff' }}>This page</b> · {BUILD.short} · {BUILD.message || ''} · built {ago(BUILD.builtAt)}</div>
+          <div><b style={{ color: '#fff' }}>Published</b> · {latest?.short || '—'} {latest?.message ? `· ${latest.message}` : ''} {latest?.builtAt ? `· built ${ago(latest.builtAt)}` : ''}</div>
+          <div><b style={{ color: '#fff' }}>API</b> · {apiVersion?.short || 'unreachable'} {apiVersion?.message ? `· ${apiVersion.message}` : ''} {apiVersion?.startedAt ? `· started ${ago(apiVersion.startedAt)}` : ''}</div>
         </div>
       )}
+
+      <style>{`@keyframes pb-footer-pulse { 0% { box-shadow: 0 0 0 0 rgba(34,197,94,.55); } 100% { box-shadow: 0 0 0 6px rgba(34,197,94,0); } }`}</style>
     </footer>
   )
 }
