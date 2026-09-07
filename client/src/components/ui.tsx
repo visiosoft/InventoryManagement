@@ -150,6 +150,7 @@ export const leadStatusTone: Record<string, string> = {
   quotation_sent: 'gray',
   won: 'green',
   lost: 'red',
+  already_customer: 'gray',
 }
 
 /* The CRM buckets, in the order a lead moves through them. One primary status
@@ -163,6 +164,7 @@ export const LEAD_STATUS_FLOW = [
   { value: 'quotation_sent', label: 'Quotation Sent', meaning: 'Formal quotation issued', next: 'Follow up on the quotation' },
   { value: 'won', label: 'Customer / Won', meaning: 'Quotation accepted', next: 'Create the customer and begin onboarding' },
   { value: 'lost', label: 'Dead Lead / Lost', meaning: 'Not moving forward', next: 'Record a reason and close it' },
+  { value: 'already_customer', label: 'Already Customer / Close', meaning: 'Turned out to already be an existing customer', next: 'Close it — no new deal to credit' },
 ] as const
 
 export const LEAD_TEMPERATURES = [
@@ -193,6 +195,7 @@ const NAMED_STATUSES: Record<string, string> = {
   quotation_sent: 'Quotation Sent',
   won: 'Customer / Won',
   lost: 'Dead Lead / Lost',
+  already_customer: 'Already Customer / Close',
 }
 
 export function statusLabel(s: string) {

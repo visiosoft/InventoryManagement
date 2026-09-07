@@ -212,8 +212,11 @@ const leadSchema = new Schema(
       type: String,
       /* One primary status at a time — the CRM buckets.
          'won' and 'lost' keep their keys because the sales targets count them
-         and renaming would silently zero everyone's figures. */
-      enum: ['new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost'],
+         and renaming would silently zero everyone's figures.
+         'already_customer' is a third closed state, for a lead that turns
+         out to already be an existing customer — closed like won/lost, but
+         not a new deal, so it must never be counted as 'won'. */
+      enum: ['new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost', 'already_customer'],
       default: 'new',
     },
     /* How warm they are, kept apart from the status.
@@ -379,7 +382,7 @@ const whatsappLabelStateSchema = new Schema(
     labels: { type: [String], default: [] },
     mappedStatus: {
       type: String,
-      enum: ['', 'new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost'],
+      enum: ['', 'new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost', 'already_customer'],
       default: '',
     },
     lastEventKey: { type: String, default: '' },

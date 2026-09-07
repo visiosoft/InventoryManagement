@@ -347,7 +347,7 @@ export async function sweepUnassignedLeads({ at = new Date(), limit = 25 } = {})
       source: 'whatsapp',
       owner: null,
       createdAt: { $gte: since },
-      status: { $nin: ['won', 'lost'] },
+      status: { $nin: ['won', 'lost', 'already_customer'] },
    }).sort({ createdAt: 1 }).limit(limit).lean();
    if (!waiting.length) return { assigned: 0, reason: 'nothing waiting' };
 

@@ -11,7 +11,7 @@ import { mailConfigured, sendMail } from '../services/mail.js';
 
 const router = Router();
 
-const ALLOWED_STATUS = new Set(['new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost']);
+const ALLOWED_STATUS = new Set(['new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost', 'already_customer']);
 const ALLOWED_TEMPERATURE = new Set(['', 'hot', 'warm', 'cold']);
 
 /* Tags add detail without replacing the status. Fixed rather than free text so
@@ -259,7 +259,7 @@ router.get('/stats', async (req, res) => {
 
         // Where the chasing has got to, over everybody rather than the page in
         // view. "Nobody has tried" is the number worth knowing first.
-        const open = { ...filter, status: { $nin: ['won', 'lost'] } };
+        const open = { ...filter, status: { $nin: ['won', 'lost', 'already_customer'] } };
 
         const [byStatus, byOwner, total, chaseNone, chaseActive, chaseExhausted, byChaser] = await Promise.all([
             Lead.aggregate([{ $match: filter }, { $group: { _id: '$status', n: { $sum: 1 } } }]),
@@ -362,7 +362,7 @@ router.get('/waiting', async (req, res) => {
             assignedAt: { $ne: null },
             firstResponseAt: null,
             owner: { $ne: null },
-            status: { $nin: ['won', 'lost'] },
+            status: { $nin: ['won', 'lost', 'already_customer'] },
         };
         if (isSalesRep(req)) filter.owner = req.user.id;
 
@@ -400,7 +400,7 @@ router.get('/follow-ups', async (req, res) => {
         const filter = {
             followUpAt: { $ne: null, $lt: horizon },
             // A closed lead's follow-up date is history, not a task.
-            status: { $nin: ['won', 'lost'] },
+            status: { $nin: ['won', 'lost', 'already_customer'] },
         };
         if (isSalesRep(req)) filter.owner = req.user.id;
         else if (req.query.owner) filter.owner = String(req.query.owner);
@@ -448,7 +448,7 @@ router.get('/newly-assigned', async (req, res) => {
             owner: req.user.id,
             ownerSeenAt: null,
             assignedAt: { $ne: null, $gte: since },
-            status: { $nin: ['won', 'lost'] },
+            status: { $nin: ['won', 'lost', 'already_customer'] },
         })
             .select('fullName phone status assignedAt autoAssigned assignedBy source')
             .populate('assignedBy', 'name')

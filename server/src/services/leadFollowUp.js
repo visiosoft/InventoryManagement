@@ -63,7 +63,7 @@ export async function quietLeads({ ownerId = null, days = null } = {}) {
     const threshold = days || await quietThreshold();
     const now = new Date();
 
-    const leadFilter = { status: { $nin: ['won', 'lost'] } };
+    const leadFilter = { status: { $nin: ['won', 'lost', 'already_customer'] } };
     if (ownerId) leadFilter.owner = ownerId;
 
     const leads = await Lead.find(leadFilter)

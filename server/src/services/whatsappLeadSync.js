@@ -31,7 +31,7 @@ const LABEL_ALIASES = {
 
 const LABEL_PRIORITY = ['lost', 'won', 'followup', 'new customer', 'lead'];
 
-const ALLOWED_LEAD_STATUS = new Set(['new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost']);
+const ALLOWED_LEAD_STATUS = new Set(['new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost', 'already_customer']);
 
 function readStatusMapFromEnv() {
     const raw = process.env.WHATSAPP_LABEL_STATUS_MAP;

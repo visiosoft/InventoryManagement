@@ -202,7 +202,7 @@ export async function runLeadSla({ now = new Date(), dry = false, limit = 50 } =
       owner: { $ne: null },
       assignedAt: { $lte: new Date(new Date(now).getTime() - earliest * MINUTE_MS), $gte: new Date(new Date(now).getTime() - 3 * 864e5) },
       firstResponseAt: null,
-      status: { $nin: ['won', 'lost'] },
+      status: { $nin: ['won', 'lost', 'already_customer'] },
    }).select('fullName phone whatsappProfileName source owner assignedAt firstResponseAt status slaNudgedAt slaReassignedAt timeline')
       .sort({ assignedAt: 1 }).limit(limit).lean();
 

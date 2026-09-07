@@ -27,7 +27,7 @@ import { QUIET_DAYS, wentQuiet, quietDays } from '../services/chatFollowUp.js';
 
 const router = Router();
 
-/* The eight buckets, in the order the pipeline is worked, with the wording the
+/* The nine buckets, in the order the pipeline is worked, with the wording the
    stage picker uses. Kept here rather than derived from the enum so the labels
    and the order are a deliberate choice rather than whatever Mongo returns. */
 export const STAGES = [
@@ -39,6 +39,7 @@ export const STAGES = [
    { key: 'quotation_sent', label: 'Quotation Sent' },
    { key: 'won', label: 'Customer / Won' },
    { key: 'lost', label: 'Dead Lead / Lost' },
+   { key: 'already_customer', label: 'Already Customer / Close' },
 ];
 
 /** Local midnight tonight, Dubai, so "today" means the day the rep is having. */
@@ -94,7 +95,7 @@ router.get('/', async (req, res) => {
          Lead.find({
             owner: me,
             followUpAt: { $ne: null, $lte: endToday },
-            status: { $nin: ['won', 'lost'] },
+            status: { $nin: ['won', 'lost', 'already_customer'] },
          }).select('fullName phone phoneNormalized whatsappProfileName followUpAt status').sort({ followUpAt: 1 }).lean(),
 
          Task.find({
@@ -104,7 +105,7 @@ router.get('/', async (req, res) => {
          }).select('taskNo title dueDate priority leadName leadId leadType').sort({ dueDate: 1 }).lean(),
 
          // Everything they own, for the chat-shaped questions below.
-         Lead.find({ owner: me, status: { $nin: ['won', 'lost'] } })
+         Lead.find({ owner: me, status: { $nin: ['won', 'lost', 'already_customer'] } })
             .select('fullName phone phoneNormalized whatsappProfileName status assignedAt ownerSeenAt followUpAt')
             .lean(),
       ]);

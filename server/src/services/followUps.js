@@ -253,7 +253,7 @@ export async function runFollowUps({ now = new Date() } = {}) {
     followUpAt: { $ne: null },
     followUpNotifiedAt: null,
     followUpTaskId: null,
-    status: { $nin: ['won', 'lost'] },
+    status: { $nin: ['won', 'lost', 'already_customer'] },
     owner: { $ne: null },
   }).select('fullName phone owner status temperature notes followUpAt followUpKind');
 
@@ -301,7 +301,7 @@ export async function pushDueFollowUps({ now = new Date() } = {}) {
     followUpAt: { $ne: null, $lte: now },
     followUpPushedAt: null,
     owner: { $ne: null },
-    status: { $nin: ['won', 'lost'] },
+    status: { $nin: ['won', 'lost', 'already_customer'] },
   }).select('fullName phone owner followUpAt followUpNote').limit(200);
 
   let pushed = 0;
