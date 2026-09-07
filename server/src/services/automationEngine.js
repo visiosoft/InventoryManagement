@@ -110,6 +110,38 @@ async function alreadySent({ rule, eventKey, channel, recurring }) {
   return !!(await AutomationLog.findOne(filter).select('_id').lean());
 }
 
+/**
+ * Midnight..midnight for the Dubai calendar day `now` falls in — "today"
+ * meaning the day the office is having, not a UTC day that rolls over
+ * mid-afternoon local time. Pure and exported so the boundary itself (a run
+ * just before vs. just after midnight) is testable without a database.
+ */
+export function dubaiDayRange(now = new Date()) {
+  const OFFSET = 4 * 3600_000;
+  const local = new Date(now.getTime() + OFFSET);
+  local.setUTCHours(0, 0, 0, 0);
+  const start = new Date(local.getTime() - OFFSET);
+  return { start, end: new Date(start.getTime() + DAY) };
+}
+
+/**
+ * A second, coarser guard on top of alreadySent()'s per-step tracking: no
+ * contract gets the same rule on the same channel more than once in one
+ * Dubai calendar day, full stop — regardless of which step matched, and
+ * regardless of a race between the 6-hourly tick and someone pressing
+ * "Run now" at the same time. Kept independent of eventKey on purpose: it
+ * still holds even if a future change to step numbering ever made two runs
+ * in one day compute two different eventKeys for what is really the same
+ * reminder.
+ */
+async function alreadySentToday({ rule, contract, channel, now }) {
+  const { start, end } = dubaiDayRange(now);
+  return !!(await AutomationLog.findOne({
+    rule: rule._id, contract: contract._id, channel, status: 'sent',
+    sentAt: { $gte: start, $lt: end },
+  }).select('_id').lean());
+}
+
 async function resolveMessages(step, templatesByName, event, vars) {
   const tpl = templatesByName.get((step.template || '').trim().toLowerCase());
   const whatsappBody = step.whatsappBody?.trim() || tpl?.whatsappBody || FALLBACK_MESSAGES[event];
@@ -192,6 +224,7 @@ async function dispatch({ rule, contract, eventKey, stepIdx, messages, dryRun, r
 
   for (const channel of channels) {
     if (await alreadySent({ rule, eventKey, channel, recurring: rule.recurring })) { results.skipped++; continue; }
+    if (await alreadySentToday({ rule, contract, channel })) { results.skipped++; continue; }
     if (dryRun) {
       results.planned.push({ rule: rule.name, contract: contract.contractNo, customer: customer.fullName, channel, step: stepIdx, message: channel === 'whatsapp' ? messages.whatsapp : messages.emailText });
       continue;

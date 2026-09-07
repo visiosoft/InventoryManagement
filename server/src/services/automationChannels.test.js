@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pickChannels, templateFor } from './automationEngine.js';
+import { pickChannels, templateFor, dubaiDayRange } from './automationEngine.js';
 
 // The rule as the built-in Contract Expiry rule actually ships: WhatsApp on,
 // email off. Turning this rule on to get its email is what once put messages
@@ -140,4 +140,32 @@ test('a step may override the template it was built from', () => {
 
 test('with neither, it stays free text — the behaviour every other trigger keeps', () => {
   assert.deepEqual(templateFor({}, { key: 'welcome' }, VARS), {});
+});
+
+/* ── the same-day guard's day boundary ──────────────────────────────────────
+   alreadySentToday() (services/automationEngine.js) reuses this range to
+   decide "did this contract already get this rule, on this channel, today" —
+   this is the part of that decision that can be tested without a database:
+   does "today" actually mean the Dubai day, not a UTC one. */
+
+test('a run just after Dubai midnight is inside today\'s range, not still in yesterday\'s', () => {
+  // 2026-03-05 00:05 Dubai time = 2026-03-04 20:05 UTC.
+  const justAfterMidnight = new Date('2026-03-04T20:05:00.000Z');
+  const { start, end } = dubaiDayRange(justAfterMidnight);
+  assert.ok(justAfterMidnight >= start && justAfterMidnight < end);
+  // Dubai midnight itself is 20:00 UTC the day before.
+  assert.equal(start.toISOString(), '2026-03-04T20:00:00.000Z');
+});
+
+test('a run just before Dubai midnight is inside today\'s range, not already tomorrow\'s', () => {
+  // 2026-03-05 23:55 Dubai time = 2026-03-05 19:55 UTC.
+  const justBeforeMidnight = new Date('2026-03-05T19:55:00.000Z');
+  const { start, end } = dubaiDayRange(justBeforeMidnight);
+  assert.ok(justBeforeMidnight >= start && justBeforeMidnight < end);
+  assert.equal(end.toISOString(), '2026-03-05T20:00:00.000Z');
+});
+
+test('the range is exactly one day wide, so a second run 6 hours later is still caught', () => {
+  const { start, end } = dubaiDayRange(new Date('2026-03-05T08:00:00.000Z'));
+  assert.equal(end.getTime() - start.getTime(), 24 * 60 * 60 * 1000);
 });
