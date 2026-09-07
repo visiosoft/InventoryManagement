@@ -32,6 +32,18 @@ export default function WhatsAppBell() {
     return () => document.removeEventListener('mousedown', away)
   }, [open])
 
+  // This runs on every single page, immediately on mount — competing with
+  // whatever that page actually opened for in the same opening burst of
+  // requests for the same handful of browser connections. A few seconds'
+  // delay before the bell's own first fetch costs nothing a user would
+  // notice (it's a background badge, not what they came for) and stops it
+  // queuing behind, or in front of, the page's own critical data.
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setReady(true), 3000)
+    return () => clearTimeout(t)
+  }, [])
+
   const { data: conversations } = useQuery<WhatsAppConversation[]>({
     // Its own cache entry: the console stores a paged result under this
     // prefix, and sharing a key would hand the bell the wrong shape. Still
@@ -41,6 +53,7 @@ export default function WhatsAppBell() {
     // Slower than the console's own polling: this runs on every page, and a
     // message showing up half a minute later in the bell is no loss.
     refetchInterval: 30_000,
+    enabled: ready,
     retry: false,
   })
 
@@ -48,6 +61,7 @@ export default function WhatsAppBell() {
     queryKey: ['wa-messages', null],
     queryFn: () => whatsappApi.messages(),
     refetchInterval: 30_000,
+    enabled: ready,
     retry: false,
   })
 

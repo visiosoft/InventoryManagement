@@ -484,11 +484,6 @@ export async function pendingExpiryQueue({ now = new Date() } = {}) {
     templatesByName.set(String(t.label || '').trim().toLowerCase(), t);
     templatesByName.set(String(t.key || '').trim().toLowerCase(), t);
   }
-  // An approved-template WhatsApp send's real wording lives on Meta's side,
-  // not in our own templates collection — resolved here the same way the
-  // quiet-leads composer does, so the preview shows what actually goes out.
-  const approved = await listWhatsAppTemplates().catch(() => ({ templates: [] }));
-  const approvedByName = new Map((approved.templates || []).map((t) => [t.name, t]));
 
   // Same principle as pendingChannelsFor above, one level up: every
   // candidate contract's channel-eligibility work is independent of every
@@ -499,8 +494,28 @@ export async function pendingExpiryQueue({ now = new Date() } = {}) {
   const computed = await Promise.all(candidates.map(async (c) => {
     const channels = await pendingChannelsFor({ rule: c.rule, contract: c.contract, eventKey: c.eventKey, waAllowed });
     if (!channels.length) return null;
-
     const messages = await resolveMessages(c.picked.s, templatesByName, 'contract_expiry', c.vars);
+    return { c, channels, messages };
+  }));
+  const pending = computed.filter(Boolean);
+
+  // An approved-template WhatsApp send's real wording lives on Meta's own
+  // side, not in our templates collection, so showing it means a real
+  // network call out to Meta's Graph API — seconds, not milliseconds, and
+  // this used to run unconditionally on every request whether or not
+  // anything pending actually used an approved template. Fetched now only
+  // when something here needs it, and once, not per-candidate.
+  const needsApproved = pending.some((item) => item.messages.whatsappTemplate);
+  let approvedByName = new Map();
+  if (needsApproved) {
+    const approved = await listWhatsAppTemplates().catch(() => ({ templates: [] }));
+    approvedByName = new Map((approved.templates || []).map((t) => [t.name, t]));
+  }
+
+  const groups = new Map();
+  const alreadyHandled = candidates.length - pending.length;
+  for (const item of pending) {
+    const { c, channels, messages } = item;
     let whatsappPreview = messages.whatsapp;
     if (messages.whatsappTemplate) {
       const approvedTpl = approvedByName.get(messages.whatsappTemplate);
@@ -508,14 +523,6 @@ export async function pendingExpiryQueue({ now = new Date() } = {}) {
         ? messages.whatsappTemplateVars.reduce((text, v, i) => text.replaceAll(`{{${i + 1}}}`, v || ''), approvedTpl.bodyText)
         : `[Approved template "${messages.whatsappTemplate}" not found in Meta's current list — check it is still approved]`;
     }
-    return { c, channels, messages, whatsappPreview };
-  }));
-
-  const groups = new Map();
-  let alreadyHandled = 0;
-  for (const item of computed) {
-    if (!item) { alreadyHandled++; continue; }
-    const { c, channels, messages, whatsappPreview } = item;
 
     const groupKey = `${c.rule._id}:${c.picked.idx}`;
     if (!groups.has(groupKey)) {
