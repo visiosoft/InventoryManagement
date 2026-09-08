@@ -624,8 +624,16 @@ export async function sendApprovedReminders({ selections = [] } = {}) {
   if (!wanted.size) return results;
 
   const ruleIds = [...new Set(selections.map((s) => s.ruleId))];
+  // The approval IS the switch. The pending list shows what a rule would
+  // send while its automatic run is off — that is the whole point of
+  // approving by hand — and it lists with `enabled: true` for that reason.
+  // The send read the rule's real flag, so with automation off every
+  // approval matched nothing and came back "sent 0, skipped N" with no
+  // email anywhere. A contract's own reminderOverrides still win inside
+  // effectiveEnabled(), so a muted contract stays muted.
   const rules = (await AutomationRule.find({ _id: { $in: ruleIds }, triggerEvent: 'contract_expiry' }).lean())
-    .filter((r) => r.steps?.length);
+    .filter((r) => r.steps?.length)
+    .map((r) => ({ ...r, enabled: true }));
   if (!rules.length) return results;
 
   const waAllowed = await getWhatsAppAutomation();
@@ -651,7 +659,7 @@ export async function sendApprovedReminders({ selections = [] } = {}) {
     if (seen.has(key)) continue;
     const [contractId, ruleId] = key.split(':');
     results.skipped++;
-    results.outcomes.push({ contractId, ruleId, contractNo: '', customerName: '', channel: null, status: 'skipped', reason: 'no longer due a reminder — the contract changed since the list was loaded; reload to check' });
+    results.outcomes.push({ contractId, ruleId, contractNo: '', customerName: '', channel: null, status: 'skipped', reason: 'not matched by any reminder step right now (renewed, muted, or the day rolled over) — reload the list' });
   }
   return results;
 }
