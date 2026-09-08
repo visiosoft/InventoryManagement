@@ -30,6 +30,19 @@ import { Customer } from '../models/index.js';
 export const PLACEHOLDER_NAME = /^whatsapp\s*contact/i;
 export const phoneTail = (phone) => String(phone || '').replace(/\D/g, '').slice(-9);
 
+/**
+ * The name a person should be shown as: the one a rep typed in, else the
+ * name on their Customer record, else the name they set on WhatsApp — and
+ * only then the "WhatsApp Contact 5892" placeholder. One rule, so a row,
+ * a drawer, a greeting and a log line never disagree about who this is.
+ */
+export function displayNameFor(lead = {}, customerName = '') {
+    const real = [lead.fullName, customerName, lead.whatsappProfileName]
+        .map((n) => String(n || '').trim())
+        .find((n) => n && !PLACEHOLDER_NAME.test(n));
+    return real || String(lead.fullName || '').trim() || 'Unknown';
+}
+
 export async function resolvePlaceholderNames(items, nameKey = 'fullName') {
     const placeholders = items.filter((l) => PLACEHOLDER_NAME.test(l[nameKey] || ''));
     if (!placeholders.length) return items;

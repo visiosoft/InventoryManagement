@@ -3,7 +3,7 @@ import { Contract, Customer, Lead, LeadFollowUp, LeadRoutingConfig, WhatsAppMess
 import { isWaitingOnUs } from './chatFollowUp.js';
 import { windowOpenFor } from './whatsapp.js';
 import { attachLastNudge, attachRecentMessages, greetingNameFor } from './leadFollowUp.js';
-import { resolvePlaceholderNames, phoneTail } from './leadNames.js';
+import { displayNameFor, phoneTail } from './leadNames.js';
 import { summariseConversation } from './conversationSummary.js';
 import { getFollowUpPlan, sequenceState } from './followUpSequence.js';
 
@@ -483,7 +483,7 @@ export async function buildQueue({ ownerId = null, leadIds = null, now = new Dat
 
         items.push({
             leadId: String(lead._id),
-            name: lead.fullName || lead.whatsappProfileName || 'Unknown',
+            name: displayNameFor(lead, customer?.name),
             phone: lead.phone || lead.phoneNormalized,
             phoneNormalized: lead.phoneNormalized,
             ownerId: lead.owner?._id ? String(lead.owner._id) : null,
@@ -507,7 +507,6 @@ export async function buildQueue({ ownerId = null, leadIds = null, now = new Dat
     }
     if (!items.length) return [];
 
-    await resolvePlaceholderNames(items, 'name');
     items = await attachAi(items);
     // The AI's temperature and open questions change the score, so re-run
     // the arithmetic now that they are on the row.
@@ -572,7 +571,7 @@ export async function detailFor({ leadId, ownerId = null, now = new Date() }) {
         item,
         lead: {
             leadId: String(lead._id),
-            name: lead.fullName || lead.whatsappProfileName || 'Unknown',
+            name: displayNameFor(lead, customer?.name),
             phone: lead.phone || lead.phoneNormalized,
             phoneNormalized: lead.phoneNormalized,
             status: lead.status,
@@ -650,7 +649,7 @@ export async function eligibilityFor(leadIds, {
             : '';
         return {
             leadId: String(lead._id),
-            name: lead.fullName || lead.whatsappProfileName || 'Unknown',
+            name: displayNameFor(lead, customer?.name),
             phone: lead.phone || lead.phoneNormalized,
             ok: verdict.ok,
             reason: verdict.reason,

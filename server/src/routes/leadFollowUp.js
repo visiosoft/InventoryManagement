@@ -8,6 +8,9 @@ import {
     attachRecentMessages, quietSummary, sendQuietFollowUp,
 } from '../services/leadFollowUp.js';
 import { quietNudgeConfig, setQuietNudgeConfig } from '../services/quietNudge.js';
+import { summariseConversation } from '../services/conversationSummary.js';
+import { customersByTail } from '../services/followUpQueue.js';
+import { displayNameFor, phoneTail } from '../services/leadNames.js';
 
 const router = Router();
 
@@ -144,8 +147,17 @@ router.get('/log', async (req, res) => {
         const rows = await LeadFollowUp.find(filter)
             .sort({ sentAt: -1 })
             .limit(200)
-            .populate('lead', 'fullName phone phoneNormalized')
+            .populate('lead', 'fullName phone phoneNormalized whatsappProfileName')
             .lean();
+
+        // The same name and AI read the queue showed when this was sent -
+        // the summary is cached by last message, so this is cheap once warm.
+        const phones = [...new Set(rows.map((r) => r.lead?.phoneNormalized || r.phoneNormalized).filter(Boolean))];
+        const [customers, summaries] = await Promise.all([
+            customersByTail(phones.map(phoneTail)),
+            Promise.all(phones.map((ph) => summariseConversation(ph).catch(() => null))),
+        ]);
+        const aiByPhone = new Map(phones.map((ph, i) => [ph, summaries[i]]));
 
         const sent = rows.filter((r) => r.status === 'sent').length;
         const replied = rows.filter((r) => r.status === 'sent' && r.repliedAt).length;
@@ -153,11 +165,17 @@ router.get('/log', async (req, res) => {
 
         res.json({
             counts: { sent, replied, stillQuiet, failed: rows.filter((r) => r.status === 'failed').length },
-            rows: rows.map((r) => ({
+            rows: rows.map((r) => {
+                const ph = r.lead?.phoneNormalized || r.phoneNormalized;
+                const ai = aiByPhone.get(ph);
+                const usable = ai?.configured && !ai.empty && !ai.error ? ai : null;
+                return {
                 id: String(r._id),
                 leadId: r.lead?._id ? String(r.lead._id) : null,
-                leadName: r.lead?.fullName || '',
+                leadName: displayNameFor(r.lead || {}, customers.get(phoneTail(ph))?.name),
                 phone: r.lead?.phone || r.phoneNormalized,
+                aiNext: usable?.nextAction || null,
+                aiSummary: usable?.headline || null,
                 sentByName: r.sentByName,
                 templateLabel: r.templateLabel,
                 reason: r.reason,
@@ -166,7 +184,8 @@ router.get('/log', async (req, res) => {
                 error: r.error,
                 sentAt: r.sentAt,
                 repliedAt: r.repliedAt,
-            })),
+                };
+            }),
         });
     } catch (e) {
         res.status(500).json({ error: e.message });

@@ -95,6 +95,8 @@ function fmtDate(iso: string) {
 function fmtTime(iso: string) {
   return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
+/** The bold line of the AI Recommendation cell: the AI's next action when
+ *  it has one, else the honest fallback for where the lead sits. */
 function recommendationFor(it: FollowUpQueueItem) {
   if (it.reason === 'sales_response_overdue') return 'Reply now'
   if (it.window === 'exhausted') return 'Decide: keep, nurture or close'
@@ -102,6 +104,14 @@ function recommendationFor(it: FollowUpQueueItem) {
   if (it.reason === 'manual_followup_due') return 'Follow up as scheduled'
   if (it.quietStage.next >= it.quietStage.total) return 'Final follow-up'
   return it.temperature === 'hot' ? 'Follow up now' : 'Check interest'
+}
+/** The line under it: the AI's read of the conversation on every tab -
+ *  Needs reply included, where it says what the customer is waiting for. */
+function recommendationDetail(it: FollowUpQueueItem) {
+  if (it.reason === 'sales_response_overdue') {
+    return (it.nextAction || it.aiSummary || 'Customer is waiting on us').slice(0, 70)
+  }
+  return (it.aiSummary || it.aiReason || whyFor(it)).slice(0, 70)
 }
 function customerSub(it: FollowUpQueueItem) {
   const s = it.aiSummary || it.recentMessages[0]?.text || REASON_UI[it.reason].blurb
@@ -378,10 +388,10 @@ export default function FollowUps() {
             <div className="p-12 text-center"><p className="text-[14px] font-semibold">No follow-ups sent in the last 30 days.</p></div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[820px]" style={{ borderCollapse: 'collapse' }}>
+              <table className="w-full min-w-[1020px]" style={{ borderCollapse: 'collapse' }}>
                 <thead>
                   <tr className="text-left text-[12px] font-semibold" style={{ color: SUB, background: '#F9FAFB' }}>
-                    <th className="pl-4 px-2 py-3">Customer</th><th className="px-2 py-3">Template</th><th className="px-2 py-3">Sent By</th><th className="px-2 py-3">Sent</th><th className="px-2 py-3">Reason</th><th className="px-2 py-3 pr-4">Outcome</th>
+                    <th className="pl-4 px-2 py-3">Customer</th><th className="px-2 py-3">Template</th><th className="px-2 py-3">Sent By</th><th className="px-2 py-3">Sent</th><th className="px-2 py-3">Reason</th><th className="px-2 py-3">AI Recommendation</th><th className="px-2 py-3 pr-4">Outcome</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -391,7 +401,11 @@ export default function FollowUps() {
                       <td className="px-2 py-3 text-[13px]">{r.templateLabel}</td>
                       <td className="px-2 py-3 whitespace-nowrap"><span className="inline-flex items-center gap-2 text-[13px]">{avatar(r.sentByName || '—')}{r.sentByName || '—'}</span></td>
                       <td className="px-2 py-3 whitespace-nowrap text-[13px]"><div>{fmtDate(r.sentAt)}</div><div className="text-[12px]" style={{ color: SUB }}>{fmtTime(r.sentAt)}</div></td>
-                      <td className="px-2 py-3 text-[12.5px] max-w-[260px] truncate" style={{ color: SUB }} title={r.reason}>{r.reason || '—'}</td>
+                      <td className="px-2 py-3 text-[12.5px] max-w-[220px] truncate" style={{ color: SUB }} title={r.reason}>{r.reason || '—'}</td>
+                      <td className="px-2 py-3 min-w-[200px]">
+                        <div className="text-[13px] font-bold">{r.aiNext || (r.repliedAt ? 'They replied — continue in chat' : 'Wait for the next cadence day')}</div>
+                        {r.aiSummary && <div className="text-[12px] mt-0.5 max-w-[260px] truncate" style={{ color: SUB }} title={r.aiSummary}>{r.aiSummary}</div>}
+                      </td>
                       <td className="px-2 py-3 pr-4">{r.repliedAt ? pill('#DCFCE7', '#15803D', `Replied ${agoText(r.repliedAt)}`) : pill('#F3F4F6', '#6B7280', 'No reply yet')}</td>
                     </tr>
                   ))}
@@ -474,7 +488,7 @@ export default function FollowUps() {
                       <td className="px-2 py-3 min-w-[200px]">
                         <div className="text-[13px] font-bold">{recommendationFor(it)}</div>
                         <div className="text-[12px] mt-0.5" style={{ color: SUB }} title={whyFor(it)}>
-                          {waiting ? 'Customer is waiting on us' : (it.aiReason || whyFor(it)).slice(0, 60)}
+                          {recommendationDetail(it)}
                         </div>
                       </td>
                       <td className="px-2 py-3" onClick={(e) => e.stopPropagation()}>

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { classify, summarise, validateForSend, stageFor, priorityOf, windowFor, nextQuietContact } from './followUpQueue.js';
 import { isWaitingOnUs } from './chatFollowUp.js';
 import { windowOpenFor } from './whatsapp.js';
+import { displayNameFor } from './leadNames.js';
 
 /**
  * The queue's decisions, pinned against the scenarios the spec was written
@@ -250,4 +251,14 @@ test('the 24-hour window: open at 23h59, shut at 24h01, shut with nothing inboun
     assert.equal(windowOpenFor({ lastInboundAt: hoursAgo(24.02), now: NOW }), false);
     assert.equal(windowOpenFor({ lastInboundAt: null, now: NOW }), false);
     assert.equal(windowOpenFor({ lastInboundAt: 'not a date', now: NOW }), false);
+});
+
+test('a placeholder-named lead is shown by their Customer record, then their WhatsApp name, never "WhatsApp Contact"', () => {
+    const ph = { fullName: 'WhatsApp Contact 5892', whatsappProfileName: 'Ahmed K' };
+    assert.equal(displayNameFor(ph, 'Ahmed Khan'), 'Ahmed Khan');
+    assert.equal(displayNameFor(ph), 'Ahmed K');
+    assert.equal(displayNameFor({ fullName: 'WhatsApp Contact 5892' }), 'WhatsApp Contact 5892');
+    // A name a rep typed in wins over everything.
+    assert.equal(displayNameFor({ fullName: 'Sara Ali', whatsappProfileName: 'S' }, 'Spring 7'), 'Sara Ali');
+    assert.equal(displayNameFor({}), 'Unknown');
 });

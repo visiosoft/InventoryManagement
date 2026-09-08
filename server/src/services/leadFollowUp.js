@@ -294,6 +294,9 @@ export async function sendQuietFollowUp({ leadIds, template, extraVars = [], byU
     }
 
     const leads = await Lead.find({ _id: { $in: leadIds } }).select('fullName phone phoneNormalized whatsappProfileName').lean();
+    // A placeholder-named lead greets by the name on their Customer record,
+    // exactly as the queue showed them - never "Hello WhatsApp".
+    await resolvePlaceholderNames(leads, 'fullName');
     const byId = new Map(leads.map((l) => [String(l._id), l]));
     const lang = String(template.language || 'en').trim() || 'en';
     const sentBy = byUser?.id || null;

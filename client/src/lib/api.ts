@@ -543,7 +543,7 @@ export const leadFollowUpApi = {
   log: (params?: { owner?: string }) =>
     api.get<{
       counts: { sent: number; replied: number; stillQuiet: number; failed: number }
-      rows: { id: string; leadId: string | null; leadName: string; phone: string; sentByName: string; templateLabel: string; reason: string; daysQuietAtSend: number; status: string; error: string; sentAt: string; repliedAt: string | null }[]
+      rows: { id: string; leadId: string | null; leadName: string; phone: string; sentByName: string; templateLabel: string; reason: string; daysQuietAtSend: number; status: string; error: string; sentAt: string; repliedAt: string | null; aiNext: string | null; aiSummary: string | null }[]
     }>('/lead-follow-up/log', { params }).then((r) => r.data),
 }
 
