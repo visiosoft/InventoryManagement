@@ -8,7 +8,7 @@ import {
     attachRecentMessages, quietSummary, sendQuietFollowUp,
 } from '../services/leadFollowUp.js';
 import { quietNudgeConfig, setQuietNudgeConfig } from '../services/quietNudge.js';
-import { summariseConversation } from '../services/conversationSummary.js';
+import { cachedSummaries } from '../services/conversationSummary.js';
 import { customersByTail } from '../services/followUpQueue.js';
 import { displayNameFor, phoneTail } from '../services/leadNames.js';
 
@@ -153,11 +153,11 @@ router.get('/log', async (req, res) => {
         // The same name and AI read the queue showed when this was sent -
         // the summary is cached by last message, so this is cheap once warm.
         const phones = [...new Set(rows.map((r) => r.lead?.phoneNormalized || r.phoneNormalized).filter(Boolean))];
-        const [customers, summaries] = await Promise.all([
+        // Cached summaries only — a history page never triggers the model.
+        const [customers, { fresh: aiByPhone }] = await Promise.all([
             customersByTail(phones.map(phoneTail)),
-            Promise.all(phones.map((ph) => summariseConversation(ph).catch(() => null))),
+            cachedSummaries(phones).catch(() => ({ fresh: new Map(), stale: [] })),
         ]);
-        const aiByPhone = new Map(phones.map((ph, i) => [ph, summaries[i]]));
 
         const sent = rows.filter((r) => r.status === 'sent').length;
         const replied = rows.filter((r) => r.status === 'sent' && r.repliedAt).length;

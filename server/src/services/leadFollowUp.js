@@ -15,7 +15,7 @@ export function greetingNameFor(lead = {}) {
         .find((n) => n && !PLACEHOLDER_NAME.test(n));
     return real ? real.split(/\s+/)[0] : 'there';
 }
-import { summariseConversation } from './conversationSummary.js';
+import { cachedSummaries, refreshSummariesInBackground } from './conversationSummary.js';
 import { sendWhatsAppTemplate, whatsappSendConfigured } from './whatsapp.js';
 
 /**
@@ -145,16 +145,18 @@ export async function quietLeads({ ownerId = null, days = null } = {}) {
  * that fails or is unconfigured is left null rather than guessed at.
  */
 export async function attachReasons(leads) {
-    const results = await Promise.all(leads.map(async (l) => {
-        try {
-            const s = await summariseConversation(l.phoneNormalized);
-            if (!s?.configured || s.empty || s.error) return { ...l, reason: null, temperature: null };
-            return { ...l, reason: s.headline || null, temperature: s.temperature || null };
-        } catch {
-            return { ...l, reason: null, temperature: null };
-        }
-    }));
-    return results;
+    // From the cache, in two reads for the batch; out-of-date threads are
+    // regenerated in the background rather than read one by one here.
+    let fresh = new Map();
+    try {
+        const r = await cachedSummaries(leads.map((l) => l.phoneNormalized));
+        fresh = r.fresh;
+        if (r.stale.length) refreshSummariesInBackground(r.stale);
+    } catch { /* the reason is a bonus, never a gate */ }
+    return leads.map((l) => {
+        const s = fresh.get(l.phoneNormalized);
+        return s ? { ...l, reason: s.headline || null, temperature: s.temperature || null } : { ...l, reason: null, temperature: null };
+    });
 }
 
 /**

@@ -4,7 +4,7 @@ import { isWaitingOnUs } from './chatFollowUp.js';
 import { windowOpenFor } from './whatsapp.js';
 import { attachLastNudge, attachRecentMessages, greetingNameFor } from './leadFollowUp.js';
 import { displayNameFor, phoneTail } from './leadNames.js';
-import { summariseConversation } from './conversationSummary.js';
+import { summariseConversation, cachedSummaries, refreshSummariesInBackground } from './conversationSummary.js';
 import { getFollowUpPlan, sequenceState } from './followUpSequence.js';
 
 /**
@@ -415,24 +415,48 @@ async function sendHistoryByLead(leadIds, lastInboundByLead) {
  * model has never seen the thread or cannot read it now. The queue never
  * waits on the model and never fails because of it.
  */
-async function attachAi(items) {
-    return Promise.all(items.map(async (it) => {
-        const blank = { aiSummary: null, aiReason: null, nextAction: null, openQuestions: [], temperature: it.temperature || null };
-        try {
-            const s = await summariseConversation(it.phoneNormalized);
-            if (!s?.configured || s.empty || s.error) return { ...it, ...blank };
-            return {
-                ...it,
-                aiSummary: s.headline || null,
-                aiReason: s.reason || null,
-                nextAction: s.nextAction || null,
-                openQuestions: Array.isArray(s.openQuestions) ? s.openQuestions : [],
-                temperature: s.temperature || it.temperature || null,
-            };
-        } catch {
-            return { ...it, ...blank };
+/**
+ * The AI's read of each conversation, from the cache.
+ *
+ * Two reads for the whole batch, never one per lead. A thread whose summary
+ * is out of date is handed to the background lane and comes back blank this
+ * time — the page refetches shortly and picks it up. `generate: 'inline'`
+ * waits instead, for the one-lead detail view where the person is looking
+ * at exactly this conversation.
+ */
+async function attachAi(items, { generate = 'background' } = {}) {
+    const blankFor = (it) => ({ aiSummary: null, aiReason: null, nextAction: null, openQuestions: [], temperature: it.temperature || null });
+    let fresh = new Map();
+    let stale = [];
+    try {
+        ({ fresh, stale } = await cachedSummaries(items.map((it) => it.phoneNormalized)));
+    } catch { /* the summary is a bonus, never a gate */ }
+
+    if (stale.length) {
+        if (generate === 'inline' && stale.length <= 3) {
+            await Promise.all(stale.map(async (phone) => {
+                try {
+                    const s = await summariseConversation(phone);
+                    if (s?.configured && !s.empty && !s.error) fresh.set(phone, s);
+                } catch { /* stays blank */ }
+            }));
+        } else {
+            refreshSummariesInBackground(stale);
         }
-    }));
+    }
+
+    return items.map((it) => {
+        const s = fresh.get(it.phoneNormalized);
+        if (!s) return { ...it, ...blankFor(it) };
+        return {
+            ...it,
+            aiSummary: s.headline || null,
+            aiReason: s.reason || null,
+            nextAction: s.nextAction || null,
+            openQuestions: Array.isArray(s.openQuestions) ? s.openQuestions : [],
+            temperature: s.temperature || it.temperature || null,
+        };
+    });
 }
 
 /**
@@ -440,7 +464,7 @@ async function attachAi(items) {
  * with its next-contact date and day-bucket. One owner's, or everybody's
  * for admin (ownerId null). `leadIds` narrows it to specific leads.
  */
-export async function buildQueue({ ownerId = null, leadIds = null, now = new Date() } = {}) {
+export async function buildQueue({ ownerId = null, leadIds = null, now = new Date(), generate = 'background' } = {}) {
     const [stages, plan] = await Promise.all([quietStages(), getFollowUpPlan().catch(() => null)]);
 
     const filter = { status: { $nin: CLOSED_STATUSES } };
@@ -507,7 +531,7 @@ export async function buildQueue({ ownerId = null, leadIds = null, now = new Dat
     }
     if (!items.length) return [];
 
-    items = await attachAi(items);
+    items = await attachAi(items, { generate });
     // The AI's temperature and open questions change the score, so re-run
     // the arithmetic now that they are on the row.
     for (const it of items) {
@@ -538,7 +562,7 @@ export async function detailFor({ leadId, ownerId = null, now = new Date() }) {
     if (ownerId && String(lead.owner?._id || '') !== String(ownerId)) return null;
 
     const [items, sends, messages, customers] = await Promise.all([
-        buildQueue({ ownerId, leadIds: [leadId], now }),
+        buildQueue({ ownerId, leadIds: [leadId], now, generate: 'inline' }),
         LeadFollowUp.find({ lead: leadId }).sort({ sentAt: -1 }).limit(20).lean(),
         lead.phoneNormalized
             ? WhatsAppMessage.find({ phoneNormalized: lead.phoneNormalized })

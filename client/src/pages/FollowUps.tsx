@@ -168,6 +168,14 @@ export default function FollowUps() {
   const items = data?.items ?? []
   const summary = data?.summary
 
+  // AI reads still being written on the server: come back for them once,
+  // rather than polling — a queue of 300 stale threads takes a few minutes.
+  useEffect(() => {
+    if (!data?.aiPending) return
+    const t = window.setTimeout(() => refetch(), 20_000)
+    return () => window.clearTimeout(t)
+  }, [data?.aiPending, refetch])
+
   const { data: log } = useQuery({
     queryKey: ['follow-up-completed', isAdmin ? owner : 'mine'],
     queryFn: () => leadFollowUpApi.log(isAdmin && owner ? { owner } : undefined),

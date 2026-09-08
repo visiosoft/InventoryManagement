@@ -650,7 +650,7 @@ export interface FollowUpEligibilityRow {
 
 export const followUpQueueApi = {
   list: (params?: { owner?: string }) =>
-    api.get<{ items: FollowUpQueueItem[]; summary: FollowUpQueueSummary; threshold: number; stages: { afterDays: number }[]; snapshotAt: string }>(
+    api.get<{ items: FollowUpQueueItem[]; summary: FollowUpQueueSummary; threshold: number; stages: { afterDays: number }[]; snapshotAt: string; aiPending?: number }>(
       '/follow-up-queue', { params },
     ).then((r) => r.data),
   detail: (leadId: string) => api.get<FollowUpDetail>(`/follow-up-queue/${leadId}`).then((r) => r.data),

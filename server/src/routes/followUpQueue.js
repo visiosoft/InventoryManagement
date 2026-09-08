@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { summariesPending } from '../services/conversationSummary.js';
 import { isValidObjectId } from 'mongoose';
 import { requireAdmin } from '../middleware/auth.js';
 import { listWhatsAppTemplates } from '../services/whatsapp.js';
@@ -69,6 +70,9 @@ router.get('/', async (req, res) => {
             // Sent back on a send, so "they replied after this list was drawn"
             // can be caught server-side.
             snapshotAt: now,
+            // Summaries still being written in the background; the page
+            // refetches once when this is non-zero.
+            aiPending: summariesPending(),
         });
     } catch (e) {
         res.status(500).json({ error: e.message });

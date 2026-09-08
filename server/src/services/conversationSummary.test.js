@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildTranscript, parseSummary, MAX_TURNS } from './conversationSummary.js';
+import { buildTranscript, parseSummary, MAX_TURNS, makeLane } from './conversationSummary.js';
 
 const msg = (over = {}) => ({
   direction: 'inbound',
@@ -103,4 +103,23 @@ test('open questions are always an array, and capped', () => {
   assert.deepEqual(parseSummary({ headline: 'h', nextAction: 'n', openQuestions: 'not a list' }).openQuestions, []);
   const many = parseSummary({ headline: 'h', nextAction: 'n', openQuestions: Array(9).fill('q?') });
   assert.equal(many.openQuestions.length, 5);
+});
+
+test('the background lane runs a few at a time, never queues the same key twice, and drains', async () => {
+    const running = new Set();
+    let peak = 0;
+    const done = [];
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    const lane = makeLane({ limit: 2, max: 10, run: async (key) => {
+        running.add(key); peak = Math.max(peak, running.size);
+        await gate; running.delete(key); done.push(key);
+    } });
+    lane.add(['a', 'b', 'c', 'a', 'b']);
+    assert.equal(lane.size(), 3);
+    assert.equal(peak, 2);
+    release();
+    await new Promise((r) => setTimeout(r, 10));
+    assert.deepEqual(done.sort(), ['a', 'b', 'c']);
+    assert.equal(lane.size(), 0);
 });
