@@ -493,6 +493,7 @@ function PendingApprovals({ data, isLoading, onSent }: {
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
     const [preview, setPreview] = useState<PendingRow | null>(null)
     const [previewTab, setPreviewTab] = useState<'email' | 'whatsapp'>('email')
+    const qc = useQueryClient()
     const [sendError, setSendError] = useState('')
     const [sendResult, setSendResult] = useState('')
     const [outcomes, setOutcomes] = useState<SendOutcome[]>([])
@@ -515,6 +516,24 @@ function PendingApprovals({ data, isLoading, onSent }: {
             setSendResult(`Sent ${d.sent}${d.skipped ? `, ${d.skipped} skipped` : ''}${d.errors ? `, ${d.errors} failed` : ''}.`)
             setOutcomes(d.outcomes ?? [])
             setSelected(new Set())
+            // A row that has just gone out leaves the list now, not after the
+            // server has rebuilt it — that rebuild takes a few seconds, and in
+            // that gap three rows marked "sent" above sat there looking as if
+            // they still needed approving.
+            const sentKeys = new Set((d.outcomes ?? []).filter(o => o.status === 'sent').map(o => `${o.contractId}:${o.ruleId}`))
+            if (sentKeys.size) {
+                qc.setQueryData<{ groups: PendingGroup[]; total: number; matched: number; alreadyHandled: number } | undefined>(
+                    ['automation-rules-pending'],
+                    (prev) => prev ? {
+                        ...prev,
+                        groups: prev.groups
+                            .map(g => ({ ...g, rows: g.rows.filter(r => !sentKeys.has(rowKey(r))) }))
+                            .filter(g => g.rows.length > 0),
+                        total: Math.max(0, prev.total - sentKeys.size),
+                        alreadyHandled: prev.alreadyHandled + sentKeys.size,
+                    } : prev,
+                )
+            }
             onSent()
         },
         onError: (e) => setSendError(apiError(e)),
