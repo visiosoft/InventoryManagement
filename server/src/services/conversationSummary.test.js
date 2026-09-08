@@ -117,7 +117,10 @@ test('the background lane runs a few at a time, never queues the same key twice,
     } });
     lane.add(['a', 'b', 'c', 'a', 'b']);
     assert.equal(lane.size(), 3);
+    // Work starts on a microtask, not synchronously — yield once.
+    await new Promise((r) => setTimeout(r, 0));
     assert.equal(peak, 2);
+    assert.equal(running.size, 2);
     release();
     await new Promise((r) => setTimeout(r, 10));
     assert.deepEqual(done.sort(), ['a', 'b', 'c']);
