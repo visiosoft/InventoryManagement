@@ -7,6 +7,7 @@ import {
     priceRenewal,
     renewalChoices,
     validateNewEndDate,
+    MAX_RENEWAL_WEEKS,
 } from '../services/renewalPricing.js';
 import { createCheckoutSession, stripeConfigured, stripePublishableKey, stripeEmbeddedConfigured } from '../services/stripe.js';
 import { bankTransferDetails } from '../services/bankDetails.js';
@@ -300,6 +301,7 @@ router.get('/renewal/:contractId/:token/options', async (req, res) => {
         rateSource: rate.source,
         vatPct: VAT_PCT,
         cardFeePct: RENEWAL_CARD_FEE_PCT,
+        maxWeeks: MAX_RENEWAL_WEEKS,
         choices: renewalChoices({
             monthlyRate: rate.monthlyRate,
             from: contract.endDate,

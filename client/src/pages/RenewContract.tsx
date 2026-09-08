@@ -49,6 +49,8 @@ interface Options {
   rateSource: 'list' | 'contract'
   vatPct: number
   cardFeePct: number
+  /** The longest renewal sold online; the dropdown runs 1..maxWeeks. */
+  maxWeeks: number
   choices: Choice[]
   stripePublishableKey: string
   cardAvailable: boolean
@@ -80,6 +82,11 @@ const money = (n: number) =>
 
 /** yyyy-mm-dd, which is what the API expects. */
 const isoDay = (d: Date) => d.toISOString().slice(0, 10)
+
+/** Our WhatsApp assistant — the only support channel on this page. */
+const ASSISTANT_WHATSAPP = '971542249946'
+const assistantLink = (contractNo: string, unitLabel: string) =>
+  `https://wa.me/${ASSISTANT_WHATSAPP}?text=${encodeURIComponent(`Hi, I'd like help renewing contract ${contractNo} (unit ${unitLabel}).`)}`
 
 const addWeeksISO = (from: string | Date, weeks: number) =>
   isoDay(new Date(new Date(from).getTime() + weeks * 7 * 86400000))
@@ -141,8 +148,7 @@ function Shell({ children }: { children: ReactNode }) {
       <div style={{ maxWidth: 620, margin: '0 auto', padding: '48px 24px 64px' }}>
         {children}
         <p style={{ fontSize: 13, color: MUTED, marginTop: 28, textAlign: 'center' }}>
-          Questions? Call <a href="tel:+97143293924" style={{ color: PURPLE }}>04 329 3924</a> or message us on{' '}
-          <a href="https://wa.me/971542249946" style={{ color: PURPLE }}>WhatsApp</a>.
+          Questions? <a href={`https://wa.me/${ASSISTANT_WHATSAPP}`} style={{ color: PURPLE }}>Talk to our assistant on WhatsApp</a>.
         </p>
       </div>
     </div>
@@ -231,7 +237,6 @@ export default function RenewContract() {
   // can't already reach, and it keeps what is charged and what the contract
   // extends by permanently in agreement (no partial-week ambiguity to explain).
   const [weeks, setWeeks] = useState(12)
-  const [weeksText, setWeeksText] = useState('12')
   const [price, setPrice] = useState<Price | null>(null)
   const [priceErr, setPriceErr] = useState('')
   const [method, setMethod] = useState<'card' | 'bank_transfer'>('card')
@@ -265,7 +270,6 @@ export default function RenewContract() {
         // renew for longer than four weeks, and it saves a decision.
         const defaultWeeks = o.choices[1]?.weeks || o.choices[0]?.weeks || 12
         setWeeks(defaultWeeks)
-        setWeeksText(String(defaultWeeks))
         if (!o.cardAvailable) setMethod('bank_transfer')
       })
       .catch((e) => live && setLoadErr(e.message))
@@ -337,20 +341,8 @@ export default function RenewContract() {
     [options?.stripePublishableKey],
   )
 
-  /** Typing commits only on a valid 1–104 value; an in-progress edit (a
-   *  cleared field, a stray character) is shown but not acted on, and a blur
-   *  with nothing valid snaps back to the last real duration. */
-  function onWeeksChange(raw: string) {
-    setWeeksText(raw)
-    const n = parseInt(raw, 10)
-    if (Number.isFinite(n) && n >= 1 && n <= 104) setWeeks(n)
-  }
-  function onWeeksBlur() {
-    setWeeksText(String(weeks))
-  }
   function pickWeeks(w: number) {
     setWeeks(w)
-    setWeeksText(String(w))
   }
 
   async function start() {
@@ -524,7 +516,7 @@ export default function RenewContract() {
 
             <section style={cardStyle}>
               <h2 style={h2Style}>How long?</h2>
-              <p style={{ margin: '8px 0 0', fontSize: 14, color: MUTED }}>Billed in whole weeks. Pick a length or set your own.</p>
+              <p style={{ margin: '8px 0 0', fontSize: 14, color: MUTED }}>Billed in whole weeks. Pick a length, or choose any number of weeks up to {options.maxWeeks}.</p>
 
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 22 }}>
                 {options.choices.map((c) => (
@@ -544,18 +536,20 @@ export default function RenewContract() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, marginTop: 26 }}>
                 <label style={{ flex: '1 1 150px', minWidth: 0, display: 'block' }}>
                   <span style={labelStyle}>Weeks</span>
-                  <input
-                    type="number" inputMode="numeric" min={1} max={104}
+                  <select
                     className="renew-num"
-                    value={weeksText}
-                    onChange={(e) => onWeeksChange(e.target.value)}
-                    onBlur={onWeeksBlur}
+                    value={weeks}
+                    onChange={(e) => pickWeeks(Number(e.target.value))}
                     style={{
                       marginTop: 8, width: '100%', height: 50, padding: '0 14px',
                       border: '1px solid rgba(20,8,31,.16)', borderRadius: 12, background: PAGE_BG,
                       fontFamily: BODY, fontSize: 16, fontWeight: 600, color: INK, fontVariantNumeric: 'tabular-nums',
                     }}
-                  />
+                  >
+                    {Array.from({ length: options.maxWeeks }, (_, i) => i + 1).map((w) => (
+                      <option key={w} value={w}>{w} week{w === 1 ? '' : 's'}</option>
+                    ))}
+                  </select>
                 </label>
                 <div style={{ flex: '1 1 200px', minWidth: 0 }}>
                   <span style={labelStyle}>Move-out date</span>
@@ -633,6 +627,20 @@ export default function RenewContract() {
               {ctaLabel}
             </button>
 
+            <a
+              href={assistantLink(options.contractNo, unitLabel)}
+              target="_blank" rel="noreferrer"
+              className="renew-assist"
+              style={{
+                marginTop: 12, height: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                border: '1.5px solid #16A34A', borderRadius: 999, color: '#15803D', background: '#F0FDF4',
+                fontFamily: BODY, fontSize: 15, fontWeight: 700, textDecoration: 'none',
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5.1-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.2-.4.7-1.3.1-.2 0-.3 0-.5l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 12 12 0 0 0 4.6 4c.6.3 1.1.4 1.5.6.6.2 1.2.2 1.6.1.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.1-1.2l-.4-.2z"/></svg>
+              Talk to our assistant on WhatsApp
+            </a>
+
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, fontSize: 12, color: MUTED }}>
               <span style={{ width: 6, height: 6, borderRadius: 999, background: '#22c55e', boxShadow: '0 0 0 3px rgba(34,197,94,.18)', flex: '0 0 auto' }} />
               <span>Same unit, same key. Nothing to move.</span>
@@ -641,9 +649,8 @@ export default function RenewContract() {
         </div>
 
         <p style={{ margin: '32px 0 0', fontSize: 13, color: MUTED }}>
-          Need a different length or a hand with anything?{' '}
-          <a href="https://wa.me/971542249946" style={{ color: PURPLE }}>Message us on WhatsApp</a> or call{' '}
-          <a href="tel:+97143293924" style={{ color: PURPLE }}>04 329 3924</a>.
+          Need longer than {options.maxWeeks} weeks, or a hand with anything?{' '}
+          <a href={assistantLink(options.contractNo, unitLabel)} target="_blank" rel="noreferrer" style={{ color: PURPLE }}>Talk to our assistant on WhatsApp</a>.
         </p>
       </div>
     </div>

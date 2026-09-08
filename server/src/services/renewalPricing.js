@@ -120,7 +120,14 @@ export function priceRenewal({ monthlyRate, from, to, vatPct = 5, cardFeePct = 0
  * Most people renew for a round period and want to be told the price rather
  * than discover it by dragging a calendar. The picker stays for everyone else.
  */
-export const PRESET_WEEKS = [4, 12, 24, 52];
+export const PRESET_WEEKS = [4, 8, 12, 24];
+
+/**
+ * The longest renewal we sell online. Anything past it is a conversation —
+ * a longer commitment usually comes with a question about price, and the
+ * assistant on WhatsApp is the right place for that, not a form.
+ */
+export const MAX_RENEWAL_WEEKS = 28;
 
 export function renewalChoices({ monthlyRate, from, vatPct = 5, cardFeePct = 0, presets = PRESET_WEEKS }) {
     const start = atMidnight(from);
@@ -143,7 +150,7 @@ export function renewalChoices({ monthlyRate, from, vatPct = 5, cardFeePct = 0, 
  * that fails with a error the tenant cannot act on. The ceiling keeps a
  * mis-typed year (2035 for 2026) from quietly producing a 470-week invoice.
  */
-export function validateNewEndDate({ currentEndDate, newEndDate, maxWeeks = 104 }) {
+export function validateNewEndDate({ currentEndDate, newEndDate, maxWeeks = MAX_RENEWAL_WEEKS }) {
     const from = atMidnight(currentEndDate);
     const to = atMidnight(newEndDate);
     if (!to) return { ok: false, error: 'Pick a valid date' };
@@ -152,7 +159,7 @@ export function validateNewEndDate({ currentEndDate, newEndDate, maxWeeks = 104 
     const weeks = weeksBetween(from, to);
     if (weeks < 1) return { ok: false, error: 'Choose a date at least a week after your current end date' };
     if (weeks > maxWeeks) {
-        return { ok: false, error: `We can renew up to ${Math.floor(maxWeeks / 52)} years ahead online — please contact us for longer` };
+        return { ok: false, error: `We can renew up to ${maxWeeks} weeks online — for longer, message our assistant on WhatsApp` };
     }
     return { ok: true, weeks };
 }

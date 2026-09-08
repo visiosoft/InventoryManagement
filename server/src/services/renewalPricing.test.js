@@ -135,7 +135,16 @@ test('the current end date itself is not a renewal', () => {
 test('a mistyped year is refused instead of invoicing nine years of storage', () => {
     const out = validateNewEndDate({ currentEndDate: '2026-10-01', newEndDate: '2035-10-01' });
     assert.equal(out.ok, false);
-    assert.match(out.error, /contact us/i);
+    assert.match(out.error, /assistant on WhatsApp/i);
+});
+
+test('28 weeks is the most sold online: 28 passes, 29 is sent to the assistant', () => {
+    const ok = validateNewEndDate({ currentEndDate: '2026-10-01', newEndDate: '2027-04-15' });
+    assert.equal(ok.ok, true);
+    assert.equal(ok.weeks, 28);
+    const over = validateNewEndDate({ currentEndDate: '2026-10-01', newEndDate: '2027-04-22' });
+    assert.equal(over.ok, false);
+    assert.match(over.error, /28 weeks/);
 });
 
 test('an ordinary renewal passes and reports its weeks', () => {
