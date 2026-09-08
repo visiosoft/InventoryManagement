@@ -2049,6 +2049,34 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     return list
   }, [convoList, labelFilter, ownerFilter, serverKnowsOwner, me?.id])
 
+  /* The list must not move under the pointer.
+   *
+   * It is newest-first and refreshed every ten seconds, so any chat getting a
+   * message jumps to the top and every row above the one being aimed at
+   * shifts down. When that landed in the same instant as a click, the click
+   * hit whichever customer had just slid under the cursor — "I clicked
+   * Hemnath and got somebody else; clicking again worked." So while the
+   * pointer is over the list the order it arrived with is kept: rows still
+   * update in place (preview, unread, chips), and anything new is added at
+   * the bottom until the pointer leaves, when the true order comes back.
+   * A search or a tab change is the reader asking for a new list, so the
+   * hold resets with them. */
+  const [pointerInList, setPointerInList] = useState(false)
+  const heldOrder = useRef<{ key: string; index: Map<string, number> } | null>(null)
+  const orderKey = `${debouncedSearch}|${ownerFilter}|${labelFilter}`
+  const displayConvos = useMemo(() => {
+    if (!pointerInList) { heldOrder.current = null; return filteredConvos }
+    if (!heldOrder.current || heldOrder.current.key !== orderKey) {
+      heldOrder.current = { key: orderKey, index: new Map(filteredConvos.map((c, i) => [c.phoneNormalized, i])) }
+      return filteredConvos
+    }
+    const { index } = heldOrder.current
+    const unseen = index.size
+    return [...filteredConvos].sort(
+      (a, b) => (index.get(a.phoneNormalized) ?? unseen) - (index.get(b.phoneNormalized) ?? unseen),
+    )
+  }, [filteredConvos, pointerInList, orderKey])
+
   /* The open conversation, from the list where the filter kept it and from the
      server's `pinned` where it did not. It used to be pushed into the list
      itself, so a chat belonging to another rep appeared under "My leads" —
@@ -2646,10 +2674,14 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
             )}
           </div>
 
-          <div className="wa-scroll flex-1 min-h-0">
+          <div
+            className="wa-scroll flex-1 min-h-0"
+            onPointerEnter={() => setPointerInList(true)}
+            onPointerLeave={() => setPointerInList(false)}
+          >
             {loadingConvos ? (
               <p className="px-4 py-3 text-sm" style={{ color: FAINT_INK }}>Loading…</p>
-            ) : filteredConvos.length === 0 ? (
+            ) : displayConvos.length === 0 ? (
               <p className="px-4 py-3 text-xs" style={{ color: FAINT_INK }}>
                 {convoList.length === 0
                   ? 'No conversations yet. Start a new chat.'
@@ -2666,7 +2698,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                           : 'No chats match that search.'}
               </p>
             ) : (
-              filteredConvos.map((c) => {
+              displayConvos.map((c) => {
                 const unread = unreadByPhone[c.phoneNormalized] ?? 0
                 const isSelected = c.phoneNormalized === selectedPhone
                 const label = convDisplayName(c)
