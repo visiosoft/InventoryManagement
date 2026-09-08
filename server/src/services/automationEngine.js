@@ -44,6 +44,35 @@ export async function getWhatsAppAutomation() {
   return doc?.whatsappAutomation === true;
 }
 
+/**
+ * Whether an automatic run — the 6-hour cron, or "Run now" from the page —
+ * is allowed to actually send WhatsApp on its own, or must leave it for a
+ * person to approve per contract.
+ *
+ * Defaults to true (approval required) on an unset config, the same way
+ * getWhatsAppAutomation() defaults to false — a fresh deploy, or a config
+ * document that predates this flag, never auto-sends a channel nobody has
+ * explicitly said is safe to. Email is untouched by this switch; only
+ * WhatsApp went out unattended before a person had reviewed the exact
+ * wording, which is the one channel a wrong send cannot be recalled from.
+ * Turning "Automated WhatsApp" on makes the channel eligible at all — for
+ * both the approval queue and, once this is turned off, the automatic
+ * runs — the two switches answer different questions.
+ */
+export async function getWhatsappApprovalRequired() {
+  const doc = await (await configCollection()).findOne({ _id: CONFIG_ID });
+  return doc?.whatsappApprovalRequired !== false;
+}
+
+export async function setWhatsappApprovalRequired(value) {
+  await (await configCollection()).updateOne(
+    { _id: CONFIG_ID },
+    { $set: { whatsappApprovalRequired: !!value, updatedAt: new Date() } },
+    { upsert: true },
+  );
+  return !!value;
+}
+
 export async function setWhatsAppAutomation(value) {
   await (await configCollection()).updateOne(
     { _id: CONFIG_ID },
@@ -234,7 +263,18 @@ export function unreachableReason({ rule, waAllowed, waConfigured, mailReady, ph
   return why.join('; ') || 'no channel available';
 }
 
-async function dispatch({ rule, contract, eventKey, stepIdx, messages, dryRun, results, waAllowed }) {
+/**
+ * Whether an automatic run must hold this channel back for a person to
+ * approve, rather than sending it now. Pure, so the rule — auto AND live
+ * (never a preview) AND WhatsApp AND the switch is on — is checkable
+ * without a database. `sendApprovedReminders()` never passes `auto`, so an
+ * approved send is never held by this regardless of the switch.
+ */
+export function needsApprovalHold({ auto, dryRun, channel, whatsappApprovalRequired }) {
+  return Boolean(auto) && !dryRun && channel === 'whatsapp' && Boolean(whatsappApprovalRequired);
+}
+
+async function dispatch({ rule, contract, eventKey, stepIdx, messages, dryRun, results, waAllowed, auto = false, whatsappApprovalRequired = false }) {
   const customer = contract.customer;
   const phone = (customer.phones?.[0] || customer.phone || '').replace(/\s+/g, '');
   const email = customer.email || '';
@@ -271,6 +311,15 @@ async function dispatch({ rule, contract, eventKey, stepIdx, messages, dryRun, r
   }
 
   for (const channel of channels) {
+    // An automatic run — the cron, or "Run now" — never sends WhatsApp on
+    // its own while this is on; it is left for a person to send from
+    // Pending Approvals. Only real dispatch is gated: a preview still shows
+    // what would go, since nothing is actually sent by looking at it, and
+    // sendApprovedReminders() never sets `auto`, so an approved WhatsApp
+    // send always goes through regardless of this switch.
+    if (needsApprovalHold({ auto, dryRun, channel, whatsappApprovalRequired })) {
+      results.skipped++; note(channel, 'skipped', 'WhatsApp needs your approval — send it from Pending Approvals'); continue;
+    }
     if (await alreadySent({ rule, eventKey, channel, recurring: rule.recurring })) {
       results.skipped++; note(channel, 'skipped', 'this step already went out for this contract — see Activity'); continue;
     }
@@ -373,6 +422,7 @@ async function expiryCandidates({ rules, now = new Date(), skipCounter } = {}) {
 export async function runAutomationRules({ dryRun = false } = {}) {
   // Read once per run rather than per contract.
   const waAllowed = await getWhatsAppAutomation();
+  const whatsappApprovalRequired = await getWhatsappApprovalRequired();
   const rules = await AutomationRule.find().lean();
   const templates = await MessageTemplate.find().lean();
   const templatesByName = new Map();
@@ -451,7 +501,7 @@ export async function runAutomationRules({ dryRun = false } = {}) {
           ? `payment_due:${target._id}:step${picked.idx}`
           : `payment_overdue:${contract._id}:step${picked.idx}`;
         const messages = await resolveMessages(picked.s, templatesByName, rule.triggerEvent, vars);
-        await dispatch({ rule, contract, eventKey, stepIdx: picked.idx, messages, dryRun, results, waAllowed });
+        await dispatch({ rule, contract, eventKey, stepIdx: picked.idx, messages, dryRun, results, waAllowed, auto: true, whatsappApprovalRequired });
       }
     }
   }
@@ -459,7 +509,7 @@ export async function runAutomationRules({ dryRun = false } = {}) {
   if (expiryRules.length) {
     for (const c of await expiryCandidates({ rules: expiryRules, now: new Date(now), skipCounter: results })) {
       const messages = await resolveMessages(c.picked.s, templatesByName, 'contract_expiry', c.vars);
-      await dispatch({ rule: c.rule, contract: c.contract, eventKey: c.eventKey, stepIdx: c.picked.idx, messages, dryRun, results, waAllowed });
+      await dispatch({ rule: c.rule, contract: c.contract, eventKey: c.eventKey, stepIdx: c.picked.idx, messages, dryRun, results, waAllowed, auto: true, whatsappApprovalRequired });
     }
   }
 

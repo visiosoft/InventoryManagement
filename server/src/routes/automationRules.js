@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { AutomationRule, AutomationLog } from '../models/index.js';
-import { runAutomationRules, getAutoSend, setAutoSend, getWhatsAppAutomation, setWhatsAppAutomation, pendingExpiryQueue, sendApprovedReminders } from '../services/automationEngine.js';
+import { runAutomationRules, getAutoSend, setAutoSend, getWhatsAppAutomation, setWhatsAppAutomation, getWhatsappApprovalRequired, setWhatsappApprovalRequired, pendingExpiryQueue, sendApprovedReminders } from '../services/automationEngine.js';
 import { sendWhatsAppTemplate, whatsappSendConfigured } from '../services/whatsapp.js';
 import { mailConfigured } from '../services/mail.js';
 
@@ -96,6 +96,20 @@ router.put('/whatsapp', async (req, res) => {
     try {
         const value = await setWhatsAppAutomation(!!req.body?.enabled);
         res.json({ ok: true, whatsappAutomation: value });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// PUT /api/automation-rules/whatsapp-approval — whether an automatic run
+// (the 6-hour cron, or "Run now") may send WhatsApp on its own, or must
+// leave every WhatsApp message for a person to approve from Pending
+// Approvals. Separate from /whatsapp above: that one is "is the channel
+// switched on at all"; this one is "is it safe to send unattended".
+router.put('/whatsapp-approval', async (req, res) => {
+    try {
+        const value = await setWhatsappApprovalRequired(!!req.body?.enabled);
+        res.json({ ok: true, whatsappApprovalRequired: value });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -207,7 +221,7 @@ router.get('/logs', async (req, res) => {
 // GET /api/automation-rules/channels — delivery channels + auto-send state
 router.get('/channels', async (_req, res) => {
     try {
-        res.json({ whatsapp: whatsappSendConfigured(), email: mailConfigured(), autoSend: await getAutoSend(), whatsappAutomation: await getWhatsAppAutomation() });
+        res.json({ whatsapp: whatsappSendConfigured(), email: mailConfigured(), autoSend: await getAutoSend(), whatsappAutomation: await getWhatsAppAutomation(), whatsappApprovalRequired: await getWhatsappApprovalRequired() });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pickChannels, templateFor, dubaiDayRange, sentCutoff, unreachableReason } from './automationEngine.js';
+import { pickChannels, templateFor, dubaiDayRange, sentCutoff, unreachableReason, needsApprovalHold } from './automationEngine.js';
 
 // The rule as the built-in Contract Expiry rule actually ships: WhatsApp on,
 // email off. Turning this rule on to get its email is what once put messages
@@ -215,4 +215,17 @@ test('an approved contract that gets no message says why, in words an admin can 
         'no email address on the customer; WhatsApp automation is switched off');
     assert.equal(unreachableReason({ rule: { emailEnabled: false, whatsappEnabled: false }, waAllowed: true, waConfigured: true, mailReady: true, phone: '9715', email: 'a@b.ae' }),
         'both channels are switched off on this rule');
+});
+
+test('WhatsApp is held for approval only on a real, automatic send — never a preview, never an approved one', () => {
+    // The cron / "Run now", live, with the switch on: held.
+    assert.equal(needsApprovalHold({ auto: true, dryRun: false, channel: 'whatsapp', whatsappApprovalRequired: true }), true);
+    // A preview never sends anything, so it still shows WhatsApp as planned.
+    assert.equal(needsApprovalHold({ auto: true, dryRun: true, channel: 'whatsapp', whatsappApprovalRequired: true }), false);
+    // A person switched the requirement off: automatic WhatsApp goes through.
+    assert.equal(needsApprovalHold({ auto: true, dryRun: false, channel: 'whatsapp', whatsappApprovalRequired: false }), false);
+    // sendApprovedReminders() never sets `auto` — an approved send is never held.
+    assert.equal(needsApprovalHold({ auto: false, dryRun: false, channel: 'whatsapp', whatsappApprovalRequired: true }), false);
+    // Email is never held by this switch, automatic or not.
+    assert.equal(needsApprovalHold({ auto: true, dryRun: false, channel: 'email', whatsappApprovalRequired: true }), false);
 });

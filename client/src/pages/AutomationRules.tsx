@@ -124,7 +124,7 @@ export default function AutomationRules() {
         queryFn: () => api.get('/automation-rules/logs').then(r => r.data),
     })
 
-    const { data: channels } = useQuery<{ whatsapp: boolean; email: boolean; autoSend: boolean; whatsappAutomation: boolean }>({
+    const { data: channels } = useQuery<{ whatsapp: boolean; email: boolean; autoSend: boolean; whatsappAutomation: boolean; whatsappApprovalRequired: boolean }>({
         queryKey: ['automation-channels'],
         queryFn: () => api.get('/automation-rules/channels').then(r => r.data),
     })
@@ -146,6 +146,10 @@ export default function AutomationRules() {
         mutationFn: (enabled: boolean) => api.put('/automation-rules/whatsapp', { enabled }),
         onSuccess: () => qc.invalidateQueries({ queryKey: ['automation-channels'] }),
         onError: (e) => setError(apiError(e)),
+    })
+    const toggleWhatsappApproval = useMutation({
+        mutationFn: (enabled: boolean) => api.put('/automation-rules/whatsapp-approval', { enabled }),
+        onSuccess: () => qc.invalidateQueries({ queryKey: ['automation-channels'] }),
     })
 
     const [runResult, setRunResult] = useState('')
@@ -262,7 +266,12 @@ export default function AutomationRules() {
                         Preview run
                     </button>
                     <button type="button" disabled={runNow.isPending}
-                        onClick={() => { if (confirm('Send all due reminders now?')) runNow.mutate(false) }}
+                        onClick={() => {
+                            const msg = channels?.whatsappApprovalRequired
+                                ? 'Send all due reminders now? WhatsApp still needs your approval — only email goes out from this button; approve WhatsApp from Pending Approvals.'
+                                : 'Send all due reminders now, on every channel including WhatsApp?'
+                            if (confirm(msg)) runNow.mutate(false)
+                        }}
                         className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 cursor-pointer disabled:opacity-60">
                         {runNow.isPending ? 'Running…' : 'Run now'}
                     </button>
@@ -292,6 +301,21 @@ export default function AutomationRules() {
                         data-tour="automation-whatsapp-gate"
                         className={`h-7 px-3 rounded-full font-bold cursor-pointer transition-colors ${channels.whatsappAutomation ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700'}`}>
                         Automated WhatsApp: {channels.whatsappAutomation ? 'ON' : 'OFF'}
+                    </button>
+                    {/* Separate from the switch above: that one is "can
+                        WhatsApp send at all"; this one is "can it send
+                        unattended". On (the default) means the 6-hour cron
+                        and "Run now" always skip WhatsApp and leave it for
+                        Pending Approvals — nothing goes out on that channel
+                        without somebody reading it first. */}
+                    <button type="button"
+                        onClick={() => {
+                            if (channels.whatsappApprovalRequired && !confirm('Let WhatsApp reminders send automatically, without your approval? Email is unaffected either way.')) return
+                            toggleWhatsappApproval.mutate(!channels.whatsappApprovalRequired)
+                        }}
+                        data-tour="automation-whatsapp-approval"
+                        className={`h-7 px-3 rounded-full font-bold cursor-pointer transition-colors ${channels.whatsappApprovalRequired ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                        WhatsApp: {channels.whatsappApprovalRequired ? 'needs your approval' : 'auto-sends — click to require approval'}
                     </button>
                     <span data-tour="automation-channels" className="flex items-center gap-4">
                       <span className={channels.whatsapp ? 'text-emerald-600 font-medium' : 'text-amber-600 font-medium'}>
