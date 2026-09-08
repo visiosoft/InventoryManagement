@@ -39,14 +39,18 @@ echo "── Health check ──"
 API_PORT=$(grep -E '^PORT=' .env 2>/dev/null | tail -1 | cut -d= -f2 | tr -d '[:space:]')
 API_PORT="${API_PORT:-${PORT:-5010}}"
 echo "probing http://localhost:${API_PORT}/api/health"
+# The API listens only once Atlas has connected, and a cold connect takes
+# 25-30 s on its own — more when two deploys land a minute apart and the
+# second restart interrupts the first connect. Five probes over ~40 s was
+# tight enough to fail a deploy whose process came up fine seconds later.
 sleep 4
-for i in 1 2 3 4 5; do
+for i in $(seq 1 20); do
   BODY=$(curl -s -m 5 "http://localhost:${API_PORT}/api/health" || true)
   case "$BODY" in
-    *'"ok":true'*) echo "API healthy: $BODY"; exit 0;;
+    *'"ok":true'*) echo "API healthy after ~$((4 + i * 5))s: $BODY"; exit 0;;
   esac
-  echo "attempt $i: $BODY"
-  sleep 3
+  echo "attempt $i: ${BODY:-no response yet}"
+  sleep 5
 done
 echo "API did not come up healthy" >&2
 pm2 logs "$PM2_NAME" --lines 30 --nostream || true
