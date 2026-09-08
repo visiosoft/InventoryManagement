@@ -111,10 +111,12 @@ test('no discount is ever applied — a renewal is always past the first four we
 test('presets are priced from the current end date and land on whole weeks', () => {
     const choices = renewalChoices({ monthlyRate: 1500, from: '2026-10-01' });
     assert.equal(choices.length, 4);
-    const [four, twelve] = choices;
+    const [four, eight, twelve] = choices;
     assert.equal(four.weeks, 4);
     assert.equal(four.endDate, '2026-10-29');
     assert.equal(four.total, 1575);
+    assert.equal(eight.weeks, 8);
+    assert.equal(eight.subTotal, 3000);
     assert.equal(twelve.weeks, 12);
     assert.equal(twelve.subTotal, 4500);
 });

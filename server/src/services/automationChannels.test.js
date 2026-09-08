@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pickChannels, templateFor, dubaiDayRange, sentCutoff } from './automationEngine.js';
+import { pickChannels, templateFor, dubaiDayRange, sentCutoff, unreachableReason } from './automationEngine.js';
 
 // The rule as the built-in Contract Expiry rule actually ships: WhatsApp on,
 // email off. Turning this rule on to get its email is what once put messages
@@ -205,4 +205,14 @@ test('a reset newer than the recurring window wins — the whole point of resett
   const freshReset = new Date('2026-03-09T00:00:00.000Z');
   const cutoff = sentCutoff({ recurring: { enabled: true, everyDays: 5 }, remindersResetAt: freshReset, now });
   assert.equal(cutoff.getTime(), freshReset.getTime());
+});
+
+test('an approved contract that gets no message says why, in words an admin can act on', () => {
+    const rule = { emailEnabled: true, whatsappEnabled: false };
+    assert.equal(unreachableReason({ rule, waAllowed: true, waConfigured: true, mailReady: true, phone: '', email: '' }), 'no email address on the customer');
+    assert.equal(unreachableReason({ rule, waAllowed: true, waConfigured: true, mailReady: false, phone: '', email: 'a@b.ae' }), 'email is not configured — connect Gmail in Settings');
+    assert.equal(unreachableReason({ rule: { emailEnabled: true, whatsappEnabled: true }, waAllowed: false, waConfigured: true, mailReady: true, phone: '9715', email: '' }),
+        'no email address on the customer; WhatsApp automation is switched off');
+    assert.equal(unreachableReason({ rule: { emailEnabled: false, whatsappEnabled: false }, waAllowed: true, waConfigured: true, mailReady: true, phone: '9715', email: 'a@b.ae' }),
+        'both channels are switched off on this rule');
 });

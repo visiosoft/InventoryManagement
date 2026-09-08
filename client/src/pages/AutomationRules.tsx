@@ -71,6 +71,16 @@ type PendingRow = {
     preview: { emailSubject: string; emailHtml: string; whatsapp: string }
 }
 
+type SendOutcome = {
+    contractId: string
+    ruleId: string
+    contractNo: string
+    customerName: string
+    channel: 'email' | 'whatsapp' | null
+    status: 'sent' | 'skipped' | 'failed'
+    reason: string
+}
+
 type PendingGroup = {
     ruleId: string
     ruleName: string
@@ -485,16 +495,25 @@ function PendingApprovals({ data, isLoading, onSent }: {
     const [previewTab, setPreviewTab] = useState<'email' | 'whatsapp'>('email')
     const [sendError, setSendError] = useState('')
     const [sendResult, setSendResult] = useState('')
+    const [outcomes, setOutcomes] = useState<SendOutcome[]>([])
+    const [outcomeNames, setOutcomeNames] = useState<Record<string, string>>({})
 
     const groups = data?.groups ?? []
     const rowKey = (r: PendingRow) => `${r.contractId}:${r.ruleId}`
 
     const send = useMutation({
-        mutationFn: (selections: { contractId: string; ruleId: string }[]) =>
-            api.post('/automation-rules/pending/send', { selections }).then(r => r.data),
+        mutationFn: (selections: { contractId: string; ruleId: string }[]) => {
+            // Remember who each row was, so an outcome for a contract that has
+            // since left the list can still be named.
+            const names: Record<string, string> = {}
+            for (const g of groups) for (const r of g.rows) names[rowKey(r)] = `${r.customerName} (${r.contractNo})`
+            setOutcomeNames(names)
+            return api.post<{ sent: number; skipped: number; errors: number; outcomes?: SendOutcome[] }>('/automation-rules/pending/send', { selections }).then(r => r.data)
+        },
         onSuccess: (d) => {
             setSendError('')
             setSendResult(`Sent ${d.sent}${d.skipped ? `, ${d.skipped} skipped` : ''}${d.errors ? `, ${d.errors} failed` : ''}.`)
+            setOutcomes(d.outcomes ?? [])
             setSelected(new Set())
             onSent()
         },
@@ -559,7 +578,32 @@ function PendingApprovals({ data, isLoading, onSent }: {
             </p>
 
             {sendError && <p className="text-xs text-destructive mt-3">{sendError}</p>}
-            {sendResult && <p className="text-xs text-emerald-700 mt-3 font-medium">{sendResult}</p>}
+            {sendResult && (
+                <div className="mt-3 rounded-xl border bg-card p-3">
+                    <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-bold">{sendResult}</p>
+                        <div className="flex items-center gap-3">
+                            <Link to="/settings/sent-emails" className="text-xs font-semibold text-primary hover:underline">Open Sent Emails →</Link>
+                            <button type="button" onClick={() => { setSendResult(''); setOutcomes([]) }} className="text-xs text-muted-foreground hover:underline cursor-pointer">Dismiss</button>
+                        </div>
+                    </div>
+                    {outcomes.length > 0 && (
+                        <ul className="mt-2 flex flex-col gap-1">
+                            {outcomes.map((o, i) => {
+                                const who = o.customerName ? `${o.customerName} (${o.contractNo})` : (outcomeNames[`${o.contractId}:${o.ruleId}`] || o.contractId)
+                                const tone = o.status === 'sent' ? 'text-emerald-700' : o.status === 'failed' ? 'text-destructive' : 'text-amber-700'
+                                const mark = o.status === 'sent' ? '✓' : o.status === 'failed' ? '✕' : '–'
+                                return (
+                                    <li key={i} className="text-xs flex gap-2">
+                                        <span className={`font-bold w-3 shrink-0 ${tone}`}>{mark}</span>
+                                        <span><span className="font-semibold">{who}</span>{o.channel ? ` · ${o.channel === 'whatsapp' ? 'WhatsApp' : 'Email'}` : ''} — <span className={tone}>{o.status === 'sent' ? '' : `${o.status}: `}{o.reason}</span></span>
+                                    </li>
+                                )
+                            })}
+                        </ul>
+                    )}
+                </div>
+            )}
 
             <div className="flex flex-col gap-4 mt-4">
                 {groups.map(g => {

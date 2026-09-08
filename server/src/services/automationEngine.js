@@ -215,10 +215,38 @@ export function pickChannels({ rule, waAllowed, waConfigured, mailReady, phone, 
   return channels;
 }
 
+/**
+ * Why a contract got no message at all — the answer to "I approved it,
+ * where is the email?". One line per channel the rule has switched on.
+ */
+export function unreachableReason({ rule, waAllowed, waConfigured, mailReady, phone, email }) {
+  const why = [];
+  if (rule.emailEnabled) {
+    if (!email) why.push('no email address on the customer');
+    else if (!mailReady) why.push('email is not configured — connect Gmail in Settings');
+  }
+  if (rule.whatsappEnabled) {
+    if (!waAllowed) why.push('WhatsApp automation is switched off');
+    else if (!waConfigured) why.push('WhatsApp is not configured');
+    else if (!phone) why.push('no phone number on the customer');
+  }
+  if (!rule.emailEnabled && !rule.whatsappEnabled) why.push('both channels are switched off on this rule');
+  return why.join('; ') || 'no channel available';
+}
+
 async function dispatch({ rule, contract, eventKey, stepIdx, messages, dryRun, results, waAllowed }) {
   const customer = contract.customer;
   const phone = (customer.phones?.[0] || customer.phone || '').replace(/\s+/g, '');
   const email = customer.email || '';
+  // Per-contract outcomes, when the caller wants them (the approval queue
+  // does; the scheduled run only keeps counts).
+  const note = (channel, status, reason) => {
+    if (!results.outcomes) return;
+    results.outcomes.push({
+      contractId: String(contract._id), ruleId: String(rule._id), contractNo: contract.contractNo || '',
+      customerName: customer.fullName || '', channel, status, reason,
+    });
+  };
   const base = {
     rule: rule._id,
     ruleName: rule.name,
@@ -236,11 +264,19 @@ async function dispatch({ rule, contract, eventKey, stepIdx, messages, dryRun, r
     phone,
     email,
   });
-  if (!channels.length) { results.skipped++; return; }
+  if (!channels.length) {
+    results.skipped++;
+    note(null, 'skipped', unreachableReason({ rule, waAllowed, waConfigured: whatsappSendConfigured(), mailReady: mailConfigured(), phone, email }));
+    return;
+  }
 
   for (const channel of channels) {
-    if (await alreadySent({ rule, eventKey, channel, recurring: rule.recurring })) { results.skipped++; continue; }
-    if (await alreadySentToday({ rule, contract, channel })) { results.skipped++; continue; }
+    if (await alreadySent({ rule, eventKey, channel, recurring: rule.recurring })) {
+      results.skipped++; note(channel, 'skipped', 'this step already went out for this contract — see Activity'); continue;
+    }
+    if (await alreadySentToday({ rule, contract, channel })) {
+      results.skipped++; note(channel, 'skipped', 'already sent today on this channel'); continue;
+    }
     if (dryRun) {
       results.planned.push({ rule: rule.name, contract: contract.contractNo, customer: customer.fullName, channel, step: stepIdx, message: channel === 'whatsapp' ? messages.whatsapp : messages.emailText });
       continue;
@@ -261,6 +297,7 @@ async function dispatch({ rule, contract, eventKey, stepIdx, messages, dryRun, r
           await sendWhatsAppText({ to: phone, body: messages.whatsapp });
         }
         await AutomationLog.create({ ...base, channel, message: messages.whatsapp, status: 'sent' });
+        note(channel, 'sent', `sent to ${phone}`);
       } else {
         // Send the designed version when there is one, keeping the text as the
         // alternative part rather than replacing it.
@@ -275,11 +312,13 @@ async function dispatch({ rule, contract, eventKey, stepIdx, messages, dryRun, r
           },
         });
         await AutomationLog.create({ ...base, channel, message: messages.emailText, status: 'sent' });
+        note(channel, 'sent', `sent to ${email}`);
       }
       results.sent++;
     } catch (e) {
       await AutomationLog.create({ ...base, channel, message: channel === 'whatsapp' ? messages.whatsapp : messages.emailText, status: 'failed', error: e.message || String(e) });
       results.errors++;
+      note(channel, 'failed', e.message || String(e));
     }
   }
 }
@@ -578,7 +617,7 @@ export async function pendingExpiryQueue({ now = new Date() } = {}) {
  * automatic run in the meantime is a no-op, not a duplicate.
  */
 export async function sendApprovedReminders({ selections = [] } = {}) {
-  const results = { sent: 0, skipped: 0, errors: 0 };
+  const results = { sent: 0, skipped: 0, errors: 0, outcomes: [] };
   const wanted = new Set(
     selections.filter((s) => s?.contractId && s?.ruleId).map((s) => `${s.contractId}:${s.ruleId}`),
   );
@@ -597,10 +636,22 @@ export async function sendApprovedReminders({ selections = [] } = {}) {
     templatesByName.set(String(t.key || '').trim().toLowerCase(), t);
   }
 
+  const seen = new Set();
   for (const c of await expiryCandidates({ rules })) {
-    if (!wanted.has(`${c.contract._id}:${c.rule._id}`)) continue;
+    const key = `${c.contract._id}:${c.rule._id}`;
+    if (!wanted.has(key)) continue;
+    seen.add(key);
     const messages = await resolveMessages(c.picked.s, templatesByName, 'contract_expiry', c.vars);
     await dispatch({ rule: c.rule, contract: c.contract, eventKey: c.eventKey, stepIdx: c.picked.idx, messages, dryRun: false, results, waAllowed });
+  }
+  // An approved row that no longer matches any step (the list was loaded
+  // before midnight, the contract was renewed meanwhile…) used to vanish
+  // from the counts entirely — "Sent 0." with nothing to explain it.
+  for (const key of wanted) {
+    if (seen.has(key)) continue;
+    const [contractId, ruleId] = key.split(':');
+    results.skipped++;
+    results.outcomes.push({ contractId, ruleId, contractNo: '', customerName: '', channel: null, status: 'skipped', reason: 'no longer due a reminder — the contract changed since the list was loaded; reload to check' });
   }
   return results;
 }
