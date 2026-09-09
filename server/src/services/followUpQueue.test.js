@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classify, summarise, validateForSend, stageFor, priorityOf, windowFor, nextQuietContact } from './followUpQueue.js';
+import { classify, summarise, validateForSend, stageFor, priorityOf, windowFor, nextQuietContact, QUEUE_SINCE } from './followUpQueue.js';
 import { isWaitingOnUs } from './chatFollowUp.js';
 import { windowOpenFor } from './whatsapp.js';
 import { displayNameFor } from './leadNames.js';
@@ -261,4 +261,10 @@ test('a placeholder-named lead is shown by their Customer record, then their Wha
     // A name a rep typed in wins over everything.
     assert.equal(displayNameFor({ fullName: 'Sara Ali', whatsappProfileName: 'S' }, 'Spring 7'), 'Sara Ali');
     assert.equal(displayNameFor({}), 'Unknown');
+});
+
+test('the queue starts at 1 September 2026, Dubai midnight — the day reliable lead data begins', () => {
+    assert.equal(QUEUE_SINCE.toISOString(), '2026-08-31T20:00:00.000Z');
+    // Dubai is UTC+4, so this is exactly 2026-09-01 00:00 local.
+    assert.equal(new Date(QUEUE_SINCE.getTime() + 4 * 3600_000).toISOString().slice(0, 16), '2026-09-01T00:00');
 });

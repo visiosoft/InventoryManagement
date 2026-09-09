@@ -42,6 +42,18 @@ export const DEFAULT_STAGES = [{ afterDays: 3 }, { afterDays: 7 }, { afterDays: 
  *  history, not today's work — the same bound the inbox's waiting tab
  *  uses (routes/whatsapp.js). Meta's window closed on them long ago. */
 export const WAITING_MAX_DAYS = 30;
+/**
+ * Leads created before this are left out of the queue entirely.
+ *
+ * Set 2026-09-09, per an explicit call: reliable data — real conversation
+ * history, a genuine name, a signal worth acting on — mostly starts at
+ * 1 September 2026; leads older than that were mostly noise inflating
+ * "Needs reply now" and "Contact today" into the hundreds with little a rep
+ * could actually act on. Only the general queue is bounded by this — a
+ * specific lead (the drawer, a bulk-send eligibility check) is never
+ * silently hidden by it; see buildQueue().
+ */
+export const QUEUE_SINCE = new Date('2026-08-31T20:00:00.000Z'); // 2026-09-01 00:00 Asia/Dubai
 export const WINDOWS = ['now', 'today', 'tomorrow', 'in_3_days', 'in_7_days', 'later', 'exhausted'];
 /** A second send to the same lead inside this window needs an explicit
  *  "yes, again" even when the cadence says it is due. */
@@ -470,6 +482,10 @@ export async function buildQueue({ ownerId = null, leadIds = null, now = new Dat
     const filter = { status: { $nin: CLOSED_STATUSES } };
     if (ownerId) filter.owner = ownerId;
     if (leadIds) filter._id = { $in: leadIds.filter((id) => Types.ObjectId.isValid(id)) };
+    // The general queue only, never a specific lookup: a deep link or a
+    // detail/eligibility check for a named lead must still work even if
+    // that lead predates the cutoff below.
+    else filter.createdAt = { $gte: QUEUE_SINCE };
 
     const leads = await Lead.find(filter)
         .select('fullName phone phoneNormalized whatsappProfileName status temperature owner followUpAt sequenceExhaustedAt attempts source')
