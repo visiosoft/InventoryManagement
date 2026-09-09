@@ -68,6 +68,7 @@ router.post('/quick-reply-video', handleVideoUpload, async (req, res) => {
     mediaUrl: `${apiBase}/uploads/quick-replies/${req.file.filename}`,
     mediaThumbnailUrl: `${apiBase}/uploads/quick-replies/${thumbName}`,
     mediaFilename: req.file.originalname,
+    mediaSizeBytes: req.file.size,
   });
 });
 
@@ -207,7 +208,7 @@ router.get('/', async (req, res) => {
 
 // Update a template
 router.put('/:id', async (req, res) => {
-  const { subject, emailBody, emailHtml, whatsappBody, label, category, sortOrder, mediaUrl, mediaKind, mediaFilename, mediaThumbnailUrl,
+  const { subject, emailBody, emailHtml, whatsappBody, label, category, sortOrder, mediaUrl, mediaKind, mediaFilename, mediaThumbnailUrl, mediaSizeBytes,
     whatsappTemplate, whatsappTemplateLang, whatsappTemplateVars,
     locationLat, locationLng, locationName, locationAddress } = req.body;
   const update = { subject, emailBody, whatsappBody };
@@ -248,6 +249,7 @@ router.put('/:id', async (req, res) => {
   }
   if (mediaFilename !== undefined) update.mediaFilename = String(mediaFilename || '');
   if (mediaThumbnailUrl !== undefined) update.mediaThumbnailUrl = String(mediaThumbnailUrl || '').trim();
+  if (mediaSizeBytes !== undefined) update.mediaSizeBytes = Math.max(0, Number(mediaSizeBytes) || 0);
 
   /* A 'location' quick reply carries coordinates instead of a file URL — see
    * the model comment for why that beats a Maps link. Validated as real

@@ -2315,6 +2315,14 @@ const messageTemplateSchema = new Schema({
   // routes/whatsapp.js's /send-quick-reply). Auto-generated at upload time,
   // not editable by hand.
   mediaThumbnailUrl: { type: String, default: '' },
+  // The uploaded video's real size, set once at upload time — what decides,
+  // at send time, whether it fits Meta's own 16 MB video cap and can go out
+  // as a native WhatsApp video (plays inline, no extra tap) or needs the
+  // hosted poster-frame-plus-link treatment. 0 for anything that isn't an
+  // uploaded video, and for a video quick reply saved before this field
+  // existed — routes/whatsapp.js treats that as "unknown, so host it"
+  // rather than risk a native send Meta rejects.
+  mediaSizeBytes: { type: Number, default: 0 },
   // A 'location' quick reply sends WhatsApp's native pin instead of a file —
   // tapping it opens directly on these coordinates, rather than a Google Maps
   // search that surfaces every storage place nearby.

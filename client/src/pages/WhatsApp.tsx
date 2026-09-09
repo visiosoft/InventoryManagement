@@ -2197,6 +2197,11 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
 
   // Outbound attachment: picked here, uploaded to Meta by the server, which
   // returns once the message is actually sent.
+  // Meta's own cap on a native WhatsApp video attachment — at or under this,
+  // a video plays inline in WhatsApp itself with no extra tap, so it is sent
+  // that way rather than hosted. Shared between the size check below and
+  // sendComposer()'s own routing decision, so the two can't disagree.
+  const WHATSAPP_VIDEO_NATIVE_LIMIT = 16 * 1024 * 1024
   const fileRef = useRef<HTMLInputElement | null>(null)
   const [pending, setPending] = useState<File | null>(null)
   const [preview, setPreview] = useState<string>('')
@@ -2473,11 +2478,13 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     if (send.isPending || sendMedia.isPending || sendHostedVideoAttachment.isPending) return
     if (!selectedPhone) { setSendErr('Pick a conversation first, or start a new chat.'); return }
     // With a file attached the draft becomes its caption, so one press sends
-    // both rather than the text going out as a separate message. A video
-    // goes out hosted — its poster frame plus a watch link — rather than as
-    // a raw attachment, so it never has to fit WhatsApp's 16 MB cap.
+    // both rather than the text going out as a separate message. A video at
+    // or under WhatsApp's own 16 MB cap goes out natively — it plays inline
+    // in WhatsApp itself with no extra tap, so there's no reason to host it.
+    // Only a bigger one goes out hosted, as its poster frame plus a watch
+    // link, since that's the one case a raw attachment cannot fit.
     if (pending) {
-      if (pending.type.startsWith('video/')) {
+      if (pending.type.startsWith('video/') && pending.size > WHATSAPP_VIDEO_NATIVE_LIMIT) {
         sendHostedVideoAttachment.mutate({ to: selectedPhone, file: pending, caption: draft.trim() })
       } else {
         sendMedia.mutate({ to: selectedPhone, file: pending, caption: draft.trim() })
@@ -3529,8 +3536,8 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                     <div className="truncate" style={{ fontSize: 13, fontWeight: 600, color: INK }}>{pending.name}</div>
                     <div style={{ fontSize: 11.5, color: FAINT_INK }}>
                       {(pending.size / 1024 / 1024).toFixed(2)} MB
-                      {pending.type.startsWith('video/')
-                        ? ' · sent as a snapshot with a watch link, not a raw video'
+                      {pending.type.startsWith('video/') && pending.size > WHATSAPP_VIDEO_NATIVE_LIMIT
+                        ? ' · over 16 MB, so sent as a snapshot with a watch link, not a raw video'
                         : ' · the message box becomes its caption'}
                     </div>
                   </>

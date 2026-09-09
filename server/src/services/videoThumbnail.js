@@ -5,6 +5,28 @@ import fs from 'node:fs';
 
 const run = promisify(execFile);
 
+/** Meta's own cap on a native WhatsApp video attachment. At or under this, a
+ *  video plays inline in the chat with no extra tap; over it, WhatsApp
+ *  simply refuses the send, which is the whole reason the hosted path
+ *  (this file's makeVideoThumbnail, plus routes/whatsapp.js's
+ *  sendHostedVideo) exists at all. */
+export const WHATSAPP_VIDEO_NATIVE_LIMIT = 16 * 1024 * 1024;
+
+/**
+ * Whether a video quick reply needs the hosted, poster-frame-plus-link
+ * treatment, or can go out as a real WhatsApp video attachment. Pure, so
+ * the size threshold is checkable without a database or a real upload.
+ *
+ * `mediaSizeBytes` of 0 (or missing) means "unknown" — a video quick reply
+ * saved before this field existed, or from anywhere else that didn't set
+ * it — and is treated as needing hosting rather than risking a native send
+ * Meta rejects because its real size was never actually checked.
+ */
+export function videoNeedsHosting({ mediaKind, mediaUrl, mediaSizeBytes }) {
+  if (mediaKind !== 'video' || !mediaUrl) return false;
+  return !mediaSizeBytes || mediaSizeBytes > WHATSAPP_VIDEO_NATIVE_LIMIT;
+}
+
 /**
  * A still frame from a video, for the WhatsApp bubble a sales video actually
  * arrives as.

@@ -8,6 +8,7 @@ import { containerMismatch, needsRemux, webmToOggOpus } from '../services/audioR
 import multer from 'multer';
 import { createLeadFromWhatsAppPhone } from '../services/whatsappLeadSync.js';
 import { quickReplyWatchLink } from '../services/renewalLink.js';
+import { videoNeedsHosting } from '../services/videoThumbnail.js';
 import { summariseConversation, summariseRecent } from '../services/conversationSummary.js';
 import { ensureDigest, dayKeyFor, previousDay } from '../services/dailyDigest.js';
 import { DailyDigest } from '../models/index.js';
@@ -1167,12 +1168,17 @@ router.post('/send-quick-reply', async (req, res) => {
             sent.push('location');
         }
 
-        // A video is never sent to WhatsApp as a video: Meta's own cap on a
-        // video attachment is 16 MB, well under a real sales video, so it is
-        // hosted on our own server and the message that goes out is the poster
-        // frame — captured at upload time, see routes/messageTemplates.js —
-        // as an image, with a link to watch the rest.
-        if (!sent.length && template.mediaKind === 'video' && template.mediaUrl) {
+        // A video over Meta's own 16 MB cap is never sent as a video: it's
+        // hosted on our own server and the message that goes out is the
+        // poster frame — captured at upload time, see
+        // routes/messageTemplates.js — as an image, with a link to watch
+        // the rest. One under the cap plays inline in WhatsApp itself with
+        // no extra tap, so it goes out as a real video attachment instead —
+        // the generic media-send branch below already does exactly that.
+        // mediaSizeBytes is 0 for a video saved before that field existed;
+        // treated as "unknown", so it hosts rather than risks Meta
+        // rejecting a native send it never actually checked the size of.
+        if (!sent.length && videoNeedsHosting(template)) {
             if (!template.mediaThumbnailUrl) {
                 return res.status(400).json({ error: 'This video has no poster image yet — re-upload it under Settings → Message Templates.' });
             }

@@ -37,6 +37,11 @@ type QuickReply = {
   // hosted on our server and sent as this poster frame instead, with a link
   // to watch the rest. Set by the upload endpoint, never typed by hand.
   mediaThumbnailUrl?: string
+  // The uploaded file's real size — what decides, at send time, whether it
+  // fits Meta's own 16 MB video cap and can go out as a native WhatsApp
+  // video, or needs the poster-frame-plus-link treatment. Set by the
+  // upload endpoint, never typed by hand.
+  mediaSizeBytes?: number
   locationLat?: number | null
   locationLng?: number | null
   locationName?: string
@@ -45,7 +50,7 @@ type QuickReply = {
 
 type QrDraft = {
   label: string; category: string; whatsappBody: string; sortOrder: number
-  mediaUrl: string; mediaKind: string; mediaThumbnailUrl: string
+  mediaUrl: string; mediaKind: string; mediaThumbnailUrl: string; mediaSizeBytes: number
   locationLat: string; locationLng: string; locationName: string; locationAddress: string
 }
 
@@ -165,6 +170,7 @@ export default function MessageTemplates() {
       mediaUrl: q.mediaUrl || '',
       mediaKind: q.mediaKind || '',
       mediaThumbnailUrl: q.mediaThumbnailUrl || '',
+      mediaSizeBytes: q.mediaSizeBytes || 0,
       locationLat: q.locationLat != null ? String(q.locationLat) : '',
       locationLng: q.locationLng != null ? String(q.locationLng) : '',
       locationName: q.locationName || '',
@@ -208,6 +214,7 @@ export default function MessageTemplates() {
         mediaKind: v.mediaKind,
         mediaUrl: v.mediaKind && v.mediaKind !== 'location' ? v.mediaUrl : '',
         mediaThumbnailUrl: v.mediaKind === 'video' ? v.mediaThumbnailUrl : '',
+        mediaSizeBytes: v.mediaKind === 'video' ? v.mediaSizeBytes : 0,
         locationLat: v.mediaKind === 'location' && v.locationLat !== '' ? v.locationLat : null,
         locationLng: v.mediaKind === 'location' && v.locationLng !== '' ? v.locationLng : null,
         locationName: v.mediaKind === 'location' ? v.locationName : '',
@@ -382,6 +389,7 @@ export default function MessageTemplates() {
                 || draft.mediaKind !== (q.mediaKind || '')
                 || draft.mediaUrl !== (q.mediaUrl || '')
                 || draft.mediaThumbnailUrl !== (q.mediaThumbnailUrl || '')
+                || draft.mediaSizeBytes !== (q.mediaSizeBytes || 0)
                 || draft.locationLat !== (q.locationLat != null ? String(q.locationLat) : '')
                 || draft.locationLng !== (q.locationLng != null ? String(q.locationLng) : '')
                 || draft.locationName !== (q.locationName || '')
@@ -443,6 +451,7 @@ export default function MessageTemplates() {
                           <VideoUploadField
                             mediaUrl={draft.mediaUrl}
                             mediaThumbnailUrl={draft.mediaThumbnailUrl}
+                            mediaSizeBytes={draft.mediaSizeBytes}
                             onUploaded={(v) => setQrDraft(q, v)}
                           />
                         </Field>
@@ -477,9 +486,9 @@ export default function MessageTemplates() {
                     )}
                     {draft.mediaKind === 'video' ? (
                       <p className="text-xs text-muted-foreground">
-                        Sent as a snapshot of the video with a link to watch it — WhatsApp's own 16 MB cap on a
-                        video attachment is well under most sales videos, so this never hits it. The message
-                        text above goes in the caption, above the watch link.
+                        At or under WhatsApp's own 16 MB video cap, this plays inline as a real video. Over it —
+                        most sales videos are — it's sent as a snapshot with a link to watch the rest instead,
+                        with the message text above going in the caption.
                       </p>
                     ) : draft.mediaKind && draft.mediaKind !== 'location' && (
                       <p className="text-xs text-muted-foreground">
@@ -732,10 +741,13 @@ export default function MessageTemplates() {
  * needs an actual upload — to our own API, which stores it, cuts a poster
  * frame from it, and hands back both URLs for the parent to save.
  */
-function VideoUploadField({ mediaUrl, mediaThumbnailUrl, onUploaded }: {
+const WHATSAPP_VIDEO_NATIVE_LIMIT = 16 * 1024 * 1024
+
+function VideoUploadField({ mediaUrl, mediaThumbnailUrl, mediaSizeBytes, onUploaded }: {
   mediaUrl: string
   mediaThumbnailUrl: string
-  onUploaded: (v: { mediaUrl: string; mediaThumbnailUrl: string; mediaFilename: string }) => void
+  mediaSizeBytes: number
+  onUploaded: (v: { mediaUrl: string; mediaThumbnailUrl: string; mediaFilename: string; mediaSizeBytes: number }) => void
 }) {
   const [uploading, setUploading] = useState(false)
   const [err, setErr] = useState('')
@@ -774,7 +786,9 @@ function VideoUploadField({ mediaUrl, mediaThumbnailUrl, onUploaded }: {
         </Button>
         {mediaUrl && !uploading && !err && (
           <p className="text-xs text-muted-foreground mt-1.5">
-            Uploaded. Sent as this snapshot with a link to watch the rest — never as a raw WhatsApp video.
+            {mediaSizeBytes > WHATSAPP_VIDEO_NATIVE_LIMIT
+              ? `Uploaded (${(mediaSizeBytes / 1024 / 1024).toFixed(0)} MB, over WhatsApp's 16 MB cap) — sent as this snapshot with a link to watch the rest.`
+              : `Uploaded (${(mediaSizeBytes / 1024 / 1024).toFixed(1)} MB) — sent as a real WhatsApp video, plays inline.`}
           </p>
         )}
         {err && <p className="text-xs text-destructive mt-1.5">{err}</p>}
