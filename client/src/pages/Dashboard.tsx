@@ -647,7 +647,29 @@ export default function Dashboard() {
             )
           }
 
-          return null
+          /* quiet-leads is retired, on purpose ("Pin Leads gone quiet into
+             the fixed KPI row, not the draggable widgets") — its number
+             lives in the stats card above now, via the same `quiet` query.
+             The DEFAULT_LAYOUT/widgets entries are what's left behind from
+             before that move; kept out of the generic fallback below so
+             this loop does not quietly bring back a duplicate "Dormant
+             leads" card the day it stops being special-cased. */
+          if (id === 'quiet-leads') return null
+
+          /* Everything else — its own full-width row, nothing to pair it
+             with. This used to be a bare `return null` covering every id
+             above, which is exactly how high-intent-leads went missing:
+             its entry in `widgets` was real, nothing in this loop ever
+             rendered it — the whole layout-order investigation before this
+             was chasing a symptom this line actually caused. Falling
+             through to render `widgets[id]` here means a future widget
+             added to DEFAULT_LAYOUT never needs its own branch wired in
+             just to appear. */
+          return (
+            <div key={id} draggable onDragStart={() => onDragStart(id)} onDragOver={onDragOver} onDrop={() => onDrop(id)}>
+              {widgets[id]}
+            </div>
+          )
         })}
       </div>
 
