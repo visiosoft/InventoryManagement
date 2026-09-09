@@ -6,6 +6,8 @@ import crypto from 'node:crypto';
 import { MessageTemplate } from '../models/index.js';
 import { UPLOADS_DIR } from '../services/drive.js';
 import { makeVideoThumbnail } from '../services/videoThumbnail.js';
+import { pipeline } from 'node:stream/promises';
+import { Readable } from 'node:stream';
 
 const router = Router();
 
@@ -168,6 +170,70 @@ async function clearStaleEmailHtml() {
 }
 
 /**
+ * Give a legacy video quick reply the poster frame the upload endpoint now
+ * always generates.
+ *
+ * A video quick reply set up before that endpoint existed — pasted in as an
+ * external URL — has no mediaThumbnailUrl and no recorded mediaSizeBytes,
+ * so videoNeedsHosting() correctly treats it as needing the hosted
+ * poster-frame-plus-link path and then has no poster to send: "This video
+ * has no poster image yet — re-upload it" is the exact error that produces.
+ *
+ * Catches it up automatically rather than making a rep re-download and
+ * re-upload the file by hand: fetches it from its existing URL, cuts a
+ * thumbnail the same way a real upload does, stores both under
+ * uploads/quick-replies/ (the same directory a real upload uses — has to
+ * be, since this runs on whichever machine is actually serving /uploads),
+ * and updates the row. Fire-and-forget from its caller — a video can be
+ * tens of megabytes, and nobody opening the quick-reply panel should wait
+ * on a background fetch for a row that isn't even theirs to fix. The
+ * in-flight guard means only one attempt runs at a time no matter how many
+ * requests land while it is still working; once a row has a thumbnail it
+ * is never selected again, so this becomes a no-op forever after.
+ */
+let legacyVideoBackfillInFlight = false;
+async function backfillLegacyVideoQuickReplies() {
+  if (legacyVideoBackfillInFlight) return;
+  const stale = await MessageTemplate.find({
+    kind: 'quick_reply', mediaKind: 'video',
+    mediaUrl: { $nin: ['', null] }, mediaThumbnailUrl: { $in: ['', null] },
+  }).select('label mediaUrl').lean();
+  if (!stale.length) return;
+
+  legacyVideoBackfillInFlight = true;
+  const dir = path.join(UPLOADS_DIR, 'quick-replies');
+  fs.mkdirSync(dir, { recursive: true });
+  const apiBase = (process.env.API_PUBLIC_URL || process.env.APP_URL || 'https://api.purplebox.ae').replace(/\/+$/, '');
+
+  (async () => {
+    for (const row of stale) {
+      const videoPath = path.join(dir, `${crypto.randomUUID()}${path.extname(new URL(row.mediaUrl).pathname) || '.mp4'}`);
+      const thumbPath = `${videoPath.slice(0, -path.extname(videoPath).length)}.jpg`;
+      try {
+        const res = await fetch(row.mediaUrl);
+        if (!res.ok || !res.body) throw new Error(`fetch failed: HTTP ${res.status}`);
+        await pipeline(Readable.fromWeb(res.body), fs.createWriteStream(videoPath));
+        const mediaSizeBytes = fs.statSync(videoPath).size;
+        await makeVideoThumbnail(videoPath, thumbPath);
+        await MessageTemplate.updateOne({ _id: row._id }, {
+          $set: {
+            mediaUrl: `${apiBase}/uploads/quick-replies/${path.basename(videoPath)}`,
+            mediaThumbnailUrl: `${apiBase}/uploads/quick-replies/${path.basename(thumbPath)}`,
+            mediaSizeBytes,
+          },
+        });
+      } catch (e) {
+        // Leaves the row exactly as it was — still missing a thumbnail, so
+        // the next request tries again rather than giving up silently.
+        console.error(`[quick-reply video backfill] "${row.label}": ${e.message}`);
+        fs.unlink(videoPath, () => {});
+        fs.unlink(thumbPath, () => {});
+      }
+    }
+  })().finally(() => { legacyVideoBackfillInFlight = false; });
+}
+
+/**
  * Add whichever DEFAULT rows this database is still missing, by key.
  *
  * Not "insert the defaults if the collection is empty" — that only ever ran
@@ -193,6 +259,8 @@ router.get('/', async (req, res) => {
 
   if (kind === 'quick_reply') {
     await ensureDefaults(DEFAULT_QUICK_REPLIES, { kind: 'quick_reply', subject: '', emailBody: '', variables: [] });
+    // Not awaited — see the function's own comment for why.
+    backfillLegacyVideoQuickReplies().catch(() => {});
     const quick = await MessageTemplate.find({ kind: 'quick_reply' }).sort({ sortOrder: 1, label: 1 });
     return res.json(quick);
   }
