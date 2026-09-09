@@ -130,6 +130,37 @@ const CSS = `
   .wa-qr { width: 100%; }
 }
 
+/* The lead-score rail is always on, not toggled — the whole point of it is
+   being read before typing, not opened after — but "always on" and
+   "squeezed into a flex row on a 375px screen" cannot both be true at once.
+   Above this width it stays a plain flex sibling with no rule below
+   touching it at all, i.e. genuinely always visible. Below it, the same
+   drawer treatment .wa-sidebar already uses: off-screen by default,
+   summoned by its own toggle (wa-score-toggle, shown only at this width)
+   rather than appearing unprompted the moment a chat opens.
+
+   The base rules have to come before both media queries below, not after:
+   equal-specificity CSS resolves by source order among every rule whose
+   condition currently holds, so a base rule placed after a media query
+   would silently win over it — on a narrow screen the base 260px would
+   then beat the 440px case's 100%, undoing exactly the override it exists
+   to make. */
+.wa-score { width: 260px; }
+.wa-score-toggle { display: none; }
+@media (max-width: 1100px) {
+  .wa-score {
+    position: absolute; top: 0; right: 0; bottom: 0;
+    width: 280px; z-index: 27; flex: none;
+    transform: translateX(102%); transition: transform .2s ease;
+    box-shadow: -10px 0 34px rgba(20,8,31,.18);
+  }
+  .wa-score.wa-score-open { transform: translateX(0); }
+  .wa-score-toggle { display: inline-flex !important; }
+}
+@media (max-width: 440px) {
+  .wa-score { width: 100%; }
+}
+
 /* Below ~700px the chat list collapses to a drawer. */
 @media (max-width: 700px) {
   .wa-sidebar {
@@ -924,7 +955,7 @@ const LEAD_TYPE_FLAG: Record<string, string> = {
  * spoken to this person overrides the model outright, not by nudging a
  * number: their read replaces the guess rather than averaging with it.
  */
-function LeadScorePanel({ leadId }: { leadId: string | null }) {
+function LeadScorePanel({ leadId, open, onClose }: { leadId: string | null; open: boolean; onClose: () => void }) {
   const qc = useQueryClient()
   const { data, isLoading } = useQuery<LeadScore>({
     queryKey: ['lead-score', leadId],
@@ -945,7 +976,7 @@ function LeadScorePanel({ leadId }: { leadId: string | null }) {
 
   if (!leadId) {
     return (
-      <aside className="wa-score flex flex-col shrink-0 items-center justify-center px-4 text-center" style={{ width: 260, background: '#fff', borderLeft: `1px solid ${LINE}` }}>
+      <aside className={cn('wa-score flex flex-col shrink-0 items-center justify-center px-4 text-center', open && 'wa-score-open')} style={{ background: '#fff', borderLeft: `1px solid ${LINE}` }}>
         <p style={{ fontSize: 12, color: FAINT_INK }}>Save this chat as a lead to see a score for it.</p>
       </aside>
     )
@@ -955,9 +986,16 @@ function LeadScorePanel({ leadId }: { leadId: string | null }) {
   const flag = data?.signals?.leadType ? LEAD_TYPE_FLAG[data.signals.leadType] : null
 
   return (
-    <aside className="wa-score flex flex-col min-h-0 shrink-0" style={{ width: 260, background: '#fff', borderLeft: `1px solid ${LINE}` }}>
-      <div className="shrink-0 px-4 py-3.5" style={{ borderBottom: `1px solid ${LINE}` }}>
+    <aside className={cn('wa-score flex flex-col min-h-0 shrink-0', open && 'wa-score-open')} style={{ background: '#fff', borderLeft: `1px solid ${LINE}` }}>
+      <div className="shrink-0 px-4 py-3.5 flex items-center justify-between" style={{ borderBottom: `1px solid ${LINE}` }}>
         <h2 style={{ fontFamily: "'Bricolage Grotesque', serif", fontWeight: 700, fontSize: 15, color: INK }}>Lead score</h2>
+        {/* Only meaningful once the panel is a drawer that can be closed —
+            harmless on a real screen, where it's always visible anyway and
+            this button is unreachable behind the same width the .wa-score
+            CSS gates on. */}
+        <button type="button" onClick={onClose} className="wa-score-toggle cursor-pointer p-1" style={{ color: FAINT_INK }} aria-label="Close">
+          <X size={16} />
+        </button>
       </div>
 
       <div className="wa-scroll flex-1 min-h-0 px-4 py-3.5" style={{ fontSize: 12.5 }}>
@@ -1866,6 +1904,10 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     return () => document.removeEventListener('mousedown', away)
   }, [notifOpen])
   const [qrOpen, setQrOpen] = useState(false)
+  // The score rail's own open state — only ever consulted below the width
+  // where it stops being an always-visible sidebar and becomes a drawer
+  // (see the .wa-score CSS). Above that width this is simply unused.
+  const [scoreOpen, setScoreOpen] = useState(false)
   /* Which half of the side panel is showing.
    *
    * Quick replies are free text and templates are not, and which one a rep
@@ -3813,6 +3855,21 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
             <IconButton title="Quick replies and approved templates" onClick={() => setQrOpen((v) => !v)} className="!h-10 !w-10 shrink-0">
               <Zap size={16} />
             </IconButton>
+            {/* Only ever visible below the width the score rail stops
+                being always-on and becomes a drawer (see the .wa-score
+                CSS) — on a real screen it's already sitting on the right,
+                nothing to summon. */}
+            {selectedPhone && (
+              <button
+                type="button"
+                onClick={() => setScoreOpen((v) => !v)}
+                title="Lead score"
+                className="wa-score-toggle shrink-0 items-center justify-center rounded-lg cursor-pointer"
+                style={{ height: 40, width: 40, background: '#F7F3FF', color: '#5B2BC9', border: 'none' }}
+              >
+                <Sparkles size={16} />
+              </button>
+            )}
             {/* Hidden while a recording is in progress — the strip above
                 replaces the whole composer with the recorder's own controls. */}
             {recordingSupported() && !voice.recording && !isVoicePending && (
@@ -4234,7 +4291,9 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
             conversation is actually selected: scoring an empty pane makes
             no sense and the query below is disabled without a lead id
             anyway. */}
-        {!embedded && selectedPhone && <LeadScorePanel leadId={selectedConvo?.lead?._id ?? null} />}
+        {!embedded && selectedPhone && (
+          <LeadScorePanel leadId={selectedConvo?.lead?._id ?? null} open={scoreOpen} onClose={() => setScoreOpen(false)} />
+        )}
       </div>
     </div>
   )
