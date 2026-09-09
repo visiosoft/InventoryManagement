@@ -1056,6 +1056,69 @@ router.post('/send-template', async (req, res) => {
     }
 });
 
+/**
+ * A video sent as its hosted poster frame plus a watch link — never as a raw
+ * WhatsApp video attachment, whose 16 MB cap a real sales video is usually
+ * well over. Shared by the quick-reply send path and the composer's own
+ * attach-and-send, which both arrive at the same "I have an uploaded
+ * video's URLs, send it now" moment from different starting points.
+ */
+async function sendHostedVideo({ to, phoneNormalized, videoUrl, thumbnailUrl, caption: bodyText, title }) {
+    const watchUrl = quickReplyWatchLink({ videoUrl, posterUrl: thumbnailUrl, title });
+    const caption = [bodyText, `▶️ Watch: ${watchUrl}`].filter(Boolean).join('\n\n');
+    const result = await sendWhatsAppMedia({ to, link: thumbnailUrl, kind: 'image', caption });
+    await WhatsAppMessage.create({
+        messageId: result?.messages?.[0]?.id || '',
+        phone: to,
+        phoneNormalized,
+        direction: 'outbound',
+        type: 'image',
+        text: caption,
+        status: 'sent',
+        occurredAt: new Date(),
+        sentByAi: false,
+        raw: {
+            image: { link: thumbnailUrl, caption },
+            // The actual video this bubble stands in for, kept on the
+            // message so the console can still say what was really sent.
+            hostedVideo: { videoUrl, watchUrl },
+            sendResult: result,
+        },
+    });
+    return result;
+}
+
+/**
+ * Send an already-uploaded video straight into a chat — the composer's own
+ * attach button, for a video that was never saved as a quick reply. The
+ * upload itself happens first, against
+ * POST /api/message-templates/quick-reply-video (the same endpoint a quick
+ * reply's video comes from — one upload+thumbnail pipeline, not two), and
+ * this route only ever receives the URLs that call already returned.
+ */
+router.post('/send-hosted-video', async (req, res) => {
+    try {
+        if (!whatsappSendConfigured()) {
+            return res.status(400).json({ error: `WhatsApp not configured. Missing: ${whatsappSendMissing().join(', ')}` });
+        }
+        const to = String(req.body?.to || '').trim();
+        const videoUrl = String(req.body?.videoUrl || '').trim();
+        const thumbnailUrl = String(req.body?.thumbnailUrl || '').trim();
+        if (!to) return res.status(400).json({ error: 'to is required' });
+        if (!videoUrl || !thumbnailUrl) return res.status(400).json({ error: 'The video has not finished uploading yet' });
+
+        const phoneNormalized = String(to).replace(/\D/g, '');
+        const caption = String(req.body?.caption || '').trim();
+        await sendHostedVideo({ to, phoneNormalized, videoUrl, thumbnailUrl, caption });
+
+        await pauseBotForHuman(phoneNormalized);
+        await markFirstResponse(phoneNormalized);
+        res.json({ ok: true, sent: ['video', 'text'] });
+    } catch (e) {
+        res.status(400).json({ error: e.message });
+    }
+});
+
 router.post('/send-quick-reply', async (req, res) => {
     try {
         if (!whatsappSendConfigured()) {
@@ -1113,27 +1176,7 @@ router.post('/send-quick-reply', async (req, res) => {
             if (!template.mediaThumbnailUrl) {
                 return res.status(400).json({ error: 'This video has no poster image yet — re-upload it under Settings → Message Templates.' });
             }
-            const watchUrl = quickReplyWatchLink({ videoUrl: template.mediaUrl, posterUrl: template.mediaThumbnailUrl, title: template.label });
-            const caption = [body, `▶️ Watch: ${watchUrl}`].filter(Boolean).join('\n\n');
-            const result = await sendWhatsAppMedia({ to, link: template.mediaThumbnailUrl, kind: 'image', caption });
-            await WhatsAppMessage.create({
-                messageId: result?.messages?.[0]?.id || '',
-                phone: to,
-                phoneNormalized,
-                direction: 'outbound',
-                type: 'image',
-                text: caption,
-                status: 'sent',
-                occurredAt: new Date(),
-                sentByAi: false,
-                raw: {
-                    image: { link: template.mediaThumbnailUrl, caption },
-                    // The actual video this bubble stands in for, kept on the
-                    // message so the console can still say what was really sent.
-                    hostedVideo: { videoUrl: template.mediaUrl, watchUrl },
-                    sendResult: result,
-                },
-            });
+            await sendHostedVideo({ to, phoneNormalized, videoUrl: template.mediaUrl, thumbnailUrl: template.mediaThumbnailUrl, caption: body, title: template.label });
             sent.push('video');
             sent.push('text');
         }

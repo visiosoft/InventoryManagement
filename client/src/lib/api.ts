@@ -420,6 +420,14 @@ export interface ApprovedTemplate {
 }
 
 export const whatsappApi = {
+  /** Send an already-uploaded video into a chat — its poster frame plus a
+   *  watch link, never the raw file (WhatsApp's own 16 MB video cap is well
+   *  under most sales videos). Call after the file has been uploaded via
+   *  POST /message-templates/quick-reply-video, which returns the URLs
+   *  this expects. */
+  sendHostedVideo: (body: { to: string; videoUrl: string; thumbnailUrl: string; caption?: string }) =>
+    api.post<{ ok: true; sent: string[] }>('/whatsapp/send-hosted-video', body).then((r) => r.data),
+
   /** Meta's own approved template list — the same source the chat
    *  composer's Templates tab reads, so anywhere that offers "pick a
    *  template" offers the templates that actually exist, not a small

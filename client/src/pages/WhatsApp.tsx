@@ -2272,6 +2272,42 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     onError: (e) => { setUploadPct(null); setSendErr(apiError(e)) },
   })
 
+  /* A video picked from the attach button, sent the same way a video quick
+   * reply already is — hosted, and delivered as its poster frame with a
+   * watch link. WhatsApp's own video attachment caps at 16 MB, well under a
+   * real sales video, so this never goes through sendMedia's raw-attach
+   * path at all: upload first (the same endpoint a quick reply's video
+   * upload uses — one pipeline, not two), then send with the URLs it
+   * returns. Two requests behind one button; uploadPct tracks the first of
+   * them, the second is fast enough not to need its own indicator. */
+  const sendHostedVideoAttachment = useMutation({
+    mutationFn: async (payload: { to: string; file: File; caption: string }) => {
+      const form = new FormData()
+      form.append('video', payload.file)
+      setUploadPct(0)
+      const uploaded = await api.post<{ mediaUrl: string; mediaThumbnailUrl: string }>(
+        '/message-templates/quick-reply-video', form,
+        {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          onUploadProgress: (e) => {
+            if (!e.total) return
+            setUploadPct(Math.min(99, Math.round((e.loaded / e.total) * 100)))
+          },
+        },
+      ).then((r) => r.data)
+      return whatsappApi.sendHostedVideo({
+        to: payload.to, videoUrl: uploaded.mediaUrl, thumbnailUrl: uploaded.mediaThumbnailUrl, caption: payload.caption,
+      })
+    },
+    onSuccess: () => {
+      setSendErr(''); setPending(null); setDraft(''); setUploadPct(null)
+      if (fileRef.current) fileRef.current.value = ''
+      stickToBottom.current = true
+      onSent()
+    },
+    onError: (e) => { setUploadPct(null); setSendErr(apiError(e)) },
+  })
+
   const send = useMutation({
     mutationFn: (payload: { to: string; body: string }) => whatsappApi.send(payload.to, payload.body),
     onSuccess: () => { setSendErr(''); stickToBottom.current = true; onSent() },
@@ -2434,12 +2470,18 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
   }
 
   function sendComposer() {
-    if (send.isPending || sendMedia.isPending) return
+    if (send.isPending || sendMedia.isPending || sendHostedVideoAttachment.isPending) return
     if (!selectedPhone) { setSendErr('Pick a conversation first, or start a new chat.'); return }
     // With a file attached the draft becomes its caption, so one press sends
-    // both rather than the text going out as a separate message.
+    // both rather than the text going out as a separate message. A video
+    // goes out hosted — its poster frame plus a watch link — rather than as
+    // a raw attachment, so it never has to fit WhatsApp's 16 MB cap.
     if (pending) {
-      sendMedia.mutate({ to: selectedPhone, file: pending, caption: draft.trim() })
+      if (pending.type.startsWith('video/')) {
+        sendHostedVideoAttachment.mutate({ to: selectedPhone, file: pending, caption: draft.trim() })
+      } else {
+        sendMedia.mutate({ to: selectedPhone, file: pending, caption: draft.trim() })
+      }
       return
     }
     const text = draft.trim()
@@ -3487,7 +3529,9 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                     <div className="truncate" style={{ fontSize: 13, fontWeight: 600, color: INK }}>{pending.name}</div>
                     <div style={{ fontSize: 11.5, color: FAINT_INK }}>
                       {(pending.size / 1024 / 1024).toFixed(2)} MB
-                      {' · the message box becomes its caption'}
+                      {pending.type.startsWith('video/')
+                        ? ' · sent as a snapshot with a watch link, not a raw video'
+                        : ' · the message box becomes its caption'}
                     </div>
                   </>
                 )}
@@ -3534,18 +3578,22 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                 const f = e.target.files?.[0]
                 if (!f) return
                 setSendErr('')
-                /* Checked before it is uploaded. These are WhatsApp's limits,
-                   and finding out after a 40 MB video has crawled up is a
-                   waste of somebody's morning. */
+                /* Checked before it is uploaded. Everything but video is
+                   sent to WhatsApp as-is, so these are Meta's own limits —
+                   finding out after a 40 MB file has crawled up is a waste
+                   of somebody's morning. A video never goes to Meta at all
+                   (it's hosted and sent as its poster frame instead), so it
+                   gets the much larger cap our own upload endpoint allows. */
                 const MB = 1024 * 1024
                 const cap = f.type.startsWith('image/') ? 5
-                  : f.type.startsWith('video/') || f.type.startsWith('audio/') ? 16
+                  : f.type.startsWith('video/') ? 500
+                  : f.type.startsWith('audio/') ? 16
                   : 100
                 if (f.size > cap * MB) {
                   const kind = f.type.startsWith('image/') ? 'Images'
                     : f.type.startsWith('video/') ? 'Videos'
                     : f.type.startsWith('audio/') ? 'Audio files' : 'Files'
-                  setSendErr(`${kind} can be up to ${cap} MB on WhatsApp. That one is ${(f.size / MB).toFixed(1)} MB.`)
+                  setSendErr(`${kind} can be up to ${cap} MB. That one is ${(f.size / MB).toFixed(1)} MB.`)
                   e.target.value = ''
                   return
                 }
@@ -3595,7 +3643,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
             <button
               type="button"
               onClick={sendComposer}
-              disabled={send.isPending || sendMedia.isPending || (!draft.trim() && !pending) || !selectedPhone}
+              disabled={send.isPending || sendMedia.isPending || sendHostedVideoAttachment.isPending || (!draft.trim() && !pending) || !selectedPhone}
               className="shrink-0 inline-flex items-center justify-center rounded-full cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed"
               style={{ width: 44, height: 44, background: '#5B2BC9', color: '#fff' }}
               aria-label="Send"
