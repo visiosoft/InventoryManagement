@@ -413,7 +413,14 @@ router.get('/funnel', async (req, res) => {
  */
 router.get('/high-intent', async (req, res) => {
     try {
-        const ownerId = isSalesRep(req) ? req.user.id : null;
+        // A rep only ever has their own to scope to; an admin normally sees
+        // the whole team's here, the company-wide read the Dashboard widget
+        // wants. `?mine=1` forces it to the requesting person's own leads
+        // regardless of role — what My Day asks for, since every card on
+        // that page is "my own", admin included, and an admin's My Day
+        // showing the whole team's leads would say something the rest of
+        // the page does not.
+        const ownerId = isSalesRep(req) || req.query.mine === '1' ? req.user.id : null;
         res.json({ items: await highIntentToday({ ownerId }) });
     } catch (e) {
         res.status(500).json({ error: e.message });

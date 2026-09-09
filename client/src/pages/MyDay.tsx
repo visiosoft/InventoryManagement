@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, AlarmClock, Check, ChevronsRight, MessageCircle, Plus, X } from 'lucide-react'
-import { api } from '../lib/api'
+import { api, leadApi, type HighIntentLead } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import WhatsApp from './WhatsApp'
 import QuietLeadsModal from '../components/QuietLeadsModal'
@@ -132,6 +132,19 @@ export default function MyDay() {
     queryFn: () => api.get('/my-day').then((r) => r.data),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
+  })
+
+  /* Own card, own load — the same reason /my-day itself does not fetch
+   * this: it needs a message-history read per candidate lead, and bolting
+   * it onto the one endpoint that already drives this whole page's polling
+   * would slow the entire day down to score a handful of leads nobody may
+   * even look at. `mine: true` forces "my own", same as everything else on
+   * this page — an admin's My Day showing the whole team's leads here
+   * would say something the rest of the page does not. */
+  const { data: highIntent, isLoading: highIntentLoading } = useQuery({
+    queryKey: ['high-intent-leads', 'mine'],
+    queryFn: () => leadApi.highIntentToday({ mine: true }),
+    staleTime: 60_000,
   })
 
   /* Snoozing and completing both write the lead's follow-up date, which is the
@@ -456,6 +469,48 @@ export default function MyDay() {
           </div>
         ))}
       </div>
+
+      {/* ── High intent ──────────────────────────────────────────────────
+          My own, scored — leadApi.highIntentToday({ mine: true }). Today
+          or yesterday only: this is a worklist, not an archive. */}
+      {(highIntentLoading || (highIntent?.items.length ?? 0) > 0) && (
+        <section style={{ ...CARD, padding: 22, marginBottom: 20 }}>
+          <div className="flex flex-wrap items-center gap-2" style={{ marginBottom: 14 }}>
+            <div style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 19, letterSpacing: '-.02em' }}>High intent — today &amp; yesterday</div>
+            <div style={{ fontSize: 12.5, color: INK3 }}>Scored by the AI&rsquo;s read of the conversation — these are the ones to follow up</div>
+          </div>
+          {highIntentLoading ? (
+            <div style={{ fontSize: 13, color: INK3 }}>Reading…</div>
+          ) : (
+            <div className="grid gap-2">
+              {highIntent!.items.slice(0, 6).map((l: HighIntentLead) => (
+                <button
+                  key={l.leadId}
+                  type="button"
+                  onClick={() => setChatPhone(l.phone)}
+                  className="flex items-start gap-3 text-left cursor-pointer hover:opacity-80 transition-opacity"
+                  style={{ padding: '10px 12px', borderRadius: 14, background: PURPLE_50, border: 'none' }}
+                >
+                  <span
+                    className="shrink-0 rounded-full flex items-center justify-center"
+                    style={{ width: 34, height: 34, background: GREEN_50, color: GREEN_700, fontSize: 12, fontWeight: 800 }}
+                  >
+                    {l.score}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>{l.name}</div>
+                    <div className="truncate" style={{ fontSize: 12, color: INK3 }}>{l.reason}</div>
+                    {l.nextAction && <div className="truncate" style={{ fontSize: 11.5, color: PURPLE_700, marginTop: 1 }}>Next: {l.nextAction}</div>}
+                  </div>
+                </button>
+              ))}
+              {highIntent!.items.length > 6 && (
+                <div style={{ fontSize: 12, color: INK3, padding: '2px 12px' }}>and {highIntent!.items.length - 6} more</div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* ── Pipeline + tasks ─────────────────────────────────────────────── */}
       <div className="grid gap-5 items-start" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', marginBottom: 20 }}>

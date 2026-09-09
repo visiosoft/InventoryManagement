@@ -122,7 +122,12 @@ export const leadApi = {
     api.post<LeadScore>(`/leads/${id}/intended-date`, { intendedStartDate: date || null }).then((r) => r.data),
   /** High-scoring leads from today or yesterday — services/leadScore.js's
    *  highIntentToday(). A rep's own; admin's, everyone's. */
-  highIntentToday: () => api.get<{ items: HighIntentLead[] }>('/leads/high-intent').then((r) => r.data),
+  /** `mine: true` forces "my own leads only", even for an admin — what My
+   *  Day wants, since every card there is personal. Omitted (or false),
+   *  the Dashboard's own behaviour applies: a rep's own, an admin's
+   *  everyone's. */
+  highIntentToday: (opts?: { mine?: boolean }) =>
+    api.get<{ items: HighIntentLead[] }>('/leads/high-intent', { params: opts?.mine ? { mine: '1' } : undefined }).then((r) => r.data),
 }
 
 export interface HighIntentLead {
