@@ -37,3 +37,16 @@ export function renewLink(contractId) {
 export function moveOutLink(contractId) {
     return `${base()}/api/contracts/public/renewal/${contractId}/${renewalToken(contractId)}?intent=not_renewing`;
 }
+
+/**
+ * Where a hosted sales video plays from.
+ *
+ * No token: the video and its poster are already public URLs — Meta itself
+ * has to be able to fetch them to send the WhatsApp message in the first
+ * place — so there is nothing here worth signing, only a nicer page than a
+ * bare video file to open them on.
+ */
+export function quickReplyWatchLink({ videoUrl, posterUrl, title }) {
+    const qs = new URLSearchParams({ v: videoUrl, ...(posterUrl ? { p: posterUrl } : {}), ...(title ? { t: title } : {}) });
+    return `${base()}/watch?${qs.toString()}`;
+}

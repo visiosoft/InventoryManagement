@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { ChevronLeft, Mail, MessageSquare, Plus, RotateCcw, Save, Trash2 } from 'lucide-react'
+import { ChevronLeft, Mail, MessageSquare, Plus, RotateCcw, Save, Trash2, Upload } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { Button, Card, CardBody, CardHeader, PageHeader, Spinner, Textarea, Field, Input, Select } from '../components/ui'
 
@@ -32,6 +32,11 @@ type QuickReply = {
   // location pin instead of either.
   mediaUrl?: string
   mediaKind?: '' | 'image' | 'video' | 'audio' | 'document' | 'location'
+  // Only meaningful for a video: WhatsApp's own 16 MB cap on a video
+  // attachment is well under a real sales video, so a video quick reply is
+  // hosted on our server and sent as this poster frame instead, with a link
+  // to watch the rest. Set by the upload endpoint, never typed by hand.
+  mediaThumbnailUrl?: string
   locationLat?: number | null
   locationLng?: number | null
   locationName?: string
@@ -40,7 +45,7 @@ type QuickReply = {
 
 type QrDraft = {
   label: string; category: string; whatsappBody: string; sortOrder: number
-  mediaUrl: string; mediaKind: string
+  mediaUrl: string; mediaKind: string; mediaThumbnailUrl: string
   locationLat: string; locationLng: string; locationName: string; locationAddress: string
 }
 
@@ -159,6 +164,7 @@ export default function MessageTemplates() {
       sortOrder: q.sortOrder ?? 0,
       mediaUrl: q.mediaUrl || '',
       mediaKind: q.mediaKind || '',
+      mediaThumbnailUrl: q.mediaThumbnailUrl || '',
       locationLat: q.locationLat != null ? String(q.locationLat) : '',
       locationLng: q.locationLng != null ? String(q.locationLng) : '',
       locationName: q.locationName || '',
@@ -201,6 +207,7 @@ export default function MessageTemplates() {
         // stale value that would be sent the next time a kind is chosen.
         mediaKind: v.mediaKind,
         mediaUrl: v.mediaKind && v.mediaKind !== 'location' ? v.mediaUrl : '',
+        mediaThumbnailUrl: v.mediaKind === 'video' ? v.mediaThumbnailUrl : '',
         locationLat: v.mediaKind === 'location' && v.locationLat !== '' ? v.locationLat : null,
         locationLng: v.mediaKind === 'location' && v.locationLng !== '' ? v.locationLng : null,
         locationName: v.mediaKind === 'location' ? v.locationName : '',
@@ -374,6 +381,7 @@ export default function MessageTemplates() {
                 || draft.sortOrder !== (q.sortOrder ?? 0)
                 || draft.mediaKind !== (q.mediaKind || '')
                 || draft.mediaUrl !== (q.mediaUrl || '')
+                || draft.mediaThumbnailUrl !== (q.mediaThumbnailUrl || '')
                 || draft.locationLat !== (q.locationLat != null ? String(q.locationLat) : '')
                 || draft.locationLng !== (q.locationLng != null ? String(q.locationLng) : '')
                 || draft.locationName !== (q.locationName || '')
@@ -430,6 +438,14 @@ export default function MessageTemplates() {
                             />
                           </div>
                         </Field>
+                      ) : draft.mediaKind === 'video' ? (
+                        <Field label="Video">
+                          <VideoUploadField
+                            mediaUrl={draft.mediaUrl}
+                            mediaThumbnailUrl={draft.mediaThumbnailUrl}
+                            onUploaded={(v) => setQrDraft(q, v)}
+                          />
+                        </Field>
                       ) : (
                         <Field label="File URL (must be publicly reachable)">
                           <Input
@@ -459,9 +475,15 @@ export default function MessageTemplates() {
                         </Field>
                       </div>
                     )}
-                    {draft.mediaKind && draft.mediaKind !== 'location' && (
+                    {draft.mediaKind === 'video' ? (
                       <p className="text-xs text-muted-foreground">
-                        WhatsApp limits: 16 MB video and audio, 5 MB images, 100 MB documents. Over that, the
+                        Sent as a snapshot of the video with a link to watch it — WhatsApp's own 16 MB cap on a
+                        video attachment is well under most sales videos, so this never hits it. The message
+                        text above goes in the caption, above the watch link.
+                      </p>
+                    ) : draft.mediaKind && draft.mediaKind !== 'location' && (
+                      <p className="text-xs text-muted-foreground">
+                        WhatsApp limits: 16 MB audio, 5 MB images, 100 MB documents. Over that, the
                         message is rejected rather than shrunk. The message text above is sent as the caption.
                       </p>
                     )}
@@ -697,6 +719,66 @@ export default function MessageTemplates() {
         </div>
       </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * A video quick reply's attachment: uploaded, not pasted as a URL.
+ *
+ * Every other kind here is fetched by WhatsApp itself from a link an admin
+ * types in, which works because the file already sits somewhere public.
+ * Video is the one kind that starts out on nobody's server but ours, so it
+ * needs an actual upload — to our own API, which stores it, cuts a poster
+ * frame from it, and hands back both URLs for the parent to save.
+ */
+function VideoUploadField({ mediaUrl, mediaThumbnailUrl, onUploaded }: {
+  mediaUrl: string
+  mediaThumbnailUrl: string
+  onUploaded: (v: { mediaUrl: string; mediaThumbnailUrl: string; mediaFilename: string }) => void
+}) {
+  const [uploading, setUploading] = useState(false)
+  const [err, setErr] = useState('')
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setErr('')
+    setUploading(true)
+    try {
+      const form = new FormData()
+      form.append('video', file)
+      const { data } = await api.post('/message-templates/quick-reply-video', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      onUploaded(data)
+    } catch (e) {
+      setErr(apiError(e))
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div className="flex items-start gap-3">
+      {mediaThumbnailUrl && (
+        <img src={mediaThumbnailUrl} alt="" className="w-20 h-14 object-cover rounded-lg border shrink-0" />
+      )}
+      <div className="flex-1 min-w-0">
+        <input ref={inputRef} type="file" accept="video/*" hidden onChange={onPick} />
+        <Button type="button" variant="outline" size="sm" disabled={uploading} onClick={() => inputRef.current?.click()}>
+          {uploading ? <Spinner /> : <Upload size={14} />}
+          {uploading ? 'Uploading…' : mediaUrl ? 'Replace video' : 'Upload video'}
+        </Button>
+        {mediaUrl && !uploading && !err && (
+          <p className="text-xs text-muted-foreground mt-1.5">
+            Uploaded. Sent as this snapshot with a link to watch the rest — never as a raw WhatsApp video.
+          </p>
+        )}
+        {err && <p className="text-xs text-destructive mt-1.5">{err}</p>}
+      </div>
     </div>
   )
 }

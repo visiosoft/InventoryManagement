@@ -7,6 +7,7 @@ import { pauseBotForHuman, markFirstResponse } from '../services/aiBot.js';
 import { containerMismatch, needsRemux, webmToOggOpus } from '../services/audioRemux.js';
 import multer from 'multer';
 import { createLeadFromWhatsAppPhone } from '../services/whatsappLeadSync.js';
+import { quickReplyWatchLink } from '../services/renewalLink.js';
 import { summariseConversation, summariseRecent } from '../services/conversationSummary.js';
 import { ensureDigest, dayKeyFor, previousDay } from '../services/dailyDigest.js';
 import { DailyDigest } from '../models/index.js';
@@ -1101,6 +1102,40 @@ router.post('/send-quick-reply', async (req, res) => {
                 },
             });
             sent.push('location');
+        }
+
+        // A video is never sent to WhatsApp as a video: Meta's own cap on a
+        // video attachment is 16 MB, well under a real sales video, so it is
+        // hosted on our own server and the message that goes out is the poster
+        // frame — captured at upload time, see routes/messageTemplates.js —
+        // as an image, with a link to watch the rest.
+        if (!sent.length && template.mediaKind === 'video' && template.mediaUrl) {
+            if (!template.mediaThumbnailUrl) {
+                return res.status(400).json({ error: 'This video has no poster image yet — re-upload it under Settings → Message Templates.' });
+            }
+            const watchUrl = quickReplyWatchLink({ videoUrl: template.mediaUrl, posterUrl: template.mediaThumbnailUrl, title: template.label });
+            const caption = [body, `▶️ Watch: ${watchUrl}`].filter(Boolean).join('\n\n');
+            const result = await sendWhatsAppMedia({ to, link: template.mediaThumbnailUrl, kind: 'image', caption });
+            await WhatsAppMessage.create({
+                messageId: result?.messages?.[0]?.id || '',
+                phone: to,
+                phoneNormalized,
+                direction: 'outbound',
+                type: 'image',
+                text: caption,
+                status: 'sent',
+                occurredAt: new Date(),
+                sentByAi: false,
+                raw: {
+                    image: { link: template.mediaThumbnailUrl, caption },
+                    // The actual video this bubble stands in for, kept on the
+                    // message so the console can still say what was really sent.
+                    hostedVideo: { videoUrl: template.mediaUrl, watchUrl },
+                    sendResult: result,
+                },
+            });
+            sent.push('video');
+            sent.push('text');
         }
 
         // The file goes first, with the text as its caption when both exist —

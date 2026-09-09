@@ -148,6 +148,7 @@ import MovingSurveyDetail from './pages/moving/MovingSurveyDetail'
 import ClientUpload from './pages/moving/ClientUpload'
 import PaySuccess from './pages/PaySuccess'
 import RenewContract from './pages/RenewContract'
+import WatchVideo from './pages/WatchVideo'
 import SharedJobView from './pages/moving/SharedJobView'
 import FieldLogin from './pages/field/FieldLogin'
 import FieldApp from './pages/field/FieldApp'
@@ -190,6 +191,10 @@ export default function App() {
             the HMAC token in the URL is the authorisation, and it is listed in
             both trees so a colleague already signed in can open it too. */}
         <Route path="/renew/:contractId/:token" element={<RenewContract />} />
+        {/* Where a video quick reply's "▶️ Watch" link opens — see
+            services/renewalLink.js's quickReplyWatchLink(). Public for the
+            same reason: whoever opens it has no PurpleBox account. */}
+        <Route path="/watch" element={<WatchVideo />} />
         <Route path="/field/login" element={<FieldLogin />} />
         <Route path="/field/*" element={<FieldApp />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
@@ -206,6 +211,7 @@ export default function App() {
       <Route path="/share/job/:token" element={<SharedJobView />} />
       <Route path="/pay/success" element={<PaySuccess />} />
       <Route path="/renew/:contractId/:token" element={<RenewContract />} />
+      <Route path="/watch" element={<WatchVideo />} />
       <Route path="/field/login" element={<Navigate to="/field" replace />} />
       <Route path="/field/*" element={<FieldApp />} />
       <Route element={<Layout />}>

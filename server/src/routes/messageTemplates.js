@@ -1,7 +1,76 @@
 import { Router } from 'express';
+import multer from 'multer';
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
 import { MessageTemplate } from '../models/index.js';
+import { UPLOADS_DIR } from '../services/drive.js';
+import { makeVideoThumbnail } from '../services/videoThumbnail.js';
 
 const router = Router();
+
+/**
+ * A quick reply's video, hosted here rather than pasted as an external
+ * link — the only kind that needs uploading rather than typing in, since
+ * WhatsApp's own 16 MB cap on a video attachment is well under what a real
+ * sales video runs to. Stores the file, cuts a poster frame from it with
+ * ffmpeg, and hands back public URLs for both; the caller (the quick-reply
+ * editor) saves them onto the template with the ordinary PUT.
+ *
+ * Disk storage, not memory: a five-minute walkthrough video is tens of
+ * megabytes, and buffering that in RAM per upload is the kind of thing that
+ * is fine once and a problem the day two people do it at once.
+ */
+const QUICK_REPLY_MEDIA_DIR = path.join(UPLOADS_DIR, 'quick-replies');
+fs.mkdirSync(QUICK_REPLY_MEDIA_DIR, { recursive: true });
+
+const videoStorage = multer.diskStorage({
+  destination: QUICK_REPLY_MEDIA_DIR,
+  filename: (_req, file, cb) => cb(null, `${crypto.randomUUID()}${path.extname(file.originalname).toLowerCase() || '.mp4'}`),
+});
+const uploadVideo = multer({
+  storage: videoStorage,
+  // A "sales video" runs long — a facility walkthrough easily clears 100 MB.
+  // WhatsApp's own limit is irrelevant here: this file is never sent to
+  // Meta, only the poster frame is.
+  limits: { fileSize: 500 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => cb(null, file.mimetype.startsWith('video/')),
+}).single('video');
+
+function handleVideoUpload(req, res, next) {
+  uploadVideo(req, res, (err) => {
+    if (!err) return next();
+    if (err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'That video is over 500 MB.' });
+    return res.status(400).json({ error: err.message || 'That file could not be read' });
+  });
+}
+
+router.post('/quick-reply-video', handleVideoUpload, async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No video file received, or the file was not a video' });
+
+  const videoPath = req.file.path;
+  const thumbName = `${path.parse(req.file.filename).name}.jpg`;
+  const thumbPath = path.join(QUICK_REPLY_MEDIA_DIR, thumbName);
+
+  try {
+    await makeVideoThumbnail(videoPath, thumbPath);
+  } catch (e) {
+    fs.unlink(videoPath, () => {});
+    return res.status(400).json({ error: `Could not read that as a video: ${e.message}` });
+  }
+
+  // Meta fetches mediaUrl itself, and a customer's phone opens the watch
+  // link directly, so both must be absolute — never a path relative to
+  // wherever this API happens to be mounted. Same base every other public,
+  // system-generated link in this app resolves from.
+  const apiBase = (process.env.API_PUBLIC_URL || process.env.APP_URL || req.headers.origin || 'https://api.purplebox.ae').replace(/\/+$/, '');
+  res.json({
+    mediaUrl: `${apiBase}/uploads/quick-replies/${req.file.filename}`,
+    mediaThumbnailUrl: `${apiBase}/uploads/quick-replies/${thumbName}`,
+    mediaFilename: req.file.originalname,
+  });
+});
+
 
 const DEFAULT_TEMPLATES = [
   { key: 'welcome', label: 'Welcome Email', subject: 'Welcome to PurpleBox Storage, @name!', emailBody: 'Dear @name,\n\nWelcome to PurpleBox Storage! Your contract @contractNo has been created.\n\nUnit: @unit\nStart Date: @startDate\n\nThank you for choosing us.\n\nBest regards,\nPurpleBox Team', whatsappBody: 'Hello @name 👋\n\nWelcome to PurpleBox Storage!\nYour contract *@contractNo* is ready.\nUnit: @unit\n\nThank you – PurpleBox', variables: ['@name', '@contractNo', '@unit', '@startDate', '@endDate', '@phone', '@email'] },
@@ -138,7 +207,7 @@ router.get('/', async (req, res) => {
 
 // Update a template
 router.put('/:id', async (req, res) => {
-  const { subject, emailBody, emailHtml, whatsappBody, label, category, sortOrder, mediaUrl, mediaKind, mediaFilename,
+  const { subject, emailBody, emailHtml, whatsappBody, label, category, sortOrder, mediaUrl, mediaKind, mediaFilename, mediaThumbnailUrl,
     whatsappTemplate, whatsappTemplateLang, whatsappTemplateVars,
     locationLat, locationLng, locationName, locationAddress } = req.body;
   const update = { subject, emailBody, whatsappBody };
@@ -178,6 +247,7 @@ router.put('/:id', async (req, res) => {
     update.mediaUrl = url;
   }
   if (mediaFilename !== undefined) update.mediaFilename = String(mediaFilename || '');
+  if (mediaThumbnailUrl !== undefined) update.mediaThumbnailUrl = String(mediaThumbnailUrl || '').trim();
 
   /* A 'location' quick reply carries coordinates instead of a file URL — see
    * the model comment for why that beats a Maps link. Validated as real

@@ -2308,6 +2308,13 @@ const messageTemplateSchema = new Schema({
   mediaUrl: { type: String, default: '' },
   mediaKind: { type: String, enum: ['', 'image', 'video', 'audio', 'document', 'location'], default: '' },
   mediaFilename: { type: String, default: '' },
+  // A poster frame, only meaningful for a video: WhatsApp's own attachment
+  // caps at 16 MB, well under a real sales video, so a video quick reply is
+  // hosted on our own server and sent as this image instead, with a link to
+  // watch the rest (see routes/messageTemplates.js's upload endpoint and
+  // routes/whatsapp.js's /send-quick-reply). Auto-generated at upload time,
+  // not editable by hand.
+  mediaThumbnailUrl: { type: String, default: '' },
   // A 'location' quick reply sends WhatsApp's native pin instead of a file —
   // tapping it opens directly on these coordinates, rather than a Google Maps
   // search that surfaces every storage place nearby.
