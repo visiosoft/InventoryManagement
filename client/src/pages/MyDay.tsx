@@ -472,16 +472,25 @@ export default function MyDay() {
 
       {/* ── High intent ──────────────────────────────────────────────────
           My own, scored — leadApi.highIntentToday({ mine: true }). Today
-          or yesterday only: this is a worklist, not an archive. */}
-      {(highIntentLoading || (highIntent?.items.length ?? 0) > 0) && (
-        <section style={{ ...CARD, padding: 22, marginBottom: 20 }}>
-          <div className="flex flex-wrap items-center gap-2" style={{ marginBottom: 14 }}>
-            <div style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 19, letterSpacing: '-.02em' }}>High intent — today &amp; yesterday</div>
-            <div style={{ fontSize: 12.5, color: INK3 }}>Scored by the AI&rsquo;s read of the conversation — these are the ones to follow up</div>
+          or yesterday only: this is a worklist, not an archive.
+
+          Shown even when empty, on purpose: a card that vanishes the
+          moment there's nothing to say reads exactly like "this feature
+          isn't here" rather than "you have none right now, correctly" —
+          the two look identical unless the empty case says so itself. */}
+      <section style={{ ...CARD, padding: 22, marginBottom: 20 }}>
+        <div className="flex flex-wrap items-center gap-2" style={{ marginBottom: 14 }}>
+          <div style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 19, letterSpacing: '-.02em' }}>High intent — today &amp; yesterday</div>
+          <div style={{ fontSize: 12.5, color: INK3 }}>Scored by the AI&rsquo;s read of the conversation — these are the ones to follow up</div>
+        </div>
+        {highIntentLoading ? (
+          <div style={{ fontSize: 13, color: INK3 }}>Reading…</div>
+        ) : !highIntent?.items.length ? (
+          <div style={{ fontSize: 13, color: INK3 }}>
+            None of your own leads have scored high yet today or yesterday. A high score needs a real conversation —
+            open a chat and reply to have one read.
           </div>
-          {highIntentLoading ? (
-            <div style={{ fontSize: 13, color: INK3 }}>Reading…</div>
-          ) : (
+        ) : (
             <div className="grid gap-2">
               {highIntent!.items.slice(0, 6).map((l: HighIntentLead) => (
                 <button
@@ -509,8 +518,7 @@ export default function MyDay() {
               )}
             </div>
           )}
-        </section>
-      )}
+      </section>
 
       {/* ── Pipeline + tasks ─────────────────────────────────────────────── */}
       <div className="grid gap-5 items-start" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', marginBottom: 20 }}>
