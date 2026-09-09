@@ -9,7 +9,7 @@ import {
   Video as VideoIcon, Play,
 } from 'lucide-react'
 import { useVoiceRecorder, recordingSupported, formatDuration } from '../lib/voiceRecorder'
-import { api, whatsappApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel } from '../lib/api'
+import { api, whatsappApi, leadApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel, type LeadScore } from '../lib/api'
 import { isSalesRepRole } from '../lib/roles'
 import { useAuth } from '../lib/auth'
 import { TaskComposer } from '../components/TaskComposer'
@@ -899,6 +899,144 @@ function ConversationDigest({ phoneNormalized }: { phoneNormalized: string }) {
   )
 }
 
+const SCORE_BAND: Record<'high' | 'medium' | 'low', { bg: string; fg: string; label: string; emoji: string }> = {
+  high: { bg: '#DCFCE7', fg: '#15803D', label: 'High', emoji: '🔥' },
+  medium: { bg: '#FEF3C7', fg: '#92400E', label: 'Medium', emoji: '🟡' },
+  low: { bg: '#F3F4F6', fg: '#6B7280', label: 'Low', emoji: '⚪' },
+}
+const LEAD_TYPE_FLAG: Record<string, string> = {
+  job_seeker: 'Asking about a job, not storage',
+  price_declined: 'Said our price was too high',
+  not_our_service: "Not something we offer, or the wrong number",
+  spam_or_unclear: 'Not enough said to tell yet',
+}
+
+/**
+ * How good this lead is, and why — the always-on right rail, so a rep
+ * reads the AI's take before they type anything rather than after.
+ *
+ * First-cut scoring (services/leadScore.js): an AI read of the conversation
+ * — is this even a real storage enquiry, and how hot — combined with plain
+ * facts from the message history itself (how many times they've actually
+ * written back, how fast). The score is arithmetic on those, never asked
+ * of the model directly, and it is not going to be right every time — which
+ * is the whole reason for the two buttons below it. A rep who has actually
+ * spoken to this person overrides the model outright, not by nudging a
+ * number: their read replaces the guess rather than averaging with it.
+ */
+function LeadScorePanel({ leadId }: { leadId: string | null }) {
+  const qc = useQueryClient()
+  const { data, isLoading } = useQuery<LeadScore>({
+    queryKey: ['lead-score', leadId],
+    queryFn: () => leadApi.score(leadId!),
+    enabled: Boolean(leadId),
+    staleTime: 60_000,
+  })
+
+  const confirm = useMutation({
+    mutationFn: (decision: 'qualifying' | 'not_interested' | '') => leadApi.scoreConfirm(leadId!, decision),
+    onSuccess: (result) => qc.setQueryData(['lead-score', leadId], result),
+  })
+
+  if (!leadId) {
+    return (
+      <aside className="wa-score flex flex-col shrink-0 items-center justify-center px-4 text-center" style={{ width: 260, background: '#fff', borderLeft: `1px solid ${LINE}` }}>
+        <p style={{ fontSize: 12, color: FAINT_INK }}>Save this chat as a lead to see a score for it.</p>
+      </aside>
+    )
+  }
+
+  const band = data?.band ? SCORE_BAND[data.band] : null
+  const flag = data?.signals?.leadType ? LEAD_TYPE_FLAG[data.signals.leadType] : null
+
+  return (
+    <aside className="wa-score flex flex-col min-h-0 shrink-0" style={{ width: 260, background: '#fff', borderLeft: `1px solid ${LINE}` }}>
+      <div className="shrink-0 px-4 py-3.5" style={{ borderBottom: `1px solid ${LINE}` }}>
+        <h2 style={{ fontFamily: "'Bricolage Grotesque', serif", fontWeight: 700, fontSize: 15, color: INK }}>Lead score</h2>
+      </div>
+
+      <div className="wa-scroll flex-1 min-h-0 px-4 py-3.5" style={{ fontSize: 12.5 }}>
+        {isLoading ? (
+          <p style={{ color: FAINT_INK }}>Reading…</p>
+        ) : data?.band === null ? (
+          <p style={{ color: FAINT_INK }}>{data.reason}</p>
+        ) : data && band ? (
+          <>
+            <div className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1" style={{ background: band.bg, color: band.fg, fontWeight: 700, fontSize: 13 }}>
+              <span>{band.emoji}</span><span>{band.label}</span><span style={{ opacity: 0.7, fontWeight: 600 }}>· {data.score}</span>
+            </div>
+            <p className="mt-2" style={{ color: MUTED_INK }}>{data.reason}</p>
+
+            {flag && (
+              <p className="mt-2 rounded-lg px-2.5 py-1.5" style={{ background: '#FFF7E6', color: '#8A5A00', fontSize: 11.5 }}>
+                ⚠️ {flag}
+              </p>
+            )}
+
+            {data.aiSummary?.nextAction && (
+              <p className="mt-3" style={{ color: INK }}><strong>Next:</strong> {data.aiSummary.nextAction}</p>
+            )}
+
+            {/* The signals behind the number — compact on purpose. This is
+                shown so the score can be argued with, not audited line by
+                line. */}
+            <div className="mt-3 pt-3 space-y-1" style={{ borderTop: `1px solid ${LINE}`, color: FAINT_INK, fontSize: 11 }}>
+              {data.signals.temperature && <div>Temperature: {data.signals.temperature}</div>}
+              {typeof data.signals.turnCount === 'number' && <div>{data.signals.turnCount} messages back and forth</div>}
+              {data.signals.medianReplyMinutes != null && (
+                <div>Typically replies in {data.signals.medianReplyMinutes < 60 ? `${Math.round(data.signals.medianReplyMinutes)}m` : `${Math.round(data.signals.medianReplyMinutes / 60)}h`}</div>
+              )}
+              {data.signals.specific !== undefined && <div>{data.signals.specific ? 'Gave a specific need' : 'Nothing specific yet'}</div>}
+            </div>
+
+            {/* Confirm or correct. Highlighted only while it's actually
+                asking for one — a rep who already confirmed, or a dead
+                lead nobody needs to weigh in on, gets the quiet version. */}
+            <div
+              className="mt-3 pt-3"
+              style={{ borderTop: `1px solid ${LINE}` }}
+            >
+              {data.override ? (
+                <div className="rounded-lg px-2.5 py-2" style={{ background: data.override === 'qualifying' ? '#DCFCE7' : '#F3F4F6', color: data.override === 'qualifying' ? '#15803D' : '#6B7280' }}>
+                  <div style={{ fontWeight: 700 }}>{data.override === 'qualifying' ? '✅ Confirmed qualifying' : '❌ Marked not interested'}</div>
+                  {data.overrideByName && <div style={{ fontSize: 10.5, opacity: 0.85 }}>by {data.overrideByName}</div>}
+                  {data.staleOverride && <div style={{ fontSize: 10.5, marginTop: 4 }}>The conversation has moved on since — worth a fresh look.</div>}
+                  <button type="button" onClick={() => confirm.mutate('')} className="mt-1.5 underline cursor-pointer" style={{ fontSize: 10.5, background: 'none', border: 'none', padding: 0, color: 'inherit' }}>
+                    Change
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {data.needsConfirmation && (
+                    <p className="mb-1.5" style={{ fontSize: 11, fontWeight: 600, color: '#4A1FA0' }}>Is this reading right?</p>
+                  )}
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button" disabled={confirm.isPending}
+                      onClick={() => confirm.mutate('qualifying')}
+                      className="flex-1 rounded-lg py-1.5 cursor-pointer disabled:opacity-50"
+                      style={{ background: '#DCFCE7', color: '#15803D', fontSize: 11.5, fontWeight: 700, border: 'none' }}
+                    >
+                      ✅ Qualifying
+                    </button>
+                    <button
+                      type="button" disabled={confirm.isPending}
+                      onClick={() => confirm.mutate('not_interested')}
+                      className="flex-1 rounded-lg py-1.5 cursor-pointer disabled:opacity-50"
+                      style={{ background: '#F3F4F6', color: '#6B7280', fontSize: 11.5, fontWeight: 700, border: 'none' }}
+                    >
+                      ❌ Not interested
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </>
+        ) : null}
+      </div>
+    </aside>
+  )
+}
 
 /**
  * Raise a task straight from a conversation.
@@ -1524,6 +1662,25 @@ function LeadAction({ convo, onChanged, menuItem }: { convo: WhatsAppConversatio
 export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } = {}) {
   const embedded = Boolean(embeddedPhone)
   const qc = useQueryClient()
+
+  /* The main nav collapses while this page is open, the same way FloorMap's
+   * edit mode already does (Layout.tsx's own 'sidebar-collapse' event) — the
+   * chat list, the thread and the new score rail all want the width back
+   * more than a full-width nav does here. Restored to whatever it was
+   * before on the way out, rather than left collapsed everywhere else in
+   * the app because someone once opened WhatsApp. Skipped when embedded —
+   * that is already a panel inside another page, not the console itself. */
+  useEffect(() => {
+    if (embedded) return
+    const prev = localStorage.getItem('pb_sidebar_collapsed')
+    localStorage.setItem('pb_sidebar_collapsed', 'true')
+    window.dispatchEvent(new Event('sidebar-collapse'))
+    return () => {
+      if (prev === null) localStorage.removeItem('pb_sidebar_collapsed')
+      else localStorage.setItem('pb_sidebar_collapsed', prev)
+      window.dispatchEvent(new Event('sidebar-collapse'))
+    }
+  }, [embedded])
   // The last chat opened, so returning to the inbox lands where you left off
   // instead of on a combined feed of everyone.
   const LAST_CHAT_KEY = 'wa_last_chat'
@@ -4032,6 +4189,13 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
             )}
           </aside>
         )}
+
+        {/* Always on, not toggled — the whole point is reading it before
+            deciding what to type, not opening it after. Only once a
+            conversation is actually selected: scoring an empty pane makes
+            no sense and the query below is disabled without a lead id
+            anyway. */}
+        {!embedded && selectedPhone && <LeadScorePanel leadId={selectedConvo?.lead?._id ?? null} />}
       </div>
     </div>
   )

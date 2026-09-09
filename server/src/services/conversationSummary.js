@@ -22,6 +22,15 @@ export const MAX_TURNS = 120;
 const MAX_CHARS_PER_TURN = 400;
 
 const TEMPERATURES = new Set(['hot', 'warm', 'cold']);
+/**
+ * What kind of conversation this actually is — the signal lead scoring needs
+ * most and the one nothing captured before: temperature alone cannot tell a
+ * genuine storage enquiry from a job-seeker, a shopper who already said our
+ * price is too high, or a wrong number. Reported by the business, verbatim,
+ * as the categories worth telling apart in their own words — editable here
+ * as the real inbox turns up patterns this list does not yet cover.
+ */
+export const LEAD_TYPES = new Set(['storage_inquiry', 'job_seeker', 'price_declined', 'not_our_service', 'spam_or_unclear']);
 
 /** Media and system rows carry no text worth summarising. */
 const SKIPPED_TYPES = new Set(['reaction', 'system', 'unsupported', 'ephemeral', 'sticker']);
@@ -54,7 +63,7 @@ export function buildTranscript(messages = []) {
 const SYSTEM = [
   'You summarise a WhatsApp conversation between a Dubai self-storage and moving company and a customer.',
   'Reply with JSON only, no prose.',
-  'Shape: {"headline":string,"wants":string,"budget":string|null,"timing":string|null,"nextAction":string,"temperature":"hot"|"warm"|"cold","reason":string,"openQuestions":string[]}',
+  'Shape: {"headline":string,"wants":string,"budget":string|null,"timing":string|null,"nextAction":string,"temperature":"hot"|"warm"|"cold","reason":string,"openQuestions":string[],"leadType":string}',
   '"headline" is one short sentence a colleague could read at a glance.',
   '"wants" is what the customer is asking for, in their terms.',
   '"budget" and "timing" are null unless the customer actually said them. Never estimate either.',
@@ -62,6 +71,12 @@ const SYSTEM = [
   '"temperature": hot if they are ready to book, warm if interested but undecided, cold if browsing or gone quiet.',
   '"reason" is one short sentence saying why you chose that temperature.',
   '"openQuestions" are things the customer asked that nobody has answered yet. Empty array if none.',
+  '"leadType" is one of: "storage_inquiry" (a genuine storage or moving enquiry, whatever their temperature), '
+    + '"job_seeker" (asking about a job, vacancy or working for us), '
+    + '"price_declined" (asked the price and said it is too expensive, or that they found somewhere cheaper), '
+    + '"not_our_service" (asking about something this business does not do, or clearly the wrong number), '
+    + '"spam_or_unclear" (spam, a bot, or too little said to tell). '
+    + 'Base it only on what was actually said — a short "hi" with nothing else yet is storage_inquiry, not spam_or_unclear, unless something in the thread says otherwise.',
   'Base everything only on what is in the transcript. Do not invent details, prices or dates.',
 ].join('\n');
 
@@ -85,6 +100,10 @@ export function parseSummary(raw) {
   if (!headline || !nextAction) return null;
 
   const temperature = TEMPERATURES.has(raw.temperature) ? raw.temperature : 'warm';
+  // Unrecognised or missing defaults to the genuine-enquiry case rather than
+  // silently excluding someone from scoring because the model answered in a
+  // shape this list does not yet cover.
+  const leadType = LEAD_TYPES.has(raw.leadType) ? raw.leadType : 'storage_inquiry';
 
   const openQuestions = Array.isArray(raw.openQuestions)
     ? raw.openQuestions.map((q) => str(q, 200)).filter(Boolean).slice(0, 5)
@@ -102,6 +121,7 @@ export function parseSummary(raw) {
     timing,
     nextAction,
     temperature,
+    leadType,
     reason: str(raw.reason, 200),
     openQuestions,
   };

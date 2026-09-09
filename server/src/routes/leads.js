@@ -10,6 +10,8 @@ import { ATTEMPT_CHANNELS, ATTEMPT_OUTCOMES } from '../models/index.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { QUEUE_SINCE } from '../services/followUpQueue.js';
 import { buildFunnel } from '../services/leadFunnel.js';
+import { scoreForLead } from '../services/leadScore.js';
+import { summariseConversation } from '../services/conversationSummary.js';
 
 const router = Router();
 
@@ -399,6 +401,68 @@ router.get('/funnel', async (req, res) => {
             .lean();
 
         res.json({ ...buildFunnel(leads), since: QUEUE_SINCE });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * One lead's score — see services/leadScore.js for how it's worked out.
+ * Read-only; nothing here writes anything.
+ */
+router.get('/:id/score', async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Bad lead id' });
+        const lead = await Lead.findById(req.params.id).select('phoneNormalized owner leadScoreOverride leadScoreOverrideBy leadScoreOverrideAt leadScoreOverrideForLeadType');
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+
+        const result = await scoreForLead(lead);
+        let overrideByName = '';
+        if (lead.leadScoreOverride && lead.leadScoreOverrideBy) {
+            const u = await User.findById(lead.leadScoreOverrideBy).select('name email').lean();
+            overrideByName = u?.name || u?.email || '';
+        }
+        res.json({
+            ...result,
+            override: lead.leadScoreOverride || '',
+            overrideByName,
+            overrideAt: lead.leadScoreOverrideAt || null,
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * A rep's own read on the score — confirming it, or saying the AI got it
+ * wrong. Stamped against the AI's current leadType (services/leadScore.js's
+ * scoreForLead reads leadScoreOverrideForLeadType to tell whether a later
+ * conversation has since moved past this confirmation).
+ *
+ * `decision` empty clears the override, handing the lead back to the
+ * computed score — the "actually, let me look again" case.
+ */
+router.post('/:id/score-confirm', async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Bad lead id' });
+        const decision = String(req.body?.decision || '');
+        if (decision && !['qualifying', 'not_interested'].includes(decision)) {
+            return res.status(400).json({ error: 'decision must be qualifying, not_interested, or empty to clear' });
+        }
+        const lead = await Lead.findById(req.params.id).select('phoneNormalized owner');
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+
+        const summary = await summariseConversation(lead.phoneNormalized).catch(() => null);
+        lead.leadScoreOverride = decision;
+        lead.leadScoreOverrideBy = decision ? req.user.id : null;
+        lead.leadScoreOverrideAt = decision ? new Date() : null;
+        lead.leadScoreOverrideForLeadType = decision ? (summary?.leadType || '') : '';
+        await lead.save();
+
+        const result = await scoreForLead(lead);
+        res.json({ ...result, override: lead.leadScoreOverride, overrideByName: req.user.name || req.user.email || '', overrideAt: lead.leadScoreOverrideAt });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

@@ -108,6 +108,40 @@ export const leadApi = {
    *  and how long they've been there. Server: routes/leads.js's GET /funnel,
    *  logic in services/leadFunnel.js. */
   funnel: () => api.get<LeadFunnel>('/leads/funnel').then((r) => r.data),
+  /** How good a lead this is — see services/leadScore.js. Read-only. */
+  score: (id: string) => api.get<LeadScore>(`/leads/${id}/score`).then((r) => r.data),
+  /** A rep's own confirmation or correction of the score. `decision: ''`
+   *  clears it and hands the lead back to the computed score. */
+  scoreConfirm: (id: string, decision: 'qualifying' | 'not_interested' | '') =>
+    api.post<LeadScore>(`/leads/${id}/score-confirm`, { decision }).then((r) => r.data),
+}
+
+export type LeadScoreBand = 'high' | 'medium' | 'low'
+export interface LeadScoreSignals {
+  leadType?: string
+  temperature?: string | null
+  specific?: boolean
+  turnCount?: number
+  medianReplyMinutes?: number | null
+  override?: string
+}
+export interface LeadScore {
+  score: number | null
+  band: LeadScoreBand | null
+  reason: string
+  signals: LeadScoreSignals
+  needsConfirmation: boolean
+  staleOverride?: boolean
+  override: '' | 'qualifying' | 'not_interested'
+  overrideByName: string
+  overrideAt: string | null
+  aiSummary: {
+    headline?: string
+    nextAction?: string
+    temperature?: string
+    leadType?: string
+    reason?: string
+  } | null
 }
 
 export interface LeadFunnelStage {

@@ -1,0 +1,109 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { scoreLead, behavioralSignals, needsConfirmation, BAND_HIGH, BAND_MEDIUM } from './leadScore.js';
+
+test('a human override wins outright, whatever the AI signals say', () => {
+    const hotLead = { leadType: 'storage_inquiry', temperature: 'hot', turnCount: 10, medianReplyMinutes: 1 };
+    assert.deepEqual(
+        { score: 0, band: 'low' },
+        (({ score, band }) => ({ score, band }))(scoreLead({ ...hotLead, override: 'not_interested' })),
+    );
+    const coldLead = { leadType: 'job_seeker', temperature: 'cold' };
+    assert.deepEqual(
+        { score: 90, band: 'high' },
+        (({ score, band }) => ({ score, band }))(scoreLead({ ...coldLead, override: 'qualifying' })),
+    );
+});
+
+test('anything but a genuine enquiry is capped low, however engaged they are', () => {
+    for (const leadType of ['job_seeker', 'price_declined', 'not_our_service', 'spam_or_unclear']) {
+        const v = scoreLead({ leadType, temperature: 'hot', turnCount: 20, medianReplyMinutes: 1 });
+        assert.ok(v.score <= 15, `${leadType} scored ${v.score}, expected capped low`);
+        assert.equal(v.band, 'low');
+    }
+});
+
+test('a genuine enquiry scores up with temperature, specifics, engagement and reply speed', () => {
+    const bare = scoreLead({ leadType: 'storage_inquiry', temperature: 'cold' });
+    const hot = scoreLead({ leadType: 'storage_inquiry', temperature: 'hot' });
+    assert.ok(hot.score > bare.score);
+
+    const specific = scoreLead({ leadType: 'storage_inquiry', temperature: 'warm', budget: 'AED 500/month' });
+    const vague = scoreLead({ leadType: 'storage_inquiry', temperature: 'warm' });
+    assert.ok(specific.score > vague.score);
+
+    const engaged = scoreLead({ leadType: 'storage_inquiry', temperature: 'warm', turnCount: 5 });
+    const oneOff = scoreLead({ leadType: 'storage_inquiry', temperature: 'warm', turnCount: 1 });
+    assert.ok(engaged.score > oneOff.score);
+
+    const fast = scoreLead({ leadType: 'storage_inquiry', temperature: 'warm', medianReplyMinutes: 5 });
+    const slow = scoreLead({ leadType: 'storage_inquiry', temperature: 'warm', medianReplyMinutes: 600 });
+    assert.ok(fast.score > slow.score);
+});
+
+test('every band boundary lands where it says it does', () => {
+    // hot + specific + engaged + fast: everything on, well past BAND_HIGH.
+    const everything = scoreLead({
+        leadType: 'storage_inquiry', temperature: 'hot', budget: 'AED 500',
+        turnCount: 10, medianReplyMinutes: 5,
+    });
+    assert.ok(everything.score >= BAND_HIGH);
+    assert.equal(everything.band, 'high');
+
+    // cold, nothing else: base only. A genuine enquiry never reads as
+    // "low" purely for being quiet so far — that band is reserved for the
+    // capped non-inquiry types above; a cold, unengaged real enquiry is
+    // "medium, no strong signal yet", not "not worth chasing".
+    const nothing = scoreLead({ leadType: 'storage_inquiry', temperature: 'cold' });
+    assert.equal(nothing.score, BAND_MEDIUM);
+    assert.equal(nothing.band, 'medium');
+});
+
+test('scoreLead never returns outside 0-100, whatever combination of signals it is given', () => {
+    for (const leadType of ['storage_inquiry', 'job_seeker', 'price_declined', 'not_our_service', 'spam_or_unclear', 'made_up']) {
+        for (const temperature of ['hot', 'warm', 'cold', undefined]) {
+            const v = scoreLead({ leadType, temperature, turnCount: 999, medianReplyMinutes: 0, budget: 'x' });
+            assert.ok(v.score >= 0 && v.score <= 100, `${leadType}/${temperature} -> ${v.score}`);
+        }
+    }
+});
+
+test('behavioralSignals: turn count is direction changes, not message count', () => {
+    const now = new Date('2026-09-10T10:00:00Z');
+    const at = (mins) => new Date(now.getTime() + mins * 60000);
+    const msgs = [
+        { direction: 'inbound', type: 'text', occurredAt: at(0) },
+        { direction: 'inbound', type: 'text', occurredAt: at(1) }, // same direction: no new turn
+        { direction: 'outbound', type: 'text', occurredAt: at(5) }, // turn 1
+        { direction: 'inbound', type: 'text', occurredAt: at(10) }, // turn 2 — replied 5 min after our message
+    ];
+    const s = behavioralSignals(msgs);
+    assert.equal(s.turnCount, 2);
+    assert.equal(s.inboundCount, 3);
+    assert.equal(s.outboundCount, 1);
+    assert.equal(s.medianReplyMinutes, 5);
+});
+
+test('behavioralSignals ignores deleted messages and system/reaction rows', () => {
+    const now = new Date('2026-09-10T10:00:00Z');
+    const msgs = [
+        { direction: 'inbound', type: 'text', occurredAt: now },
+        { direction: 'inbound', type: 'text', occurredAt: now, deletedAt: now },
+        { direction: 'outbound', type: 'reaction', occurredAt: now },
+    ];
+    const s = behavioralSignals(msgs);
+    assert.equal(s.inboundCount, 1);
+    assert.equal(s.outboundCount, 0);
+});
+
+test('behavioralSignals on no messages, or none from us, never throws and has no reply latency', () => {
+    assert.equal(behavioralSignals([]).medianReplyMinutes, null);
+    assert.equal(behavioralSignals([{ direction: 'inbound', type: 'text', occurredAt: new Date() }]).medianReplyMinutes, null);
+});
+
+test('needsConfirmation: only a genuine enquiry, only after we have actually replied, never twice', () => {
+    assert.equal(needsConfirmation({ band: 'high', override: '', outboundCount: 1 }), true);
+    assert.equal(needsConfirmation({ band: 'high', override: '', outboundCount: 0 }), false);
+    assert.equal(needsConfirmation({ band: 'low', override: '', outboundCount: 3 }), false);
+    assert.equal(needsConfirmation({ band: 'high', override: 'qualifying', outboundCount: 3 }), false);
+});

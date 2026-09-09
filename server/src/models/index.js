@@ -274,6 +274,21 @@ const leadSchema = new Schema(
        answered. What the "close this or give it one more" prompt reads off;
        cleared when somebody decides either way. */
     sequenceExhaustedAt: { type: Date, default: null },
+    /* A rep's own read on the lead score — services/leadScore.js's number is
+       arithmetic on an AI read that is not going to be right every time, so
+       this is where a person overrides it after actually talking to them.
+       Takes precedence over the computed score outright, never blended with
+       it: a rep who has spoken to this person knows something the model
+       cannot. Cleared automatically the next time the AI's own read of the
+       conversation changes (services/leadScore.js), so a stale confirmation
+       from before their last few messages never quietly outlives them. */
+    leadScoreOverride: { type: String, enum: ['', 'qualifying', 'not_interested'], default: '' },
+    leadScoreOverrideBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    leadScoreOverrideAt: { type: Date, default: null },
+    // The AI-read lead type (services/conversationSummary.js's leadType) the
+    // override above was set against — how the "cleared when it changes"
+    // rule above knows whether the conversation has actually moved since.
+    leadScoreOverrideForLeadType: { type: String, default: '' },
     source: {
       type: String,
       enum: ['manual', 'whatsapp', 'referral', 'walk_in', 'other'],
