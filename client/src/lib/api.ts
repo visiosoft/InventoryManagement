@@ -114,6 +114,12 @@ export const leadApi = {
    *  clears it and hands the lead back to the computed score. */
   scoreConfirm: (id: string, decision: 'qualifying' | 'not_interested' | '') =>
     api.post<LeadScore>(`/leads/${id}/score-confirm`, { decision }).then((r) => r.data),
+  /** When they actually said they'd need it — a call the AI never heard,
+   *  or a correction to what it read from the chat. `date` a plain
+   *  'YYYY-MM-DD', or '' to clear it. Not the same thing as when we should
+   *  next contact them. */
+  setIntendedDate: (id: string, date: string) =>
+    api.post<LeadScore>(`/leads/${id}/intended-date`, { intendedStartDate: date || null }).then((r) => r.data),
 }
 
 export type LeadScoreBand = 'high' | 'medium' | 'low'
@@ -124,6 +130,8 @@ export interface LeadScoreSignals {
   turnCount?: number
   medianReplyMinutes?: number | null
   override?: string
+  intendedStartDate?: string | null
+  daysUntilNeeded?: number | null
 }
 export interface LeadScore {
   score: number | null

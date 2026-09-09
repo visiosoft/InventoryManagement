@@ -406,6 +406,24 @@ router.get('/funnel', async (req, res) => {
     }
 });
 
+const SCORE_LEAD_FIELDS = 'phoneNormalized owner intendedStartDate leadScoreOverride leadScoreOverrideBy leadScoreOverrideAt leadScoreOverrideForLeadType';
+
+/**
+ * A score, plus who confirmed or corrected it and when — the same shape
+ * every score-related route below hands back, whether it just read the
+ * lead or just changed something about it. One place builds this so the
+ * three routes' responses can never quietly drift apart from each other.
+ */
+async function withOverrideInfo(lead) {
+    const result = await scoreForLead(lead);
+    let overrideByName = '';
+    if (lead.leadScoreOverride && lead.leadScoreOverrideBy) {
+        const u = await User.findById(lead.leadScoreOverrideBy).select('name email').lean();
+        overrideByName = u?.name || u?.email || '';
+    }
+    return { ...result, override: lead.leadScoreOverride || '', overrideByName, overrideAt: lead.leadScoreOverrideAt || null };
+}
+
 /**
  * One lead's score — see services/leadScore.js for how it's worked out.
  * Read-only; nothing here writes anything.
@@ -413,22 +431,11 @@ router.get('/funnel', async (req, res) => {
 router.get('/:id/score', async (req, res) => {
     try {
         if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Bad lead id' });
-        const lead = await Lead.findById(req.params.id).select('phoneNormalized owner leadScoreOverride leadScoreOverrideBy leadScoreOverrideAt leadScoreOverrideForLeadType');
+        const lead = await Lead.findById(req.params.id).select(SCORE_LEAD_FIELDS);
         if (!lead) return res.status(404).json({ error: 'Lead not found' });
         if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
 
-        const result = await scoreForLead(lead);
-        let overrideByName = '';
-        if (lead.leadScoreOverride && lead.leadScoreOverrideBy) {
-            const u = await User.findById(lead.leadScoreOverrideBy).select('name email').lean();
-            overrideByName = u?.name || u?.email || '';
-        }
-        res.json({
-            ...result,
-            override: lead.leadScoreOverride || '',
-            overrideByName,
-            overrideAt: lead.leadScoreOverrideAt || null,
-        });
+        res.json(await withOverrideInfo(lead));
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -450,7 +457,7 @@ router.post('/:id/score-confirm', async (req, res) => {
         if (decision && !['qualifying', 'not_interested'].includes(decision)) {
             return res.status(400).json({ error: 'decision must be qualifying, not_interested, or empty to clear' });
         }
-        const lead = await Lead.findById(req.params.id).select('phoneNormalized owner');
+        const lead = await Lead.findById(req.params.id).select(SCORE_LEAD_FIELDS);
         if (!lead) return res.status(404).json({ error: 'Lead not found' });
         if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
 
@@ -461,8 +468,39 @@ router.post('/:id/score-confirm', async (req, res) => {
         lead.leadScoreOverrideForLeadType = decision ? (summary?.leadType || '') : '';
         await lead.save();
 
-        const result = await scoreForLead(lead);
-        res.json({ ...result, override: lead.leadScoreOverride, overrideByName: req.user.name || req.user.email || '', overrideAt: lead.leadScoreOverrideAt });
+        res.json(await withOverrideInfo(lead));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * When they actually said they'd need it — a call the AI never heard, or a
+ * correction to what it read from the chat. See the model comment on
+ * Lead.intendedStartDate for why this is not the same thing as followUpAt.
+ * The override above, if any, is untouched by this — a rep's "not
+ * interested" does not need revisiting just because a date was corrected.
+ *
+ * `intendedStartDate` a plain 'YYYY-MM-DD' or null to clear it.
+ */
+router.post('/:id/intended-date', async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Bad lead id' });
+        const raw = req.body?.intendedStartDate;
+        let value = null;
+        if (raw) {
+            const d = new Date(raw);
+            if (Number.isNaN(d.getTime())) return res.status(400).json({ error: 'Not a valid date' });
+            value = d;
+        }
+        const lead = await Lead.findById(req.params.id).select(SCORE_LEAD_FIELDS);
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+
+        lead.intendedStartDate = value;
+        await lead.save();
+
+        res.json(await withOverrideInfo(lead));
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

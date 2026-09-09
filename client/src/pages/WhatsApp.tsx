@@ -938,6 +938,11 @@ function LeadScorePanel({ leadId }: { leadId: string | null }) {
     onSuccess: (result) => qc.setQueryData(['lead-score', leadId], result),
   })
 
+  const setDate = useMutation({
+    mutationFn: (date: string) => leadApi.setIntendedDate(leadId!, date),
+    onSuccess: (result) => qc.setQueryData(['lead-score', leadId], result),
+  })
+
   if (!leadId) {
     return (
       <aside className="wa-score flex flex-col shrink-0 items-center justify-center px-4 text-center" style={{ width: 260, background: '#fff', borderLeft: `1px solid ${LINE}` }}>
@@ -987,6 +992,40 @@ function LeadScorePanel({ leadId }: { leadId: string | null }) {
                 <div>Typically replies in {data.signals.medianReplyMinutes < 60 ? `${Math.round(data.signals.medianReplyMinutes)}m` : `${Math.round(data.signals.medianReplyMinutes / 60)}h`}</div>
               )}
               {data.signals.specific !== undefined && <div>{data.signals.specific ? 'Gave a specific need' : 'Nothing specific yet'}</div>}
+            </div>
+
+            {/* When they actually need it — not the same question as when
+                we should next contact them. A lead who isn't ready right
+                now isn't necessarily a dead one; this is what tells the
+                two apart, whether the AI caught it in the chat or a rep
+                heard it on a call. Saves the moment a date is picked — one
+                action, not a form with its own submit. */}
+            <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${LINE}` }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: INK, display: 'block', marginBottom: 4 }}>When do they need it?</label>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="date"
+                  value={data.signals.intendedStartDate ? data.signals.intendedStartDate.slice(0, 10) : ''}
+                  onChange={(e) => setDate.mutate(e.target.value)}
+                  disabled={setDate.isPending}
+                  style={{ fontSize: 11.5, border: `1px solid ${LINE}`, borderRadius: 8, padding: '4px 6px', color: INK, flex: 1, minWidth: 0 }}
+                />
+                {data.signals.intendedStartDate && (
+                  <button
+                    type="button" disabled={setDate.isPending}
+                    onClick={() => setDate.mutate('')}
+                    className="cursor-pointer disabled:opacity-50"
+                    style={{ fontSize: 10.5, color: FAINT_INK, background: 'none', border: 'none', padding: 0, whiteSpace: 'nowrap' }}
+                  >
+                    Not sure
+                  </button>
+                )}
+              </div>
+              {typeof data.signals.daysUntilNeeded === 'number' && (
+                <p className="mt-1" style={{ fontSize: 10.5, color: FAINT_INK }}>
+                  {data.signals.daysUntilNeeded <= 0 ? 'Needs it now' : `In ${data.signals.daysUntilNeeded} day${data.signals.daysUntilNeeded === 1 ? '' : 's'}`}
+                </p>
+              )}
             </div>
 
             {/* Confirm or correct. Highlighted only while it's actually

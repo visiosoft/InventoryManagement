@@ -350,6 +350,14 @@ const leadSchema = new Schema(
     storageSizeUnit: { type: String, enum: ['sqft'], default: 'sqft' },
     durationValue: { type: Number, default: 1, min: 1 },
     durationUnit: { type: String, enum: ['week', 'month'], default: 'month' },
+    /* When they actually said they'd need it — not when we should next
+       contact them (followUpAt), a different question with a different
+       answer: someone ready to book next month is not overdue for a reply
+       today. Set by a rep from a call the AI never saw, or corrected when
+       the AI's own free-text reading of "timing" missed it. Read by
+       services/leadScore.js so "not ready right now" scores as a real,
+       future-dated lead rather than as a cold, vague one. */
+    intendedStartDate: { type: Date, default: null },
     owner: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     unitsNeeded: { type: Number, required: true, min: 1 },
     notes: { type: String, default: '' },

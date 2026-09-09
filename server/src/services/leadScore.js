@@ -51,6 +51,15 @@ export const ENGAGEMENT_POINTS = 15;
  *  right now, not someone who will get back to it eventually. */
 export const FAST_REPLY_MINUTES = 30;
 export const FAST_REPLY_POINTS = 10;
+/** A real date, however far out, is its own signal — separate from
+ *  temperature. "Not ready right now" and "not interested" read the same
+ *  on tone alone; a stated date is what actually tells them apart. Within
+ *  this many days counts as imminent and scores like a hot lead does; past
+ *  it, it still counts as specific (folded into SPECIFICITY_POINTS below)
+ *  but is not treated as urgent — a lead needing storage next month is not
+ *  overdue for anything today. */
+export const NEED_SOON_WINDOW_DAYS = 14;
+export const NEED_SOON_POINTS = 20;
 
 export const BAND_HIGH = 70;
 export const BAND_MEDIUM = 40;
@@ -110,19 +119,27 @@ export function behavioralSignals(messages = []) {
 export function scoreLead({
   leadType, temperature, wants, budget, timing,
   turnCount = 0, medianReplyMinutes = null,
+  intendedStartDate = null, now = new Date(),
   override = '',
 } = {}) {
+  // How far out the stated need is, in whole days — negative or 0 means
+  // today or already past, which reads the same as "needs it now".
+  const daysUntilNeeded = intendedStartDate
+    ? Math.round((new Date(intendedStartDate).getTime() - new Date(now).getTime()) / 864e5)
+    : null;
+  const dateSignals = { intendedStartDate: intendedStartDate ? new Date(intendedStartDate).toISOString() : null, daysUntilNeeded };
+
   if (override === 'not_interested') {
-    return { score: 0, band: 'low', reason: 'Marked not interested by a rep.', signals: { leadType, override } };
+    return { score: 0, band: 'low', reason: 'Marked not interested by a rep.', signals: { leadType, override, ...dateSignals } };
   }
   if (override === 'qualifying') {
-    return { score: 90, band: 'high', reason: 'Confirmed qualifying by a rep.', signals: { leadType, override } };
+    return { score: 90, band: 'high', reason: 'Confirmed qualifying by a rep.', signals: { leadType, override, ...dateSignals } };
   }
 
   const type = LEAD_TYPES.has(leadType) ? leadType : 'storage_inquiry';
   let score = LEAD_TYPE_BASE[type] ?? LEAD_TYPE_BASE.storage_inquiry;
   const reasons = [];
-  const signals = { leadType: type };
+  const signals = { leadType: type, ...dateSignals };
 
   if (type !== 'storage_inquiry') {
     score = Math.min(score, NON_INQUIRY_CAP);
@@ -133,9 +150,25 @@ export function scoreLead({
     if (temperature === 'hot') reasons.push('hot');
     signals.temperature = temperature || null;
 
-    const specific = Boolean(budget) || Boolean(timing) || (String(wants || '').trim().length > 15);
+    // A stated date is specific whether or not the free-text budget/timing/
+    // wants fields also caught it — a rep can set this from a phone call
+    // the AI never read.
+    const hasDate = daysUntilNeeded !== null;
+    const specific = hasDate || Boolean(budget) || Boolean(timing) || (String(wants || '').trim().length > 15);
     signals.specific = specific;
     if (specific) { score += SPECIFICITY_POINTS; reasons.push('gave specifics'); }
+
+    if (hasDate) {
+      if (daysUntilNeeded <= NEED_SOON_WINDOW_DAYS) {
+        score += NEED_SOON_POINTS;
+        reasons.push(daysUntilNeeded <= 0 ? 'needs it now' : `needs it within ${daysUntilNeeded} day${daysUntilNeeded === 1 ? '' : 's'}`);
+      } else {
+        // Not urgent, and deliberately not scored as if it were — but said
+        // plainly, so "not ready right now" is never misread as "not
+        // interested" the way a bare cold temperature alone would be.
+        reasons.push(`needs it from ${new Date(intendedStartDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`);
+      }
+    }
 
     signals.turnCount = turnCount;
     if (turnCount >= ENGAGEMENT_TURNS_THRESHOLD) {
@@ -207,6 +240,7 @@ export async function scoreForLead(lead) {
     leadType: summary.leadType, temperature: summary.temperature,
     wants: summary.wants, budget: summary.budget, timing: summary.timing,
     turnCount: behavior.turnCount, medianReplyMinutes: behavior.medianReplyMinutes,
+    intendedStartDate: lead.intendedStartDate || null,
     override,
   });
 

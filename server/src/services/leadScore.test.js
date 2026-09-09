@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { scoreLead, behavioralSignals, needsConfirmation, BAND_HIGH, BAND_MEDIUM } from './leadScore.js';
+import { scoreLead, behavioralSignals, needsConfirmation, BAND_HIGH, BAND_MEDIUM, NEED_SOON_WINDOW_DAYS } from './leadScore.js';
+
+const NOW = new Date('2026-09-10T10:00:00Z');
+const daysFromNow = (d) => new Date(NOW.getTime() + d * 864e5);
 
 test('a human override wins outright, whatever the AI signals say', () => {
     const hotLead = { leadType: 'storage_inquiry', temperature: 'hot', turnCount: 10, medianReplyMinutes: 1 };
@@ -66,6 +69,46 @@ test('scoreLead never returns outside 0-100, whatever combination of signals it 
             assert.ok(v.score >= 0 && v.score <= 100, `${leadType}/${temperature} -> ${v.score}`);
         }
     }
+});
+
+test('a stated need date within the soon window scores like a hot lead, and says so', () => {
+    const soon = scoreLead({ leadType: 'storage_inquiry', temperature: 'cold', intendedStartDate: daysFromNow(3), now: NOW });
+    assert.equal(soon.signals.daysUntilNeeded, 3);
+    assert.ok(soon.reason.includes('needs it within 3 days'));
+    const bare = scoreLead({ leadType: 'storage_inquiry', temperature: 'cold', now: NOW });
+    assert.ok(soon.score > bare.score);
+});
+
+test('a stated need date today or already past reads as "needs it now", not a negative day count', () => {
+    const today = scoreLead({ leadType: 'storage_inquiry', temperature: 'cold', intendedStartDate: NOW, now: NOW });
+    assert.ok(today.reason.includes('needs it now'));
+    const overdue = scoreLead({ leadType: 'storage_inquiry', temperature: 'cold', intendedStartDate: daysFromNow(-5), now: NOW });
+    assert.ok(overdue.reason.includes('needs it now'));
+});
+
+test('a real future date is never scored down for being unready right now — it counts as specific, not as cold', () => {
+    const future = scoreLead({ leadType: 'storage_inquiry', temperature: 'cold', intendedStartDate: daysFromNow(45), now: NOW });
+    assert.equal(future.signals.daysUntilNeeded, 45);
+    assert.equal(future.signals.specific, true);
+    assert.ok(future.reason.includes('needs it from'));
+    // Not treated as urgent: no "needs it within N days" bonus for a date
+    // this far out.
+    assert.ok(!future.reason.includes('needs it within'));
+    const bare = scoreLead({ leadType: 'storage_inquiry', temperature: 'cold', now: NOW });
+    assert.ok(future.score > bare.score); // still scores up, for being specific
+});
+
+test('right at the edge of the soon window, both sides behave as documented', () => {
+    const justInside = scoreLead({ leadType: 'storage_inquiry', temperature: 'cold', intendedStartDate: daysFromNow(NEED_SOON_WINDOW_DAYS), now: NOW });
+    assert.ok(justInside.reason.includes('needs it within'));
+    const justOutside = scoreLead({ leadType: 'storage_inquiry', temperature: 'cold', intendedStartDate: daysFromNow(NEED_SOON_WINDOW_DAYS + 1), now: NOW });
+    assert.ok(justOutside.reason.includes('needs it from'));
+    assert.ok(justInside.score > justOutside.score);
+});
+
+test('a human override still wins over a stated need date', () => {
+    const v = scoreLead({ leadType: 'storage_inquiry', intendedStartDate: daysFromNow(2), override: 'not_interested', now: NOW });
+    assert.equal(v.score, 0);
 });
 
 test('behavioralSignals: turn count is direction changes, not message count', () => {
