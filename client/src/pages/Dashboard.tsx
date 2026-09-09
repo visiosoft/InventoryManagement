@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { GripVertical, X } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
-import { api, apiError, leadFollowUpApi } from '../lib/api'
+import { api, apiError, leadApi, leadFollowUpApi, type HighIntentLead } from '../lib/api'
 import type { Contract, DashboardStats, FloorOccupancy } from '../lib/types'
 import { EmptyState, Skeleton, Table, Th, Td, Button, Badge } from '../components/ui'
 import { formatDate } from '../lib/utils'
@@ -18,6 +18,7 @@ const PURPLE_LIGHT = '#F7F3FF'
 
 type WidgetId =
   | 'stats'
+  | 'high-intent-leads'
   | 'units-by-size'
   | 'floor-occupancy'
   | 'quiet-leads'
@@ -28,6 +29,7 @@ const DASHBOARD_LAYOUT_KEY = 'pb_dashboard_layout_v2'
 
 const DEFAULT_LAYOUT: WidgetId[] = [
   'stats',
+  'high-intent-leads',
   'units-by-size',
   'floor-occupancy',
   'quiet-leads',
@@ -148,6 +150,16 @@ export default function Dashboard() {
   const { data: quiet, isLoading: quietLoading } = useQuery({
     queryKey: ['lead-follow-up-summary'],
     queryFn: () => leadFollowUpApi.summary(),
+    staleTime: 60_000,
+  })
+
+  // Who to actually follow up with — every other lead widget on this page
+  // is about volume or backlog; this is the one that says who's worth the
+  // time, today or yesterday only. Own card, own load, same as quiet-leads
+  // beside it — the heaviest reads on this page never block the rest of it.
+  const { data: highIntent, isLoading: highIntentLoading } = useQuery({
+    queryKey: ['high-intent-leads'],
+    queryFn: () => leadApi.highIntentToday(),
     staleTime: 60_000,
   })
 
@@ -298,6 +310,51 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
+        ),
+        'high-intent-leads': (
+          <WidgetShell
+            id="high-intent-leads"
+            title="High intent — today & yesterday"
+            subtitle="Scored by the AI's read of the conversation — these are the ones to follow up"
+            onDragStart={onDragStart}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+          >
+            {highIntentLoading ? <Skeleton className="h-[160px]" /> : !highIntent || highIntent.items.length === 0 ? (
+              <p style={{ fontSize: 12.5, color: MUTED_CLR, padding: '8px 0' }}>
+                Nobody's scored high yet today or yesterday. Open a chat in WhatsApp to have one read.
+              </p>
+            ) : (
+              <div style={{ display: 'grid', gap: 6 }}>
+                {highIntent.items.slice(0, 8).map((l: HighIntentLead) => (
+                  <Link
+                    key={l.leadId}
+                    to={`/whatsapp?phone=${l.phone}`}
+                    className="flex items-start gap-3 hover:opacity-80 transition-opacity"
+                    style={{ padding: '8px 10px', borderRadius: 10, background: '#FAF8F5', textDecoration: 'none' }}
+                  >
+                    <span
+                      className="shrink-0 rounded-full flex items-center justify-center"
+                      style={{ width: 34, height: 34, background: '#DCFCE7', color: '#15803D', fontSize: 12, fontWeight: 800 }}
+                    >
+                      {l.score}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate" style={{ fontSize: 13, fontWeight: 700, color: INK }}>{l.name}</span>
+                        <span style={{ fontSize: 10.5, color: MUTED_CLR, whiteSpace: 'nowrap' }}>{l.ownerName}</span>
+                      </div>
+                      <div className="truncate" style={{ fontSize: 11.5, color: MUTED_CLR }}>{l.reason}</div>
+                      {l.nextAction && <div className="truncate" style={{ fontSize: 11, color: '#4A1FA0', marginTop: 1 }}>Next: {l.nextAction}</div>}
+                    </div>
+                  </Link>
+                ))}
+                {highIntent.items.length > 8 && (
+                  <div style={{ fontSize: 11.5, color: MUTED_CLR, padding: '2px 10px' }}>and {highIntent.items.length - 8} more</div>
+                )}
+              </div>
+            )}
+          </WidgetShell>
         ),
         'units-by-size': (
           <WidgetShell
@@ -511,6 +568,7 @@ export default function Dashboard() {
     },
     [statsLoading, statsIsError, stats, statsError, refetchStats, floorLoading, floorIsError, floor, refetchFloor,
       expiringLoading, expiringIsError, expiringContracts, refetchExpiring, tasksLoading, teamTasks, quietLoading, quiet,
+      highIntentLoading, highIntent,
       onDrop, onDragStart, onDragOver]
   )
 

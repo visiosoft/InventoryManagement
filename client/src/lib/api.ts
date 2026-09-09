@@ -120,6 +120,21 @@ export const leadApi = {
    *  next contact them. */
   setIntendedDate: (id: string, date: string) =>
     api.post<LeadScore>(`/leads/${id}/intended-date`, { intendedStartDate: date || null }).then((r) => r.data),
+  /** High-scoring leads from today or yesterday — services/leadScore.js's
+   *  highIntentToday(). A rep's own; admin's, everyone's. */
+  highIntentToday: () => api.get<{ items: HighIntentLead[] }>('/leads/high-intent').then((r) => r.data),
+}
+
+export interface HighIntentLead {
+  leadId: string
+  name: string
+  phone: string
+  ownerId: string | null
+  ownerName: string
+  createdAt: string
+  score: number
+  reason: string
+  nextAction: string | null
 }
 
 export type LeadScoreBand = 'high' | 'medium' | 'low'

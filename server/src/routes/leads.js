@@ -10,7 +10,7 @@ import { ATTEMPT_CHANNELS, ATTEMPT_OUTCOMES } from '../models/index.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { QUEUE_SINCE } from '../services/followUpQueue.js';
 import { buildFunnel } from '../services/leadFunnel.js';
-import { scoreForLead } from '../services/leadScore.js';
+import { scoreForLead, highIntentToday } from '../services/leadScore.js';
 import { summariseConversation } from '../services/conversationSummary.js';
 
 const router = Router();
@@ -401,6 +401,20 @@ router.get('/funnel', async (req, res) => {
             .lean();
 
         res.json({ ...buildFunnel(leads), since: QUEUE_SINCE });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * High-scoring leads from today or yesterday — the dashboard's "these are
+ * the ones to work" list. See services/leadScore.js's highIntentToday()
+ * for how it's built; the usual rep/admin scope applies.
+ */
+router.get('/high-intent', async (req, res) => {
+    try {
+        const ownerId = isSalesRep(req) ? req.user.id : null;
+        res.json({ items: await highIntentToday({ ownerId }) });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

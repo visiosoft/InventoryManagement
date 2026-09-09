@@ -19,10 +19,12 @@
  * and meant to be read and argued with, not treated as settled.
  */
 
-import { WhatsAppMessage } from '../models/index.js';
-import { summariseConversation } from './conversationSummary.js';
+import { Lead, WhatsAppMessage } from '../models/index.js';
+import { summariseConversation, cachedSummaries, refreshSummariesInBackground } from './conversationSummary.js';
 import { LEAD_TYPES } from './conversationSummary.js';
 import { median } from './leadFunnel.js';
+import { dubaiDayRange } from './automationEngine.js';
+import { CLOSED_STATUSES } from './followUpQueue.js';
 
 /** What each conversation kind starts from, before anything else is
  *  weighed. Only storage_inquiry is scored up from here — everything else
@@ -251,4 +253,84 @@ export async function scoreForLead(lead) {
     aiSummary: summary,
     behavior,
   };
+}
+
+/**
+ * Every high-scoring lead from today or yesterday — the dashboard's own
+ * "these are the ones to work" list. Everyone's read of this is the same
+ * question with a scoped answer: a rep sees their own, admin sees
+ * everyone's, matching how the rest of the app already splits a lead list
+ * (routes/leads.js's own /stats and /funnel do the same).
+ *
+ * Batched deliberately, not scoreForLead() called once per lead in a loop:
+ * that shape is exactly what made the Follow-Ups queue slow enough to stall
+ * the API earlier this session (see conversationSummary.js's cachedSummaries
+ * doc comment) — one cache lookup and one message-history read for the
+ * whole batch here, never one call per lead. A lead whose AI read is out of
+ * date is left out of today's list rather than waited on; it is handed to
+ * the background lane and simply appears once that finishes and this is
+ * asked for again.
+ */
+export async function highIntentToday({ ownerId = null, now = new Date() } = {}) {
+  const today = dubaiDayRange(now);
+  const yesterday = dubaiDayRange(new Date(now.getTime() - 864e5));
+  const filter = {
+    status: { $nin: CLOSED_STATUSES },
+    createdAt: { $gte: yesterday.start, $lt: today.end },
+  };
+  if (ownerId) filter.owner = ownerId;
+
+  const leads = await Lead.find(filter)
+    .select('fullName phone phoneNormalized whatsappProfileName owner createdAt intendedStartDate leadScoreOverride leadScoreOverrideForLeadType')
+    .populate('owner', 'name')
+    .lean();
+  if (!leads.length) return [];
+
+  const phones = [...new Set(leads.map((l) => l.phoneNormalized).filter(Boolean))];
+  const [{ fresh, stale }, messages] = await Promise.all([
+    cachedSummaries(phones),
+    // Every message for every phone in the batch, one query — grouped by
+    // phone below rather than one WhatsAppMessage.find() per lead.
+    WhatsAppMessage.find({ phoneNormalized: { $in: phones } })
+      .select('phoneNormalized direction type occurredAt deletedAt').sort({ occurredAt: 1 }).lean(),
+  ]);
+  if (stale.length) refreshSummariesInBackground(stale);
+
+  const messagesByPhone = new Map();
+  for (const m of messages) {
+    if (!messagesByPhone.has(m.phoneNormalized)) messagesByPhone.set(m.phoneNormalized, []);
+    messagesByPhone.get(m.phoneNormalized).push(m);
+  }
+
+  const results = [];
+  for (const lead of leads) {
+    const summary = fresh.get(lead.phoneNormalized);
+    if (!summary) continue; // stale or never summarised: left for next time
+    const behavior = behavioralSignals(messagesByPhone.get(lead.phoneNormalized) || []);
+    const overrideStillValid = lead.leadScoreOverride && lead.leadScoreOverrideForLeadType === summary.leadType;
+    const override = overrideStillValid ? lead.leadScoreOverride : '';
+
+    const score = scoreLead({
+      leadType: summary.leadType, temperature: summary.temperature,
+      wants: summary.wants, budget: summary.budget, timing: summary.timing,
+      turnCount: behavior.turnCount, medianReplyMinutes: behavior.medianReplyMinutes,
+      intendedStartDate: lead.intendedStartDate || null,
+      override, now,
+    });
+    if (score.band !== 'high') continue;
+
+    results.push({
+      leadId: String(lead._id),
+      name: lead.fullName || lead.whatsappProfileName || lead.phone || 'Unknown',
+      phone: lead.phone || lead.phoneNormalized,
+      ownerId: lead.owner?._id ? String(lead.owner._id) : null,
+      ownerName: lead.owner?.name || 'Unassigned',
+      createdAt: lead.createdAt,
+      score: score.score,
+      reason: score.reason,
+      nextAction: summary.nextAction || null,
+    });
+  }
+
+  return results.sort((a, b) => b.score - a.score);
 }
