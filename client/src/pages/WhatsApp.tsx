@@ -6,6 +6,7 @@ import {
   Send, MessageSquare, RefreshCw, UserPlus, UserCheck, Bell, BellOff, FileText,
   Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Paperclip, Pencil,
   Bot, Tag, Check, ClipboardList, Sparkles, Trash2, MapPin, Mic, Square, AlertTriangle, MoreVertical, UserCog, Loader2,
+  Video as VideoIcon, Play,
 } from 'lucide-react'
 import { useVoiceRecorder, recordingSupported, formatDuration } from '../lib/voiceRecorder'
 import { api, whatsappApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel } from '../lib/api'
@@ -65,6 +66,10 @@ type MessageTemplate = {
   // or send WhatsApp's native location pin instead.
   mediaUrl?: string
   mediaKind?: '' | 'image' | 'video' | 'audio' | 'document' | 'location'
+  // The poster frame a video quick reply is actually sent as — WhatsApp's own
+  // video attachment caps at 16 MB, well under a real sales video, so the
+  // video is hosted and this snapshot goes out instead, with a watch link.
+  mediaThumbnailUrl?: string
 }
 
 /* One of the templates Meta has approved for this WhatsApp account.
@@ -1670,7 +1675,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
    * Quick replies are free text and templates are not, and which one a rep
    * needs is decided entirely by whether the 24-hour window is still open —
    * so they share one panel rather than competing for the same corner. */
-  const [panelTab, setPanelTab] = useState<'quick' | 'templates'>('quick')
+  const [panelTab, setPanelTab] = useState<'quick' | 'templates' | 'videos'>('quick')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [setupOpen, setSetupOpen] = useState(false)
   // Renaming the person this thread belongs to, without leaving the console.
@@ -1787,6 +1792,17 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
 
   const quickReplies = useMemo(
     () => (templates ?? []).filter((t) => (t.whatsappBody ?? '').trim().length > 0),
+    [templates]
+  )
+
+  /* A dedicated shelf for video quick replies — pulled from every template,
+     not from quickReplies above: a sales video is often sent with no caption
+     text at all, and quickReplies drops exactly that case, so it would never
+     otherwise be reachable from the console. Finding a specific video by
+     scrolling through categorised quick replies is also just slower than it
+     needs to be for the thing reps send most often to a hot lead. */
+  const videoReplies = useMemo(
+    () => (templates ?? []).filter((t) => t.mediaKind === 'video' && t.mediaUrl),
     [templates]
   )
 
@@ -3600,14 +3616,16 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
               <div className="flex items-start gap-2">
                 <div className="min-w-0 flex-1">
                   <h2 style={{ fontFamily: "'Bricolage Grotesque', serif", fontWeight: 700, fontSize: 17, color: INK }}>
-                    {panelTab === 'quick' ? 'Quick replies' : 'Approved templates'}
+                    {panelTab === 'quick' ? 'Quick replies' : panelTab === 'videos' ? 'Videos' : 'Approved templates'}
                   </h2>
                   <p style={{ fontSize: 11.5, color: FAINT_INK }}>
                     {panelTab === 'quick'
                       ? 'Tap one to send it'
-                      : replyWindow.open
-                        ? 'For chats outside the 24-hour window'
-                        : 'The only messages Meta will deliver now'}
+                      : panelTab === 'videos'
+                        ? 'Tap a video to send its snapshot with a watch link'
+                        : replyWindow.open
+                          ? 'For chats outside the 24-hour window'
+                          : 'The only messages Meta will deliver now'}
                   </p>
                 </div>
                 <button type="button" onClick={() => setQrOpen(false)} className="cursor-pointer p-1" style={{ color: FAINT_INK }} aria-label="Close panel">
@@ -3619,7 +3637,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                   decides it, so the closed state is marked here rather than
                   left for a rep to remember. */}
               <div className="mt-2.5 flex gap-1 p-0.5" style={{ background: '#F3EEFB', borderRadius: 10 }}>
-                {([['quick', 'Quick replies'], ['templates', 'Templates']] as const).map(([id, label]) => (
+                {([['quick', 'Quick replies'], ['videos', 'Videos'], ['templates', 'Templates']] as const).map(([id, label]) => (
                   <button
                     key={id}
                     type="button"
@@ -3772,6 +3790,78 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                   </div>
                 </div>
               </div>
+            </div>
+            )}
+
+            {panelTab === 'videos' && (
+            <div className="wa-scroll flex-1 min-h-0 px-3 py-3">
+              {replyWindow.known && !replyWindow.open && (
+                <p
+                  className="px-3 py-2 mb-3"
+                  style={{ background: '#FFF7E6', border: '1px solid #F3DFB0', borderRadius: 10, fontSize: 11.5, color: '#6B4500' }}
+                >
+                  They last wrote over 24 hours ago, so this will not be delivered — the poster image is free text
+                  too.{' '}
+                  <button
+                    type="button"
+                    onClick={() => setPanelTab('templates')}
+                    className="underline cursor-pointer"
+                    style={{ color: '#6B4500', background: 'none', border: 'none', font: 'inherit', padding: 0, fontWeight: 700 }}
+                  >
+                    Use a template
+                  </button>
+                </p>
+              )}
+              {videoReplies.length === 0 ? (
+                <p className="px-1 py-2" style={{ fontSize: 12, color: FAINT_INK }}>
+                  No videos yet. Upload one under{' '}
+                  <Link to="/settings/templates" style={{ color: '#4A1FA0', fontWeight: 600 }}>
+                    Settings → Message Templates
+                  </Link>{' '}
+                  — set a quick reply's attachment to Video.
+                </p>
+              ) : (
+                <div className="grid grid-cols-2 gap-2.5">
+                  {videoReplies.map((t) => (
+                    <button
+                      key={t._id}
+                      type="button"
+                      onClick={() => sendQuickReply.mutate(t._id)}
+                      disabled={!selectedPhone || send.isPending || sendQuickReply.isPending}
+                      className="text-left cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden"
+                      style={{ border: `1px solid ${LINE}`, borderRadius: 12, background: '#fff' }}
+                      title="Send this video — its snapshot, with a watch link"
+                    >
+                      <div style={{ position: 'relative', aspectRatio: '16 / 10', background: '#14081F' }}>
+                        {t.mediaThumbnailUrl ? (
+                          <img src={t.mediaThumbnailUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <VideoIcon size={20} style={{ color: 'rgba(255,255,255,.4)' }} />
+                          </div>
+                        )}
+                        <div
+                          className="flex items-center justify-center"
+                          style={{ position: 'absolute', inset: 0, background: 'rgba(20,8,31,.18)' }}
+                        >
+                          <span
+                            className="flex items-center justify-center rounded-full"
+                            style={{ width: 30, height: 30, background: 'rgba(255,255,255,.92)' }}
+                          >
+                            <Play size={13} style={{ color: '#5B2BC9', marginLeft: 1.5 }} fill="#5B2BC9" />
+                          </span>
+                        </div>
+                      </div>
+                      <div className="px-2.5 py-2">
+                        <div className="truncate" style={{ fontSize: 12, fontWeight: 700, color: INK }}>{t.label}</div>
+                        {t.whatsappBody && (
+                          <div className="truncate mt-0.5" style={{ fontSize: 11, color: FAINT_INK }}>{t.whatsappBody}</div>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             )}
 
