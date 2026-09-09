@@ -46,20 +46,29 @@ function safeLoadLayout() {
     const result = parsed.filter((x): x is WidgetId => DEFAULT_LAYOUT.includes(x as WidgetId))
 
     /* A widget added to DEFAULT_LAYOUT after somebody already saved a custom
-       order used to be appended at the very end, past everything else on the
-       page — which for a widget added last (quiet-leads) meant the bottom of
-       a long dashboard, easy to miss and easy to mistake for "not there".
-       Placed instead right after whichever of its default-order neighbours
-       the person still has, so a new widget lands near where it was designed
-       to sit rather than always at the tail. */
+       order is placed right after whichever of its default-order neighbours
+       the person still has, so it lands near where it was designed to sit
+       rather than always at the tail. That still has one gap: if none of
+       its earlier neighbours survive in the saved order either — every one
+       of them since removed or renamed — the search finds nothing and used
+       to fall back to appending at the very end, past everything else on
+       a long dashboard. That is exactly how the last widget added this way
+       (quiet-leads) went unnoticed for a while, and precisely what
+       happened again with the one added right after it (high-intent-leads)
+       reusing the same fallback. The front of the list is the safer
+       default for a fallback nobody chose: a widget arriving one row later
+       than expected is a shrug, arriving at the bottom of a page people
+       stop scrolling before reaching is invisible. */
     for (const id of DEFAULT_LAYOUT) {
       if (result.includes(id)) continue
       const defaultIdx = DEFAULT_LAYOUT.indexOf(id)
-      let insertAt = result.length
+      let insertAt = 0
+      let foundNeighbour = false
       for (let i = defaultIdx - 1; i >= 0; i--) {
         const afterIdx = result.indexOf(DEFAULT_LAYOUT[i])
-        if (afterIdx !== -1) { insertAt = afterIdx + 1; break }
+        if (afterIdx !== -1) { insertAt = afterIdx + 1; foundNeighbour = true; break }
       }
+      if (!foundNeighbour) insertAt = 0
       result.splice(insertAt, 0, id)
     }
     return result
