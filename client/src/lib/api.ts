@@ -104,6 +104,25 @@ export const leadApi = {
       .post<{ ok: true; created: boolean; customer: Customer; lead: Lead }>(`/leads/${id}/convert`)
       .then((r) => r.data),
   remove: (id: string) => api.delete<{ ok: true }>(`/leads/${id}`).then((r) => r.data),
+  /** The pipeline as a funnel: how many leads sit at each stage right now,
+   *  and how long they've been there. Server: routes/leads.js's GET /funnel,
+   *  logic in services/leadFunnel.js. */
+  funnel: () => api.get<LeadFunnel>('/leads/funnel').then((r) => r.data),
+}
+
+export interface LeadFunnelStage {
+  key: string
+  label: string
+  count: number
+  medianDays: number | null
+  atOrPastPct: number
+}
+export interface LeadFunnel {
+  total: number
+  lost: number
+  alreadyCustomer: number
+  since: string
+  stages: LeadFunnelStage[]
 }
 
 export const integrationApi = {

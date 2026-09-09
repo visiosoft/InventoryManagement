@@ -8,6 +8,8 @@ import { applyOutcome, getFollowUpPlan, nextDateFor, sequenceState } from '../se
 import { summarise } from '../services/speedToLead.js';
 import { ATTEMPT_CHANNELS, ATTEMPT_OUTCOMES } from '../models/index.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
+import { QUEUE_SINCE } from '../services/followUpQueue.js';
+import { buildFunnel } from '../services/leadFunnel.js';
 
 const router = Router();
 
@@ -372,6 +374,31 @@ router.get('/waiting', async (req, res) => {
         ]);
 
         res.json(summarise(leads, new Date(), plan?.responseSlaMinutes));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * The pipeline, as a funnel — see services/leadFunnel.js for how it counts.
+ *
+ * Bounded to leads created since QUEUE_SINCE, the same cutoff the Follow-Ups
+ * queue uses — older leads predate reliable tracking and would only put
+ * noise in a view whose whole point is telling you where things actually
+ * stand. Lives on the Follow-Ups page rather than a page of its own — leads
+ * already have one home, and this is a different lens on the same data, not
+ * a different feature.
+ */
+router.get('/funnel', async (req, res) => {
+    try {
+        const filter = { createdAt: { $gte: QUEUE_SINCE } };
+        if (isSalesRep(req)) filter.owner = req.user.id;
+
+        const leads = await Lead.find(filter)
+            .select('status createdAt timeline.type timeline.at')
+            .lean();
+
+        res.json({ ...buildFunnel(leads), since: QUEUE_SINCE });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

@@ -10,6 +10,7 @@ import { useAuth } from '../lib/auth'
 import { Skeleton } from '../components/ui'
 import FollowUpDrawer from '../components/FollowUpDrawer'
 import FollowUpBulkModal from '../components/FollowUpBulkModal'
+import PipelineFunnel from '../components/PipelineFunnel'
 import { REASON_UI, whyFor, agoText, initialsOf, customerBadge } from '../lib/followUpUi'
 
 /* ── The design reference's palette, copied ──────────────────────────────── */
@@ -278,6 +279,8 @@ export default function FollowUps() {
           )}
         </div>
       </div>
+
+      <PipelineFunnel />
 
       {/* ── Cards: when ──────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mt-5">
