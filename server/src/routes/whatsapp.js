@@ -3,7 +3,7 @@ import { mediaFromRaw } from './whatsappMedia.js';
 import { wentQuiet, remindAt, PRESETS, isWaitingOnUs } from '../services/chatFollowUp.js';
 import { WhatsAppMessage, Lead, Customer, User, AiBotThread, WhatsAppLabel, WhatsAppChatLabel, MessageTemplate } from '../models/index.js';
 import { sendWhatsAppText, sendWhatsAppMedia, sendWhatsAppLocation, uploadWhatsAppMedia, whatsappMediaKind, whatsappSendConfigured, whatsappSendMissing, listWhatsAppTemplates, sendWhatsAppTemplate } from '../services/whatsapp.js';
-import { pauseBotForHuman } from '../services/aiBot.js';
+import { pauseBotForHuman, markFirstResponse } from '../services/aiBot.js';
 import { containerMismatch, needsRemux, webmToOggOpus } from '../services/audioRemux.js';
 import multer from 'multer';
 import { createLeadFromWhatsAppPhone } from '../services/whatsappLeadSync.js';
@@ -280,6 +280,8 @@ router.post('/messages/:id/correct', async (req, res) => {
         await original.save();
 
         await pauseBotForHuman(original.phoneNormalized);
+
+        await markFirstResponse(original.phoneNormalized);
         res.json({ ok: true, quoted: Boolean(original.messageId), message: sent });
     } catch (e) {
         res.status(400).json({ error: e.message });
@@ -932,6 +934,7 @@ router.post('/send', async (req, res) => {
     // A colleague has taken the conversation, so the assistant steps back and
     // its pending suggestion — now stale — is dropped.
     await pauseBotForHuman(phoneNormalized);
+    await markFirstResponse(phoneNormalized);
 
     res.json({ ok: true, result });
 });
@@ -1044,6 +1047,7 @@ router.post('/send-template', async (req, res) => {
 
         // A person has taken this conversation on, the same as any typed send.
         await pauseBotForHuman(phoneNormalized);
+        await markFirstResponse(phoneNormalized);
 
         res.json({ ok: true, sent: name, text: filled });
     } catch (e) {
@@ -1151,6 +1155,8 @@ router.post('/send-quick-reply', async (req, res) => {
         if (!sent.length) return res.status(400).json({ error: 'This quick reply has neither text nor a file' });
 
         await pauseBotForHuman(phoneNormalized);
+
+        await markFirstResponse(phoneNormalized);
         res.json({ ok: true, sent });
     } catch (e) {
         res.status(400).json({ error: e.message });
@@ -1262,6 +1268,8 @@ router.post('/send-media', uploadOne, async (req, res) => {
         });
 
         await pauseBotForHuman(String(to).replace(/\D/g, ''));
+
+        await markFirstResponse(String(to).replace(/\D/g, ''));
 
         res.json({ ok: true, kind, mediaId });
     } catch (e) {

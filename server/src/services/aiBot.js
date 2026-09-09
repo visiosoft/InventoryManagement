@@ -325,6 +325,32 @@ export async function pauseBotForHuman(phoneNormalized) {
 }
 
 /**
+ * A rep answered this person on WhatsApp — stop the "waiting" panel counting
+ * them.
+ *
+ * firstResponseAt used to be set only by logging an attempt on the Follow-Up
+ * Plan or changing the lead's stage — two things a rep does from the leads
+ * board, neither of which is where a WhatsApp reply actually happens. A rep
+ * who spent all day replying in the inbox itself never touched either, so
+ * their leads sat in the red "waiting" strip for days with a real
+ * conversation already under way — the exact case the panel exists to catch,
+ * reading as the opposite of what was true.
+ *
+ * Matched by phone, not by an id carried on the message: the id can be
+ * stale (models/index.js explains why the inbox itself does not trust it),
+ * and the phone number is the fact. Never overwrites a time already set — a
+ * later reply must not make the first one look slower than it was, same
+ * rule the manual writers already follow.
+ */
+export async function markFirstResponse(phoneNormalized) {
+    if (!phoneNormalized) return;
+    await Lead.updateOne(
+        { phoneNormalized, firstResponseAt: null },
+        { $set: { firstResponseAt: new Date() } },
+    );
+}
+
+/**
  * Whether to answer this message, hand it over, or leave it alone — decided
  * before anything is sent and without touching the database, so the rules that
  * keep the assistant out of trouble can be tested directly.
