@@ -477,11 +477,11 @@ export default function PersonProfile() {
       {/* ── Header card ───────────────────────────────────────────────────── */}
       <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 22, boxShadow: SHADOW_SM, padding: '26px 28px', marginBottom: 20 }}>
         <div className="flex items-start justify-between flex-wrap" style={{ gap: 20 }}>
-          <div className="flex items-start" style={{ gap: 16 }}>
+          <div className="flex items-start" style={{ gap: 16, flex: '1 1 420px', minWidth: 0 }}>
             <div style={{ width: 56, height: 56, borderRadius: 999, background: PURPLE_100, color: DEEP, display: 'grid', placeItems: 'center', fontWeight: 700, fontSize: 18, flex: '0 0 auto' }}>
               {initials}
             </div>
-            <div>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <h1 style={{ ...DISPLAY, fontSize: 24, fontWeight: 700, margin: 0 }}>{name}</h1>
               <div className="flex items-center flex-wrap" style={{ gap: 8, marginTop: 8 }}>
                 <span className="inline-flex rounded-full" style={{ padding: '5px 12px', fontSize: 12, fontWeight: 700, background: statusTone.bg, color: statusTone.fg }}>
@@ -507,8 +507,12 @@ export default function PersonProfile() {
                   live on the customer record, and editing the lead behind
                   them would change nothing anybody can see. */}
               {!editing ? (
-                <div style={{ marginTop: 10, maxWidth: 320 }}>
-                  <div className="flex flex-col" style={{ gap: 6 }}>
+                <div style={{ marginTop: 10 }}>
+                  {/* A single narrow column left a header card mostly empty
+                      on anything wider than a phone — this fills the row
+                      the name already claims, wrapping to more columns as
+                      the window grows rather than fixed at one width. */}
+                  <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', columnGap: 28, rowGap: 6, maxWidth: 760 }}>
                     <Detail label="Phone" value={phone} />
                     <Detail label="WhatsApp" value={lead?.whatsappNo || phone} />
                     <Detail label="Email" value={email} />
