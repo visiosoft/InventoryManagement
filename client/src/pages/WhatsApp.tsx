@@ -19,6 +19,7 @@ import { Modal, Field, Input, Textarea, Select } from '../components/ui'
 import { CustomerForm } from '../components/AddCustomerModal'
 import { useSeen, markSeen as markSeenShared, unreadFrom } from '../lib/whatsappSeen'
 import { cn } from '../lib/utils'
+import { dubaiToday } from '../lib/timezone'
 
 /** Which slice of the inbox is on screen. 'waiting' is not a slice by owner
  *  like the others — it is everybody who is owed an answer. */
@@ -944,6 +945,20 @@ const LEAD_TYPE_FLAG: Record<string, string> = {
   spam_or_unclear: 'Not enough said to tell yet',
 }
 
+/* The gaps a rep actually reaches for after a call — one click instead of
+   counting days on a calendar, the same idea PersonProfile.tsx's own
+   follow-up scheduler uses. */
+const REMINDER_PRESETS: { days: number; label: string }[] = [
+  { days: 0, label: 'Today' }, { days: 1, label: 'Tomorrow' }, { days: 3, label: 'In 3 days' }, { days: 7, label: 'In a week' },
+]
+
+/** N days from today (Dubai-local), as a plain 'YYYY-MM-DD'. */
+function dateInDays(days: number): string {
+  const base = new Date(`${dubaiToday()}T00:00:00.000Z`)
+  base.setUTCDate(base.getUTCDate() + days)
+  return base.toISOString().slice(0, 10)
+}
+
 /** A documented intake fact, shown quiet rather than as a re-editable
  *  input — the whole point of the checklist below is that a filled-in
  *  field stops asking. "Change" is a plain text link, not another button,
@@ -1016,7 +1031,11 @@ function LeadScorePanel({ leadId, open, onClose }: { leadId: string | null; open
   const [editReminder, setEditReminder] = useState(false)
   const [lengthValue, setLengthValue] = useState('1')
   const [lengthUnit, setLengthUnit] = useState<'week' | 'month'>('month')
-  const [reminderAt, setReminderAt] = useState('')
+  // Date and time as two plain native inputs, not one combined
+  // datetime-local — that control's own scroll-wheel time picker is slow
+  // to use quickly, which is exactly the complaint this replaced.
+  const [reminderDate, setReminderDate] = useState('')
+  const [reminderTime, setReminderTime] = useState('09:00')
   const [reminderNote, setReminderNote] = useState('')
 
   const intake = data?.intake
@@ -1026,7 +1045,8 @@ function LeadScorePanel({ leadId, open, onClose }: { leadId: string | null; open
       setLengthUnit(intake.lengthOfStay.unit)
     }
     if (intake?.followUpReminder) {
-      setReminderAt(intake.followUpReminder.at.slice(0, 16))
+      setReminderDate(intake.followUpReminder.at.slice(0, 10))
+      setReminderTime(intake.followUpReminder.at.slice(11, 16) || '09:00')
       setReminderNote(intake.followUpReminder.note)
     }
   }, [intake?.lengthOfStay?.value, intake?.lengthOfStay?.unit, intake?.followUpReminder?.at, intake?.followUpReminder?.note])
@@ -1289,14 +1309,50 @@ function LeadScorePanel({ leadId, open, onClose }: { leadId: string | null; open
                     rows={3}
                     style={{ fontSize: 11.5, border: `1px solid ${LINE}`, borderRadius: 8, padding: 6, color: INK, width: '100%', minHeight: 60, resize: 'vertical', fontFamily: 'inherit' }}
                   />
-                  <input
-                    type="datetime-local" value={reminderAt}
-                    onChange={(e) => setReminderAt(e.target.value)}
-                    style={{ fontSize: 11.5, border: `1px solid ${LINE}`, borderRadius: 8, padding: '4px 6px', color: INK, width: '100%' }}
-                  />
+                  {/* One tap for the common gaps; the date/time below for
+                      anything else — faster than the browser's own
+                      datetime-local control, whose scroll-wheel time picker
+                      is slow to use for exactly this kind of quick entry. */}
+                  <div className="flex flex-wrap" style={{ gap: 4 }}>
+                    {REMINDER_PRESETS.map((p) => {
+                      const target = dateInDays(p.days)
+                      const active = reminderDate === target
+                      return (
+                        <button
+                          key={p.days}
+                          type="button"
+                          onClick={() => setReminderDate(target)}
+                          className="cursor-pointer"
+                          style={{
+                            borderRadius: 999, padding: '4px 9px', fontSize: 10.5, fontWeight: 700, border: 'none',
+                            background: active ? '#5B2BC9' : '#F3F4F6',
+                            color: active ? '#fff' : MUTED_INK,
+                          }}
+                        >
+                          {p.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="date" value={reminderDate}
+                      min={dubaiToday()}
+                      onChange={(e) => setReminderDate(e.target.value)}
+                      style={{ fontSize: 11.5, border: `1px solid ${LINE}`, borderRadius: 8, padding: '4px 6px', color: INK, flex: 1, minWidth: 0 }}
+                    />
+                    <input
+                      type="time" value={reminderTime}
+                      onChange={(e) => setReminderTime(e.target.value || '09:00')}
+                      style={{ fontSize: 11.5, border: `1px solid ${LINE}`, borderRadius: 8, padding: '4px 6px', color: INK, width: 92 }}
+                    />
+                  </div>
                   <button
-                    type="button" disabled={setReminder.isPending || !reminderAt}
-                    onClick={() => { setReminder.mutate({ at: new Date(reminderAt).toISOString(), note: reminderNote }); setEditReminder(false) }}
+                    type="button" disabled={setReminder.isPending || !reminderDate}
+                    onClick={() => {
+                      setReminder.mutate({ at: new Date(`${reminderDate}T${reminderTime}:00`).toISOString(), note: reminderNote })
+                      setEditReminder(false)
+                    }}
                     className="cursor-pointer disabled:opacity-50 rounded-lg"
                     style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: '#4A1FA0', border: 'none', padding: '5px 8px', width: '100%' }}
                   >

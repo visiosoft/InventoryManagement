@@ -1103,22 +1103,29 @@ export default function PersonProfile() {
               cannot drift apart. */}
           {waNumber && (
             <div className="flex" style={{ gap: 4, background: '#F7F3FF', borderRadius: 999, padding: 4 }}>
-              {([['details', 'Details'], ['chat', 'WhatsApp']] as const).map(([key, label]) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setPane(key)}
-                  className="flex-1 cursor-pointer"
-                  style={{
-                    height: 32, borderRadius: 999, border: 'none', fontSize: 13, fontWeight: 700,
-                    background: pane === key ? '#fff' : 'transparent',
-                    color: pane === key ? INK : FAINT,
-                    boxShadow: pane === key ? '0 1px 2px rgba(20,8,31,.10)' : 'none',
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
+              {([['details', 'Details'], ['chat', 'WhatsApp']] as const).map(([key, label]) => {
+                const active = pane === key
+                // WhatsApp gets its own brand colour when selected — instantly
+                // recognisable as "the chat", rather than the same purple
+                // every other active tab in the app uses.
+                const isWa = key === 'chat'
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setPane(key)}
+                    className="flex-1 cursor-pointer"
+                    style={{
+                      height: 32, borderRadius: 999, border: 'none', fontSize: 13, fontWeight: 700,
+                      background: active ? (isWa ? '#25D366' : '#fff') : 'transparent',
+                      color: active ? (isWa ? '#fff' : INK) : (isWa ? '#16A34A' : FAINT),
+                      boxShadow: active ? '0 1px 2px rgba(20,8,31,.10)' : 'none',
+                    }}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
             </div>
           )}
 
