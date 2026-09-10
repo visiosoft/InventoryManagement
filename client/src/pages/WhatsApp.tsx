@@ -110,6 +110,8 @@ const CSS = `
 .wa-grip { height: 12px; display: grid; place-items: center; cursor: ns-resize; touch-action: none; }
 .wa-grip-bar { width: 44px; height: 4px; border-radius: 999px; background: rgba(20,8,31,.16); transition: background .15s ease; }
 .wa-grip:hover .wa-grip-bar { background: rgba(91,43,201,.55); }
+.wa-score-grip-bar { width: 4px; height: 44px; border-radius: 999px; background: rgba(20,8,31,.16); transition: background .15s ease; }
+.wa-score-grip:hover .wa-score-grip-bar { background: rgba(91,43,201,.55); }
 .wa-scroll { overflow-y: auto; }
 .wa-scroll::-webkit-scrollbar { width: 8px; }
 .wa-scroll::-webkit-scrollbar-thumb { background: rgba(20,8,31,.16); border-radius: 999px; }
@@ -1029,6 +1031,40 @@ function LeadScorePanel({ leadId, open, onClose }: { leadId: string | null; open
     }
   }, [intake?.lengthOfStay?.value, intake?.lengthOfStay?.unit, intake?.followUpReminder?.at, intake?.followUpReminder?.note])
 
+  // Below ~1100px this panel is a drawer (see the .wa-score CSS), not a
+  // fixed-width rail — the same reason the composer got a drag handle:
+  // a fixed width is either too cramped for the checklist below or wastes
+  // space over the chat. Dragging its left edge resizes it the same way
+  // the composer's own grip resizes height — pointer capture, clamped,
+  // persisted. Above that breakpoint this is simply unused.
+  const SCORE_MIN = 240
+  const SCORE_MAX = 480
+  const [scoreW, setScoreW] = useState<number | null>(() => {
+    const saved = Number(localStorage.getItem('wa_score_w'))
+    return Number.isFinite(saved) && saved >= SCORE_MIN ? Math.min(saved, SCORE_MAX) : null
+  })
+  const scoreDragRef = useRef<{ startX: number; startW: number } | null>(null)
+  const onScoreDragStart = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    scoreDragRef.current = { startX: e.clientX, startW: scoreW ?? 280 }
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  }
+  const onScoreDragMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = scoreDragRef.current
+    if (!d) return
+    // Anchored to the right edge, so dragging left (a smaller clientX)
+    // makes it wider.
+    const next = Math.min(SCORE_MAX, Math.max(SCORE_MIN, d.startW + (d.startX - e.clientX)))
+    setScoreW(next)
+  }
+  const onScoreDragEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!scoreDragRef.current) return
+    scoreDragRef.current = null
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId) } catch { /* already released */ }
+    setScoreW((w) => { if (w != null) localStorage.setItem('wa_score_w', String(w)); return w })
+  }
+  const resetScoreW = () => { setScoreW(null); localStorage.removeItem('wa_score_w') }
+
   if (!leadId) {
     return (
       <aside className={cn('wa-score flex flex-col shrink-0 items-center justify-center px-4 text-center', open && 'wa-score-open')} style={{ background: '#fff', borderLeft: `1px solid ${LINE}` }}>
@@ -1041,7 +1077,28 @@ function LeadScorePanel({ leadId, open, onClose }: { leadId: string | null; open
   const flag = data?.signals?.leadType ? LEAD_TYPE_FLAG[data.signals.leadType] : null
 
   return (
-    <aside className={cn('wa-score flex flex-col min-h-0 shrink-0', open && 'wa-score-open')} style={{ background: '#fff', borderLeft: `1px solid ${LINE}` }}>
+    <aside
+      className={cn('wa-score flex flex-col min-h-0 shrink-0', open && 'wa-score-open')}
+      style={{ background: '#fff', borderLeft: `1px solid ${LINE}`, position: 'relative', ...(scoreW != null ? { width: scoreW } : {}) }}
+    >
+      {/* Drag left to make the drawer wider — the same grip mechanic as the
+          composer's, on the other axis, since this panel slides in from
+          the side rather than sitting above the message box. */}
+      <div
+        onPointerDown={onScoreDragStart}
+        onPointerMove={onScoreDragMove}
+        onPointerUp={onScoreDragEnd}
+        onPointerCancel={onScoreDragEnd}
+        onDoubleClick={resetScoreW}
+        title="Drag to resize · double-click to reset"
+        role="separator"
+        aria-orientation="vertical"
+        className="wa-score-grip"
+        style={{ position: 'absolute', left: -6, top: 0, bottom: 0, width: 12, cursor: 'ew-resize', touchAction: 'none', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      >
+        <span className="wa-score-grip-bar" />
+      </div>
+
       <div className="shrink-0 px-4 py-3.5 flex items-center justify-between" style={{ borderBottom: `1px solid ${LINE}` }}>
         <h2 style={{ fontFamily: "'Bricolage Grotesque', serif", fontWeight: 700, fontSize: 15, color: INK }}>Lead score</h2>
         {/* Only meaningful once the panel is a drawer that can be closed —
@@ -1227,20 +1284,26 @@ function LeadScorePanel({ leadId, open, onClose }: { leadId: string | null; open
               )}
             </div>
 
-            {/* Follow-up reminder — date, time, and why, reachable here
-                without opening the full edit form. */}
+            {/* What happened on the call, and when to come back to them —
+                one combined area and one Save rather than two separate
+                asks, since a rep who just hung up fills both in together.
+                The notes box resizes by dragging its own corner (the
+                browser's native textarea handle), same idea as the panel's
+                own drag-to-widen grip above. */}
             <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${LINE}` }}>
-              <label style={{ fontSize: 11, fontWeight: 600, color: INK, display: 'block', marginBottom: 4 }}>Follow-up reminder</label>
+              <label style={{ fontSize: 11, fontWeight: 600, color: INK, display: 'block', marginBottom: 4 }}>Call notes &amp; next follow-up</label>
               {data.intake.missing.includes('followUpReminder') || editReminder ? (
                 <div className="space-y-1.5">
+                  <textarea
+                    placeholder="What was discussed on the call…"
+                    value={reminderNote}
+                    onChange={(e) => setReminderNote(e.target.value)}
+                    rows={3}
+                    style={{ fontSize: 11.5, border: `1px solid ${LINE}`, borderRadius: 8, padding: 6, color: INK, width: '100%', minHeight: 60, resize: 'vertical', fontFamily: 'inherit' }}
+                  />
                   <input
                     type="datetime-local" value={reminderAt}
                     onChange={(e) => setReminderAt(e.target.value)}
-                    style={{ fontSize: 11.5, border: `1px solid ${LINE}`, borderRadius: 8, padding: '4px 6px', color: INK, width: '100%' }}
-                  />
-                  <input
-                    type="text" placeholder="What's it for?" value={reminderNote}
-                    onChange={(e) => setReminderNote(e.target.value)}
                     style={{ fontSize: 11.5, border: `1px solid ${LINE}`, borderRadius: 8, padding: '4px 6px', color: INK, width: '100%' }}
                   />
                   <button
@@ -1253,10 +1316,19 @@ function LeadScorePanel({ leadId, open, onClose }: { leadId: string | null; open
                   </button>
                 </div>
               ) : (
-                <FieldSummary
-                  text={`${new Date(data.intake.followUpReminder!.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}${data.intake.followUpReminder!.note ? ` — ${data.intake.followUpReminder!.note}` : ''}`}
-                  onChange={() => setEditReminder(true)}
-                />
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <span style={{ fontSize: 11.5, color: INK, fontWeight: 600 }}>
+                      {new Date(data.intake.followUpReminder!.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    <button type="button" onClick={() => setEditReminder(true)} className="underline cursor-pointer shrink-0" style={{ fontSize: 10.5, color: FAINT_INK, background: 'none', border: 'none', padding: 0 }}>
+                      Change
+                    </button>
+                  </div>
+                  {data.intake.followUpReminder!.note && (
+                    <p className="mt-1" style={{ fontSize: 11.5, color: MUTED_INK, whiteSpace: 'pre-wrap' }}>{data.intake.followUpReminder!.note}</p>
+                  )}
+                </div>
               )}
             </div>
 
