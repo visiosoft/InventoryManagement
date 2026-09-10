@@ -35,6 +35,10 @@ const populateAll = (q) => q.populate('customer').populate('unit').populate('uni
 
 const OPEN_STATUSES = ['draft', 'pending_signature', 'active'];
 
+function isSalesRep(req) {
+  return req.user?.role === 'sales_rep' || req.user?.role === 'accounts';
+}
+
 function hasDateOverlap(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && aEnd > bStart;
 }
@@ -1054,12 +1058,12 @@ router.put('/:id', async (req, res) => {
     const contract = await Contract.findById(req.params.id);
     if (!contract) return res.status(404).json({ error: 'Contract not found' });
 
-    // Once booked (active), only an admin may edit the contract terms — except
-    // renewalIntent alone, which sales reps update from the renewal-calling
-    // queue on contracts that are, by definition, always active.
+    // Once booked (active), only an admin or sales rep may edit the contract
+    // terms — except renewalIntent alone, which sales reps update from the
+    // renewal-calling queue on contracts that are, by definition, always active.
     const isRenewalIntentOnly = Object.keys(req.body).length > 0 && Object.keys(req.body).every((k) => k === 'renewalIntent');
-    if (contract.status === 'active' && req.user.role !== 'admin' && !isRenewalIntentOnly) {
-      return res.status(403).json({ error: 'Only an admin can edit a booked contract' });
+    if (contract.status === 'active' && req.user.role !== 'admin' && !isSalesRep(req) && !isRenewalIntentOnly) {
+      return res.status(403).json({ error: 'Only an admin or sales rep can edit a booked contract' });
     }
 
     // Use $set to avoid VersionError from concurrent background writes on this document
