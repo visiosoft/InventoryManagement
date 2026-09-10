@@ -1132,18 +1132,6 @@ function LeadScorePanel({ leadId, open, onClose }: { leadId: string | null; open
               <p className="mt-3" style={{ color: INK }}><strong>Next:</strong> {data.aiSummary.nextAction}</p>
             )}
 
-            {/* The signals behind the number — compact on purpose. This is
-                shown so the score can be argued with, not audited line by
-                line. */}
-            <div className="mt-3 pt-3 space-y-1" style={{ borderTop: `1px solid ${LINE}`, color: FAINT_INK, fontSize: 11 }}>
-              {data.signals.temperature && <div>Temperature: {data.signals.temperature}</div>}
-              {typeof data.signals.turnCount === 'number' && <div>{data.signals.turnCount} messages back and forth</div>}
-              {data.signals.medianReplyMinutes != null && (
-                <div>Typically replies in {data.signals.medianReplyMinutes < 60 ? `${Math.round(data.signals.medianReplyMinutes)}m` : `${Math.round(data.signals.medianReplyMinutes / 60)}h`}</div>
-              )}
-              {data.signals.specific !== undefined && <div>{data.signals.specific ? 'Gave a specific need' : 'Nothing specific yet'}</div>}
-            </div>
-
             {/* When they actually need it — not the same question as when
                 we should next contact them. A lead who isn't ready right
                 now isn't necessarily a dead one; this is what tells the
