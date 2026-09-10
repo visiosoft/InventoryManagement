@@ -6,6 +6,7 @@ import { computeUnitAvailability } from './unitAvailability.js';
 import { sendWhatsAppMedia, sendWhatsAppText, uploadWhatsAppMedia, whatsappSendConfigured } from './whatsapp.js';
 import { understandMedia } from './mediaUnderstanding.js';
 import { mixAmbience } from './voiceAmbience.js';
+import { dismissAssignmentNotification } from './leadNotify.js';
 
 // WhatsApp only permits a free-form reply inside 24 hours of the customer's
 // last message. Replying at 23h59 would race that limit and fail at Meta, so
@@ -348,6 +349,12 @@ export async function markFirstResponse(phoneNormalized) {
         { phoneNormalized, firstResponseAt: null },
         { $set: { firstResponseAt: new Date() } },
     );
+    // The "you were given a lead" mobile push, if this phone has one still
+    // pending, stops here too — a rep who has just replied does not need to
+    // be told again that the lead is theirs. Independent of the write above:
+    // a lead can be replied to a second time, on a fresh assignment, long
+    // after its firstResponseAt was set once and for good.
+    await dismissAssignmentNotification(phoneNormalized);
 }
 
 /**

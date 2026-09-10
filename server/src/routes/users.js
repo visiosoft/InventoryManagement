@@ -2,6 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { User, ALL_MODULES } from '../models/index.js';
 import { requireAdmin, signToken } from '../middleware/auth.js';
+import { registerExpoPushToken, unregisterExpoPushToken } from '../services/expoPush.js';
 
 const router = Router();
 
@@ -154,6 +155,41 @@ router.post('/me/change-password', async (req, res) => {
   user.passwordHash = await bcrypt.hash(newPassword, 12);
   await user.save();
   res.json({ ok: true, token: signToken(user) });
+});
+
+/**
+ * Register this device for mobile push — lead-assignment notifications, the
+ * one thing PurpleBoxMobile currently pushes for.
+ *
+ * Called once after login, and again whenever `expo-notifications` fires its
+ * token-refresh event, so the same person can carry more than one device and
+ * neither ever goes stale. `$addToSet` on the model side makes a repeat call
+ * with the same token free.
+ */
+router.post('/push-token', async (req, res) => {
+  try {
+    const token = String(req.body?.token || '').trim();
+    if (!token) return res.status(400).json({ error: 'A push token is required' });
+    const ok = await registerExpoPushToken(req.user.id, token);
+    if (!ok) return res.status(400).json({ error: 'Not a valid Expo push token' });
+    res.status(201).json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/** Stop pushing to this device — called on sign-out, so a shared or
+ *  reassigned phone does not keep receiving the previous person's leads.
+ *  POST, not DELETE, matching services/push.js's own /unsubscribe. */
+router.post('/push-token/remove', async (req, res) => {
+  try {
+    const token = String(req.body?.token || '').trim();
+    if (!token) return res.status(400).json({ error: 'A push token is required' });
+    await unregisterExpoPushToken(req.user.id, token);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 export default router;

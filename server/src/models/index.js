@@ -49,6 +49,12 @@ const userSchema = new Schema(
       enabled: { type: Boolean, default: true },
       completed: { type: [String], default: [] },
     },
+    /* Expo push tokens for the mobile app — one per device this person is
+       logged into, since a rep can carry both a work and a personal phone.
+       services/expoPush.js is the only writer: it adds a token on
+       registration and drops it the moment Expo reports the device gone,
+       so this never grows stale. */
+    pushTokens: { type: [String], default: [] },
   },
   { timestamps: true }
 );
@@ -311,6 +317,29 @@ const leadSchema = new Schema(
        and it goes quiet a second time, that is a new silence and earns a new
        nudge, so this is never explicitly cleared on reply. */
     quietNudgedAt: { type: Date, default: null },
+
+    /* The mobile "you've been given a lead" push, and its lifecycle.
+     *
+     * Stamped the moment services/leadNotify.js actually sends the push —
+     * not the moment the lead is assigned, because an owner with no
+     * registered device gets no push and should not be treated as reminded.
+     * Cleared (via $unset) on every fresh hand-off so a lead moved a second
+     * time gets its own notification rather than reusing the last one's
+     * state. */
+    assignmentNotifiedAt: { type: Date, default: null },
+    /* Set the moment the rep actually replies to this lead on WhatsApp — see
+       services/aiBot.js's markFirstResponse, the one place every outbound
+       send already passes through. Read by the mobile app to decide the push
+       is stale and by services/leadAssignReminder.js to leave a lead alone
+       once it has genuinely been answered, even before firstResponseAt (a
+       slower-moving, more official field elsewhere) catches up. */
+    assignmentNotificationDismissedAt: { type: Date, default: null },
+    /* When the owner was last reminded that this one is still sitting
+       unanswered — see services/leadAssignReminder.js. Same idea as
+       quietNudgedAt: compared against assignedAt so a lead reassigned since
+       the last reminder starts a fresh window rather than being skipped
+       forever. At most one reminder per lead per day. */
+    assignmentReminderSentAt: { type: Date, default: null },
 
     /* When somebody was put on this lead.
      *

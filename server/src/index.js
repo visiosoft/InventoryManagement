@@ -101,6 +101,7 @@ import { ensureDigest, dayKeyFor, previousDay, localHour } from './services/dail
 import { runDayBriefs } from './services/dayBrief.js';
 import { runLeadSla } from './services/leadSla.js';
 import { runQuietNudge } from './services/quietNudge.js';
+import { runLeadAssignReminder } from './services/leadAssignReminder.js';
 import { releaseLapsedHolds } from './utils/unitStatus.js';
 import { runCampaignTick } from './services/campaignSender.js';
 import { inspectWhatsAppToken } from './services/whatsapp.js';
@@ -551,6 +552,22 @@ async function start() {
       console.error('[QuietNudge]', e.message);
     }
   }, 15 * 60_000), 90_000);
+
+  /* A lead handed to somebody who never actually did anything about it —
+     no attempt logged, no stage moved, no WhatsApp reply sent — gets one
+     mobile reminder a day until one of those happens. Not the same clock as
+     LeadSLA above: that one moves the lead to somebody else inside half an
+     hour; this one leaves it exactly where it is and just says it again,
+     for the much slower case of a rep who meant to get to it and did not.
+     Every 20 minutes is plenty against a reminder measured in hours. */
+  setTimeout(() => setInterval(async () => {
+    try {
+      const out = await runLeadAssignReminder();
+      if (out.reminded) console.log(`[LeadAssignReminder] reminded on ${out.reminded} lead(s)`);
+    } catch (e) {
+      console.error('[LeadAssignReminder]', e.message);
+    }
+  }, 20 * 60_000), 100_000);
 
   /* Units held by a quotation that has since expired.
      A quote holds its unit until its expiry date, and nothing else sweeps

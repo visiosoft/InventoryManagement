@@ -15,9 +15,35 @@
  * whatever the mail server or a push endpoint is doing.
  */
 
-import { User } from '../models/index.js';
+import { Lead, User } from '../models/index.js';
 import { mailConfigured, sendMail } from './mail.js';
 import { pushConfigured, pushToUser } from './push.js';
+import { expoPushConfigured, pushExpoToUser } from './expoPush.js';
+
+/* Kept small on purpose — "four or five, not more" is the product ask, and a
+ * badge that just counts every lead ever assigned to somebody would grow all
+ * year. Capped rather than exact past the cap: once there are more than this
+ * many still-unanswered assignments, the badge itself has stopped being
+ * useful as a count and the number of the cap is the more honest thing to
+ * show. */
+export const MAX_ASSIGNMENT_BADGE = 5;
+
+/**
+ * How many "you were given a lead" pushes are still live for somebody: sent,
+ * not yet replied to, not yet closed. What the phone's app-icon badge and the
+ * mobile app's own in-app list both read, so neither ever drifts from what a
+ * rep would count by hand.
+ */
+export async function pendingAssignmentBadge(ownerId) {
+   if (!ownerId) return 0;
+   const count = await Lead.countDocuments({
+      owner: ownerId,
+      assignmentNotifiedAt: { $ne: null },
+      assignmentNotificationDismissedAt: null,
+      status: { $nin: ['won', 'lost'] },
+   });
+   return Math.min(count, MAX_ASSIGNMENT_BADGE);
+}
 
 const escapeHtml = (s) => String(s ?? '')
    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -78,8 +104,67 @@ export function buildLeadNotice({ lead, assignedByName, reason, firstMessage, ap
       subject,
       text,
       html,
-      push: { title, body: line, url: path, tag: `lead-${lead?._id ?? ''}` },
+      push: {
+         title,
+         body: line,
+         url: path,
+         tag: `lead-${lead?._id ?? ''}`,
+         /* What the mobile app needs to jump straight into the right
+            WhatsApp thread on tap, without a round trip to the API first —
+            see app/_layout.tsx in PurpleBoxMobile, which reads exactly this
+            shape off the notification response. */
+         data: {
+            type: 'lead_assigned',
+            phone: lead?.phoneNormalized || lead?.phone || '',
+            leadId: String(lead?._id ?? ''),
+            name: who,
+         },
+      },
    };
+}
+
+/**
+ * A rep has just replied — the "you were given a lead" push is no longer
+ * relevant, whatever the OS notification tray still shows.
+ *
+ * True remote removal of an already-delivered notification is only partially
+ * in reach through Expo's abstraction: Android accepts a tag/identifier it
+ * will dismiss by, but iOS has no equivalent without a mutable-content push
+ * that rewrites or removes a specific delivered alert, which Expo's push API
+ * does not expose. What this function guarantees instead — and what is fully
+ * in reach — is that the lead is marked dismissed so neither the phone's
+ * badge count nor the mobile app's own pending-leads list can ever show it
+ * again, however long the OS tray keeps the original alert visible. A
+ * best-effort silent push is also sent, which PurpleBoxMobile's
+ * src/lib/pushNotifications.ts uses to clear the tray entry itself when the
+ * app is open or has been backgrounded (not force-quit) recently enough for
+ * the OS to deliver it.
+ *
+ * Called from wherever a reply actually goes out — see
+ * services/aiBot.js's markFirstResponse, the one place every outbound
+ * WhatsApp send already passes through.
+ */
+export async function dismissAssignmentNotification(phoneNormalized) {
+   if (!phoneNormalized) return;
+   try {
+      const lead = await Lead.findOneAndUpdate(
+         { phoneNormalized, assignmentNotifiedAt: { $ne: null }, assignmentNotificationDismissedAt: null },
+         { $set: { assignmentNotificationDismissedAt: new Date() } },
+         { new: true },
+      ).select('_id owner').lean();
+      if (!lead?.owner) return;
+
+      if (expoPushConfigured()) {
+         const badge = await pendingAssignmentBadge(lead.owner);
+         await pushExpoToUser(lead.owner, {
+            silent: true,
+            data: { type: 'lead_assigned_dismiss', leadId: String(lead._id) },
+            badge,
+         }).catch(() => null);
+      }
+   } catch (e) {
+      console.error('[LeadNotify] could not dismiss assignment push:', e.message);
+   }
 }
 
 /**
@@ -87,7 +172,7 @@ export function buildLeadNotice({ lead, assignedByName, reason, firstMessage, ap
  * caller can log it without having to guard.
  */
 export async function notifyLeadAssigned({ lead, ownerId, assignedByName = '', reason = '', firstMessage = '' }) {
-   const result = { push: null, email: null };
+   const result = { push: null, email: null, mobile: null };
    if (!lead || !ownerId) return result;
 
    try {
@@ -101,6 +186,29 @@ export async function notifyLeadAssigned({ lead, ownerId, assignedByName = '', r
 
       if (pushConfigured()) {
          result.push = await pushToUser(ownerId, notice.push).catch((e) => ({ error: e.message }));
+      }
+
+      /* The phone. This is the notification the product ask is actually
+       * about — the browser push above only reaches somebody at a desk, and
+       * a WhatsApp lead is usually won or lost before anybody sits back down
+       * at one.
+       *
+       * `assignmentNotifiedAt` is stamped only once a device was actually
+       * reached — never on a bare attempt — because that field is what
+       * decides whether this lead is "pending" for the badge count and the
+       * missed-lead reminder (services/leadAssignReminder.js). Stamping it
+       * regardless would mark an owner with no phone registered as already
+       * notified, and they would never be reminded that a lead is sitting
+       * there unread. */
+      if (expoPushConfigured()) {
+         const badge = await pendingAssignmentBadge(ownerId) + 1;
+         result.mobile = await pushExpoToUser(ownerId, { ...notice.push, badge }).catch((e) => ({ error: e.message }));
+         if (result.mobile?.sent > 0) {
+            await Lead.updateOne(
+               { _id: lead._id },
+               { $set: { assignmentNotifiedAt: new Date() }, $unset: { assignmentNotificationDismissedAt: 1, assignmentReminderSentAt: 1 } },
+            ).catch((e) => console.error('[LeadNotify] could not stamp assignmentNotifiedAt:', e.message));
+         }
       }
 
       /* No email for this.
