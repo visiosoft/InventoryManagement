@@ -167,6 +167,50 @@ export async function dismissAssignmentNotification(phoneNormalized) {
    }
 }
 
+/** A push body for a message with no text of its own. */
+const MEDIA_PREVIEW = {
+   image: '📷 Photo', video: '🎥 Video', audio: '🎵 Audio', voice: '🎤 Voice message',
+   document: '📄 Document', sticker: 'Sticker', location: '📍 Location',
+};
+
+/**
+ * A customer wrote back on a chat somebody already owns.
+ *
+ * Separate from notifyLeadAssigned on purpose: that one fires once, the
+ * moment a lead becomes somebody's; this fires every time they reply after
+ * that, which is a different frequency and a different reason to interrupt
+ * somebody. Skipped entirely for a lead's very first message — that message
+ * is also the one that creates and assigns the lead, so it already gets the
+ * "you were given a lead" push from the caller in whatsappLeadSync.js; a
+ * second push for the same message would just be noise.
+ *
+ * No email, no badge: unlike an assignment, an unread message does not need
+ * to survive as a standing "still pending" count on the app icon — it is a
+ * notification, not a queue entry.
+ */
+export async function notifyInboundWhatsAppMessage({ lead, text, msgType }) {
+   const result = { mobile: null };
+   if (!lead?.owner || !expoPushConfigured()) return result;
+
+   try {
+      const who = leadLabel(lead);
+      const body = text ? String(text).slice(0, 120) : (MEDIA_PREVIEW[msgType] || 'New message');
+      result.mobile = await pushExpoToUser(String(lead.owner), {
+         title: who,
+         body,
+         data: {
+            type: 'whatsapp_message',
+            phone: lead.phoneNormalized || lead.phone || '',
+            leadId: String(lead._id),
+            name: who,
+         },
+      }).catch((e) => ({ error: e.message }));
+   } catch (e) {
+      console.error('[LeadNotify] could not notify inbound message:', e.message);
+   }
+   return result;
+}
+
 /**
  * Send it. Returns what happened on each channel rather than throwing, so a
  * caller can log it without having to guard.

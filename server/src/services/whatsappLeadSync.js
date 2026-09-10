@@ -1,6 +1,6 @@
 import { Lead, User, WhatsAppLabelState, WhatsAppWebhookEvent, WhatsAppMessage } from '../models/index.js';
 import { routeInboundLead } from './leadRouting.js';
-import { notifyLeadAssigned } from './leadNotify.js';
+import { notifyLeadAssigned, notifyInboundWhatsAppMessage } from './leadNotify.js';
 import { normalizeLeadPhone } from '../routes/leads.js';
 import { getAiBotConfig, noteInboundForBot, pauseBotForHuman } from './aiBot.js';
 import { sendFirstContactVideo } from './firstContact.js';
@@ -411,6 +411,10 @@ async function persistMessages(messages) {
         if (existing) continue;
 
         let lead = await Lead.findOne({ phoneNormalized: msg.phoneNormalized });
+        // Whether this message is the one that creates the lead — if so it
+        // already gets the "you were given a lead" push below, and the
+        // per-message push further down must skip it to avoid a duplicate.
+        const isNewLead = !lead;
         if (!lead && msg.direction === 'inbound') {
             lead = await createLeadFromWhatsAppPhone({
                 phone: msg.phone,
@@ -442,6 +446,18 @@ async function persistMessages(messages) {
         if (lead && msg.direction === 'inbound' && msg.text) {
             pushTimeline(lead, 'whatsapp_message', `Inbound WhatsApp message: ${msg.text.slice(0, 200)}`);
             await lead.save();
+        }
+
+        /* A push for the reply itself — every inbound message on a chat
+           somebody already owns, not just the first one that creates and
+           assigns the lead (that already got its own push above). Not
+           awaited into the webhook's response path, same reason as
+           notifyLeadAssigned: Meta needs this endpoint back quickly, and a
+           slow push service must never be the reason a message fails to
+           save. */
+        if (lead && msg.direction === 'inbound' && lead.owner && !isNewLead) {
+            notifyInboundWhatsAppMessage({ lead, text: msg.text, msgType: msg.type })
+                .catch((e) => console.error('[WhatsAppLeadSync] message notify failed:', e.message));
         }
 
         /* They wrote back, so any reminder to chase them is off.
