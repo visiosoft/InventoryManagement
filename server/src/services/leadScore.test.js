@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { scoreLead, behavioralSignals, needsConfirmation, BAND_HIGH, BAND_MEDIUM, NEED_SOON_WINDOW_DAYS } from './leadScore.js';
+import { scoreLead, behavioralSignals, needsConfirmation, intakeChecklist, BAND_HIGH, BAND_MEDIUM, NEED_SOON_WINDOW_DAYS } from './leadScore.js';
 
 const NOW = new Date('2026-09-10T10:00:00Z');
 const daysFromNow = (d) => new Date(NOW.getTime() + d * 864e5);
@@ -149,4 +149,60 @@ test('needsConfirmation: only a genuine enquiry, only after we have actually rep
     assert.equal(needsConfirmation({ band: 'high', override: '', outboundCount: 0 }), false);
     assert.equal(needsConfirmation({ band: 'low', override: '', outboundCount: 3 }), false);
     assert.equal(needsConfirmation({ band: 'high', override: 'qualifying', outboundCount: 3 }), false);
+});
+
+test('intakeChecklist: a brand-new lead is missing every fact, with a message suggestion for each customer-facing one', () => {
+    const lead = { leadDateTime: new Date('2026-09-01T09:00:00Z'), durationValue: 1, durationUnit: 'month' };
+    const c = intakeChecklist(lead);
+    assert.deepEqual(c.missing, ['moveInDate', 'lengthOfStay', 'financiallyQualified', 'locationPreference', 'followUpReminder']);
+    assert.equal(c.leadInitiatedAt, lead.leadDateTime);
+    assert.equal(c.moveInDate, null);
+    assert.equal(c.lengthOfStay, null);
+    assert.equal(c.financiallyQualified, '');
+    assert.equal(c.locationPreference, '');
+    assert.equal(c.followUpReminder, null);
+    // financiallyQualified and followUpReminder are never something to ask
+    // the customer, so only three of the five missing facts get a message.
+    assert.equal(c.suggestedMessages.length, 3);
+});
+
+test('intakeChecklist: durationValue/durationUnit alone never count as documented — only lengthOfStayConfirmedAt does', () => {
+    const untouched = intakeChecklist({ durationValue: 1, durationUnit: 'month' });
+    assert.ok(untouched.missing.includes('lengthOfStay'));
+    assert.equal(untouched.lengthOfStay, null);
+
+    const confirmed = intakeChecklist({ durationValue: 3, durationUnit: 'week', lengthOfStayConfirmedAt: new Date() });
+    assert.ok(!confirmed.missing.includes('lengthOfStay'));
+    assert.deepEqual(confirmed.lengthOfStay, { value: 3, unit: 'week' });
+});
+
+test('intakeChecklist: a field drops off the missing list and out of its message suggestion once documented', () => {
+    const lead = {
+        intendedStartDate: new Date('2026-10-01'),
+        lengthOfStayConfirmedAt: new Date(), durationValue: 2, durationUnit: 'month',
+        financiallyQualified: 'yes',
+        locationPreference: 'Al Quoz',
+        followUpAt: new Date('2026-09-15T10:00:00Z'), followUpNote: 'call back after payday',
+    };
+    const c = intakeChecklist(lead);
+    assert.deepEqual(c.missing, []);
+    assert.deepEqual(c.suggestedMessages, []);
+    assert.equal(c.moveInDate, lead.intendedStartDate);
+    assert.deepEqual(c.lengthOfStay, { value: 2, unit: 'month' });
+    assert.equal(c.financiallyQualified, 'yes');
+    assert.equal(c.locationPreference, 'Al Quoz');
+    assert.deepEqual(c.followUpReminder, { at: lead.followUpAt, note: 'call back after payday' });
+});
+
+test('intakeChecklist: only the still-missing customer-facing facts get a suggested message', () => {
+    const c = intakeChecklist({
+        intendedStartDate: new Date('2026-10-01'),
+        lengthOfStayConfirmedAt: null,
+        locationPreference: '',
+    });
+    assert.deepEqual(c.missing.filter((k) => ['moveInDate', 'lengthOfStay', 'locationPreference'].includes(k)), ['lengthOfStay', 'locationPreference']);
+    assert.equal(c.suggestedMessages.length, 2);
+    assert.ok(c.suggestedMessages.some((m) => /store with us/.test(m)));
+    assert.ok(c.suggestedMessages.some((m) => /Al Quoz or DIP/.test(m)));
+    assert.ok(!c.suggestedMessages.some((m) => /move in/.test(m)));
 });

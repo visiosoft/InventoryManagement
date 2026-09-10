@@ -358,6 +358,19 @@ const leadSchema = new Schema(
        services/leadScore.js so "not ready right now" scores as a real,
        future-dated lead rather than as a cold, vague one. */
     intendedStartDate: { type: Date, default: null },
+    /* A rep's own yes/no read on whether they can actually afford this —
+       asked on a call or in person, never inferred from anything the AI
+       read. '' means nobody has asked yet. */
+    financiallyQualified: { type: String, enum: ['', 'yes', 'no'], default: '' },
+    /* Which of the two facilities they actually want. A plain enum rather
+       than a Site reference: reps talk about "Al Quoz" or "DIP" as places,
+       not as the longer Site records those names resolve to. */
+    locationPreference: { type: String, enum: ['', 'Al Quoz', 'DIP'], default: '' },
+    /* Stamped the moment a rep actually confirms durationValue/durationUnit
+       with the lead. Both fields carry a real-looking default from creation
+       (1 month), so their presence alone can never mean "documented" — this
+       is the only honest signal that somebody has actually asked. */
+    lengthOfStayConfirmedAt: { type: Date, default: null },
     owner: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     unitsNeeded: { type: Number, required: true, min: 1 },
     notes: { type: String, default: '' },

@@ -942,6 +942,21 @@ const LEAD_TYPE_FLAG: Record<string, string> = {
   spam_or_unclear: 'Not enough said to tell yet',
 }
 
+/** A documented intake fact, shown quiet rather than as a re-editable
+ *  input — the whole point of the checklist below is that a filled-in
+ *  field stops asking. "Change" is a plain text link, not another button,
+ *  so it reads as an escape hatch rather than an invitation. */
+function FieldSummary({ text, onChange }: { text: string; onChange: () => void }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span style={{ fontSize: 11.5, color: INK }}>{text}</span>
+      <button type="button" onClick={onChange} className="underline cursor-pointer shrink-0" style={{ fontSize: 10.5, color: FAINT_INK, background: 'none', border: 'none', padding: 0 }}>
+        Change
+      </button>
+    </div>
+  )
+}
+
 /**
  * How good this lead is, and why — the always-on right rail, so a rep
  * reads the AI's take before they type anything rather than after.
@@ -973,6 +988,46 @@ function LeadScorePanel({ leadId, open, onClose }: { leadId: string | null; open
     mutationFn: (date: string) => leadApi.setIntendedDate(leadId!, date),
     onSuccess: (result) => qc.setQueryData(['lead-score', leadId], result),
   })
+
+  const setQualified = useMutation({
+    mutationFn: (value: '' | 'yes' | 'no') => leadApi.setFinanciallyQualified(leadId!, value),
+    onSuccess: (result) => qc.setQueryData(['lead-score', leadId], result),
+  })
+  const setLocation = useMutation({
+    mutationFn: (value: '' | 'Al Quoz' | 'DIP') => leadApi.setLocationPreference(leadId!, value),
+    onSuccess: (result) => qc.setQueryData(['lead-score', leadId], result),
+  })
+  const setLength = useMutation({
+    mutationFn: (payload: { value: number; unit: 'week' | 'month' }) => leadApi.setLengthOfStay(leadId!, payload.value, payload.unit),
+    onSuccess: (result) => qc.setQueryData(['lead-score', leadId], result),
+  })
+  const setReminder = useMutation({
+    mutationFn: (payload: { at: string; note: string }) => leadApi.setFollowUpReminder(leadId!, payload.at, payload.note),
+    onSuccess: (result) => qc.setQueryData(['lead-score', leadId], result),
+  })
+
+  // Once a fact is documented its input drops out of the panel, per the
+  // intake checklist below — "Change" brings it back for this one field
+  // without needing the fact to go missing again.
+  const [editMoveIn, setEditMoveIn] = useState(false)
+  const [editLength, setEditLength] = useState(false)
+  const [editReminder, setEditReminder] = useState(false)
+  const [lengthValue, setLengthValue] = useState('1')
+  const [lengthUnit, setLengthUnit] = useState<'week' | 'month'>('month')
+  const [reminderAt, setReminderAt] = useState('')
+  const [reminderNote, setReminderNote] = useState('')
+
+  const intake = data?.intake
+  useEffect(() => {
+    if (intake?.lengthOfStay) {
+      setLengthValue(String(intake.lengthOfStay.value))
+      setLengthUnit(intake.lengthOfStay.unit)
+    }
+    if (intake?.followUpReminder) {
+      setReminderAt(intake.followUpReminder.at.slice(0, 16))
+      setReminderNote(intake.followUpReminder.note)
+    }
+  }, [intake?.lengthOfStay?.value, intake?.lengthOfStay?.unit, intake?.followUpReminder?.at, intake?.followUpReminder?.note])
 
   if (!leadId) {
     return (
@@ -1032,39 +1087,207 @@ function LeadScorePanel({ leadId, open, onClose }: { leadId: string | null; open
               {data.signals.specific !== undefined && <div>{data.signals.specific ? 'Gave a specific need' : 'Nothing specific yet'}</div>}
             </div>
 
+            {/* Lead initiated — automatic, never editable, so it's a plain
+                stamp rather than a field in the checklist below. */}
+            {data.intake.leadInitiatedAt && (
+              <p className="mt-2" style={{ fontSize: 10.5, color: FAINT_INK }}>
+                Lead initiated {new Date(data.intake.leadInitiatedAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              </p>
+            )}
+
             {/* When they actually need it — not the same question as when
                 we should next contact them. A lead who isn't ready right
                 now isn't necessarily a dead one; this is what tells the
                 two apart, whether the AI caught it in the chat or a rep
                 heard it on a call. Saves the moment a date is picked — one
-                action, not a form with its own submit. */}
+                action, not a form with its own submit. Drops out once
+                documented, like the rest of the intake checklist below —
+                "Change" brings the input back for a correction. */}
             <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${LINE}` }}>
-              <label style={{ fontSize: 11, fontWeight: 600, color: INK, display: 'block', marginBottom: 4 }}>When do they need it?</label>
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="date"
-                  value={data.signals.intendedStartDate ? data.signals.intendedStartDate.slice(0, 10) : ''}
-                  onChange={(e) => setDate.mutate(e.target.value)}
-                  disabled={setDate.isPending}
-                  style={{ fontSize: 11.5, border: `1px solid ${LINE}`, borderRadius: 8, padding: '4px 6px', color: INK, flex: 1, minWidth: 0 }}
+              <label style={{ fontSize: 11, fontWeight: 600, color: INK, display: 'block', marginBottom: 4 }}>Move-in date</label>
+              {data.intake.missing.includes('moveInDate') || editMoveIn ? (
+                <>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="date"
+                      value={data.signals.intendedStartDate ? data.signals.intendedStartDate.slice(0, 10) : ''}
+                      onChange={(e) => { setDate.mutate(e.target.value); setEditMoveIn(false) }}
+                      disabled={setDate.isPending}
+                      style={{ fontSize: 11.5, border: `1px solid ${LINE}`, borderRadius: 8, padding: '4px 6px', color: INK, flex: 1, minWidth: 0 }}
+                    />
+                    {data.signals.intendedStartDate && (
+                      <button
+                        type="button" disabled={setDate.isPending}
+                        onClick={() => { setDate.mutate(''); setEditMoveIn(false) }}
+                        className="cursor-pointer disabled:opacity-50"
+                        style={{ fontSize: 10.5, color: FAINT_INK, background: 'none', border: 'none', padding: 0, whiteSpace: 'nowrap' }}
+                      >
+                        Not sure
+                      </button>
+                    )}
+                  </div>
+                  {typeof data.signals.daysUntilNeeded === 'number' && (
+                    <p className="mt-1" style={{ fontSize: 10.5, color: FAINT_INK }}>
+                      {data.signals.daysUntilNeeded <= 0 ? 'Needs it now' : `In ${data.signals.daysUntilNeeded} day${data.signals.daysUntilNeeded === 1 ? '' : 's'}`}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <FieldSummary
+                  text={new Date(data.intake.moveInDate!).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  onChange={() => setEditMoveIn(true)}
                 />
-                {data.signals.intendedStartDate && (
-                  <button
-                    type="button" disabled={setDate.isPending}
-                    onClick={() => setDate.mutate('')}
-                    className="cursor-pointer disabled:opacity-50"
-                    style={{ fontSize: 10.5, color: FAINT_INK, background: 'none', border: 'none', padding: 0, whiteSpace: 'nowrap' }}
-                  >
-                    Not sure
-                  </button>
-                )}
-              </div>
-              {typeof data.signals.daysUntilNeeded === 'number' && (
-                <p className="mt-1" style={{ fontSize: 10.5, color: FAINT_INK }}>
-                  {data.signals.daysUntilNeeded <= 0 ? 'Needs it now' : `In ${data.signals.daysUntilNeeded} day${data.signals.daysUntilNeeded === 1 ? '' : 's'}`}
-                </p>
               )}
             </div>
+
+            {/* Length of stay — durationValue/durationUnit already default
+                to "1 month" from creation, so a Change link that just
+                re-opens the same two inputs is exactly right here too. */}
+            <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${LINE}` }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: INK, display: 'block', marginBottom: 4 }}>Length of stay</label>
+              {data.intake.missing.includes('lengthOfStay') || editLength ? (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number" min={1} value={lengthValue}
+                    onChange={(e) => setLengthValue(e.target.value)}
+                    style={{ fontSize: 11.5, border: `1px solid ${LINE}`, borderRadius: 8, padding: '4px 6px', color: INK, width: 56 }}
+                  />
+                  <select
+                    value={lengthUnit} onChange={(e) => setLengthUnit(e.target.value as 'week' | 'month')}
+                    style={{ fontSize: 11.5, border: `1px solid ${LINE}`, borderRadius: 8, padding: '4px 6px', color: INK }}
+                  >
+                    <option value="week">week(s)</option>
+                    <option value="month">month(s)</option>
+                  </select>
+                  <button
+                    type="button" disabled={setLength.isPending || !Number(lengthValue)}
+                    onClick={() => { setLength.mutate({ value: Number(lengthValue), unit: lengthUnit }); setEditLength(false) }}
+                    className="cursor-pointer disabled:opacity-50 rounded-lg"
+                    style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: '#4A1FA0', border: 'none', padding: '5px 8px' }}
+                  >
+                    Save
+                  </button>
+                </div>
+              ) : (
+                <FieldSummary
+                  text={`${data.intake.lengthOfStay!.value} ${data.intake.lengthOfStay!.unit}${data.intake.lengthOfStay!.value === 1 ? '' : 's'}`}
+                  onChange={() => setEditLength(true)}
+                />
+              )}
+            </div>
+
+            {/* Financially qualified — a rep's own judgment from a call or
+                in person, never something to ask the customer outright, so
+                this is a one-tap Yes/No rather than a message suggestion. */}
+            <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${LINE}` }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: INK, display: 'block', marginBottom: 4 }}>Financially qualified?</label>
+              {!data.intake.financiallyQualified ? (
+                <div className="flex gap-1.5">
+                  <button
+                    type="button" disabled={setQualified.isPending}
+                    onClick={() => setQualified.mutate('yes')}
+                    className="flex-1 rounded-lg py-1.5 cursor-pointer disabled:opacity-50"
+                    style={{ background: '#DCFCE7', color: '#15803D', fontSize: 11.5, fontWeight: 700, border: 'none' }}
+                  >
+                    Yes
+                  </button>
+                  <button
+                    type="button" disabled={setQualified.isPending}
+                    onClick={() => setQualified.mutate('no')}
+                    className="flex-1 rounded-lg py-1.5 cursor-pointer disabled:opacity-50"
+                    style={{ background: '#F3F4F6', color: '#6B7280', fontSize: 11.5, fontWeight: 700, border: 'none' }}
+                  >
+                    No
+                  </button>
+                </div>
+              ) : (
+                <FieldSummary
+                  text={data.intake.financiallyQualified === 'yes' ? 'Yes' : 'No'}
+                  onChange={() => setQualified.mutate('')}
+                />
+              )}
+            </div>
+
+            {/* Location preference — the two facilities, nothing else. */}
+            <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${LINE}` }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: INK, display: 'block', marginBottom: 4 }}>Location preference</label>
+              {!data.intake.locationPreference ? (
+                <div className="flex gap-1.5">
+                  <button
+                    type="button" disabled={setLocation.isPending}
+                    onClick={() => setLocation.mutate('Al Quoz')}
+                    className="flex-1 rounded-lg py-1.5 cursor-pointer disabled:opacity-50"
+                    style={{ background: '#F7F3FF', color: '#4A1FA0', fontSize: 11.5, fontWeight: 700, border: 'none' }}
+                  >
+                    Al Quoz
+                  </button>
+                  <button
+                    type="button" disabled={setLocation.isPending}
+                    onClick={() => setLocation.mutate('DIP')}
+                    className="flex-1 rounded-lg py-1.5 cursor-pointer disabled:opacity-50"
+                    style={{ background: '#F7F3FF', color: '#4A1FA0', fontSize: 11.5, fontWeight: 700, border: 'none' }}
+                  >
+                    DIP
+                  </button>
+                </div>
+              ) : (
+                <FieldSummary text={data.intake.locationPreference} onChange={() => setLocation.mutate('')} />
+              )}
+            </div>
+
+            {/* Follow-up reminder — date, time, and why, reachable here
+                without opening the full edit form. */}
+            <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${LINE}` }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: INK, display: 'block', marginBottom: 4 }}>Follow-up reminder</label>
+              {data.intake.missing.includes('followUpReminder') || editReminder ? (
+                <div className="space-y-1.5">
+                  <input
+                    type="datetime-local" value={reminderAt}
+                    onChange={(e) => setReminderAt(e.target.value)}
+                    style={{ fontSize: 11.5, border: `1px solid ${LINE}`, borderRadius: 8, padding: '4px 6px', color: INK, width: '100%' }}
+                  />
+                  <input
+                    type="text" placeholder="What's it for?" value={reminderNote}
+                    onChange={(e) => setReminderNote(e.target.value)}
+                    style={{ fontSize: 11.5, border: `1px solid ${LINE}`, borderRadius: 8, padding: '4px 6px', color: INK, width: '100%' }}
+                  />
+                  <button
+                    type="button" disabled={setReminder.isPending || !reminderAt}
+                    onClick={() => { setReminder.mutate({ at: new Date(reminderAt).toISOString(), note: reminderNote }); setEditReminder(false) }}
+                    className="cursor-pointer disabled:opacity-50 rounded-lg"
+                    style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: '#4A1FA0', border: 'none', padding: '5px 8px', width: '100%' }}
+                  >
+                    Save
+                  </button>
+                </div>
+              ) : (
+                <FieldSummary
+                  text={`${new Date(data.intake.followUpReminder!.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}${data.intake.followUpReminder!.note ? ` — ${data.intake.followUpReminder!.note}` : ''}`}
+                  onChange={() => setEditReminder(true)}
+                />
+              )}
+            </div>
+
+            {/* Copy-ready prompts for whichever customer-facing facts are
+                still missing — "financially qualified" and the reminder
+                itself are the rep's own call, not something to ask, so
+                neither gets a suggestion here. */}
+            {data.intake.suggestedMessages.length > 0 && (
+              <div className="mt-3 pt-3 space-y-1.5" style={{ borderTop: `1px solid ${LINE}` }}>
+                <p style={{ fontSize: 11, fontWeight: 600, color: INK }}>Suggested messages</p>
+                {data.intake.suggestedMessages.map((msg, i) => (
+                  <button
+                    key={i} type="button"
+                    onClick={() => navigator.clipboard?.writeText(msg).catch(() => {})}
+                    className="block w-full text-left rounded-lg px-2.5 py-1.5 cursor-pointer"
+                    style={{ background: '#FAF7FF', color: MUTED_INK, fontSize: 11, border: `1px solid ${LINE}` }}
+                    title="Click to copy"
+                  >
+                    {msg}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Confirm or correct. Highlighted only while it's actually
                 asking for one — a rep who already confirmed, or a dead

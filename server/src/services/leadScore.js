@@ -334,3 +334,58 @@ export async function highIntentToday({ ownerId = null, now = new Date() } = {})
 
   return results.sort((a, b) => b.score - a.score);
 }
+
+/** The intake facts to ask a customer directly, distinct from `signals`
+ *  above (the AI's own read of the conversation) — these are things a rep
+ *  is expected to have actually asked, on a call or in person. Kept as
+ *  their own object on the score response so a panel can show only what's
+ *  still missing, and never show a documented field's input again. */
+const INTAKE_FIELDS = ['moveInDate', 'lengthOfStay', 'financiallyQualified', 'locationPreference', 'followUpReminder'];
+
+/** Short, copy-pasteable prompts for the customer-facing facts only —
+ *  "financially qualified" is a rep's own judgment call, and a follow-up
+ *  reminder is about when the rep comes back, not something to ask the
+ *  customer, so neither gets a suggested message. */
+function suggestedFollowUpMessages(missing, lead) {
+  const name = (lead.firstName || String(lead.fullName || '').split(' ')[0] || '').trim();
+  const greet = name ? `Hi ${name}, ` : 'Hi, ';
+  const out = [];
+  if (missing.includes('moveInDate')) {
+    out.push(`${greet}just checking in — when are you looking to move in?`);
+  }
+  if (missing.includes('lengthOfStay')) {
+    out.push(`${greet}roughly how long are you planning to store with us — a few weeks, or longer term?`);
+  }
+  if (missing.includes('locationPreference')) {
+    out.push(`${greet}would Al Quoz or DIP work better for you?`);
+  }
+  return out;
+}
+
+/**
+ * What's been documented about this lead beyond the AI's read of the
+ * chat, and what's still missing. Synchronous and cheap (no AI call, no
+ * message history read) — everything it needs is already on the lead
+ * document once routes/leads.js selects the right fields.
+ */
+export function intakeChecklist(lead) {
+  const missing = INTAKE_FIELDS.filter((key) => {
+    if (key === 'moveInDate') return !lead.intendedStartDate;
+    if (key === 'lengthOfStay') return !lead.lengthOfStayConfirmedAt;
+    if (key === 'financiallyQualified') return !lead.financiallyQualified;
+    if (key === 'locationPreference') return !lead.locationPreference;
+    if (key === 'followUpReminder') return !lead.followUpAt;
+    return false;
+  });
+
+  return {
+    leadInitiatedAt: lead.leadDateTime || null,
+    moveInDate: lead.intendedStartDate || null,
+    lengthOfStay: lead.lengthOfStayConfirmedAt ? { value: lead.durationValue, unit: lead.durationUnit } : null,
+    financiallyQualified: lead.financiallyQualified || '',
+    locationPreference: lead.locationPreference || '',
+    followUpReminder: lead.followUpAt ? { at: lead.followUpAt, note: lead.followUpNote || '' } : null,
+    missing,
+    suggestedMessages: suggestedFollowUpMessages(missing, lead),
+  };
+}

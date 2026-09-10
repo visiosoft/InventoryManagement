@@ -10,7 +10,7 @@ import { ATTEMPT_CHANNELS, ATTEMPT_OUTCOMES } from '../models/index.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { QUEUE_SINCE } from '../services/followUpQueue.js';
 import { buildFunnel } from '../services/leadFunnel.js';
-import { scoreForLead, highIntentToday } from '../services/leadScore.js';
+import { scoreForLead, highIntentToday, intakeChecklist } from '../services/leadScore.js';
 import { summariseConversation } from '../services/conversationSummary.js';
 
 const router = Router();
@@ -427,7 +427,8 @@ router.get('/high-intent', async (req, res) => {
     }
 });
 
-const SCORE_LEAD_FIELDS = 'phoneNormalized owner intendedStartDate leadScoreOverride leadScoreOverrideBy leadScoreOverrideAt leadScoreOverrideForLeadType';
+const SCORE_LEAD_FIELDS = 'phoneNormalized owner firstName fullName intendedStartDate leadScoreOverride leadScoreOverrideBy leadScoreOverrideAt leadScoreOverrideForLeadType '
+  + 'leadDateTime durationValue durationUnit lengthOfStayConfirmedAt financiallyQualified locationPreference followUpAt followUpNote followUpNotifiedAt followUpPushedAt status';
 
 /**
  * A score, plus who confirmed or corrected it and when — the same shape
@@ -442,7 +443,13 @@ async function withOverrideInfo(lead) {
         const u = await User.findById(lead.leadScoreOverrideBy).select('name email').lean();
         overrideByName = u?.name || u?.email || '';
     }
-    return { ...result, override: lead.leadScoreOverride || '', overrideByName, overrideAt: lead.leadScoreOverrideAt || null };
+    return {
+        ...result,
+        override: lead.leadScoreOverride || '',
+        overrideByName,
+        overrideAt: lead.leadScoreOverrideAt || null,
+        intake: intakeChecklist(lead),
+    };
 }
 
 /**
@@ -519,6 +526,122 @@ router.post('/:id/intended-date', async (req, res) => {
         if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
 
         lead.intendedStartDate = value;
+        await lead.save();
+
+        res.json(await withOverrideInfo(lead));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/** A rep's own yes/no on whether they can actually afford this — see the
+ *  model comment on Lead.financiallyQualified. `value` empty clears it. */
+router.post('/:id/financially-qualified', async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Bad lead id' });
+        const value = String(req.body?.value ?? '');
+        if (!['', 'yes', 'no'].includes(value)) return res.status(400).json({ error: 'value must be yes, no, or empty to clear' });
+
+        const lead = await Lead.findById(req.params.id).select(SCORE_LEAD_FIELDS);
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+
+        lead.financiallyQualified = value;
+        await lead.save();
+
+        res.json(await withOverrideInfo(lead));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/** Which of the two facilities they want — see the model comment on
+ *  Lead.locationPreference. `value` empty clears it. */
+router.post('/:id/location-preference', async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Bad lead id' });
+        const value = String(req.body?.value ?? '');
+        if (!['', 'Al Quoz', 'DIP'].includes(value)) return res.status(400).json({ error: 'value must be Al Quoz, DIP, or empty to clear' });
+
+        const lead = await Lead.findById(req.params.id).select(SCORE_LEAD_FIELDS);
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+
+        lead.locationPreference = value;
+        await lead.save();
+
+        res.json(await withOverrideInfo(lead));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * How long they're actually planning to stay, confirmed with the lead
+ * directly — see the model comment on Lead.lengthOfStayConfirmedAt for why
+ * durationValue/durationUnit alone can never mean "documented".
+ */
+router.post('/:id/length-of-stay', async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Bad lead id' });
+        const durationValue = Number(req.body?.durationValue);
+        const durationUnit = String(req.body?.durationUnit || '');
+        if (!Number.isFinite(durationValue) || durationValue < 1) return res.status(400).json({ error: 'Invalid duration value' });
+        if (!ALLOWED_DURATION_UNIT.has(durationUnit)) return res.status(400).json({ error: 'Invalid duration unit' });
+
+        const lead = await Lead.findById(req.params.id).select(SCORE_LEAD_FIELDS);
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+
+        lead.durationValue = durationValue;
+        lead.durationUnit = durationUnit;
+        lead.lengthOfStayConfirmedAt = new Date();
+        await lead.save();
+
+        res.json(await withOverrideInfo(lead));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * When to come back to them, and why — the same fields the full edit form
+ * writes (followUpAt/followUpNote), reachable from the score panel without
+ * the rest of that form. Mirrors routes/whatsapp.js's own POST /:phone/remind:
+ * reset the notified/pushed stamps so a moved reminder fires again, and
+ * nudge the status forward only from a stage that is genuinely behind it.
+ */
+router.post('/:id/follow-up-reminder', async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Bad lead id' });
+        const raw = req.body?.followUpAt;
+        let at = null;
+        if (raw) {
+            const d = new Date(raw);
+            if (Number.isNaN(d.getTime())) return res.status(400).json({ error: 'Not a valid date' });
+            at = d;
+        }
+        const note = String(req.body?.followUpNote || '').slice(0, 500);
+
+        const lead = await Lead.findById(req.params.id).select(SCORE_LEAD_FIELDS);
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+
+        lead.followUpAt = at;
+        lead.followUpNote = note;
+        lead.followUpNotifiedAt = null;
+        lead.followUpPushedAt = null;
+        if (at && ['new', 'contacted', 'contact_attempted'].includes(lead.status)) {
+            lead.status = 'follow_up_scheduled';
+        }
+        const userName = req.user.name || req.user.email || 'a colleague';
+        lead.timeline.push({
+            type: 'note',
+            text: at
+                ? `Follow-up set for ${at.toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })} by ${userName}${note ? ` — ${note}` : ''}`
+                : `Follow-up cleared by ${userName}`,
+            user: req.user.id,
+        });
         await lead.save();
 
         res.json(await withOverrideInfo(lead));

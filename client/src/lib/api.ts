@@ -120,6 +120,21 @@ export const leadApi = {
    *  next contact them. */
   setIntendedDate: (id: string, date: string) =>
     api.post<LeadScore>(`/leads/${id}/intended-date`, { intendedStartDate: date || null }).then((r) => r.data),
+  /** A rep's own yes/no on whether they can actually afford this. `value`
+   *  empty clears it. */
+  setFinanciallyQualified: (id: string, value: '' | 'yes' | 'no') =>
+    api.post<LeadScore>(`/leads/${id}/financially-qualified`, { value }).then((r) => r.data),
+  /** Which of the two facilities they want. `value` empty clears it. */
+  setLocationPreference: (id: string, value: '' | 'Al Quoz' | 'DIP') =>
+    api.post<LeadScore>(`/leads/${id}/location-preference`, { value }).then((r) => r.data),
+  /** How long they're actually planning to stay, confirmed with the lead
+   *  directly — not the same as merely having a default duration. */
+  setLengthOfStay: (id: string, durationValue: number, durationUnit: 'week' | 'month') =>
+    api.post<LeadScore>(`/leads/${id}/length-of-stay`, { durationValue, durationUnit }).then((r) => r.data),
+  /** When to come back to them, and why. `followUpAt` an ISO datetime or
+   *  '' to clear it. */
+  setFollowUpReminder: (id: string, followUpAt: string, followUpNote: string) =>
+    api.post<LeadScore>(`/leads/${id}/follow-up-reminder`, { followUpAt: followUpAt || null, followUpNote }).then((r) => r.data),
   /** High-scoring leads from today or yesterday — services/leadScore.js's
    *  highIntentToday(). A rep's own; admin's, everyone's. */
   /** `mine: true` forces "my own leads only", even for an admin — what My
@@ -170,6 +185,21 @@ export interface LeadScore {
     leadType?: string
     reason?: string
   } | null
+  intake: LeadIntake
+}
+
+/** Facts a rep is expected to have actually asked the lead directly —
+ *  distinct from `signals`, which is the AI's own read of the chat. */
+export type LeadIntakeField = 'moveInDate' | 'lengthOfStay' | 'financiallyQualified' | 'locationPreference' | 'followUpReminder'
+export interface LeadIntake {
+  leadInitiatedAt: string | null
+  moveInDate: string | null
+  lengthOfStay: { value: number; unit: 'week' | 'month' } | null
+  financiallyQualified: '' | 'yes' | 'no'
+  locationPreference: '' | 'Al Quoz' | 'DIP'
+  followUpReminder: { at: string; note: string } | null
+  missing: LeadIntakeField[]
+  suggestedMessages: string[]
 }
 
 export interface LeadFunnelStage {
