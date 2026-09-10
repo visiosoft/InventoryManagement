@@ -1087,14 +1087,6 @@ function LeadScorePanel({ leadId, open, onClose }: { leadId: string | null; open
               {data.signals.specific !== undefined && <div>{data.signals.specific ? 'Gave a specific need' : 'Nothing specific yet'}</div>}
             </div>
 
-            {/* Lead initiated — automatic, never editable, so it's a plain
-                stamp rather than a field in the checklist below. */}
-            {data.intake.leadInitiatedAt && (
-              <p className="mt-2" style={{ fontSize: 10.5, color: FAINT_INK }}>
-                Lead initiated {new Date(data.intake.leadInitiatedAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-              </p>
-            )}
-
             {/* When they actually need it — not the same question as when
                 we should next contact them. A lead who isn't ready right
                 now isn't necessarily a dead one; this is what tells the
