@@ -1,5 +1,7 @@
 import {
   forwardRef,
+  useEffect,
+  useState,
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
   type ReactNode,
@@ -10,6 +12,41 @@ import {
 } from 'react'
 import { X } from 'lucide-react'
 import { cn } from '../lib/utils'
+
+/** Keeps a conditionally-shown panel mounted for `exitMs` after `open`
+ *  turns false, so its own CSS transition can actually play instead of
+ *  the panel vanishing the instant state changes — a bare `if (!open)
+ *  return null` gives a transition nothing to animate on the way out.
+ *  Entry needs no such delay: React paints the "not entered" state on
+ *  first render, and the rAF below flips it to "entered" one frame
+ *  later, which is what gives the transition two distinct states to
+ *  move between instead of both landing in the same paint. */
+function usePresence(open: boolean, exitMs: number) {
+  const [rendered, setRendered] = useState(open)
+  const [entered, setEntered] = useState(false)
+
+  useEffect(() => {
+    if (open) {
+      setRendered(true)
+      const raf = requestAnimationFrame(() => setEntered(true))
+      return () => cancelAnimationFrame(raf)
+    }
+    setEntered(false)
+    const t = setTimeout(() => setRendered(false), exitMs)
+    return () => clearTimeout(t)
+  }, [open, exitMs])
+
+  return { rendered, entered }
+}
+
+/** Fewer and gentler, not zero — reduced motion keeps the fade (it still
+ *  explains the state change) and drops the scale, per this repo's own
+ *  design-skill guidance. Read live rather than cached: nobody reloads
+ *  the app after flipping the OS setting, but a fresh modal open should
+ *  still respect it. */
+function prefersReducedMotion(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+}
 
 /* ---------- Button ---------- */
 type ButtonVariant = 'default' | 'outline' | 'ghost' | 'destructive' | 'success'
@@ -224,15 +261,28 @@ export function Modal({
   wide?: boolean
   className?: string
 }) {
-  if (!open) return null
+  const reduced = prefersReducedMotion()
+  const { rendered, entered } = usePresence(open, 200)
+  if (!rendered) return null
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className={cn(
-        'relative w-full bg-card shadow-2xl max-h-[92vh] overflow-y-auto',
-        'rounded-t-2xl sm:rounded-xl border',
-        className || (wide ? 'sm:max-w-2xl' : 'sm:max-w-md')
-      )}>
+      <div
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        style={{ opacity: entered ? 1 : 0, transition: 'opacity 200ms cubic-bezier(0.23,1,0.32,1)' }}
+        onClick={onClose}
+      />
+      <div
+        className={cn(
+          'relative w-full bg-card shadow-2xl max-h-[92vh] overflow-y-auto',
+          'rounded-t-2xl sm:rounded-xl border',
+          className || (wide ? 'sm:max-w-2xl' : 'sm:max-w-md')
+        )}
+        style={{
+          opacity: entered ? 1 : 0,
+          transform: reduced ? 'none' : `scale(${entered ? 1 : 0.97})`,
+          transition: 'transform 200ms cubic-bezier(0.23,1,0.32,1), opacity 200ms cubic-bezier(0.23,1,0.32,1)',
+        }}
+      >
         <div className="flex items-center justify-between border-b px-5 py-3.5 sticky top-0 bg-card z-10">
           <h2 className="font-semibold text-sm">{title}</h2>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground cursor-pointer p-1 rounded-lg hover:bg-muted transition-colors">
@@ -265,15 +315,31 @@ export function SlideOver({
   width?: string
   side?: 'left' | 'right'
 }) {
-  if (!open) return null
+  const reduced = prefersReducedMotion()
+  const { rendered, entered } = usePresence(open, 220)
+  if (!rendered) return null
+  // Enters and exits along the same edge it's anchored to — a panel that
+  // slides in from the right has to leave the same way, or the two
+  // motions read as unrelated rather than one panel opening and closing.
+  const offscreen = side === 'left' ? '-100%' : '100%'
   return (
     <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0" style={{ background: 'rgba(20,8,31,.28)' }} onClick={onClose} />
-      <div className={cn(
-        'absolute top-0 h-full w-full bg-card shadow-xl overflow-y-auto flex flex-col',
-        side === 'left' ? 'left-0 animate-in slide-in-from-left' : 'right-0 animate-in slide-in-from-right',
-        width
-      )}>
+      <div
+        className="absolute inset-0"
+        style={{ background: 'rgba(20,8,31,.28)', opacity: entered ? 1 : 0, transition: 'opacity 220ms cubic-bezier(0.23,1,0.32,1)' }}
+        onClick={onClose}
+      />
+      <div
+        className={cn(
+          'absolute top-0 h-full w-full bg-card shadow-xl overflow-y-auto flex flex-col',
+          side === 'left' ? 'left-0' : 'right-0',
+          width
+        )}
+        style={{
+          transform: reduced ? 'none' : `translateX(${entered ? '0' : offscreen})`,
+          transition: 'transform 220ms cubic-bezier(0.32,0.72,0,1)',
+        }}
+      >
         <div className="sticky top-0 bg-card border-b px-5 py-4 flex items-start justify-between gap-3 z-10">
           <div className="min-w-0">
             <div className="text-base font-bold" style={{ fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' }}>
