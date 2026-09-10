@@ -37,6 +37,13 @@
       "runtimeArgs": ["expo", "start", "--web", "--port", "8083"],
       "port": 8083,
       "cwd": "PurpleBoxMove/crew"
+    },
+    {
+      "name": "purpleboxmobile",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["expo", "start", "--web", "--port", "8085"],
+      "port": 8085,
+      "cwd": "../PurpleBoxMobile"
     }
   ]
 }

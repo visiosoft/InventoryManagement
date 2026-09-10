@@ -19,6 +19,24 @@ const router = Router();
 /** A name the sync invented, not one a person gave us. */
 const isPlaceholderLeadName = (n) => !n || /^whatsapp\s*contact/i.test(String(n).trim());
 
+// Same rule as leads.js: a sales rep only ever sees their own — enforced
+// server-side so it can't be widened via query params. Before this, the
+// conversations endpoint had no such gate at all, so "All" on a rep's own
+// inbox was every rep's chats company-wide, not just leads assigned to them.
+function isSalesRep(req) {
+    return req.user?.role === 'sales_rep' || req.user?.role === 'accounts';
+}
+
+/** The inbox row's preview line for a message that has no text of its own. */
+const MEDIA_PREVIEW = {
+    image: '📷 Photo', video: '🎥 Video', audio: '🎵 Audio', voice: '🎤 Voice message',
+    document: '📄 Document', sticker: 'Sticker', location: '📍 Location',
+};
+function previewOf(type, text) {
+    if (text) return text;
+    return MEDIA_PREVIEW[type] || 'Message';
+}
+
 
 /**
  * The WhatsApp thread belonging to a customer, for the Chat tab on a contract.
@@ -319,6 +337,11 @@ router.get('/conversations', async (req, res) => {
                     lastAt: { $max: '$occurredAt' },
                     count: { $sum: 1 },
                     phone: { $first: '$phone' },
+                    // The row's own preview line — first in sort order above
+                    // means the newest message, same trick as `phone`.
+                    lastText: { $first: '$text' },
+                    lastType: { $first: '$type' },
+                    lastDirection: { $first: '$direction' },
                     /* When they last wrote to us.
                      *
                      * WhatsApp only allows free text within 24 hours of this;
@@ -479,6 +502,11 @@ router.get('/conversations', async (req, res) => {
     };
     const mineOn = (r) => ownerOf(r) === me && !tenantOn(r);
 
+    // Enforced here, not just left to the `owner` query param, for the same
+    // reason leads.js does it: a rep re-pointing `owner=all` at this endpoint
+    // should not be able to widen their own inbox to everyone else's chats.
+    if (isSalesRep(req)) visible = visible.filter(mineOn);
+
     const ownerCounts = { all: visible.length, mine: 0, tenants: 0, unassigned: 0, waiting: 0, quiet: 0 };
     for (const r of visible) {
         if (unassignedOn(r)) ownerCounts.unassigned += 1;
@@ -576,6 +604,8 @@ router.get('/conversations', async (req, res) => {
             phone: r.phone,
             count: r.count,
             lastAt: r.lastAt,
+            lastMessage: previewOf(r.lastType, r.lastText),
+            lastMessageMine: r.lastDirection === 'outbound',
             lastInboundAt: r.lastInboundAt || null,
             lastOutboundAt: r.lastOutboundAt || null,
             // Since when they have been owed an answer; null when they are not.
