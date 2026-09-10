@@ -840,9 +840,14 @@ export default function Layout() {
 
             {profileOpen && (
               <div
-                className="absolute right-0 top-full mt-3 z-50 overflow-hidden"
+                className="absolute right-0 top-full mt-3 z-50 overflow-hidden flex flex-col"
                 style={{
                   width: 640,
+                  // Capped so the footer row (Settings/Dark mode/Clear cache/Logout)
+                  // never ends up below the viewport — it used to, for any admin
+                  // whose permission groups made the nav grid tall enough to push
+                  // Logout off-screen with no obvious way to reach it.
+                  maxHeight: 'calc(100vh - 88px)',
                   background: '#fff',
                   borderRadius: 18,
                   border: '1px solid rgba(20,8,31,.10)',
@@ -851,7 +856,7 @@ export default function Layout() {
               >
                 {/* Who you are signed in as */}
                 <div
-                  className="flex items-center gap-3.5"
+                  className="flex items-center gap-3.5 shrink-0"
                   style={{ padding: '20px 24px', borderBottom: '1px solid rgba(20,8,31,.10)' }}
                 >
                   <div
@@ -866,8 +871,10 @@ export default function Layout() {
                   </div>
                 </div>
 
-                {/* Two columns of grouped links */}
-                <div className="grid grid-cols-2" style={{ columnGap: 28, rowGap: 22, padding: '20px 24px' }}>
+                {/* Two columns of grouped links — scrolls on its own so a long
+                    list (admins see every group) can never push the footer's
+                    Settings/Dark mode/Clear cache/Logout row out of reach. */}
+                <div className="grid grid-cols-2 overflow-y-auto" style={{ columnGap: 28, rowGap: 22, padding: '20px 24px', minHeight: 0, flex: '1 1 auto' }}>
                   {profileMenuGroups.map((group) => {
                     const items = group.items.filter(
                       (i) => (!i.perm || hasPermission(i.perm)) && (!i.adminOnly || isAdmin)
@@ -904,7 +911,7 @@ export default function Layout() {
 
                 {/* Settings, dark mode, cache, sign out */}
                 <div
-                  className="flex items-center gap-2"
+                  className="flex items-center gap-2 shrink-0"
                   style={{ padding: '14px 24px', borderTop: '1px solid rgba(20,8,31,.10)', background: '#F7F3FF' }}
                 >
                   {hasPermission('settings') && (
