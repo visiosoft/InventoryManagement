@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import mongoose from 'mongoose';
 import { Customer, Contract, Document, Lead, Task, User, WhatsAppMessage } from '../models/index.js';
-import { notifyLeadAssigned } from '../services/leadNotify.js';
+import { notifyLeadAssigned, pendingAssignmentBadge } from '../services/leadNotify.js';
 import { resolvePlaceholderNames } from '../services/leadNames.js';
 import { FOLLOW_UP_KINDS, runFollowUps, syncFollowUpTask, syncSiteVisitTask } from '../services/followUps.js';
 import { applyOutcome, getFollowUpPlan, nextDateFor, sequenceState } from '../services/followUpSequence.js';
@@ -738,6 +738,23 @@ router.get('/newly-assigned', async (req, res) => {
             // How it came to be theirs, so the alert can say.
             by: l.autoAssigned ? 'the rota' : (l.assignedBy?.name || ''),
         })));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * How many "you were given a lead" pushes are still live for the caller —
+ * what PurpleBoxMobile sets its app-icon badge to on every foreground,
+ * independently of whatever a push itself managed to deliver. A push can be
+ * missed (the phone was off, a silent dismiss push was dropped by the OS);
+ * this endpoint cannot be, so it is the one thing the badge is allowed to
+ * fully trust. See services/leadNotify.js's pendingAssignmentBadge for the
+ * same cap ("four or five, not more") the count itself already enforces.
+ */
+router.get('/assignment-badge', async (req, res) => {
+    try {
+        res.json({ count: await pendingAssignmentBadge(req.user.id) });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
