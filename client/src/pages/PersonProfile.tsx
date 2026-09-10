@@ -515,7 +515,6 @@ export default function PersonProfile() {
                   <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', columnGap: 28, rowGap: 6, maxWidth: 760 }}>
                     <Detail label="Phone" value={phone} />
                     <Detail label="WhatsApp" value={lead?.whatsappNo || phone} />
-                    <Detail label="Email" value={email} />
                     {customer && <>
                       <Detail label="Company" value={customer.company} />
                       <Detail label="Nationality" value={customer.nationality} />
@@ -523,10 +522,6 @@ export default function PersonProfile() {
                       <Detail label="Emirates ID" value={customer.emiratesId} />
                       <Detail label="ID expiry" value={customer.eidExpiry ? formatDate(customer.eidExpiry) : ''} />
                       <Detail label="Address" value={customer.address} />
-                    </>}
-                    {lead && <>
-                      <Detail label="Source" value={statusLabel(lead.source)} />
-                      <Detail label="First seen" value={formatDate(lead.leadDateTime)} />
                     </>}
                   </div>
                   {(lead || customer) && (
