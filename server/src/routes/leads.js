@@ -679,7 +679,7 @@ router.get('/follow-ups', async (req, res) => {
         else if (req.query.owner) filter.owner = String(req.query.owner);
 
         const leads = await Lead.find(filter)
-            .select('fullName phone status temperature tags followUpAt owner ownerSeenAt')
+            .select('fullName phone status temperature tags followUpAt owner ownerSeenAt whatsappProfileName')
             .populate('owner', 'name email')
             .sort({ followUpAt: 1 })
             .lean();
