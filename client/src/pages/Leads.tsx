@@ -734,6 +734,16 @@ export default function Leads() {
     })
     const leads = leadsPage?.data
 
+    /* The order a rep is actually looking at, so opening one lead and paging
+       through with Next/Back on its profile follows this list rather than
+       forcing a trip back here for every single one. Session-scoped and
+       overwritten on every filter/page change, so it always reflects what
+       was on screen when a lead was opened, never a stale run from earlier. */
+    useEffect(() => {
+        if (!leads) return
+        sessionStorage.setItem('leadNavOrder', JSON.stringify(leads.map((l) => l._id)))
+    }, [leads])
+
     /* The tabs and the rail both count everything, not the twenty-five rows on
        screen: "New 3" meaning three on this page was worse than no number. */
     const { data: stats } = useQuery<LeadStats>({

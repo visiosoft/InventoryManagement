@@ -2,14 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
-  AlertTriangle, ArrowLeft, Calendar, Clock, FileText, Mail, MessageCircle, MessageSquare,
+  AlertTriangle, ArrowLeft, ArrowRight, Calendar, Clock, FileText, MessageCircle, MessageSquare,
   ClipboardList, ExternalLink, PackageCheck, Pencil, Phone, Plus, Repeat, UserCheck, UserPlus,
 } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { TaskComposer } from '../components/TaskComposer'
 import WhatsAppConsole from './WhatsApp'
 import { useAuth } from '../lib/auth'
-import { Spinner, statusLabel, LEAD_STATUS_FLOW, LEAD_TEMPERATURES, LEAD_TAGS } from '../components/ui'
+import { Spinner, statusLabel, LEAD_STATUS_FLOW, LEAD_TEMPERATURES } from '../components/ui'
 import { formatDate, formatDateTime } from '../lib/utils'
 import { FOLLOW_UP_TONE, followUpState, reminderDay } from '../lib/followUp'
 import { dubaiToday } from '../lib/timezone'
@@ -176,6 +176,22 @@ export default function PersonProfile() {
   const { id = '' } = useParams()
   const qc = useQueryClient()
   const navigate = useNavigate()
+
+  /* The order the Leads list had on screen when this lead was opened —
+     Leads.tsx writes it on every filter/page change. Lets a rep work
+     through a filtered list one by one without a trip back for each,
+     without this page needing to know anything about how that list was
+     filtered or sorted. Read once: a lead moving in or out of the list
+     mid-review should not reshuffle the Prev/Next a rep is mid-click on. */
+  const [navOrder] = useState<string[]>(() => {
+    try {
+      const raw = sessionStorage.getItem('leadNavOrder')
+      return raw ? JSON.parse(raw) : []
+    } catch { return [] }
+  })
+  const navIndex = navOrder.indexOf(id)
+  const prevLeadId = navIndex > 0 ? navOrder[navIndex - 1] : null
+  const nextLeadId = navIndex >= 0 && navIndex < navOrder.length - 1 ? navOrder[navIndex + 1] : null
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const [err, setErr] = useState('')
@@ -419,14 +435,44 @@ export default function PersonProfile() {
 
   return (
     <div style={{ background: PAGE, fontFamily: "'Manrope', system-ui, sans-serif", color: INK }}>
-      <button
-        onClick={() => navigate(-1)}
-        className="inline-flex items-center justify-center cursor-pointer"
-        style={{ width: 34, height: 34, borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK_2, marginBottom: 16 }}
-        aria-label="Back"
-      >
-        <ArrowLeft size={16} />
-      </button>
+      <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
+        <button
+          onClick={() => navigate(-1)}
+          className="inline-flex items-center justify-center cursor-pointer"
+          style={{ width: 34, height: 34, borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK_2 }}
+          aria-label="Back"
+        >
+          <ArrowLeft size={16} />
+        </button>
+
+        {/* Working a filtered list one lead at a time used to mean a trip
+            back to it for every single one. This follows the order Leads.tsx
+            had on screen — see navOrder above — so Next/Previous move
+            through exactly what was being worked, not some other ordering. */}
+        {navIndex >= 0 && (
+          <div className="flex items-center" style={{ gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => prevLeadId && navigate(`/leads/${prevLeadId}`)}
+              disabled={!prevLeadId}
+              className="inline-flex items-center cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontWeight: 600, fontSize: 13 }}
+            >
+              <ArrowLeft size={13} /> Previous
+            </button>
+            <span style={{ fontSize: 12.5, color: FAINT }}>{navIndex + 1} of {navOrder.length}</span>
+            <button
+              type="button"
+              onClick={() => nextLeadId && navigate(`/leads/${nextLeadId}`)}
+              disabled={!nextLeadId}
+              className="inline-flex items-center cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontWeight: 600, fontSize: 13 }}
+            >
+              Next <ArrowRight size={13} />
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* ── Header card ───────────────────────────────────────────────────── */}
       <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 22, boxShadow: SHADOW_SM, padding: '26px 28px', marginBottom: 20 }}>
@@ -454,25 +500,121 @@ export default function PersonProfile() {
                   </span>
                 )}
               </div>
-              {phone && (
-                <div className="flex items-center" style={{ gap: 6, marginTop: 10, color: INK_2, fontSize: 14, fontWeight: 500 }}>
-                  <Phone size={14} style={{ color: FAINT }} />
-                  <span>{phone}</span>
+              {/* Contact details used to be their own card lower down the
+                  page — folded in here instead, beside the name they're
+                  about, rather than a separate section a rep had to scroll
+                  to. Editable only on a lead: a customer's name and number
+                  live on the customer record, and editing the lead behind
+                  them would change nothing anybody can see. */}
+              {!editing ? (
+                <div style={{ marginTop: 10, maxWidth: 320 }}>
+                  <div className="flex flex-col" style={{ gap: 6 }}>
+                    <Detail label="Phone" value={phone} />
+                    <Detail label="WhatsApp" value={lead?.whatsappNo || phone} />
+                    <Detail label="Email" value={email} />
+                    {customer && <>
+                      <Detail label="Company" value={customer.company} />
+                      <Detail label="Nationality" value={customer.nationality} />
+                      <Detail label="Emergency contact" value={customer.emergencyNumber} />
+                      <Detail label="Emirates ID" value={customer.emiratesId} />
+                      <Detail label="ID expiry" value={customer.eidExpiry ? formatDate(customer.eidExpiry) : ''} />
+                      <Detail label="Address" value={customer.address} />
+                    </>}
+                    {lead && <>
+                      <Detail label="Source" value={statusLabel(lead.source)} />
+                      <Detail label="First seen" value={formatDate(lead.leadDateTime)} />
+                    </>}
+                  </div>
+                  {(lead || customer) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForm({
+                          fullName: name === 'Unnamed' ? '' : name,
+                          phone: phone || '',
+                          whatsappNo: lead?.whatsappNo || '',
+                          email: email || '',
+                          source: lead?.source || 'manual',
+                          company: customer?.company || '',
+                          nationality: customer?.nationality || '',
+                          emergencyNumber: customer?.emergencyNumber || '',
+                          emiratesId: customer?.emiratesId || '',
+                          address: customer?.address || '',
+                        })
+                        setErr('')
+                        setEditing(true)
+                      }}
+                      className="inline-flex items-center gap-1.5 cursor-pointer"
+                      style={{ background: 'none', border: 'none', color: PURPLE, fontSize: 12.5, fontWeight: 700, marginTop: 10, padding: 0 }}
+                    >
+                      <Pencil size={12} /> Edit contact details
+                    </button>
+                  )}
                 </div>
-              )}
-              {email && (
-                <div className="flex items-center" style={{ gap: 6, marginTop: 4, color: INK_2, fontSize: 14, fontWeight: 500 }}>
-                  <Mail size={14} style={{ color: FAINT }} />
-                  <a href={`mailto:${email}`} style={{ color: INK_2 }}>{email}</a>
+              ) : (
+                <div className="flex flex-col" style={{ gap: 12, marginTop: 12, maxWidth: 320 }}>
+                  <Field label="Name" value={form.fullName} onChange={(v) => setForm((f) => ({ ...f, fullName: v }))} />
+                  <Field label="Phone" value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} />
+                  {!isCustomer && (
+                    <Field label="WhatsApp" value={form.whatsappNo} onChange={(v) => setForm((f) => ({ ...f, whatsappNo: v }))} />
+                  )}
+                  <Field label="Email" value={form.email} onChange={(v) => setForm((f) => ({ ...f, email: v }))} type="email" />
+
+                  {/* Only a customer has these — a lead is a name and a number. */}
+                  {customer && <>
+                    <Field label="Company" value={form.company} onChange={(v) => setForm((f) => ({ ...f, company: v }))} />
+                    <Field label="Nationality" value={form.nationality} onChange={(v) => setForm((f) => ({ ...f, nationality: v }))} />
+                    <Field label="Emergency contact" value={form.emergencyNumber} onChange={(v) => setForm((f) => ({ ...f, emergencyNumber: v }))} />
+                    <Field label="Emirates ID" value={form.emiratesId} onChange={(v) => setForm((f) => ({ ...f, emiratesId: v }))} />
+                    <Field label="Address" value={form.address} onChange={(v) => setForm((f) => ({ ...f, address: v }))} />
+                  </>}
+
+                  {lead && !isCustomer && <div>
+                    <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Source</span>
+                    <select
+                      value={form.source}
+                      onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))}
+                      className="cursor-pointer"
+                      style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK }}
+                    >
+                      {LEAD_SOURCES.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
+                    </select>
+                  </div>}
+                  <div className="flex" style={{ gap: 8, marginTop: 2 }}>
+                    <button
+                      type="button"
+                      onClick={() => saveDetails.mutate()}
+                      disabled={!form.fullName.trim() || !form.phone.trim() || saveDetails.isPending}
+                      className="cursor-pointer disabled:opacity-50"
+                      style={{ height: 38, padding: '0 16px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontSize: 13, fontWeight: 700, fontFamily: 'inherit' }}
+                    >
+                      {saveDetails.isPending ? 'Saving…' : 'Save'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setEditing(false); setErr('') }}
+                      disabled={saveDetails.isPending}
+                      className="cursor-pointer disabled:opacity-50"
+                      style={{ height: 38, padding: '0 16px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: FAINT, fontSize: 13, fontWeight: 600, fontFamily: 'inherit' }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  {/* Both are required by the server, so say it here rather than
+                      letting the save come back refused. */}
+                  {(!form.fullName.trim() || !form.phone.trim()) && (
+                    <p style={{ fontSize: 12, color: FAINT }}>A name and a phone number are needed.</p>
+                  )}
+                  {err && <p style={{ fontSize: 12.5, color: '#C0392B' }}>{err}</p>}
                 </div>
               )}
             </div>
           </div>
 
-          <div className="flex flex-wrap" style={{ gap: 10 }}>
+          <div className="flex flex-wrap" style={{ gap: 8 }}>
             {phone && (
-              <a href={`tel:${phone}`} className="inline-flex items-center" style={{ gap: 8, height: 44, padding: '0 18px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontWeight: 600, fontSize: 14 }}>
-                <Phone size={16} /> Call
+              <a href={`tel:${phone}`} className="inline-flex items-center" style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: INK, fontWeight: 600, fontSize: 13 }}>
+                <Phone size={13} /> Call
               </a>
             )}
             {/* Two different places, so both are offered rather than one
@@ -484,9 +626,9 @@ export default function PersonProfile() {
                 to={`/whatsapp?phone=${waNumber}`}
                 title="Open the conversation in PurpleBox"
                 className="inline-flex items-center cursor-pointer"
-                style={{ gap: 8, height: 44, padding: '0 18px', borderRadius: 999, border: `1px solid ${PURPLE_200}`, background: PURPLE_50, color: DEEP, fontWeight: 600, fontSize: 14 }}
+                style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: `1px solid ${PURPLE_200}`, background: PURPLE_50, color: DEEP, fontWeight: 600, fontSize: 13 }}
               >
-                <MessageCircle size={16} /> Chat
+                <MessageCircle size={13} /> Chat
               </Link>
             )}
             {waNumber && (
@@ -496,9 +638,9 @@ export default function PersonProfile() {
                 rel="noreferrer"
                 title="Open WhatsApp in a new tab"
                 className="inline-flex items-center"
-                style={{ gap: 8, height: 44, padding: '0 18px', borderRadius: 999, border: '1px solid rgba(22,163,74,.28)', background: 'rgba(22,163,74,.09)', color: '#047857', fontWeight: 600, fontSize: 14 }}
+                style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(22,163,74,.28)', background: 'rgba(22,163,74,.09)', color: '#047857', fontWeight: 600, fontSize: 13 }}
               >
-                <MessageCircle size={16} /> WhatsApp <ExternalLink size={13} style={{ opacity: 0.7 }} />
+                <MessageCircle size={13} /> WhatsApp <ExternalLink size={11} style={{ opacity: 0.7 }} />
               </a>
             )}
             {/* Raising a task about somebody was only possible from their chat,
@@ -508,15 +650,15 @@ export default function PersonProfile() {
               type="button"
               onClick={() => setTaskOpen(true)}
               className="inline-flex items-center cursor-pointer"
-              style={{ gap: 8, height: 44, padding: '0 18px', borderRadius: 999, border: '1px solid #F5DFB8', background: '#FFF7E6', color: '#B45309', fontWeight: 600, fontSize: 14, whiteSpace: 'nowrap' }}
+              style={{ gap: 6, height: 34, padding: '0 14px', borderRadius: 999, border: '1px solid #F5DFB8', background: '#FFF7E6', color: '#B45309', fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap' }}
               title="Create a task about this lead"
             >
-              <ClipboardList size={16} /> Create a task
+              <ClipboardList size={13} /> Create a task
             </button>
             {/* Available at both stages: the wizard creates the customer when a
                 lead is booked, which is the point at which they become one. */}
-            <Link to={bookHref} className="inline-flex items-center cursor-pointer" style={{ gap: 8, height: 44, padding: '0 20px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontWeight: 700, fontSize: 14, boxShadow: SHADOW_MD, whiteSpace: 'nowrap' }}>
-              <PackageCheck size={16} /> Book unit
+            <Link to={bookHref} className="inline-flex items-center cursor-pointer" style={{ gap: 6, height: 34, padding: '0 16px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontWeight: 700, fontSize: 13, boxShadow: SHADOW_MD, whiteSpace: 'nowrap' }}>
+              <PackageCheck size={13} /> Book unit
             </Link>
           </div>
         </div>
@@ -537,114 +679,6 @@ export default function PersonProfile() {
       <div className="flex flex-wrap items-start" style={{ gap: 20 }}>
 
         <div className="flex flex-col" style={{ flex: '1 1 340px', maxWidth: 380, gap: 20 }}>
-          {/* Editable only on a lead. A customer's name and number live on the
-              customer record, and editing the lead behind them would change
-              nothing anybody can see. */}
-          <Card
-            title="Contact details"
-            action={(lead || customer) && !editing ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setForm({
-                    fullName: name === 'Unnamed' ? '' : name,
-                    phone: phone || '',
-                    whatsappNo: lead?.whatsappNo || '',
-                    email: email || '',
-                    source: lead?.source || 'manual',
-                    company: customer?.company || '',
-                    nationality: customer?.nationality || '',
-                    emergencyNumber: customer?.emergencyNumber || '',
-                    emiratesId: customer?.emiratesId || '',
-                    address: customer?.address || '',
-                  })
-                  setErr('')
-                  setEditing(true)
-                }}
-                className="inline-flex items-center gap-1.5 cursor-pointer"
-                style={{ background: 'none', border: 'none', color: PURPLE, fontSize: 13, fontWeight: 700 }}
-              >
-                <Pencil size={13} /> Edit
-              </button>
-            ) : undefined}
-          >
-            {editing ? (
-              <div className="flex flex-col" style={{ gap: 12 }}>
-                <Field label="Name" value={form.fullName} onChange={(v) => setForm((f) => ({ ...f, fullName: v }))} />
-                <Field label="Phone" value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} />
-                {!isCustomer && (
-                  <Field label="WhatsApp" value={form.whatsappNo} onChange={(v) => setForm((f) => ({ ...f, whatsappNo: v }))} />
-                )}
-                <Field label="Email" value={form.email} onChange={(v) => setForm((f) => ({ ...f, email: v }))} type="email" />
-
-                {/* Only a customer has these — a lead is a name and a number. */}
-                {customer && <>
-                  <Field label="Company" value={form.company} onChange={(v) => setForm((f) => ({ ...f, company: v }))} />
-                  <Field label="Nationality" value={form.nationality} onChange={(v) => setForm((f) => ({ ...f, nationality: v }))} />
-                  <Field label="Emergency contact" value={form.emergencyNumber} onChange={(v) => setForm((f) => ({ ...f, emergencyNumber: v }))} />
-                  <Field label="Emirates ID" value={form.emiratesId} onChange={(v) => setForm((f) => ({ ...f, emiratesId: v }))} />
-                  <Field label="Address" value={form.address} onChange={(v) => setForm((f) => ({ ...f, address: v }))} />
-                </>}
-
-                {lead && !isCustomer && <div>
-                  <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Source</span>
-                  <select
-                    value={form.source}
-                    onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))}
-                    className="cursor-pointer"
-                    style={{ width: '100%', height: 40, padding: '0 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', fontSize: 14, fontFamily: 'inherit', color: INK }}
-                  >
-                    {LEAD_SOURCES.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
-                  </select>
-                </div>}
-                <div className="flex" style={{ gap: 8, marginTop: 2 }}>
-                  <button
-                    type="button"
-                    onClick={() => saveDetails.mutate()}
-                    disabled={!form.fullName.trim() || !form.phone.trim() || saveDetails.isPending}
-                    className="cursor-pointer disabled:opacity-50"
-                    style={{ height: 38, padding: '0 16px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontSize: 13, fontWeight: 700, fontFamily: 'inherit' }}
-                  >
-                    {saveDetails.isPending ? 'Saving…' : 'Save'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setEditing(false); setErr('') }}
-                    disabled={saveDetails.isPending}
-                    className="cursor-pointer disabled:opacity-50"
-                    style={{ height: 38, padding: '0 16px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: FAINT, fontSize: 13, fontWeight: 600, fontFamily: 'inherit' }}
-                  >
-                    Cancel
-                  </button>
-                </div>
-                {/* Both are required by the server, so say it here rather than
-                    letting the save come back refused. */}
-                {(!form.fullName.trim() || !form.phone.trim()) && (
-                  <p style={{ fontSize: 12, color: FAINT }}>A name and a phone number are needed.</p>
-                )}
-                {err && <p style={{ fontSize: 12.5, color: '#C0392B' }}>{err}</p>}
-              </div>
-            ) : (
-              <div className="flex flex-col" style={{ gap: 14 }}>
-                <Detail label="Phone" value={phone} />
-                <Detail label="WhatsApp" value={lead?.whatsappNo || phone} />
-                <Detail label="Email" value={email} />
-                {customer && <>
-                  <Detail label="Company" value={customer.company} />
-                  <Detail label="Nationality" value={customer.nationality} />
-                  <Detail label="Emergency contact" value={customer.emergencyNumber} />
-                  <Detail label="Emirates ID" value={customer.emiratesId} />
-                  <Detail label="ID expiry" value={customer.eidExpiry ? formatDate(customer.eidExpiry) : ''} />
-                  <Detail label="Address" value={customer.address} />
-                </>}
-                {lead && <>
-                  <Detail label="Source" value={statusLabel(lead.source)} />
-                  <Detail label="First seen" value={formatDate(lead.leadDateTime)} />
-                </>}
-              </div>
-            )}
-          </Card>
-
           {/* When we next deal with this person, kept beside who they are
               rather than buried among the pipeline controls. Only ever shows
               the date the stage in play is actually about. */}
@@ -1143,8 +1177,6 @@ export default function PersonProfile() {
                   </p>
                 </div>
 
-                {/* Temperature sits beside the stage, not inside it: a lead can
-                    be Follow-Up Scheduled and hot, or Contacted and cold. */}
                 {/* A standing fact about the lead, not only something asked
                     once on the way to Contacted. Sizes come from the units
                     themselves, so every size that exists can be picked and
@@ -1180,31 +1212,6 @@ export default function PersonProfile() {
                   {(lead.unitsNeeded ?? 1) > 1 && (
                     <p style={{ fontSize: 12.5, color: FAINT, marginTop: 6 }}>{lead.unitsNeeded} units</p>
                   )}
-                </div>
-
-                <div>
-                  <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Temperature</span>
-                  <div className="grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6 }}>
-                    {LEAD_TEMPERATURES.map((t) => {
-                      const on = lead.temperature === t.value
-                      return (
-                        <button
-                          key={t.value}
-                          type="button"
-                          onClick={() => patchLead.mutate({ temperature: on ? '' : t.value })}
-                          className="cursor-pointer"
-                          style={{
-                            height: 40, borderRadius: 10, fontSize: 13, fontWeight: 700, fontFamily: 'inherit',
-                            border: `1.5px solid ${on ? t.fg : LINE_STRONG}`,
-                            background: on ? t.bg : '#fff',
-                            color: on ? t.fg : FAINT,
-                          }}
-                        >
-                          {t.label}
-                        </button>
-                      )
-                    })}
-                  </div>
                 </div>
 
                 {/* Moving a stage is the moment somebody knows why. Asking
@@ -1252,35 +1259,6 @@ export default function PersonProfile() {
                   </div>
                 )}
 
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Tags</span>
-                  <div className="flex flex-wrap" style={{ gap: 6 }}>
-                    {LEAD_TAGS.map((t) => {
-                      const on = (lead.tags ?? []).includes(t.value)
-                      return (
-                        <button
-                          key={t.value}
-                          type="button"
-                          onClick={() => {
-                            const next = on
-                              ? (lead.tags ?? []).filter((x) => x !== t.value)
-                              : [...(lead.tags ?? []), t.value]
-                            patchLead.mutate({ tags: next })
-                          }}
-                          className="cursor-pointer"
-                          style={{
-                            borderRadius: 999, padding: '5px 12px', fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
-                            border: `1px solid ${on ? PURPLE : LINE_STRONG}`,
-                            background: on ? PURPLE_100 : '#fff',
-                            color: on ? DEEP : FAINT,
-                          }}
-                        >
-                          {t.label}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
               </div>
             </Card>
           )}
