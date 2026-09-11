@@ -1417,27 +1417,6 @@ function LeadScorePanel({ leadId, open, onClose }: { leadId: string | null; open
               )}
             </div>
 
-            {/* Copy-ready prompts for whichever customer-facing facts are
-                still missing — "financially qualified" and the reminder
-                itself are the rep's own call, not something to ask, so
-                neither gets a suggestion here. */}
-            {data.intake.suggestedMessages.length > 0 && (
-              <div className="mt-3 pt-3 space-y-1.5" style={{ borderTop: `1px solid ${LINE}` }}>
-                <p style={{ fontSize: 11, fontWeight: 600, color: INK }}>Suggested messages</p>
-                {data.intake.suggestedMessages.map((msg, i) => (
-                  <button
-                    key={i} type="button"
-                    onClick={() => navigator.clipboard?.writeText(msg).catch(() => {})}
-                    className="block w-full text-left rounded-lg px-2.5 py-1.5 cursor-pointer"
-                    style={{ background: '#FAF7FF', color: MUTED_INK, fontSize: 11, border: `1px solid ${LINE}` }}
-                    title="Click to copy"
-                  >
-                    {msg}
-                  </button>
-                ))}
-              </div>
-            )}
-
             {/* Confirm or correct. Highlighted only while it's actually
                 asking for one — a rep who already confirmed, or a dead
                 lead nobody needs to weigh in on, gets the quiet version. */}
