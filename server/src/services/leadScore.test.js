@@ -154,16 +154,31 @@ test('needsConfirmation: only a genuine enquiry, only after we have actually rep
 test('intakeChecklist: a brand-new lead is missing every fact, with a message suggestion for each customer-facing one', () => {
     const lead = { leadDateTime: new Date('2026-09-01T09:00:00Z'), durationValue: 1, durationUnit: 'month' };
     const c = intakeChecklist(lead);
-    assert.deepEqual(c.missing, ['moveInDate', 'lengthOfStay', 'financiallyQualified', 'locationPreference', 'followUpReminder']);
+    assert.deepEqual(c.missing, ['moveInDate', 'lengthOfStay', 'unitSize', 'financiallyQualified', 'locationPreference', 'followUpReminder']);
     assert.equal(c.leadInitiatedAt, lead.leadDateTime);
     assert.equal(c.moveInDate, null);
     assert.equal(c.lengthOfStay, null);
+    assert.equal(c.unitSize, null);
     assert.equal(c.financiallyQualified, '');
     assert.equal(c.locationPreference, '');
     assert.equal(c.followUpReminder, null);
     // financiallyQualified and followUpReminder are never something to ask
-    // the customer, so only three of the five missing facts get a message.
-    assert.equal(c.suggestedMessages.length, 3);
+    // the customer, so only four of the six missing facts get a message.
+    assert.equal(c.suggestedMessages.length, 4);
+});
+
+test('intakeChecklist: storageSizeValue alone has no meaningful default — 0 (or unset) is always missing, any positive number is always documented', () => {
+    const unset = intakeChecklist({});
+    assert.ok(unset.missing.includes('unitSize'));
+    assert.equal(unset.unitSize, null);
+
+    const zero = intakeChecklist({ storageSizeValue: 0, storageSizeUnit: 'sqft' });
+    assert.ok(zero.missing.includes('unitSize'));
+    assert.equal(zero.unitSize, null);
+
+    const set = intakeChecklist({ storageSizeValue: 75, storageSizeUnit: 'sqft' });
+    assert.ok(!set.missing.includes('unitSize'));
+    assert.deepEqual(set.unitSize, { value: 75, unit: 'sqft' });
 });
 
 test('intakeChecklist: durationValue/durationUnit alone never count as documented — only lengthOfStayConfirmedAt does', () => {
@@ -180,6 +195,7 @@ test('intakeChecklist: a field drops off the missing list and out of its message
     const lead = {
         intendedStartDate: new Date('2026-10-01'),
         lengthOfStayConfirmedAt: new Date(), durationValue: 2, durationUnit: 'month',
+        storageSizeValue: 75, storageSizeUnit: 'sqft',
         financiallyQualified: 'yes',
         locationPreference: 'Al Quoz',
         followUpAt: new Date('2026-09-15T10:00:00Z'), followUpNote: 'call back after payday',
@@ -189,6 +205,7 @@ test('intakeChecklist: a field drops off the missing list and out of its message
     assert.deepEqual(c.suggestedMessages, []);
     assert.equal(c.moveInDate, lead.intendedStartDate);
     assert.deepEqual(c.lengthOfStay, { value: 2, unit: 'month' });
+    assert.deepEqual(c.unitSize, { value: 75, unit: 'sqft' });
     assert.equal(c.financiallyQualified, 'yes');
     assert.equal(c.locationPreference, 'Al Quoz');
     assert.deepEqual(c.followUpReminder, { at: lead.followUpAt, note: 'call back after payday' });
@@ -198,6 +215,7 @@ test('intakeChecklist: only the still-missing customer-facing facts get a sugges
     const c = intakeChecklist({
         intendedStartDate: new Date('2026-10-01'),
         lengthOfStayConfirmedAt: null,
+        storageSizeValue: 75, storageSizeUnit: 'sqft',
         locationPreference: '',
     });
     assert.deepEqual(c.missing.filter((k) => ['moveInDate', 'lengthOfStay', 'locationPreference'].includes(k)), ['lengthOfStay', 'locationPreference']);

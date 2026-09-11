@@ -428,7 +428,7 @@ router.get('/high-intent', async (req, res) => {
 });
 
 const SCORE_LEAD_FIELDS = 'phoneNormalized owner firstName fullName intendedStartDate leadScoreOverride leadScoreOverrideBy leadScoreOverrideAt leadScoreOverrideForLeadType '
-  + 'leadDateTime durationValue durationUnit lengthOfStayConfirmedAt financiallyQualified locationPreference followUpAt followUpNote followUpNotifiedAt followUpPushedAt status';
+  + 'leadDateTime durationValue durationUnit lengthOfStayConfirmedAt storageSizeValue storageSizeUnit financiallyQualified locationPreference followUpAt followUpNote followUpNotifiedAt followUpPushedAt status';
 
 /**
  * A score, plus who confirmed or corrected it and when — the same shape
@@ -596,6 +596,31 @@ router.post('/:id/length-of-stay', async (req, res) => {
         lead.durationValue = durationValue;
         lead.durationUnit = durationUnit;
         lead.lengthOfStayConfirmedAt = new Date();
+        await lead.save();
+
+        res.json(await withOverrideInfo(lead));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * How much storage they actually need, confirmed with the lead directly.
+ * Unlike length of stay, storageSizeValue has no meaningful default (it's
+ * 0 until somebody sets it — see the model), so there's no separate
+ * "confirmed at" stamp to disambiguate a default from a real answer.
+ */
+router.post('/:id/unit-size', async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Bad lead id' });
+        const storageSizeValue = Number(req.body?.storageSizeValue);
+        if (!Number.isFinite(storageSizeValue) || storageSizeValue <= 0) return res.status(400).json({ error: 'Invalid storage size' });
+
+        const lead = await Lead.findById(req.params.id).select(SCORE_LEAD_FIELDS);
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+
+        lead.storageSizeValue = storageSizeValue;
         await lead.save();
 
         res.json(await withOverrideInfo(lead));

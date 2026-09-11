@@ -1018,6 +1018,10 @@ function LeadScorePanel({ leadId, open, onClose }: { leadId: string | null; open
     mutationFn: (payload: { value: number; unit: 'week' | 'month' }) => leadApi.setLengthOfStay(leadId!, payload.value, payload.unit),
     onSuccess: (result) => qc.setQueryData(['lead-score', leadId], result),
   })
+  const setSize = useMutation({
+    mutationFn: (value: number) => leadApi.setUnitSize(leadId!, value),
+    onSuccess: (result) => qc.setQueryData(['lead-score', leadId], result),
+  })
   const setReminder = useMutation({
     mutationFn: (payload: { at: string; note: string }) => leadApi.setFollowUpReminder(leadId!, payload.at, payload.note),
     onSuccess: (result) => qc.setQueryData(['lead-score', leadId], result),
@@ -1028,9 +1032,11 @@ function LeadScorePanel({ leadId, open, onClose }: { leadId: string | null; open
   // without needing the fact to go missing again.
   const [editMoveIn, setEditMoveIn] = useState(false)
   const [editLength, setEditLength] = useState(false)
+  const [editSize, setEditSize] = useState(false)
   const [editReminder, setEditReminder] = useState(false)
   const [lengthValue, setLengthValue] = useState('1')
   const [lengthUnit, setLengthUnit] = useState<'week' | 'month'>('month')
+  const [sizeValue, setSizeValue] = useState('')
   // Date and time as two plain native inputs, not one combined
   // datetime-local — that control's own scroll-wheel time picker is slow
   // to use quickly, which is exactly the complaint this replaced.
@@ -1044,12 +1050,15 @@ function LeadScorePanel({ leadId, open, onClose }: { leadId: string | null; open
       setLengthValue(String(intake.lengthOfStay.value))
       setLengthUnit(intake.lengthOfStay.unit)
     }
+    if (intake?.unitSize) {
+      setSizeValue(String(intake.unitSize.value))
+    }
     if (intake?.followUpReminder) {
       setReminderDate(intake.followUpReminder.at.slice(0, 10))
       setReminderTime(intake.followUpReminder.at.slice(11, 16) || '09:00')
       setReminderNote(intake.followUpReminder.note)
     }
-  }, [intake?.lengthOfStay?.value, intake?.lengthOfStay?.unit, intake?.followUpReminder?.at, intake?.followUpReminder?.note])
+  }, [intake?.lengthOfStay?.value, intake?.lengthOfStay?.unit, intake?.unitSize?.value, intake?.followUpReminder?.at, intake?.followUpReminder?.note])
 
   // Below ~1100px this panel is a drawer (see the .wa-score CSS), not a
   // fixed-width rail — the same reason the composer got a drag handle:
@@ -1229,6 +1238,38 @@ function LeadScorePanel({ leadId, open, onClose }: { leadId: string | null; open
                 <FieldSummary
                   text={`${data.intake.lengthOfStay!.value} ${data.intake.lengthOfStay!.unit}${data.intake.lengthOfStay!.value === 1 ? '' : 's'}`}
                   onChange={() => setEditLength(true)}
+                />
+              )}
+            </div>
+
+            {/* Unit size — storageSizeValue is 0 until somebody actually
+                sets it (unlike length of stay's meaningful "1 month"
+                default), so missing/documented is a plain >0 check with no
+                separate confirmed-at stamp needed. */}
+            <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${LINE}` }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: INK, display: 'block', marginBottom: 4 }}>Unit size</label>
+              {data.intake.missing.includes('unitSize') || editSize ? (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number" min={1} value={sizeValue}
+                    onChange={(e) => setSizeValue(e.target.value)}
+                    placeholder="e.g. 75"
+                    style={{ fontSize: 11.5, border: `1px solid ${LINE}`, borderRadius: 8, padding: '4px 6px', color: INK, width: 64 }}
+                  />
+                  <span style={{ fontSize: 11.5, color: MUTED_INK }}>sqft</span>
+                  <button
+                    type="button" disabled={setSize.isPending || !Number(sizeValue)}
+                    onClick={() => { setSize.mutate(Number(sizeValue)); setEditSize(false) }}
+                    className="cursor-pointer disabled:opacity-50 rounded-lg"
+                    style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: '#4A1FA0', border: 'none', padding: '5px 8px' }}
+                  >
+                    Save
+                  </button>
+                </div>
+              ) : (
+                <FieldSummary
+                  text={`${data.intake.unitSize!.value} sqft`}
+                  onChange={() => setEditSize(true)}
                 />
               )}
             </div>

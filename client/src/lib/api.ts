@@ -131,6 +131,9 @@ export const leadApi = {
    *  directly — not the same as merely having a default duration. */
   setLengthOfStay: (id: string, durationValue: number, durationUnit: 'week' | 'month') =>
     api.post<LeadScore>(`/leads/${id}/length-of-stay`, { durationValue, durationUnit }).then((r) => r.data),
+  /** How much storage they actually need, confirmed with the lead directly. */
+  setUnitSize: (id: string, storageSizeValue: number) =>
+    api.post<LeadScore>(`/leads/${id}/unit-size`, { storageSizeValue }).then((r) => r.data),
   /** When to come back to them, and why. `followUpAt` an ISO datetime or
    *  '' to clear it. */
   setFollowUpReminder: (id: string, followUpAt: string, followUpNote: string) =>
@@ -190,11 +193,12 @@ export interface LeadScore {
 
 /** Facts a rep is expected to have actually asked the lead directly —
  *  distinct from `signals`, which is the AI's own read of the chat. */
-export type LeadIntakeField = 'moveInDate' | 'lengthOfStay' | 'financiallyQualified' | 'locationPreference' | 'followUpReminder'
+export type LeadIntakeField = 'moveInDate' | 'lengthOfStay' | 'unitSize' | 'financiallyQualified' | 'locationPreference' | 'followUpReminder'
 export interface LeadIntake {
   leadInitiatedAt: string | null
   moveInDate: string | null
   lengthOfStay: { value: number; unit: 'week' | 'month' } | null
+  unitSize: { value: number; unit: 'sqft' } | null
   financiallyQualified: '' | 'yes' | 'no'
   locationPreference: '' | 'Al Quoz' | 'DIP'
   followUpReminder: { at: string; note: string } | null

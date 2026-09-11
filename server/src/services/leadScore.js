@@ -340,7 +340,7 @@ export async function highIntentToday({ ownerId = null, now = new Date() } = {})
  *  is expected to have actually asked, on a call or in person. Kept as
  *  their own object on the score response so a panel can show only what's
  *  still missing, and never show a documented field's input again. */
-const INTAKE_FIELDS = ['moveInDate', 'lengthOfStay', 'financiallyQualified', 'locationPreference', 'followUpReminder'];
+const INTAKE_FIELDS = ['moveInDate', 'lengthOfStay', 'unitSize', 'financiallyQualified', 'locationPreference', 'followUpReminder'];
 
 /** Short, copy-pasteable prompts for the customer-facing facts only —
  *  "financially qualified" is a rep's own judgment call, and a follow-up
@@ -355,6 +355,9 @@ function suggestedFollowUpMessages(missing, lead) {
   }
   if (missing.includes('lengthOfStay')) {
     out.push(`${greet}roughly how long are you planning to store with us — a few weeks, or longer term?`);
+  }
+  if (missing.includes('unitSize')) {
+    out.push(`${greet}roughly how much are you looking to store — any idea on the size you'll need?`);
   }
   if (missing.includes('locationPreference')) {
     out.push(`${greet}would Al Quoz or DIP work better for you?`);
@@ -372,6 +375,7 @@ export function intakeChecklist(lead) {
   const missing = INTAKE_FIELDS.filter((key) => {
     if (key === 'moveInDate') return !lead.intendedStartDate;
     if (key === 'lengthOfStay') return !lead.lengthOfStayConfirmedAt;
+    if (key === 'unitSize') return !(lead.storageSizeValue > 0);
     if (key === 'financiallyQualified') return !lead.financiallyQualified;
     if (key === 'locationPreference') return !lead.locationPreference;
     if (key === 'followUpReminder') return !lead.followUpAt;
@@ -382,6 +386,7 @@ export function intakeChecklist(lead) {
     leadInitiatedAt: lead.leadDateTime || null,
     moveInDate: lead.intendedStartDate || null,
     lengthOfStay: lead.lengthOfStayConfirmedAt ? { value: lead.durationValue, unit: lead.durationUnit } : null,
+    unitSize: lead.storageSizeValue > 0 ? { value: lead.storageSizeValue, unit: lead.storageSizeUnit } : null,
     financiallyQualified: lead.financiallyQualified || '',
     locationPreference: lead.locationPreference || '',
     followUpReminder: lead.followUpAt ? { at: lead.followUpAt, note: lead.followUpNote || '' } : null,
