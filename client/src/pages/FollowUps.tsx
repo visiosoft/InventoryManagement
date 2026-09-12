@@ -61,16 +61,22 @@ const WINDOW_LABEL: Record<FollowUpWindow, { label: string; bg: string; fg: stri
   exhausted: { label: 'Decide', bg: '#F3F4F6', fg: '#374151' },
 }
 
-/** Within a day: what kind of row. */
-type Tab = 'all' | 'needs_reply' | 'quiet' | 'scheduled' | 'hot' | 'completed'
+/** Within a day: which intent bucket. High is a rep's first stop —
+ *  a hot lead due today is worth more than a cold one due today, so it
+ *  gets its own tab rather than being sorted somewhere inside "All". */
+type Tab = 'high' | 'medium' | 'low' | 'completed'
 const TABS: { key: Tab; label: string; tone?: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'needs_reply', label: 'Needs Reply', tone: '#B91C1C' },
-  { key: 'quiet', label: 'Went Quiet' },
-  { key: 'scheduled', label: 'Scheduled' },
-  { key: 'hot', label: 'Hot Leads' },
+  { key: 'high', label: 'High Intent', tone: '#B91C1C' },
+  { key: 'medium', label: 'Medium Intent', tone: '#B45309' },
+  { key: 'low', label: 'Low Intent' },
   { key: 'completed', label: 'Completed' },
 ]
+/** No AI read yet defaults to the middle bucket — an unscored lead is not
+ *  the same claim as a cold one, and it should not hide in "Low" where
+ *  nobody is looking for it. */
+function intentOf(it: FollowUpQueueItem): 'hot' | 'warm' | 'cold' {
+  return it.temperature ?? 'warm'
+}
 
 const EMPTY: Record<Card, string> = {
   now: 'Nobody is waiting on a reply. Every customer who wrote has been answered.',
@@ -84,11 +90,21 @@ const EMPTY: Record<Card, string> = {
 type LogRow = Awaited<ReturnType<typeof leadFollowUpApi.log>>['rows'][number]
 
 function inTab(it: FollowUpQueueItem, tab: Tab) {
-  if (tab === 'all' || tab === 'completed') return true
-  if (tab === 'needs_reply') return it.reason === 'sales_response_overdue'
-  if (tab === 'quiet') return it.reason === 'customer_quiet'
-  if (tab === 'scheduled') return it.reason === 'manual_followup_due'
-  return it.temperature === 'hot'
+  if (tab === 'completed') return true
+  const t = intentOf(it)
+  if (tab === 'high') return t === 'hot'
+  if (tab === 'medium') return t === 'warm'
+  return t === 'cold'
+}
+/** Within High Intent specifically: a customer waiting on our reply, or a
+ *  lead due right now, outranks one merely due today or later — "follow up
+ *  right away" means the ones actually owed a reply surface first. */
+function urgencyRank(it: FollowUpQueueItem): number {
+  if (it.reason === 'sales_response_overdue') return 0
+  if (it.window === 'now') return 1
+  if (it.window === 'today') return 2
+  if (it.window === 'exhausted') return 3
+  return 4
 }
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -140,10 +156,11 @@ export default function FollowUps() {
   const isAdmin = user?.role === 'admin'
 
   const [card, setCard] = useState<Card>('today')
-  const [tab, setTab] = useState<Tab>('all')
+  // High Intent first: it is the bucket that actually needs a follow-up
+  // right away, not a neutral starting point like the old "All" tab was.
+  const [tab, setTab] = useState<Tab>('high')
   const [search, setSearch] = useState('')
   const [priority, setPriority] = useState<'' | FollowUpPriority>('')
-  const [intent, setIntent] = useState<'' | 'hot' | 'warm' | 'cold'>('')
   const [reasonF, setReasonF] = useState<'' | FollowUpReason>('')
   const [customerF, setCustomerF] = useState<'' | 'tenant' | 'not_customer'>('')
   const [owner, setOwner] = useState('')
@@ -202,21 +219,18 @@ export default function FollowUps() {
   }, [summary])
 
   const tabCounts = useMemo<Record<Tab, number>>(() => ({
-    all: inCardItems.length,
-    needs_reply: inCardItems.filter((it) => it.reason === 'sales_response_overdue').length,
-    quiet: inCardItems.filter((it) => it.reason === 'customer_quiet').length,
-    scheduled: inCardItems.filter((it) => it.reason === 'manual_followup_due').length,
-    hot: inCardItems.filter((it) => it.temperature === 'hot').length,
+    high: inCardItems.filter((it) => intentOf(it) === 'hot').length,
+    medium: inCardItems.filter((it) => intentOf(it) === 'warm').length,
+    low: inCardItems.filter((it) => intentOf(it) === 'cold').length,
     completed: completed.length,
   }), [inCardItems, completed])
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase()
     const qDigits = q.replace(/\D/g, '')
-    return inCardItems.filter((it) => {
+    const filtered = inCardItems.filter((it) => {
       if (!inTab(it, tab)) return false
       if (priority && it.priority !== priority) return false
-      if (intent && it.temperature !== intent) return false
       if (reasonF && it.reason !== reasonF) return false
       if (customerF === 'tenant' && it.customer?.status !== 'active') return false
       if (customerF === 'not_customer' && it.customer) return false
@@ -227,11 +241,15 @@ export default function FollowUps() {
       }
       return true
     })
-  }, [inCardItems, tab, priority, intent, reasonF, customerF, search])
+    // High Intent only: surface who's actually owed a reply, or due right
+    // now, ahead of the rest of the bucket — "follow up right away" is a
+    // sort order, not just a filter.
+    return tab === 'high' ? [...filtered].sort((a, b) => urgencyRank(a) - urgencyRank(b)) : filtered
+  }, [inCardItems, tab, priority, reasonF, customerF, search])
 
   const openIndex = openId ? visible.findIndex((it) => it.leadId === openId) : -1
   const nextId = openIndex >= 0 && openIndex + 1 < visible.length ? visible[openIndex + 1].leadId : null
-  const activeFilters = [priority, intent, reasonF, customerF, owner].filter(Boolean).length
+  const activeFilters = [priority, reasonF, customerF, owner].filter(Boolean).length
   const tenantsInView = visible.filter((it) => it.customer?.status === 'active').length
   const dueCard = card === 'now' || card === 'today'
 
@@ -289,7 +307,7 @@ export default function FollowUps() {
           : CARDS.map((c) => {
             const on = card === c.key
             return (
-              <button key={c.key} type="button" onClick={() => { setCard(c.key); setTab('all') }}
+              <button key={c.key} type="button" onClick={() => { setCard(c.key); setTab('high') }}
                 className="text-left rounded-xl border p-4 cursor-pointer transition-shadow"
                 style={{ background: c.bg, borderColor: on ? c.iconBg : c.border, boxShadow: on ? `0 0 0 2px ${c.iconBg}33` : undefined }}>
                 <div className="flex items-center gap-2.5">
@@ -340,11 +358,6 @@ export default function FollowUps() {
                     <option value="">Any</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
                   </select>
                 </label>
-                <label className="block text-[11px] font-semibold uppercase" style={{ color: SUB, letterSpacing: '.06em' }}>Intent
-                  <select value={intent} onChange={(e) => setIntent(e.target.value as '' | 'hot' | 'warm' | 'cold')} className="mt-1 w-full h-9 border rounded-lg px-2 text-[13px] font-normal normal-case bg-white" style={{ borderColor: LINE }}>
-                    <option value="">Any</option><option value="hot">High</option><option value="warm">Medium</option><option value="cold">Low</option>
-                  </select>
-                </label>
                 <label className="block text-[11px] font-semibold uppercase" style={{ color: SUB, letterSpacing: '.06em' }}>Reason
                   <select value={reasonF} onChange={(e) => setReasonF(e.target.value as '' | FollowUpReason)} className="mt-1 w-full h-9 border rounded-lg px-2 text-[13px] font-normal normal-case bg-white" style={{ borderColor: LINE }}>
                     <option value="">Any</option>
@@ -369,7 +382,7 @@ export default function FollowUps() {
                   </label>
                 )}
                 {activeFilters > 0 && (
-                  <button type="button" onClick={() => { setPriority(''); setIntent(''); setReasonF(''); setCustomerF(''); setOwner('') }} className="text-[12px] font-semibold cursor-pointer" style={{ color: BRAND }}>Clear filters</button>
+                  <button type="button" onClick={() => { setPriority(''); setReasonF(''); setCustomerF(''); setOwner('') }} className="text-[12px] font-semibold cursor-pointer" style={{ color: BRAND }}>Clear filters</button>
                 )}
               </div>
             )}
@@ -381,6 +394,12 @@ export default function FollowUps() {
           </div>
         </div>
       </div>
+      {tab === 'high' && tabCounts.high > 0 && (
+        <p className="text-[12.5px] mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold" style={{ background: '#FEE2E2', color: '#B91C1C' }}>
+          <AlertTriangle size={13} />
+          <b>{tabCounts.high}</b> high-intent {tabCounts.high === 1 ? 'lead needs' : 'leads need'} a follow-up right away — the ones actually owed a reply are listed first.
+        </p>
+      )}
       {!dueCard && tab !== 'completed' && (
         <p className="text-[12.5px] mt-2" style={{ color: SUB }}>
           These were contacted recently and are not due yet. They will move to <b>Contact today</b> on their day — sending earlier needs a deliberate override.
@@ -433,7 +452,7 @@ export default function FollowUps() {
           </div>
         ) : visible.length === 0 ? (
           <div className="p-12 text-center">
-            <p className="text-[14px] font-semibold">{inCardItems.length && (search || activeFilters || tab !== 'all') ? 'Nothing matches those filters.' : EMPTY[card]}</p>
+            <p className="text-[14px] font-semibold">{inCardItems.length ? 'Nothing matches those filters.' : EMPTY[card]}</p>
             {!items.length && <p className="text-[12.5px] mt-1" style={{ color: SUB }}>Leads appear here the moment a customer is waiting on you, has gone quiet, or a follow-up you scheduled arrives.</p>}
           </div>
         ) : (
