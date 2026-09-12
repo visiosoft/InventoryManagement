@@ -5,7 +5,7 @@ import {
   AlertTriangle, ArrowLeft, ArrowRight, Calendar, Clock, FileText, MessageCircle, MessageSquare,
   ClipboardList, ExternalLink, PackageCheck, Pencil, Phone, Plus, Repeat, UserCheck, UserPlus,
 } from 'lucide-react'
-import { api, apiError } from '../lib/api'
+import { api, apiError, leadApi } from '../lib/api'
 import { TaskComposer } from '../components/TaskComposer'
 import WhatsAppConsole from './WhatsApp'
 import { useAuth } from '../lib/auth'
@@ -183,12 +183,30 @@ export default function PersonProfile() {
      without this page needing to know anything about how that list was
      filtered or sorted. Read once: a lead moving in or out of the list
      mid-review should not reshuffle the Prev/Next a rep is mid-click on. */
-  const [navOrder] = useState<string[]>(() => {
+  const [sessionNavOrder] = useState<string[]>(() => {
     try {
       const raw = sessionStorage.getItem('leadNavOrder')
       return raw ? JSON.parse(raw) : []
     } catch { return [] }
   })
+  const sessionHasLead = sessionNavOrder.includes(id)
+
+  /* Previous/Next used to only work if a rep clicked through from the
+     Leads list in this same browser — a bookmark, a shared link, or a
+     colleague opening the same lead on their own machine saw nothing,
+     even signed into the exact same account, because sessionStorage
+     belongs to one browser tab and nothing else. Falls back to the
+     server's own default-order id list (same scope: a rep's own leads,
+     everyone else's all of them) whenever the session-scoped list — the
+     actual filtered page a rep was looking at — doesn't have this lead,
+     so it still works from any entry point. */
+  const { data: fallbackNavOrder } = useQuery({
+    queryKey: ['leads-nav-order'],
+    queryFn: leadApi.navOrder,
+    enabled: !sessionHasLead,
+    staleTime: 5 * 60_000,
+  })
+  const navOrder = sessionHasLead ? sessionNavOrder : (fallbackNavOrder ?? [])
   const navIndex = navOrder.indexOf(id)
   const prevLeadId = navIndex > 0 ? navOrder[navIndex - 1] : null
   const nextLeadId = navIndex >= 0 && navIndex < navOrder.length - 1 ? navOrder[navIndex + 1] : null

@@ -233,6 +233,38 @@ router.get('/', async (req, res) => {
 });
 
 /**
+ * Every lead id, in the same default order and scope the Leads list shows
+ * with no filter applied — id only, so this is cheap even over hundreds of
+ * leads.
+ *
+ * What Previous/Next on a lead's own page falls back to when it wasn't
+ * reached by clicking through that list (a bookmark, a shared link, a
+ * fresh page load): sessionStorage's own leadNavOrder only ever holds
+ * whatever page of whatever filter was on screen at the time, which is
+ * naturally empty for a browser that never visited it. This is scoped
+ * the same way that list is (a sales rep's own; everyone else's, all of
+ * it) so Previous/Next never offers a lead the viewer cannot open.
+ */
+router.get('/nav-order', async (req, res) => {
+    const filter = {
+        $and: [{
+            $or: [
+                { fullName: { $not: /^whatsapp\s*contact/i } },
+                { assignedAt: { $ne: null } },
+            ],
+        }],
+    };
+    if (isSalesRep(req)) filter.owner = req.user.id;
+
+    const leads = await Lead.find(filter)
+        .select('_id')
+        .sort({ leadDateTime: -1, createdAt: -1 })
+        .lean();
+
+    res.json({ ids: leads.map((l) => String(l._id)) });
+});
+
+/**
  * Leads with a follow-up date that has arrived.
  *
  * Capturing the date was only half of it — a date nothing surfaces is a note

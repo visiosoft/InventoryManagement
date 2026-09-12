@@ -96,6 +96,12 @@ export const unitTypeApi = {
 
 export const leadApi = {
   list: (params: LeadQuery) => api.get<LeadPage>('/leads', { params }).then((r) => r.data),
+  /** Every lead id, in the same default order/scope the Leads list shows
+   *  with no filter — the fallback a lead's own page reaches for when
+   *  Previous/Next has no sessionStorage list to walk (the viewer never
+   *  visited the Leads list in this browser: a bookmark, a shared link, a
+   *  fresh load). */
+  navOrder: () => api.get<{ ids: string[] }>('/leads/nav-order').then((r) => r.data.ids),
   create: (body: Partial<Lead>) => api.post<Lead>('/leads', body).then((r) => r.data),
   update: (id: string, body: Partial<Lead>) => api.put<Lead>(`/leads/${id}`, body).then((r) => r.data),
   updateStatus: (id: string, status: string, comment?: string) => api.patch<Lead>(`/leads/${id}/status`, { status, comment }).then((r) => r.data),
