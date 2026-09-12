@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
-  AlertTriangle, ArrowRight, CalendarDays, CheckSquare, Eye, Filter, MessageCircle,
-  Search, Square, X, Clock, CalendarClock, CalendarRange, Hourglass,
+  AlertTriangle, CalendarDays, CheckSquare, Eye, Filter, MessageCircle,
+  Search, Square, X, Clock,
 } from 'lucide-react'
 import { followUpQueueApi, leadFollowUpApi, type FollowUpPriority, type FollowUpQueueItem, type FollowUpReason, type FollowUpWindow } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -35,22 +35,6 @@ const INTENT: Record<'hot' | 'warm' | 'cold' | 'none', { label: string; bg: stri
   none: { label: '—', bg: '#F3F4F6', fg: '#9CA3AF' },
 }
 
-/**
- * The cards: WHEN to contact. Clicking one filters the list to that day.
- * 'today' is the default and covers everything in front of you now — a
- * customer waiting on a reply, follow-ups due today, and a cadence that
- * has run out and needs a decision.
- */
-type Card = 'now' | 'today' | 'tomorrow' | 'in_3_days' | 'in_7_days' | 'later'
-const CARDS: { key: Card; label: string; sub: string; bg: string; border: string; iconBg: string; icon: React.ReactNode; windows: FollowUpWindow[] }[] = [
-  { key: 'now', label: 'Needs reply now', sub: 'Customer is waiting on us', bg: '#FFF1F2', border: '#FECDD3', iconBg: '#EF4444', icon: <AlertTriangle size={16} />, windows: ['now'] },
-  { key: 'today', label: 'Contact today', sub: 'Due today, or overdue', bg: '#FFF7ED', border: '#FED7AA', iconBg: '#F59E0B', icon: <Clock size={16} />, windows: ['now', 'today', 'exhausted'] },
-  { key: 'tomorrow', label: 'Tomorrow', sub: 'Leave them until tomorrow', bg: '#EFF6FF', border: '#BFDBFE', iconBg: '#3B82F6', icon: <CalendarDays size={16} />, windows: ['tomorrow'] },
-  { key: 'in_3_days', label: 'In 3 days', sub: 'Recently contacted', bg: '#F5F3FF', border: '#DDD6FE', iconBg: '#7C3AED', icon: <CalendarClock size={16} />, windows: ['in_3_days'] },
-  { key: 'in_7_days', label: 'In 7 days', sub: 'After the first follow-up', bg: '#ECFDF5', border: '#A7F3D0', iconBg: '#22C55E', icon: <CalendarRange size={16} />, windows: ['in_7_days'] },
-  { key: 'later', label: 'Later', sub: 'Two weeks out, or spent', bg: '#F0FDFA', border: '#99F6E4', iconBg: '#14B8A6', icon: <Hourglass size={16} />, windows: ['later', 'exhausted'] },
-]
-
 const WINDOW_LABEL: Record<FollowUpWindow, { label: string; bg: string; fg: string }> = {
   now: { label: 'Now', bg: '#FEE2E2', fg: '#B91C1C' },
   today: { label: 'Today', bg: '#FFEDD5', fg: '#C2410C' },
@@ -76,15 +60,6 @@ const TABS: { key: Tab; label: string; tone?: string }[] = [
  *  nobody is looking for it. */
 function intentOf(it: FollowUpQueueItem): 'hot' | 'warm' | 'cold' {
   return it.temperature ?? 'warm'
-}
-
-const EMPTY: Record<Card, string> = {
-  now: 'Nobody is waiting on a reply. Every customer who wrote has been answered.',
-  today: 'Nothing to contact today. Great work — you’re all caught up.',
-  tomorrow: 'Nobody is due tomorrow.',
-  in_3_days: 'Nobody is due in three days.',
-  in_7_days: 'Nobody is due in a week.',
-  later: 'Nothing further out.',
 }
 
 type LogRow = Awaited<ReturnType<typeof leadFollowUpApi.log>>['rows'][number]
@@ -143,19 +118,17 @@ function cadenceText(it: FollowUpQueueItem) {
 }
 
 /**
- * The follow-up queue: who to contact, and when.
+ * The follow-up queue: who to contact, grouped by how promising they are.
  *
- * The cards are days. A lead sits under the one day it is due — messaged
- * yesterday means "in 3 days", not "today again" — so nobody is contacted
- * on consecutive days by accident, and a send before that day is refused
- * by the server. "Needs reply" (a customer we owe an answer) keeps its own
- * red card and tab so it is never read as "went quiet on us".
+ * "Needs reply" (a customer we owe an answer) still outranks everything
+ * within its bucket via urgencyRank — see below — even without a separate
+ * card for it; a send before a lead's actual due day is still refused by
+ * the server regardless of what's on screen.
  */
 export default function FollowUps() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
 
-  const [card, setCard] = useState<Card>('today')
   // High Intent first: it is the bucket that actually needs a follow-up
   // right away, not a neutral starting point like the old "All" tab was.
   const [tab, setTab] = useState<Tab>('high')
@@ -184,7 +157,6 @@ export default function FollowUps() {
     refetchInterval: 5 * 60_000,
   })
   const items = data?.items ?? []
-  const summary = data?.summary
 
   // AI reads still being written on the server: come back for them once,
   // rather than polling — a queue of 300 stale threads takes a few minutes.
@@ -208,27 +180,17 @@ export default function FollowUps() {
     return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]))
   }, [items])
 
-  const cardWindows = CARDS.find((c) => c.key === card)!.windows
-  const inCard = (it: FollowUpQueueItem) => cardWindows.includes(it.window)
-  const inCardItems = useMemo(() => items.filter(inCard), [items, card]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const cardCounts = useMemo<Record<Card, number>>(() => {
-    const w = summary?.windows
-    const n = (ws: FollowUpWindow[]) => ws.reduce((s, k) => s + (w?.[k] ?? 0), 0)
-    return Object.fromEntries(CARDS.map((c) => [c.key, n(c.windows)])) as Record<Card, number>
-  }, [summary])
-
   const tabCounts = useMemo<Record<Tab, number>>(() => ({
-    high: inCardItems.filter((it) => intentOf(it) === 'hot').length,
-    medium: inCardItems.filter((it) => intentOf(it) === 'warm').length,
-    low: inCardItems.filter((it) => intentOf(it) === 'cold').length,
+    high: items.filter((it) => intentOf(it) === 'hot').length,
+    medium: items.filter((it) => intentOf(it) === 'warm').length,
+    low: items.filter((it) => intentOf(it) === 'cold').length,
     completed: completed.length,
-  }), [inCardItems, completed])
+  }), [items, completed])
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase()
     const qDigits = q.replace(/\D/g, '')
-    const filtered = inCardItems.filter((it) => {
+    const filtered = items.filter((it) => {
       if (!inTab(it, tab)) return false
       if (priority && it.priority !== priority) return false
       if (reasonF && it.reason !== reasonF) return false
@@ -245,13 +207,12 @@ export default function FollowUps() {
     // now, ahead of the rest of the bucket — "follow up right away" is a
     // sort order, not just a filter.
     return tab === 'high' ? [...filtered].sort((a, b) => urgencyRank(a) - urgencyRank(b)) : filtered
-  }, [inCardItems, tab, priority, reasonF, customerF, search])
+  }, [items, tab, priority, reasonF, customerF, search])
 
   const openIndex = openId ? visible.findIndex((it) => it.leadId === openId) : -1
   const nextId = openIndex >= 0 && openIndex + 1 < visible.length ? visible[openIndex + 1].leadId : null
   const activeFilters = [priority, reasonF, customerF, owner].filter(Boolean).length
   const tenantsInView = visible.filter((it) => it.customer?.status === 'active').length
-  const dueCard = card === 'now' || card === 'today'
 
   function toggle(id: string) {
     setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -299,32 +260,6 @@ export default function FollowUps() {
       </div>
 
       <PipelineFunnel />
-
-      {/* ── Cards: when ──────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mt-5">
-        {isLoading && !summary
-          ? Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-[104px] rounded-xl" />)
-          : CARDS.map((c) => {
-            const on = card === c.key
-            return (
-              <button key={c.key} type="button" onClick={() => { setCard(c.key); setTab('high') }}
-                className="text-left rounded-xl border p-4 cursor-pointer transition-shadow"
-                style={{ background: c.bg, borderColor: on ? c.iconBg : c.border, boxShadow: on ? `0 0 0 2px ${c.iconBg}33` : undefined }}>
-                <div className="flex items-center gap-2.5">
-                  <span className="grid place-items-center rounded-full text-white shrink-0" style={{ width: 32, height: 32, background: c.iconBg }}>{c.icon}</span>
-                  <span className="text-[13px] font-semibold">{c.label}</span>
-                </div>
-                <div className="flex items-end justify-between mt-2">
-                  <div>
-                    <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-.02em', lineHeight: 1.1 }}>{cardCounts[c.key]}</div>
-                    <div className="text-[11.5px] mt-1" style={{ color: SUB }}>{c.sub}</div>
-                  </div>
-                  <ArrowRight size={14} style={{ color: on ? c.iconBg : SUB }} />
-                </div>
-              </button>
-            )
-          })}
-      </div>
 
       {/* ── Tabs: what kind ──────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-3 mt-6 border-b" style={{ borderColor: LINE }}>
@@ -400,11 +335,6 @@ export default function FollowUps() {
           <b>{tabCounts.high}</b> high-intent {tabCounts.high === 1 ? 'lead needs' : 'leads need'} a follow-up right away — the ones actually owed a reply are listed first.
         </p>
       )}
-      {!dueCard && tab !== 'completed' && (
-        <p className="text-[12.5px] mt-2" style={{ color: SUB }}>
-          These were contacted recently and are not due yet. They will move to <b>Contact today</b> on their day — sending earlier needs a deliberate override.
-        </p>
-      )}
       {tenantsInView > 0 && tab !== 'completed' && (
         <p className="text-[12.5px] mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg" style={{ background: '#DCFCE7', color: '#15803D' }}>
           <b>{tenantsInView}</b> of these {tenantsInView === 1 ? 'is an active tenant' : 'are active tenants'} — marked in green. A lead template would be wrong for them; they are left out of bulk sends unless you include them deliberately.
@@ -452,7 +382,13 @@ export default function FollowUps() {
           </div>
         ) : visible.length === 0 ? (
           <div className="p-12 text-center">
-            <p className="text-[14px] font-semibold">{inCardItems.length ? 'Nothing matches those filters.' : EMPTY[card]}</p>
+            <p className="text-[14px] font-semibold">
+              {!items.length
+                ? 'Nobody needs a follow-up right now. Great work — you’re all caught up.'
+                : tabCounts[tab] === 0
+                  ? `No ${TABS.find((t) => t.key === tab)?.label.toLowerCase()} follow-ups right now.`
+                  : 'Nothing matches those filters.'}
+            </p>
             {!items.length && <p className="text-[12.5px] mt-1" style={{ color: SUB }}>Leads appear here the moment a customer is waiting on you, has gone quiet, or a follow-up you scheduled arrives.</p>}
           </div>
         ) : (
