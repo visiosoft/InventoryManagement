@@ -30,8 +30,21 @@
 
 import { Lead, MovingStorageFlowThread, Unit } from '../models/index.js';
 import { computeUnitAvailability } from './unitAvailability.js';
-import { isButtonReply, interactiveReplyId } from './renewalReply.js';
-import { sendWhatsAppInteractiveButtons, sendWhatsAppInteractiveList, sendWhatsAppText, whatsappSendConfigured } from './whatsapp.js';
+import { isButtonReply, interactiveReplyId, isFlowReply, flowReplyData } from './renewalReply.js';
+import {
+    sendWhatsAppInteractiveButtons, sendWhatsAppInteractiveList, sendWhatsAppInteractiveFlow,
+    sendWhatsAppText, whatsappSendConfigured,
+} from './whatsapp.js';
+
+/** Set once the "Booking Dates" Flow (a real in-chat calendar — two
+ *  DatePicker fields, from_date/to_date) is created and published in
+ *  WhatsApp Manager — paste scripts/booking-dates-flow.json into its Flow
+ *  JSON editor, publish, and put the flow id this env var. Until then, the
+ *  awaiting_date_from/awaiting_date_to plain-text questions are used
+ *  instead — the bot works either way, this only decides which. */
+export function bookingDatesFlowId() {
+    return String(process.env.WHATSAPP_BOOKING_DATES_FLOW_ID || '').trim();
+}
 
 // ── Pure helpers — no I/O, so they're unit-testable without a DB. ────────
 
@@ -131,6 +144,11 @@ export function dateToPrompt() {
     return 'And until what date do you need it? (e.g. 20/12/2026)';
 }
 
+/** The body text shown alongside the "Choose Dates" calendar flow. */
+export function datesFlowPrompt(size) {
+    return `Great, a ${size} sqft unit — tap below to pick the dates you need it for.`;
+}
+
 /** The message once a live check finds a real unit free for those dates. */
 export function bookingConfirmationMessage({ unitNumber, size, price, from, to }) {
     const priceText = Number(price) > 0 ? `AED ${price}/month` : 'pricing to be confirmed by our team';
@@ -153,6 +171,52 @@ export function noAvailabilityMessage({ size, from, to }) {
  *  Moving branch and "Need Help Choosing" are both a handoff for now. */
 function handoffMessage() {
     return "Thanks! A member of our team will follow up shortly to help with this.";
+}
+
+/** Sends the "Choose Dates" calendar flow — the one I/O step both the
+ *  first offer and any resend (an ignored tap, a malformed submission)
+ *  share, so the wording only lives in one place. */
+async function sendDatesFlow({ to, phoneNormalized, size, flowId }) {
+    await sendWhatsAppInteractiveFlow({
+        to,
+        bodyText: datesFlowPrompt(size),
+        flowId,
+        flowCta: 'Choose Dates',
+        screenId: 'DATES',
+        flowToken: `mvst.${phoneNormalized}`,
+    });
+}
+
+/** Once both ends of a date range are in hand — from either the calendar
+ *  flow or the plain-text fallback — the rest is identical: check real
+ *  availability, offer the unit found (or hand off), and save it on the
+ *  thread. Mutates and saves `thread`; sends exactly one message. */
+async function resolveDatesAndOfferUnit({ thread, to, from, to_ }) {
+    thread.reservation.startDate = from;
+    thread.reservation.endDate = to_;
+
+    const { allUnits, bookedUnitIds } = await computeUnitAvailability({ from, to: to_ });
+    const candidate = allUnits.find(
+        (u) => Number(u.sizeSqf) === Number(thread.size) && !bookedUnitIds.has(String(u._id))
+    );
+
+    if (!candidate) {
+        thread.step = 'done';
+        thread.completedAt = new Date();
+        await thread.save();
+        await sendWhatsAppText({ to, body: noAvailabilityMessage({ size: thread.size, from, to: to_ }) });
+        return;
+    }
+
+    thread.unit = candidate._id;
+    thread.unitNumber = candidate.unitNumber;
+    thread.monthlyPrice = candidate.price ?? null;
+    thread.step = 'awaiting_name';
+    await thread.save();
+    await sendWhatsAppText({
+        to,
+        body: bookingConfirmationMessage({ unitNumber: candidate.unitNumber, size: thread.size, price: candidate.price, from, to: to_ }),
+    });
 }
 
 /**
@@ -228,14 +292,43 @@ export async function handleMovingStorageFlow({ phoneNormalized, phone, text, ty
             const size = sizeFromListId(replyId);
             if (size) {
                 thread.size = size;
-                thread.step = 'awaiting_date_from';
-                await thread.save();
-                await sendWhatsAppText({ to, body: dateFromPrompt() });
+                const flowId = bookingDatesFlowId();
+                if (flowId) {
+                    thread.step = 'awaiting_dates';
+                    await thread.save();
+                    await sendDatesFlow({ to, phoneNormalized, size, flowId });
+                } else {
+                    thread.step = 'awaiting_date_from';
+                    await thread.save();
+                    await sendWhatsAppText({ to, body: dateFromPrompt() });
+                }
                 return { handled: true, step: thread.step };
             }
             const units = await Unit.find({ status: { $ne: 'maintenance' } }).select('sizeSqf price').lean();
             const { bodyText, buttonLabel, rows } = sizeMenu(sizeRowsFromUnits(units));
             await sendWhatsAppInteractiveList({ to, bodyText, buttonLabel, rows });
+            return { handled: true, step: thread.step };
+        }
+
+        /* The real calendar — a WhatsApp Flow — replies as a single
+         * nfm_reply carrying both dates once submitted, not a button tap
+         * or free text; anything else here is resent the same flow rather
+         * than misread as an attempt to type a date. */
+        if (thread.step === 'awaiting_dates') {
+            const flowId = bookingDatesFlowId();
+            if (!isFlowReply(raw)) {
+                await sendDatesFlow({ to, phoneNormalized, size: thread.size, flowId });
+                return { handled: true, step: thread.step };
+            }
+            const data = flowReplyData(raw);
+            const from = parseFlexibleDate(data.from_date);
+            const to_ = parseFlexibleDate(data.to_date);
+            if (!from || !to_ || to_ <= from) {
+                await sendWhatsAppText({ to, body: "Sorry, that date range didn't come through right — let's try again." });
+                await sendDatesFlow({ to, phoneNormalized, size: thread.size, flowId });
+                return { handled: true, step: thread.step };
+            }
+            await resolveDatesAndOfferUnit({ thread, to, from, to_ });
             return { handled: true, step: thread.step };
         }
 
@@ -259,30 +352,7 @@ export async function handleMovingStorageFlow({ phoneNormalized, phone, text, ty
                 await sendWhatsAppText({ to, body: `Sorry, that needs to be a date after ${formatDate(from)} — ${dateToPrompt()}` });
                 return { handled: true, step: thread.step };
             }
-            thread.reservation.endDate = to_;
-
-            const { allUnits, bookedUnitIds } = await computeUnitAvailability({ from, to: to_ });
-            const candidate = allUnits.find(
-                (u) => Number(u.sizeSqf) === Number(thread.size) && !bookedUnitIds.has(String(u._id))
-            );
-
-            if (!candidate) {
-                thread.step = 'done';
-                thread.completedAt = new Date();
-                await thread.save();
-                await sendWhatsAppText({ to, body: noAvailabilityMessage({ size: thread.size, from, to: to_ }) });
-                return { handled: true, step: thread.step };
-            }
-
-            thread.unit = candidate._id;
-            thread.unitNumber = candidate.unitNumber;
-            thread.monthlyPrice = candidate.price ?? null;
-            thread.step = 'awaiting_name';
-            await thread.save();
-            await sendWhatsAppText({
-                to,
-                body: bookingConfirmationMessage({ unitNumber: candidate.unitNumber, size: thread.size, price: candidate.price, from, to: to_ }),
-            });
+            await resolveDatesAndOfferUnit({ thread, to, from, to_ });
             return { handled: true, step: thread.step };
         }
 

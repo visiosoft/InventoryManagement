@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buttonReplyText, isButtonReply, readAnswer, interactiveReplyId } from './renewalReply.js';
+import { buttonReplyText, isButtonReply, readAnswer, interactiveReplyId, isFlowReply, flowReplyData } from './renewalReply.js';
 
 /**
  * Reading a Yes/No tap on the contract-expiry template.
@@ -26,6 +26,23 @@ test('an interactive button reply is read from its title', () => {
 test('a list pick is read too', () => {
     const raw = { interactive: { type: 'list_reply', list_reply: { id: 'r12', title: 'Renew' } } };
     assert.equal(buttonReplyText(raw), 'Renew');
+});
+
+test('a submitted WhatsApp Flow is recognised as its own kind of reply, not a button tap', () => {
+    const raw = { interactive: { type: 'nfm_reply', nfm_reply: { response_json: '{"from_date":"2026-09-20"}' } } };
+    assert.equal(isFlowReply(raw), true);
+    assert.equal(isButtonReply(raw, 'interactive'), false);
+});
+
+test("a flow's answers are parsed out of Meta's JSON-in-a-string field", () => {
+    const raw = { interactive: { type: 'nfm_reply', nfm_reply: { response_json: '{"from_date":"2026-09-20","to_date":"2026-12-20"}' } } };
+    assert.deepEqual(flowReplyData(raw), { from_date: '2026-09-20', to_date: '2026-12-20' });
+});
+
+test('a missing or unparsable flow response reads as empty, not a thrown error', () => {
+    assert.deepEqual(flowReplyData({ interactive: { type: 'nfm_reply' } }), {});
+    assert.deepEqual(flowReplyData({ interactive: { type: 'nfm_reply', nfm_reply: { response_json: 'not json' } } }), {});
+    assert.deepEqual(flowReplyData({}), {});
 });
 
 test('the payload is used when a button carries no text', () => {

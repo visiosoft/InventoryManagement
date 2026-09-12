@@ -65,6 +65,27 @@ export function interactiveReplyId(raw) {
     return String(raw?.interactive?.button_reply?.id || raw?.interactive?.list_reply?.id || '').trim();
 }
 
+/** A submitted WhatsApp Flow — the customer filled in a native form (e.g.
+ *  a date picker) and tapped its own submit button, distinct from a plain
+ *  button/list tap above. */
+export function isFlowReply(raw) {
+    return raw?.interactive?.type === 'nfm_reply';
+}
+
+/** The flow's answers, parsed from Meta's own JSON-in-a-string field, or
+ *  {} if this wasn't a flow reply or the JSON was somehow unreadable — a
+ *  malformed submission should read as empty, never throw and drop the
+ *  message the webhook is in the middle of handling. */
+export function flowReplyData(raw) {
+    const raw_ = raw?.interactive?.nfm_reply?.response_json;
+    if (!raw_) return {};
+    try {
+        return JSON.parse(raw_) || {};
+    } catch {
+        return {};
+    }
+}
+
 const YES = /^(yes|yes please|renew|renew my unit|i want to renew|نعم)$/i;
 const NO = /^(no|no thanks|not renewing|moving out|لا)$/i;
 

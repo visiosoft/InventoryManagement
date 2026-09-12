@@ -534,3 +534,68 @@ export async function sendWhatsAppInteractiveList({ to, bodyText, buttonLabel, r
 
     return payload;
 }
+
+/**
+ * A WhatsApp Flow message — a native in-chat form (used here for a real
+ * calendar date picker, which no button or list message can offer). This
+ * sends a *static* flow: one whose terminal screen ends the flow itself
+ * with a "complete" action, so — unlike the Client Info flow in
+ * services/whatsappFlow.js — there is no data-exchange endpoint, no
+ * encryption, and nothing for our server to answer mid-flow. The filled-in
+ * answers arrive back on the ordinary webhook as an nfm_reply interactive
+ * message once the customer submits, same as a button tap.
+ *
+ * `flowId` is the id Meta assigns once the flow is created and published in
+ * WhatsApp Manager (Business Settings → Flows) — there is no API in this
+ * codebase that creates one, the JSON is authored there directly.
+ */
+export async function sendWhatsAppInteractiveFlow({ to, bodyText, flowId, flowCta, screenId, flowToken, data }) {
+    if (!whatsappSendConfigured()) {
+        throw new Error('WhatsApp is not configured');
+    }
+
+    const normalizedTo = normalizeRecipientPhone(to);
+    if (!normalizedTo) {
+        throw new Error('Recipient phone number is required');
+    }
+
+    const endpoint = `https://graph.facebook.com/v20.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
+    const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            to: normalizedTo,
+            type: 'interactive',
+            interactive: {
+                type: 'flow',
+                body: { text: String(bodyText || '').trim() },
+                action: {
+                    name: 'flow',
+                    parameters: {
+                        flow_message_version: '3',
+                        flow_token: String(flowToken || `noop.${Date.now()}`),
+                        flow_id: String(flowId),
+                        flow_cta: String(flowCta || 'Choose Dates').slice(0, 30),
+                        flow_action: 'navigate',
+                        flow_action_payload: {
+                            screen: String(screenId),
+                            ...(data ? { data } : {}),
+                        },
+                    },
+                },
+            },
+        }),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        const detail = payload?.error?.message || payload?.message || `HTTP ${response.status}`;
+        throw new Error(`WhatsApp send failed: ${detail}`);
+    }
+
+    return payload;
+}

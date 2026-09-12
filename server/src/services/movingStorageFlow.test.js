@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
     sizeFromListId, sizeRowsFromUnits, priceLabelFor,
     parseFlexibleDate, formatDate,
-    serviceMenu, sizeMenu, dateFromPrompt, dateToPrompt,
+    serviceMenu, sizeMenu, dateFromPrompt, dateToPrompt, datesFlowPrompt, bookingDatesFlowId,
     bookingConfirmationMessage, noAvailabilityMessage,
 } from './movingStorageFlow.js';
 
@@ -87,6 +87,23 @@ test('formatDate renders a real date and blanks an invalid one', () => {
 test('the date prompts ask from, then to', () => {
     assert.match(dateFromPrompt(), /start/i);
     assert.match(dateToPrompt(), /until/i);
+});
+
+test('the calendar-flow prompt names the size just picked', () => {
+    assert.match(datesFlowPrompt('25'), /25 sqft/);
+});
+
+test('the booking-dates flow id reads from its env var, blank until configured', () => {
+    const prev = process.env.WHATSAPP_BOOKING_DATES_FLOW_ID;
+    try {
+        delete process.env.WHATSAPP_BOOKING_DATES_FLOW_ID;
+        assert.equal(bookingDatesFlowId(), '');
+        process.env.WHATSAPP_BOOKING_DATES_FLOW_ID = '  123456  ';
+        assert.equal(bookingDatesFlowId(), '123456');
+    } finally {
+        if (prev === undefined) delete process.env.WHATSAPP_BOOKING_DATES_FLOW_ID;
+        else process.env.WHATSAPP_BOOKING_DATES_FLOW_ID = prev;
+    }
 });
 
 test('the booking confirmation names the real unit, size, price and dates', () => {

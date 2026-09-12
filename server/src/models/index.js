@@ -1946,7 +1946,10 @@ const movingStorageFlowSchema = new Schema({
   phoneNormalized: { type: String, required: true, unique: true },
   step: {
     type: String,
-    enum: ['awaiting_service', 'awaiting_size', 'awaiting_date_from', 'awaiting_date_to', 'awaiting_name', 'awaiting_phone', 'done'],
+    // awaiting_dates: a real calendar (a WhatsApp Flow) — used once
+    // WHATSAPP_BOOKING_DATES_FLOW_ID is configured. awaiting_date_from /
+    // awaiting_date_to: the plain-text fallback used until then.
+    enum: ['awaiting_service', 'awaiting_size', 'awaiting_dates', 'awaiting_date_from', 'awaiting_date_to', 'awaiting_name', 'awaiting_phone', 'done'],
     default: 'awaiting_service',
   },
   service: { type: String, enum: ['', 'moving', 'storage'], default: '' },
