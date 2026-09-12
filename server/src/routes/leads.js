@@ -119,7 +119,14 @@ function applyChaseFilter(filter, { chase, attemptBy }) {
     return filter;
 }
 
-router.get('/', async (req, res) => {
+/**
+ * Every filter the Leads list itself accepts (status, source, owner,
+ * search, date range, chase, includeUnsaved), built the same way for
+ * whoever asks — the list endpoint and GET /nav-order (below), so that a
+ * rep's own filtered view and what Previous/Next walks through can never
+ * quietly disagree.
+ */
+function buildLeadListFilter(req) {
     const filter = {};
     applyChaseFilter(filter, { chase: String(req.query.chase || ''), attemptBy: req.query.attemptBy ? String(req.query.attemptBy) : '' });
     if (req.query.status && ALLOWED_STATUS.has(String(req.query.status))) {
@@ -208,6 +215,11 @@ router.get('/', async (req, res) => {
         filter.$or = or;
     }
 
+    return filter;
+}
+
+router.get('/', async (req, res) => {
+    const filter = buildLeadListFilter(req);
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.min(Math.max(1, Number(req.query.limit) || 25), 500);
     const skip = (page - 1) * limit;
@@ -233,28 +245,24 @@ router.get('/', async (req, res) => {
 });
 
 /**
- * Every lead id, in the same default order and scope the Leads list shows
- * with no filter applied — id only, so this is cheap even over hundreds of
- * leads.
+ * Every lead id matching the same filters the Leads list itself accepts
+ * (status, source, owner, search, date range, chase, includeUnsaved — see
+ * buildLeadListFilter), in that list's own sort order — id only, so this
+ * is cheap even over hundreds of leads, and with no filter given at all it
+ * is exactly the default view's order and scope.
  *
- * What Previous/Next on a lead's own page falls back to when it wasn't
- * reached by clicking through that list (a bookmark, a shared link, a
- * fresh page load): sessionStorage's own leadNavOrder only ever holds
- * whatever page of whatever filter was on screen at the time, which is
- * naturally empty for a browser that never visited it. This is scoped
- * the same way that list is (a sales rep's own; everyone else's, all of
- * it) so Previous/Next never offers a lead the viewer cannot open.
+ * What Previous/Next on a lead's own page walks: Leads.tsx asks for this
+ * with whatever filter is actually on screen and writes the full answer
+ * to sessionStorage, so paging through a filtered view of hundreds never
+ * runs out at 25 (one page) or drifts onto some other rep's leads a filter
+ * had deliberately excluded. Also what a lead's own page falls back to
+ * when it wasn't reached by clicking through that list at all (a
+ * bookmark, a shared link, a fresh page load) — sessionStorage is empty
+ * for a browser that never visited the list, and unfiltered is the only
+ * order left to fall back on then.
  */
 router.get('/nav-order', async (req, res) => {
-    const filter = {
-        $and: [{
-            $or: [
-                { fullName: { $not: /^whatsapp\s*contact/i } },
-                { assignedAt: { $ne: null } },
-            ],
-        }],
-    };
-    if (isSalesRep(req)) filter.owner = req.user.id;
+    const filter = buildLeadListFilter(req);
 
     const leads = await Lead.find(filter)
         .select('_id')

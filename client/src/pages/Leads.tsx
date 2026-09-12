@@ -734,15 +734,39 @@ export default function Leads() {
     })
     const leads = leadsPage?.data
 
+    // Same filter as the list above, minus page/limit — Previous/Next walks
+    // every lead the current filter matches, not just the 25 on this page.
+    const navFilterParams = useMemo(
+        () => ({
+            search: search.trim() || undefined,
+            status: status || undefined,
+            source: source || undefined,
+            owner: owner || undefined,
+            chase: chase || undefined,
+            attemptBy: attemptBy || undefined,
+            from: from || undefined,
+            to: to || undefined,
+        }),
+        [search, status, source, owner, chase, attemptBy, from, to]
+    )
+    const { data: navOrderIds } = useQuery({
+        queryKey: ['leads-nav-order', navFilterParams],
+        queryFn: () => leadApi.navOrder(navFilterParams),
+        staleTime: 60_000,
+    })
+
     /* The order a rep is actually looking at, so opening one lead and paging
        through with Next/Back on its profile follows this list rather than
-       forcing a trip back here for every single one. Session-scoped and
-       overwritten on every filter/page change, so it always reflects what
-       was on screen when a lead was opened, never a stale run from earlier. */
+       forcing a trip back here for every single one. Every id the current
+       filter matches, not only the page on screen — a filtered view of
+       hundreds used to run out of Next at whatever page happened to be
+       open. Session-scoped and overwritten on every filter change, so it
+       always reflects what was on screen when a lead was opened, never a
+       stale run from earlier. */
     useEffect(() => {
-        if (!leads) return
-        sessionStorage.setItem('leadNavOrder', JSON.stringify(leads.map((l) => l._id)))
-    }, [leads])
+        if (!navOrderIds) return
+        sessionStorage.setItem('leadNavOrder', JSON.stringify(navOrderIds))
+    }, [navOrderIds])
 
     /* The tabs and the rail both count everything, not the twenty-five rows on
        screen: "New 3" meaning three on this page was worse than no number. */
