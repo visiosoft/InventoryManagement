@@ -387,6 +387,14 @@ const leadSchema = new Schema(
        services/leadScore.js so "not ready right now" scores as a real,
        future-dated lead rather than as a cold, vague one. */
     intendedStartDate: { type: Date, default: null },
+    /* The other end of intendedStartDate — set only by the WhatsApp
+       moving/storage booking flow once a customer gives both ends of a
+       date range, alongside selectedUnit below. Nothing else writes this. */
+    bookingEndDate: { type: Date, default: null },
+    /* The specific unit a customer picked in that same flow — a live
+       availability check found it free for their dates at the moment they
+       asked, not a hold; whoever converts this to a quote re-checks. */
+    selectedUnit: { type: Schema.Types.ObjectId, ref: 'Unit', default: null },
     /* A rep's own yes/no read on whether they can actually afford this —
        asked on a call or in person, never inferred from anything the AI
        read. '' means nobody has asked yet. */
@@ -1938,17 +1946,24 @@ const movingStorageFlowSchema = new Schema({
   phoneNormalized: { type: String, required: true, unique: true },
   step: {
     type: String,
-    enum: ['awaiting_service', 'awaiting_size', 'awaiting_size_or_reserve', 'awaiting_name', 'awaiting_phone', 'awaiting_move_in_date', 'done'],
+    enum: ['awaiting_service', 'awaiting_size', 'awaiting_date_from', 'awaiting_date_to', 'awaiting_name', 'awaiting_phone', 'done'],
     default: 'awaiting_service',
   },
   service: { type: String, enum: ['', 'moving', 'storage'], default: '' },
   // The sqft size mid-flow, e.g. '25' — kept as a string since it's only
   // ever read back into a message or an id, never added or compared.
   size: { type: String, default: '' },
+  // The specific unit a live availability check found free for the given
+  // dates — picked once, at the moment awaiting_date_to completes, so the
+  // name/phone questions that follow confirm a real unit rather than a size.
+  unit: { type: Schema.Types.ObjectId, ref: 'Unit', default: null },
+  unitNumber: { type: String, default: '' },
+  monthlyPrice: { type: Number, default: null },
   reservation: {
     name: { type: String, default: '' },
     contactPhone: { type: String, default: '' },
-    moveInDate: { type: String, default: '' },
+    startDate: { type: Date, default: null },
+    endDate: { type: Date, default: null },
   },
   completedAt: { type: Date, default: null },
 }, { timestamps: true });
