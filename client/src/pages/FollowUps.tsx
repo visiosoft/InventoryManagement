@@ -11,7 +11,7 @@ import { Skeleton } from '../components/ui'
 import FollowUpDrawer from '../components/FollowUpDrawer'
 import FollowUpBulkModal from '../components/FollowUpBulkModal'
 import PipelineFunnel from '../components/PipelineFunnel'
-import { REASON_UI, whyFor, agoText, initialsOf, customerBadge } from '../lib/followUpUi'
+import { whyFor, agoText, initialsOf, customerBadge } from '../lib/followUpUi'
 
 /* ── The design reference's palette, copied ──────────────────────────────── */
 const FONT = "'Plus Jakarta Sans', 'Inter', system-ui, sans-serif"
@@ -27,12 +27,6 @@ const PRIORITY: Record<FollowUpPriority, { label: string; bg: string; fg: string
   high: { label: 'High', bg: '#FEE2E2', fg: '#B91C1C', dot: '#EF4444' },
   medium: { label: 'Medium', bg: '#FEF3C7', fg: '#B45309', dot: '#F59E0B' },
   low: { label: 'Low', bg: '#DCFCE7', fg: '#15803D', dot: '#22C55E' },
-}
-const INTENT: Record<'hot' | 'warm' | 'cold' | 'none', { label: string; bg: string; fg: string }> = {
-  hot: { label: 'High', bg: '#FEE2E2', fg: '#B91C1C' },
-  warm: { label: 'Medium', bg: '#FEF3C7', fg: '#B45309' },
-  cold: { label: 'Low', bg: '#F3F4F6', fg: '#6B7280' },
-  none: { label: '—', bg: '#F3F4F6', fg: '#9CA3AF' },
 }
 
 const WINDOW_LABEL: Record<FollowUpWindow, { label: string; bg: string; fg: string }> = {
@@ -104,10 +98,6 @@ function recommendationDetail(it: FollowUpQueueItem) {
     return (it.nextAction || it.aiSummary || 'Customer is waiting on us').slice(0, 70)
   }
   return (it.aiSummary || it.aiReason || whyFor(it)).slice(0, 70)
-}
-function customerSub(it: FollowUpQueueItem) {
-  const s = it.aiSummary || it.recentMessages[0]?.text || REASON_UI[it.reason].blurb
-  return s.length > 44 ? `${s.slice(0, 42)}…` : s
 }
 /** "Follow-up 2 of 3 · last sent 4d ago" — where they are in the cadence. */
 function cadenceText(it: FollowUpQueueItem) {
@@ -393,7 +383,7 @@ export default function FollowUps() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1180px]" style={{ borderCollapse: 'collapse' }}>
+            <table className="w-full min-w-[880px]" style={{ borderCollapse: 'collapse' }}>
               <thead>
                 <tr className="text-left text-[12px] font-semibold" style={{ color: SUB, background: '#F9FAFB' }}>
                   <th className="pl-4 pr-2 py-3 w-10">
@@ -403,23 +393,17 @@ export default function FollowUps() {
                   </th>
                   <th className="px-2 py-3">Priority</th>
                   <th className="px-2 py-3">Customer</th>
-                  <th className="px-2 py-3">Phone</th>
                   <th className="px-2 py-3">Assigned To</th>
-                  <th className="px-2 py-3">Last Contact</th>
                   <th className="px-2 py-3">Next Contact</th>
-                  <th className="px-2 py-3">Intent</th>
                   <th className="px-2 py-3">AI Recommendation</th>
-                  <th className="px-2 py-3">Next Action</th>
-                  <th className="px-2 py-3 pr-4">Actions</th>
+                  <th className="px-2 py-3 pr-4">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {visible.map((it) => {
                   const p = PRIORITY[it.priority]
-                  const iu = INTENT[it.temperature ?? 'none']
                   const w = WINDOW_LABEL[it.window]
                   const on = selected.has(it.leadId)
-                  const lastContact = [it.lastInboundAt, it.lastOutboundAt, it.lastSentAt].filter(Boolean).sort().pop() || it.since
                   const waiting = it.reason === 'sales_response_overdue'
                   const due = it.window === 'now' || it.window === 'today'
                   return (
@@ -434,48 +418,42 @@ export default function FollowUps() {
                           <span className="text-[13.5px] font-bold">{it.name}</span>
                           {(() => { const b = customerBadge(it.customer); return b ? <span title={b.title} className="px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap" style={{ background: b.bg, color: b.fg }}>{b.label}</span> : null })()}
                         </div>
-                        <div className="text-[12px] mt-0.5" style={{ color: SUB }}>{customerSub(it)}</div>
-                      </td>
-                      <td className="px-2 py-3 whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1.5 text-[13px]"><MessageCircle size={15} style={{ color: WA_ICON }} />{it.phone}</span>
+                        <span className="inline-flex items-center gap-1.5 text-[12px] mt-0.5" style={{ color: SUB }}>
+                          <MessageCircle size={12} style={{ color: WA_ICON }} />{it.phone}
+                        </span>
                       </td>
                       <td className="px-2 py-3 whitespace-nowrap">
                         <span className="inline-flex items-center gap-2 text-[13px]">{avatar(it.ownerName)}{it.ownerName}</span>
-                      </td>
-                      <td className="px-2 py-3 whitespace-nowrap text-[13px]">
-                        <div>{fmtDate(lastContact)}</div>
-                        <div className="text-[12px]" style={{ color: SUB }}>{fmtTime(lastContact)}</div>
                       </td>
                       <td className="px-2 py-3 min-w-[150px]">
                         {pill(w.bg, w.fg, it.nextContactAt && !due && it.window !== 'now' ? `${w.label} · ${fmtDate(it.nextContactAt)}` : w.label)}
                         <div className="text-[11.5px] mt-1" style={{ color: SUB }}>{cadenceText(it)}</div>
                       </td>
-                      <td className="px-2 py-3">{pill(iu.bg, iu.fg, iu.label)}</td>
                       <td className="px-2 py-3 min-w-[200px]">
                         <div className="text-[13px] font-bold">{recommendationFor(it)}</div>
                         <div className="text-[12px] mt-0.5" style={{ color: SUB }} title={whyFor(it)}>
                           {recommendationDetail(it)}
                         </div>
                       </td>
-                      <td className="px-2 py-3" onClick={(e) => e.stopPropagation()}>
-                        {waiting && it.windowOpen ? (
-                          <Link to={`/whatsapp?phone=${it.phoneNormalized}`} className="inline-flex items-center gap-1.5 h-9 px-4 rounded-lg text-[13px] font-semibold text-white" style={{ background: WA_GREEN }}>
-                            <MessageCircle size={14} /> Reply
-                          </Link>
-                        ) : due || it.window === 'exhausted' ? (
-                          <button type="button" onClick={() => setOpenId(it.leadId)} className="inline-flex items-center gap-1.5 h-9 px-4 rounded-lg text-[13px] font-semibold text-white cursor-pointer" style={{ background: WA_GREEN }}>
-                            <MessageCircle size={14} /> {it.window === 'exhausted' ? 'Decide' : 'Send'}
-                          </button>
-                        ) : (
-                          <button type="button" onClick={() => setOpenId(it.leadId)} className="inline-flex items-center gap-1.5 h-9 px-4 rounded-lg border text-[13px] font-semibold cursor-pointer" style={{ borderColor: LINE, color: SUB }} title="Not due yet — open to override">
-                            <Clock size={14} /> {w.label}
-                          </button>
-                        )}
-                      </td>
                       <td className="px-2 py-3 pr-4" onClick={(e) => e.stopPropagation()}>
-                        <button type="button" onClick={() => setOpenId(it.leadId)} title="View" className="grid place-items-center rounded-lg border cursor-pointer hover:bg-gray-50" style={{ width: 32, height: 32, borderColor: LINE, color: SUB }}>
-                          <Eye size={15} />
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          {waiting && it.windowOpen ? (
+                            <Link to={`/whatsapp?phone=${it.phoneNormalized}`} className="inline-flex items-center gap-1.5 h-9 px-4 rounded-lg text-[13px] font-semibold text-white" style={{ background: WA_GREEN }}>
+                              <MessageCircle size={14} /> Reply
+                            </Link>
+                          ) : due || it.window === 'exhausted' ? (
+                            <button type="button" onClick={() => setOpenId(it.leadId)} className="inline-flex items-center gap-1.5 h-9 px-4 rounded-lg text-[13px] font-semibold text-white cursor-pointer" style={{ background: WA_GREEN }}>
+                              <MessageCircle size={14} /> {it.window === 'exhausted' ? 'Decide' : 'Send'}
+                            </button>
+                          ) : (
+                            <button type="button" onClick={() => setOpenId(it.leadId)} className="inline-flex items-center gap-1.5 h-9 px-4 rounded-lg border text-[13px] font-semibold cursor-pointer" style={{ borderColor: LINE, color: SUB }} title="Not due yet — open to override">
+                              <Clock size={14} /> {w.label}
+                            </button>
+                          )}
+                          <button type="button" onClick={() => setOpenId(it.leadId)} title="View" className="grid place-items-center rounded-lg border cursor-pointer hover:bg-gray-50 shrink-0" style={{ width: 36, height: 36, borderColor: LINE, color: SUB }}>
+                            <Eye size={15} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )
