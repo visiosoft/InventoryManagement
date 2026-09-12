@@ -12,6 +12,7 @@ type Config = {
   useAvailability: boolean
   autoSummarise: boolean
   sendVideoOnFirstContact: boolean
+  movingStorageFlowEnabled: boolean
   replyWithVoice: boolean
   voice: string
   voiceStyle: string
@@ -388,6 +389,20 @@ export default function AiAssistant() {
                 same quick reply a colleague would tap, so there is one piece of wording and one
                 file to keep current. Once per number, ever: somebody coming back months later is
                 not new, and getting the tour twice reads as a machine.
+              </span>
+            </span>
+          </label>
+
+          <label className="flex items-start gap-3 cursor-pointer pt-1">
+            <input type="checkbox" className="mt-1" checked={draft.movingStorageFlowEnabled}
+              onChange={(e) => set({ movingStorageFlowEnabled: e.target.checked })} />
+            <span className="text-sm">
+              <span className="font-medium">Moving/Storage button menu on a first message</span>
+              <span className="block text-muted-foreground text-[13px]">
+                A number with no prior conversation gets a fixed Moving/Storage button menu instead
+                of the assistant's own reply — the assistant stands back for that number until the
+                menu is done or handed off. Off by default: it's one or the other, never both
+                answering the same message.
               </span>
             </span>
           </label>

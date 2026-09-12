@@ -1834,6 +1834,10 @@ const aiBotConfigSchema = new Schema({
     type: String,
     default: 'Speak warmly and naturally, like a friendly colleague on the phone. Normal conversational rhythm, unhurried, never like reading an announcement.',
   },
+  /* A fixed button/list menu in place of the assistant for a number's first
+     message — see services/movingStorageFlow.js. Off by default: it takes
+     over the AI's usual first reply, one or the other, never both. */
+  movingStorageFlowEnabled: { type: Boolean, default: false },
 }, { timestamps: true });
 
 // One per conversation, holding the state machine and any pending draft.
@@ -1923,6 +1927,32 @@ export const AssistantConfig = model('AssistantConfig', assistantConfigSchema);
 
 export const AiBotConfig = model('AiBotConfig', aiBotConfigSchema);
 export const AiBotThread = model('AiBotThread', aiBotThreadSchema);
+
+/* One per conversation, holding the moving/storage button-menu's own place
+ * in it — see services/movingStorageFlow.js. Deliberately separate from
+ * AiBotThread above: that state machine is the assistant's claim/draft/
+ * escalate lifecycle, this one is a rigid step order, and conflating the
+ * two would mean either could clobber the other's idea of what's
+ * happening on this number. */
+const movingStorageFlowSchema = new Schema({
+  phoneNormalized: { type: String, required: true, unique: true },
+  step: {
+    type: String,
+    enum: ['awaiting_service', 'awaiting_size', 'awaiting_size_or_reserve', 'awaiting_name', 'awaiting_phone', 'awaiting_move_in_date', 'done'],
+    default: 'awaiting_service',
+  },
+  service: { type: String, enum: ['', 'moving', 'storage'], default: '' },
+  // The sqft size mid-flow, e.g. '25' — kept as a string since it's only
+  // ever read back into a message or an id, never added or compared.
+  size: { type: String, default: '' },
+  reservation: {
+    name: { type: String, default: '' },
+    contactPhone: { type: String, default: '' },
+    moveInDate: { type: String, default: '' },
+  },
+  completedAt: { type: Date, default: null },
+}, { timestamps: true });
+export const MovingStorageFlowThread = model('MovingStorageFlowThread', movingStorageFlowSchema);
 
 const counterSchema = new Schema({
   key: { type: String, required: true, unique: true },

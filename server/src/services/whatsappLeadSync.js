@@ -8,6 +8,7 @@ import { mediaFromRaw } from '../routes/whatsappMedia.js';
 import { cancelFollowUpOnReply } from './chatFollowUp.js';
 import { markQuietFollowUpReplied } from './leadFollowUp.js';
 import { buttonReplyText, handleRenewalButtonReply } from './renewalReply.js';
+import { handleMovingStorageFlow } from './movingStorageFlow.js';
 
 const DEFAULT_STATUS_BY_LABEL = {
     lead: 'new',
@@ -483,10 +484,12 @@ async function persistMessages(messages) {
         // decides whether to reply; this only records that something arrived,
         // so the webhook still returns to Meta immediately.
         if (msg.direction === 'inbound') {
+            const aiBotConfig = await getAiBotConfig();
+
             /* Their first message gets the tour, before anything else is
                said about the place. Not awaited into the delivery path — a
                webhook must not fail because a video did not go out. */
-            sendFirstContactVideo({ phoneNormalized: msg.phoneNormalized, config: await getAiBotConfig() })
+            sendFirstContactVideo({ phoneNormalized: msg.phoneNormalized, config: aiBotConfig })
                 .catch((e) => console.error('[FirstContact]', e.message));
 
             /* Yes/No on the contract-expiry template.
@@ -509,7 +512,30 @@ async function persistMessages(messages) {
             } catch (e) {
                 console.error('[RenewalReply]', e.message);
             }
+
+            /* The moving/storage button menu — same idea as the renewal
+             * check just above: claimed here, before the assistant sees
+             * anything, or not at all. Off by default (movingStorageFlowEnabled
+             * on AiBotConfig), so a number gets this rigid menu or the
+             * assistant's own first reply, never a race between both. */
+            let handledAsMovingStorageFlow = false;
             if (!handledAsRenewal) {
+                try {
+                    const out = await handleMovingStorageFlow({
+                        phoneNormalized: msg.phoneNormalized,
+                        phone: msg.phone,
+                        text: msg.text,
+                        type: msg.type,
+                        raw: msg.raw,
+                        config: aiBotConfig,
+                    });
+                    handledAsMovingStorageFlow = out.handled;
+                } catch (e) {
+                    console.error('[MovingStorageFlow]', e.message);
+                }
+            }
+
+            if (!handledAsRenewal && !handledAsMovingStorageFlow) {
                 try {
                     await noteInboundForBot({
                         phoneNormalized: msg.phoneNormalized,

@@ -52,6 +52,19 @@ export function isButtonReply(raw, type) {
     return Boolean(raw?.interactive?.button_reply || raw?.interactive?.list_reply);
 }
 
+/**
+ * The id a button or list row was actually built with, as opposed to
+ * buttonReplyText's title — the two answer different questions. A menu
+ * with wording that can change (or one day be translated) still needs a
+ * stable thing to branch on, which is what the id is for; services/
+ * movingStorageFlow.js is what actually uses this. Unlike buttonReplyText,
+ * this never falls back to the title — an id-driven flow with no id is a
+ * tap it does not recognise, not a guess at one.
+ */
+export function interactiveReplyId(raw) {
+    return String(raw?.interactive?.button_reply?.id || raw?.interactive?.list_reply?.id || '').trim();
+}
+
 const YES = /^(yes|yes please|renew|renew my unit|i want to renew|نعم)$/i;
 const NO = /^(no|no thanks|not renewing|moving out|لا)$/i;
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buttonReplyText, isButtonReply, readAnswer } from './renewalReply.js';
+import { buttonReplyText, isButtonReply, readAnswer, interactiveReplyId } from './renewalReply.js';
 
 /**
  * Reading a Yes/No tap on the contract-expiry template.
@@ -66,6 +66,26 @@ test('"no" is never mistaken for "yes" by a loose match', () => {
     // A substring match would make "not renewing" contain "renew".
     assert.equal(readAnswer('not renewing'), 'not_renewing');
     assert.notEqual(readAnswer('not renewing'), 'renewing');
+});
+
+test('interactiveReplyId reads the id an id-driven flow branches on, not the title', () => {
+    // Unlike buttonReplyText, this must prefer the id even when a title is
+    // also present — a menu's wording can change (or be translated) without
+    // breaking what it branches on.
+    assert.equal(
+        interactiveReplyId({ interactive: { button_reply: { id: 'svc_storage', title: 'Storage' } } }),
+        'svc_storage',
+    );
+    assert.equal(
+        interactiveReplyId({ interactive: { list_reply: { id: 'size_35', title: '35 sqft' } } }),
+        'size_35',
+    );
+});
+
+test('interactiveReplyId is empty for anything that is not an interactive reply', () => {
+    assert.equal(interactiveReplyId({ type: 'text', text: { body: 'hi' } }), '');
+    assert.equal(interactiveReplyId({ type: 'button', button: { text: 'Yes' } }), '');
+    assert.equal(interactiveReplyId(null), '');
 });
 
 test('rubbish input does not throw', () => {

@@ -427,3 +427,110 @@ export async function sendWhatsAppText({ to, body, replyTo }) {
 
     return payload;
 }
+
+/**
+ * A reply-button message — up to three taps, no typing needed. Used by
+ * services/movingStorageFlow.js's own step prompts; the reply itself is
+ * always inside Meta's 24-hour window, since it can only ever follow a
+ * message that just arrived from this number.
+ *
+ * `buttons` up to 3 `{ id, title }` — Meta refuses a fourth outright, so
+ * this takes the first three rather than sending a request that would
+ * fail, and titles are capped at 20 characters, its own hard limit.
+ */
+export async function sendWhatsAppInteractiveButtons({ to, bodyText, buttons }) {
+    if (!whatsappSendConfigured()) {
+        throw new Error('WhatsApp is not configured');
+    }
+
+    const normalizedTo = normalizeRecipientPhone(to);
+    if (!normalizedTo) {
+        throw new Error('Recipient phone number is required');
+    }
+
+    const endpoint = `https://graph.facebook.com/v20.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
+    const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            to: normalizedTo,
+            type: 'interactive',
+            interactive: {
+                type: 'button',
+                body: { text: String(bodyText || '').trim() },
+                action: {
+                    buttons: (buttons || []).slice(0, 3).map((b) => ({
+                        type: 'reply',
+                        reply: { id: String(b.id), title: String(b.title).slice(0, 20) },
+                    })),
+                },
+            },
+        }),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        const detail = payload?.error?.message || payload?.message || `HTTP ${response.status}`;
+        throw new Error(`WhatsApp send failed: ${detail}`);
+    }
+
+    return payload;
+}
+
+/**
+ * A pick-one-of-many list message — the same shape a quick reply's own
+ * category list uses, for when there are more options than three buttons
+ * can hold (Meta's own button limit). `rows` up to 10 (its own limit)
+ * `{ id, title, description? }` — titles capped at 24 characters,
+ * descriptions at 72, both Meta's own limits.
+ */
+export async function sendWhatsAppInteractiveList({ to, bodyText, buttonLabel, rows }) {
+    if (!whatsappSendConfigured()) {
+        throw new Error('WhatsApp is not configured');
+    }
+
+    const normalizedTo = normalizeRecipientPhone(to);
+    if (!normalizedTo) {
+        throw new Error('Recipient phone number is required');
+    }
+
+    const endpoint = `https://graph.facebook.com/v20.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
+    const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            to: normalizedTo,
+            type: 'interactive',
+            interactive: {
+                type: 'list',
+                body: { text: String(bodyText || '').trim() },
+                action: {
+                    button: String(buttonLabel || 'Choose').slice(0, 20),
+                    sections: [{
+                        rows: (rows || []).slice(0, 10).map((r) => ({
+                            id: String(r.id),
+                            title: String(r.title).slice(0, 24),
+                            ...(r.description ? { description: String(r.description).slice(0, 72) } : {}),
+                        })),
+                    }],
+                },
+            },
+        }),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        const detail = payload?.error?.message || payload?.message || `HTTP ${response.status}`;
+        throw new Error(`WhatsApp send failed: ${detail}`);
+    }
+
+    return payload;
+}
