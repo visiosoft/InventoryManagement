@@ -23,10 +23,16 @@ const BRAND_DARK = '#5B21B6'
 const WA_GREEN = '#16A34A'
 const WA_ICON = '#22C55E'
 
+/* Urgency (how soon to act — waiting-on-us, days elapsed, cadence stage)
+ * and Intent (how promising the AI reads them — hot/warm/cold) are two
+ * genuinely independent scores, and a lead can land High on one and
+ * Medium on the other. Both used to say "High/Medium/Low", which read as
+ * a contradiction the moment the Intent tab and this pill disagreed —
+ * these labels exist so they're never the same word. */
 const PRIORITY: Record<FollowUpPriority, { label: string; bg: string; fg: string; dot: string }> = {
-  high: { label: 'High', bg: '#FEE2E2', fg: '#B91C1C', dot: '#EF4444' },
-  medium: { label: 'Medium', bg: '#FEF3C7', fg: '#B45309', dot: '#F59E0B' },
-  low: { label: 'Low', bg: '#DCFCE7', fg: '#15803D', dot: '#22C55E' },
+  high: { label: 'Urgent', bg: '#FEE2E2', fg: '#B91C1C', dot: '#EF4444' },
+  medium: { label: 'Soon', bg: '#FEF3C7', fg: '#B45309', dot: '#F59E0B' },
+  low: { label: 'Whenever', bg: '#DCFCE7', fg: '#15803D', dot: '#22C55E' },
 }
 
 const WINDOW_LABEL: Record<FollowUpWindow, { label: string; bg: string; fg: string }> = {
@@ -278,9 +284,9 @@ export default function FollowUps() {
             </button>
             {filterOpen && (
               <div className="absolute right-0 mt-1 w-64 rounded-lg border bg-white shadow-lg z-20 p-3 space-y-2.5" style={{ borderColor: LINE }}>
-                <label className="block text-[11px] font-semibold uppercase" style={{ color: SUB, letterSpacing: '.06em' }}>Priority
+                <label className="block text-[11px] font-semibold uppercase" style={{ color: SUB, letterSpacing: '.06em' }}>Urgency
                   <select value={priority} onChange={(e) => setPriority(e.target.value as '' | FollowUpPriority)} className="mt-1 w-full h-9 border rounded-lg px-2 text-[13px] font-normal normal-case bg-white" style={{ borderColor: LINE }}>
-                    <option value="">Any</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
+                    <option value="">Any</option><option value="high">Urgent</option><option value="medium">Soon</option><option value="low">Whenever</option>
                   </select>
                 </label>
                 <label className="block text-[11px] font-semibold uppercase" style={{ color: SUB, letterSpacing: '.06em' }}>Reason
@@ -391,7 +397,7 @@ export default function FollowUps() {
                       ? <button type="button" onClick={toggleAllShown} className="cursor-pointer align-middle" style={{ color: allShownOn ? BRAND : '#9CA3AF' }}>{allShownOn ? <CheckSquare size={16} /> : <Square size={16} />}</button>
                       : <Square size={16} style={{ color: '#D1D5DB' }} />}
                   </th>
-                  <th className="px-2 py-3">Priority</th>
+                  <th className="px-2 py-3">Urgency</th>
                   <th className="px-2 py-3">Customer</th>
                   <th className="px-2 py-3">Assigned To</th>
                   <th className="px-2 py-3">Next Contact</th>

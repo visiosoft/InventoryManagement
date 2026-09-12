@@ -20,10 +20,16 @@ export const REASON_UI: Record<FollowUpReason, { label: string; bg: string; fg: 
   manual_followup_due: { label: 'Follow-up due', bg: '#FEF3C7', fg: '#92400E', blurb: 'A follow-up you scheduled has arrived' },
 }
 
+/* "Urgent/Soon/Whenever", not "High/Medium/Low": this is a separate score
+ * from Intent (temperature, just below) — how soon to act, not how
+ * promising the lead is — and both used to say High/Medium/Low, which
+ * read as a contradiction the moment a row disagreed with the intent tab
+ * it was sitting in (a lead can genuinely be Urgent and Medium intent at
+ * once). Kept in one place so the drawer and the table never disagree. */
 export const PRIORITY_UI: Record<FollowUpPriority, { label: string; bg: string; fg: string }> = {
-  high: { label: 'HIGH', bg: '#FEE2E2', fg: '#B91C1C' },
-  medium: { label: 'MEDIUM', bg: '#FEF3C7', fg: '#92400E' },
-  low: { label: 'LOW', bg: '#ECFDF5', fg: '#047857' },
+  high: { label: 'URGENT', bg: '#FEE2E2', fg: '#B91C1C' },
+  medium: { label: 'SOON', bg: '#FEF3C7', fg: '#92400E' },
+  low: { label: 'WHENEVER', bg: '#ECFDF5', fg: '#047857' },
 }
 
 export const TEMP_UI: Record<'hot' | 'warm' | 'cold', { bg: string; fg: string }> = {
