@@ -3817,37 +3817,47 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
           {/* The assistant handed this thread over. Shown rather than silently
               going quiet, so nobody wonders why it stopped replying. */}
           {selectedConvo?.botStatus === 'escalated' && !escalationHidden.has(selectedConvo.phoneNormalized) && (
-            <div className="shrink-0 mx-6 mb-2 flex items-start gap-2 rounded-xl px-3.5 py-2.5"
+            <div className="shrink-0 mx-6 mb-2 rounded-xl px-3.5 py-2.5"
               style={{ background: '#FFF7E6', border: '1px solid #F5D9A0' }}>
-              <UserCheck size={15} style={{ color: '#8A5A00', flex: '0 0 auto', marginTop: 1 }} />
-              <div className="min-w-0 flex-1" style={{ fontSize: 12.5, color: '#6B4500' }}>
-                <span style={{ fontWeight: 700 }}>Waiting for a person.</span>{' '}
-                {selectedConvo.botEscalationReason || 'The assistant could not answer this one.'}
+              {/* The message and the actions are two rows, not one — on a
+                  narrow screen "Hand back to AI" alongside the icon and the
+                  dismiss X left no room for the text at all: min-w-0/flex-1
+                  let it shrink, so it did, down to one word per line instead
+                  of overflowing. Its own row below never has to compete with
+                  the message's width for space. */}
+              <div className="flex items-start gap-2">
+                <UserCheck size={15} style={{ color: '#8A5A00', flex: '0 0 auto', marginTop: 1 }} />
+                <div className="min-w-0 flex-1" style={{ fontSize: 12.5, color: '#6B4500' }}>
+                  <span style={{ fontWeight: 700 }}>Waiting for a person.</span>{' '}
+                  {selectedConvo.botEscalationReason || 'The assistant could not answer this one.'}
+                </div>
+                {/* Out of the way without handing the thread back: reading the
+                    reason is usually all somebody needs, and after that the
+                    notice is just taking up the composer's space. It returns
+                    if the assistant escalates again. */}
+                <button
+                  type="button"
+                  onClick={() => setEscalationHidden((h) => new Set(h).add(selectedConvo.phoneNormalized))}
+                  className="shrink-0 cursor-pointer"
+                  style={{ background: 'none', border: 'none', color: '#8A5A00', lineHeight: 1, padding: 2 }}
+                  title="Hide this notice"
+                  aria-label="Hide this notice"
+                >
+                  <X size={14} />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => resumeBot.mutate(selectedConvo.phoneNormalized)}
-                disabled={resumeBot.isPending}
-                className="shrink-0 rounded-full px-3 py-1 cursor-pointer disabled:opacity-50"
-                style={{ background: '#8A5A00', color: '#fff', fontSize: 11.5, fontWeight: 700 }}
-                title="The assistant will answer this conversation again"
-              >
-                {resumeBot.isPending ? 'Handing back…' : 'Hand back to AI'}
-              </button>
-              {/* Out of the way without handing the thread back: reading the
-                  reason is usually all somebody needs, and after that the
-                  notice is just taking up the composer's space. It returns if
-                  the assistant escalates again. */}
-              <button
-                type="button"
-                onClick={() => setEscalationHidden((h) => new Set(h).add(selectedConvo.phoneNormalized))}
-                className="shrink-0 cursor-pointer"
-                style={{ background: 'none', border: 'none', color: '#8A5A00', lineHeight: 1, padding: 2 }}
-                title="Hide this notice"
-                aria-label="Hide this notice"
-              >
-                <X size={14} />
-              </button>
+              <div className="flex justify-end mt-2">
+                <button
+                  type="button"
+                  onClick={() => resumeBot.mutate(selectedConvo.phoneNormalized)}
+                  disabled={resumeBot.isPending}
+                  className="shrink-0 rounded-full px-3 py-1 cursor-pointer disabled:opacity-50"
+                  style={{ background: '#8A5A00', color: '#fff', fontSize: 11.5, fontWeight: 700 }}
+                  title="The assistant will answer this conversation again"
+                >
+                  {resumeBot.isPending ? 'Handing back…' : 'Hand back to AI'}
+                </button>
+              </div>
             </div>
           )}
 
