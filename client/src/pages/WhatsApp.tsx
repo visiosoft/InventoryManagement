@@ -148,7 +148,7 @@ const CSS = `
    would silently win over it — on a narrow screen the base 260px would
    then beat the 440px case's 100%, undoing exactly the override it exists
    to make. */
-.wa-score { width: 260px; }
+.wa-score { width: 260px; position: relative; }
 .wa-score-toggle { display: none; }
 @media (max-width: 1100px) {
   .wa-score {
@@ -1108,7 +1108,18 @@ function LeadScorePanel({ leadId, open, onClose }: { leadId: string | null; open
   return (
     <aside
       className={cn('wa-score flex flex-col min-h-0 shrink-0', open && 'wa-score-open')}
-      style={{ background: '#fff', borderLeft: `1px solid ${LINE}`, position: 'relative', ...(scoreW != null ? { width: scoreW } : {}) }}
+      // `position` is deliberately left to the stylesheet, not set here:
+      // an inline value would beat the ≤1100px media query's own
+      // `position: absolute` no matter what it said (inline always wins
+      // over a class rule on the same property, media query or not),
+      // permanently defeating the drawer behavior that rule exists for —
+      // this panel would sit in the flex row claiming its full width on
+      // every screen size, squeezing the chat column next to it down to
+      // a sliver. The base .wa-score rule below now carries
+      // `position: relative` itself instead, purely so the drag handle
+      // has something to anchor to above that breakpoint, where no
+      // media query rule touches position at all.
+      style={{ background: '#fff', borderLeft: `1px solid ${LINE}`, ...(scoreW != null ? { width: scoreW } : {}) }}
     >
       {/* Drag left to make the drawer wider — the same grip mechanic as the
           composer's, on the other axis, since this panel slides in from
