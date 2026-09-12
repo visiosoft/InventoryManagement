@@ -1606,16 +1606,48 @@ function QuickAssign({ convo, onChanged }: { convo: WhatsAppConversation; onChan
      falls back to everyone the server will let hold a lead. Better to hand it
      to an admin than to leave the chat unowned because nobody fits. */
   const choices = reps.length > 0 ? reps : people
+  const qc = useQueryClient()
 
   const assign = useMutation({
     mutationFn: async (owner: string) => {
-      if (leadId) { await api.put(`/leads/${leadId}`, { owner }); return }
-      await whatsappApi.createLead(convo.phoneNormalized, {
+      if (leadId) {
+        const { data } = await api.put<{ owner?: { _id: string; name: string } | null }>(`/leads/${leadId}`, { owner })
+        return { ownerId: owner, ownerName: data.owner?.name || '' }
+      }
+      const res = await whatsappApi.createLead(convo.phoneNormalized, {
         fullName: convo.customer?.fullName || '',
         owner,
       })
+      return { ownerId: owner, ownerName: '', createdLead: res.lead }
     },
-    onSuccess: () => { setErr(''); setOpen(false); onChanged() },
+    /* The row this button sits in shows the owner's name the moment this
+     * resolves, rather than waiting on a refetch (onChanged, still called
+     * below) to land — the inbox polls this list every 10s regardless, so
+     * a rep who assigns and immediately moves on could easily see the
+     * "Assign" pill still sitting there with no name for several seconds,
+     * which reads as the assignment having silently failed. Patched
+     * directly into every cached wa-conversations query (there's one per
+     * filter/search/owner combination, hence setQueriesData rather than a
+     * single setQueryData) since this component has no reason to know
+     * which of those the parent currently has active. */
+    onSuccess: (result) => {
+      setErr('')
+      setOpen(false)
+      const ownerName = result.ownerName || choices.find((p) => p._id === result.ownerId)?.name || ''
+      qc.setQueriesData<{ list: WhatsAppConversation[] } | undefined>({ queryKey: ['wa-conversations'] }, (old) => {
+        if (!old) return old
+        return {
+          ...old,
+          list: old.list.map((c) => (c.phoneNormalized !== convo.phoneNormalized ? c : {
+            ...c,
+            lead: result.createdLead
+              ? { _id: result.createdLead._id, fullName: result.createdLead.fullName, status: result.createdLead.status, ownerId: result.ownerId, ownerName, assigned: true }
+              : c.lead ? { ...c.lead, ownerId: result.ownerId, ownerName, assigned: true, autoAssigned: false } : c.lead,
+          })),
+        }
+      })
+      onChanged()
+    },
     onError: (e) => setErr(apiError(e)),
   })
 
