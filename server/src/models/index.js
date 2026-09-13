@@ -1842,10 +1842,6 @@ const aiBotConfigSchema = new Schema({
     type: String,
     default: 'Speak warmly and naturally, like a friendly colleague on the phone. Normal conversational rhythm, unhurried, never like reading an announcement.',
   },
-  /* A fixed button/list menu in place of the assistant for a number's first
-     message — see services/movingStorageFlow.js. Off by default: it takes
-     over the AI's usual first reply, one or the other, never both. */
-  movingStorageFlowEnabled: { type: Boolean, default: false },
 }, { timestamps: true });
 
 // One per conversation, holding the state machine and any pending draft.
@@ -1936,29 +1932,81 @@ export const AssistantConfig = model('AssistantConfig', assistantConfigSchema);
 export const AiBotConfig = model('AiBotConfig', aiBotConfigSchema);
 export const AiBotThread = model('AiBotThread', aiBotThreadSchema);
 
-/* One per conversation, holding the moving/storage button-menu's own place
- * in it — see services/movingStorageFlow.js. Deliberately separate from
- * AiBotThread above: that state machine is the assistant's claim/draft/
- * escalate lifecycle, this one is a rigid step order, and conflating the
- * two would mean either could clobber the other's idea of what's
- * happening on this number. */
+/* A step in a WhatsAppFlowTemplate — see services/movingStorageFlow.js for
+ * how each `kind` is actually run. `_id: false`: steps are addressed by
+ * their position in the array, the same convention automationStepSchema
+ * (above) uses for AutomationRule's own steps. */
+const flowStepSchema = new Schema({
+  kind: {
+    type: String,
+    enum: ['buttons', 'size_list', 'date_range', 'text_question', 'handoff'],
+    required: true,
+  },
+  prompt: { type: String, default: '' },
+  // buttons: 2-3 of these. 'handoff' ends the conversation there and then;
+  // 'next' moves on to the following step. Matched back by array index
+  // when a reply arrives (see movingStorageFlow.js) — never by label text,
+  // which an admin can reword at any time.
+  options: [{
+    label: { type: String, default: '' },
+    action: { type: String, enum: ['next', 'handoff'], default: 'next' },
+  }],
+  // size_list only:
+  listButtonLabel: { type: String, default: 'Choose' },
+  helpOptionLabel: { type: String, default: '' }, // '' = no trailing help row
+  // text_question only — the only two fields this flow collects this way.
+  saveField: { type: String, enum: ['fullName', 'contactPhone'], default: 'fullName' },
+  // date_range only. Both support {unitNumber} {size} {price} {from} {to}.
+  noAvailabilityText: { type: String, default: '' },
+  confirmationText: { type: String, default: '' },
+}, { _id: false });
+
+/* A named, editable WhatsApp conversation — what used to be the single
+ * hardcoded Moving/Storage flow (services/movingStorageFlow.js) is now the
+ * seeded default row here. At most one template is `active` at a time;
+ * none active means the feature is off, same as movingStorageFlowEnabled
+ * used to. `custom` distinguishes an admin-created template from the
+ * seeded one, mirroring AutomationRule's own convention. */
+const whatsAppFlowTemplateSchema = new Schema({
+  name: { type: String, required: true },
+  active: { type: Boolean, default: false },
+  custom: { type: Boolean, default: false },
+  order: { type: Number, default: 0 },
+  // Sent whenever a buttons option or size_list's help row hands off, and
+  // whenever a deleted/missing template forces an early exit.
+  handoffText: { type: String, default: '' },
+  // Sent once the last step finishes and the Lead has been updated.
+  // Supports {name} {unitNumber} {size} {price} {from} {to}.
+  completionText: { type: String, default: '' },
+  steps: { type: [flowStepSchema], default: [] },
+}, { timestamps: true });
+export const WhatsAppFlowTemplate = model('WhatsAppFlowTemplate', whatsAppFlowTemplateSchema);
+
+/* One per conversation, holding a flow template's own place in it — see
+ * services/movingStorageFlow.js. Deliberately separate from AiBotThread
+ * above: that state machine is the assistant's claim/draft/escalate
+ * lifecycle, this one just walks a template's steps in order, and
+ * conflating the two would mean either could clobber the other's idea of
+ * what's happening on this number. */
 const movingStorageFlowSchema = new Schema({
   phoneNormalized: { type: String, required: true, unique: true },
-  step: {
-    type: String,
-    // awaiting_dates: a real calendar (a WhatsApp Flow) — used once
-    // WHATSAPP_BOOKING_DATES_FLOW_ID is configured. awaiting_date_from /
-    // awaiting_date_to: the plain-text fallback used until then.
-    enum: ['awaiting_service', 'awaiting_size', 'awaiting_dates', 'awaiting_date_from', 'awaiting_date_to', 'awaiting_name', 'awaiting_phone', 'done'],
-    default: 'awaiting_service',
-  },
-  service: { type: String, enum: ['', 'moving', 'storage'], default: '' },
+  // Snapshotted when the thread is created, not re-read from "whichever
+  // template is active" on every message — an admin editing the live
+  // template mid-conversation should not yank someone out from under it.
+  templateId: { type: Schema.Types.ObjectId, ref: 'WhatsAppFlowTemplate', default: null },
+  stepIndex: { type: Number, default: 0 },
+  // Only meaningful while the current step is a date_range kind — it's a
+  // small multi-turn exchange of its own (a calendar Flow round trip, or
+  // two plain-text questions), which a single stepIndex can't distinguish
+  // from "waiting on the next step entirely". '' the rest of the time.
+  dateSubStep: { type: String, enum: ['', 'awaiting_flow', 'awaiting_from', 'awaiting_to'], default: '' },
+  done: { type: Boolean, default: false },
   // The sqft size mid-flow, e.g. '25' — kept as a string since it's only
   // ever read back into a message or an id, never added or compared.
   size: { type: String, default: '' },
   // The specific unit a live availability check found free for the given
-  // dates — picked once, at the moment awaiting_date_to completes, so the
-  // name/phone questions that follow confirm a real unit rather than a size.
+  // dates — picked once a date_range step completes, so the questions
+  // that follow confirm a real unit rather than a size.
   unit: { type: Schema.Types.ObjectId, ref: 'Unit', default: null },
   unitNumber: { type: String, default: '' },
   monthlyPrice: { type: Number, default: null },

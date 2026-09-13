@@ -527,7 +527,6 @@ async function persistMessages(messages) {
                         text: msg.text,
                         type: msg.type,
                         raw: msg.raw,
-                        config: aiBotConfig,
                     });
                     handledAsMovingStorageFlow = out.handled;
                 } catch (e) {

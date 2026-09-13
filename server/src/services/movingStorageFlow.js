@@ -1,15 +1,15 @@
 /**
- * A fixed button/list menu for a moving-or-storage inquiry, in place of the
- * AI assistant's own first reply — see the movingStorageFlowEnabled setting
- * on AiBotConfig (Settings → AI Assistant). Off by default: a number either
- * gets this rigid menu or the assistant's own judgement, never both fighting
- * over who answers first.
+ * Runs whichever WhatsAppFlowTemplate is currently active (Settings →
+ * WhatsApp Flow Templates), in place of the AI assistant's own first
+ * reply. Off whenever no template is active: a number either gets this
+ * fixed menu or the assistant's own judgement, never both fighting over
+ * who answers first.
  *
- * One document per phone number (MovingStorageFlowThread) holds a plain step
- * order, deliberately apart from AiBotThread — that one is the assistant's
- * own claim/draft/escalate lifecycle, this is a form with a fixed shape, and
- * conflating the two would mean either could clobber the other's idea of
- * what's happening on this number.
+ * One document per phone number (MovingStorageFlowThread) holds a plain
+ * position in the template's steps, deliberately apart from AiBotThread —
+ * that one is the assistant's own claim/draft/escalate lifecycle, this one
+ * just walks a template in order, and conflating the two would mean either
+ * could clobber the other's idea of what's happening on this number.
  *
  * Called from whatsappLeadSync.js in the same slot handleRenewalButtonReply
  * already occupies: checked before the assistant is told anything, and when
@@ -18,18 +18,23 @@
  * with no thread at all reached from an interactive reply rather than a
  * fresh text — is left alone and falls through untouched.
  *
- * Sizes and pricing shown here are real units read live from the same
- * Unit collection the booking screens use (see sizeRowsFromUnits), not a
- * fixed table — a discount or a new unit added in the console shows up on
- * the next message without touching this file. Once a customer gives a
- * date range, the specific unit offered is picked by computeUnitAvailability
- * (services/unitAvailability.js) — the exact function the "Book Unit"
- * wizard and the AI assistant's own availability answers already use, so
- * this can't offer a unit that is actually quoted or contracted elsewhere.
+ * Every template is built from five step kinds; only two carry real
+ * business logic, reused unchanged from before this became editable:
+ *   - size_list reads real, live units (see sizeRowsFromUnits) — a
+ *     discount or a new unit added in the console shows up on the next
+ *     message without editing any template.
+ *   - date_range hands the picked window to computeUnitAvailability
+ *     (services/unitAvailability.js) — the exact function the "Book Unit"
+ *     wizard and the AI assistant's own availability answers already use,
+ *     so this can't offer a unit that is actually quoted or contracted
+ *     elsewhere.
+ * The other three (buttons, text_question, handoff) are just wording and
+ * branching, which is what makes a template editable at all.
  */
 
-import { Lead, MovingStorageFlowThread, Unit } from '../models/index.js';
+import { Lead, MovingStorageFlowThread, Unit, WhatsAppFlowTemplate } from '../models/index.js';
 import { computeUnitAvailability } from './unitAvailability.js';
+import { ensureDefaultFlowTemplate, getActiveFlowTemplate, fillPlaceholders, DEFAULT_HANDOFF_TEXT } from './whatsappFlowTemplates.js';
 import { isButtonReply, interactiveReplyId, isFlowReply, flowReplyData } from './renewalReply.js';
 import {
     sendWhatsAppInteractiveButtons, sendWhatsAppInteractiveList, sendWhatsAppInteractiveFlow,
@@ -39,9 +44,9 @@ import {
 /** Set once the "Booking Dates" Flow (a real in-chat calendar — two
  *  DatePicker fields, from_date/to_date) is created and published in
  *  WhatsApp Manager — paste scripts/booking-dates-flow.json into its Flow
- *  JSON editor, publish, and put the flow id this env var. Until then, the
- *  awaiting_date_from/awaiting_date_to plain-text questions are used
- *  instead — the bot works either way, this only decides which. */
+ *  JSON editor, publish, and put the flow id in this env var. Until then, a
+ *  date_range step falls back to two plain-text questions — the bot works
+ *  either way, this only decides which. */
 export function bookingDatesFlowId() {
     return String(process.env.WHATSAPP_BOOKING_DATES_FLOW_ID || '').trim();
 }
@@ -81,6 +86,12 @@ export function sizeFromListId(id) {
     return m ? m[1] : '';
 }
 
+/** The option index out of an "opt_2"-shaped button id, or -1. */
+export function optionIndexFromId(id) {
+    const m = /^opt_(\d+)$/.exec(String(id || ''));
+    return m ? Number(m[1]) : -1;
+}
+
 /** A loose date parse: DD/MM/YYYY (or DD-MM-YYYY, UAE convention, day
  *  first) is read explicitly so it isn't misread as month-first; anything
  *  else — an ISO date, "20 Sep 2026" — falls back to native parsing.
@@ -108,34 +119,6 @@ export function formatDate(d) {
     return dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
 }
 
-// ── The messages each step sends — pure builders. ─────────────────────────
-
-export function serviceMenu() {
-    return {
-        bodyText: 'Hi! Are you looking for Moving or Storage services?',
-        buttons: [
-            { id: 'svc_moving', title: 'Moving' },
-            { id: 'svc_storage', title: 'Storage' },
-        ],
-    };
-}
-
-/** sizeRows is the sizeRowsFromUnits() output — real, live availability. */
-export function sizeMenu(sizeRows) {
-    return {
-        bodyText: 'Here are our available unit sizes and pricing:',
-        buttonLabel: 'View Sizes',
-        rows: [
-            ...(sizeRows || []).slice(0, 9).map((row) => ({
-                id: `size_${row.size}`,
-                title: `${row.size} sqft`,
-                description: `${row.count} available · ${priceLabelFor(row)}`,
-            })),
-            { id: 'size_help', title: 'Need Help Choosing' },
-        ],
-    };
-}
-
 export function dateFromPrompt() {
     return 'What date would you like the rental to start from? (e.g. 20/09/2026)';
 }
@@ -144,79 +127,181 @@ export function dateToPrompt() {
     return 'And until what date do you need it? (e.g. 20/12/2026)';
 }
 
-/** The body text shown alongside the "Choose Dates" calendar flow. */
-export function datesFlowPrompt(size) {
-    return `Great, a ${size} sqft unit — tap below to pick the dates you need it for.`;
+/** The {token} values known so far on this thread — used to fill a step's
+ *  prompt/confirmation/completion/handoff text. A token with nothing to
+ *  fill it drops out (see fillPlaceholders) rather than showing literally. */
+function threadVars(thread) {
+    return {
+        size: thread.size || '',
+        unitNumber: thread.unitNumber || '',
+        price: Number(thread.monthlyPrice) > 0 ? `AED ${thread.monthlyPrice}/month` : '',
+        from: formatDate(thread.reservation?.startDate),
+        to: formatDate(thread.reservation?.endDate),
+        name: thread.reservation?.name || '',
+    };
 }
 
-/** The message once a live check finds a real unit free for those dates. */
-export function bookingConfirmationMessage({ unitNumber, size, price, from, to }) {
-    const priceText = Number(price) > 0 ? `AED ${price}/month` : 'pricing to be confirmed by our team';
-    return (
-        `Sure, I'll help you book unit ${unitNumber} (${size} sqft) right away! ` +
-        `It's ${priceText}, available ${formatDate(from)} to ${formatDate(to)}. ` +
-        `Let's get your reservation started — what's your full name?`
-    );
+/** Builds and sends whichever WhatsApp message a size_list step's rows are
+ *  today — real units, queried fresh every time. */
+async function sendSizeList({ to, step }) {
+    const units = await Unit.find({ status: { $ne: 'maintenance' } }).select('sizeSqf price').lean();
+    const rows = sizeRowsFromUnits(units).slice(0, 9).map((row) => ({
+        id: `size_${row.size}`,
+        title: `${row.size} sqft`,
+        description: `${row.count} available · ${priceLabelFor(row)}`,
+    }));
+    if (step.helpOptionLabel) rows.push({ id: 'size_help', title: step.helpOptionLabel });
+    await sendWhatsAppInteractiveList({ to, bodyText: fillPlaceholders(step.prompt, {}), buttonLabel: step.listButtonLabel || 'Choose', rows });
 }
 
-/** No unit of that size is free for the dates given. */
-export function noAvailabilityMessage({ size, from, to }) {
-    return (
-        `We don't have a ${size} sqft unit free from ${formatDate(from)} to ${formatDate(to)} right now. ` +
-        `A member of our team will follow up shortly with the closest options.`
-    );
+/** Sends a date_range step's opening question — a real calendar (a
+ *  WhatsApp Flow) once WHATSAPP_BOOKING_DATES_FLOW_ID is configured,
+ *  otherwise the first of two plain-text questions. Sets thread.dateSubStep
+ *  so the next reply is read correctly; does not save the thread. */
+async function startDateRange({ thread, to, phoneNormalized, step }) {
+    const flowId = bookingDatesFlowId();
+    if (flowId) {
+        thread.dateSubStep = 'awaiting_flow';
+        await sendWhatsAppInteractiveFlow({
+            to,
+            bodyText: fillPlaceholders(step.prompt, threadVars(thread)),
+            flowId,
+            flowCta: 'Choose Dates',
+            screenId: 'DATES',
+            flowToken: `mvst.${phoneNormalized}`,
+        });
+    } else {
+        thread.dateSubStep = 'awaiting_from';
+        await sendWhatsAppText({ to, body: dateFromPrompt() });
+    }
 }
 
-/** Sent when a rep or a colleague should pick this up from here — the
- *  Moving branch and "Need Help Choosing" are both a handoff for now. */
-function handoffMessage() {
-    return "Thanks! A member of our team will follow up shortly to help with this.";
+/** Sends whichever message opens the step at `stepIndex` and saves the
+ *  thread's new position. The one place that decides "what does entering
+ *  this step look like" — reused for the very first step and for every
+ *  advance afterwards. */
+async function enterStep({ thread, template, to, phoneNormalized, stepIndex }) {
+    thread.stepIndex = stepIndex;
+    thread.dateSubStep = '';
+    const step = template.steps[stepIndex];
+    const v = threadVars(thread);
+
+    if (step.kind === 'buttons') {
+        await thread.save();
+        await sendWhatsAppInteractiveButtons({
+            to,
+            bodyText: fillPlaceholders(step.prompt, v),
+            buttons: (step.options || []).slice(0, 3).map((o, i) => ({ id: `opt_${i}`, title: o.label })),
+        });
+        return;
+    }
+    if (step.kind === 'size_list') {
+        await thread.save();
+        await sendSizeList({ to, step });
+        return;
+    }
+    if (step.kind === 'date_range') {
+        await startDateRange({ thread, to, phoneNormalized, step });
+        await thread.save();
+        return;
+    }
+    if (step.kind === 'text_question') {
+        await thread.save();
+        await sendWhatsAppText({ to, body: fillPlaceholders(step.prompt, v) });
+        return;
+    }
+    // 'handoff' — an explicit end-of-flow step, not something a customer
+    // answers; entering it ends the conversation immediately.
+    thread.done = true;
+    thread.completedAt = new Date();
+    await thread.save();
+    await sendWhatsAppText({ to, body: fillPlaceholders(step.prompt, v) || fillPlaceholders(template.handoffText, v) || DEFAULT_HANDOFF_TEXT });
 }
 
-/** Sends the "Choose Dates" calendar flow — the one I/O step both the
- *  first offer and any resend (an ignored tap, a malformed submission)
- *  share, so the wording only lives in one place. */
-async function sendDatesFlow({ to, phoneNormalized, size, flowId }) {
-    await sendWhatsAppInteractiveFlow({
-        to,
-        bodyText: datesFlowPrompt(size),
-        flowId,
-        flowCta: 'Choose Dates',
-        screenId: 'DATES',
-        flowToken: `mvst.${phoneNormalized}`,
-    });
+/** The generic "this step is done, what's next" — the next step if there
+ *  is one, otherwise the Lead is updated and the template's completion
+ *  message goes out. Every step kind's success path ends here. */
+async function advanceOrFinish({ thread, template, to, phoneNormalized, nextIndex }) {
+    if (nextIndex < template.steps.length) {
+        await enterStep({ thread, template, to, phoneNormalized, stepIndex: nextIndex });
+        return;
+    }
+
+    thread.done = true;
+    thread.completedAt = new Date();
+    await thread.save();
+
+    /* Onto the actual CRM record, not just this flow's own thread — every
+     * inbound WhatsApp message already has a Lead for its number by the
+     * time this runs (whatsappLeadSync.js's own pipeline), so this updates
+     * it rather than creating a second one. Only ever sets what this
+     * conversation actually collected — a template that never asks for a
+     * size or dates leaves those fields alone. Never blocks the
+     * confirmation reply if it fails. */
+    try {
+        const lead = await Lead.findOne({ phoneNormalized: thread.phoneNormalized });
+        if (lead) {
+            if (thread.size) {
+                lead.storageSizeValue = Number(thread.size) || lead.storageSizeValue;
+                lead.storageSizeUnit = 'sqft';
+            }
+            if (thread.reservation?.startDate) lead.intendedStartDate = thread.reservation.startDate;
+            if (thread.reservation?.endDate) lead.bookingEndDate = thread.reservation.endDate;
+            if (thread.unit) lead.selectedUnit = thread.unit;
+
+            const parts = [];
+            if (thread.unitNumber) parts.push(`unit ${thread.unitNumber}`);
+            if (thread.size) parts.push(`(${thread.size} sqft)`);
+            if (Number(thread.monthlyPrice) > 0) parts.push(`at AED ${thread.monthlyPrice}/mo`);
+            if (thread.reservation?.startDate && thread.reservation?.endDate) {
+                parts.push(`${formatDate(thread.reservation.startDate)} to ${formatDate(thread.reservation.endDate)}`);
+            }
+            if (thread.reservation?.name) parts.push(`name ${thread.reservation.name}`);
+            if (thread.reservation?.contactPhone) parts.push(`contact ${thread.reservation.contactPhone}`);
+            if (parts.length) lead.timeline.push({ type: 'note', text: `WhatsApp reservation request: ${parts.join(', ')}` });
+
+            await lead.save();
+        }
+    } catch (e) {
+        console.error('[MovingStorageFlow] could not update the lead:', e.message);
+    }
+
+    const body = fillPlaceholders(template.completionText, threadVars(thread));
+    if (body) await sendWhatsAppText({ to, body });
 }
 
-/** Once both ends of a date range are in hand — from either the calendar
- *  flow or the plain-text fallback — the rest is identical: check real
- *  availability, offer the unit found (or hand off), and save it on the
- *  thread. Mutates and saves `thread`; sends exactly one message. */
-async function resolveDatesAndOfferUnit({ thread, to, from, to_ }) {
+/** A date_range step's reply resolved into a real from/to window — checks
+ *  real availability and either offers the unit found or ends the
+ *  conversation, exactly as before this became a template. */
+async function resolveDateRange({ thread, template, to, phoneNormalized, from, toDate }) {
+    const step = template.steps[thread.stepIndex];
     thread.reservation.startDate = from;
-    thread.reservation.endDate = to_;
+    thread.reservation.endDate = toDate;
 
-    const { allUnits, bookedUnitIds } = await computeUnitAvailability({ from, to: to_ });
+    const { allUnits, bookedUnitIds } = await computeUnitAvailability({ from, to: toDate });
     const candidate = allUnits.find(
         (u) => Number(u.sizeSqf) === Number(thread.size) && !bookedUnitIds.has(String(u._id))
     );
 
     if (!candidate) {
-        thread.step = 'done';
+        thread.done = true;
         thread.completedAt = new Date();
+        thread.dateSubStep = '';
         await thread.save();
-        await sendWhatsAppText({ to, body: noAvailabilityMessage({ size: thread.size, from, to: to_ }) });
+        await sendWhatsAppText({ to, body: fillPlaceholders(step.noAvailabilityText, threadVars(thread)) });
         return;
     }
 
     thread.unit = candidate._id;
     thread.unitNumber = candidate.unitNumber;
     thread.monthlyPrice = candidate.price ?? null;
-    thread.step = 'awaiting_name';
+    thread.dateSubStep = '';
     await thread.save();
-    await sendWhatsAppText({
-        to,
-        body: bookingConfirmationMessage({ unitNumber: candidate.unitNumber, size: thread.size, price: candidate.price, from, to: to_ }),
-    });
+
+    const confirmationBody = fillPlaceholders(step.confirmationText, threadVars(thread));
+    if (confirmationBody) await sendWhatsAppText({ to, body: confirmationBody });
+
+    await advanceOrFinish({ thread, template, to, phoneNormalized, nextIndex: thread.stepIndex + 1 });
 }
 
 /**
@@ -226,9 +311,8 @@ async function resolveDatesAndOfferUnit({ thread, to, from, to_ }) {
  *
  * Never throws: a webhook must not fail because a menu did not go out.
  */
-export async function handleMovingStorageFlow({ phoneNormalized, phone, text, type, raw, config }) {
+export async function handleMovingStorageFlow({ phoneNormalized, phone, text, type, raw }) {
     try {
-        if (!config?.movingStorageFlowEnabled) return { handled: false };
         if (!whatsappSendConfigured()) return { handled: false };
         if (!phoneNormalized) return { handled: false };
 
@@ -244,175 +328,140 @@ export async function handleMovingStorageFlow({ phoneNormalized, phone, text, ty
          * is left alone rather than guessed at). */
         if (!thread) {
             if (type !== 'text' || isReply) return { handled: false };
-            thread = await MovingStorageFlowThread.create({ phoneNormalized, step: 'awaiting_service' });
-            const { bodyText, buttons } = serviceMenu();
-            await sendWhatsAppInteractiveButtons({ to, bodyText, buttons });
-            return { handled: true, step: thread.step };
+            // Self-healing: the migration off the old movingStorageFlowEnabled
+            // checkbox only needs to run once, but it must run before the
+            // first real message arrives, not only once someone opens the
+            // new settings page.
+            await ensureDefaultFlowTemplate();
+            const template = await getActiveFlowTemplate();
+            if (!template || !template.steps.length) return { handled: false };
+            thread = await MovingStorageFlowThread.create({ phoneNormalized, templateId: template._id, stepIndex: 0 });
+            await enterStep({ thread, template, to, phoneNormalized, stepIndex: 0 });
+            return { handled: true, step: thread.stepIndex };
         }
 
         // The flow has already run its course on this number — whatever
         // comes next is a fresh conversation, for the assistant or a person.
-        if (thread.step === 'done') return { handled: false };
+        if (thread.done) return { handled: false };
+
+        // The template a thread started on is snapshotted at creation, not
+        // re-read as "whichever is active now" — an admin editing the live
+        // template mid-conversation should not yank someone out from under it.
+        const template = await WhatsAppFlowTemplate.findById(thread.templateId);
+        const step = template?.steps?.[thread.stepIndex];
+        if (!template || !step) {
+            thread.done = true;
+            thread.completedAt = new Date();
+            await thread.save();
+            await sendWhatsAppText({ to, body: DEFAULT_HANDOFF_TEXT });
+            return { handled: true, step: -1 };
+        }
 
         // From here on this number has an active flow, so every message on
         // it — a tap or a stray line of text — is answered here, never
         // handed to the assistant mid-form.
 
-        if (thread.step === 'awaiting_service') {
-            if (replyId === 'svc_storage') {
-                thread.service = 'storage';
-                thread.step = 'awaiting_size';
-                await thread.save();
-                const units = await Unit.find({ status: { $ne: 'maintenance' } }).select('sizeSqf price').lean();
-                const { bodyText, buttonLabel, rows } = sizeMenu(sizeRowsFromUnits(units));
-                await sendWhatsAppInteractiveList({ to, bodyText, buttonLabel, rows });
-                return { handled: true, step: thread.step };
+        if (step.kind === 'buttons') {
+            const idx = optionIndexFromId(replyId);
+            const option = idx >= 0 ? step.options[idx] : null;
+            if (!option) {
+                await enterStep({ thread, template, to, phoneNormalized, stepIndex: thread.stepIndex });
+                return { handled: true, step: thread.stepIndex };
             }
-            if (replyId === 'svc_moving') {
-                thread.service = 'moving';
-                thread.step = 'done';
+            if (option.action === 'handoff') {
+                thread.done = true;
                 thread.completedAt = new Date();
                 await thread.save();
-                await sendWhatsAppText({ to, body: handoffMessage() });
-                return { handled: true, step: thread.step };
+                await sendWhatsAppText({ to, body: fillPlaceholders(template.handoffText, threadVars(thread)) || DEFAULT_HANDOFF_TEXT });
+                return { handled: true, step: thread.stepIndex };
             }
-            const { bodyText, buttons } = serviceMenu();
-            await sendWhatsAppInteractiveButtons({ to, bodyText, buttons });
-            return { handled: true, step: thread.step };
+            await advanceOrFinish({ thread, template, to, phoneNormalized, nextIndex: thread.stepIndex + 1 });
+            return { handled: true, step: thread.stepIndex };
         }
 
-        if (thread.step === 'awaiting_size') {
-            if (replyId === 'size_help') {
-                thread.step = 'done';
+        if (step.kind === 'size_list') {
+            if (replyId === 'size_help' && step.helpOptionLabel) {
+                thread.done = true;
                 thread.completedAt = new Date();
                 await thread.save();
-                await sendWhatsAppText({ to, body: handoffMessage() });
-                return { handled: true, step: thread.step };
+                await sendWhatsAppText({ to, body: fillPlaceholders(template.handoffText, threadVars(thread)) || DEFAULT_HANDOFF_TEXT });
+                return { handled: true, step: thread.stepIndex };
             }
             const size = sizeFromListId(replyId);
-            if (size) {
-                thread.size = size;
-                const flowId = bookingDatesFlowId();
-                if (flowId) {
-                    thread.step = 'awaiting_dates';
+            if (!size) {
+                await sendSizeList({ to, step });
+                return { handled: true, step: thread.stepIndex };
+            }
+            thread.size = size;
+            await advanceOrFinish({ thread, template, to, phoneNormalized, nextIndex: thread.stepIndex + 1 });
+            return { handled: true, step: thread.stepIndex };
+        }
+
+        if (step.kind === 'date_range') {
+            if (thread.dateSubStep === 'awaiting_flow') {
+                if (!isFlowReply(raw)) {
+                    await startDateRange({ thread, to, phoneNormalized, step });
                     await thread.save();
-                    await sendDatesFlow({ to, phoneNormalized, size, flowId });
-                } else {
-                    thread.step = 'awaiting_date_from';
+                    return { handled: true, step: thread.stepIndex };
+                }
+                const data = flowReplyData(raw);
+                const from = parseFlexibleDate(data.from_date);
+                const toDate = parseFlexibleDate(data.to_date);
+                if (!from || !toDate || toDate <= from) {
+                    await sendWhatsAppText({ to, body: "Sorry, that date range didn't come through right — let's try again." });
+                    await startDateRange({ thread, to, phoneNormalized, step });
                     await thread.save();
-                    await sendWhatsAppText({ to, body: dateFromPrompt() });
+                    return { handled: true, step: thread.stepIndex };
                 }
-                return { handled: true, step: thread.step };
+                await resolveDateRange({ thread, template, to, phoneNormalized, from, toDate });
+                return { handled: true, step: thread.stepIndex };
             }
-            const units = await Unit.find({ status: { $ne: 'maintenance' } }).select('sizeSqf price').lean();
-            const { bodyText, buttonLabel, rows } = sizeMenu(sizeRowsFromUnits(units));
-            await sendWhatsAppInteractiveList({ to, bodyText, buttonLabel, rows });
-            return { handled: true, step: thread.step };
-        }
 
-        /* The real calendar — a WhatsApp Flow — replies as a single
-         * nfm_reply carrying both dates once submitted, not a button tap
-         * or free text; anything else here is resent the same flow rather
-         * than misread as an attempt to type a date. */
-        if (thread.step === 'awaiting_dates') {
-            const flowId = bookingDatesFlowId();
-            if (!isFlowReply(raw)) {
-                await sendDatesFlow({ to, phoneNormalized, size: thread.size, flowId });
-                return { handled: true, step: thread.step };
-            }
-            const data = flowReplyData(raw);
-            const from = parseFlexibleDate(data.from_date);
-            const to_ = parseFlexibleDate(data.to_date);
-            if (!from || !to_ || to_ <= from) {
-                await sendWhatsAppText({ to, body: "Sorry, that date range didn't come through right — let's try again." });
-                await sendDatesFlow({ to, phoneNormalized, size: thread.size, flowId });
-                return { handled: true, step: thread.step };
-            }
-            await resolveDatesAndOfferUnit({ thread, to, from, to_ });
-            return { handled: true, step: thread.step };
-        }
-
-        if (thread.step === 'awaiting_date_from') {
-            const from = parseFlexibleDate(text);
-            if (!from) {
-                await sendWhatsAppText({ to, body: `Sorry, I didn't catch that date — ${dateFromPrompt()}` });
-                return { handled: true, step: thread.step };
-            }
-            thread.reservation.startDate = from;
-            thread.step = 'awaiting_date_to';
-            await thread.save();
-            await sendWhatsAppText({ to, body: dateToPrompt() });
-            return { handled: true, step: thread.step };
-        }
-
-        if (thread.step === 'awaiting_date_to') {
-            const to_ = parseFlexibleDate(text);
-            const from = thread.reservation.startDate;
-            if (!to_ || to_ <= from) {
-                await sendWhatsAppText({ to, body: `Sorry, that needs to be a date after ${formatDate(from)} — ${dateToPrompt()}` });
-                return { handled: true, step: thread.step };
-            }
-            await resolveDatesAndOfferUnit({ thread, to, from, to_ });
-            return { handled: true, step: thread.step };
-        }
-
-        /* The reservation collection: name, then a contact number — one
-         * question at a time, each a plain text answer rather than a
-         * button, so it takes whatever they type. */
-        if (thread.step === 'awaiting_name') {
-            const name = String(text || '').trim();
-            if (!name) {
-                await sendWhatsAppText({ to, body: "Sorry, I didn't catch that — what's your full name?" });
-                return { handled: true, step: thread.step };
-            }
-            thread.reservation.name = name;
-            thread.step = 'awaiting_phone';
-            await thread.save();
-            await sendWhatsAppText({ to, body: `Thanks, ${name}! What's the best phone number to reach you on?` });
-            return { handled: true, step: thread.step };
-        }
-
-        if (thread.step === 'awaiting_phone') {
-            const contactPhone = String(text || '').trim();
-            if (!contactPhone) {
-                await sendWhatsAppText({ to, body: "What's the best phone number to reach you on?" });
-                return { handled: true, step: thread.step };
-            }
-            thread.reservation.contactPhone = contactPhone;
-            thread.step = 'done';
-            thread.completedAt = new Date();
-            await thread.save();
-
-            /* Onto the actual CRM record, not just this flow's own thread —
-             * every inbound WhatsApp message already has a Lead for its
-             * number by the time this runs (whatsappLeadSync.js's own
-             * pipeline), so this updates it rather than creating a second
-             * one. Never blocks the confirmation reply if it fails. */
-            try {
-                const lead = await Lead.findOne({ phoneNormalized });
-                if (lead) {
-                    lead.storageSizeValue = Number(thread.size) || lead.storageSizeValue;
-                    lead.storageSizeUnit = 'sqft';
-                    lead.intendedStartDate = thread.reservation.startDate;
-                    lead.bookingEndDate = thread.reservation.endDate;
-                    lead.selectedUnit = thread.unit;
-                    lead.timeline.push({
-                        type: 'note',
-                        text: `WhatsApp reservation request: unit ${thread.unitNumber} (${thread.size} sqft) at AED ${thread.monthlyPrice ?? '—'}/mo, ${formatDate(thread.reservation.startDate)} to ${formatDate(thread.reservation.endDate)}, name ${thread.reservation.name}, contact ${thread.reservation.contactPhone}`,
-                    });
-                    await lead.save();
+            if (thread.dateSubStep === 'awaiting_from') {
+                const from = parseFlexibleDate(text);
+                if (!from) {
+                    await sendWhatsAppText({ to, body: `Sorry, I didn't catch that date — ${dateFromPrompt()}` });
+                    return { handled: true, step: thread.stepIndex };
                 }
-            } catch (e) {
-                console.error('[MovingStorageFlow] could not update the lead:', e.message);
+                thread.reservation.startDate = from;
+                thread.dateSubStep = 'awaiting_to';
+                await thread.save();
+                await sendWhatsAppText({ to, body: dateToPrompt() });
+                return { handled: true, step: thread.stepIndex };
             }
 
-            await sendWhatsAppText({
-                to,
-                body: `You're all set, ${thread.reservation.name}! We've noted your reservation for unit ${thread.unitNumber} (${thread.size} sqft), ${formatDate(thread.reservation.startDate)} to ${formatDate(thread.reservation.endDate)}. Our team will confirm shortly.`,
-            });
-            return { handled: true, step: thread.step };
+            if (thread.dateSubStep === 'awaiting_to') {
+                const toDate = parseFlexibleDate(text);
+                const from = thread.reservation.startDate;
+                if (!toDate || toDate <= from) {
+                    await sendWhatsAppText({ to, body: `Sorry, that needs to be a date after ${formatDate(from)} — ${dateToPrompt()}` });
+                    return { handled: true, step: thread.stepIndex };
+                }
+                await resolveDateRange({ thread, template, to, phoneNormalized, from, toDate });
+                return { handled: true, step: thread.stepIndex };
+            }
+
+            // No sub-step recorded (shouldn't normally happen) — (re)start it.
+            await startDateRange({ thread, to, phoneNormalized, step });
+            await thread.save();
+            return { handled: true, step: thread.stepIndex };
         }
 
+        if (step.kind === 'text_question') {
+            const value = String(text || '').trim();
+            if (!value) {
+                await sendWhatsAppText({ to, body: fillPlaceholders(step.prompt, threadVars(thread)) });
+                return { handled: true, step: thread.stepIndex };
+            }
+            if (step.saveField === 'contactPhone') thread.reservation.contactPhone = value;
+            else thread.reservation.name = value;
+            await advanceOrFinish({ thread, template, to, phoneNormalized, nextIndex: thread.stepIndex + 1 });
+            return { handled: true, step: thread.stepIndex };
+        }
+
+        // 'handoff' steps end the moment they're entered (see enterStep) —
+        // a reply arriving for one regardless means the thread is already
+        // done, which is checked above. Nothing left to do here.
         return { handled: false };
     } catch (e) {
         console.error('[MovingStorageFlow]', e.message);

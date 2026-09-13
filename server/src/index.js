@@ -52,6 +52,7 @@ import stripeWebhookRoutes from './routes/stripeWebhook.js';
 import userRoutes from './routes/users.js';
 import whatsappRoutes from './routes/whatsapp.js';
 import aiBotRoutes from './routes/aiBot.js';
+import whatsappFlowTemplateRoutes from './routes/whatsappFlowTemplates.js';
 import campaignRoutes from './routes/campaigns.js';
 import sentEmailRoutes from './routes/sentEmails.js';
 import walkthroughRoutes from './routes/walkthroughs.js';
@@ -308,6 +309,7 @@ app.use('/api/backup', requireAuth, backupRoutes);
 // would be "something went wrong" on a customer's phone.
 app.use('/api/whatsapp', (req, res, next) => (req.path.startsWith('/flow') ? next() : requireAuth(req, res, next)), whatsappRoutes);
 app.use('/api/ai-bot', requireAuth, aiBotRoutes);
+app.use('/api/whatsapp-flow-templates', requireAuth, whatsappFlowTemplateRoutes);
 app.use('/api/marketing', marketingPublicRoutes);
 app.use('/api/campaigns', requireAuth, campaignRoutes);
 app.use('/api/sent-emails', requireAuth, sentEmailRoutes);

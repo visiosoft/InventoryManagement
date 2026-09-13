@@ -86,6 +86,7 @@ import MessageTemplates from './pages/MessageTemplates'
 import WhatsAppDebug from './pages/WhatsAppDebug'
 import AgreementTemplate from './pages/AgreementTemplate'
 import AiAssistant from './pages/AiAssistant'
+import WhatsAppFlowTemplates from './pages/WhatsAppFlowTemplates'
 import AssistantSettings from './pages/AssistantSettings'
 import Marketing from './pages/Marketing'
 import SentEmails from './pages/SentEmails'
@@ -275,6 +276,7 @@ export default function App() {
         <Route path="/settings/reminders" element={<AdminGuard><ReminderSettings /></AdminGuard>} />
         <Route path="/settings/automation" element={<AdminGuard><AutomationRules /></AdminGuard>} />
         <Route path="/settings/ai" element={<AdminGuard><AiAssistant /></AdminGuard>} />
+        <Route path="/settings/flow-templates" element={<AdminGuard><WhatsAppFlowTemplates /></AdminGuard>} />
         <Route path="/settings/assistant" element={<AdminGuard><AssistantSettings /></AdminGuard>} />
         <Route path="/marketing" element={<AdminGuard><Marketing /></AdminGuard>} />
         <Route path="/settings/sent-emails" element={<AdminGuard><SentEmails /></AdminGuard>} />

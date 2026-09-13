@@ -88,7 +88,6 @@ const shape = (config) => ({
     useAvailability: config.useAvailability,
     autoSummarise: config.autoSummarise !== false,
     sendVideoOnFirstContact: Boolean(config.sendVideoOnFirstContact),
-    movingStorageFlowEnabled: Boolean(config.movingStorageFlowEnabled),
     replyWithVoice: Boolean(config.replyWithVoice),
     voice: config.voice || 'coral',
     voiceStyle: config.voiceStyle || '',
@@ -152,7 +151,6 @@ router.put('/config', requireAdmin, async (req, res) => {
     if (b.useAvailability !== undefined) config.useAvailability = Boolean(b.useAvailability);
     if (b.autoSummarise !== undefined) config.autoSummarise = Boolean(b.autoSummarise);
     if (b.sendVideoOnFirstContact !== undefined) config.sendVideoOnFirstContact = Boolean(b.sendVideoOnFirstContact);
-    if (b.movingStorageFlowEnabled !== undefined) config.movingStorageFlowEnabled = Boolean(b.movingStorageFlowEnabled);
     if (b.replyWithVoice !== undefined) config.replyWithVoice = Boolean(b.replyWithVoice);
     // Only the voices OpenAI actually offers; anything else is a silent failure.
     if (b.voice !== undefined && VOICES.includes(String(b.voice))) config.voice = String(b.voice);
