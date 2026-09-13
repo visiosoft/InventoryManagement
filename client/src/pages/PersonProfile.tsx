@@ -202,7 +202,7 @@ export default function PersonProfile() {
      so it still works from any entry point. */
   const { data: fallbackNavOrder } = useQuery({
     queryKey: ['leads-nav-order'],
-    queryFn: leadApi.navOrder,
+    queryFn: () => leadApi.navOrder(),
     enabled: !sessionHasLead,
     staleTime: 5 * 60_000,
   })
