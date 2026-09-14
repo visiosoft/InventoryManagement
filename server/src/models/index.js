@@ -1787,6 +1787,20 @@ const whatsappChatLabelSchema = new Schema({
 export const WhatsAppLabel = model('WhatsAppLabel', whatsappLabelSchema);
 export const WhatsAppChatLabel = model('WhatsAppChatLabel', whatsappChatLabelSchema);
 
+/* A number the team never wants to hear from again. Checked at the very
+ * top of whatsappLeadSync.js's persistMessages — a blocked number's
+ * inbound traffic is dropped before a message is saved, before a Lead is
+ * touched, before any bot or flow handling runs. Deliberately its own tiny
+ * collection rather than a field on Lead: a number can be blocked whether
+ * or not a Lead exists for it yet, and blocking must survive that Lead
+ * being deleted later. */
+const whatsappBlockedNumberSchema = new Schema({
+  phoneNormalized: { type: String, required: true, unique: true },
+  blockedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+  reason: { type: String, default: '' },
+}, { timestamps: true });
+export const WhatsAppBlockedNumber = model('WhatsAppBlockedNumber', whatsappBlockedNumberSchema);
+
 // ── WhatsApp AI assistant ────────────────────────────────────────────────────
 // One config document for the whole account, the same shape reminderConfig uses.
 // `mode` is the safety switch: 'draft' writes a suggestion into the console for

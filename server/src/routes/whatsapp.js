@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { mediaFromRaw } from './whatsappMedia.js';
 import { wentQuiet, remindAt, PRESETS, isWaitingOnUs } from '../services/chatFollowUp.js';
-import { WhatsAppMessage, Lead, Customer, User, AiBotThread, WhatsAppLabel, WhatsAppChatLabel, MessageTemplate } from '../models/index.js';
+import { WhatsAppMessage, Lead, Customer, User, AiBotThread, WhatsAppLabel, WhatsAppChatLabel, WhatsAppLabelState, WhatsAppBlockedNumber, MessageTemplate } from '../models/index.js';
 import { sendWhatsAppText, sendWhatsAppMedia, sendWhatsAppLocation, uploadWhatsAppMedia, whatsappMediaKind, whatsappSendConfigured, whatsappSendMissing, listWhatsAppTemplates, sendWhatsAppTemplate } from '../services/whatsapp.js';
 import { pauseBotForHuman, markFirstResponse } from '../services/aiBot.js';
 import { containerMismatch, needsRemux, webmToOggOpus } from '../services/audioRemux.js';
@@ -224,6 +224,66 @@ router.delete('/messages/:id', async (req, res) => {
     message.deletedAt = new Date();
     await message.save();
     res.json(message);
+});
+
+/**
+ * Delete an entire conversation — every message with this number, plus its
+ * manually-applied chat labels and legacy label-sync state, so a number
+ * that writes in again later starts clean rather than reappearing with
+ * stale chips. The Lead/Customer record itself is untouched, same as
+ * DELETE /leads/:id leaves the conversation's own messages behind: they
+ * are separate facts about separate things.
+ *
+ * A sales rep or accounts sees only their own leads' chats elsewhere in
+ * this console — letting either permanently erase a conversation is the
+ * same class of mistake as letting them delete a lead, so it is refused
+ * here the same way.
+ */
+router.delete('/conversations/:phoneNormalized', async (req, res) => {
+    if (isSalesRep(req)) return res.status(403).json({ error: 'Not allowed to delete a conversation' });
+    const phoneNormalized = req.params.phoneNormalized;
+    try {
+        const result = await WhatsAppMessage.deleteMany({ phoneNormalized });
+        await Promise.all([
+            WhatsAppChatLabel.deleteOne({ phoneNormalized }),
+            WhatsAppLabelState.deleteOne({ phoneNormalized }),
+        ]);
+        res.json({ ok: true, deletedMessages: result.deletedCount });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * Block a number: from this point on, whatsappLeadSync.js's persistMessages
+ * drops every inbound message from it before anything else runs — no
+ * message saved, no lead touched, no bot reply. Does not delete anything
+ * on its own; pair with DELETE /conversations/:phoneNormalized for
+ * "delete and block".
+ */
+router.post('/conversations/:phoneNormalized/block', async (req, res) => {
+    if (isSalesRep(req)) return res.status(403).json({ error: 'Not allowed to block a number' });
+    const phoneNormalized = req.params.phoneNormalized;
+    try {
+        await WhatsAppBlockedNumber.findOneAndUpdate(
+            { phoneNormalized },
+            { phoneNormalized, blockedBy: req.user.id, reason: String(req.body?.reason || '') },
+            { upsert: true, new: true }
+        );
+        res.json({ ok: true, blocked: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.post('/conversations/:phoneNormalized/unblock', async (req, res) => {
+    if (isSalesRep(req)) return res.status(403).json({ error: 'Not allowed to unblock a number' });
+    try {
+        await WhatsAppBlockedNumber.deleteOne({ phoneNormalized: req.params.phoneNormalized });
+        res.json({ ok: true, blocked: false });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 /**
@@ -575,7 +635,7 @@ router.get('/conversations', async (req, res) => {
     const phones = hydrate.map((r) => r._id);
 
     // The second wave: these three need `visible`, but not each other.
-    const [botThreads, owners, chatLabels] = await Promise.all([
+    const [botThreads, owners, chatLabels, blockedNumbers] = await Promise.all([
         // The AI assistant's state per thread — whether it has a suggestion
         // waiting and whether it has handed the conversation over.
         AiBotThread.find({ phoneNormalized: { $in: phones } })
@@ -583,11 +643,13 @@ router.get('/conversations', async (req, res) => {
         ownerIds.length ? User.find({ _id: { $in: ownerIds } }).select('name email').lean() : [],
         WhatsAppChatLabel.find({ phoneNormalized: { $in: phones } })
             .populate('labels', 'name color sortOrder').lean(),
+        WhatsAppBlockedNumber.find({ phoneNormalized: { $in: phones } }).select('phoneNormalized').lean(),
     ]);
 
     const byThread = new Map(botThreads.map((t) => [t.phoneNormalized, t]));
     const byOwner = new Map(owners.map((u) => [String(u._id), u.name || u.email || '']));
     const byLabels = new Map(chatLabels.map((c) => [c.phoneNormalized, c.labels || []]));
+    const blockedSet = new Set(blockedNumbers.map((b) => b.phoneNormalized));
 
     // How many exist beyond what is being returned, so the page can offer to
     // show more rather than pretending this is all there is.
@@ -651,6 +713,7 @@ router.get('/conversations', async (req, res) => {
             // and only then the number. Never the placeholder.
             displayName: customer?.fullName || leadName || lead?.whatsappProfileName || (r.phone || r._id),
             labels: byLabels.get(r._id) || [],
+            blocked: blockedSet.has(r._id),
             botStatus: bot?.status || '',
             botDraft: bot?.draftText || '',
             botEscalationReason: bot?.escalationReason || '',

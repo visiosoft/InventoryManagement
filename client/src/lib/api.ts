@@ -498,6 +498,9 @@ export type WhatsAppConversation = {
      anybody who has been quoted, so its presence alone is not a tenancy. */
   customer: { _id: string; fullName: string; stage?: 'prospect' | 'customer' } | null
   labels: WhatsAppLabel[]
+  // Whether this number is on the block list — see routes/whatsapp.js's
+  // block/unblock endpoints and whatsappLeadSync.js's persistMessages.
+  blocked?: boolean
   // AI assistant state for this thread: '' when it has never looked at it.
   botStatus?: '' | 'bot' | 'escalated' | 'paused'
   botDraft?: string
@@ -619,6 +622,12 @@ export const whatsappApi = {
     api.post<{ action: 'created' | 'updated' | 'exists'; lead: WhatsAppLeadRef }>(
       `/whatsapp/conversations/${phoneNormalized}/lead`, body,
     ).then((r) => r.data),
+  deleteConversation: (phoneNormalized: string) =>
+    api.delete<{ ok: boolean; deletedMessages: number }>(`/whatsapp/conversations/${phoneNormalized}`).then((r) => r.data),
+  blockNumber: (phoneNormalized: string, reason?: string) =>
+    api.post<{ ok: boolean; blocked: boolean }>(`/whatsapp/conversations/${phoneNormalized}/block`, { reason }).then((r) => r.data),
+  unblockNumber: (phoneNormalized: string) =>
+    api.post<{ ok: boolean; blocked: boolean }>(`/whatsapp/conversations/${phoneNormalized}/unblock`).then((r) => r.data),
   connect: (body: WhatsAppCredentials) =>
     api.post<{ ok: boolean; configured: boolean; missing: string[]; displayPhoneNumber: string; verifiedName: string }>(
       '/integrations/whatsapp/connect', body

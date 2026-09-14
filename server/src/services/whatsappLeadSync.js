@@ -1,4 +1,4 @@
-import { Lead, User, WhatsAppLabelState, WhatsAppWebhookEvent, WhatsAppMessage } from '../models/index.js';
+import { Lead, User, WhatsAppLabelState, WhatsAppWebhookEvent, WhatsAppMessage, WhatsAppBlockedNumber } from '../models/index.js';
 import { routeInboundLead } from './leadRouting.js';
 import { notifyLeadAssigned, notifyInboundWhatsAppMessage } from './leadNotify.js';
 import { normalizeLeadPhone } from '../routes/leads.js';
@@ -372,7 +372,18 @@ export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, stat
 async function persistMessages(messages) {
     let saved = 0;
 
+    // Numbers on the block list are dropped before anything else touches
+    // them — no message saved, no lead created, no bot/renewal/moving-flow
+    // handling. Queried once for every number in this batch (almost always
+    // one) rather than per message.
+    const numbers = [...new Set(messages.map((m) => m.phoneNormalized).filter(Boolean))];
+    const blocked = numbers.length
+        ? new Set((await WhatsAppBlockedNumber.find({ phoneNormalized: { $in: numbers } }).select('phoneNormalized').lean()).map((b) => b.phoneNormalized))
+        : new Set();
+
     for (const msg of messages) {
+        if (blocked.has(msg.phoneNormalized)) continue;
+
         // A delivery receipt carries the same id as the message it refers to.
         // It updates that message's status — it is never a message of its own,
         // and storing it as one produced empty "[status]" bubbles in the chat.

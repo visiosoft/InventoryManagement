@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom'
 import {
   Send, MessageSquare, RefreshCw, UserPlus, UserCheck, Bell, BellOff, FileText,
   Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Paperclip, Pencil,
-  Bot, Tag, Check, ClipboardList, Sparkles, Trash2, MapPin, Mic, Square, AlertTriangle, MoreVertical, UserCog, Loader2,
+  Bot, Tag, Check, ClipboardList, Sparkles, Trash2, MapPin, Mic, Square, AlertTriangle, MoreVertical, UserCog, Loader2, Ban,
   Video as VideoIcon, Play,
 } from 'lucide-react'
 import { useVoiceRecorder, recordingSupported, formatDuration } from '../lib/voiceRecorder'
@@ -2122,6 +2122,93 @@ function LeadAction({ convo, onChanged, menuItem }: { convo: WhatsAppConversatio
 }
 
 /**
+ * Delete a conversation, and optionally block the number so it can never
+ * start another one. Two separate confirmations rather than one dialog
+ * with a checkbox: "Delete" is a mistake a rep can recover from by asking
+ * the customer to write in again; "Delete and block" cannot be undone from
+ * the console (see whatsappApi.unblockNumber for the only way back), so it
+ * gets its own, more explicit warning.
+ */
+function ChatDangerActions({ convo, onDeleted, onChanged }: { convo: WhatsAppConversation; onDeleted: () => void; onChanged: () => void }) {
+  const [confirming, setConfirming] = useState<'delete' | 'block' | null>(null)
+  const [err, setErr] = useState('')
+
+  const del = useMutation({
+    mutationFn: () => whatsappApi.deleteConversation(convo.phoneNormalized),
+    onSuccess: () => { setConfirming(null); setErr(''); onDeleted() },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  const deleteAndBlock = useMutation({
+    mutationFn: async () => {
+      await whatsappApi.deleteConversation(convo.phoneNormalized)
+      await whatsappApi.blockNumber(convo.phoneNormalized)
+    },
+    onSuccess: () => { setConfirming(null); setErr(''); onDeleted() },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  const unblock = useMutation({
+    mutationFn: () => whatsappApi.unblockNumber(convo.phoneNormalized),
+    onSuccess: () => { setErr(''); onChanged() },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  const dialogButtons = (busy: boolean, onConfirm: () => void, label: string) => (
+    <div className="flex justify-end gap-2 pt-1">
+      <button type="button" className={MENU_ROW.replace('w-full', '')} style={{ padding: '6px 14px', borderRadius: 999, border: `1px solid ${LINE}`, color: INK }} onClick={() => setConfirming(null)} disabled={busy}>
+        Cancel
+      </button>
+      <button
+        type="button"
+        style={{ padding: '6px 14px', borderRadius: 999, background: '#DC2626', color: '#fff', fontWeight: 600, fontSize: 13, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}
+        onClick={onConfirm}
+        disabled={busy}
+      >
+        {busy ? 'Working…' : label}
+      </button>
+    </div>
+  )
+
+  return (
+    <>
+      <button type="button" onClick={() => { setErr(''); setConfirming('delete') }} className={MENU_ROW} style={{ color: '#B91C1C' }}>
+        <Trash2 size={15} />
+        <span className="flex-1">Delete chat</span>
+      </button>
+
+      {convo.blocked ? (
+        <button type="button" onClick={() => unblock.mutate()} className={MENU_ROW} style={{ color: INK }} disabled={unblock.isPending}>
+          <Ban size={15} style={{ color: '#047857' }} />
+          <span className="flex-1">{unblock.isPending ? 'Unblocking…' : 'Unblock this number'}</span>
+        </button>
+      ) : (
+        <button type="button" onClick={() => { setErr(''); setConfirming('block') }} className={MENU_ROW} style={{ color: '#B91C1C' }}>
+          <Ban size={15} />
+          <span className="flex-1">Delete and block</span>
+        </button>
+      )}
+
+      <Modal open={confirming === 'delete'} onClose={() => setConfirming(null)} title="Delete this chat?">
+        <div className="space-y-3 text-sm">
+          <p>Every message in this conversation is permanently removed from the console. The lead or customer record itself is not affected, and this number can still write in again.</p>
+          {err && <p className="text-xs text-red-600">{err}</p>}
+          {dialogButtons(del.isPending, () => del.mutate(), 'Delete chat')}
+        </div>
+      </Modal>
+
+      <Modal open={confirming === 'block'} onClose={() => setConfirming(null)} title="Delete and block this number?">
+        <div className="space-y-3 text-sm">
+          <p>Deletes every message in this conversation, then blocks <strong>{convo.phone || `+${convo.phoneNormalized}`}</strong> — future messages from this number will be silently dropped, with no reply and no new lead created. Undo any time from this same menu.</p>
+          {err && <p className="text-xs text-red-600">{err}</p>}
+          {dialogButtons(deleteAndBlock.isPending, () => deleteAndBlock.mutate(), 'Delete and block')}
+        </div>
+      </Modal>
+    </>
+  )
+}
+
+/**
  * The WhatsApp console.
  *
  * Given `embeddedPhone` it becomes one conversation with no chat list — which
@@ -3785,6 +3872,18 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                           row must not close the menu out from under it. */}
                       <div data-keep-open>
                         <LeadAction menuItem convo={selectedConvo} onChanged={onSent} />
+                      </div>
+
+                      <div style={{ borderTop: `1px solid ${LINE}` }} />
+
+                      {/* Confirmation dialogs of its own — must not close
+                          behind them the way a plain menu row would. */}
+                      <div data-keep-open>
+                        <ChatDangerActions
+                          convo={selectedConvo}
+                          onChanged={() => refetchConvos()}
+                          onDeleted={() => { setSelectedPhone(null); setChatMenuOpen(false); refetchConvos() }}
+                        />
                       </div>
                     </div>
                   )}
