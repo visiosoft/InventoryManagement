@@ -69,6 +69,7 @@ export default function WhatsAppFlowTemplates() {
   const [completionText, setCompletionText] = useState('')
   const [steps, setSteps] = useState<FlowStep[]>([])
   const [addKind, setAddKind] = useState<StepKind>('text_question')
+  const [justAddedIndex, setJustAddedIndex] = useState<number | null>(null)
 
   const { data: templates = [], isLoading } = useQuery<FlowTemplate[]>({
     queryKey: ['whatsapp-flow-templates'],
@@ -140,7 +141,14 @@ export default function WhatsAppFlowTemplates() {
   }
 
   function addStep() {
+    const newIndex = steps.length
     setSteps(s => [...s, blankStep(addKind)])
+    // The new step lands at the bottom of a list that's often already
+    // taller than the screen — with no scroll or highlight, clicking "Add
+    // step" looked like it did nothing at all.
+    setJustAddedIndex(newIndex)
+    setTimeout(() => document.getElementById(`flow-step-${newIndex}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
+    setTimeout(() => setJustAddedIndex((cur) => cur === newIndex ? null : cur), 1500)
   }
   function removeStep(idx: number) {
     setSteps(s => s.filter((_, i) => i !== idx))
@@ -278,7 +286,12 @@ export default function WhatsAppFlowTemplates() {
 
                 <div className="space-y-3">
                   {steps.map((step, idx) => (
-                    <div key={idx} className="rounded-lg border p-3 space-y-2.5">
+                    <div
+                      key={idx}
+                      id={`flow-step-${idx}`}
+                      className="rounded-lg border p-3 space-y-2.5 transition-colors"
+                      style={justAddedIndex === idx ? { borderColor: 'var(--primary)', background: 'color-mix(in srgb, var(--primary) 6%, transparent)' } : undefined}
+                    >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-muted text-xs font-semibold">{idx + 1}</span>
