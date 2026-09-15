@@ -120,6 +120,11 @@ const CSS = `
 .wa-thumb:hover { opacity: 0.92; }
 .wa-doc:hover { text-decoration: underline; }
 .wa-row:hover { background-color: #FAF7FF; }
+/* Press feedback on the row itself, not just hover — a tap needs to look
+   like it landed the instant it lands, not once openConversation resolves.
+   (No effect on a selected row: its inline background always wins over a
+   plain rule like this one, which is fine — it's already visually distinct.) */
+.wa-row:active { background-color: #F0E9FF; }
 .wa-grip { height: 12px; display: grid; place-items: center; cursor: ns-resize; touch-action: none; }
 .wa-grip-bar { width: 44px; height: 4px; border-radius: 999px; background: rgba(20,8,31,.16); transition: background .15s ease; }
 .wa-grip:hover .wa-grip-bar { background: rgba(91,43,201,.55); }
@@ -1603,7 +1608,10 @@ function QuickAssign({ convo, onChanged }: { convo: WhatsAppConversation; onChan
   const [open, setOpen] = useState(false)
   const [err, setErr] = useState('')
   const boxRef = useRef<HTMLDivElement | null>(null)
-  const btnRef = useRef<HTMLButtonElement | null>(null)
+  // A span with role="button", not an actual <button> — this sits inside
+  // the chat row's own <button>, and a button nested inside a button is
+  // invalid HTML with unreliable focus/AT behavior, not just a lint nit.
+  const btnRef = useRef<HTMLSpanElement | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
   // Where to put the portalled menu, measured from the button when it opens.
   const [pos, setPos] = useState<{ top: number; right: number } | null>(null)
@@ -1701,19 +1709,21 @@ function QuickAssign({ convo, onChanged }: { convo: WhatsAppConversation; onChan
 
   return (
     <span ref={boxRef} className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
-      <button
+      <span
         ref={btnRef}
-        type="button"
+        role="button"
+        tabIndex={0}
         onClick={toggle}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle() } }}
         title="Nobody has this yet — assign it"
-        className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 cursor-pointer"
+        className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 cursor-pointer active:scale-90 transition-transform duration-150"
         style={{ fontSize: 10, fontWeight: 700, background: '#FFF7E6', color: '#B45309', border: 'none' }}
       >
         {assign.isPending
           ? <Loader2 size={11} className="animate-spin" />
           : <UserPlus size={11} />}
         {assign.isPending ? 'Assigning…' : 'Assign'}
-      </button>
+      </span>
 
       {/* Rendered into <body>, not beside the button.
        *
