@@ -35,11 +35,28 @@ const statusDot: Record<string, string> = {
   in_progress: '#F59E0B', completed: '#10B981', invoiced: '#14B8A6', cancelled: '#EF4444',
 }
 
-function StatCard({ label, value, sub, icon, iconBg, iconColor }: {
+function StatCard({ label, value, sub, icon, iconBg, iconColor, onClick, active }: {
   label: string; value: string | number; sub?: string; icon: React.ReactNode; iconBg: string; iconColor: string
+  /** Filters the list to this stat's status when given; the card renders as a button. */
+  onClick?: () => void; active?: boolean
 }) {
   return (
-    <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 20 }}>
+    <div
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } } : undefined}
+      style={{
+        background: 'white',
+        border: '1px solid ' + (active ? PURPLE : 'rgba(20,8,31,0.08)'),
+        boxShadow: active ? '0 0 0 3px rgba(91,43,201,0.12)' : 'none',
+        borderRadius: 16,
+        padding: 20,
+        cursor: onClick ? 'pointer' : 'default',
+        transition: 'border-color 0.15s, box-shadow 0.15s',
+      }}
+      className={onClick ? 'hover:border-[#5B2BC9] hover:shadow-md' : undefined}
+    >
       <div className="flex justify-between items-start">
         <div style={{ fontSize: 13, color: MUTED, fontWeight: 500 }}>{label}</div>
         <div style={{ width: 36, height: 36, borderRadius: 10, background: iconBg, display: 'grid', placeItems: 'center', color: iconColor }}>
@@ -159,10 +176,10 @@ export default function MovingJobs() {
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-7">
-        <StatCard label="Total Jobs" value={allCount} sub="all statuses" icon={<Briefcase size={18} />} iconBg="#F3F0EA" iconColor={MUTED} />
-        <StatCard label="Confirmed" value={confirmedCount} sub="ready to go" icon={<CheckCircle size={18} />} iconBg="#EFF6FF" iconColor="#3B82F6" />
-        <StatCard label="In Progress" value={inProgressCount} sub="currently active" icon={<Truck size={18} />} iconBg="#FFF7ED" iconColor="#EA580C" />
-        <StatCard label="Completed" value={completedCount} sub="finished" icon={<Clock size={18} />} iconBg="#ECFDF5" iconColor="#059669" />
+        <StatCard label="Total Jobs" value={allCount} sub="all statuses" icon={<Briefcase size={18} />} iconBg="#F3F0EA" iconColor={MUTED} onClick={() => setStatus('')} active={status === ''} />
+        <StatCard label="Confirmed" value={confirmedCount} sub="ready to go" icon={<CheckCircle size={18} />} iconBg="#EFF6FF" iconColor="#3B82F6" onClick={() => setStatus('confirmed')} active={status === 'confirmed'} />
+        <StatCard label="In Progress" value={inProgressCount} sub="currently active" icon={<Truck size={18} />} iconBg="#FFF7ED" iconColor="#EA580C" onClick={() => setStatus('in_progress')} active={status === 'in_progress'} />
+        <StatCard label="Completed" value={completedCount} sub="finished" icon={<Clock size={18} />} iconBg="#ECFDF5" iconColor="#059669" onClick={() => setStatus('completed')} active={status === 'completed'} />
       </div>
 
       {/* Search + status pills */}
