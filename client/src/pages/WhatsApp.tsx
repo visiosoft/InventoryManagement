@@ -104,6 +104,7 @@ const CSS = `
   50%      { background-color: rgba(91, 43, 201, 0.16); }
 }
 .wa-blink { animation: wa-blink-bg 1s ease-in-out 4; }
+@keyframes wa-spin { to { transform: rotate(360deg); } }
 .wa-thumb { cursor: zoom-in; }
 .wa-thumb:hover { opacity: 0.92; }
 .wa-doc:hover { text-decoration: underline; }
@@ -2604,6 +2605,21 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     enabled: qrOpen && panelTab === 'templates',
     staleTime: 10 * 60_000,
   })
+  // Bypasses the server's own 10-minute cache — a template just approved
+  // in Meta Business Manager would otherwise sit invisible here for up to
+  // that long with nothing a rep could do about it.
+  const [waTemplatesRefreshing, setWaTemplatesRefreshing] = useState(false)
+  async function refreshWaTemplates() {
+    setWaTemplatesRefreshing(true)
+    try {
+      const data = await api.get('/whatsapp/templates', { params: { refresh: '1' } }).then((r) => r.data)
+      qc.setQueryData(['whatsapp-templates'], data)
+    } catch {
+      // Surfaced already by waTemplatesError on the next normal read.
+    } finally {
+      setWaTemplatesRefreshing(false)
+    }
+  }
 
   // Which template is expanded to fill its {{1}}, {{2}} … in, and with what.
   const [openTemplate, setOpenTemplate] = useState('')
@@ -4797,6 +4813,20 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
 
             {panelTab === 'templates' && (
               <div className="wa-scroll flex-1 min-h-0 px-3 py-3 space-y-2.5">
+                {/* A template just approved in Meta Business Manager
+                    otherwise sits invisible here for up to the server's
+                    own 10-minute cache — this bypasses it on demand. */}
+                <button
+                  type="button"
+                  onClick={refreshWaTemplates}
+                  disabled={waTemplatesRefreshing}
+                  className="flex items-center gap-1.5 px-1 cursor-pointer disabled:cursor-default"
+                  style={{ fontSize: 11, color: '#5B2BC9', fontWeight: 600 }}
+                >
+                  <RefreshCw size={12} style={{ animation: waTemplatesRefreshing ? 'wa-spin 0.8s linear infinite' : 'none' }} />
+                  {waTemplatesRefreshing ? 'Refreshing…' : 'Refresh from Meta'}
+                </button>
+
                 {replyWindow.open && (
                   <p className="px-1" style={{ fontSize: 11.5, color: FAINT_INK }}>
                     They wrote within the last 24 hours, so an ordinary reply still reaches
