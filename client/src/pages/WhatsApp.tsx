@@ -2475,6 +2475,22 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     document.addEventListener('keydown', esc)
     return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc) }
   }, [chatMenuOpen])
+  /* The composer's own overflow menu — attach / quick replies / lead score /
+     record, behind one button rather than four fighting the text box for
+     width. Same close-on-outside-click behavior as the chat's own menu
+     above. */
+  const [toolsOpen, setToolsOpen] = useState(false)
+  const toolsMenuRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!toolsOpen) return
+    const away = (e: MouseEvent) => {
+      if (!toolsMenuRef.current?.contains(e.target as Node)) setToolsOpen(false)
+    }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setToolsOpen(false) }
+    document.addEventListener('mousedown', away)
+    document.addEventListener('keydown', esc)
+    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc) }
+  }, [toolsOpen])
   const selectedRef = useRef(selectedPhone)
   selectedRef.current = selectedPhone
 
@@ -4415,42 +4431,78 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                 setPending(f)
               }}
             />
-            <IconButton
-              title="Attach a photo, video, audio or document"
-              onClick={() => fileRef.current?.click()}
-              className="!h-10 !w-10 shrink-0"
-            >
-              <Paperclip size={16} />
-            </IconButton>
-            <IconButton title="Quick replies and approved templates" onClick={() => setQrOpen((v) => !v)} className="!h-10 !w-10 shrink-0">
-              <Zap size={16} />
-            </IconButton>
-            {/* Toggles the score rail at every width now — it defaults
-                open on a wide screen, so this mostly reopens it once
-                closed there; on a narrow one it's the only way to summon
-                it at all (see the .wa-score CSS). */}
-            {selectedPhone && (
-              <button
-                type="button"
-                onClick={() => setScoreOpen((v) => !v)}
-                title="Lead score"
-                className="wa-score-toggle shrink-0 items-center justify-center rounded-lg cursor-pointer"
-                style={{ height: 40, width: 40, background: '#F7F3FF', color: '#5B2BC9', border: 'none' }}
-              >
-                <Sparkles size={16} />
-              </button>
-            )}
-            {/* Hidden while a recording is in progress — the strip above
-                replaces the whole composer with the recorder's own controls. */}
-            {recordingSupported() && !voice.recording && !isVoicePending && (
+            {/* Attach / quick replies / lead score / record — one button
+                behind a dropdown rather than four fighting the text box
+                for width. */}
+            <div className="relative shrink-0" ref={toolsMenuRef}>
               <IconButton
-                title="Record a voice message"
-                onClick={() => { setSendErr(''); voice.start() }}
+                title="Attach, quick replies, lead score, or record"
+                onClick={() => setToolsOpen((v) => !v)}
                 className="!h-10 !w-10 shrink-0"
               >
-                <Mic size={16} />
+                <Plus size={18} style={{ transform: toolsOpen ? 'rotate(45deg)' : 'none', transition: 'transform .15s ease' }} />
               </IconButton>
-            )}
+
+              {toolsOpen && (
+                <div
+                  className="absolute left-0 bottom-full mb-1.5 z-30 rounded-xl overflow-hidden"
+                  style={{ background: '#fff', border: `1px solid ${LINE}`, boxShadow: '0 10px 30px rgba(20,8,31,.16)', minWidth: 232 }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => { setToolsOpen(false); fileRef.current?.click() }}
+                    className={MENU_ROW}
+                    style={{ color: INK }}
+                  >
+                    <Paperclip size={15} style={{ color: '#4A1FA0' }} />
+                    <span className="flex-1">Attach a file</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setToolsOpen(false); setQrOpen((v) => !v) }}
+                    className={MENU_ROW}
+                    style={{ color: INK }}
+                  >
+                    <Zap size={15} style={{ color: '#4A1FA0' }} />
+                    <span className="flex-1">Quick replies &amp; templates</span>
+                  </button>
+
+                  {/* Toggles the score rail at every width now — it
+                      defaults open on a wide screen, so this mostly
+                      reopens it once closed there; on a narrow one it's
+                      the only way to summon it at all (see the .wa-score
+                      CSS). */}
+                  {selectedPhone && (
+                    <button
+                      type="button"
+                      onClick={() => { setToolsOpen(false); setScoreOpen((v) => !v) }}
+                      className={MENU_ROW}
+                      style={{ color: INK }}
+                    >
+                      <Sparkles size={15} style={{ color: '#4A1FA0' }} />
+                      <span className="flex-1">Lead score</span>
+                    </button>
+                  )}
+
+                  {/* Absent while a recording is in progress — the strip
+                      above replaces the whole composer with the
+                      recorder's own controls, so there is nothing left
+                      here to start a second one with. */}
+                  {recordingSupported() && !voice.recording && !isVoicePending && (
+                    <button
+                      type="button"
+                      onClick={() => { setToolsOpen(false); setSendErr(''); voice.start() }}
+                      className={MENU_ROW}
+                      style={{ color: INK }}
+                    >
+                      <Mic size={15} style={{ color: '#4A1FA0' }} />
+                      <span className="flex-1">Record a voice message</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
             <textarea
               ref={taRef}
               rows={1}
