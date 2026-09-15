@@ -1064,11 +1064,22 @@ const PINNED_TEMPLATE_NAMES = [
     '20_off_your_first_4_weeks', '10_off_your_first_4_weeks', 'location_request_template',
 ];
 
+// Hidden from this manual send-a-template list, even though Meta still has
+// them approved — contract_expiry_notification in particular is still what
+// the automation engine sends on its own (see services/automationEngine.js
+// and MessageTemplate's own whatsappTemplate field), which reads Meta
+// directly and never calls this route, so hiding it here only stops a rep
+// from picking it by hand.
+const HIDDEN_TEMPLATE_NAMES = new Set([
+    'contract_expiry_notification', 'facility_visit_followup', 'final_nudge_closing', 'inquiry_followup_unit_sizes',
+    'move_store_bundle',
+]);
+
 router.get('/templates', async (req, res) => {
     try {
         const out = await listWhatsAppTemplates({ force: req.query.refresh === '1' });
         const approved = (out.templates || [])
-            .filter((t) => String(t.status).toUpperCase() === 'APPROVED')
+            .filter((t) => String(t.status).toUpperCase() === 'APPROVED' && !HIDDEN_TEMPLATE_NAMES.has(t.name))
             .map((t) => ({
                 name: t.name,
                 language: t.language,
