@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { softDeletePlugin } from '../utils/softDelete.js';
 
 const { Schema, model } = mongoose;
 
@@ -28,7 +29,7 @@ const ALL_MODULES = [
 const userSchema = new Schema(
   {
     name: { type: String, required: true },
-    email: { type: String, required: true, unique: true, lowercase: true },
+    email: { type: String, required: true, lowercase: true },
     passwordHash: { type: String, required: true },
     // 'accounts' is a second sales-rep-equivalent role: identical access and
     // data scope, kept separate only so the two teams can be told apart.
@@ -58,12 +59,14 @@ const userSchema = new Schema(
   },
   { timestamps: true }
 );
+userSchema.index({ email: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+userSchema.plugin(softDeletePlugin);
 
 export { ALL_MODULES };
 
 const unitTypeSchema = new Schema(
   {
-    sizeSqf: { type: Number, required: true, unique: true },
+    sizeSqf: { type: Number, required: true },
     label: { type: String },
     weeklyRate: { type: Number, required: true, default: 0 },
     monthlyRate: { type: Number, required: true, default: 0 },
@@ -71,10 +74,12 @@ const unitTypeSchema = new Schema(
   },
   { timestamps: true }
 );
+unitTypeSchema.index({ sizeSqf: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+unitTypeSchema.plugin(softDeletePlugin);
 
 const unitSchema = new Schema(
   {
-    unitNumber: { type: String, required: true, unique: true },
+    unitNumber: { type: String, required: true },
     site: { type: Schema.Types.ObjectId, ref: 'Site', default: null }, // null = default site
     floor: { type: String, default: '' },
     sizeSqf: { type: Number, default: null },
@@ -92,6 +97,8 @@ const unitSchema = new Schema(
   },
   { timestamps: true }
 );
+unitSchema.index({ unitNumber: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+unitSchema.plugin(softDeletePlugin);
 
 const accessPersonSchema = new Schema(
   {
@@ -159,6 +166,7 @@ const customerSchema = new Schema(
   },
   { timestamps: true }
 );
+customerSchema.plugin(softDeletePlugin);
 
 const leadCommentSchema = new Schema({
   user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
@@ -203,7 +211,7 @@ const leadSchema = new Schema(
     email: { type: String, default: '' },
     phone: { type: String, required: true },
     whatsappNo: { type: String, default: '' },
-    phoneNormalized: { type: String, required: true, unique: true },
+    phoneNormalized: { type: String, required: true },
     preferredContact: { type: String, enum: ['email', 'whatsapp'], default: 'whatsapp' },
     // Excluded from marketing campaigns; sales follow-up is unaffected.
     unsubscribed: { type: Boolean, default: false },
@@ -428,6 +436,8 @@ const leadSchema = new Schema(
 leadSchema.index({ leadDateTime: -1, createdAt: -1 });
 leadSchema.index({ status: 1, owner: 1, leadDateTime: -1 });
 leadSchema.index({ source: 1, createdAt: -1 });
+leadSchema.index({ phoneNormalized: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+leadSchema.plugin(softDeletePlugin);
 
 const whatsappWebhookEventSchema = new Schema(
   {
@@ -451,7 +461,7 @@ whatsappWebhookEventSchema.index({ phoneNormalized: 1, createdAt: -1 });
 const whatsappLabelStateSchema = new Schema(
   {
     phone: { type: String, default: '' },
-    phoneNormalized: { type: String, required: true, unique: true },
+    phoneNormalized: { type: String, required: true },
     labels: { type: [String], default: [] },
     mappedStatus: {
       type: String,
@@ -466,6 +476,8 @@ const whatsappLabelStateSchema = new Schema(
 );
 
 whatsappLabelStateSchema.index({ mappedStatus: 1, updatedAt: -1 });
+whatsappLabelStateSchema.index({ phoneNormalized: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+whatsappLabelStateSchema.plugin(softDeletePlugin);
 
 const whatsappMessageSchema = new Schema(
   {
@@ -524,10 +536,15 @@ whatsappMessageSchema.index({ messageId: 1 }, { unique: true, sparse: true });
    lean on and so sorted in memory. Cheap at four thousand messages, and the
    thing that quietly stops scaling as the archive grows. */
 whatsappMessageSchema.index({ occurredAt: -1 });
+// Named removedAt/removedBy (not deletedAt/deletedBy): this schema's own
+// `deletedAt` already means "WhatsApp reported this message deleted by the
+// sender" (see above) — an unrelated concept from an admin soft-deleting a
+// whole conversation, so the two must not collide.
+whatsappMessageSchema.plugin(softDeletePlugin, { deletedAtField: 'removedAt', deletedByField: 'removedBy' });
 
 const contractSchema = new Schema(
   {
-    contractNo: { type: String, required: true, unique: true },
+    contractNo: { type: String, required: true },
     customer: { type: Schema.Types.ObjectId, ref: 'Customer', required: true },
     unit: { type: Schema.Types.ObjectId, ref: 'Unit', required: true },
     units: [{ type: Schema.Types.ObjectId, ref: 'Unit' }],
@@ -651,6 +668,8 @@ contractSchema.index(
   { externalId: 1 },
   { unique: true, partialFilterExpression: { externalId: { $type: 'string', $gt: '' } } }
 );
+contractSchema.index({ contractNo: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+contractSchema.plugin(softDeletePlugin);
 // Hot lookups: contract lists, unit-conflict checks and customer history
 contractSchema.index({ archived: 1, createdAt: -1 });
 contractSchema.index({ unit: 1, status: 1 });
@@ -720,7 +739,7 @@ export const DEFAULT_QUOTE_TERMS = [
 
 const quoteSchema = new Schema(
   {
-    quoteNo: { type: String, required: true, unique: true },
+    quoteNo: { type: String, required: true },
     quoteDate: { type: Date, required: true, default: Date.now },
     creationDate: { type: Date, required: true, default: Date.now },
     salesperson: { type: String, default: '' },
@@ -788,6 +807,8 @@ const quoteSchema = new Schema(
   },
   { timestamps: true }
 );
+quoteSchema.index({ quoteNo: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+quoteSchema.plugin(softDeletePlugin);
 
 const invoiceItemSchema = new Schema(
   {
@@ -826,7 +847,7 @@ const invoiceAttachmentSchema = new Schema(
 
 const invoiceSchema = new Schema(
   {
-    invoiceNo: { type: String, required: true, unique: true },
+    invoiceNo: { type: String, required: true },
     orderNumber: { type: String, default: '' },
     invoiceDate: { type: Date, required: true, default: Date.now },
     terms: { type: String, default: '' },
@@ -866,11 +887,13 @@ const invoiceSchema = new Schema(
   },
   { timestamps: true }
 );
+invoiceSchema.index({ invoiceNo: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+invoiceSchema.plugin(softDeletePlugin);
 
 const vendorSchema = new Schema(
   {
     vendorCode: { type: String, default: '' },
-    contactId: { type: String, required: true, unique: true },
+    contactId: { type: String, required: true },
     contactName: { type: String, required: true },
     companyName: { type: String, default: '' },
     displayName: { type: String, default: '' },
@@ -917,6 +940,8 @@ const vendorSchema = new Schema(
 
 vendorSchema.index({ contactName: 1 });
 vendorSchema.index({ companyName: 1 });
+vendorSchema.index({ contactId: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+vendorSchema.plugin(softDeletePlugin);
 
 const purchaseItemSchema = new Schema(
   {
@@ -952,7 +977,7 @@ const purchaseAttachmentSchema = new Schema(
 
 const purchaseSchema = new Schema(
   {
-    purchaseNo: { type: String, required: true, unique: true },
+    purchaseNo: { type: String, required: true },
     vendor: { type: Schema.Types.ObjectId, ref: 'Vendor' },
     vendorName: { type: String, default: '' },
     billId: { type: String, default: '' },
@@ -998,6 +1023,8 @@ const purchaseSchema = new Schema(
   },
   { timestamps: true }
 );
+purchaseSchema.index({ purchaseNo: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+purchaseSchema.plugin(softDeletePlugin);
 
 const expenseSchema = new Schema(
   {
@@ -1058,7 +1085,11 @@ expenseSchema.index({ expenseDate: -1, createdAt: -1 });
 expenseSchema.index({ vendor: 1, expenseDate: -1 });
 expenseSchema.index({ expenseAccount: 1, expenseDate: -1 });
 expenseSchema.index({ status: 1, expenseDate: -1 });
-expenseSchema.index({ expenseReferenceId: 1 }, { unique: true, sparse: true });
+expenseSchema.index(
+  { expenseReferenceId: 1 },
+  { unique: true, partialFilterExpression: { expenseReferenceId: { $exists: true }, deletedAt: null } }
+);
+expenseSchema.plugin(softDeletePlugin);
 
 const paymentSchema = new Schema(
   {
@@ -1074,10 +1105,11 @@ const paymentSchema = new Schema(
   },
   { timestamps: true }
 );
+paymentSchema.plugin(softDeletePlugin);
 
 const movingItemSchema = new Schema(
   {
-    sku: { type: String, required: true, unique: true },
+    sku: { type: String, required: true },
     name: { type: String, required: true },
     category: { type: String, default: 'box' },
     sizeLabel: { type: String, default: '' },
@@ -1116,10 +1148,13 @@ const movingStockTxnSchema = new Schema(
 
 movingItemSchema.index({ name: 1, sizeLabel: 1 });
 movingItemSchema.index({ active: 1, onHand: 1 });
+movingItemSchema.index({ sku: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+movingItemSchema.plugin(softDeletePlugin);
 movingStockTxnSchema.index({ item: 1, txnDate: -1 });
 movingStockTxnSchema.index({ contract: 1, txnDate: -1 });
 movingStockTxnSchema.index({ customer: 1, txnDate: -1 });
 movingStockTxnSchema.index({ movingJob: 1, txnDate: -1 });
+movingStockTxnSchema.plugin(softDeletePlugin);
 
 // ── Moving Business Schemas ──────────────────────────────────────────────────
 
@@ -1141,6 +1176,7 @@ const workerSchema = new Schema(
   { timestamps: true }
 );
 workerSchema.index({ status: 1, name: 1 });
+workerSchema.plugin(softDeletePlugin);
 
 const truckSchema = new Schema(
   {
@@ -1157,6 +1193,7 @@ const truckSchema = new Schema(
   { timestamps: true }
 );
 truckSchema.index({ status: 1 });
+truckSchema.plugin(softDeletePlugin);
 
 const movingTimelineEntrySchema = new Schema(
   { at: { type: Date, default: Date.now }, text: { type: String, default: '' }, author: { type: String, default: '' } },
@@ -1212,6 +1249,7 @@ const movingLeadSchema = new Schema(
 movingLeadSchema.index({ status: 1, createdAt: -1 });
 movingLeadSchema.index({ customer: 1 });
 movingLeadSchema.index({ status: 1, owner: 1 });
+movingLeadSchema.plugin(softDeletePlugin);
 
 const movingJobCrewSchema = new Schema(
   {
@@ -1270,7 +1308,7 @@ const movingMaterialUsageSchema = new Schema(
 
 const movingJobSchema = new Schema(
   {
-    jobNo: { type: String, required: true, unique: true },
+    jobNo: { type: String, required: true },
     // Free-text job name shown alongside the job number
     title: { type: String, default: '' },
     customer: { type: Schema.Types.ObjectId, ref: 'Customer', required: true },
@@ -1351,6 +1389,13 @@ const movingJobSchema = new Schema(
       createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
       createdByName: { type: String, default: '' },
       createdAt: { type: Date, default: Date.now },
+      // A visit is a subdocument, not its own collection, so the
+      // softDeletePlugin's query filtering doesn't reach it — these three
+      // fields are the same idea applied by hand. Routes filter `deleted`
+      // out of what they return instead of a query excluding it.
+      deleted: { type: Boolean, default: false },
+      deletedAt: { type: Date, default: null },
+      deletedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     }],
     uploadToken: { type: String, default: null },
     shareToken: { type: String, default: null },
@@ -1364,6 +1409,20 @@ const movingJobSchema = new Schema(
 movingJobSchema.index({ status: 1, scheduledDate: -1 });
 movingJobSchema.index({ customer: 1, scheduledDate: -1 });
 movingJobSchema.index({ scheduledDate: 1 });
+movingJobSchema.index({ jobNo: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+movingJobSchema.plugin(softDeletePlugin);
+// clientVisits is a subdocument array, not its own collection, so the
+// softDeletePlugin's query-level filtering never sees it — a soft-deleted
+// visit has to be stripped here instead, on every read, rather than trusting
+// each route that returns a job to remember to filter it by hand.
+movingJobSchema.set('toJSON', {
+  transform(doc, ret) {
+    if (Array.isArray(ret.clientVisits)) {
+      ret.clientVisits = ret.clientVisits.filter((v) => !v.deleted);
+    }
+    return ret;
+  },
+});
 
 const movingQuoteItemSchema = new Schema(
   {
@@ -1378,7 +1437,7 @@ const movingQuoteItemSchema = new Schema(
 
 const movingQuoteSchema = new Schema(
   {
-    quoteNo: { type: String, required: true, unique: true },
+    quoteNo: { type: String, required: true },
     job: { type: Schema.Types.ObjectId, ref: 'MovingJob' },
     customer: { type: Schema.Types.ObjectId, ref: 'Customer', required: true },
     status: { type: String, enum: ['draft', 'sent', 'accepted', 'rejected', 'expired'], default: 'draft' },
@@ -1414,6 +1473,8 @@ const movingQuoteSchema = new Schema(
 );
 movingQuoteSchema.index({ customer: 1, createdAt: -1 });
 movingQuoteSchema.index({ status: 1 });
+movingQuoteSchema.index({ quoteNo: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+movingQuoteSchema.plugin(softDeletePlugin);
 
 const movingInvoicePaymentSchema = new Schema(
   {
@@ -1440,7 +1501,7 @@ const movingInvoiceAttachmentSchema = new Schema(
 
 const movingInvoiceSchema = new Schema(
   {
-    invoiceNo: { type: String, required: true, unique: true },
+    invoiceNo: { type: String, required: true },
     job: { type: Schema.Types.ObjectId, ref: 'MovingJob' },
     customer: { type: Schema.Types.ObjectId, ref: 'Customer', required: true },
     status: { type: String, enum: ['draft', 'sent', 'paid', 'partial', 'cancelled'], default: 'draft' },
@@ -1473,6 +1534,8 @@ const movingInvoiceSchema = new Schema(
 movingInvoiceSchema.index({ customer: 1, createdAt: -1 });
 movingInvoiceSchema.index({ status: 1 });
 movingInvoiceSchema.index({ job: 1 });
+movingInvoiceSchema.index({ invoiceNo: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+movingInvoiceSchema.plugin(softDeletePlugin);
 
 const movingSurveyItemSchema = new Schema(
   {
@@ -1559,7 +1622,7 @@ const auditLogSchema = new Schema(
 // ── Damage Claims ────────────────────────────────────────────────────────────
 const movingClaimSchema = new Schema(
   {
-    claimNo: { type: String, required: true, unique: true },
+    claimNo: { type: String, required: true },
     job: { type: Schema.Types.ObjectId, ref: 'MovingJob', required: true },
     customer: { type: Schema.Types.ObjectId, ref: 'Customer', required: true },
     status: { type: String, enum: ['reported', 'under_review', 'approved', 'rejected', 'settled'], default: 'reported' },
@@ -1582,9 +1645,11 @@ const movingClaimSchema = new Schema(
 movingClaimSchema.index({ job: 1 });
 movingClaimSchema.index({ customer: 1 });
 movingClaimSchema.index({ status: 1, createdAt: -1 });
+movingClaimSchema.index({ claimNo: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+movingClaimSchema.plugin(softDeletePlugin);
 
 const siteVisitSchema = new Schema({
-  visitNo: { type: String, required: true, unique: true },
+  visitNo: { type: String, required: true },
   visitDate: { type: Date, required: true },
   visitTime: { type: String, default: '' },
   customerName: { type: String, default: '' },
@@ -1597,6 +1662,8 @@ const siteVisitSchema = new Schema({
   createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
   createdByName: { type: String, default: '' },
 }, { timestamps: true });
+siteVisitSchema.index({ visitNo: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+siteVisitSchema.plugin(softDeletePlugin);
 
 const reminderStageSchema = new Schema({
   name: { type: String, default: '' },
@@ -1760,7 +1827,12 @@ const campaignRecipientSchema = new Schema({
 campaignRecipientSchema.index({ campaign: 1, status: 1 });
 // The same person must not appear twice on one campaign and one channel, even
 // if they arrived from both the tenant list and the lead list.
-campaignRecipientSchema.index({ campaign: 1, channel: 1, kind: 1, refId: 1 }, { unique: true });
+campaignRecipientSchema.index(
+  { campaign: 1, channel: 1, kind: 1, refId: 1 },
+  { unique: true, partialFilterExpression: { deletedAt: null } }
+);
+campaignSchema.plugin(softDeletePlugin);
+campaignRecipientSchema.plugin(softDeletePlugin);
 
 export const Campaign = model('Campaign', campaignSchema);
 export const CampaignRecipient = model('CampaignRecipient', campaignRecipientSchema);
@@ -1775,14 +1847,17 @@ const whatsappLabelSchema = new Schema({
   color: { type: String, default: '#5B2BC9' },
   sortOrder: { type: Number, default: 0 },
 }, { timestamps: true });
-whatsappLabelSchema.index({ name: 1 }, { unique: true });
+whatsappLabelSchema.index({ name: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+whatsappLabelSchema.plugin(softDeletePlugin);
 
 // Which labels are on a conversation. Keyed by number rather than by lead or
 // customer, because a chat has a number long before it has either.
 const whatsappChatLabelSchema = new Schema({
-  phoneNormalized: { type: String, required: true, unique: true },
+  phoneNormalized: { type: String, required: true },
   labels: [{ type: Schema.Types.ObjectId, ref: 'WhatsAppLabel' }],
 }, { timestamps: true });
+whatsappChatLabelSchema.index({ phoneNormalized: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+whatsappChatLabelSchema.plugin(softDeletePlugin);
 
 export const WhatsAppLabel = model('WhatsAppLabel', whatsappLabelSchema);
 export const WhatsAppChatLabel = model('WhatsAppChatLabel', whatsappChatLabelSchema);
@@ -1994,6 +2069,7 @@ const whatsAppFlowTemplateSchema = new Schema({
   completionText: { type: String, default: '' },
   steps: { type: [flowStepSchema], default: [] },
 }, { timestamps: true });
+whatsAppFlowTemplateSchema.plugin(softDeletePlugin);
 export const WhatsAppFlowTemplate = model('WhatsAppFlowTemplate', whatsAppFlowTemplateSchema);
 
 /* One per conversation, holding a flow template's own place in it — see
@@ -2083,6 +2159,7 @@ const siteSchema = new Schema({
     updatedAt: { type: Date, default: null },
   },
 }, { timestamps: true });
+siteSchema.plugin(softDeletePlugin);
 
 // ── Indexes for the hottest queries ───────────────────────────────────────────
 // Without these, payments/invoices/documents lookups scan the whole collection
@@ -2099,6 +2176,7 @@ invoiceSchema.index({ status: 1, dueDate: 1 });
 documentSchema.index({ contract: 1, createdAt: -1 });
 documentSchema.index({ customer: 1 });
 documentSchema.index({ name: 1 });
+documentSchema.plugin(softDeletePlugin);
 
 unitSchema.index({ status: 1 });
 unitSchema.index({ site: 1, status: 1 });
@@ -2143,7 +2221,7 @@ export const WhatsAppMessage = model('WhatsAppMessage', whatsappMessageSchema);
  * its own — nothing here decides anything.
  */
 const leadRoutingRuleSchema = new Schema({
-  user: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+  user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   /* A share, not a promise of a percentage. They need not sum to 100: two reps
      on 2 and 1 split the day two to one, which is the same thing as 67 and 33
      and easier to type. */
@@ -2168,6 +2246,8 @@ const leadRoutingRuleSchema = new Schema({
   fallbackUser: { type: Schema.Types.ObjectId, ref: 'User', default: null },
   notes: { type: String, default: '' },
 }, { timestamps: true });
+leadRoutingRuleSchema.index({ user: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+leadRoutingRuleSchema.plugin(softDeletePlugin);
 
 /** The settings that are not about one person. A single document. */
 const leadRoutingConfigSchema = new Schema({
@@ -2375,6 +2455,7 @@ const automationRuleSchema = new Schema({
    * only changes what counts as "already sent" from this moment forward. */
   remindersResetAt: { type: Date, default: null },
 }, { timestamps: true });
+automationRuleSchema.plugin(softDeletePlugin);
 
 const automationLogSchema = new Schema({
   rule: { type: Schema.Types.ObjectId, ref: 'AutomationRule' },
@@ -2445,7 +2526,7 @@ leadFollowUpSchema.index({ sentBy: 1, sentAt: -1 });
 export const LeadFollowUp = model('LeadFollowUp', leadFollowUpSchema);
 
 const messageTemplateSchema = new Schema({
-  key: { type: String, required: true, unique: true },
+  key: { type: String, required: true },
   label: { type: String, required: true },
   subject: { type: String, default: '' },
   emailBody: { type: String, default: '' },
@@ -2506,6 +2587,8 @@ const messageTemplateSchema = new Schema({
   locationName: { type: String, default: '' },
   locationAddress: { type: String, default: '' },
 }, { timestamps: true });
+messageTemplateSchema.index({ key: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+messageTemplateSchema.plugin(softDeletePlugin);
 export const MessageTemplate = model('MessageTemplate', messageTemplateSchema);
 
 // Document templates designed in the app — the storage agreement, notices
@@ -2520,6 +2603,7 @@ const agreementTemplateSchema = new Schema({
   updatedBy: { type: String, default: '' },
   key: { type: String }, // legacy singleton key, kept for old documents
 }, { timestamps: true });
+agreementTemplateSchema.plugin(softDeletePlugin);
 export const AgreementTemplate = model('AgreementTemplate', agreementTemplateSchema);
 
 // Asana-style task, assignable by admins to sales reps or created by a rep
@@ -2531,6 +2615,13 @@ const taskCommentSchema = new Schema({
   userName: { type: String, default: '' },
   text: { type: String, required: true },
   createdAt: { type: Date, default: Date.now },
+  // A comment is a subdocument, not its own collection, so the
+  // softDeletePlugin's query filtering doesn't reach it — these are the
+  // same idea applied by hand; the route filters `deleted` out of what it
+  // returns instead of a query excluding it.
+  deleted: { type: Boolean, default: false },
+  deletedAt: { type: Date, default: null },
+  deletedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
 });
 
 const taskAssignmentHistorySchema = new Schema({
@@ -2587,6 +2678,18 @@ taskSchema.index({ assignedTo: 1, status: 1, dueDate: 1 });
 // Backs GET /tasks?sort=createdAt — the dashboard's "latest 5" card, sorted
 // newest-first rather than by the assignedTo-scoped index above.
 taskSchema.index({ createdAt: -1 });
+taskSchema.plugin(softDeletePlugin);
+// comments is a subdocument array — same reasoning as movingJobSchema's
+// clientVisits transform above: filter a soft-deleted comment out on every
+// read instead of relying on each route to remember to.
+taskSchema.set('toJSON', {
+  transform(doc, ret) {
+    if (Array.isArray(ret.comments)) {
+      ret.comments = ret.comments.filter((c) => !c.deleted);
+    }
+    return ret;
+  },
+});
 export const Task = model('Task', taskSchema);
 
 /* One browser that has agreed to be interrupted.

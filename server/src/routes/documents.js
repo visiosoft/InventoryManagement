@@ -6,6 +6,7 @@ import { Document, Customer } from '../models/index.js';
 import { uploadFile, driveConfigured, driveClient, UPLOADS_DIR } from '../services/drive.js';
 import { openaiConfigured, openaiModel, visionJson } from '../services/openai.js';
 import { parseIdFields, diffAgainstCustomer } from '../services/documentExtract.js';
+import { softDelete } from '../utils/softDelete.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
@@ -163,7 +164,9 @@ router.post('/:id/extract', async (req, res) => {
 });
 
 router.delete('/:id', async (req, res) => {
-  await Document.findByIdAndDelete(req.params.id);
+  const doc = await Document.findById(req.params.id);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  await softDelete(doc, req.user.id);
   res.json({ ok: true });
 });
 

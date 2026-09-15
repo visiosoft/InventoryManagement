@@ -13,6 +13,7 @@ import { summariseConversation, summariseRecent } from '../services/conversation
 import { ensureDigest, dayKeyFor, previousDay } from '../services/dailyDigest.js';
 import { DailyDigest } from '../models/index.js';
 import { askInbox } from '../services/inboxAsk.js';
+import { softDelete, softDeleteMany } from '../utils/softDelete.js';
 
 const router = Router();
 
@@ -134,7 +135,7 @@ router.delete('/labels/:id', async (req, res) => {
     if (!label) return res.status(404).json({ error: 'Label not found' });
     // Take it off every chat too, or those chats keep a reference to nothing.
     await WhatsAppChatLabel.updateMany({ labels: label._id }, { $pull: { labels: label._id } });
-    await label.deleteOne();
+    await softDelete(label, req.user.id);
     res.json({ ok: true });
 });
 
@@ -243,12 +244,16 @@ router.delete('/conversations/:phoneNormalized', async (req, res) => {
     if (isSalesRep(req)) return res.status(403).json({ error: 'Not allowed to delete a conversation' });
     const phoneNormalized = req.params.phoneNormalized;
     try {
-        const result = await WhatsAppMessage.deleteMany({ phoneNormalized });
-        await Promise.all([
-            WhatsAppChatLabel.deleteOne({ phoneNormalized }),
-            WhatsAppLabelState.deleteOne({ phoneNormalized }),
+        const result = await softDeleteMany(WhatsAppMessage, { phoneNormalized }, req.user.id, { deletedAtField: 'removedAt', deletedByField: 'removedBy' });
+        const [chatLabel, labelState] = await Promise.all([
+            WhatsAppChatLabel.findOne({ phoneNormalized }),
+            WhatsAppLabelState.findOne({ phoneNormalized }),
         ]);
-        res.json({ ok: true, deletedMessages: result.deletedCount });
+        await Promise.all([
+            chatLabel ? softDelete(chatLabel, req.user.id) : null,
+            labelState ? softDelete(labelState, req.user.id) : null,
+        ]);
+        res.json({ ok: true, deletedMessages: result.modifiedCount });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

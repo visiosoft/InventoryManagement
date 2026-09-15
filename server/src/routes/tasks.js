@@ -4,6 +4,7 @@ import { Task, User, nextTaskNo } from '../models/index.js';
 import { uploadFile } from '../services/drive.js';
 import { notifyTaskAssigned } from '../services/taskNotify.js';
 import { runDayBriefs } from '../services/dayBrief.js';
+import { softDelete } from '../utils/softDelete.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
@@ -195,7 +196,9 @@ router.delete('/:id/comments/:commentId', async (req, res) => {
   if (!comment) return res.status(404).json({ error: 'Comment not found' });
   const isAuthor = String(comment.user) === String(req.user.id);
   if (!isPrivileged(req) && !isAuthor) return res.status(403).json({ error: 'Not your comment' });
-  comment.deleteOne();
+  comment.deleted = true;
+  comment.deletedAt = new Date();
+  comment.deletedBy = req.user.id;
   await task.save();
   res.json(await task.populate([{ path: 'assignedTo', select: 'name email' }, { path: 'comments.user', select: 'name' }]));
 });
@@ -239,7 +242,7 @@ router.delete('/:id', async (req, res) => {
   if (!task) return res.status(404).json({ error: 'Task not found' });
   const isCreator = String(task.createdBy) === String(req.user.id);
   if (!isPrivileged(req) && !isCreator) return res.status(403).json({ error: 'Only the creator or an admin can delete this task' });
-  await task.deleteOne();
+  await softDelete(task, req.user.id);
   res.json({ ok: true });
 });
 

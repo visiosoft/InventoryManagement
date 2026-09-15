@@ -4,6 +4,7 @@ import { Expense, Vendor } from '../models/index.js';
 import { parseCsv } from '../services/csv.js';
 import { uploadToVendorFolder } from '../services/drive.js';
 import { zohoBooksConfigured, createZohoExpense, createZohoExpenseWithReceipt, fetchZohoExpenses } from '../services/zohoBooks.js';
+import { softDelete } from '../utils/softDelete.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
@@ -321,8 +322,9 @@ router.patch('/:id/status', async (req, res) => {
 });
 
 router.delete('/:id', async (req, res) => {
-    const expense = await Expense.findByIdAndDelete(req.params.id);
+    const expense = await Expense.findById(req.params.id);
     if (!expense) return res.status(404).json({ error: 'Expense not found' });
+    await softDelete(expense, req.user.id);
     res.json({ ok: true });
 });
 

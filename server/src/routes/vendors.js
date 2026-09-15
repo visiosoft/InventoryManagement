@@ -3,6 +3,7 @@ import multer from 'multer';
 import { Vendor, Purchase, Expense } from '../models/index.js';
 import { parseCsv } from '../services/csv.js';
 import { zohoBooksConfigured, fetchZohoVendors } from '../services/zohoBooks.js';
+import { softDelete } from '../utils/softDelete.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
@@ -151,8 +152,9 @@ router.put('/:id', async (req, res) => {
 });
 
 router.delete('/:id', async (req, res) => {
-    const vendor = await Vendor.findByIdAndDelete(req.params.id);
+    const vendor = await Vendor.findById(req.params.id);
     if (!vendor) return res.status(404).json({ error: 'Vendor not found' });
+    await softDelete(vendor, req.user.id);
     res.json({ ok: true });
 });
 

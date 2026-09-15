@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { MovingClaim, MovingJob, nextMovingClaimNo } from '../models/index.js';
+import { softDelete } from '../utils/softDelete.js';
 
 const router = Router();
 
@@ -106,7 +107,7 @@ router.delete('/:id', async (req, res) => {
     const claim = await MovingClaim.findById(req.params.id);
     if (!claim) return res.status(404).json({ error: 'Claim not found' });
     if (claim.status === 'settled') return res.status(409).json({ error: 'Cannot delete a settled claim' });
-    await claim.deleteOne();
+    await softDelete(claim, req.user.id);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

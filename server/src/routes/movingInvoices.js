@@ -8,6 +8,7 @@ import { notifyInvoiceReady, notifyPaymentReceived } from '../services/movingNot
 import { zohoBooksConfigured, createZohoInvoice } from '../services/zohoBooks.js';
 import { stripeConfigured, createInvoiceCheckoutSession } from '../services/stripe.js';
 import { applyMovingInvoicePayment } from '../services/movingInvoicePayments.js';
+import { softDelete } from '../utils/softDelete.js';
 
 const router = Router();
 
@@ -463,7 +464,7 @@ router.delete('/:id', requireAdmin, async (req, res) => {
   try {
     const inv = await MovingInvoice.findById(req.params.id);
     if (!inv) return res.status(404).json({ error: 'Invoice not found' });
-    await inv.deleteOne();
+    await softDelete(inv, req.user.id);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

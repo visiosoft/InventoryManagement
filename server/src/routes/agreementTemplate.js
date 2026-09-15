@@ -2,6 +2,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { isValidObjectId } from 'mongoose';
 import { AgreementTemplate } from '../models/index.js';
+import { softDelete } from '../utils/softDelete.js';
 import {
   mergeAgreementText, looksLikeHtml, samplePlaceholderContract,
   renderAgreementHtmlPdf, renderAgreementTextPdf,
@@ -115,8 +116,9 @@ router.put('/:id', aw(async (req, res) => {
 router.delete('/:id', aw(async (req, res) => {
   if (!requireAdmin(req, res)) return;
   if (!isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid template id' });
-  const tpl = await AgreementTemplate.findByIdAndDelete(req.params.id);
+  const tpl = await AgreementTemplate.findById(req.params.id);
   if (!tpl) return res.status(404).json({ error: 'Template not found' });
+  await softDelete(tpl, req.user.id);
   res.json({ ok: true });
 }));
 

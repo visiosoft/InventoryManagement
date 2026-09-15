@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { User, ALL_MODULES } from '../models/index.js';
 import { requireAdmin, signToken } from '../middleware/auth.js';
 import { registerExpoPushToken, unregisterExpoPushToken } from '../services/expoPush.js';
+import { softDelete } from '../utils/softDelete.js';
 
 const router = Router();
 
@@ -139,7 +140,7 @@ router.delete('/:id', requireAdmin, async (req, res) => {
     const adminCount = await User.countDocuments({ role: 'admin' });
     if (adminCount <= 1) return res.status(400).json({ error: 'Cannot delete the last admin' });
   }
-  await user.deleteOne();
+  await softDelete(user, req.user.id);
   res.json({ ok: true });
 });
 

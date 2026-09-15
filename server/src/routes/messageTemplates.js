@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { MessageTemplate } from '../models/index.js';
+import { softDelete } from '../utils/softDelete.js';
 import { UPLOADS_DIR } from '../services/drive.js';
 import { makeVideoThumbnail } from '../services/videoThumbnail.js';
 import { pipeline } from 'node:stream/promises';
@@ -136,7 +137,7 @@ const OLD_CONTRACT_EXPIRING_BODY = 'Dear @name,\n\nYour storage contract @contra
  * has since customized is never overwritten.
  */
 async function migrateContractExpiring() {
-  const autoRenewed = await MessageTemplate.findOne({ key: 'contract_auto_renewed' }).lean();
+  const autoRenewed = await MessageTemplate.findOne({ key: 'contract_auto_renewed' });
   if (!autoRenewed) return;
   const expiring = await MessageTemplate.findOne({ key: 'contract_expiring' });
   if (expiring && expiring.emailBody === OLD_CONTRACT_EXPIRING_BODY) {
@@ -147,7 +148,7 @@ async function migrateContractExpiring() {
     expiring.variables = merged.variables;
     await expiring.save();
   }
-  await MessageTemplate.deleteOne({ key: 'contract_auto_renewed' });
+  await softDelete(autoRenewed, null);
 }
 
 /**
@@ -375,7 +376,7 @@ router.delete('/:id', async (req, res) => {
     if (!template) return res.status(404).json({ error: 'Template not found' });
     const isDefault = DEFAULT_TEMPLATES.some(d => d.key === template.key);
     if (isDefault) return res.status(400).json({ error: 'Cannot delete built-in templates' });
-    await template.deleteOne();
+    await softDelete(template, req.user.id);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

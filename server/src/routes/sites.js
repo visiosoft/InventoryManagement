@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { Site, Unit } from '../models/index.js';
 import { clearCompanyCache } from '../services/companyIdentity.js';
+import { softDelete } from '../utils/softDelete.js';
 
 const router = Router();
 
@@ -123,7 +124,7 @@ router.delete('/:id', requireAdmin, async (req, res) => {
   if (site.isDefault) return res.status(409).json({ error: 'The default site cannot be deleted' });
   const hasUnits = await Unit.exists({ site: site._id });
   if (hasUnits) return res.status(409).json({ error: 'This facility has units — move or delete them first' });
-  await site.deleteOne();
+  await softDelete(site, req.user.id);
   clearCompanyCache(site._id);
   res.json({ ok: true });
 });

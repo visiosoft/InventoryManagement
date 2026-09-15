@@ -11,6 +11,7 @@ import { zohoBooksConfigured, zohoOutstandingByCustomer } from '../services/zoho
 import { requireAdmin } from '../middleware/auth.js';
 import { renewLink, moveOutLink } from '../services/renewalLink.js';
 import { syncUnitStatus } from '../utils/unitStatus.js';
+import { softDelete, softDeleteMany } from '../utils/softDelete.js';
 import { sendForSignature, downloadSignedPdf, zohoConfigured } from '../services/zoho.js';
 import { uploadFile } from '../services/drive.js';
 import { mergeAgreementText, renderAgreementTextPdf, renderAgreementHtmlPdf, looksLikeHtml } from '../services/agreementText.js';
@@ -56,16 +57,16 @@ async function findOverlappingUnitContract({ unit, startDate, endDate, excludeId
 }
 
 
-async function deleteContractRecord(contract) {
+export async function deleteContractRecord(contract, userId) {
   if (contract.status === 'active') {
     throw new Error('Cannot delete an active contract. End or cancel it first.');
   }
 
   const allUnitIds = contract.units?.length ? contract.units : [contract.unit];
-  await Payment.deleteMany({ contract: contract._id });
-  await Document.deleteMany({ contract: contract._id });
-  await Invoice.deleteMany({ orderNumber: contract.contractNo });
-  await contract.deleteOne();
+  await softDeleteMany(Payment, { contract: contract._id }, userId);
+  await softDeleteMany(Document, { contract: contract._id }, userId);
+  await softDeleteMany(Invoice, { orderNumber: contract.contractNo }, userId);
+  await softDelete(contract, userId);
   await Promise.all(allUnitIds.map((uid) => syncUnitStatus(uid)));
 }
 
@@ -1374,7 +1375,7 @@ router.post('/bulk-delete', requireAdmin, async (req, res) => {
   }
 
   for (const contract of contracts) {
-    await deleteContractRecord(contract);
+    await deleteContractRecord(contract, req.user.id);
   }
 
   res.json({ ok: true, deleted: contracts.length, requested: uniqueIds.length });
@@ -1387,7 +1388,7 @@ router.delete('/:id', requireAdmin, async (req, res) => {
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
 
   try {
-    await deleteContractRecord(contract);
+    await deleteContractRecord(contract, req.user.id);
   } catch (err) {
     return res.status(409).json({ error: err.message });
   }

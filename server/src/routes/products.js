@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { Product } from '../models/index.js';
+import { softDelete } from '../utils/softDelete.js';
 
 const router = Router();
 
@@ -35,7 +36,9 @@ router.put('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   try {
-    await Product.findByIdAndDelete(req.params.id);
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ error: 'Product not found' });
+    await softDelete(product, req.user.id);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

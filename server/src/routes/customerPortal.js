@@ -319,7 +319,9 @@ router.delete('/moves/:id/visits/:visitId', async (req, res) => {
     const visit = job.clientVisits.id(req.params.visitId);
     if (!visit) return res.status(404).json({ error: 'Visit not found' });
 
-    visit.deleteOne();
+    visit.deleted = true;
+    visit.deletedAt = new Date();
+    visit.deletedBy = null;
     await job.save();
     res.json({ ok: true });
   } catch (err) {

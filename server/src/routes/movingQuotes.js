@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import { MovingQuote, MovingInvoice, MovingJob, nextMovingQuoteNo, nextMovingInvoiceNo } from '../models/index.js';
+import { softDelete } from '../utils/softDelete.js';
 import { generateMovingQuotePdf } from '../services/movingQuotePdf.js';
 import { chargesVat, movingTotals } from '../services/movingTotals.js';
 import { stripeConfigured, createCheckoutSession } from '../services/stripe.js';
@@ -361,7 +362,9 @@ router.post('/:id/payment-link', async (req, res) => {
 // Delete quote
 router.delete('/:id', async (req, res) => {
   try {
-    await MovingQuote.findByIdAndDelete(req.params.id);
+    const quote = await MovingQuote.findById(req.params.id);
+    if (!quote) return res.status(404).json({ error: 'Quote not found' });
+    await softDelete(quote, req.user.id);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

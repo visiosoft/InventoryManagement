@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { UnitType } from '../models/index.js';
+import { softDelete } from '../utils/softDelete.js';
 
 const router = Router();
 
@@ -67,8 +68,9 @@ router.put('/:id', async (req, res) => {
 });
 
 router.delete('/:id', async (req, res) => {
-  const tier = await UnitType.findByIdAndDelete(req.params.id);
+  const tier = await UnitType.findById(req.params.id);
   if (!tier) return res.status(404).json({ error: 'Tier not found' });
+  await softDelete(tier, req.user.id);
   res.json({ ok: true });
 });
 

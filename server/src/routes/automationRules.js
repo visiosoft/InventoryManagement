@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { AutomationRule, AutomationLog } from '../models/index.js';
+import { softDelete } from '../utils/softDelete.js';
 import { runAutomationRules, getAutoSend, setAutoSend, getWhatsAppAutomation, setWhatsAppAutomation, getWhatsappApprovalRequired, setWhatsappApprovalRequired, pendingExpiryQueue, sendApprovedReminders } from '../services/automationEngine.js';
 import { sendWhatsAppTemplate, whatsappSendConfigured } from '../services/whatsapp.js';
 import { mailConfigured } from '../services/mail.js';
@@ -183,7 +184,7 @@ router.delete('/:id', async (req, res) => {
         if (!rule.custom && (await AutomationRule.countDocuments()) <= 1) {
             return res.status(400).json({ error: 'This is the last rule; deleting it would restore the built-in set on the next restart' });
         }
-        await rule.deleteOne();
+        await softDelete(rule, req.user.id);
         res.json({ ok: true });
     } catch (e) {
         res.status(500).json({ error: e.message });

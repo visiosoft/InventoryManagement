@@ -13,6 +13,7 @@ import { zohoBooksConfigured, createZohoInvoice, recordZohoPayment } from '../se
 import { applyInvoicePayment, syncLinkedPayment } from '../services/invoicePayments.js';
 import { stripeConfigured, createCheckoutSession } from '../services/stripe.js';
 import { DEFAULT_BANK_INFORMATION } from '../services/bankDetails.js';
+import { softDelete, softDeleteMany } from '../utils/softDelete.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -183,9 +184,9 @@ router.delete('/import/rollback/:batch', requireAdmin, async (req, res) => {
     const batch = req.params.batch;
     const invoices = await Invoice.find({ importBatch: batch }).select('_id');
     const invoiceIds = invoices.map(i => i._id);
-    await Invoice.deleteMany({ importBatch: batch });
-    const customers = await Customer.deleteMany({ importBatch: batch });
-    res.json({ ok: true, invoicesDeleted: invoiceIds.length, customersDeleted: customers.deletedCount });
+    await softDeleteMany(Invoice, { importBatch: batch }, req.user.id);
+    const customers = await softDeleteMany(Customer, { importBatch: batch }, req.user.id);
+    res.json({ ok: true, invoicesDeleted: invoiceIds.length, customersDeleted: customers.modifiedCount });
 });
 
 // List import batches
@@ -227,14 +228,14 @@ router.delete('/import/cleanup-stubs', requireAdmin, async (req, res) => {
     const allStubIds = [...stubCustomers.map(c => c._id), ...stubIds];
 
     // Delete invoices linked to stub customers
-    const invResult = await Invoice.deleteMany({ customer: { $in: allStubIds } });
+    const invResult = await softDeleteMany(Invoice, { customer: { $in: allStubIds } }, req.user.id);
     // Delete stub customers
-    const custResult = await Customer.deleteMany({ _id: { $in: allStubIds } });
+    const custResult = await softDeleteMany(Customer, { _id: { $in: allStubIds } }, req.user.id);
 
     res.json({
         ok: true,
-        customersDeleted: custResult.deletedCount,
-        invoicesDeleted: invResult.deletedCount,
+        customersDeleted: custResult.modifiedCount,
+        invoicesDeleted: invResult.modifiedCount,
         names: [...stubCustomers.map(c => c.fullName), ...recentNoSource.filter(c => stubIds.some(id => id.equals(c._id))).map(c => c.fullName)],
     });
 });
@@ -587,7 +588,7 @@ router.post('/bulk-delete', requireAdmin, async (req, res) => {
     const invoices = await Invoice.find({ _id: { $in: uniqueIds } }).select('_id');
     const foundIds = invoices.map((invoice) => String(invoice._id));
 
-    await Invoice.deleteMany({ _id: { $in: uniqueIds } });
+    await softDeleteMany(Invoice, { _id: { $in: uniqueIds } }, req.user.id);
 
     for (const invoiceId of foundIds) {
         await detachLinkedPayment(invoiceId);
@@ -597,10 +598,11 @@ router.post('/bulk-delete', requireAdmin, async (req, res) => {
 });
 
 router.delete('/:id', requireAdmin, async (req, res) => {
-    const invoice = await Invoice.findByIdAndDelete(req.params.id);
+    const invoice = await Invoice.findById(req.params.id);
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
 
-    await Payment.deleteMany({ invoice: invoice._id });
+    await softDelete(invoice, req.user.id);
+    await softDeleteMany(Payment, { invoice: invoice._id }, req.user.id);
 
     res.json({ ok: true });
 });

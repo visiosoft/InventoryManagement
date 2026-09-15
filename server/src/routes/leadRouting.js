@@ -7,6 +7,7 @@
 import { Router } from 'express';
 import { Customer, Lead, LeadRoutingConfig, LeadRoutingRule, PushSubscription, User, WhatsAppMessage } from '../models/index.js';
 import { requireAdmin } from '../middleware/auth.js';
+import { softDelete } from '../utils/softDelete.js';
 import { availability, countsForToday, digitTail, pickOwner, targetShares } from '../services/leadRouting.js';
 import { runLeadSla } from '../services/leadSla.js';
 
@@ -138,7 +139,9 @@ router.put('/rules/:userId', async (req, res) => {
 
 router.delete('/rules/:userId', async (req, res) => {
    try {
-      await LeadRoutingRule.deleteOne({ user: req.params.userId });
+      const rule = await LeadRoutingRule.findOne({ user: req.params.userId });
+      if (!rule) return res.status(404).json({ error: 'Rule not found' });
+      await softDelete(rule, req.user.id);
       res.json({ ok: true });
    } catch (e) {
       res.status(400).json({ error: e.message });

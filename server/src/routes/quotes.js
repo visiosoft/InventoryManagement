@@ -11,6 +11,7 @@ import { isRefundableRow, vatBase, vatOn } from '../services/quoteVat.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { archivePdf } from '../utils/archivePdf.js';
 import { stripeConfigured, createCheckoutSession } from '../services/stripe.js';
+import { softDelete } from '../utils/softDelete.js';
 
 const router = Router();
 
@@ -537,8 +538,9 @@ router.patch('/:id/flow-step', async (req, res) => {
 });
 
 router.delete('/:id', async (req, res) => {
-    const quote = await Quote.findByIdAndDelete(req.params.id);
+    const quote = await Quote.findById(req.params.id);
     if (!quote) return res.status(404).json({ error: 'Quote not found' });
+    await softDelete(quote, req.user.id);
     // The hold went with the quote; the unit's badge should not wait an hour
     // for the sweep to notice.
     await resyncQuoteUnits(quote.units.map((u) => u.unit));

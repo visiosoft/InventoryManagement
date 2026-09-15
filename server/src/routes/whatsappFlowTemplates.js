@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { WhatsAppFlowTemplate } from '../models/index.js';
 import { ensureDefaultFlowTemplate } from '../services/whatsappFlowTemplates.js';
+import { softDelete } from '../utils/softDelete.js';
 
 const router = Router();
 
@@ -129,7 +130,7 @@ router.delete('/:id', requireAdmin, async (req, res) => {
         if ((await WhatsAppFlowTemplate.countDocuments()) <= 1) {
             return res.status(400).json({ error: 'This is the last template; deleting it would restore the built-in one on the next restart' });
         }
-        await template.deleteOne();
+        await softDelete(template, req.user.id);
         res.json({ ok: true });
     } catch (e) {
         res.status(500).json({ error: e.message });

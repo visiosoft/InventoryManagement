@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { Worker, MovingJob } from '../models/index.js';
+import { softDelete } from '../utils/softDelete.js';
 
 const router = Router();
 
@@ -82,9 +83,11 @@ router.patch('/:id/status', async (req, res) => {
 // Delete worker
 router.delete('/:id', async (req, res) => {
   try {
+    const worker = await Worker.findById(req.params.id);
+    if (!worker) return res.status(404).json({ error: 'Worker not found' });
     const inUse = await MovingJob.exists({ 'crew.worker': req.params.id, status: { $in: ['confirmed', 'in_progress'] } });
     if (inUse) return res.status(409).json({ error: 'Worker is assigned to an active job' });
-    await Worker.findByIdAndDelete(req.params.id);
+    await softDelete(worker, req.user.id);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
