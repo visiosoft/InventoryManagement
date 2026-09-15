@@ -43,10 +43,24 @@ const CSS = `
 .ctr-card { transition: box-shadow .14s ease; cursor: pointer; }
 .ctr-card:hover { box-shadow: 0 6px 18px rgba(20,8,31,.10); }
 .ctr-card:focus-visible { outline: 2px solid ${PURPLE}; outline-offset: 2px; }
+.ctr-card:active { box-shadow: 0 2px 8px rgba(20,8,31,.08); }
 .ctr-link:hover { text-decoration: underline; }
 .ctr-del:hover { background: #FDEEEE; color: ${DANGER}; }
+.ctr-del:active:not(:disabled) { transform: scale(0.90); }
+.ctr-del:focus-visible { outline: 2px solid ${PURPLE}; outline-offset: 2px; }
+.ctr-ghost { transition: filter .12s ease, transform .1s ease; }
 .ctr-ghost:hover { filter: brightness(0.97); }
+.ctr-ghost:active:not(:disabled) { transform: scale(0.96); }
+.ctr-ghost:focus-visible { outline: 2px solid ${PURPLE}; outline-offset: 2px; }
+.ctr-page-btn { transition: filter .12s ease, transform .1s ease; }
 .ctr-page-btn:not(:disabled):hover { filter: brightness(0.96); }
+.ctr-page-btn:not(:disabled):active { transform: scale(0.96); }
+.ctr-page-btn:focus-visible { outline: 2px solid ${PURPLE}; outline-offset: 2px; }
+/* pillBase/fieldBase kill the default outline outright (see below) so every
+   text input, select and date field on this page was keyboard-invisible —
+   this restores a focus ring on the one interaction that actually needs it. */
+.ctr-field { outline: none; }
+.ctr-field:focus-visible { outline: 2px solid ${PURPLE}; outline-offset: 2px; }
 `
 
 // Every control on the toolbar is the same pill: 44px tall, fully rounded.
@@ -59,7 +73,6 @@ const pillBase: React.CSSProperties = {
   fontSize: 14,
   fontWeight: 600,
   padding: '0 16px',
-  outline: 'none',
 }
 
 const fieldBase: React.CSSProperties = {
@@ -70,7 +83,6 @@ const fieldBase: React.CSSProperties = {
   color: INK,
   fontSize: 13,
   padding: '0 12px',
-  outline: 'none',
 }
 
 /** First letters of the first two words, for the avatar. */
@@ -391,16 +403,17 @@ export default function Contracts() {
               placeholder="Customer, unit, contract #…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              className="ctr-field"
               style={{ ...pillBase, width: '100%', fontWeight: 400, padding: '0 16px 0 40px' }}
             />
           </div>
 
-          <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ ...pillBase, cursor: 'pointer', minWidth: 150 }}>
+          <select value={status} onChange={(e) => setStatus(e.target.value)} className="ctr-field" style={{ ...pillBase, cursor: 'pointer', minWidth: 150 }}>
             <option value="">All statuses</option>
             {STATUSES.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
           </select>
 
-          <select value={floor} onChange={(e) => setFloor(e.target.value)} style={{ ...pillBase, cursor: 'pointer', minWidth: 130 }}>
+          <select value={floor} onChange={(e) => setFloor(e.target.value)} className="ctr-field" style={{ ...pillBase, cursor: 'pointer', minWidth: 130 }}>
             <option value="">All floors</option>
             <option value="F1">Floor F1</option>
             <option value="F2">Floor F2</option>
@@ -411,7 +424,7 @@ export default function Contracts() {
           {/* The old table sorted from its column headers. There are no headers
               on a card list, so every one of those sorts lives here instead —
               including Owes and Renewal, which are server-side. */}
-          <select value={sort} onChange={(e) => setSort(e.target.value)} style={{ ...pillBase, cursor: 'pointer', minWidth: 190 }}>
+          <select value={sort} onChange={(e) => setSort(e.target.value)} className="ctr-field" style={{ ...pillBase, cursor: 'pointer', minWidth: 190 }}>
             <option value="newest">Sort: Newest first</option>
             <option value="oldest">Sort: Oldest first</option>
             <option value="start_asc">Sort: Start date ↑</option>
@@ -453,7 +466,7 @@ export default function Contracts() {
             className="flex flex-wrap items-end"
             style={{ gap: 12, marginBottom: 16, padding: 18, background: '#fff', border: `1px solid ${LINE}`, borderRadius: 14 }}
           >
-            <select value={groupBy} onChange={(e) => setGroupBy(e.target.value as typeof groupBy)} style={{ ...fieldBase, cursor: 'pointer', minWidth: 170 }}>
+            <select value={groupBy} onChange={(e) => setGroupBy(e.target.value as typeof groupBy)} className="ctr-field" style={{ ...fieldBase, cursor: 'pointer', minWidth: 170 }}>
               <option value="none">Group: None</option>
               <option value="status">Group: Status</option>
               <option value="payment">Group: Payment</option>
@@ -461,7 +474,7 @@ export default function Contracts() {
               <option value="billing">Group: Billing</option>
             </select>
 
-            <select value={billing} onChange={(e) => setBilling(e.target.value)} style={{ ...fieldBase, cursor: 'pointer', minWidth: 160 }}>
+            <select value={billing} onChange={(e) => setBilling(e.target.value)} className="ctr-field" style={{ ...fieldBase, cursor: 'pointer', minWidth: 160 }}>
               <option value="">All billing periods</option>
               <option value="weekly">Weekly billing</option>
               <option value="monthly">Monthly billing</option>
@@ -469,19 +482,19 @@ export default function Contracts() {
 
             <div>
               <p style={{ fontSize: 11, color: MUTED_COLOR, marginBottom: 4 }}>Start from</p>
-              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ ...fieldBase, width: 160 }} />
+              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="ctr-field" style={{ ...fieldBase, width: 160 }} />
             </div>
             <div>
               <p style={{ fontSize: 11, color: MUTED_COLOR, marginBottom: 4 }}>to</p>
-              <input type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} style={{ ...fieldBase, width: 160 }} />
+              <input type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} className="ctr-field" style={{ ...fieldBase, width: 160 }} />
             </div>
 
-            <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} style={{ ...fieldBase, cursor: 'pointer', minWidth: 140 }}>
+            <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="ctr-field" style={{ ...fieldBase, cursor: 'pointer', minWidth: 140 }}>
               {[25, 50, 100, 200].map((n) => <option key={n} value={n}>{n} per page</option>)}
             </select>
 
             <label className="flex items-center gap-2" style={{ fontSize: 13, color: SECOND, height: 44, cursor: 'pointer' }}>
-              <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+              <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} style={{ accentColor: PURPLE }} />
               Archived &amp; ended
             </label>
 
@@ -520,6 +533,7 @@ export default function Contracts() {
                 checked={allVisibleSelected}
                 onChange={toggleAllVisibleContracts}
                 aria-label="Select all contracts on this page"
+                style={{ accentColor: PURPLE }}
               />
               Select all on this page
               {selectedContractIds.length > 0 && (
@@ -586,7 +600,7 @@ export default function Contracts() {
                             onChange={() => toggleContractSelection(c._id)}
                             onClick={(e) => e.stopPropagation()}
                             aria-label={`Select contract ${c.contractNo}`}
-                            style={{ flex: '0 0 auto', cursor: 'pointer' }}
+                            style={{ flex: '0 0 auto', cursor: 'pointer', accentColor: PURPLE }}
                           />
                         )}
 
@@ -719,7 +733,7 @@ export default function Contracts() {
                               background: 'transparent',
                               color: MUTED_COLOR,
                               cursor: 'pointer',
-                              transition: 'background .12s ease, color .12s ease',
+                              transition: 'background .12s ease, color .12s ease, transform .1s ease',
                             }}
                           >
                             <Trash2 size={16} />
