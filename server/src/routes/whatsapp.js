@@ -1055,11 +1055,14 @@ router.post('/send', async (req, res) => {
  * for them by position before sending rather than after Meta counts them.
  */
 // Kept pinned to the top of the list, in this order, ahead of the
-// alphabetical rest — the ones reps reach for constantly (a discount offer,
+// alphabetical rest — the ones reps reach for constantly (a promo offer,
 // asking for a pin) rather than whatever a straight A-Z sort happens to
 // put first. Absent from Meta (not yet approved, or not yet created) is
 // not an error here — it just never matches anything to pin.
-const PINNED_TEMPLATE_NAMES = ['20_off_your_first_4_weeks', '10_off_your_first_4_weeks', 'location_request_template'];
+const PINNED_TEMPLATE_NAMES = [
+    'storage_promo_check_in', 'storage_promo_update',
+    '20_off_your_first_4_weeks', '10_off_your_first_4_weeks', 'location_request_template',
+];
 
 router.get('/templates', async (req, res) => {
     try {
