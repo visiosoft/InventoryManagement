@@ -838,7 +838,7 @@ function LabelPicker({ convo, labels, onChanged, menuItem }: {
                 onChange={(e) => setNewName(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && newName.trim()) create.mutate() }}
                 placeholder="New label name"
-                className="flex-1 px-2 py-1.5 focus:outline-none"
+                className="flex-1 px-2 py-1.5 focus:outline-none focus-visible:outline-2 focus-visible:outline-ring"
                 style={{ fontSize: 12, background: '#fff', border: `1px solid ${LINE}`, borderRadius: 8, color: INK }}
               />
               <button
@@ -3488,7 +3488,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search name or number"
-                className="w-full pl-8 pr-3 py-2 text-[13px] focus:outline-none"
+                className="w-full pl-8 pr-3 py-2 text-[13px] focus:outline-none focus-visible:outline-2 focus-visible:outline-ring"
                 style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', borderRadius: 10, color: INK }}
               />
             </div>
@@ -3507,12 +3507,13 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                     key={key}
                     type="button"
                     onClick={() => chooseOwnerFilter(key)}
-                    className="flex-1 cursor-pointer truncate"
+                    className="flex-1 cursor-pointer truncate active:scale-95"
                     style={{
                       height: 28, borderRadius: 999, fontSize: 12, fontWeight: 600, border: 'none',
                       background: active ? '#fff' : 'transparent',
                       color: active ? INK : FAINT_INK,
                       boxShadow: active ? '0 1px 2px rgba(20,8,31,.10)' : 'none',
+                      transition: 'background-color 150ms ease, box-shadow 150ms ease, color 150ms ease, transform 100ms ease',
                     }}
                   >
                     {label}
@@ -4573,11 +4574,16 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                 if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendComposer() }
               }}
               placeholder={pending ? 'Add a caption (optional)…' : selectedPhone ? 'Type a message…' : 'Pick a chat to start typing…'}
-              className="flex-1 resize-none px-4 py-2.5 text-sm focus:outline-none"
+              className="flex-1 resize-none px-4 py-2.5 text-sm focus:outline-none focus-visible:outline-2 focus-visible:outline-ring"
               style={{
                 background: '#F7F3FF',
                 border: '1px solid #EDE5FF',
                 borderRadius: composerH > 80 ? 14 : 20,
+                // Height itself stays untransitioned — it changes on every
+                // keystroke while typing, and animating that would make
+                // typing feel laggy rather than responsive (kill latency
+                // first). Only the border-radius snap gets one.
+                transition: 'border-radius 150ms ease',
                 height: composerH,
                 color: INK,
                 lineHeight: 1.4,
@@ -4587,7 +4593,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
               type="button"
               onClick={sendComposer}
               disabled={send.isPending || sendMedia.isPending || sendHostedVideoAttachment.isPending || (!draft.trim() && !pending) || !selectedPhone}
-              className="shrink-0 inline-flex items-center justify-center rounded-full cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed"
+              className="shrink-0 inline-flex items-center justify-center rounded-full cursor-pointer active:scale-90 transition-transform duration-100 disabled:opacity-45 disabled:cursor-not-allowed disabled:active:scale-100"
               style={{ width: 44, height: 44, background: '#5B2BC9', color: '#fff' }}
               aria-label="Send"
               title="Send"
@@ -4730,7 +4736,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                               type="button"
                               onClick={() => sendQuickReply.mutate(t._id)}
                               disabled={!selectedPhone || send.isPending || sendQuickReply.isPending}
-                              className="shrink-0 inline-flex items-center justify-center rounded-full cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                              className="shrink-0 inline-flex items-center justify-center rounded-full cursor-pointer active:scale-90 transition-transform duration-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
                               style={{ width: 26, height: 26, background: '#5B2BC9', color: '#fff' }}
                               title="Send now"
                               aria-label={`Send ${t.label} now`}
@@ -4756,7 +4762,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                     value={custom}
                     onChange={(e) => setCustom(e.target.value)}
                     placeholder="Write a one-off message…"
-                    className="w-full resize-none px-3 py-2 text-[12.5px] focus:outline-none"
+                    className="w-full resize-none px-3 py-2 text-[12.5px] focus:outline-none focus-visible:outline-2 focus-visible:outline-ring"
                     style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', borderRadius: 10, color: INK }}
                   />
                   <div className="flex items-center gap-2">
@@ -4956,7 +4962,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                               <input
                                 value={v}
                                 onChange={(e) => setVar(t.name, i, e.target.value, t.variableCount)}
-                                className="mt-0.5 w-full px-3 py-1.5 text-[12.5px] focus:outline-none"
+                                className="mt-0.5 w-full px-3 py-1.5 text-[12.5px] focus:outline-none focus-visible:outline-2 focus-visible:outline-ring"
                                 style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', borderRadius: 10, color: INK }}
                                 placeholder={i === 0 ? 'Ahmed' : 'Value'}
                               />
@@ -4966,7 +4972,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                             type="button"
                             onClick={() => sendTemplate.mutate({ name: t.name, language: t.language, variables: values })}
                             disabled={!selectedPhone || !ready || sendTemplate.isPending}
-                            className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-white cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed"
+                            className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-white cursor-pointer active:scale-[0.98] transition-transform duration-100 disabled:opacity-45 disabled:cursor-not-allowed disabled:active:scale-100"
                             style={{ fontSize: 12, fontWeight: 700, background: '#5B2BC9' }}
                             title={ready ? 'Send this template now' : 'Fill every placeholder first — Meta rejects a blank one'}
                           >
