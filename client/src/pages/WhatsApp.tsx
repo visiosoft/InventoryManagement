@@ -111,8 +111,11 @@ const CSS = `
 .wa-grip { height: 12px; display: grid; place-items: center; cursor: ns-resize; touch-action: none; }
 .wa-grip-bar { width: 44px; height: 4px; border-radius: 999px; background: rgba(20,8,31,.16); transition: background .15s ease; }
 .wa-grip:hover .wa-grip-bar { background: rgba(91,43,201,.55); }
-.wa-score-grip-bar { width: 4px; height: 44px; border-radius: 999px; background: rgba(20,8,31,.16); transition: background .15s ease; }
-.wa-score-grip:hover .wa-score-grip-bar { background: rgba(91,43,201,.55); }
+/* The vertical drag-handle bar — shared by every side panel that resizes
+   left/right (the score rail, the chat list), as opposed to .wa-grip
+   above, which is the composer's horizontal one. */
+.wa-vgrip-bar { width: 4px; height: 44px; border-radius: 999px; background: rgba(20,8,31,.16); transition: background .15s ease; }
+.wa-vgrip:hover .wa-vgrip-bar { background: rgba(91,43,201,.55); }
 .wa-scroll { overflow-y: auto; }
 .wa-scroll::-webkit-scrollbar { width: 8px; }
 .wa-scroll::-webkit-scrollbar-thumb { background: rgba(20,8,31,.16); border-radius: 999px; }
@@ -133,14 +136,14 @@ const CSS = `
   .wa-qr { width: 100%; }
 }
 
-/* The lead-score rail is always on, not toggled — the whole point of it is
-   being read before typing, not opened after — but "always on" and
-   "squeezed into a flex row on a 375px screen" cannot both be true at once.
-   Above this width it stays a plain flex sibling with no rule below
-   touching it at all, i.e. genuinely always visible. Below it, the same
-   drawer treatment .wa-sidebar already uses: off-screen by default,
-   summoned by its own toggle (wa-score-toggle, shown only at this width)
-   rather than appearing unprompted the moment a chat opens.
+/* The lead-score rail defaults to on — the whole point of it is being read
+   before typing, not opened after — but it is closeable at every width now,
+   not just below the point where it becomes a drawer: "always on" and "no
+   way to get it out of the way while I work" turned out not to be the same
+   thing. Above 1100px it stays a plain flex sibling, just one that can be
+   removed from the flow (display:none) when closed. Below it, the same
+   drawer treatment .wa-sidebar already uses: transform-based, off-screen
+   until its own toggle (wa-score-toggle) opens it.
 
    The base rules have to come before both media queries below, not after:
    equal-specificity CSS resolves by source order among every rule whose
@@ -149,7 +152,10 @@ const CSS = `
    then beat the 440px case's 100%, undoing exactly the override it exists
    to make. */
 .wa-score { width: 260px; position: relative; }
-.wa-score-toggle { display: none; }
+.wa-score-toggle { display: inline-flex; }
+@media (min-width: 1101px) {
+  .wa-score:not(.wa-score-open) { display: none; }
+}
 @media (max-width: 1100px) {
   .wa-score {
     position: absolute; top: 0; right: 0; bottom: 0;
@@ -158,11 +164,17 @@ const CSS = `
     box-shadow: -10px 0 34px rgba(20,8,31,.18);
   }
   .wa-score.wa-score-open { transform: translateX(0); }
-  .wa-score-toggle { display: inline-flex !important; }
 }
 @media (max-width: 440px) {
   .wa-score { width: 100%; }
 }
+
+/* position: relative, purely so the resize grip below has something to
+   anchor to above ~700px, where no other rule touches position at all —
+   left out of the element's own inline style so it cannot beat the media
+   query's position: absolute below, the same trap the score rail's grip
+   comment (above) already explains. */
+.wa-sidebar { position: relative; }
 
 /* Below ~700px the chat list collapses to a drawer. */
 @media (max-width: 700px) {
@@ -1133,10 +1145,10 @@ function LeadScorePanel({ leadId, open, onClose }: { leadId: string | null; open
         title="Drag to resize · double-click to reset"
         role="separator"
         aria-orientation="vertical"
-        className="wa-score-grip"
+        className="wa-vgrip"
         style={{ position: 'absolute', left: -6, top: 0, bottom: 0, width: 12, cursor: 'ew-resize', touchAction: 'none', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
       >
-        <span className="wa-score-grip-bar" />
+        <span className="wa-vgrip-bar" />
       </div>
 
       <div className="shrink-0 px-4 py-3.5 flex items-center justify-between" style={{ borderBottom: `1px solid ${LINE}` }}>
@@ -2385,10 +2397,13 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     return () => document.removeEventListener('mousedown', away)
   }, [notifOpen])
   const [qrOpen, setQrOpen] = useState(false)
-  // The score rail's own open state — only ever consulted below the width
-  // where it stops being an always-visible sidebar and becomes a drawer
-  // (see the .wa-score CSS). Above that width this is simply unused.
-  const [scoreOpen, setScoreOpen] = useState(false)
+  // The score rail's own open state — now consulted at every width (see
+  // the .wa-score CSS). Starts open on a wide screen and closed on a
+  // narrow one, matching what was previously true unconditionally on each
+  // side of that breakpoint, before either side could be toggled.
+  const [scoreOpen, setScoreOpen] = useState(() => (
+    typeof window !== 'undefined' ? window.matchMedia('(min-width: 1101px)').matches : true
+  ))
   /* Which half of the side panel is showing.
    *
    * Quick replies are free text and templates are not, and which one a rep
@@ -2396,6 +2411,40 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
    * so they share one panel rather than competing for the same corner. */
   const [panelTab, setPanelTab] = useState<'quick' | 'templates' | 'videos'>('quick')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  // The chat list's own width — same drag-to-resize mechanic as the score
+  // rail's (SCORE_MIN/MAX etc., see LeadScorePanel): pointer capture,
+  // clamped, persisted. Below ~700px the list becomes a drawer (see the
+  // .wa-sidebar CSS) at its own fixed width — this is only meaningful
+  // above that.
+  const SIDEBAR_MIN = 280
+  const SIDEBAR_MAX = 560
+  const [sidebarW, setSidebarW] = useState<number | null>(() => {
+    const saved = Number(localStorage.getItem('wa_sidebar_w'))
+    return Number.isFinite(saved) && saved >= SIDEBAR_MIN ? Math.min(saved, SIDEBAR_MAX) : null
+  })
+  const sidebarDragRef = useRef<{ startX: number; startW: number } | null>(null)
+  const onSidebarDragStart = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    sidebarDragRef.current = { startX: e.clientX, startW: sidebarW ?? CHAT_PANEL_W }
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  }
+  const onSidebarDragMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = sidebarDragRef.current
+    if (!d) return
+    // Anchored to the left edge, so dragging right (a larger clientX)
+    // makes it wider — the mirror image of the score rail's own grip.
+    const next = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, d.startW + (e.clientX - d.startX)))
+    setSidebarW(next)
+  }
+  const onSidebarDragEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!sidebarDragRef.current) return
+    sidebarDragRef.current = null
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId) } catch { /* already released */ }
+    setSidebarW((w) => { if (w != null) localStorage.setItem('wa_sidebar_w', String(w)); return w })
+  }
+  const resetSidebarW = () => { setSidebarW(null); localStorage.removeItem('wa_sidebar_w') }
+
   const [setupOpen, setSetupOpen] = useState(false)
   // Renaming the person this thread belongs to, without leaving the console.
   const [renaming, setRenaming] = useState(false)
@@ -3241,8 +3290,26 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
         {!embedded && (
         <aside
           className={cn('wa-sidebar flex flex-col min-h-0', sidebarOpen && 'wa-sidebar-open')}
-          style={{ flex: `0 0 ${CHAT_PANEL_W}px`, width: CHAT_PANEL_W, background: '#fff', borderRight: `1px solid ${LINE}`, fontFamily: CHAT_PANEL_FONT }}
+          style={{ flex: `0 0 ${sidebarW ?? CHAT_PANEL_W}px`, width: sidebarW ?? CHAT_PANEL_W, background: '#fff', borderRight: `1px solid ${LINE}`, fontFamily: CHAT_PANEL_FONT }}
         >
+          {/* Drag right to make the list wider — the score rail's own grip,
+              mirrored onto the opposite edge since this panel sits on the
+              left rather than sliding in from the right. */}
+          <div
+            onPointerDown={onSidebarDragStart}
+            onPointerMove={onSidebarDragMove}
+            onPointerUp={onSidebarDragEnd}
+            onPointerCancel={onSidebarDragEnd}
+            onDoubleClick={resetSidebarW}
+            title="Drag to resize · double-click to reset"
+            role="separator"
+            aria-orientation="vertical"
+            className="wa-vgrip"
+            style={{ position: 'absolute', right: -6, top: 0, bottom: 0, width: 12, cursor: 'ew-resize', touchAction: 'none', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <span className="wa-vgrip-bar" />
+          </div>
+
           <div className="shrink-0 px-4 pt-4 pb-3 space-y-3">
             {/* The console had a dark bar of its own above all this, carrying
                 the PurpleBox name a second time — the page is already titled
@@ -4358,10 +4425,10 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
             <IconButton title="Quick replies and approved templates" onClick={() => setQrOpen((v) => !v)} className="!h-10 !w-10 shrink-0">
               <Zap size={16} />
             </IconButton>
-            {/* Only ever visible below the width the score rail stops
-                being always-on and becomes a drawer (see the .wa-score
-                CSS) — on a real screen it's already sitting on the right,
-                nothing to summon. */}
+            {/* Toggles the score rail at every width now — it defaults
+                open on a wide screen, so this mostly reopens it once
+                closed there; on a narrow one it's the only way to summon
+                it at all (see the .wa-score CSS). */}
             {selectedPhone && (
               <button
                 type="button"
