@@ -105,6 +105,17 @@ const CSS = `
 }
 .wa-blink { animation: wa-blink-bg 1s ease-in-out 4; }
 @keyframes wa-spin { to { transform: rotate(360deg); } }
+
+/* A dropdown materializes from its own trigger, not just fades in place —
+   transform-origin (set per menu, since one opens upward and the other
+   down) does the anchoring; this only supplies the scale + fade. Plays
+   once on mount, so it works with a menu that's conditionally rendered
+   rather than always-present and toggled. */
+@keyframes wa-menu-in { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: scale(1); } }
+.wa-menu-pop { animation: wa-menu-in 140ms cubic-bezier(0.16, 1, 0.3, 1); }
+@media (prefers-reduced-motion: reduce) {
+  .wa-menu-pop { animation: none; }
+}
 .wa-thumb { cursor: zoom-in; }
 .wa-thumb:hover { opacity: 0.92; }
 .wa-doc:hover { text-decoration: underline; }
@@ -152,10 +163,22 @@ const CSS = `
    would silently win over it — on a narrow screen the base 260px would
    then beat the 440px case's 100%, undoing exactly the override it exists
    to make. */
-.wa-score { width: 260px; position: relative; }
+.wa-score { width: 260px; position: relative; max-width: 480px; transition: max-width 200ms ease; }
 .wa-score-toggle { display: inline-flex; }
 @media (min-width: 1101px) {
-  .wa-score:not(.wa-score-open) { display: none; }
+  /* max-width, not display:none or width — closing used to be an
+     instant cut, while the narrow drawer below gets a proper slide.
+     max-width rather than width specifically: width is also set inline
+     (the resize grip's scoreW), and a stylesheet rule fighting an inline
+     value needs !important to win, which — cascade-origin change and
+     all — several engines then quietly skip transitioning. max-width has
+     no inline counterpart here, so it's stylesheet-vs-stylesheet the
+     whole way and transitions reliably. overflow/border only apply once
+     actually closing (not on the steady open state), so the resize
+     grip — which sits slightly outside the box — stays visible and
+     usable the moment it starts reopening rather than only once the
+     transition finishes. */
+  .wa-score:not(.wa-score-open) { max-width: 0; overflow: hidden; border-left: none; }
 }
 @media (max-width: 1100px) {
   .wa-score {
@@ -228,6 +251,13 @@ const CSS = `
 @media (max-width: 400px) {
   .wa-head-extra { display: none !important; }
   .wa-bubble { max-width: 92% !important; }
+}
+
+/* Drawers still open and close under reduced motion — they just cut
+   instead of sliding/growing. Placed last so it wins the drawer rules
+   above at whatever width both conditions hold. */
+@media (prefers-reduced-motion: reduce) {
+  .wa-score, .wa-sidebar { transition: none !important; }
 }
 `
 
@@ -387,7 +417,9 @@ function Attachment({ messageId, media }: { messageId: string; media: WaMedia })
  * The header carried five circular icons and no words, which is fine on a
  * desktop where you can hover for a tooltip and hopeless on a phone. Behind
  * one button they can be what they always should have been: named actions. */
-const MENU_ROW = 'w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-sm cursor-pointer hover:bg-[#F7F3FF]'
+// active:* fires the instant a row is pressed, not once onClick resolves —
+// a menu tap gets the same no-latency feedback as everything else here.
+const MENU_ROW = 'w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-sm cursor-pointer transition-colors duration-100 hover:bg-[#F7F3FF] active:bg-[#EDE5FF]'
 
 function IconButton({
   title, onClick, children, tone = 'light', className,
@@ -404,7 +436,10 @@ function IconButton({
       title={title}
       aria-label={title}
       onClick={onClick}
-      className={cn('inline-flex items-center justify-center rounded-lg transition-colors cursor-pointer h-8 w-8', className)}
+      // Feedback belongs on the press, not just on hover — active:scale
+      // is the instant, no-latency response a tap needs; nothing here
+      // waits for onClick to resolve before something visibly happens.
+      className={cn('inline-flex items-center justify-center rounded-lg transition duration-150 active:scale-90 cursor-pointer h-8 w-8', className)}
       style={
         tone === 'dark'
           ? { background: 'rgba(255,255,255,.08)', border: '1px solid rgba(255,255,255,.14)', color: '#fff' }
@@ -3919,8 +3954,8 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
 
                   {chatMenuOpen && (
                     <div
-                      className="absolute right-0 mt-1 z-30 rounded-xl overflow-hidden"
-                      style={{ background: '#fff', border: `1px solid ${LINE}`, boxShadow: '0 10px 30px rgba(20,8,31,.16)', minWidth: 218 }}
+                      className="absolute right-0 mt-1 z-30 rounded-xl overflow-hidden wa-menu-pop"
+                      style={{ background: '#fff', border: `1px solid ${LINE}`, boxShadow: '0 10px 30px rgba(20,8,31,.16)', minWidth: 218, transformOrigin: 'top right' }}
                       onClick={(e) => {
                         // A row that opens a dialog should close the menu behind
                         // it; the label picker opens in place, so it must not.
@@ -4461,8 +4496,8 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
 
               {toolsOpen && (
                 <div
-                  className="absolute left-0 bottom-full mb-1.5 z-30 rounded-xl overflow-hidden"
-                  style={{ background: '#fff', border: `1px solid ${LINE}`, boxShadow: '0 10px 30px rgba(20,8,31,.16)', minWidth: 232 }}
+                  className="absolute left-0 bottom-full mb-1.5 z-30 rounded-xl overflow-hidden wa-menu-pop"
+                  style={{ background: '#fff', border: `1px solid ${LINE}`, boxShadow: '0 10px 30px rgba(20,8,31,.16)', minWidth: 232, transformOrigin: 'bottom left' }}
                 >
                   <button
                     type="button"
