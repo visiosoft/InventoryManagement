@@ -1073,6 +1073,7 @@ const PINNED_TEMPLATE_NAMES = [
 const HIDDEN_TEMPLATE_NAMES = new Set([
     'contract_expiry_notification', 'facility_visit_followup', 'final_nudge_closing', 'inquiry_followup_unit_sizes',
     'move_store_bundle',
+    'promo_10_percent_new_leads', 'promo_10_percent_retarget', 'promo_last_chance', 'promo_reminder_touchbase',
 ]);
 
 router.get('/templates', async (req, res) => {
