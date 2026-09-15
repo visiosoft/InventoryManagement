@@ -120,7 +120,16 @@ export function Field({ label, children, className }: { label: string; children:
 
 /* ---------- Card ---------- */
 export function Card({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn('rounded-xl border bg-card text-card-foreground shadow-sm', className)}>{children}</div>
+  return (
+    <div
+      className={cn(
+        'rounded-xl border bg-card text-card-foreground shadow-sm transition-[box-shadow,border-color] hover:border-primary/40 hover:shadow-md',
+        className,
+      )}
+    >
+      {children}
+    </div>
+  )
 }
 
 export function CardHeader({ title, subtitle, action }: { title: ReactNode; subtitle?: ReactNode; action?: ReactNode }) {
