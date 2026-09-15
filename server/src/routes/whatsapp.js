@@ -1054,6 +1054,13 @@ router.post('/send', async (req, res) => {
  * `variables` names the {{1}}, {{2}} … the body expects, so the console can ask
  * for them by position before sending rather than after Meta counts them.
  */
+// Kept pinned to the top of the list, in this order, ahead of the
+// alphabetical rest — the ones reps reach for constantly (a discount offer,
+// asking for a pin) rather than whatever a straight A-Z sort happens to
+// put first. Absent from Meta (not yet approved, or not yet created) is
+// not an error here — it just never matches anything to pin.
+const PINNED_TEMPLATE_NAMES = ['20_off_your_first_4_weeks', '10_off_your_first_4_weeks', 'location_request_template'];
+
 router.get('/templates', async (req, res) => {
     try {
         const out = await listWhatsAppTemplates({ force: req.query.refresh === '1' });
@@ -1069,7 +1076,16 @@ router.get('/templates', async (req, res) => {
                 // what Meta stores and what nobody wants to read in a list.
                 label: t.name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
             }))
-            .sort((a, b) => a.label.localeCompare(b.label));
+            .sort((a, b) => {
+                const pa = PINNED_TEMPLATE_NAMES.indexOf(a.name);
+                const pb = PINNED_TEMPLATE_NAMES.indexOf(b.name);
+                if (pa !== -1 || pb !== -1) {
+                    if (pa === -1) return 1;
+                    if (pb === -1) return -1;
+                    return pa - pb;
+                }
+                return a.label.localeCompare(b.label);
+            });
         res.json({ configured: out.configured, error: out.error || '', templates: approved });
     } catch (e) {
         res.status(500).json({ error: e.message });
