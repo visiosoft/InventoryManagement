@@ -3,6 +3,23 @@ import { MovingJob, MovingInvoice, MovingLead, MovingQuote, MovingClaim } from '
 
 const router = Router();
 
+/* What the client was actually billed for a job.
+ *
+ * Most moving jobs go through the agreed package price (set at booking)
+ * rather than a formal line-itemed invoice — only fall back to the linked
+ * invoice's total when no package was agreed. Used everywhere a job's
+ * revenue is computed, so a job billed by package price never reads as
+ * AED 0 (and therefore all-loss) just because nobody built the invoice.
+ */
+function clientTotalOf(job) {
+  const pkg = job.clientPackage;
+  if (pkg && (pkg.agreedPrice > 0 || pkg.additionalCharges?.length)) {
+    const addons = (pkg.additionalCharges || []).reduce((s, a) => s + (a.amount || 0), 0);
+    return (pkg.agreedPrice || 0) + addons;
+  }
+  return job.invoice?.total ?? 0;
+}
+
 // Dashboard summary
 router.get('/summary', async (req, res) => {
   try {
@@ -187,12 +204,12 @@ router.get('/profitability', async (req, res) => {
     const jobs = await MovingJob.find(filter)
       .populate('customer', 'fullName')
       .populate('invoice', 'invoiceNo total status')
-      .select('jobNo customer scheduledDate costs invoice status')
+      .select('jobNo customer scheduledDate costs invoice status clientPackage')
       .sort({ scheduledDate: -1 })
       .limit(500);
 
     const rows = jobs.map(j => {
-      const revenue = j.invoice?.total ?? 0;
+      const revenue = clientTotalOf(j);
       const cost = j.costs?.total ?? 0;
       const profit = revenue - cost;
       const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
@@ -300,18 +317,6 @@ router.get('/costs', async (req, res) => {
       status: { $in: ['completed', 'invoiced'] },
       scheduledDate: { $gte: from },
     }).select('scheduledDate costs clientPackage invoice').populate('invoice', 'total').lean();
-
-    // What the client was actually billed. Most moving jobs go through the
-    // agreed package price (set at booking) rather than a formal invoice —
-    // only fall back to the linked invoice total when no package was agreed.
-    const clientTotalOf = (j) => {
-      const pkg = j.clientPackage;
-      if (pkg && (pkg.agreedPrice > 0 || pkg.additionalCharges?.length)) {
-        const addons = (pkg.additionalCharges || []).reduce((s, a) => s + (a.amount || 0), 0);
-        return (pkg.agreedPrice || 0) + addons;
-      }
-      return j.invoice?.total ?? 0;
-    };
 
     const byMonth = new Map();
     const categories = ['labor', 'truck', 'materials', 'packing', 'extras', 'externalHires'];

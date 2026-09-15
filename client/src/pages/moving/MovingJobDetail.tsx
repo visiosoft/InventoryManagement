@@ -1368,12 +1368,20 @@ export default function MovingJobDetail() {
       </Card>
 
       {/* Profitability */}
-      {job.invoice && (
+      {(job.invoice || (job.clientPackage?.agreedPrice ?? 0) > 0) && (
         <Card>
           <CardHeader title="Job Profitability" />
           <CardBody>
             {(() => {
-              const revenue = (job.invoice as any)?.total ?? 0
+              // Most moving jobs are billed at the agreed package price (set
+              // at booking) rather than a formal line-itemed invoice — same
+              // fallback as movingReports.js's clientTotalOf(), so a job
+              // billed by package price never reads as AED 0 revenue just
+              // because nobody built the invoice.
+              const pkg = job.clientPackage
+              const revenue = pkg && ((pkg.agreedPrice ?? 0) > 0 || pkg.additionalCharges?.length)
+                ? (pkg.agreedPrice ?? 0) + (pkg.additionalCharges ?? []).reduce((s, a) => s + (a.amount || 0), 0)
+                : (job.invoice as any)?.total ?? 0
               const cost = job.costs?.total ?? 0
               const profit = revenue - cost
               const margin = revenue > 0 ? Math.round(((profit / revenue) * 100) * 10) / 10 : 0

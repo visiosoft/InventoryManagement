@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
-import { Plus, Search, ArrowRight, MapPin, Trash2, Pencil, Briefcase, CheckCircle, Clock, Truck, FileSignature, Send, FileText } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { Plus, Search, ArrowRight, MapPin, Trash2, Pencil, Briefcase, CheckCircle, Clock, Truck, FileSignature, Send, FileText, X } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
 import type { MovingJob, MovingJobStatus } from '../../lib/types'
 import { Badge, Button, Modal, Spinner, movingJobStatusLabel } from '../../components/ui'
@@ -63,7 +63,13 @@ function truncate(s?: string, max = 32) {
 }
 
 export default function MovingJobs() {
-  const [status, setStatus] = useState<MovingJobStatus | ''>('')
+  // ?status= (comma-separated for a multi-status deep link, e.g. the
+  // dashboard's "Active Jobs" card) and ?from=/?to= (a scheduled-date range,
+  // e.g. "Jobs This Month") let other screens link straight to a filtered list.
+  const [urlParams] = useSearchParams()
+  const [status, setStatus] = useState<string>(urlParams.get('status') || '')
+  const [dateFrom, setDateFrom] = useState(urlParams.get('from') || '')
+  const [dateTo, setDateTo] = useState(urlParams.get('to') || '')
   const [search, setSearch] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<{ _id: string; jobNo: string } | null>(null)
   const [deleteErr, setDeleteErr] = useState('')
@@ -99,8 +105,10 @@ export default function MovingJobs() {
   })
 
   const { data, isLoading } = useQuery<{ jobs: MovingJob[]; total: number }>({
-    queryKey: ['moving-jobs', status],
-    queryFn: () => api.get('/moving-jobs', { params: { status: status || undefined, limit: 200 } }).then(r => r.data),
+    queryKey: ['moving-jobs', status, dateFrom, dateTo],
+    queryFn: () => api.get('/moving-jobs', {
+      params: { status: status || undefined, from: dateFrom || undefined, to: dateTo || undefined, limit: 200 },
+    }).then(r => r.data),
   })
 
   const { data: breakdown } = useQuery<JobsBreakdown>({
@@ -195,6 +203,20 @@ export default function MovingJobs() {
             )
           })}
         </div>
+
+        {(dateFrom || dateTo) && (
+          <button
+            onClick={() => { setDateFrom(''); setDateTo('') }}
+            style={{
+              height: 32, borderRadius: 10, background: '#EDE5FF', color: PURPLE,
+              fontSize: 12.5, fontWeight: 600, padding: '0 10px', border: 'none', width: 'fit-content',
+            }}
+            className="flex items-center gap-1.5 hover:opacity-90 transition-opacity"
+          >
+            {dateFrom ? fmtDate(dateFrom) : 'Start'} → {dateTo ? fmtDate(dateTo) : 'End'}
+            <X size={12} />
+          </button>
+        )}
       </div>
 
       {/* Results */}

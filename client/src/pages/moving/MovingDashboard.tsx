@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -57,6 +57,17 @@ const TYPE_LABELS: Record<string, string> = {
 
 const CHART_COLORS = ['#60a5fa', '#34d399', '#fbbf24', '#c084fc', '#2dd4bf', '#f87171', '#fb923c']
 
+const CSS = `
+.kpi-card-link:hover { box-shadow: 0 6px 18px rgba(20,8,31,.08); }
+.kpi-card-link:active { transform: scale(0.99); }
+.kpi-card-link:focus-visible { outline: 2px solid #5B2BC9; outline-offset: 2px; }
+.status-slice { cursor: pointer; transition: opacity .12s ease; }
+.status-slice:hover { opacity: 0.82; }
+.status-legend-link { cursor: pointer; border: none; background: none; padding: 0; }
+.status-legend-link:hover { text-decoration: underline; }
+.status-legend-link:focus-visible { outline: 2px solid #5B2BC9; outline-offset: 2px; border-radius: 4px; }
+`
+
 const statusTone: Record<string, string> = {
   draft: 'gray', confirmed: 'blue',
   in_progress: 'yellow', completed: 'green', invoiced: 'teal', cancelled: 'red',
@@ -68,6 +79,14 @@ function getLast6Months() {
     const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1)
     return { year: d.getFullYear(), month: d.getMonth() + 1, label: d.toLocaleDateString('en-US', { month: 'short' }) }
   })
+}
+
+function monthRange() {
+  const now = new Date()
+  const from = new Date(now.getFullYear(), now.getMonth(), 1)
+  const to = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+  const iso = (d: Date) => d.toISOString().slice(0, 10)
+  return { from: iso(from), to: iso(to) }
 }
 
 function isToday(dateStr?: string) {
@@ -86,8 +105,8 @@ const EMPTY: MovingSummary = {
   totalJobs: 0, jobsThisMonth: 0, activeJobs: 0, totalRevenue: 0, revenueThisMonth: 0, upcomingJobs: [],
 }
 
-function KPICard({ label, value, sub, icon: Icon, color }: {
-  label: string; value: string; sub: string; icon: React.ElementType; color: 'blue' | 'amber' | 'green' | 'purple'
+function KPICard({ label, value, sub, icon: Icon, color, to }: {
+  label: string; value: string; sub: string; icon: React.ElementType; color: 'blue' | 'amber' | 'green' | 'purple'; to?: string
 }) {
   const colorMap = {
     blue:   { iconBg: 'rgba(96,165,250,0.12)', iconColor: '#2563eb' },
@@ -96,8 +115,8 @@ function KPICard({ label, value, sub, icon: Icon, color }: {
     purple: { iconBg: 'rgba(91,43,201,0.12)',  iconColor: '#5B2BC9' },
   }
   const { iconBg, iconColor } = colorMap[color]
-  return (
-    <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 20 }}>
+  const body = (
+    <>
       <div className="flex items-start justify-between gap-3">
         <div style={{ fontSize: 13, color: MUTED_COLOR, fontWeight: 500 }}>{label}</div>
         <div style={{ width: 36, height: 36, borderRadius: 10, background: iconBg, display: 'grid', placeItems: 'center', color: iconColor }}>
@@ -106,7 +125,18 @@ function KPICard({ label, value, sub, icon: Icon, color }: {
       </div>
       <div style={{ ...HEADING, fontSize: 32, fontWeight: 700, color: INK, marginTop: 8 }}>{value}</div>
       {sub && <div style={{ fontSize: 12, color: MUTED_COLOR, marginTop: 6 }}>{sub}</div>}
-    </div>
+    </>
+  )
+  const style: React.CSSProperties = { background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, padding: 20 }
+  if (!to) return <div style={style}>{body}</div>
+  return (
+    <Link
+      to={to}
+      style={{ ...style, display: 'block', transition: 'box-shadow .14s ease, transform .1s ease' }}
+      className="kpi-card-link"
+    >
+      {body}
+    </Link>
   )
 }
 
@@ -122,6 +152,7 @@ const RevenueTooltip = ({ active, payload, label }: any) => {
 }
 
 export default function MovingDashboard() {
+  const navigate = useNavigate()
   const todayStr = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
   const { data: summary = EMPTY, isLoading } = useQuery<MovingSummary>({
@@ -149,7 +180,7 @@ export default function MovingDashboard() {
 
   const statusPie = (jobsBreakdown?.byStatus ?? [])
     .filter(s => s._id && s.count > 0)
-    .map(s => ({ name: movingJobStatusLabel(s._id), value: s.count, color: STATUS_COLORS[s._id] ?? '#94a3b8' }))
+    .map(s => ({ key: s._id, name: movingJobStatusLabel(s._id), value: s.count, color: STATUS_COLORS[s._id] ?? '#94a3b8' }))
 
   const typeBars = (jobsBreakdown?.byType ?? [])
     .filter(t => t._id)
@@ -161,8 +192,12 @@ export default function MovingDashboard() {
 
   if (isLoading) return <div className="flex justify-center py-24"><Spinner /></div>
 
+  const { from: monthFrom, to: monthTo } = monthRange()
+  const statusPieLink = (s: { name: string; value: number; color: string; key: string }) => `/moving/jobs?status=${s.key}`
+
   return (
     <div style={{ background: '#FDFCFA', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7 space-y-5">
+      <style>{CSS}</style>
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
@@ -186,10 +221,10 @@ export default function MovingDashboard() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard label="Jobs This Month" value={String(summary.jobsThisMonth)} sub={`${summary.totalJobs} total all time`} icon={ClipboardList} color="blue" />
-        <KPICard label="Active Jobs" value={String(summary.activeJobs)} sub="confirmed + in progress" icon={Truck} color="amber" />
-        <KPICard label="Revenue This Month" value={fmtAed(summary.revenueThisMonth)} sub="from paid invoices" icon={TrendingUp} color="green" />
-        <KPICard label="Total Revenue" value={fmtAed(summary.totalRevenue)} sub="all time, paid invoices" icon={Wallet} color="purple" />
+        <KPICard label="Jobs This Month" value={String(summary.jobsThisMonth)} sub={`${summary.totalJobs} total all time`} icon={ClipboardList} color="blue" to={`/moving/jobs?from=${monthFrom}&to=${monthTo}`} />
+        <KPICard label="Active Jobs" value={String(summary.activeJobs)} sub="confirmed + in progress" icon={Truck} color="amber" to="/moving/jobs?status=confirmed,in_progress" />
+        <KPICard label="Revenue This Month" value={fmtAed(summary.revenueThisMonth)} sub="from paid invoices" icon={TrendingUp} color="green" to="/moving/invoices?status=paid&month=1" />
+        <KPICard label="Total Revenue" value={fmtAed(summary.totalRevenue)} sub="all time, paid invoices" icon={Wallet} color="purple" to="/moving/invoices?status=paid" />
       </div>
 
       {/* Charts Row 1: Revenue trend + Status donut */}
@@ -234,17 +269,28 @@ export default function MovingDashboard() {
                 <ResponsiveContainer width="100%" height={150}>
                   <PieChart>
                     <Pie data={statusPie} cx="50%" cy="50%" innerRadius={42} outerRadius={68} paddingAngle={2} dataKey="value">
-                      {statusPie.map((e, i) => <Cell key={i} fill={e.color} />)}
+                      {statusPie.map((e, i) => (
+                        <Cell
+                          key={i}
+                          fill={e.color}
+                          className="status-slice"
+                          onClick={() => navigate(statusPieLink(e))}
+                        />
+                      ))}
                     </Pie>
                     <Tooltip formatter={(v) => [v + ' jobs', '']} contentStyle={{ borderRadius: 8, fontSize: 12 }} />
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="flex flex-wrap gap-x-3 gap-y-1.5 justify-center">
                   {statusPie.map(s => (
-                    <div key={s.name} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <button
+                      key={s.name}
+                      onClick={() => navigate(statusPieLink(s))}
+                      className="status-legend-link flex items-center gap-1.5 text-xs text-muted-foreground"
+                    >
                       <span className="w-2 h-2 rounded-full shrink-0" style={{ background: s.color }} />
                       {s.name} <span className="font-medium text-foreground">{s.value}</span>
-                    </div>
+                    </button>
                   ))}
                 </div>
               </div>

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useState } from 'react'
 import { Search, Receipt, ArrowRight, AlertCircle, CheckCircle2, Clock, Trash2, Plus, X } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
@@ -67,7 +67,12 @@ export default function MovingInvoices() {
   const isAdmin = user?.role === 'admin'
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const [filterStatus, setFilterStatus] = useState<MovingInvoiceStatus | ''>('')
+  // ?status= and ?month=1 let the dashboard's Revenue KPIs link straight to
+  // a filtered list ("This Month" scopes to the current calendar month by
+  // invoiceDate, same window "Collected This Month" below is computed over).
+  const [urlParams] = useSearchParams()
+  const [filterStatus, setFilterStatus] = useState<MovingInvoiceStatus | ''>((urlParams.get('status') as MovingInvoiceStatus) || '')
+  const [monthOnly, setMonthOnly] = useState(urlParams.get('month') === '1')
   const [search, setSearch] = useState('')
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [err, setErr] = useState('')
@@ -166,7 +171,11 @@ export default function MovingInvoices() {
     const matchSearch = !search ||
       inv.invoiceNo.toLowerCase().includes(search.toLowerCase()) ||
       inv.customer?.fullName?.toLowerCase().includes(search.toLowerCase())
-    return matchStatus && matchSearch
+    const matchMonth = !monthOnly || (inv.invoiceDate && (() => {
+      const d = new Date(inv.invoiceDate)
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
+    })())
+    return matchStatus && matchSearch && matchMonth
   })
 
   return (
@@ -227,6 +236,20 @@ export default function MovingInvoices() {
             )
           })}
         </div>
+
+        {monthOnly && (
+          <button
+            onClick={() => setMonthOnly(false)}
+            style={{
+              height: 32, borderRadius: 10, background: '#EDE5FF', color: PURPLE,
+              fontSize: 12.5, fontWeight: 600, padding: '0 10px', border: 'none', width: 'fit-content',
+            }}
+            className="flex items-center gap-1.5 hover:opacity-90 transition-opacity"
+          >
+            {now.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
+            <X size={12} />
+          </button>
+        )}
       </div>
 
       {/* Results */}
