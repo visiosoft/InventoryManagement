@@ -868,7 +868,10 @@ export interface ReminderLog {
 export interface MovingInvoice {
   _id: string
   invoiceNo: string
-  job?: { _id: string; jobNo: string; status: string; pickupAddress?: string; deliveryAddress?: string; scheduledDate?: string }
+  job?: {
+    _id: string; jobNo: string; status: string; pickupAddress?: string; deliveryAddress?: string; scheduledDate?: string
+    clientPackage?: { packageType?: string; label?: string; agreedPrice?: number; additionalCharges?: Array<{ description: string; amount: number }>; notes?: string }
+  }
   customer: { _id: string; fullName: string; email?: string; phone?: string; address?: string }
   status: MovingInvoiceStatus
   invoiceDate: string

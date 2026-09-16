@@ -8,6 +8,7 @@ import { google } from 'googleapis';
 import { isValidObjectId } from 'mongoose';
 import { MovingJob, MovingItem, MovingStockTxn, Customer, MovingInvoice, MovingDocument, AgreementTemplate, nextMovingJobNo } from '../models/index.js';
 import { softDelete } from '../utils/softDelete.js';
+import { syncInvoiceFromJob } from '../services/movingInvoiceSync.js';
 import { notifyJobConfirmed, notifyCrewOnTheWay, notifyJobCompleted } from '../services/movingNotifications.js';
 import { uploadPublicImage, driveConfigured } from '../services/drive.js';
 import {
@@ -234,6 +235,10 @@ router.put('/:id', async (req, res) => {
     Object.assign(job, update);
     if (update.crew || update.trucks || update.extraCharges) recalcCosts(job);
     await job.save();
+    // The agreed package price is what a linked invoice's amount is derived
+    // from — see services/movingInvoiceSync.js. Keeps the invoice honest the
+    // moment the price changes here, rather than only at invoice-creation time.
+    if ('clientPackage' in update) await syncInvoiceFromJob(job);
     const populated = await MovingJob.findById(job._id).populate(POPULATE_JOB);
     res.json(populated);
   } catch (err) {

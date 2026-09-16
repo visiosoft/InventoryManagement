@@ -1007,6 +1007,12 @@ export default function MovingJobDetail() {
                 ? <Badge tone="amber">Required</Badge>
                 : <span className="text-muted-foreground">Not required</span>}
             />
+            {job.quote && (
+              <InfoItem
+                label="Quote"
+                value={<Link to={`/moving/quotes/${job.quote._id}`} className="text-primary hover:underline font-medium">{job.quote.quoteNo}</Link>}
+              />
+            )}
             {job.invoice && (
               <InfoItem
                 label="Invoice"

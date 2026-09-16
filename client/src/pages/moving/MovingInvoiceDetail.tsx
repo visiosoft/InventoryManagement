@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Download, Share2, Edit, Plus, Trash2, RefreshCw, CheckCircle, Pencil, CreditCard, Mail, Link as LinkIcon } from 'lucide-react'
+import { ArrowLeft, Download, Share2, Edit, Plus, Trash2, RefreshCw, CheckCircle, Pencil, CreditCard, Mail, Link as LinkIcon, Info } from 'lucide-react'
 import { api, apiError, apiUrl } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
 import { EditCustomerModalLoader } from '../../components/AddCustomerModal'
@@ -379,6 +379,16 @@ export default function MovingInvoiceDetail() {
             </Button>
           )}
         </div>
+        {(invoice.job?.clientPackage?.agreedPrice ?? 0) > 0 && (
+          <div style={{ padding: '10px 24px', background: '#F5F1FF', borderBottom: '1px solid rgba(20,8,31,0.06)' }} className="flex items-center gap-2">
+            <Info size={13} color={PURPLE} className="shrink-0" />
+            <span style={{ fontSize: 12.5, color: INK }}>
+              Synced from this job's agreed package — edit the price on{' '}
+              <Link to={`/moving/jobs/${invoice.job?._id}`} style={{ color: PURPLE, fontWeight: 600 }} className="hover:opacity-80">{invoice.job?.jobNo}</Link>
+              {' '}to change this invoice.
+            </span>
+          </div>
+        )}
         {/* Desktop table */}
         <div className="hidden md:block overflow-x-auto">
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>

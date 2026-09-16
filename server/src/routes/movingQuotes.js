@@ -4,6 +4,7 @@ import { MovingQuote, MovingInvoice, MovingJob, nextMovingQuoteNo, nextMovingInv
 import { softDelete } from '../utils/softDelete.js';
 import { generateMovingQuotePdf } from '../services/movingQuotePdf.js';
 import { chargesVat, movingTotals } from '../services/movingTotals.js';
+import { syncInvoiceFromJob } from '../services/movingInvoiceSync.js';
 import { stripeConfigured, createCheckoutSession } from '../services/stripe.js';
 
 const router = Router();
@@ -89,6 +90,13 @@ router.put('/:id', async (req, res) => {
       .populate('customer', 'fullName phone email address')
       .populate('job', 'jobNo status');
     if (!quote) return res.status(404).json({ error: 'Quote not found' });
+    // The quote is only the invoice's price source when the job never got its
+    // own agreed package — see services/movingInvoiceSync.js. Job always wins,
+    // so this is a no-op whenever the job has its own price set.
+    if (quote.job?._id) {
+      const job = await MovingJob.findById(quote.job._id);
+      if (job && !(job.clientPackage?.agreedPrice > 0)) await syncInvoiceFromJob(job);
+    }
     res.json(quote);
   } catch (err) {
     res.status(400).json({ error: err.message });

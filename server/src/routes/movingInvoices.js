@@ -14,8 +14,23 @@ const router = Router();
 
 const POPULATE_INV = [
   { path: 'customer', select: 'fullName phone email address' },
-  { path: 'job', select: 'jobNo status scheduledDate pickupAddress deliveryAddress' },
+  { path: 'job', select: 'jobNo status scheduledDate pickupAddress deliveryAddress clientPackage' },
 ];
+
+/* The stored subTotal/vatAmount/total/balanceDue can drift from what the
+ * items actually add up to (the client's "Line Items" card already
+ * recomputes live from items rather than trust these fields — see
+ * MovingInvoiceDetail.tsx). Reads should show the same figure everywhere on
+ * the page, so every list/detail response is reshaped through this rather
+ * than trusting whatever was last saved. This never writes the correction
+ * back — see the route handlers for why.
+ */
+function withComputedTotals(invoice) {
+  const doc = invoice.toObject ? invoice.toObject() : invoice;
+  const totals = movingTotals(doc);
+  const { balanceDue } = movingBalance({ total: totals.total, depositPaid: doc.depositPaid, paymentHistory: doc.paymentHistory });
+  return { ...doc, ...totals, balanceDue };
+}
 
 // Public payment page data (no auth — uses share token)
 // MUST be before /:id to prevent Express matching "pay" as an ObjectId
@@ -67,7 +82,7 @@ router.get('/', async (req, res) => {
       .populate('customer', 'fullName phone email')
       .populate('job', 'jobNo status')
       .sort({ createdAt: -1 });
-    res.json(invoices);
+    res.json(invoices.map(withComputedTotals));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -146,7 +161,7 @@ router.get('/:id', async (req, res) => {
   try {
     const invoice = await MovingInvoice.findById(req.params.id).populate(POPULATE_INV);
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
-    res.json(invoice);
+    res.json(withComputedTotals(invoice));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -422,12 +437,16 @@ router.post('/:id/revise', async (req, res) => {
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
     // Allow revising even paid invoices
 
-    const total = (items || []).reduce((s, i) => s + (i.amount || 0), 0);
-    const totalPaid = (invoice.depositPaid || 0) + (invoice.paymentHistory || []).reduce((s, p) => s + p.amount, 0);
-    const balanceDue = Math.max(0, total - totalPaid);
+    // Same rule as every other write to this document: totals come from the
+    // items, not a sum the caller worked out itself — this route used to
+    // total the items alone and skip VAT, which is exactly the kind of
+    // drift that leaves an invoice's stored total disagreeing with what its
+    // own line items add up to.
+    const totals = movingTotals({ ...invoice.toObject(), items });
+    const { balanceDue } = movingBalance({ total: totals.total, depositPaid: invoice.depositPaid, paymentHistory: invoice.paymentHistory });
 
     invoice.items = items;
-    invoice.total = total;
+    Object.assign(invoice, totals);
     invoice.balanceDue = balanceDue;
     invoice.status = 'sent';
     if (supervisorNote) invoice.notes = [invoice.notes, `[Revision] ${supervisorNote}`].filter(Boolean).join('\n\n');
@@ -443,7 +462,7 @@ router.post('/:id/revise', async (req, res) => {
           `Your invoice *${invoice.invoiceNo}* has been revised.`,
           supervisorNote ? `Note: ${supervisorNote}` : ``,
           ``,
-          `New total: *AED ${total.toLocaleString()}*`,
+          `New total: *AED ${totals.total.toLocaleString()}*`,
           `Balance due: *AED ${balanceDue.toLocaleString()}*`,
           ``,
           `Thank you! — PurpleBox Moving`,
