@@ -24,6 +24,7 @@ import mongoose from 'mongoose';
 import { connectDb } from './db.js';
 
 import { requireAuth, readOnlyFor } from './middleware/auth.js';
+import { auditLogMiddleware } from './middleware/auditLog.js';
 import { UPLOADS_DIR } from './services/drive.js';
 import authRoutes from './routes/auth.js';
 import unitRoutes from './routes/units.js';
@@ -86,6 +87,7 @@ import accountsDashboardRoutes from './routes/accountsDashboard.js';
 import exportRoutes from './routes/exports.js';
 import leadRoutingRoutes from './routes/leadRouting.js';
 import activityRoutes from './routes/activity.js';
+import auditLogRoutes from './routes/auditLog.js';
 import signingMovingRoutes from './routes/signingMoving.js';
 import customerAuthRoutes from './routes/customerAuth.js';
 import customerPortalRoutes from './routes/customerPortal.js';
@@ -111,6 +113,10 @@ import { runAutomationRules, getAutoSend } from './services/automationEngine.js'
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
+// Trusts the first hop (nginx, in production — see the CORS note just below)
+// so req.ip reads the real client address from X-Forwarded-For instead of
+// nginx's own. Harmless in local dev, where there's no proxy in front at all.
+app.set('trust proxy', 1);
 // In production this server sits behind an nginx layer that already injects
 // Access-Control-Allow-Origin (and related headers) on every response, so Express
 // must not add its own or the browser sees duplicate values ("*, *") and blocks it.
@@ -141,6 +147,11 @@ app.use(
   })
 );
 app.use('/uploads', express.static(UPLOADS_DIR));
+
+// Sees every mutating request across every router mounted below — who did
+// it, from what IP, on what record — without any of those routers needing
+// to know it exists. See middleware/auditLog.js.
+app.use(auditLogMiddleware);
 
 
 // Public signing routes — no JWT required
@@ -336,6 +347,7 @@ app.use('/api/exports', requireAuth, exportRoutes);
 // Who gets the next WhatsApp lead. Admin only, inside the router.
 app.use('/api/lead-routing', requireAuth, leadRoutingRoutes);
 app.use('/api/activity', requireAuth, activityRoutes);
+app.use('/api/audit-log', requireAuth, auditLogRoutes);
 
 // Central error handler
 app.use((err, _req, res, _next) => {

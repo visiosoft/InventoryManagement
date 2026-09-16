@@ -93,6 +93,7 @@ import SentEmails from './pages/SentEmails'
 import Walkthroughs from './pages/Walkthroughs'
 import ZohoComparison from './pages/ZohoComparison'
 import Backup from './pages/Backup'
+import AuditLogReport from './pages/AuditLogReport'
 import Leads from './pages/Leads'
 import SalesBoard from './pages/SalesBoard'
 import MovingEstimator from './pages/MovingEstimator'
@@ -268,6 +269,7 @@ export default function App() {
         <Route path="/tasks" element={<TasksGuard><Tasks /></TasksGuard>} />
         <Route path="/diary" element={<Diary />} />
         <Route path="/backup" element={<AdminGuard><Backup /></AdminGuard>} />
+        <Route path="/audit-log" element={<AdminGuard><AuditLogReport /></AdminGuard>} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/settings/templates" element={<AdminGuard><MessageTemplates /></AdminGuard>} />
         <Route path="/settings/whatsapp-debug" element={<AdminGuard><WhatsAppDebug /></AdminGuard>} />
