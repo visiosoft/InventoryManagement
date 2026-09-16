@@ -2,7 +2,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { isValidObjectId, Types } from 'mongoose';
 import { stampSignature } from '../services/stampSignature.js';
-import { Contract, Customer, Unit, Payment, Document, Invoice, Quote, AgreementTemplate, nextContractNo, nextInvoiceNo, MessageTemplate, ContractRenewal } from '../models/index.js';
+import { Contract, Customer, Unit, Payment, Document, Invoice, Quote, AgreementTemplate, nextContractNo, nextInvoiceNo, MessageTemplate, ContractRenewal, AuditLog } from '../models/index.js';
 import { applyRenewal } from '../services/renewalApply.js';
 import { creditFor, markLeadWon } from '../services/dealCredit.js';
 import { contractExportRows } from '../services/contractExportRows.js';
@@ -18,6 +18,7 @@ import { mergeAgreementText, renderAgreementTextPdf, renderAgreementHtmlPdf, loo
 import { sendWhatsAppTemplate, whatsappSendConfigured } from '../services/whatsapp.js';
 import { AutomationLog } from '../models/index.js';
 import { buildContractPdf } from '../services/contractDocument.js';
+import { sha256Hex, buildSigningRecord, appendSigningCertificate } from '../services/documentSigning.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { brandedEmailHtml } from '../services/emailLayout.js';
 import { siteScope } from '../utils/siteScope.js';
@@ -775,8 +776,10 @@ async function markSigned(contractId, recordedBy = '') {
 
   // Archive the signed PDF (real Zoho download, or regenerate locally in mock mode).
   let pdfBuffer = null;
+  let signingMethod = 'offline_paper';
   if (zohoConfigured() && contract.zohoRequestId && !contract.zohoRequestId.startsWith('MOCK-')) {
     pdfBuffer = await downloadSignedPdf(contract.zohoRequestId);
+    signingMethod = 'zoho_sign';
   }
   const signedAt = new Date();
   if (!pdfBuffer) {
@@ -789,6 +792,21 @@ async function markSigned(contractId, recordedBy = '') {
       offlineNote: `Signed outside the system${recordedBy ? `, recorded by ${recordedBy}` : ''} on ${on}`,
     });
   }
+
+  // Neither path keeps the exact buffer that was originally sent/printed, so
+  // this re-render of today's wording is the closest available proxy for
+  // "what was presented" — see the same tamper-evidence idea the in-house
+  // token flow uses in services/documentSigning.js.
+  const presentedPdf = await buildContractPdf(contract);
+  const signingRecord = buildSigningRecord({
+    method: signingMethod,
+    signerName: contract.customer?.fullName || 'Unknown',
+    signedAt,
+    documentHash: sha256Hex(presentedPdf),
+    signedPdfHash: sha256Hex(pdfBuffer),
+  });
+  pdfBuffer = await appendSigningCertificate(pdfBuffer, signingRecord, `Contract ${contract.contractNo}`);
+
   const stored = await uploadFile({
     buffer: pdfBuffer,
     filename: `${contract.contractNo}-signed.pdf`,
@@ -805,15 +823,23 @@ async function markSigned(contractId, recordedBy = '') {
 
   contract.status = 'active';
   contract.signedDocUrl = stored.url;
-  // Recorded here too: the contract said signedDocUrl was set while signedAt
-  // stayed empty, so nothing in the data said when it had been signed.
-  if (!contract.signedAt) contract.signedAt = signedAt;
+  contract.signingRecord = signingRecord;
   contract.timeline.push({
     type: 'signed',
     text: `Marked signed${recordedBy ? ` by ${recordedBy}` : ''}`,
     author: recordedBy || 'system',
   });
   await contract.save();
+  try {
+    await AuditLog.create({
+      action: 'document_signed',
+      entity: 'Contract',
+      entityId: String(contract._id),
+      detail: `${signingRecord.signerName} signed via ${signingMethod}${recordedBy ? `, recorded by ${recordedBy}` : ''}`,
+    });
+  } catch (err) {
+    console.error('AuditLog write failed for signing event:', err);
+  }
   const signedUnitIds = contract.units?.length ? contract.units.map((u) => u._id ?? u) : [contract.unit._id];
   await Promise.all(signedUnitIds.map((uid) => syncUnitStatus(uid)));
   return contract;

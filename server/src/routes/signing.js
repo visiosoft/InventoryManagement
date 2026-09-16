@@ -3,6 +3,7 @@ import { Contract, Unit, Document, Payment } from '../models/index.js';
 import { syncUnitStatus } from '../utils/unitStatus.js';
 import { uploadFile } from '../services/drive.js';
 import { buildContractPdf, buildSignedContractPdf } from '../services/contractDocument.js';
+import { recordSignature } from '../services/documentSigning.js';
 
 const router = Router();
 
@@ -75,14 +76,19 @@ router.post('/:token', async (req, res) => {
     const { signerName, signatureDataUrl, signMode, initialsText, initialsDataUrl, initialsMode } = req.body;
     if (!signerName?.trim()) return res.status(400).json({ error: 'Signer name is required' });
 
-    const now = new Date();
-    const pdfBuffer = await buildSignedContractPdf(contract, now, {
-      signerName, signatureDataUrl, signMode,
-      initialsText, initialsDataUrl, initialsMode,
+    const { finalPdf } = await recordSignature({
+      doc: contract,
+      entityType: 'Contract',
+      documentLabel: `Contract ${contract.contractNo}`,
+      timelineText: `Contract signed remotely by ${signerName}`,
+      req,
+      signerName, signatureDataUrl, signMode, initialsText, initialsDataUrl, initialsMode,
+      buildUnsignedPdf: () => buildContractPdf(contract),
+      buildSignedPdf: (signedAt, sig) => buildSignedContractPdf(contract, signedAt, sig),
     });
 
     const stored = await uploadFile({
-      buffer: pdfBuffer,
+      buffer: finalPdf,
       filename: `${contract.contractNo}-signed.pdf`,
       mimeType: 'application/pdf',
       customerName: contract.customer?.fullName,

@@ -111,6 +111,26 @@ const accessPersonSchema = new Schema(
   { _id: false }
 );
 
+/* What a Contract or MovingJob's e-signature actually proves — see
+ * services/documentSigning.js. Structured so Contract's in-house token flow,
+ * MovingJob's in-house token flow, and the Zoho Sign / offline-paper path all
+ * report through the same shape, rather than each recording something
+ * different (or nothing) for the same kind of event. */
+const signingRecordSchema = new Schema({
+  method: { type: String, enum: ['in_house_token', 'zoho_sign', 'offline_paper'], required: true },
+  signerName: { type: String, required: true },
+  signedAt: { type: Date, required: true },
+  ipAddress: { type: String, default: '' },
+  userAgent: { type: String, default: '' },
+  consentTextVersion: { type: String, default: '' },
+  consentText: { type: String, default: '' },
+  signatureMode: { type: String, enum: ['drawn', 'typed'], default: 'typed' },
+  // sha256, hex — of the exact PDF shown to the signer, and of the final
+  // signed PDF (before the certificate-of-completion page is appended).
+  documentHash: { type: String, required: true },
+  signedPdfHash: { type: String, required: true },
+}, { _id: false });
+
 const customerSchema = new Schema(
   {
     fullName: { type: String, required: true },
@@ -576,6 +596,7 @@ const contractSchema = new Schema(
     },
     zohoRequestId: { type: String, default: '' },
     signedDocUrl: { type: String, default: '' },
+    signingRecord: { type: signingRecordSchema, default: null },
     // The agreement wording for this contract, editable per contract. Empty
     // means "use the saved agreement template". Stored with placeholders
     // already resolved so what you read is exactly what the PDF prints.
@@ -1403,6 +1424,7 @@ const movingJobSchema = new Schema(
     signingToken: { type: String, default: null },
     signingTokenExpiry: { type: Date, default: null },
     signedDocUrl: { type: String, default: '' },
+    signingRecord: { type: signingRecordSchema, default: null },
   },
   { timestamps: true }
 );
@@ -1610,14 +1632,24 @@ const documentSchema = new Schema(
 
 const auditLogSchema = new Schema(
   {
-    user: { type: Schema.Types.ObjectId, ref: 'User' },
+    user: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    // Denormalized so a row still reads sensibly if the user is later renamed
+    // or removed — a log is a record of what happened, not a live join.
+    userName: { type: String, default: '' },
+    userEmail: { type: String, default: '' },
     action: { type: String, required: true },
     entity: { type: String, required: true },
     entityId: { type: String, default: '' },
+    method: { type: String, default: '' },
+    path: { type: String, default: '' },
+    ipAddress: { type: String, default: '' },
     detail: { type: String, default: '' },
   },
   { timestamps: true }
 );
+auditLogSchema.index({ createdAt: -1 });
+auditLogSchema.index({ entity: 1, createdAt: -1 });
+auditLogSchema.index({ user: 1, createdAt: -1 });
 
 // ── Damage Claims ────────────────────────────────────────────────────────────
 const movingClaimSchema = new Schema(

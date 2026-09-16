@@ -314,7 +314,8 @@ export default function SignMovingJob() {
             />
             <span>
               I, <strong>{signerName || '…'}</strong>, confirm that I have read and agree to all terms and conditions
-              of this moving agreement. I understand that this electronic signature is legally binding.
+              of this document. I understand that this electronic signature is legally binding under UAE Federal
+              Decree-Law No. 46 of 2021 on Electronic Transactions and Trust Services.
             </span>
           </label>
 
