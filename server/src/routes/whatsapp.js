@@ -12,6 +12,7 @@ import { videoNeedsHosting } from '../services/videoThumbnail.js';
 import { summariseConversation, summariseRecent } from '../services/conversationSummary.js';
 import { ensureDigest, dayKeyFor, previousDay } from '../services/dailyDigest.js';
 import { DailyDigest } from '../models/index.js';
+import { beforeCursorFilter } from '../services/messageCursor.js';
 import { askInbox } from '../services/inboxAsk.js';
 import { softDelete, softDeleteMany } from '../utils/softDelete.js';
 
@@ -167,20 +168,22 @@ router.get('/messages', async (req, res) => {
         q.phoneNormalized = phone.replace(/\D/g, '');
     }
 
-    /* One conversation comes back whole.
-     *
-     * The limit defaulted to 100 for both cases, so opening a chat with more
-     * than a hundred messages silently dropped its oldest ones. The history was
-     * in the database the whole time — it was simply never sent. A single
-     * thread is naturally bounded, so it gets a ceiling high enough not to bite
-     * rather than a page size.
-     *
-     * The whole-inbox feed keeps a small one: it drives unread counts and the
-     * ping, and does not need every message ever sent to do that.
+    /* A single conversation used to come back whole, with the limit raised to
+     * 5000 so a long thread's oldest messages were never silently dropped —
+     * but that meant opening (and every 5-second poll of) a long-running chat
+     * fetched and re-rendered thousands of messages every time, which is what
+     * actually made the console feel frozen. Back to a small page (matching
+     * the whole-inbox feed's own limit) plus a `before` cursor, so the
+     * console loads the recent window fast and pages backward into history
+     * only when someone actually scrolls up looking for it — nothing is any
+     * less reachable than it was, it just isn't pulled up front.
      */
-    const limit = phone
-        ? Math.min(Math.max(Number(req.query.limit) || 2000, 1), 5000)
-        : Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
+
+    if (req.query.before) {
+        const cursor = await WhatsAppMessage.findById(req.query.before).select('occurredAt').lean();
+        if (cursor) Object.assign(q, beforeCursorFilter(cursor));
+    }
 
     /* No populate on `lead` here.
      *

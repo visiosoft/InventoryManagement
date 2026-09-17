@@ -595,8 +595,10 @@ export const whatsappApi = {
         serverFiltered: true,
       }
     }),
-  messages: (phone?: string) =>
-    api.get<WhatsAppMsg[]>('/whatsapp/messages', { params: phone ? { phone } : {} }).then((r) => r.data),
+  // `before` pages backward into history (a message id) — the recent window
+  // otherwise returned is capped server-side, see routes/whatsapp.js.
+  messages: (phone?: string, opts?: { before?: string; limit?: number }) =>
+    api.get<WhatsAppMsg[]>('/whatsapp/messages', { params: { ...(phone ? { phone } : {}), ...opts } }).then((r) => r.data),
   send: (to: string, body: string) => api.post<{ ok: boolean }>('/whatsapp/send', { to, body }).then((r) => r.data),
   // Removes it from our own record — Meta has no unsend endpoint, so this
   // cannot pull a message back off the customer's phone.

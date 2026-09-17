@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
@@ -456,7 +456,23 @@ function IconButton({
   )
 }
 
-function MessageBubble({ msg }: { msg: WaMsg }) {
+/* Memoized deliberately: the composer's own state (every keystroke, the
+ * suggested-reply card, Edit/Dismiss) lives in the parent WhatsApp component
+ * alongside the message list, so without this every bubble in the thread —
+ * however long the conversation — re-rendered on every keystroke and every
+ * suggestion action. `msg` is the only prop, and it's a stable reference from
+ * the parent's memoized `sorted` array, so this actually skips work rather
+ * than comparing props that always differ. */
+function MessageBubbleImpl({ msg, onCorrected, onDeleted }: {
+  msg: WaMsg
+  // The recent-window query's own invalidate-and-refetch (below) only ever
+  // refreshes what's in that window — a message sitting further back, paged
+  // in from history, lives in the parent's own `olderMessages` state and
+  // needs patching directly or it won't visibly update. See loadOlder in the
+  // parent for why the two are kept apart.
+  onCorrected?: (id: string) => void
+  onDeleted?: (id: string) => void
+}) {
   const out = msg.direction === 'outbound'
   const qc = useQueryClient()
   const [hovered, setHovered] = useState(false)
@@ -474,6 +490,7 @@ function MessageBubble({ msg }: { msg: WaMsg }) {
       setCorrecting(false)
       setErr('')
       qc.invalidateQueries({ queryKey: ['wa-messages'] })
+      onCorrected?.(msg._id)
     },
     onError: (e) => setErr(apiError(e)),
   })
@@ -484,7 +501,10 @@ function MessageBubble({ msg }: { msg: WaMsg }) {
   // actually said.
   const deleteMsg = useMutation({
     mutationFn: () => whatsappApi.deleteMessage(msg._id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['wa-messages'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['wa-messages'] })
+      onDeleted?.(msg._id)
+    },
   })
 
   return (
@@ -656,6 +676,7 @@ function MessageBubble({ msg }: { msg: WaMsg }) {
     </div>
   )
 }
+const MessageBubble = memo(MessageBubbleImpl)
 
 // The chat panel's own type and width, from the ChatPanel design: Manrope for
 // a rounder, friendlier list, and a little more room than the 300px it had.
@@ -2555,6 +2576,13 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
    */
   const LIVE = { refetchIntervalInBackground: true, refetchOnWindowFocus: true } as const
 
+  // The recent-window page size for an open conversation, and the page size
+  // for paging backward into its history — kept as one explicit constant so
+  // "did that request come back short of a full page" is an exact
+  // comparison rather than a guess at the server's own default (which this
+  // matches — see routes/whatsapp.js).
+  const MESSAGE_PAGE_SIZE = 100
+
   /* How many threads to ask for. Raised by "Show older chats" rather than
      fetching everything up front, so a busy inbox stays quick to open. */
   const [convoLimit, setConvoLimit] = useState(200)
@@ -2594,14 +2622,100 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     ...LIVE,
   })
 
-  const { data: messages, isLoading: loadingMsgs } = useQuery<WaMsg[]>({
+  const { data: recentMessages, isLoading: loadingMsgs } = useQuery<WaMsg[]>({
     queryKey: ['wa-messages', selectedPhone],
-    queryFn: () => whatsappApi.messages(selectedPhone ?? undefined),
+    queryFn: () => whatsappApi.messages(selectedPhone ?? undefined, { limit: MESSAGE_PAGE_SIZE }),
     // The open conversation is the one being watched, so it polls fastest.
+    // Server-capped at a small recent window (see routes/whatsapp.js) — a
+    // long thread used to be fetched (and re-fetched every 5s) whole, up to
+    // 5000 messages, which is what actually made the console feel frozen.
+    // Older history is paged in on demand — see olderMessages below.
     refetchInterval: 5_000,
     enabled: true,
     ...LIVE,
   })
+
+  /* History paged in as someone scrolls up, kept apart from the polled
+   * recent window above — the two are fetched completely differently (one
+   * polls forward for what's new, one is a one-shot page backward) and
+   * merging them into a single query would fight itself. Reset whenever the
+   * open conversation changes: this is a different thread's history, not a
+   * continuation of the last one's. */
+  const [olderMessages, setOlderMessages] = useState<WaMsg[]>([])
+  const [hasMoreOlder, setHasMoreOlder] = useState(true)
+  const [loadingOlder, setLoadingOlder] = useState(false)
+  const prevScrollMetrics = useRef<{ height: number; top: number } | null>(null)
+
+  useEffect(() => {
+    setOlderMessages([])
+    setHasMoreOlder(true)
+    setLoadingOlder(false)
+  }, [selectedPhone])
+
+  // If the recent window alone came back short of a full page, the whole
+  // conversation fits in it — nothing more to page back into.
+  useEffect(() => {
+    if (olderMessages.length === 0 && recentMessages && recentMessages.length < MESSAGE_PAGE_SIZE) {
+      setHasMoreOlder(false)
+    }
+  }, [recentMessages, olderMessages.length])
+
+  // The recent window plus whatever's been scrolled into, deduplicated at the
+  // seam — a message can legitimately appear in both once the recent
+  // window's own boundary shifts past it on a later poll.
+  const messages = useMemo(() => {
+    if (olderMessages.length === 0) return recentMessages
+    const seen = new Set<string>()
+    const merged: WaMsg[] = []
+    for (const m of [...olderMessages, ...(recentMessages ?? [])]) {
+      if (seen.has(m._id)) continue
+      seen.add(m._id)
+      merged.push(m)
+    }
+    return merged
+  }, [olderMessages, recentMessages])
+
+  const loadOlder = useCallback(async () => {
+    if (loadingOlder || !hasMoreOlder || !selectedPhone) return
+    const current = olderMessages.length ? olderMessages : (recentMessages ?? [])
+    if (current.length === 0) return
+    const oldest = current.reduce((a, m) => (m.occurredAt < a.occurredAt ? m : a), current[0])
+    setLoadingOlder(true)
+    try {
+      const older = await whatsappApi.messages(selectedPhone, { before: oldest._id, limit: MESSAGE_PAGE_SIZE })
+      if (older.length < MESSAGE_PAGE_SIZE) setHasMoreOlder(false)
+      const el = scrollRef.current
+      if (el) prevScrollMetrics.current = { height: el.scrollHeight, top: el.scrollTop }
+      setOlderMessages((prev) => {
+        const seen = new Set(prev.map((m) => m._id))
+        const fresh = older.filter((m) => !seen.has(m._id))
+        return fresh.length ? [...fresh, ...prev] : prev
+      })
+    } catch {
+      // A failed page-back isn't worth surfacing as a send-composer error —
+      // scrolling up again retries it.
+    } finally {
+      setLoadingOlder(false)
+    }
+  }, [loadingOlder, hasMoreOlder, selectedPhone, olderMessages, recentMessages])
+
+  // Prepending older messages pushes everything else down by the height just
+  // added — restore the reader's exact spot rather than letting the view
+  // jump. Runs before paint, so nothing visibly shifts.
+  useLayoutEffect(() => {
+    const metrics = prevScrollMetrics.current
+    const el = scrollRef.current
+    if (!metrics || !el) return
+    prevScrollMetrics.current = null
+    el.scrollTop = el.scrollHeight - metrics.height + metrics.top
+  }, [olderMessages])
+
+  const patchOlderMessageCorrected = useCallback((id: string) => {
+    setOlderMessages((prev) => prev.map((m) => (m._id === id ? { ...m, correctedAt: new Date().toISOString() } : m)))
+  }, [])
+  const removeOlderMessage = useCallback((id: string) => {
+    setOlderMessages((prev) => prev.filter((m) => m._id !== id))
+  }, [])
 
   // The customer's most recent message, used to prefill a task raised from this
   // chat. Capped: a task description should not swallow an essay.
@@ -2993,7 +3107,8 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     const el = scrollRef.current
     if (!el) return
     stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60
-  }, [])
+    if (el.scrollTop < 100 && hasMoreOlder && !loadingOlder) loadOlder()
+  }, [hasMoreOlder, loadingOlder, loadOlder])
 
   useEffect(() => {
     const el = scrollRef.current
@@ -4094,7 +4209,14 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                 <p className="text-sm">No messages yet.</p>
               </div>
             ) : (
-              sorted.map((m) => <MessageBubble key={m._id} msg={m} />)
+              <>
+                {loadingOlder && (
+                  <p className="text-center text-xs py-1" style={{ color: FAINT_INK }}>Loading earlier messages…</p>
+                )}
+                {sorted.map((m) => (
+                  <MessageBubble key={m._id} msg={m} onCorrected={patchOlderMessageCorrected} onDeleted={removeOlderMessage} />
+                ))}
+              </>
             )}
           </div>
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { Sparkles, X, Send, RotateCcw, Mail, MessageCircle } from 'lucide-react'
 import { api, apiError } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -98,6 +98,14 @@ function composeCount(c: Compose): number {
  */
 export default function AssistantWidget() {
   const { user } = useAuth()
+  const location = useLocation()
+  // The WhatsApp console already owns the entire bottom of the screen — its
+  // own composer's Send button sits in the exact corner this widget's
+  // launcher does, and on a phone-width screen the two overlap. That page
+  // doesn't need a second floating entry point into the same assistant
+  // either: it's mid-conversation with a customer, not asking a business
+  // question.
+  const hideHere = location.pathname.startsWith('/whatsapp')
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState('')
   const [turns, setTurns] = useState<Turn[]>(() => {
@@ -156,7 +164,7 @@ export default function AssistantWidget() {
 
   useEffect(() => { if (open) window.setTimeout(() => inputRef.current?.focus(), 50) }, [open])
 
-  if (!user || !caps?.enabled || !caps?.allowed) return null
+  if (!user || !caps?.enabled || !caps?.allowed || hideHere) return null
 
   async function ask(text: string) {
     const q = text.trim()
