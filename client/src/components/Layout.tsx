@@ -13,6 +13,20 @@ import AppFooter from './AppFooter'
 import { cn } from '../lib/utils'
 import { isSalesRepRole } from '../lib/roles'
 import { WalkthroughProvider } from '../walkthroughs/WalkthroughProvider'
+import { isDemoEnv } from '../lib/env'
+
+// Which deployment you're looking at — main and SAASModel are each deployed
+// separately with no other visible difference in the UI.
+const EnvBadge = () => (
+  <span
+    className={cn(
+      'text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full leading-none shrink-0',
+      isDemoEnv ? 'bg-[#F59E0B] text-white' : 'bg-[#22C55E] text-white'
+    )}
+  >
+    {isDemoEnv ? 'Demo' : 'Production'}
+  </span>
+)
 
 const navTop = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard' as string | undefined },
@@ -406,8 +420,11 @@ export default function Layout() {
           <img src="/Invoicelogo_Logo.png" alt="PurpleBox" className="h-7 w-7 object-contain" />
         </div>
         {!isCollapsed && (
-          <div>
-            <div className="font-bold text-sm text-sidebar-foreground leading-tight">PurpleBox</div>
+          <div className="min-w-0">
+            <div className="font-bold text-sm text-sidebar-foreground leading-tight flex items-center gap-1.5">
+              PurpleBox
+              <EnvBadge />
+            </div>
             <div className="text-[10px] text-sidebar-muted leading-tight">Unit Rental Manager</div>
           </div>
         )}
@@ -788,7 +805,10 @@ export default function Layout() {
           <div className="h-7 w-7 rounded-lg bg-[#FFF799] flex items-center justify-center shrink-0">
             <img src="/Invoicelogo_Logo.png" alt="" className="h-5 w-5 object-contain" />
           </div>
-          <span className="font-bold text-sm text-sidebar-foreground">PurpleBox</span>
+          <span className="font-bold text-sm text-sidebar-foreground flex items-center gap-1.5">
+            PurpleBox
+            <EnvBadge />
+          </span>
         </div>
         {!isMovingOnly && (
           <button
@@ -982,7 +1002,9 @@ export default function Layout() {
               SiteGate. Without it the first page of a fresh login asks for
               data before a facility is chosen and caches the whole company. */}
           <SiteGate>
-            <Outlet />
+            <div key={location.pathname} className="pb-page-transition">
+              <Outlet />
+            </div>
           </SiteGate>
         </div>
         <AppFooter />

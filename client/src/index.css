@@ -120,6 +120,17 @@ body {
   .slide-in-from-right, .slide-in-from-left { animation: none; }
 }
 
+/* Page-to-page navigation (sidebar/menu clicks). A small fade + rise so the
+   next page arrives rather than just appearing — kept short so it never
+   reads as latency. Keyed by pathname in Layout.tsx so it replays per
+   navigation instead of once per app load. */
+@keyframes pb-page-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pb-page-fade { from { opacity: 0; } to { opacity: 1; } }
+.pb-page-transition { animation: pb-page-in .22s cubic-bezier(.2,.8,.3,1); }
+@media (prefers-reduced-motion: reduce) {
+  .pb-page-transition { animation: pb-page-fade .15s ease-out; }
+}
+
 /* Agreement/notice rich-text editors (Document Templates page, and every
    "click a template" prefilled panel on Contract/Moving Job detail pages) —
    global so it applies regardless of which page mounted first; previously
