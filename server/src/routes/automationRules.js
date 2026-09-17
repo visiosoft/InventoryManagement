@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { AutomationRule, AutomationLog } from '../models/index.js';
-import { runAutomationRules, getAutoSend, setAutoSend, getWhatsAppAutomation, setWhatsAppAutomation } from '../services/automationEngine.js';
+import { softDelete } from '../utils/softDelete.js';
+import { runAutomationRules, getAutoSend, setAutoSend, getWhatsAppAutomation, setWhatsAppAutomation, getWhatsappApprovalRequired, setWhatsappApprovalRequired, pendingExpiryQueue, sendApprovedReminders } from '../services/automationEngine.js';
 import { sendWhatsAppTemplate, whatsappSendConfigured } from '../services/whatsapp.js';
 import { mailConfigured } from '../services/mail.js';
 
@@ -101,6 +102,45 @@ router.put('/whatsapp', async (req, res) => {
     }
 });
 
+// PUT /api/automation-rules/whatsapp-approval — whether an automatic run
+// (the 6-hour cron, or "Run now") may send WhatsApp on its own, or must
+// leave every WhatsApp message for a person to approve from Pending
+// Approvals. Separate from /whatsapp above: that one is "is the channel
+// switched on at all"; this one is "is it safe to send unattended".
+router.put('/whatsapp-approval', async (req, res) => {
+    try {
+        const value = await setWhatsappApprovalRequired(!!req.body?.enabled);
+        res.json({ ok: true, whatsappApprovalRequired: value });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * "Start fresh" for one rule: a contract already messaged under a step,
+ * back before that step's day count was last changed, becomes eligible
+ * again — steps are tracked by position, not by day number, so retiming a
+ * step alone never does this on its own. The old AutomationLog rows are
+ * left exactly as they are; this only changes what counts as "already
+ * sent" from this moment forward, so Recent Activity still shows the full
+ * history. Admin-only: it can put reminders straight back out to clients
+ * who already got one.
+ */
+router.post('/:id/reset-history', async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
+    try {
+        const rule = await AutomationRule.findByIdAndUpdate(
+            req.params.id,
+            { remindersResetAt: new Date() },
+            { new: true },
+        );
+        if (!rule) return res.status(404).json({ error: 'Rule not found' });
+        res.json(rule);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // PUT /api/automation-rules/:id
 router.put('/:id', async (req, res) => {
     try {
@@ -144,7 +184,7 @@ router.delete('/:id', async (req, res) => {
         if (!rule.custom && (await AutomationRule.countDocuments()) <= 1) {
             return res.status(400).json({ error: 'This is the last rule; deleting it would restore the built-in set on the next restart' });
         }
-        await rule.deleteOne();
+        await softDelete(rule, req.user.id);
         res.json({ ok: true });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -182,7 +222,7 @@ router.get('/logs', async (req, res) => {
 // GET /api/automation-rules/channels — delivery channels + auto-send state
 router.get('/channels', async (_req, res) => {
     try {
-        res.json({ whatsapp: whatsappSendConfigured(), email: mailConfigured(), autoSend: await getAutoSend(), whatsappAutomation: await getWhatsAppAutomation() });
+        res.json({ whatsapp: whatsappSendConfigured(), email: mailConfigured(), autoSend: await getAutoSend(), whatsappAutomation: await getWhatsAppAutomation(), whatsappApprovalRequired: await getWhatsappApprovalRequired() });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -236,6 +276,43 @@ router.post('/test-template', async (req, res) => {
             message: `${name}(${variables.join(', ')})`, status: 'failed', error: e.message,
         });
         res.status(502).json({ error: e.message });
+    }
+});
+
+/**
+ * The approval queue: contract-expiry reminders that are due but have not
+ * gone out yet, grouped by which step matched, each with the real message
+ * that contract's tenant would receive already rendered. Read-only — never
+ * sends, never logs.
+ */
+router.get('/pending', async (_req, res) => {
+    try {
+        res.json(await pendingExpiryQueue());
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * Send exactly the reminders an admin checked in the queue above. Every
+ * message is re-derived from the contract, not trusted from the client, and
+ * goes through the same guards (per-step, same-day) the automatic engine
+ * itself uses — so approving something the automatic run already sent in
+ * the meantime is a no-op, not a duplicate.
+ */
+router.post('/pending/send', async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
+    try {
+        const selections = Array.isArray(req.body?.selections)
+            ? req.body.selections
+                .filter((s) => s && typeof s.contractId === 'string' && typeof s.ruleId === 'string')
+                .map((s) => ({ contractId: s.contractId, ruleId: s.ruleId }))
+            : [];
+        if (!selections.length) return res.status(400).json({ error: 'Nothing selected' });
+        const result = await sendApprovedReminders({ selections });
+        res.json({ ok: true, ...result });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     }
 });
 

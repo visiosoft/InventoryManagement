@@ -230,6 +230,49 @@ export async function sendWhatsAppLocation({ to, latitude, longitude, name, addr
     return json;
 }
 
+/* Which Business Account this number belongs to.
+ *
+ * Templates are held against the account, not the number, so listing them
+ * needs an id that nothing else in the system uses — which is why it was never
+ * set here, and why the templates panel came up empty on an installation that
+ * was otherwise working perfectly.
+ *
+ * Meta knows the answer already, so it is asked before anybody is sent looking
+ * through Business Manager for it. The configured value still wins: an account
+ * with more than one number is a thing, and a stated answer beats a derived
+ * one. Cached for the life of the process — a number does not move between
+ * business accounts.
+ */
+let derivedWabaId = '';
+
+export async function resolveWabaId() {
+    const set = String(process.env.WHATSAPP_WABA_ID || '').trim();
+    if (set) return set;
+    if (derivedWabaId) return derivedWabaId;
+
+    const token = String(process.env.WHATSAPP_ACCESS_TOKEN || '').trim();
+    const phoneId = String(process.env.WHATSAPP_PHONE_NUMBER_ID || '').trim();
+    if (!token || !phoneId) return '';
+
+    try {
+        const url = `https://graph.facebook.com/v20.0/${encodeURIComponent(phoneId)}?fields=whatsapp_business_account`;
+        const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+        const body = await r.json().catch(() => ({}));
+        // Not an error worth raising: the token may simply lack the permission
+        // to read the account, and the caller has a clear message for that.
+        if (!r.ok) return '';
+        derivedWabaId = String(body?.whatsapp_business_account?.id || '').trim();
+        return derivedWabaId;
+    } catch {
+        return '';
+    }
+}
+
+/** After the credentials change, so a new number is not read off the old one. */
+export function forgetWabaId() {
+    derivedWabaId = '';
+}
+
 // Approved templates change rarely and the composer asks on every render.
 let templateCache = { at: 0, data: null };
 
@@ -242,10 +285,16 @@ let templateCache = { at: 0, data: null };
  * with status APPROVED.
  */
 export async function listWhatsAppTemplates({ force = false } = {}) {
-    const waba = String(process.env.WHATSAPP_WABA_ID || '').trim();
     const token = String(process.env.WHATSAPP_ACCESS_TOKEN || '').trim();
-    if (!waba) return { configured: false, error: 'WHATSAPP_WABA_ID is not set', templates: [] };
     if (!token) return { configured: false, error: 'WhatsApp is not configured', templates: [] };
+    const waba = await resolveWabaId();
+    if (!waba) {
+        return {
+            configured: false,
+            templates: [],
+            error: 'The WhatsApp Business Account ID is not set, and Meta would not say which account this number belongs to. Add it under Settings → Integrations → WhatsApp; it is the "WhatsApp Business Account ID" in Meta → WhatsApp → API Setup.',
+        };
+    }
     if (!force && templateCache.data && Date.now() - templateCache.at < 10 * 60 * 1000) return templateCache.data;
 
     const url = `https://graph.facebook.com/v20.0/${waba}/message_templates?limit=200`;
@@ -275,6 +324,26 @@ function countTemplateVariables(components) {
     const body = components.find((c) => c.type === 'BODY')?.text || '';
     const found = new Set([...body.matchAll(/\{\{(\d+)\}\}/g)].map((m) => m[1]));
     return found.size;
+}
+
+/** Meta's customer-service window: free text is allowed only within this
+ *  long of the customer's last message. Outside it, only an approved
+ *  template can be sent. */
+export const SERVICE_WINDOW_MS = 24 * 3600_000;
+
+/**
+ * Is a free-text message still allowed to this customer?
+ *
+ * True only while their most recent inbound message is under 24 hours old.
+ * Before this, nothing in the app checked — a free-text send outside the
+ * window simply went to Meta and came back rejected, which the person sending
+ * it saw as a failure with no explanation. Pure, so the boundary is testable.
+ */
+export function windowOpenFor({ lastInboundAt = null, now = new Date() } = {}) {
+    if (!lastInboundAt) return false;
+    const at = new Date(lastInboundAt).getTime();
+    if (Number.isNaN(at)) return false;
+    return (new Date(now).getTime() - at) < SERVICE_WINDOW_MS;
 }
 
 /**
@@ -347,6 +416,178 @@ export async function sendWhatsAppText({ to, body, replyTo }) {
             type: 'text',
             text: { body: String(body || '').trim() },
             ...(replyTo ? { context: { message_id: String(replyTo) } } : {}),
+        }),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        const detail = payload?.error?.message || payload?.message || `HTTP ${response.status}`;
+        throw new Error(`WhatsApp send failed: ${detail}`);
+    }
+
+    return payload;
+}
+
+/**
+ * A reply-button message — up to three taps, no typing needed. Used by
+ * services/movingStorageFlow.js's own step prompts; the reply itself is
+ * always inside Meta's 24-hour window, since it can only ever follow a
+ * message that just arrived from this number.
+ *
+ * `buttons` up to 3 `{ id, title }` — Meta refuses a fourth outright, so
+ * this takes the first three rather than sending a request that would
+ * fail, and titles are capped at 20 characters, its own hard limit.
+ */
+export async function sendWhatsAppInteractiveButtons({ to, bodyText, buttons }) {
+    if (!whatsappSendConfigured()) {
+        throw new Error('WhatsApp is not configured');
+    }
+
+    const normalizedTo = normalizeRecipientPhone(to);
+    if (!normalizedTo) {
+        throw new Error('Recipient phone number is required');
+    }
+
+    const endpoint = `https://graph.facebook.com/v20.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
+    const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            to: normalizedTo,
+            type: 'interactive',
+            interactive: {
+                type: 'button',
+                body: { text: String(bodyText || '').trim() },
+                action: {
+                    buttons: (buttons || []).slice(0, 3).map((b) => ({
+                        type: 'reply',
+                        reply: { id: String(b.id), title: String(b.title).slice(0, 20) },
+                    })),
+                },
+            },
+        }),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        const detail = payload?.error?.message || payload?.message || `HTTP ${response.status}`;
+        throw new Error(`WhatsApp send failed: ${detail}`);
+    }
+
+    return payload;
+}
+
+/**
+ * A pick-one-of-many list message — the same shape a quick reply's own
+ * category list uses, for when there are more options than three buttons
+ * can hold (Meta's own button limit). `rows` up to 10 (its own limit)
+ * `{ id, title, description? }` — titles capped at 24 characters,
+ * descriptions at 72, both Meta's own limits.
+ */
+export async function sendWhatsAppInteractiveList({ to, bodyText, buttonLabel, rows }) {
+    if (!whatsappSendConfigured()) {
+        throw new Error('WhatsApp is not configured');
+    }
+
+    const normalizedTo = normalizeRecipientPhone(to);
+    if (!normalizedTo) {
+        throw new Error('Recipient phone number is required');
+    }
+
+    const endpoint = `https://graph.facebook.com/v20.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
+    const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            to: normalizedTo,
+            type: 'interactive',
+            interactive: {
+                type: 'list',
+                body: { text: String(bodyText || '').trim() },
+                action: {
+                    button: String(buttonLabel || 'Choose').slice(0, 20),
+                    sections: [{
+                        rows: (rows || []).slice(0, 10).map((r) => ({
+                            id: String(r.id),
+                            title: String(r.title).slice(0, 24),
+                            ...(r.description ? { description: String(r.description).slice(0, 72) } : {}),
+                        })),
+                    }],
+                },
+            },
+        }),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        const detail = payload?.error?.message || payload?.message || `HTTP ${response.status}`;
+        throw new Error(`WhatsApp send failed: ${detail}`);
+    }
+
+    return payload;
+}
+
+/**
+ * A WhatsApp Flow message — a native in-chat form (used here for a real
+ * calendar date picker, which no button or list message can offer). This
+ * sends a *static* flow: one whose terminal screen ends the flow itself
+ * with a "complete" action, so — unlike the Client Info flow in
+ * services/whatsappFlow.js — there is no data-exchange endpoint, no
+ * encryption, and nothing for our server to answer mid-flow. The filled-in
+ * answers arrive back on the ordinary webhook as an nfm_reply interactive
+ * message once the customer submits, same as a button tap.
+ *
+ * `flowId` is the id Meta assigns once the flow is created and published in
+ * WhatsApp Manager (Business Settings → Flows) — there is no API in this
+ * codebase that creates one, the JSON is authored there directly.
+ */
+export async function sendWhatsAppInteractiveFlow({ to, bodyText, flowId, flowCta, screenId, flowToken, data }) {
+    if (!whatsappSendConfigured()) {
+        throw new Error('WhatsApp is not configured');
+    }
+
+    const normalizedTo = normalizeRecipientPhone(to);
+    if (!normalizedTo) {
+        throw new Error('Recipient phone number is required');
+    }
+
+    const endpoint = `https://graph.facebook.com/v20.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
+    const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            to: normalizedTo,
+            type: 'interactive',
+            interactive: {
+                type: 'flow',
+                body: { text: String(bodyText || '').trim() },
+                action: {
+                    name: 'flow',
+                    parameters: {
+                        flow_message_version: '3',
+                        flow_token: String(flowToken || `noop.${Date.now()}`),
+                        flow_id: String(flowId),
+                        flow_cta: String(flowCta || 'Choose Dates').slice(0, 30),
+                        flow_action: 'navigate',
+                        flow_action_payload: {
+                            screen: String(screenId),
+                            ...(data ? { data } : {}),
+                        },
+                    },
+                },
+            },
         }),
     });
 

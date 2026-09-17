@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, AlarmClock, Check, ChevronsRight, MessageCircle, Plus, X } from 'lucide-react'
-import { api } from '../lib/api'
+import { api, leadApi, type HighIntentLead } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import WhatsApp from './WhatsApp'
+import QuietLeadsModal from '../components/QuietLeadsModal'
 
 /**
  * A rep's morning, on one screen.
@@ -124,12 +125,26 @@ export default function MyDay() {
   const [snoozeFor, setSnoozeFor] = useState<string | null>(null)
   /** The chat open in the slide-over, by number. */
   const [chatPhone, setChatPhone] = useState<string | null>(null)
+  const [showQuiet, setShowQuiet] = useState(false)
 
   const { data, isLoading } = useQuery<MyDayData>({
     queryKey: ['my-day'],
     queryFn: () => api.get('/my-day').then((r) => r.data),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
+  })
+
+  /* Own card, own load — the same reason /my-day itself does not fetch
+   * this: it needs a message-history read per candidate lead, and bolting
+   * it onto the one endpoint that already drives this whole page's polling
+   * would slow the entire day down to score a handful of leads nobody may
+   * even look at. `mine: true` forces "my own", same as everything else on
+   * this page — an admin's My Day showing the whole team's leads here
+   * would say something the rest of the page does not. */
+  const { data: highIntent, isLoading: highIntentLoading } = useQuery({
+    queryKey: ['high-intent-leads', 'mine'],
+    queryFn: () => leadApi.highIntentToday({ mine: true }),
+    staleTime: 60_000,
   })
 
   /* Snoozing and completing both write the lead's follow-up date, which is the
@@ -192,7 +207,7 @@ export default function MyDay() {
       { label: `Leads given to you ${window}`, value: String(counter.leads), sub: `${data?.fresh.length ?? 0} not opened yet`, tone: 'neutral' as const },
       { label: `Units booked ${window}`, value: String(counter.booked), sub: counter.value ? `AED ${money(counter.value)} monthly value` : 'nothing signed yet', tone: 'good' as const },
       { label: 'Waiting on a reply', value: String(waiting.length), sub: waiting.length ? `longest ${waitLabel(waiting[0].since)}` : 'everyone has been answered', tone: waiting.length ? 'warn' as const : 'good' as const },
-      { label: `Quiet ${data?.quietAfterDays ?? 3}+ days`, value: String(data?.quiet.length ?? 0), sub: 'we spoke last, nothing came back', tone: 'neutral' as const },
+      { label: `Dormant ${data?.quietAfterDays ?? 3}+ days`, value: String(data?.quiet.length ?? 0), sub: data?.quiet.length ? 'review & send a follow-up →' : 'we spoke last, nothing came back', tone: 'neutral' as const, key: 'quiet' as const },
     ]
   }, [counter, range, waiting, data])
 
@@ -261,9 +276,11 @@ export default function MyDay() {
               <AlarmClock size={17} />
             </div>
             <div>
-              <div style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 19, letterSpacing: '-.02em' }}>Reminders due today</div>
+              <div style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 19, letterSpacing: '-.02em' }}>Quiet leads needing follow-up</div>
               <div style={{ fontSize: 12.5, color: INK3, marginTop: 1 }}>
                 {overdueReminders} overdue · {Math.max(0, reminders.length - overdueReminders)} later today
+                {' · '}
+                <Link to="/follow-ups" style={{ color: PURPLE, fontWeight: 600 }}>See full Follow-Ups queue →</Link>
               </div>
             </div>
             <div style={{ marginLeft: 'auto', fontFamily: DISPLAY, fontSize: 32, fontWeight: 700, letterSpacing: '-.03em', color: PURPLE }}>
@@ -274,7 +291,7 @@ export default function MyDay() {
           <div className="flex flex-col" style={{ gap: 8, marginTop: 18 }}>
             {reminders.length === 0 && (
               <div style={{ fontSize: 13, color: INK3, padding: '10px 2px 14px' }}>
-                Nothing promised for today. Reminders you set from a chat land here.
+                Nothing here. A reminder shows up once its lead has also gone quiet.
               </div>
             )}
             {reminders.slice(0, 4).map((r) => (
@@ -430,7 +447,11 @@ export default function MyDay() {
       {/* ── KPI row ──────────────────────────────────────────────────────── */}
       <div className="grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', marginBottom: 20 }}>
         {kpis.map((k) => (
-          <div key={k.label} style={{ ...CARD, borderRadius: 18, padding: '18px 18px 20px' }}>
+          <div
+            key={k.label}
+            onClick={k.key === 'quiet' && data?.quiet.length ? () => setShowQuiet(true) : undefined}
+            style={{ ...CARD, borderRadius: 18, padding: '18px 18px 20px', cursor: k.key === 'quiet' && data?.quiet.length ? 'pointer' : undefined }}
+          >
             <div className="flex items-center gap-2.5">
               <div style={{ fontSize: 12.5, fontWeight: 600, color: INK2 }}>{k.label}</div>
               <div style={{
@@ -448,6 +469,56 @@ export default function MyDay() {
           </div>
         ))}
       </div>
+
+      {/* ── High intent ──────────────────────────────────────────────────
+          My own, scored — leadApi.highIntentToday({ mine: true }). Today
+          or yesterday only: this is a worklist, not an archive.
+
+          Shown even when empty, on purpose: a card that vanishes the
+          moment there's nothing to say reads exactly like "this feature
+          isn't here" rather than "you have none right now, correctly" —
+          the two look identical unless the empty case says so itself. */}
+      <section style={{ ...CARD, padding: 22, marginBottom: 20 }}>
+        <div className="flex flex-wrap items-center gap-2" style={{ marginBottom: 14 }}>
+          <div style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 19, letterSpacing: '-.02em' }}>High intent — today &amp; yesterday</div>
+          <div style={{ fontSize: 12.5, color: INK3 }}>Scored by the AI&rsquo;s read of the conversation — these are the ones to follow up</div>
+        </div>
+        {highIntentLoading ? (
+          <div style={{ fontSize: 13, color: INK3 }}>Reading…</div>
+        ) : !highIntent?.items.length ? (
+          <div style={{ fontSize: 13, color: INK3 }}>
+            None of your own leads have scored high yet today or yesterday. A high score needs a real conversation —
+            open a chat and reply to have one read.
+          </div>
+        ) : (
+            <div className="grid gap-2">
+              {highIntent!.items.slice(0, 6).map((l: HighIntentLead) => (
+                <button
+                  key={l.leadId}
+                  type="button"
+                  onClick={() => setChatPhone(l.phone)}
+                  className="flex items-start gap-3 text-left cursor-pointer hover:opacity-80 transition-opacity"
+                  style={{ padding: '10px 12px', borderRadius: 14, background: PURPLE_50, border: 'none' }}
+                >
+                  <span
+                    className="shrink-0 rounded-full flex items-center justify-center"
+                    style={{ width: 34, height: 34, background: GREEN_50, color: GREEN_700, fontSize: 12, fontWeight: 800 }}
+                  >
+                    {l.score}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>{l.name}</div>
+                    <div className="truncate" style={{ fontSize: 12, color: INK3 }}>{l.reason}</div>
+                    {l.nextAction && <div className="truncate" style={{ fontSize: 11.5, color: PURPLE_700, marginTop: 1 }}>Next: {l.nextAction}</div>}
+                  </div>
+                </button>
+              ))}
+              {highIntent!.items.length > 6 && (
+                <div style={{ fontSize: 12, color: INK3, padding: '2px 12px' }}>and {highIntent!.items.length - 6} more</div>
+              )}
+            </div>
+          )}
+      </section>
 
       {/* ── Pipeline + tasks ─────────────────────────────────────────────── */}
       <div className="grid gap-5 items-start" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', marginBottom: 20 }}>
@@ -623,6 +694,8 @@ export default function MyDay() {
           </div>
         </div>
       )}
+
+      {showQuiet && <QuietLeadsModal onClose={() => setShowQuiet(false)} scope="mine" />}
     </div>
   )
 }

@@ -12,6 +12,18 @@ export function stripeWebhookConfigured() {
   return Boolean(process.env.STRIPE_WEBHOOK_SECRET);
 }
 
+/* The publishable key, needed by any page that renders Stripe's own card form
+ * rather than redirecting to Stripe. Unlike the secret key this one is meant to
+ * be public — it identifies the account and can do nothing on its own — so it
+ * is the only Stripe credential this server will hand to a browser. */
+export function stripePublishableKey() {
+  return String(process.env.STRIPE_PUBLISHABLE_KEY || '');
+}
+
+export function stripeEmbeddedConfigured() {
+  return Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_PUBLISHABLE_KEY);
+}
+
 let cachedClient = null;
 let cachedKey = null;
 
@@ -31,30 +43,54 @@ export async function verifyStripeKey(secretKey) {
   await client.balance.retrieve();
 }
 
-// Creates a hosted Stripe Checkout session for the invoice's current balance
-// due. Returns { id, url }. The session itself is the "payment link" — no
-// separate public page of ours is needed, Stripe hosts the checkout UI.
-//
-// feePct (optional): when set, adds a separate "card processing fee" line so
-// the customer — not PurpleBox — covers Stripe's cut. The invoice-owed
-// portion is recorded in metadata.invoiceAmountFils so the webhook credits
-// only that amount against the invoice, never the fee on top of it.
-export async function createInvoiceCheckoutSession({ invoice, customerEmail, successUrl, cancelUrl, feePct = 0 }) {
+/**
+ * The card-processing fee in fils, for a charge of this size at this
+ * percentage. Pure and rounded the way Stripe wants amounts — whole fils —
+ * so the fee shown on screen before sending is exactly the fee the checkout
+ * session will carry, never a rounding-drift apart.
+ */
+export function computeFeeFils(amountFils, feePct) {
+  const pct = Number(feePct) || 0;
+  if (!(amountFils > 0) || pct <= 0) return 0;
+  return Math.round(amountFils * (pct / 100));
+}
+
+/**
+ * Creates a hosted Stripe Checkout session for an arbitrary amount. Returns
+ * { id, url, feeAmount }. The session itself is the "payment link" — no
+ * separate public page of ours is needed, Stripe hosts the checkout UI.
+ *
+ * feePct (optional): when greater than zero, adds a separate "card
+ * processing fee" line so the customer — not PurpleBox — covers Stripe's
+ * cut. The thing actually owed is recorded in metadata.amountFils (fils, the
+ * fee excluded) so a webhook can credit only that portion, never the fee on
+ * top of it. `metadata` is merged in on top — callers add whichever id
+ * (invoice, quote, storage or moving) the webhook needs to find the record.
+ *
+ * embedded (optional): renders Stripe's card form inside one of our own pages
+ * instead of sending the payer to Stripe's. Used by the tenant renewal page,
+ * where bouncing somebody out to a different domain mid-decision loses them.
+ * Stripe rejects success_url/cancel_url in this mode and takes a single
+ * return_url instead, so the two shapes cannot simply be merged — and the
+ * caller gets back a clientSecret rather than a url, since there is nowhere to
+ * send them.
+ */
+export async function createCheckoutSession({ amountAed, description, productName, metadata = {}, customerEmail, successUrl, cancelUrl, feePct = 0, embedded = false, returnUrl }) {
   const client = getClient();
-  const amountFils = Math.round(Number(invoice.balanceDue) * 100);
+  const amountFils = Math.round(Number(amountAed) * 100);
   if (!Number.isFinite(amountFils) || amountFils <= 0) {
-    throw new Error('Invoice has no outstanding balance to charge');
+    throw new Error('Nothing outstanding to charge');
   }
   const pct = Number(feePct) || 0;
-  const feeFils = pct > 0 ? Math.round(amountFils * (pct / 100)) : 0;
+  const feeFils = computeFeeFils(amountFils, pct);
 
   const lineItems = [{
     price_data: {
       currency: 'aed',
       unit_amount: amountFils,
       product_data: {
-        name: `Invoice ${invoice.invoiceNo}`,
-        description: `Moving invoice balance due — PurpleBox`,
+        name: productName,
+        description: description || undefined,
       },
     },
     quantity: 1,
@@ -70,22 +106,42 @@ export async function createInvoiceCheckoutSession({ invoice, customerEmail, suc
     });
   }
 
+  if (embedded && !returnUrl) throw new Error('An embedded checkout needs a returnUrl');
+
   const session = await client.checkout.sessions.create({
     mode: 'payment',
     payment_method_types: ['card'],
     customer_email: customerEmail || undefined,
     line_items: lineItems,
     metadata: {
-      movingInvoiceId: String(invoice._id),
-      invoiceNo: invoice.invoiceNo,
-      invoiceAmountFils: String(amountFils),
+      ...metadata,
+      amountFils: String(amountFils),
       feeFils: String(feeFils),
       feePct: String(pct),
     },
-    success_url: successUrl,
-    cancel_url: cancelUrl,
+    ...(embedded
+      ? { ui_mode: 'embedded', return_url: returnUrl }
+      : { success_url: successUrl, cancel_url: cancelUrl }),
   });
-  return { id: session.id, url: session.url, feeAmount: feeFils / 100 };
+  return {
+    id: session.id,
+    url: session.url,
+    clientSecret: session.client_secret || '',
+    feeAmount: feeFils / 100,
+  };
+}
+
+// Thin wrapper kept for the one existing caller (moving invoices) so its
+// metadata key (movingInvoiceId) and copy stay exactly as they were.
+export async function createInvoiceCheckoutSession({ invoice, customerEmail, successUrl, cancelUrl, feePct = 0 }) {
+  const session = await createCheckoutSession({
+    amountAed: invoice.balanceDue,
+    productName: `Invoice ${invoice.invoiceNo}`,
+    description: 'Moving invoice balance due — PurpleBox',
+    metadata: { movingInvoiceId: String(invoice._id), invoiceNo: invoice.invoiceNo },
+    customerEmail, successUrl, cancelUrl, feePct,
+  });
+  return session;
 }
 
 export function constructWebhookEvent(rawBody, signature) {

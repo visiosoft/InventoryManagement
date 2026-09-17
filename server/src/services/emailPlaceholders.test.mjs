@@ -39,6 +39,14 @@ test('fills the contract details that went out raw', () => {
     assert.equal(leftoverPlaceholders(out).length, 0);
 });
 
+test('@newEndDate is exactly 28 days after @endDate, for the auto-renewed notice', () => {
+    // 25 Dec 2026 + 28 days — checked against the calendar, not just re-running
+    // the same arithmetic the code does.
+    const out = fillPlaceholders('was @endDate, now @newEndDate', customer, contract);
+    assert.match(out, /was 25 Dec 2026/);
+    assert.match(out, /now 22 Jan 2027/);
+});
+
 test('a contract with several units names them all', () => {
     const many = { ...contract, units: [{ unitNumber: 'F2-44' }, { unitNumber: 'F2-45' }] };
     assert.match(fillPlaceholders('@unit', customer, many), /F2-44, F2-45/);

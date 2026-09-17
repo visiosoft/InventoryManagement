@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
   Send, MessageSquare, RefreshCw, UserPlus, UserCheck, Bell, BellOff, FileText,
   Search, X, Plus, ChevronDown, Zap, CheckCheck, Menu, Paperclip, Pencil,
-  Bot, Tag, Check, ClipboardList, Sparkles, Trash2, MapPin, Mic, Square, AlertTriangle, MoreVertical, UserCog, Loader2,
+  Bot, Tag, Check, ClipboardList, Sparkles, Trash2, MapPin, Mic, Square, AlertTriangle, MoreVertical, UserCog, Loader2, Ban,
+  Video as VideoIcon, Play,
 } from 'lucide-react'
 import { useVoiceRecorder, recordingSupported, formatDuration } from '../lib/voiceRecorder'
-import { api, whatsappApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel } from '../lib/api'
+import { api, whatsappApi, leadApi, apiError, type WhatsAppConversation, type WhatsAppMsg, type WhatsAppLabel as WaLabel, type LeadScore } from '../lib/api'
+import { isSalesRepRole } from '../lib/roles'
 import { useAuth } from '../lib/auth'
 import { TaskComposer } from '../components/TaskComposer'
 import { playPing, primePing } from '../lib/ping'
@@ -16,6 +19,7 @@ import { Modal, Field, Input, Textarea, Select } from '../components/ui'
 import { CustomerForm } from '../components/AddCustomerModal'
 import { useSeen, markSeen as markSeenShared, unreadFrom } from '../lib/whatsappSeen'
 import { cn } from '../lib/utils'
+import { dubaiToday } from '../lib/timezone'
 
 /** Which slice of the inbox is on screen. 'waiting' is not a slice by owner
  *  like the others — it is everybody who is owed an answer. */
@@ -63,6 +67,27 @@ type MessageTemplate = {
   // or send WhatsApp's native location pin instead.
   mediaUrl?: string
   mediaKind?: '' | 'image' | 'video' | 'audio' | 'document' | 'location'
+  // The poster frame a video quick reply is actually sent as — WhatsApp's own
+  // video attachment caps at 16 MB, well under a real sales video, so the
+  // video is hosted and this snapshot goes out instead, with a watch link.
+  mediaThumbnailUrl?: string
+}
+
+/* One of the templates Meta has approved for this WhatsApp account.
+ *
+ * Not the same thing as a quick reply above: a quick reply is free text we
+ * compose, which Meta only delivers inside 24 hours of the customer's last
+ * message. A template is wording Meta has vetted in advance, and it is the
+ * only kind of message that reaches somebody who has gone quiet. */
+type ApprovedTemplate = {
+  name: string
+  label: string
+  language: string
+  category: string
+  bodyText: string
+  // How many {{1}}, {{2}} … the body expects. Meta rejects the send outright
+  // if the count is wrong, so the panel asks for them before sending.
+  variableCount: number
 }
 
 const MUTE_KEY = 'wa_inbox_muted'
@@ -79,13 +104,35 @@ const CSS = `
   50%      { background-color: rgba(91, 43, 201, 0.16); }
 }
 .wa-blink { animation: wa-blink-bg 1s ease-in-out 4; }
+@keyframes wa-spin { to { transform: rotate(360deg); } }
+
+/* A dropdown materializes from its own trigger, not just fades in place —
+   transform-origin (set per menu, since one opens upward and the other
+   down) does the anchoring; this only supplies the scale + fade. Plays
+   once on mount, so it works with a menu that's conditionally rendered
+   rather than always-present and toggled. */
+@keyframes wa-menu-in { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: scale(1); } }
+.wa-menu-pop { animation: wa-menu-in 140ms cubic-bezier(0.16, 1, 0.3, 1); }
+@media (prefers-reduced-motion: reduce) {
+  .wa-menu-pop { animation: none; }
+}
 .wa-thumb { cursor: zoom-in; }
 .wa-thumb:hover { opacity: 0.92; }
 .wa-doc:hover { text-decoration: underline; }
 .wa-row:hover { background-color: #FAF7FF; }
+/* Press feedback on the row itself, not just hover — a tap needs to look
+   like it landed the instant it lands, not once openConversation resolves.
+   (No effect on a selected row: its inline background always wins over a
+   plain rule like this one, which is fine — it's already visually distinct.) */
+.wa-row:active { background-color: #F0E9FF; }
 .wa-grip { height: 12px; display: grid; place-items: center; cursor: ns-resize; touch-action: none; }
 .wa-grip-bar { width: 44px; height: 4px; border-radius: 999px; background: rgba(20,8,31,.16); transition: background .15s ease; }
 .wa-grip:hover .wa-grip-bar { background: rgba(91,43,201,.55); }
+/* The vertical drag-handle bar — shared by every side panel that resizes
+   left/right (the score rail, the chat list), as opposed to .wa-grip
+   above, which is the composer's horizontal one. */
+.wa-vgrip-bar { width: 4px; height: 44px; border-radius: 999px; background: rgba(20,8,31,.16); transition: background .15s ease; }
+.wa-vgrip:hover .wa-vgrip-bar { background: rgba(91,43,201,.55); }
 .wa-scroll { overflow-y: auto; }
 .wa-scroll::-webkit-scrollbar { width: 8px; }
 .wa-scroll::-webkit-scrollbar-thumb { background: rgba(20,8,31,.16); border-radius: 999px; }
@@ -105,6 +152,58 @@ const CSS = `
 @media (max-width: 440px) {
   .wa-qr { width: 100%; }
 }
+
+/* The lead-score rail defaults to on — the whole point of it is being read
+   before typing, not opened after — but it is closeable at every width now,
+   not just below the point where it becomes a drawer: "always on" and "no
+   way to get it out of the way while I work" turned out not to be the same
+   thing. Above 1100px it stays a plain flex sibling, just one that can be
+   removed from the flow (display:none) when closed. Below it, the same
+   drawer treatment .wa-sidebar already uses: transform-based, off-screen
+   until its own toggle (wa-score-toggle) opens it.
+
+   The base rules have to come before both media queries below, not after:
+   equal-specificity CSS resolves by source order among every rule whose
+   condition currently holds, so a base rule placed after a media query
+   would silently win over it — on a narrow screen the base 260px would
+   then beat the 440px case's 100%, undoing exactly the override it exists
+   to make. */
+.wa-score { width: 260px; position: relative; max-width: 480px; transition: max-width 200ms ease; }
+.wa-score-toggle { display: inline-flex; }
+@media (min-width: 1101px) {
+  /* max-width, not display:none or width — closing used to be an
+     instant cut, while the narrow drawer below gets a proper slide.
+     max-width rather than width specifically: width is also set inline
+     (the resize grip's scoreW), and a stylesheet rule fighting an inline
+     value needs !important to win, which — cascade-origin change and
+     all — several engines then quietly skip transitioning. max-width has
+     no inline counterpart here, so it's stylesheet-vs-stylesheet the
+     whole way and transitions reliably. overflow/border only apply once
+     actually closing (not on the steady open state), so the resize
+     grip — which sits slightly outside the box — stays visible and
+     usable the moment it starts reopening rather than only once the
+     transition finishes. */
+  .wa-score:not(.wa-score-open) { max-width: 0; overflow: hidden; border-left: none; }
+}
+@media (max-width: 1100px) {
+  .wa-score {
+    position: absolute; top: 0; right: 0; bottom: 0;
+    width: 280px; z-index: 27; flex: none;
+    transform: translateX(102%); transition: transform .2s ease;
+    box-shadow: -10px 0 34px rgba(20,8,31,.18);
+  }
+  .wa-score.wa-score-open { transform: translateX(0); }
+}
+@media (max-width: 440px) {
+  .wa-score { width: 100%; }
+}
+
+/* position: relative, purely so the resize grip below has something to
+   anchor to above ~700px, where no other rule touches position at all —
+   left out of the element's own inline style so it cannot beat the media
+   query's position: absolute below, the same trap the score rail's grip
+   comment (above) already explains. */
+.wa-sidebar { position: relative; }
 
 /* Below ~700px the chat list collapses to a drawer. */
 @media (max-width: 700px) {
@@ -157,6 +256,13 @@ const CSS = `
 @media (max-width: 400px) {
   .wa-head-extra { display: none !important; }
   .wa-bubble { max-width: 92% !important; }
+}
+
+/* Drawers still open and close under reduced motion — they just cut
+   instead of sliding/growing. Placed last so it wins the drawer rules
+   above at whatever width both conditions hold. */
+@media (prefers-reduced-motion: reduce) {
+  .wa-score, .wa-sidebar { transition: none !important; }
 }
 `
 
@@ -316,7 +422,9 @@ function Attachment({ messageId, media }: { messageId: string; media: WaMedia })
  * The header carried five circular icons and no words, which is fine on a
  * desktop where you can hover for a tooltip and hopeless on a phone. Behind
  * one button they can be what they always should have been: named actions. */
-const MENU_ROW = 'w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-sm cursor-pointer hover:bg-[#F7F3FF]'
+// active:* fires the instant a row is pressed, not once onClick resolves —
+// a menu tap gets the same no-latency feedback as everything else here.
+const MENU_ROW = 'w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-sm cursor-pointer transition-colors duration-100 hover:bg-[#F7F3FF] active:bg-[#EDE5FF]'
 
 function IconButton({
   title, onClick, children, tone = 'light', className,
@@ -333,7 +441,10 @@ function IconButton({
       title={title}
       aria-label={title}
       onClick={onClick}
-      className={cn('inline-flex items-center justify-center rounded-lg transition-colors cursor-pointer h-8 w-8', className)}
+      // Feedback belongs on the press, not just on hover — active:scale
+      // is the instant, no-latency response a tap needs; nothing here
+      // waits for onClick to resolve before something visibly happens.
+      className={cn('inline-flex items-center justify-center rounded-lg transition duration-150 active:scale-90 cursor-pointer h-8 w-8', className)}
       style={
         tone === 'dark'
           ? { background: 'rgba(255,255,255,.08)', border: '1px solid rgba(255,255,255,.14)', color: '#fff' }
@@ -727,7 +838,7 @@ function LabelPicker({ convo, labels, onChanged, menuItem }: {
                 onChange={(e) => setNewName(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && newName.trim()) create.mutate() }}
                 placeholder="New label name"
-                className="flex-1 px-2 py-1.5 focus:outline-none"
+                className="flex-1 px-2 py-1.5 focus:outline-none focus-visible:outline-2 focus-visible:outline-ring"
                 style={{ fontSize: 12, background: '#fff', border: `1px solid ${LINE}`, borderRadius: 8, color: INK }}
               />
               <button
@@ -875,6 +986,549 @@ function ConversationDigest({ phoneNormalized }: { phoneNormalized: string }) {
   )
 }
 
+const SCORE_BAND: Record<'high' | 'medium' | 'low', { bg: string; fg: string; label: string; emoji: string }> = {
+  high: { bg: '#DCFCE7', fg: '#15803D', label: 'High', emoji: '🔥' },
+  medium: { bg: '#FEF3C7', fg: '#92400E', label: 'Medium', emoji: '🟡' },
+  low: { bg: '#F3F4F6', fg: '#6B7280', label: 'Low', emoji: '⚪' },
+}
+const LEAD_TYPE_FLAG: Record<string, string> = {
+  job_seeker: 'Asking about a job, not storage',
+  price_declined: 'Said our price was too high',
+  not_our_service: "Not something we offer, or the wrong number",
+  spam_or_unclear: 'Not enough said to tell yet',
+}
+
+/* The gaps a rep actually reaches for after a call — one click instead of
+   counting days on a calendar, the same idea PersonProfile.tsx's own
+   follow-up scheduler uses. */
+const REMINDER_PRESETS: { days: number; label: string }[] = [
+  { days: 0, label: 'Today' }, { days: 1, label: 'Tomorrow' }, { days: 3, label: 'In 3 days' }, { days: 7, label: 'In a week' },
+]
+
+/** N days from today (Dubai-local), as a plain 'YYYY-MM-DD'. */
+function dateInDays(days: number): string {
+  const base = new Date(`${dubaiToday()}T00:00:00.000Z`)
+  base.setUTCDate(base.getUTCDate() + days)
+  return base.toISOString().slice(0, 10)
+}
+
+/** A documented intake fact, shown quiet rather than as a re-editable
+ *  input — the whole point of the checklist below is that a filled-in
+ *  field stops asking. "Change" is a plain text link, not another button,
+ *  so it reads as an escape hatch rather than an invitation. */
+function FieldSummary({ text, onChange }: { text: string; onChange: () => void }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span style={{ fontSize: 11.5, color: INK }}>{text}</span>
+      <button type="button" onClick={onChange} className="underline cursor-pointer shrink-0" style={{ fontSize: 10.5, color: FAINT_INK, background: 'none', border: 'none', padding: 0 }}>
+        Change
+      </button>
+    </div>
+  )
+}
+
+/**
+ * How good this lead is, and why — the always-on right rail, so a rep
+ * reads the AI's take before they type anything rather than after.
+ *
+ * First-cut scoring (services/leadScore.js): an AI read of the conversation
+ * — is this even a real storage enquiry, and how hot — combined with plain
+ * facts from the message history itself (how many times they've actually
+ * written back, how fast). The score is arithmetic on those, never asked
+ * of the model directly, and it is not going to be right every time — which
+ * is the whole reason for the two buttons below it. A rep who has actually
+ * spoken to this person overrides the model outright, not by nudging a
+ * number: their read replaces the guess rather than averaging with it.
+ */
+function LeadScorePanel({ leadId, open, onClose }: { leadId: string | null; open: boolean; onClose: () => void }) {
+  const qc = useQueryClient()
+  const { data, isLoading } = useQuery<LeadScore>({
+    queryKey: ['lead-score', leadId],
+    queryFn: () => leadApi.score(leadId!),
+    enabled: Boolean(leadId),
+    staleTime: 60_000,
+  })
+
+  const confirm = useMutation({
+    mutationFn: (decision: 'qualifying' | 'not_interested' | '') => leadApi.scoreConfirm(leadId!, decision),
+    onSuccess: (result) => qc.setQueryData(['lead-score', leadId], result),
+  })
+
+  const setDate = useMutation({
+    mutationFn: (date: string) => leadApi.setIntendedDate(leadId!, date),
+    onSuccess: (result) => qc.setQueryData(['lead-score', leadId], result),
+  })
+
+  const setQualified = useMutation({
+    mutationFn: (value: '' | 'yes' | 'no') => leadApi.setFinanciallyQualified(leadId!, value),
+    onSuccess: (result) => qc.setQueryData(['lead-score', leadId], result),
+  })
+  const setLocation = useMutation({
+    mutationFn: (value: '' | 'Al Quoz' | 'DIP') => leadApi.setLocationPreference(leadId!, value),
+    onSuccess: (result) => qc.setQueryData(['lead-score', leadId], result),
+  })
+  const setLength = useMutation({
+    mutationFn: (payload: { value: number; unit: 'week' | 'month' }) => leadApi.setLengthOfStay(leadId!, payload.value, payload.unit),
+    onSuccess: (result) => qc.setQueryData(['lead-score', leadId], result),
+  })
+  const setSize = useMutation({
+    mutationFn: (value: number) => leadApi.setUnitSize(leadId!, value),
+    onSuccess: (result) => qc.setQueryData(['lead-score', leadId], result),
+  })
+  const setReminder = useMutation({
+    mutationFn: (payload: { at: string; note: string }) => leadApi.setFollowUpReminder(leadId!, payload.at, payload.note),
+    onSuccess: (result) => qc.setQueryData(['lead-score', leadId], result),
+  })
+
+  // Once a fact is documented its input drops out of the panel, per the
+  // intake checklist below — "Change" brings it back for this one field
+  // without needing the fact to go missing again.
+  const [editMoveIn, setEditMoveIn] = useState(false)
+  const [editLength, setEditLength] = useState(false)
+  const [editSize, setEditSize] = useState(false)
+  const [editReminder, setEditReminder] = useState(false)
+  const [lengthValue, setLengthValue] = useState('1')
+  const [lengthUnit, setLengthUnit] = useState<'week' | 'month'>('month')
+  const [sizeValue, setSizeValue] = useState('')
+  // Date and time as two plain native inputs, not one combined
+  // datetime-local — that control's own scroll-wheel time picker is slow
+  // to use quickly, which is exactly the complaint this replaced.
+  const [reminderDate, setReminderDate] = useState('')
+  const [reminderTime, setReminderTime] = useState('09:00')
+  const [reminderNote, setReminderNote] = useState('')
+
+  const intake = data?.intake
+  useEffect(() => {
+    if (intake?.lengthOfStay) {
+      setLengthValue(String(intake.lengthOfStay.value))
+      setLengthUnit(intake.lengthOfStay.unit)
+    }
+    if (intake?.unitSize) {
+      setSizeValue(String(intake.unitSize.value))
+    }
+    if (intake?.followUpReminder) {
+      setReminderDate(intake.followUpReminder.at.slice(0, 10))
+      setReminderTime(intake.followUpReminder.at.slice(11, 16) || '09:00')
+      setReminderNote(intake.followUpReminder.note)
+    }
+  }, [intake?.lengthOfStay?.value, intake?.lengthOfStay?.unit, intake?.unitSize?.value, intake?.followUpReminder?.at, intake?.followUpReminder?.note])
+
+  // Below ~1100px this panel is a drawer (see the .wa-score CSS), not a
+  // fixed-width rail — the same reason the composer got a drag handle:
+  // a fixed width is either too cramped for the checklist below or wastes
+  // space over the chat. Dragging its left edge resizes it the same way
+  // the composer's own grip resizes height — pointer capture, clamped,
+  // persisted. Above that breakpoint this is simply unused.
+  const SCORE_MIN = 240
+  const SCORE_MAX = 480
+  const [scoreW, setScoreW] = useState<number | null>(() => {
+    const saved = Number(localStorage.getItem('wa_score_w'))
+    return Number.isFinite(saved) && saved >= SCORE_MIN ? Math.min(saved, SCORE_MAX) : null
+  })
+  const scoreDragRef = useRef<{ startX: number; startW: number } | null>(null)
+  const onScoreDragStart = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    scoreDragRef.current = { startX: e.clientX, startW: scoreW ?? 280 }
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  }
+  const onScoreDragMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = scoreDragRef.current
+    if (!d) return
+    // Anchored to the right edge, so dragging left (a smaller clientX)
+    // makes it wider.
+    const next = Math.min(SCORE_MAX, Math.max(SCORE_MIN, d.startW + (d.startX - e.clientX)))
+    setScoreW(next)
+  }
+  const onScoreDragEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!scoreDragRef.current) return
+    scoreDragRef.current = null
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId) } catch { /* already released */ }
+    setScoreW((w) => { if (w != null) localStorage.setItem('wa_score_w', String(w)); return w })
+  }
+  const resetScoreW = () => { setScoreW(null); localStorage.removeItem('wa_score_w') }
+
+  if (!leadId) {
+    return (
+      <aside className={cn('wa-score flex flex-col shrink-0 items-center justify-center px-4 text-center', open && 'wa-score-open')} style={{ background: '#fff', borderLeft: `1px solid ${LINE}` }}>
+        <p style={{ fontSize: 12, color: FAINT_INK }}>Save this chat as a lead to see a score for it.</p>
+      </aside>
+    )
+  }
+
+  const band = data?.band ? SCORE_BAND[data.band] : null
+  const flag = data?.signals?.leadType ? LEAD_TYPE_FLAG[data.signals.leadType] : null
+
+  return (
+    <aside
+      className={cn('wa-score flex flex-col min-h-0 shrink-0', open && 'wa-score-open')}
+      // `position` is deliberately left to the stylesheet, not set here:
+      // an inline value would beat the ≤1100px media query's own
+      // `position: absolute` no matter what it said (inline always wins
+      // over a class rule on the same property, media query or not),
+      // permanently defeating the drawer behavior that rule exists for —
+      // this panel would sit in the flex row claiming its full width on
+      // every screen size, squeezing the chat column next to it down to
+      // a sliver. The base .wa-score rule below now carries
+      // `position: relative` itself instead, purely so the drag handle
+      // has something to anchor to above that breakpoint, where no
+      // media query rule touches position at all.
+      style={{ background: '#fff', borderLeft: `1px solid ${LINE}`, ...(scoreW != null ? { width: scoreW } : {}) }}
+    >
+      {/* Drag left to make the drawer wider — the same grip mechanic as the
+          composer's, on the other axis, since this panel slides in from
+          the side rather than sitting above the message box. */}
+      <div
+        onPointerDown={onScoreDragStart}
+        onPointerMove={onScoreDragMove}
+        onPointerUp={onScoreDragEnd}
+        onPointerCancel={onScoreDragEnd}
+        onDoubleClick={resetScoreW}
+        title="Drag to resize · double-click to reset"
+        role="separator"
+        aria-orientation="vertical"
+        className="wa-vgrip"
+        style={{ position: 'absolute', left: -6, top: 0, bottom: 0, width: 12, cursor: 'ew-resize', touchAction: 'none', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      >
+        <span className="wa-vgrip-bar" />
+      </div>
+
+      <div className="shrink-0 px-4 py-3.5 flex items-center justify-between" style={{ borderBottom: `1px solid ${LINE}` }}>
+        <h2 style={{ fontFamily: "'Bricolage Grotesque', serif", fontWeight: 700, fontSize: 15, color: INK }}>Lead score</h2>
+        {/* Only meaningful once the panel is a drawer that can be closed —
+            harmless on a real screen, where it's always visible anyway and
+            this button is unreachable behind the same width the .wa-score
+            CSS gates on. */}
+        <button type="button" onClick={onClose} className="wa-score-toggle cursor-pointer p-1" style={{ color: FAINT_INK }} aria-label="Close">
+          <X size={16} />
+        </button>
+      </div>
+
+      <div className="wa-scroll flex-1 min-h-0 px-4 py-3.5" style={{ fontSize: 12.5 }}>
+        {isLoading ? (
+          <p style={{ color: FAINT_INK }}>Reading…</p>
+        ) : data?.band === null ? (
+          <p style={{ color: FAINT_INK }}>{data.reason}</p>
+        ) : data && band ? (
+          <>
+            <div className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1" style={{ background: band.bg, color: band.fg, fontWeight: 700, fontSize: 13 }}>
+              <span>{band.emoji}</span><span>{band.label}</span><span style={{ opacity: 0.7, fontWeight: 600 }}>· {data.score}</span>
+            </div>
+            <p className="mt-2" style={{ color: MUTED_INK }}>{data.reason}</p>
+
+            {flag && (
+              <p className="mt-2 rounded-lg px-2.5 py-1.5" style={{ background: '#FFF7E6', color: '#8A5A00', fontSize: 11.5 }}>
+                ⚠️ {flag}
+              </p>
+            )}
+
+            {data.aiSummary?.nextAction && (
+              <p className="mt-3" style={{ color: INK }}><strong>Next:</strong> {data.aiSummary.nextAction}</p>
+            )}
+
+            {/* When they actually need it — not the same question as when
+                we should next contact them. A lead who isn't ready right
+                now isn't necessarily a dead one; this is what tells the
+                two apart, whether the AI caught it in the chat or a rep
+                heard it on a call. Saves the moment a date is picked — one
+                action, not a form with its own submit. Drops out once
+                documented, like the rest of the intake checklist below —
+                "Change" brings the input back for a correction. */}
+            <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${LINE}` }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: INK, display: 'block', marginBottom: 4 }}>Move-in date</label>
+              {data.intake.missing.includes('moveInDate') || editMoveIn ? (
+                <>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="date"
+                      value={data.signals.intendedStartDate ? data.signals.intendedStartDate.slice(0, 10) : ''}
+                      onChange={(e) => { setDate.mutate(e.target.value); setEditMoveIn(false) }}
+                      disabled={setDate.isPending}
+                      style={{ fontSize: 11.5, border: `1px solid ${LINE}`, borderRadius: 8, padding: '4px 6px', color: INK, flex: 1, minWidth: 0 }}
+                    />
+                    {data.signals.intendedStartDate && (
+                      <button
+                        type="button" disabled={setDate.isPending}
+                        onClick={() => { setDate.mutate(''); setEditMoveIn(false) }}
+                        className="cursor-pointer disabled:opacity-50"
+                        style={{ fontSize: 10.5, color: FAINT_INK, background: 'none', border: 'none', padding: 0, whiteSpace: 'nowrap' }}
+                      >
+                        Not sure
+                      </button>
+                    )}
+                  </div>
+                  {typeof data.signals.daysUntilNeeded === 'number' && (
+                    <p className="mt-1" style={{ fontSize: 10.5, color: FAINT_INK }}>
+                      {data.signals.daysUntilNeeded <= 0 ? 'Needs it now' : `In ${data.signals.daysUntilNeeded} day${data.signals.daysUntilNeeded === 1 ? '' : 's'}`}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <FieldSummary
+                  text={new Date(data.intake.moveInDate!).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  onChange={() => setEditMoveIn(true)}
+                />
+              )}
+            </div>
+
+            {/* Length of stay — durationValue/durationUnit already default
+                to "1 month" from creation, so a Change link that just
+                re-opens the same two inputs is exactly right here too. */}
+            <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${LINE}` }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: INK, display: 'block', marginBottom: 4 }}>Length of stay</label>
+              {data.intake.missing.includes('lengthOfStay') || editLength ? (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number" min={1} value={lengthValue}
+                    onChange={(e) => setLengthValue(e.target.value)}
+                    style={{ fontSize: 11.5, border: `1px solid ${LINE}`, borderRadius: 8, padding: '4px 6px', color: INK, width: 56 }}
+                  />
+                  <select
+                    value={lengthUnit} onChange={(e) => setLengthUnit(e.target.value as 'week' | 'month')}
+                    style={{ fontSize: 11.5, border: `1px solid ${LINE}`, borderRadius: 8, padding: '4px 6px', color: INK }}
+                  >
+                    <option value="week">week(s)</option>
+                    <option value="month">month(s)</option>
+                  </select>
+                  <button
+                    type="button" disabled={setLength.isPending || !Number(lengthValue)}
+                    onClick={() => { setLength.mutate({ value: Number(lengthValue), unit: lengthUnit }); setEditLength(false) }}
+                    className="cursor-pointer disabled:opacity-50 rounded-lg"
+                    style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: '#4A1FA0', border: 'none', padding: '5px 8px' }}
+                  >
+                    Save
+                  </button>
+                </div>
+              ) : (
+                <FieldSummary
+                  text={`${data.intake.lengthOfStay!.value} ${data.intake.lengthOfStay!.unit}${data.intake.lengthOfStay!.value === 1 ? '' : 's'}`}
+                  onChange={() => setEditLength(true)}
+                />
+              )}
+            </div>
+
+            {/* Unit size — storageSizeValue is 0 until somebody actually
+                sets it (unlike length of stay's meaningful "1 month"
+                default), so missing/documented is a plain >0 check with no
+                separate confirmed-at stamp needed. */}
+            <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${LINE}` }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: INK, display: 'block', marginBottom: 4 }}>Unit size</label>
+              {data.intake.missing.includes('unitSize') || editSize ? (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number" min={1} value={sizeValue}
+                    onChange={(e) => setSizeValue(e.target.value)}
+                    placeholder="e.g. 75"
+                    style={{ fontSize: 11.5, border: `1px solid ${LINE}`, borderRadius: 8, padding: '4px 6px', color: INK, width: 64 }}
+                  />
+                  <span style={{ fontSize: 11.5, color: MUTED_INK }}>sqft</span>
+                  <button
+                    type="button" disabled={setSize.isPending || !Number(sizeValue)}
+                    onClick={() => { setSize.mutate(Number(sizeValue)); setEditSize(false) }}
+                    className="cursor-pointer disabled:opacity-50 rounded-lg"
+                    style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: '#4A1FA0', border: 'none', padding: '5px 8px' }}
+                  >
+                    Save
+                  </button>
+                </div>
+              ) : (
+                <FieldSummary
+                  text={`${data.intake.unitSize!.value} sqft`}
+                  onChange={() => setEditSize(true)}
+                />
+              )}
+            </div>
+
+            {/* Financially qualified — a rep's own judgment from a call or
+                in person, never something to ask the customer outright, so
+                this is a one-tap Yes/No rather than a message suggestion. */}
+            <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${LINE}` }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: INK, display: 'block', marginBottom: 4 }}>Financially qualified?</label>
+              {!data.intake.financiallyQualified ? (
+                <div className="flex gap-1.5">
+                  <button
+                    type="button" disabled={setQualified.isPending}
+                    onClick={() => setQualified.mutate('yes')}
+                    className="flex-1 rounded-lg py-1.5 cursor-pointer disabled:opacity-50"
+                    style={{ background: '#DCFCE7', color: '#15803D', fontSize: 11.5, fontWeight: 700, border: 'none' }}
+                  >
+                    Yes
+                  </button>
+                  <button
+                    type="button" disabled={setQualified.isPending}
+                    onClick={() => setQualified.mutate('no')}
+                    className="flex-1 rounded-lg py-1.5 cursor-pointer disabled:opacity-50"
+                    style={{ background: '#F3F4F6', color: '#6B7280', fontSize: 11.5, fontWeight: 700, border: 'none' }}
+                  >
+                    No
+                  </button>
+                </div>
+              ) : (
+                <FieldSummary
+                  text={data.intake.financiallyQualified === 'yes' ? 'Yes' : 'No'}
+                  onChange={() => setQualified.mutate('')}
+                />
+              )}
+            </div>
+
+            {/* Location preference — the two facilities, nothing else. */}
+            <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${LINE}` }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: INK, display: 'block', marginBottom: 4 }}>Location preference</label>
+              {!data.intake.locationPreference ? (
+                <div className="flex gap-1.5">
+                  <button
+                    type="button" disabled={setLocation.isPending}
+                    onClick={() => setLocation.mutate('Al Quoz')}
+                    className="flex-1 rounded-lg py-1.5 cursor-pointer disabled:opacity-50"
+                    style={{ background: '#F7F3FF', color: '#4A1FA0', fontSize: 11.5, fontWeight: 700, border: 'none' }}
+                  >
+                    Al Quoz
+                  </button>
+                  <button
+                    type="button" disabled={setLocation.isPending}
+                    onClick={() => setLocation.mutate('DIP')}
+                    className="flex-1 rounded-lg py-1.5 cursor-pointer disabled:opacity-50"
+                    style={{ background: '#F7F3FF', color: '#4A1FA0', fontSize: 11.5, fontWeight: 700, border: 'none' }}
+                  >
+                    DIP
+                  </button>
+                </div>
+              ) : (
+                <FieldSummary text={data.intake.locationPreference} onChange={() => setLocation.mutate('')} />
+              )}
+            </div>
+
+            {/* What happened on the call, and when to come back to them —
+                one combined area and one Save rather than two separate
+                asks, since a rep who just hung up fills both in together.
+                The notes box resizes by dragging its own corner (the
+                browser's native textarea handle), same idea as the panel's
+                own drag-to-widen grip above. */}
+            <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${LINE}` }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: INK, display: 'block', marginBottom: 4 }}>Call notes &amp; next follow-up</label>
+              {data.intake.missing.includes('followUpReminder') || editReminder ? (
+                <div className="space-y-1.5">
+                  <textarea
+                    placeholder="What was discussed on the call…"
+                    value={reminderNote}
+                    onChange={(e) => setReminderNote(e.target.value)}
+                    rows={3}
+                    style={{ fontSize: 11.5, border: `1px solid ${LINE}`, borderRadius: 8, padding: 6, color: INK, width: '100%', minHeight: 60, resize: 'vertical', fontFamily: 'inherit' }}
+                  />
+                  {/* One tap for the common gaps; the date/time below for
+                      anything else — faster than the browser's own
+                      datetime-local control, whose scroll-wheel time picker
+                      is slow to use for exactly this kind of quick entry. */}
+                  <div className="flex flex-wrap" style={{ gap: 4 }}>
+                    {REMINDER_PRESETS.map((p) => {
+                      const target = dateInDays(p.days)
+                      const active = reminderDate === target
+                      return (
+                        <button
+                          key={p.days}
+                          type="button"
+                          onClick={() => setReminderDate(target)}
+                          className="cursor-pointer"
+                          style={{
+                            borderRadius: 999, padding: '4px 9px', fontSize: 10.5, fontWeight: 700, border: 'none',
+                            background: active ? '#5B2BC9' : '#F3F4F6',
+                            color: active ? '#fff' : MUTED_INK,
+                          }}
+                        >
+                          {p.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="date" value={reminderDate}
+                      min={dubaiToday()}
+                      onChange={(e) => setReminderDate(e.target.value)}
+                      style={{ fontSize: 11.5, border: `1px solid ${LINE}`, borderRadius: 8, padding: '4px 6px', color: INK, flex: 1, minWidth: 0 }}
+                    />
+                    <input
+                      type="time" value={reminderTime}
+                      onChange={(e) => setReminderTime(e.target.value || '09:00')}
+                      style={{ fontSize: 11.5, border: `1px solid ${LINE}`, borderRadius: 8, padding: '4px 6px', color: INK, width: 92 }}
+                    />
+                  </div>
+                  <button
+                    type="button" disabled={setReminder.isPending || !reminderDate}
+                    onClick={() => {
+                      setReminder.mutate({ at: new Date(`${reminderDate}T${reminderTime}:00`).toISOString(), note: reminderNote })
+                      setEditReminder(false)
+                    }}
+                    className="cursor-pointer disabled:opacity-50 rounded-lg"
+                    style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: '#4A1FA0', border: 'none', padding: '5px 8px', width: '100%' }}
+                  >
+                    Save
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <span style={{ fontSize: 11.5, color: INK, fontWeight: 600 }}>
+                      {new Date(data.intake.followUpReminder!.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    <button type="button" onClick={() => setEditReminder(true)} className="underline cursor-pointer shrink-0" style={{ fontSize: 10.5, color: FAINT_INK, background: 'none', border: 'none', padding: 0 }}>
+                      Change
+                    </button>
+                  </div>
+                  {data.intake.followUpReminder!.note && (
+                    <p className="mt-1" style={{ fontSize: 11.5, color: MUTED_INK, whiteSpace: 'pre-wrap' }}>{data.intake.followUpReminder!.note}</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Confirm or correct. Highlighted only while it's actually
+                asking for one — a rep who already confirmed, or a dead
+                lead nobody needs to weigh in on, gets the quiet version. */}
+            <div
+              className="mt-3 pt-3"
+              style={{ borderTop: `1px solid ${LINE}` }}
+            >
+              {data.override ? (
+                <div className="rounded-lg px-2.5 py-2" style={{ background: data.override === 'qualifying' ? '#DCFCE7' : '#F3F4F6', color: data.override === 'qualifying' ? '#15803D' : '#6B7280' }}>
+                  <div style={{ fontWeight: 700 }}>{data.override === 'qualifying' ? '✅ Confirmed qualifying' : '❌ Marked not interested'}</div>
+                  {data.overrideByName && <div style={{ fontSize: 10.5, opacity: 0.85 }}>by {data.overrideByName}</div>}
+                  {data.staleOverride && <div style={{ fontSize: 10.5, marginTop: 4 }}>The conversation has moved on since — worth a fresh look.</div>}
+                  <button type="button" onClick={() => confirm.mutate('')} className="mt-1.5 underline cursor-pointer" style={{ fontSize: 10.5, background: 'none', border: 'none', padding: 0, color: 'inherit' }}>
+                    Change
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {data.needsConfirmation && (
+                    <p className="mb-1.5" style={{ fontSize: 11, fontWeight: 600, color: '#4A1FA0' }}>Is this reading right?</p>
+                  )}
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button" disabled={confirm.isPending}
+                      onClick={() => confirm.mutate('qualifying')}
+                      className="flex-1 rounded-lg py-1.5 cursor-pointer disabled:opacity-50"
+                      style={{ background: '#DCFCE7', color: '#15803D', fontSize: 11.5, fontWeight: 700, border: 'none' }}
+                    >
+                      ✅ Qualifying
+                    </button>
+                    <button
+                      type="button" disabled={confirm.isPending}
+                      onClick={() => confirm.mutate('not_interested')}
+                      className="flex-1 rounded-lg py-1.5 cursor-pointer disabled:opacity-50"
+                      style={{ background: '#F3F4F6', color: '#6B7280', fontSize: 11.5, fontWeight: 700, border: 'none' }}
+                    >
+                      ❌ Not interested
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </>
+        ) : null}
+      </div>
+    </aside>
+  )
+}
 
 /**
  * Raise a task straight from a conversation.
@@ -954,63 +1608,165 @@ function QuickAssign({ convo, onChanged }: { convo: WhatsAppConversation; onChan
   const [open, setOpen] = useState(false)
   const [err, setErr] = useState('')
   const boxRef = useRef<HTMLDivElement | null>(null)
+  // A span with role="button", not an actual <button> — this sits inside
+  // the chat row's own <button>, and a button nested inside a button is
+  // invalid HTML with unreliable focus/AT behavior, not just a lint nit.
+  const btnRef = useRef<HTMLSpanElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  // Where to put the portalled menu, measured from the button when it opens.
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null)
   const leadId = convo.lead?._id
+
+  function toggle() {
+    if (open) { setOpen(false); return }
+    const r = btnRef.current?.getBoundingClientRect()
+    if (r) setPos({ top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) })
+    setOpen(true)
+  }
 
   useEffect(() => {
     if (!open) return
+    // The menu is in <body>, so "outside" has to mean outside both it and the
+    // button — a click inside the portal is not inside boxRef.
     const away = (e: MouseEvent) => {
-      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false)
+      const t = e.target as Node
+      if (boxRef.current?.contains(t) || menuRef.current?.contains(t)) return
+      setOpen(false)
     }
+    /* A fixed menu does not travel with the list, so scrolling would leave it
+       stranded beside the wrong row. Closing is the honest response — the
+       alternative is recomputing the position on every scroll frame for a menu
+       nobody is looking at. */
+    const close = () => setOpen(false)
     document.addEventListener('mousedown', away)
-    return () => document.removeEventListener('mousedown', away)
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    return () => {
+      document.removeEventListener('mousedown', away)
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+    }
   }, [open])
 
-  const { data: people = [] } = useQuery<{ _id: string; name: string; email: string; role?: string }[]>({
+  const { data: people = [], isLoading: loadingPeople, error: peopleError } = useQuery<{ _id: string; name: string; email: string; role?: string }[]>({
     queryKey: ['assignable-users'],
     queryFn: () => api.get('/users/assignable').then((r) => r.data ?? []),
     staleTime: 30 * 60_000,
   })
-  const reps = people.filter((u) => u.role === 'sales_rep')
+  /* Whoever can carry a lead. Asked through isSalesRepRole rather than
+     `role === 'sales_rep'`, which is the rule lib/roles.ts states and this
+     used to break: 'accounts' is the same role under another name, so a team
+     set up that way got an empty menu and a button that looked dead. */
+  const reps = people.filter((u) => isSalesRepRole(u.role))
+  /* An empty menu is a dead end, so when there are no reps at all the list
+     falls back to everyone the server will let hold a lead. Better to hand it
+     to an admin than to leave the chat unowned because nobody fits. */
+  const choices = reps.length > 0 ? reps : people
+  const qc = useQueryClient()
 
   const assign = useMutation({
     mutationFn: async (owner: string) => {
-      if (leadId) { await api.put(`/leads/${leadId}`, { owner }); return }
-      await whatsappApi.createLead(convo.phoneNormalized, {
+      if (leadId) {
+        const { data } = await api.put<{ owner?: { _id: string; name: string } | null }>(`/leads/${leadId}`, { owner })
+        return { ownerId: owner, ownerName: data.owner?.name || '' }
+      }
+      const res = await whatsappApi.createLead(convo.phoneNormalized, {
         fullName: convo.customer?.fullName || '',
         owner,
       })
+      return { ownerId: owner, ownerName: '', createdLead: res.lead }
     },
-    onSuccess: () => { setErr(''); setOpen(false); onChanged() },
+    /* The row this button sits in shows the owner's name the moment this
+     * resolves, rather than waiting on a refetch (onChanged, still called
+     * below) to land — the inbox polls this list every 10s regardless, so
+     * a rep who assigns and immediately moves on could easily see the
+     * "Assign" pill still sitting there with no name for several seconds,
+     * which reads as the assignment having silently failed. Patched
+     * directly into every cached wa-conversations query (there's one per
+     * filter/search/owner combination, hence setQueriesData rather than a
+     * single setQueryData) since this component has no reason to know
+     * which of those the parent currently has active. */
+    onSuccess: (result) => {
+      setErr('')
+      setOpen(false)
+      const ownerName = result.ownerName || choices.find((p) => p._id === result.ownerId)?.name || ''
+      qc.setQueriesData<{ list: WhatsAppConversation[] } | undefined>({ queryKey: ['wa-conversations'] }, (old) => {
+        if (!old) return old
+        return {
+          ...old,
+          list: old.list.map((c) => (c.phoneNormalized !== convo.phoneNormalized ? c : {
+            ...c,
+            lead: result.createdLead
+              ? { _id: result.createdLead._id, fullName: result.createdLead.fullName, status: result.createdLead.status, ownerId: result.ownerId, ownerName, assigned: true }
+              : c.lead ? { ...c.lead, ownerId: result.ownerId, ownerName, assigned: true, autoAssigned: false } : c.lead,
+          })),
+        }
+      })
+      onChanged()
+    },
     onError: (e) => setErr(apiError(e)),
   })
 
   return (
     <span ref={boxRef} className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
+      <span
+        ref={btnRef}
+        role="button"
+        tabIndex={0}
+        onClick={toggle}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle() } }}
         title="Nobody has this yet — assign it"
-        className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 cursor-pointer"
+        className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 cursor-pointer active:scale-90 transition-transform duration-150"
         style={{ fontSize: 10, fontWeight: 700, background: '#FFF7E6', color: '#B45309', border: 'none' }}
       >
         {assign.isPending
           ? <Loader2 size={11} className="animate-spin" />
           : <UserPlus size={11} />}
         {assign.isPending ? 'Assigning…' : 'Assign'}
-      </button>
+      </span>
 
-      {open && (
+      {/* Rendered into <body>, not beside the button.
+       *
+       * The inbox list is a scroll container (.wa-scroll sets overflow-y, and
+       * CSS then clips the other axis too), and the row itself has been a
+       * clipping box at least once already. A menu positioned inside all that
+       * gets cut down to whatever space is left — which is why this looked like
+       * an empty white sliver rather than a list of names. A portal has no
+       * ancestor to be clipped by, so it cannot happen again wherever the row
+       * sits or however the list is restyled. */}
+      {open && pos && createPortal(
         <div
-          className="absolute right-0 mt-1 z-40 rounded-xl overflow-hidden"
-          style={{ background: '#fff', border: `1px solid ${LINE}`, boxShadow: '0 10px 30px rgba(20,8,31,.16)', minWidth: 170 }}
+          ref={menuRef}
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: 'fixed', top: pos.top, right: pos.right, zIndex: 60,
+            background: '#fff', border: `1px solid ${LINE}`, borderRadius: 12,
+            boxShadow: '0 10px 30px rgba(20,8,31,.16)', minWidth: 190,
+            maxHeight: 320, overflowY: 'auto',
+          }}
         >
           {err && <p className="px-3 py-1.5" style={{ fontSize: 11, color: '#B91C1C' }}>{err}</p>}
-          {reps.length === 0 && (
-            <p className="px-3 py-2" style={{ fontSize: 12, color: FAINT_INK }}>
-              {people.length === 0 ? 'Loading…' : 'No sales reps to assign to.'}
+          {/* Say which of the three it is. This used to read "Loading…"
+              whenever the list came back empty for ANY reason, including the
+              request failing outright — so a broken menu and a slow one looked
+              identical, and neither said anything worth acting on. */}
+          {choices.length === 0 && (
+            <p className="px-3 py-2" style={{ fontSize: 12, fontWeight: 600, color: peopleError ? '#B91C1C' : '#B45309' }}>
+              {loadingPeople ? 'Loading…'
+                : peopleError ? `Could not load the team: ${apiError(peopleError)}`
+                  /* Says the count, not just "nobody". An empty menu that only
+                     says it is empty leaves you unable to tell a failed request
+                     from a team with no reps set up — which is exactly the loop
+                     this got stuck in. */
+                  : `/users/assignable returned ${people.length} — nobody can take this. Check Users.`}
             </p>
           )}
-          {reps.map((u) => (
+          {reps.length === 0 && people.length > 0 && (
+            <p className="px-3 pt-2" style={{ fontSize: 10.5, color: FAINT_INK }}>
+              No sales reps set up — showing everyone
+            </p>
+          )}
+          {choices.map((u) => (
             <button
               key={u._id}
               type="button"
@@ -1022,7 +1778,8 @@ function QuickAssign({ convo, onChanged }: { convo: WhatsAppConversation; onChan
               {u.name || u.email}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </span>
   )
@@ -1062,10 +1819,14 @@ function AssignRep({ convo, onChanged }: { convo: WhatsAppConversation; onChange
   })
 
   /* Sales reps only. The endpoint is shared with task assignment, which wants
-     accounts and ops too, so the narrowing belongs here — a lead goes to a rep.
-     Whoever holds it now stays on the list even if they are not a rep, or an
-     admin-owned lead would read as unassigned and get handed away by mistake. */
-  const reps = people.filter((u) => u.role === 'sales_rep' || u._id === ownerId)
+     ops too, so the narrowing belongs here — a lead goes to a rep. Whoever
+     holds it now stays on the list even if they are not a rep, or an
+     admin-owned lead would read as unassigned and get handed away by mistake.
+
+     Asked through isSalesRepRole, per lib/roles.ts: 'accounts' is the same
+     role under another name, and testing `role === 'sales_rep'` here left a
+     team set up that way with nothing to pick. */
+  const reps = people.filter((u) => isSalesRepRole(u.role) || u._id === ownerId)
 
   /* The click closes the menu and moves the tick straight away, and the list
      is put right from the server afterwards.
@@ -1419,6 +2180,93 @@ function LeadAction({ convo, onChanged, menuItem }: { convo: WhatsAppConversatio
 }
 
 /**
+ * Delete a conversation, and optionally block the number so it can never
+ * start another one. Two separate confirmations rather than one dialog
+ * with a checkbox: "Delete" is a mistake a rep can recover from by asking
+ * the customer to write in again; "Delete and block" cannot be undone from
+ * the console (see whatsappApi.unblockNumber for the only way back), so it
+ * gets its own, more explicit warning.
+ */
+function ChatDangerActions({ convo, onDeleted, onChanged }: { convo: WhatsAppConversation; onDeleted: () => void; onChanged: () => void }) {
+  const [confirming, setConfirming] = useState<'delete' | 'block' | null>(null)
+  const [err, setErr] = useState('')
+
+  const del = useMutation({
+    mutationFn: () => whatsappApi.deleteConversation(convo.phoneNormalized),
+    onSuccess: () => { setConfirming(null); setErr(''); onDeleted() },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  const deleteAndBlock = useMutation({
+    mutationFn: async () => {
+      await whatsappApi.deleteConversation(convo.phoneNormalized)
+      await whatsappApi.blockNumber(convo.phoneNormalized)
+    },
+    onSuccess: () => { setConfirming(null); setErr(''); onDeleted() },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  const unblock = useMutation({
+    mutationFn: () => whatsappApi.unblockNumber(convo.phoneNormalized),
+    onSuccess: () => { setErr(''); onChanged() },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  const dialogButtons = (busy: boolean, onConfirm: () => void, label: string) => (
+    <div className="flex justify-end gap-2 pt-1">
+      <button type="button" className={MENU_ROW.replace('w-full', '')} style={{ padding: '6px 14px', borderRadius: 999, border: `1px solid ${LINE}`, color: INK }} onClick={() => setConfirming(null)} disabled={busy}>
+        Cancel
+      </button>
+      <button
+        type="button"
+        style={{ padding: '6px 14px', borderRadius: 999, background: '#DC2626', color: '#fff', fontWeight: 600, fontSize: 13, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}
+        onClick={onConfirm}
+        disabled={busy}
+      >
+        {busy ? 'Working…' : label}
+      </button>
+    </div>
+  )
+
+  return (
+    <>
+      <button type="button" onClick={() => { setErr(''); setConfirming('delete') }} className={MENU_ROW} style={{ color: '#B91C1C' }}>
+        <Trash2 size={15} />
+        <span className="flex-1">Delete chat</span>
+      </button>
+
+      {convo.blocked ? (
+        <button type="button" onClick={() => unblock.mutate()} className={MENU_ROW} style={{ color: INK }} disabled={unblock.isPending}>
+          <Ban size={15} style={{ color: '#047857' }} />
+          <span className="flex-1">{unblock.isPending ? 'Unblocking…' : 'Unblock this number'}</span>
+        </button>
+      ) : (
+        <button type="button" onClick={() => { setErr(''); setConfirming('block') }} className={MENU_ROW} style={{ color: '#B91C1C' }}>
+          <Ban size={15} />
+          <span className="flex-1">Delete and block</span>
+        </button>
+      )}
+
+      <Modal open={confirming === 'delete'} onClose={() => setConfirming(null)} title="Delete this chat?">
+        <div className="space-y-3 text-sm">
+          <p>Every message in this conversation is permanently removed from the console. The lead or customer record itself is not affected, and this number can still write in again.</p>
+          {err && <p className="text-xs text-red-600">{err}</p>}
+          {dialogButtons(del.isPending, () => del.mutate(), 'Delete chat')}
+        </div>
+      </Modal>
+
+      <Modal open={confirming === 'block'} onClose={() => setConfirming(null)} title="Delete and block this number?">
+        <div className="space-y-3 text-sm">
+          <p>Deletes every message in this conversation, then blocks <strong>{convo.phone || `+${convo.phoneNormalized}`}</strong> — future messages from this number will be silently dropped, with no reply and no new lead created. Undo any time from this same menu.</p>
+          {err && <p className="text-xs text-red-600">{err}</p>}
+          {dialogButtons(deleteAndBlock.isPending, () => deleteAndBlock.mutate(), 'Delete and block')}
+        </div>
+      </Modal>
+    </>
+  )
+}
+
+/**
  * The WhatsApp console.
  *
  * Given `embeddedPhone` it becomes one conversation with no chat list — which
@@ -1430,6 +2278,25 @@ function LeadAction({ convo, onChanged, menuItem }: { convo: WhatsAppConversatio
 export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } = {}) {
   const embedded = Boolean(embeddedPhone)
   const qc = useQueryClient()
+
+  /* The main nav collapses while this page is open, the same way FloorMap's
+   * edit mode already does (Layout.tsx's own 'sidebar-collapse' event) — the
+   * chat list, the thread and the new score rail all want the width back
+   * more than a full-width nav does here. Restored to whatever it was
+   * before on the way out, rather than left collapsed everywhere else in
+   * the app because someone once opened WhatsApp. Skipped when embedded —
+   * that is already a panel inside another page, not the console itself. */
+  useEffect(() => {
+    if (embedded) return
+    const prev = localStorage.getItem('pb_sidebar_collapsed')
+    localStorage.setItem('pb_sidebar_collapsed', 'true')
+    window.dispatchEvent(new Event('sidebar-collapse'))
+    return () => {
+      if (prev === null) localStorage.removeItem('pb_sidebar_collapsed')
+      else localStorage.setItem('pb_sidebar_collapsed', prev)
+      window.dispatchEvent(new Event('sidebar-collapse'))
+    }
+  }, [embedded])
   // The last chat opened, so returning to the inbox lands where you left off
   // instead of on a combined feed of everyone.
   const LAST_CHAT_KEY = 'wa_last_chat'
@@ -1576,7 +2443,54 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     return () => document.removeEventListener('mousedown', away)
   }, [notifOpen])
   const [qrOpen, setQrOpen] = useState(false)
+  // The score rail's own open state — now consulted at every width (see
+  // the .wa-score CSS). Starts open on a wide screen and closed on a
+  // narrow one, matching what was previously true unconditionally on each
+  // side of that breakpoint, before either side could be toggled.
+  const [scoreOpen, setScoreOpen] = useState(() => (
+    typeof window !== 'undefined' ? window.matchMedia('(min-width: 1101px)').matches : true
+  ))
+  /* Which half of the side panel is showing.
+   *
+   * Quick replies are free text and templates are not, and which one a rep
+   * needs is decided entirely by whether the 24-hour window is still open —
+   * so they share one panel rather than competing for the same corner. */
+  const [panelTab, setPanelTab] = useState<'quick' | 'templates' | 'videos'>('quick')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  // The chat list's own width — same drag-to-resize mechanic as the score
+  // rail's (SCORE_MIN/MAX etc., see LeadScorePanel): pointer capture,
+  // clamped, persisted. Below ~700px the list becomes a drawer (see the
+  // .wa-sidebar CSS) at its own fixed width — this is only meaningful
+  // above that.
+  const SIDEBAR_MIN = 280
+  const SIDEBAR_MAX = 560
+  const [sidebarW, setSidebarW] = useState<number | null>(() => {
+    const saved = Number(localStorage.getItem('wa_sidebar_w'))
+    return Number.isFinite(saved) && saved >= SIDEBAR_MIN ? Math.min(saved, SIDEBAR_MAX) : null
+  })
+  const sidebarDragRef = useRef<{ startX: number; startW: number } | null>(null)
+  const onSidebarDragStart = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    sidebarDragRef.current = { startX: e.clientX, startW: sidebarW ?? CHAT_PANEL_W }
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  }
+  const onSidebarDragMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = sidebarDragRef.current
+    if (!d) return
+    // Anchored to the left edge, so dragging right (a larger clientX)
+    // makes it wider — the mirror image of the score rail's own grip.
+    const next = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, d.startW + (e.clientX - d.startX)))
+    setSidebarW(next)
+  }
+  const onSidebarDragEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!sidebarDragRef.current) return
+    sidebarDragRef.current = null
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId) } catch { /* already released */ }
+    setSidebarW((w) => { if (w != null) localStorage.setItem('wa_sidebar_w', String(w)); return w })
+  }
+  const resetSidebarW = () => { setSidebarW(null); localStorage.removeItem('wa_sidebar_w') }
+
   const [setupOpen, setSetupOpen] = useState(false)
   // Renaming the person this thread belongs to, without leaving the console.
   const [renaming, setRenaming] = useState(false)
@@ -1607,6 +2521,22 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     document.addEventListener('keydown', esc)
     return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc) }
   }, [chatMenuOpen])
+  /* The composer's own overflow menu — attach / quick replies / lead score /
+     record, behind one button rather than four fighting the text box for
+     width. Same close-on-outside-click behavior as the chat's own menu
+     above. */
+  const [toolsOpen, setToolsOpen] = useState(false)
+  const toolsMenuRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!toolsOpen) return
+    const away = (e: MouseEvent) => {
+      if (!toolsMenuRef.current?.contains(e.target as Node)) setToolsOpen(false)
+    }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setToolsOpen(false) }
+    document.addEventListener('mousedown', away)
+    document.addEventListener('keydown', esc)
+    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc) }
+  }, [toolsOpen])
   const selectedRef = useRef(selectedPhone)
   selectedRef.current = selectedPhone
 
@@ -1694,6 +2624,51 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     () => (templates ?? []).filter((t) => (t.whatsappBody ?? '').trim().length > 0),
     [templates]
   )
+
+  /* A dedicated shelf for video quick replies — pulled from every template,
+     not from quickReplies above: a sales video is often sent with no caption
+     text at all, and quickReplies drops exactly that case, so it would never
+     otherwise be reachable from the console. Finding a specific video by
+     scrolling through categorised quick replies is also just slower than it
+     needs to be for the thing reps send most often to a hot lead. */
+  const videoReplies = useMemo(
+    () => (templates ?? []).filter((t) => t.mediaKind === 'video' && t.mediaUrl),
+    [templates]
+  )
+
+  /* The templates Meta has approved.
+   *
+   * Fetched only while the panel is open — it is a live call out to Meta on a
+   * ten-minute cache, and most of the time nobody is looking at this list. */
+  const { data: waTemplates, isLoading: waTemplatesLoading, error: waTemplatesError } = useQuery<{
+    configured: boolean
+    error: string
+    templates: ApprovedTemplate[]
+  }>({
+    queryKey: ['whatsapp-templates'],
+    queryFn: () => api.get('/whatsapp/templates').then((r) => r.data),
+    enabled: qrOpen && panelTab === 'templates',
+    staleTime: 10 * 60_000,
+  })
+  // Bypasses the server's own 10-minute cache — a template just approved
+  // in Meta Business Manager would otherwise sit invisible here for up to
+  // that long with nothing a rep could do about it.
+  const [waTemplatesRefreshing, setWaTemplatesRefreshing] = useState(false)
+  async function refreshWaTemplates() {
+    setWaTemplatesRefreshing(true)
+    try {
+      const data = await api.get('/whatsapp/templates', { params: { refresh: '1' } }).then((r) => r.data)
+      qc.setQueryData(['whatsapp-templates'], data)
+    } catch {
+      // Surfaced already by waTemplatesError on the next normal read.
+    } finally {
+      setWaTemplatesRefreshing(false)
+    }
+  }
+
+  // Which template is expanded to fill its {{1}}, {{2}} … in, and with what.
+  const [openTemplate, setOpenTemplate] = useState('')
+  const [templateVars, setTemplateVars] = useState<Record<string, string[]>>({})
 
   // Grouped for the panel, keeping the server's order inside each group.
   const quickReplyGroups = useMemo(() => {
@@ -1935,6 +2910,34 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     return list
   }, [convoList, labelFilter, ownerFilter, serverKnowsOwner, me?.id])
 
+  /* The list must not move under the pointer.
+   *
+   * It is newest-first and refreshed every ten seconds, so any chat getting a
+   * message jumps to the top and every row above the one being aimed at
+   * shifts down. When that landed in the same instant as a click, the click
+   * hit whichever customer had just slid under the cursor — "I clicked
+   * Hemnath and got somebody else; clicking again worked." So while the
+   * pointer is over the list the order it arrived with is kept: rows still
+   * update in place (preview, unread, chips), and anything new is added at
+   * the bottom until the pointer leaves, when the true order comes back.
+   * A search or a tab change is the reader asking for a new list, so the
+   * hold resets with them. */
+  const [pointerInList, setPointerInList] = useState(false)
+  const heldOrder = useRef<{ key: string; index: Map<string, number> } | null>(null)
+  const orderKey = `${debouncedSearch}|${ownerFilter}|${labelFilter}`
+  const displayConvos = useMemo(() => {
+    if (!pointerInList) { heldOrder.current = null; return filteredConvos }
+    if (!heldOrder.current || heldOrder.current.key !== orderKey) {
+      heldOrder.current = { key: orderKey, index: new Map(filteredConvos.map((c, i) => [c.phoneNormalized, i])) }
+      return filteredConvos
+    }
+    const { index } = heldOrder.current
+    const unseen = index.size
+    return [...filteredConvos].sort(
+      (a, b) => (index.get(a.phoneNormalized) ?? unseen) - (index.get(b.phoneNormalized) ?? unseen),
+    )
+  }, [filteredConvos, pointerInList, orderKey])
+
   /* The open conversation, from the list where the filter kept it and from the
      server's `pinned` where it did not. It used to be pushed into the list
      itself, so a chat belonging to another rep appeared under "My leads" —
@@ -2039,6 +3042,11 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
 
   // Outbound attachment: picked here, uploaded to Meta by the server, which
   // returns once the message is actually sent.
+  // Meta's own cap on a native WhatsApp video attachment — at or under this,
+  // a video plays inline in WhatsApp itself with no extra tap, so it is sent
+  // that way rather than hosted. Shared between the size check below and
+  // sendComposer()'s own routing decision, so the two can't disagree.
+  const WHATSAPP_VIDEO_NATIVE_LIMIT = 16 * 1024 * 1024
   const fileRef = useRef<HTMLInputElement | null>(null)
   const [pending, setPending] = useState<File | null>(null)
   const [preview, setPreview] = useState<string>('')
@@ -2104,6 +3112,42 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
           setUploadPct(Math.min(99, Math.round((e.loaded / e.total) * 100)))
         },
       }).then((r) => r.data)
+    },
+    onSuccess: () => {
+      setSendErr(''); setPending(null); setDraft(''); setUploadPct(null)
+      if (fileRef.current) fileRef.current.value = ''
+      stickToBottom.current = true
+      onSent()
+    },
+    onError: (e) => { setUploadPct(null); setSendErr(apiError(e)) },
+  })
+
+  /* A video picked from the attach button, sent the same way a video quick
+   * reply already is — hosted, and delivered as its poster frame with a
+   * watch link. WhatsApp's own video attachment caps at 16 MB, well under a
+   * real sales video, so this never goes through sendMedia's raw-attach
+   * path at all: upload first (the same endpoint a quick reply's video
+   * upload uses — one pipeline, not two), then send with the URLs it
+   * returns. Two requests behind one button; uploadPct tracks the first of
+   * them, the second is fast enough not to need its own indicator. */
+  const sendHostedVideoAttachment = useMutation({
+    mutationFn: async (payload: { to: string; file: File; caption: string }) => {
+      const form = new FormData()
+      form.append('video', payload.file)
+      setUploadPct(0)
+      const uploaded = await api.post<{ mediaUrl: string; mediaThumbnailUrl: string }>(
+        '/message-templates/quick-reply-video', form,
+        {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          onUploadProgress: (e) => {
+            if (!e.total) return
+            setUploadPct(Math.min(99, Math.round((e.loaded / e.total) * 100)))
+          },
+        },
+      ).then((r) => r.data)
+      return whatsappApi.sendHostedVideo({
+        to: payload.to, videoUrl: uploaded.mediaUrl, thumbnailUrl: uploaded.mediaThumbnailUrl, caption: payload.caption,
+      })
     },
     onSuccess: () => {
       setSendErr(''); setPending(null); setDraft(''); setUploadPct(null)
@@ -2222,6 +3266,52 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     onError: (e) => setSendErr(apiError(e)),
   })
 
+  /* Send an approved template.
+   *
+   * The one send that still works after the window has closed. Recorded in the
+   * thread by the server, so the next person to open the chat sees the wording
+   * that actually went out rather than a gap. */
+  const sendTemplate = useMutation({
+    mutationFn: (t: { name: string; language: string; variables: string[] }) =>
+      api.post('/whatsapp/send-template', { to: selectedPhone, ...t }).then((r) => r.data),
+    onSuccess: () => {
+      setSendErr('')
+      setOpenTemplate('')
+      stickToBottom.current = true
+      onSent()
+    },
+    onError: (e) => setSendErr(apiError(e)),
+  })
+
+  /* What to put in {{1}} before anybody types.
+   *
+   * Every template that takes a variable opens with the person's first name,
+   * and it is already on screen — asking a rep to retype it is the kind of
+   * friction that gets a template sent as "Hi {{1}}". Only a real name is
+   * used: the placeholder the sync invents would be worse than blank. */
+  const templatePrefill = useMemo(() => {
+    const full = (selectedConvo?.customer?.fullName || selectedConvo?.lead?.fullName || '').trim()
+    if (!full || isPlaceholderName(full)) return ''
+    return full.split(/\s+/)[0]
+  }, [selectedConvo?.customer?.fullName, selectedConvo?.lead?.fullName])
+
+  const varsFor = (t: ApprovedTemplate) => {
+    const held = templateVars[t.name]
+    if (held) return held
+    return Array.from({ length: t.variableCount }, (_, i) => (i === 0 ? templatePrefill : ''))
+  }
+
+  const setVar = (name: string, i: number, value: string, count: number) =>
+    setTemplateVars((prev) => {
+      const next = [...(prev[name] ?? Array.from({ length: count }, (_, n) => (n === 0 ? templatePrefill : '')))]
+      next[i] = value
+      return { ...prev, [name]: next }
+    })
+
+  /** The wording as the customer will read it, placeholders filled in. */
+  const previewOf = (t: ApprovedTemplate, values: string[]) =>
+    values.reduce((text, v, i) => text.replaceAll(`{{${i + 1}}}`, v || `{{${i + 1}}}`), t.bodyText)
+
   function sendText(body: string) {
     const text = body.trim()
     if (!text) return
@@ -2230,12 +3320,20 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
   }
 
   function sendComposer() {
-    if (send.isPending || sendMedia.isPending) return
+    if (send.isPending || sendMedia.isPending || sendHostedVideoAttachment.isPending) return
     if (!selectedPhone) { setSendErr('Pick a conversation first, or start a new chat.'); return }
     // With a file attached the draft becomes its caption, so one press sends
-    // both rather than the text going out as a separate message.
+    // both rather than the text going out as a separate message. A video at
+    // or under WhatsApp's own 16 MB cap goes out natively — it plays inline
+    // in WhatsApp itself with no extra tap, so there's no reason to host it.
+    // Only a bigger one goes out hosted, as its poster frame plus a watch
+    // link, since that's the one case a raw attachment cannot fit.
     if (pending) {
-      sendMedia.mutate({ to: selectedPhone, file: pending, caption: draft.trim() })
+      if (pending.type.startsWith('video/') && pending.size > WHATSAPP_VIDEO_NATIVE_LIMIT) {
+        sendHostedVideoAttachment.mutate({ to: selectedPhone, file: pending, caption: draft.trim() })
+      } else {
+        sendMedia.mutate({ to: selectedPhone, file: pending, caption: draft.trim() })
+      }
       return
     }
     const text = draft.trim()
@@ -2269,8 +3367,26 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
         {!embedded && (
         <aside
           className={cn('wa-sidebar flex flex-col min-h-0', sidebarOpen && 'wa-sidebar-open')}
-          style={{ flex: `0 0 ${CHAT_PANEL_W}px`, width: CHAT_PANEL_W, background: '#fff', borderRight: `1px solid ${LINE}`, fontFamily: CHAT_PANEL_FONT }}
+          style={{ flex: `0 0 ${sidebarW ?? CHAT_PANEL_W}px`, width: sidebarW ?? CHAT_PANEL_W, background: '#fff', borderRight: `1px solid ${LINE}`, fontFamily: CHAT_PANEL_FONT }}
         >
+          {/* Drag right to make the list wider — the score rail's own grip,
+              mirrored onto the opposite edge since this panel sits on the
+              left rather than sliding in from the right. */}
+          <div
+            onPointerDown={onSidebarDragStart}
+            onPointerMove={onSidebarDragMove}
+            onPointerUp={onSidebarDragEnd}
+            onPointerCancel={onSidebarDragEnd}
+            onDoubleClick={resetSidebarW}
+            title="Drag to resize · double-click to reset"
+            role="separator"
+            aria-orientation="vertical"
+            className="wa-vgrip"
+            style={{ position: 'absolute', right: -6, top: 0, bottom: 0, width: 12, cursor: 'ew-resize', touchAction: 'none', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <span className="wa-vgrip-bar" />
+          </div>
+
           <div className="shrink-0 px-4 pt-4 pb-3 space-y-3">
             {/* The console had a dark bar of its own above all this, carrying
                 the PurpleBox name a second time — the page is already titled
@@ -2372,7 +3488,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search name or number"
-                className="w-full pl-8 pr-3 py-2 text-[13px] focus:outline-none"
+                className="w-full pl-8 pr-3 py-2 text-[13px] focus:outline-none focus-visible:outline-2 focus-visible:outline-ring"
                 style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', borderRadius: 10, color: INK }}
               />
             </div>
@@ -2391,12 +3507,13 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                     key={key}
                     type="button"
                     onClick={() => chooseOwnerFilter(key)}
-                    className="flex-1 cursor-pointer truncate"
+                    className="flex-1 cursor-pointer truncate active:scale-95"
                     style={{
                       height: 28, borderRadius: 999, fontSize: 12, fontWeight: 600, border: 'none',
                       background: active ? '#fff' : 'transparent',
                       color: active ? INK : FAINT_INK,
                       boxShadow: active ? '0 1px 2px rgba(20,8,31,.10)' : 'none',
+                      transition: 'background-color 150ms ease, box-shadow 150ms ease, color 150ms ease, transform 100ms ease',
                     }}
                   >
                     {label}
@@ -2486,10 +3603,14 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
             )}
           </div>
 
-          <div className="wa-scroll flex-1 min-h-0">
+          <div
+            className="wa-scroll flex-1 min-h-0"
+            onPointerEnter={() => setPointerInList(true)}
+            onPointerLeave={() => setPointerInList(false)}
+          >
             {loadingConvos ? (
               <p className="px-4 py-3 text-sm" style={{ color: FAINT_INK }}>Loading…</p>
-            ) : filteredConvos.length === 0 ? (
+            ) : displayConvos.length === 0 ? (
               <p className="px-4 py-3 text-xs" style={{ color: FAINT_INK }}>
                 {convoList.length === 0
                   ? 'No conversations yet. Start a new chat.'
@@ -2506,7 +3627,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                           : 'No chats match that search.'}
               </p>
             ) : (
-              filteredConvos.map((c) => {
+              displayConvos.map((c) => {
                 const unread = unreadByPhone[c.phoneNormalized] ?? 0
                 const isSelected = c.phoneNormalized === selectedPhone
                 const label = convDisplayName(c)
@@ -2547,9 +3668,15 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
 
                       {/* The state of the chat, on its own line. Only the owner
                           truncates: the chips are a fixed width and carry the
-                          things worth noticing while scrolling past. */}
+                          things worth noticing while scrolling past.
+
+                          No overflow-hidden here. The owner name below clips
+                          itself with `truncate min-w-0`, so it was never needed
+                          for that — but this row is one line tall, and Assign
+                          opens its menu underneath, so hiding the overflow made
+                          that menu invisible and the button look broken. */}
                       <div
-                        className="flex items-center gap-1.5 overflow-hidden"
+                        className="flex items-center gap-1.5 min-w-0"
                         style={{ fontSize: 11, color: '#A09AAA', whiteSpace: 'nowrap' }}
                       >
                         {(c.customer || (c.lead && (!isPlaceholderName(c.lead.fullName) || c.lead.assigned))) && (
@@ -2838,8 +3965,8 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
 
                   {chatMenuOpen && (
                     <div
-                      className="absolute right-0 mt-1 z-30 rounded-xl overflow-hidden"
-                      style={{ background: '#fff', border: `1px solid ${LINE}`, boxShadow: '0 10px 30px rgba(20,8,31,.16)', minWidth: 218 }}
+                      className="absolute right-0 mt-1 z-30 rounded-xl overflow-hidden wa-menu-pop"
+                      style={{ background: '#fff', border: `1px solid ${LINE}`, boxShadow: '0 10px 30px rgba(20,8,31,.16)', minWidth: 218, transformOrigin: 'top right' }}
                       onClick={(e) => {
                         // A row that opens a dialog should close the menu behind
                         // it; the label picker opens in place, so it must not.
@@ -2860,7 +3987,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
 
                       <button type="button" onClick={() => setQrOpen(true)} className={MENU_ROW} style={{ color: INK }}>
                         <Zap size={15} style={{ color: '#4A1FA0' }} />
-                        <span className="flex-1">Quick replies</span>
+                        <span className="flex-1">Quick replies &amp; templates</span>
                       </button>
 
                       <div data-keep-open>
@@ -2890,6 +4017,18 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                           row must not close the menu out from under it. */}
                       <div data-keep-open>
                         <LeadAction menuItem convo={selectedConvo} onChanged={onSent} />
+                      </div>
+
+                      <div style={{ borderTop: `1px solid ${LINE}` }} />
+
+                      {/* Confirmation dialogs of its own — must not close
+                          behind them the way a plain menu row would. */}
+                      <div data-keep-open>
+                        <ChatDangerActions
+                          convo={selectedConvo}
+                          onChanged={() => refetchConvos()}
+                          onDeleted={() => { setSelectedPhone(null); setChatMenuOpen(false); refetchConvos() }}
+                        />
                       </div>
                     </div>
                   )}
@@ -2965,37 +4104,47 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
           {/* The assistant handed this thread over. Shown rather than silently
               going quiet, so nobody wonders why it stopped replying. */}
           {selectedConvo?.botStatus === 'escalated' && !escalationHidden.has(selectedConvo.phoneNormalized) && (
-            <div className="shrink-0 mx-6 mb-2 flex items-start gap-2 rounded-xl px-3.5 py-2.5"
+            <div className="shrink-0 mx-6 mb-2 rounded-xl px-3.5 py-2.5"
               style={{ background: '#FFF7E6', border: '1px solid #F5D9A0' }}>
-              <UserCheck size={15} style={{ color: '#8A5A00', flex: '0 0 auto', marginTop: 1 }} />
-              <div className="min-w-0 flex-1" style={{ fontSize: 12.5, color: '#6B4500' }}>
-                <span style={{ fontWeight: 700 }}>Waiting for a person.</span>{' '}
-                {selectedConvo.botEscalationReason || 'The assistant could not answer this one.'}
+              {/* The message and the actions are two rows, not one — on a
+                  narrow screen "Hand back to AI" alongside the icon and the
+                  dismiss X left no room for the text at all: min-w-0/flex-1
+                  let it shrink, so it did, down to one word per line instead
+                  of overflowing. Its own row below never has to compete with
+                  the message's width for space. */}
+              <div className="flex items-start gap-2">
+                <UserCheck size={15} style={{ color: '#8A5A00', flex: '0 0 auto', marginTop: 1 }} />
+                <div className="min-w-0 flex-1" style={{ fontSize: 12.5, color: '#6B4500' }}>
+                  <span style={{ fontWeight: 700 }}>Waiting for a person.</span>{' '}
+                  {selectedConvo.botEscalationReason || 'The assistant could not answer this one.'}
+                </div>
+                {/* Out of the way without handing the thread back: reading the
+                    reason is usually all somebody needs, and after that the
+                    notice is just taking up the composer's space. It returns
+                    if the assistant escalates again. */}
+                <button
+                  type="button"
+                  onClick={() => setEscalationHidden((h) => new Set(h).add(selectedConvo.phoneNormalized))}
+                  className="shrink-0 cursor-pointer"
+                  style={{ background: 'none', border: 'none', color: '#8A5A00', lineHeight: 1, padding: 2 }}
+                  title="Hide this notice"
+                  aria-label="Hide this notice"
+                >
+                  <X size={14} />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => resumeBot.mutate(selectedConvo.phoneNormalized)}
-                disabled={resumeBot.isPending}
-                className="shrink-0 rounded-full px-3 py-1 cursor-pointer disabled:opacity-50"
-                style={{ background: '#8A5A00', color: '#fff', fontSize: 11.5, fontWeight: 700 }}
-                title="The assistant will answer this conversation again"
-              >
-                {resumeBot.isPending ? 'Handing back…' : 'Hand back to AI'}
-              </button>
-              {/* Out of the way without handing the thread back: reading the
-                  reason is usually all somebody needs, and after that the
-                  notice is just taking up the composer's space. It returns if
-                  the assistant escalates again. */}
-              <button
-                type="button"
-                onClick={() => setEscalationHidden((h) => new Set(h).add(selectedConvo.phoneNormalized))}
-                className="shrink-0 cursor-pointer"
-                style={{ background: 'none', border: 'none', color: '#8A5A00', lineHeight: 1, padding: 2 }}
-                title="Hide this notice"
-                aria-label="Hide this notice"
-              >
-                <X size={14} />
-              </button>
+              <div className="flex justify-end mt-2">
+                <button
+                  type="button"
+                  onClick={() => resumeBot.mutate(selectedConvo.phoneNormalized)}
+                  disabled={resumeBot.isPending}
+                  className="shrink-0 rounded-full px-3 py-1 cursor-pointer disabled:opacity-50"
+                  style={{ background: '#8A5A00', color: '#fff', fontSize: 11.5, fontWeight: 700 }}
+                  title="The assistant will answer this conversation again"
+                >
+                  {resumeBot.isPending ? 'Handing back…' : 'Hand back to AI'}
+                </button>
+              </div>
             </div>
           )}
 
@@ -3183,11 +4332,11 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                 or ask them to message first.
                 <button
                   type="button"
-                  onClick={() => setQrOpen(true)}
+                  onClick={() => { setPanelTab('templates'); setQrOpen(true) }}
                   className="ml-1 underline cursor-pointer"
-                  style={{ color: '#6B4500', background: 'none', border: 'none', font: 'inherit', padding: 0 }}
+                  style={{ color: '#6B4500', background: 'none', border: 'none', font: 'inherit', padding: 0, fontWeight: 700 }}
                 >
-                  Open quick replies
+                  Open approved templates
                 </button>
               </div>
             </div>
@@ -3273,7 +4422,9 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                     <div className="truncate" style={{ fontSize: 13, fontWeight: 600, color: INK }}>{pending.name}</div>
                     <div style={{ fontSize: 11.5, color: FAINT_INK }}>
                       {(pending.size / 1024 / 1024).toFixed(2)} MB
-                      {' · the message box becomes its caption'}
+                      {pending.type.startsWith('video/') && pending.size > WHATSAPP_VIDEO_NATIVE_LIMIT
+                        ? ' · over 16 MB, so sent as a snapshot with a watch link, not a raw video'
+                        : ' · the message box becomes its caption'}
                     </div>
                   </>
                 )}
@@ -3320,45 +4471,100 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                 const f = e.target.files?.[0]
                 if (!f) return
                 setSendErr('')
-                /* Checked before it is uploaded. These are WhatsApp's limits,
-                   and finding out after a 40 MB video has crawled up is a
-                   waste of somebody's morning. */
+                /* Checked before it is uploaded. Everything but video is
+                   sent to WhatsApp as-is, so these are Meta's own limits —
+                   finding out after a 40 MB file has crawled up is a waste
+                   of somebody's morning. A video never goes to Meta at all
+                   (it's hosted and sent as its poster frame instead), so it
+                   gets the much larger cap our own upload endpoint allows. */
                 const MB = 1024 * 1024
                 const cap = f.type.startsWith('image/') ? 5
-                  : f.type.startsWith('video/') || f.type.startsWith('audio/') ? 16
+                  : f.type.startsWith('video/') ? 500
+                  : f.type.startsWith('audio/') ? 16
                   : 100
                 if (f.size > cap * MB) {
                   const kind = f.type.startsWith('image/') ? 'Images'
                     : f.type.startsWith('video/') ? 'Videos'
                     : f.type.startsWith('audio/') ? 'Audio files' : 'Files'
-                  setSendErr(`${kind} can be up to ${cap} MB on WhatsApp. That one is ${(f.size / MB).toFixed(1)} MB.`)
+                  setSendErr(`${kind} can be up to ${cap} MB. That one is ${(f.size / MB).toFixed(1)} MB.`)
                   e.target.value = ''
                   return
                 }
                 setPending(f)
               }}
             />
-            <IconButton
-              title="Attach a photo, video, audio or document"
-              onClick={() => fileRef.current?.click()}
-              className="!h-10 !w-10 shrink-0"
-            >
-              <Paperclip size={16} />
-            </IconButton>
-            <IconButton title="Quick replies" onClick={() => setQrOpen((v) => !v)} className="!h-10 !w-10 shrink-0">
-              <Zap size={16} />
-            </IconButton>
-            {/* Hidden while a recording is in progress — the strip above
-                replaces the whole composer with the recorder's own controls. */}
-            {recordingSupported() && !voice.recording && !isVoicePending && (
+            {/* Attach / quick replies / lead score / record — one button
+                behind a dropdown rather than four fighting the text box
+                for width. */}
+            <div className="relative shrink-0" ref={toolsMenuRef}>
               <IconButton
-                title="Record a voice message"
-                onClick={() => { setSendErr(''); voice.start() }}
+                title="Attach, quick replies, lead score, or record"
+                onClick={() => setToolsOpen((v) => !v)}
                 className="!h-10 !w-10 shrink-0"
               >
-                <Mic size={16} />
+                <Plus size={18} style={{ transform: toolsOpen ? 'rotate(45deg)' : 'none', transition: 'transform .15s ease' }} />
               </IconButton>
-            )}
+
+              {toolsOpen && (
+                <div
+                  className="absolute left-0 bottom-full mb-1.5 z-30 rounded-xl overflow-hidden wa-menu-pop"
+                  style={{ background: '#fff', border: `1px solid ${LINE}`, boxShadow: '0 10px 30px rgba(20,8,31,.16)', minWidth: 232, transformOrigin: 'bottom left' }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => { setToolsOpen(false); fileRef.current?.click() }}
+                    className={MENU_ROW}
+                    style={{ color: INK }}
+                  >
+                    <Paperclip size={15} style={{ color: '#4A1FA0' }} />
+                    <span className="flex-1">Attach a file</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setToolsOpen(false); setQrOpen((v) => !v) }}
+                    className={MENU_ROW}
+                    style={{ color: INK }}
+                  >
+                    <Zap size={15} style={{ color: '#4A1FA0' }} />
+                    <span className="flex-1">Quick replies &amp; templates</span>
+                  </button>
+
+                  {/* Toggles the score rail at every width now — it
+                      defaults open on a wide screen, so this mostly
+                      reopens it once closed there; on a narrow one it's
+                      the only way to summon it at all (see the .wa-score
+                      CSS). */}
+                  {selectedPhone && (
+                    <button
+                      type="button"
+                      onClick={() => { setToolsOpen(false); setScoreOpen((v) => !v) }}
+                      className={MENU_ROW}
+                      style={{ color: INK }}
+                    >
+                      <Sparkles size={15} style={{ color: '#4A1FA0' }} />
+                      <span className="flex-1">Lead score</span>
+                    </button>
+                  )}
+
+                  {/* Absent while a recording is in progress — the strip
+                      above replaces the whole composer with the
+                      recorder's own controls, so there is nothing left
+                      here to start a second one with. */}
+                  {recordingSupported() && !voice.recording && !isVoicePending && (
+                    <button
+                      type="button"
+                      onClick={() => { setToolsOpen(false); setSendErr(''); voice.start() }}
+                      className={MENU_ROW}
+                      style={{ color: INK }}
+                    >
+                      <Mic size={15} style={{ color: '#4A1FA0' }} />
+                      <span className="flex-1">Record a voice message</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
             <textarea
               ref={taRef}
               rows={1}
@@ -3368,11 +4574,16 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                 if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendComposer() }
               }}
               placeholder={pending ? 'Add a caption (optional)…' : selectedPhone ? 'Type a message…' : 'Pick a chat to start typing…'}
-              className="flex-1 resize-none px-4 py-2.5 text-sm focus:outline-none"
+              className="flex-1 resize-none px-4 py-2.5 text-sm focus:outline-none focus-visible:outline-2 focus-visible:outline-ring"
               style={{
                 background: '#F7F3FF',
                 border: '1px solid #EDE5FF',
                 borderRadius: composerH > 80 ? 14 : 20,
+                // Height itself stays untransitioned — it changes on every
+                // keystroke while typing, and animating that would make
+                // typing feel laggy rather than responsive (kill latency
+                // first). Only the border-radius snap gets one.
+                transition: 'border-radius 150ms ease',
                 height: composerH,
                 color: INK,
                 lineHeight: 1.4,
@@ -3381,8 +4592,8 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
             <button
               type="button"
               onClick={sendComposer}
-              disabled={send.isPending || sendMedia.isPending || (!draft.trim() && !pending) || !selectedPhone}
-              className="shrink-0 inline-flex items-center justify-center rounded-full cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed"
+              disabled={send.isPending || sendMedia.isPending || sendHostedVideoAttachment.isPending || (!draft.trim() && !pending) || !selectedPhone}
+              className="shrink-0 inline-flex items-center justify-center rounded-full cursor-pointer active:scale-90 transition-transform duration-100 disabled:opacity-45 disabled:cursor-not-allowed disabled:active:scale-100"
               style={{ width: 44, height: 44, background: '#5B2BC9', color: '#fff' }}
               aria-label="Send"
               title="Send"
@@ -3398,17 +4609,71 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
             className="wa-qr flex flex-col min-h-0"
             style={{ flex: '0 0 320px', background: '#fff', borderLeft: `1px solid ${LINE}` }}
           >
-            <div className="shrink-0 flex items-start gap-2 px-4 py-3.5" style={{ borderBottom: `1px solid ${LINE}` }}>
-              <div className="min-w-0 flex-1">
-                <h2 style={{ fontFamily: "'Bricolage Grotesque', serif", fontWeight: 700, fontSize: 17, color: INK }}>Quick replies</h2>
-                <p style={{ fontSize: 11.5, color: FAINT_INK }}>Tap one to send it</p>
+            <div className="shrink-0 px-4 py-3.5" style={{ borderBottom: `1px solid ${LINE}` }}>
+              <div className="flex items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <h2 style={{ fontFamily: "'Bricolage Grotesque', serif", fontWeight: 700, fontSize: 17, color: INK }}>
+                    {panelTab === 'quick' ? 'Quick replies' : panelTab === 'videos' ? 'Videos' : 'Approved templates'}
+                  </h2>
+                  <p style={{ fontSize: 11.5, color: FAINT_INK }}>
+                    {panelTab === 'quick'
+                      ? 'Tap one to send it'
+                      : panelTab === 'videos'
+                        ? 'Tap a video to send its snapshot with a watch link'
+                        : replyWindow.open
+                          ? 'For chats outside the 24-hour window'
+                          : 'The only messages Meta will deliver now'}
+                  </p>
+                </div>
+                <button type="button" onClick={() => setQrOpen(false)} className="cursor-pointer p-1" style={{ color: FAINT_INK }} aria-label="Close panel">
+                  <X size={16} />
+                </button>
               </div>
-              <button type="button" onClick={() => setQrOpen(false)} className="cursor-pointer p-1" style={{ color: FAINT_INK }} aria-label="Close quick replies">
-                <X size={16} />
-              </button>
+
+              {/* Which list is the right one is not a preference — the window
+                  decides it, so the closed state is marked here rather than
+                  left for a rep to remember. */}
+              <div className="mt-2.5 flex gap-1 p-0.5" style={{ background: '#F3EEFB', borderRadius: 10 }}>
+                {([['quick', 'Quick replies'], ['videos', 'Videos'], ['templates', 'Templates']] as const).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setPanelTab(id)}
+                    className="flex-1 cursor-pointer py-1.5"
+                    style={{
+                      fontSize: 12, fontWeight: 700, borderRadius: 8,
+                      background: panelTab === id ? '#fff' : 'transparent',
+                      color: panelTab === id ? '#4A1FA0' : FAINT_INK,
+                      boxShadow: panelTab === id ? '0 1px 2px rgba(20,8,31,.12)' : undefined,
+                    }}
+                  >
+                    {label}
+                    {id === 'quick' && replyWindow.known && !replyWindow.open && (
+                      <span title="Free text will not be delivered right now" style={{ marginLeft: 4, color: '#B45309' }}>!</span>
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
 
+            {panelTab === 'quick' && (
             <div className="wa-scroll flex-1 min-h-0 px-3 py-3 space-y-3">
+              {replyWindow.known && !replyWindow.open && (
+                <p
+                  className="px-3 py-2"
+                  style={{ background: '#FFF7E6', border: '1px solid #F3DFB0', borderRadius: 10, fontSize: 11.5, color: '#6B4500' }}
+                >
+                  They last wrote over 24 hours ago, so none of these will be delivered.{' '}
+                  <button
+                    type="button"
+                    onClick={() => setPanelTab('templates')}
+                    className="underline cursor-pointer"
+                    style={{ color: '#6B4500', background: 'none', border: 'none', font: 'inherit', padding: 0, fontWeight: 700 }}
+                  >
+                    Use a template
+                  </button>
+                </p>
+              )}
               {quickReplies.length === 0 ? (
                 <p className="px-1 py-2" style={{ fontSize: 12, color: FAINT_INK }}>
                   No quick replies yet. Add them under{' '}
@@ -3471,7 +4736,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                               type="button"
                               onClick={() => sendQuickReply.mutate(t._id)}
                               disabled={!selectedPhone || send.isPending || sendQuickReply.isPending}
-                              className="shrink-0 inline-flex items-center justify-center rounded-full cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                              className="shrink-0 inline-flex items-center justify-center rounded-full cursor-pointer active:scale-90 transition-transform duration-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
                               style={{ width: 26, height: 26, background: '#5B2BC9', color: '#fff' }}
                               title="Send now"
                               aria-label={`Send ${t.label} now`}
@@ -3497,7 +4762,7 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                     value={custom}
                     onChange={(e) => setCustom(e.target.value)}
                     placeholder="Write a one-off message…"
-                    className="w-full resize-none px-3 py-2 text-[12.5px] focus:outline-none"
+                    className="w-full resize-none px-3 py-2 text-[12.5px] focus:outline-none focus-visible:outline-2 focus-visible:outline-ring"
                     style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', borderRadius: 10, color: INK }}
                   />
                   <div className="flex items-center gap-2">
@@ -3523,7 +4788,214 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                 </div>
               </div>
             </div>
+            )}
+
+            {panelTab === 'videos' && (
+            <div className="wa-scroll flex-1 min-h-0 px-3 py-3">
+              {replyWindow.known && !replyWindow.open && (
+                <p
+                  className="px-3 py-2 mb-3"
+                  style={{ background: '#FFF7E6', border: '1px solid #F3DFB0', borderRadius: 10, fontSize: 11.5, color: '#6B4500' }}
+                >
+                  They last wrote over 24 hours ago, so this will not be delivered — the poster image is free text
+                  too.{' '}
+                  <button
+                    type="button"
+                    onClick={() => setPanelTab('templates')}
+                    className="underline cursor-pointer"
+                    style={{ color: '#6B4500', background: 'none', border: 'none', font: 'inherit', padding: 0, fontWeight: 700 }}
+                  >
+                    Use a template
+                  </button>
+                </p>
+              )}
+              {videoReplies.length === 0 ? (
+                <p className="px-1 py-2" style={{ fontSize: 12, color: FAINT_INK }}>
+                  No videos yet. Upload one under{' '}
+                  <Link to="/settings/templates" style={{ color: '#4A1FA0', fontWeight: 600 }}>
+                    Settings → Message Templates
+                  </Link>{' '}
+                  — set a quick reply's attachment to Video.
+                </p>
+              ) : (
+                <div className="grid grid-cols-2 gap-2.5">
+                  {videoReplies.map((t) => (
+                    <button
+                      key={t._id}
+                      type="button"
+                      onClick={() => sendQuickReply.mutate(t._id)}
+                      disabled={!selectedPhone || send.isPending || sendQuickReply.isPending}
+                      className="text-left cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed overflow-hidden"
+                      style={{ border: `1px solid ${LINE}`, borderRadius: 12, background: '#fff' }}
+                      title="Send this video — its snapshot, with a watch link"
+                    >
+                      <div style={{ position: 'relative', aspectRatio: '16 / 10', background: '#14081F' }}>
+                        {t.mediaThumbnailUrl ? (
+                          <img src={t.mediaThumbnailUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <VideoIcon size={20} style={{ color: 'rgba(255,255,255,.4)' }} />
+                          </div>
+                        )}
+                        <div
+                          className="flex items-center justify-center"
+                          style={{ position: 'absolute', inset: 0, background: 'rgba(20,8,31,.18)' }}
+                        >
+                          <span
+                            className="flex items-center justify-center rounded-full"
+                            style={{ width: 30, height: 30, background: 'rgba(255,255,255,.92)' }}
+                          >
+                            <Play size={13} style={{ color: '#5B2BC9', marginLeft: 1.5 }} fill="#5B2BC9" />
+                          </span>
+                        </div>
+                      </div>
+                      <div className="px-2.5 py-2">
+                        <div className="truncate" style={{ fontSize: 12, fontWeight: 700, color: INK }}>{t.label}</div>
+                        {t.whatsappBody && (
+                          <div className="truncate mt-0.5" style={{ fontSize: 11, color: FAINT_INK }}>{t.whatsappBody}</div>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            )}
+
+            {panelTab === 'templates' && (
+              <div className="wa-scroll flex-1 min-h-0 px-3 py-3 space-y-2.5">
+                {/* A template just approved in Meta Business Manager
+                    otherwise sits invisible here for up to the server's
+                    own 10-minute cache — this bypasses it on demand. */}
+                <button
+                  type="button"
+                  onClick={refreshWaTemplates}
+                  disabled={waTemplatesRefreshing}
+                  className="flex items-center gap-1.5 px-1 cursor-pointer disabled:cursor-default"
+                  style={{ fontSize: 11, color: '#5B2BC9', fontWeight: 600 }}
+                >
+                  <RefreshCw size={12} style={{ animation: waTemplatesRefreshing ? 'wa-spin 0.8s linear infinite' : 'none' }} />
+                  {waTemplatesRefreshing ? 'Refreshing…' : 'Refresh from Meta'}
+                </button>
+
+                {replyWindow.open && (
+                  <p className="px-1" style={{ fontSize: 11.5, color: FAINT_INK }}>
+                    They wrote within the last 24 hours, so an ordinary reply still reaches
+                    them — a template is not needed yet.
+                  </p>
+                )}
+
+                {/* Asked by every rep who opens this panel, so answered
+                    before they ask. The wording is fixed at approval — that is
+                    what buys a template the right to be delivered at all. */}
+                {!waTemplatesLoading && (waTemplates?.templates.length ?? 0) > 0 && (
+                  <p className="px-1" style={{ fontSize: 11, color: FAINT_INK, lineHeight: 1.5 }}>
+                    Meta approves the wording, so it cannot be changed here — only the
+                    highlighted blanks. Their reply reopens the 24-hour window and you can
+                    type freely again.
+                  </p>
+                )}
+
+                {waTemplatesLoading && (
+                  <p className="px-1 py-2" style={{ fontSize: 12, color: FAINT_INK }}>Loading templates from Meta…</p>
+                )}
+
+                {/* Meta is the authority on this list, not us: if it cannot be
+                    fetched, saying so beats an empty panel that reads like
+                    "there are no templates". */}
+                {!waTemplatesLoading && (waTemplatesError || waTemplates?.error) && (
+                  <p className="px-3 py-2" style={{ background: '#FEF2F2', border: '1px solid #FBD5D5', borderRadius: 10, fontSize: 11.5, color: '#8A1C1C' }}>
+                    Could not load templates: {waTemplatesError ? apiError(waTemplatesError) : waTemplates?.error}
+                  </p>
+                )}
+
+                {!waTemplatesLoading && !waTemplatesError && !waTemplates?.error && (waTemplates?.templates.length ?? 0) === 0 && (
+                  <p className="px-1 py-2" style={{ fontSize: 12, color: FAINT_INK }}>
+                    No approved templates on this WhatsApp account yet. They are written and
+                    approved in Meta Business Manager, then appear here.
+                  </p>
+                )}
+
+                {(waTemplates?.templates ?? []).map((t) => {
+                  const values = varsFor(t)
+                  const ready = values.every((v) => v.trim().length > 0)
+                  const expanded = openTemplate === t.name
+                  return (
+                    <div key={t.name} style={{ border: `1px solid ${LINE}`, borderRadius: 12, overflow: 'hidden' }}>
+                      <button
+                        type="button"
+                        onClick={() => setOpenTemplate(expanded ? '' : t.name)}
+                        className="w-full flex items-start gap-2 px-3 py-2.5 text-left cursor-pointer"
+                        style={{ background: expanded ? '#F7F3FF' : '#fff' }}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div style={{ fontSize: 12.5, fontWeight: 700, color: '#4A1FA0' }}>
+                            {t.label}
+                            {t.variableCount > 0 && (
+                              <span
+                                className="ml-1.5 inline-flex items-center rounded-full px-1.5"
+                                style={{ background: '#EDE5FF', fontSize: 9.5, fontWeight: 800 }}
+                                title={`Needs ${t.variableCount} value(s) before it can be sent`}
+                              >
+                                {t.variableCount} to fill
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-0.5" style={{ fontSize: 12, color: MUTED_INK, whiteSpace: 'pre-wrap' }}>
+                            {previewOf(t, values)}
+                          </p>
+                        </div>
+                        <ChevronDown
+                          size={15}
+                          className="shrink-0 mt-0.5"
+                          style={{ color: '#4A1FA0', transform: expanded ? 'rotate(180deg)' : undefined, transition: 'transform .15s' }}
+                        />
+                      </button>
+
+                      {expanded && (
+                        <div className="px-3 pb-3 pt-2 space-y-2" style={{ borderTop: `1px solid ${LINE}` }}>
+                          {values.map((v, i) => (
+                            <label key={i} className="block">
+                              <span style={{ fontSize: 11, fontWeight: 700, color: FAINT_INK }}>
+                                {`{{${i + 1}}}`}{i === 0 ? ' · their name' : ''}
+                              </span>
+                              <input
+                                value={v}
+                                onChange={(e) => setVar(t.name, i, e.target.value, t.variableCount)}
+                                className="mt-0.5 w-full px-3 py-1.5 text-[12.5px] focus:outline-none focus-visible:outline-2 focus-visible:outline-ring"
+                                style={{ background: '#F7F3FF', border: '1px solid #EDE5FF', borderRadius: 10, color: INK }}
+                                placeholder={i === 0 ? 'Ahmed' : 'Value'}
+                              />
+                            </label>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => sendTemplate.mutate({ name: t.name, language: t.language, variables: values })}
+                            disabled={!selectedPhone || !ready || sendTemplate.isPending}
+                            className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-white cursor-pointer active:scale-[0.98] transition-transform duration-100 disabled:opacity-45 disabled:cursor-not-allowed disabled:active:scale-100"
+                            style={{ fontSize: 12, fontWeight: 700, background: '#5B2BC9' }}
+                            title={ready ? 'Send this template now' : 'Fill every placeholder first — Meta rejects a blank one'}
+                          >
+                            <Send size={12} />
+                            {sendTemplate.isPending ? 'Sending…' : 'Send template'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </aside>
+        )}
+
+        {/* Always on, not toggled — the whole point is reading it before
+            deciding what to type, not opening it after. Only once a
+            conversation is actually selected: scoring an empty pane makes
+            no sense and the query below is disabled without a lead id
+            anyway. */}
+        {!embedded && selectedPhone && (
+          <LeadScorePanel leadId={selectedConvo?.lead?._id ?? null} open={scoreOpen} onClose={() => setScoreOpen(false)} />
         )}
       </div>
     </div>

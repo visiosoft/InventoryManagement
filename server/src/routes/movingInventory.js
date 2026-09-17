@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { MovingItem, MovingStockTxn } from '../models/index.js';
+import { softDelete } from '../utils/softDelete.js';
 
 const router = Router();
 
@@ -103,7 +104,7 @@ router.delete('/items/:id', async (req, res) => {
             await item.save();
             return res.json({ ok: true, deactivated: true });
         }
-        await item.deleteOne();
+        await softDelete(item, req.user.id);
         res.json({ ok: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -228,7 +229,7 @@ router.delete('/transactions/:id', async (req, res) => {
             await item.save();
         }
 
-        await txn.deleteOne();
+        await softDelete(txn, req.user.id);
         res.json({ ok: true });
     } catch (err) {
         res.status(500).json({ error: err.message });

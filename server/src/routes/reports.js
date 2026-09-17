@@ -146,6 +146,127 @@ router.get('/summary', async (req, res) => {
   });
 });
 
+/**
+ * The same numbers as /summary's KPI row and units-by-size chart — split
+ * into their own endpoint so the dashboard can show them the moment this
+ * resolves, without waiting on floor occupancy or the expiring-contracts
+ * list too. /summary itself is left as it was for whatever else still
+ * calls it; this is additive, not a replacement.
+ */
+router.get('/stats', async (req, res) => {
+  const scope = await siteScope(req.query.site);
+  const uF = scope ? scope.unitFilter : {};
+  const cF = scope ? scope.contractFilter : {};
+  const pF = scope ? scope.paymentFilter : {};
+
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+  const [unitStats, unitsBySize, availableUnits, revenueAgg, dueAgg, activeContracts,
+    moveInsThisMonthList, moveOutsThisMonthList, moveInsLastMonth, moveOutsLastMonth,
+    movingOutThisMonth] = await Promise.all([
+      Unit.aggregate([
+        { $match: uF },
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ]),
+      Unit.aggregate([
+        { $match: uF },
+        { $group: { _id: { sizeSqf: '$sizeSqf', status: '$status' }, count: { $sum: 1 } } },
+      ]),
+      Unit.find({ ...uF, status: 'available' }).select('unitNumber floor sizeSqf price').lean(),
+      Payment.aggregate([
+        { $match: { ...pF, status: 'paid', paidDate: { $gte: monthStart, $lt: monthEnd } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } },
+      ]),
+      Payment.aggregate([
+        { $match: { ...pF, status: { $in: ['pending', 'overdue'] }, dueDate: { $gte: monthStart, $lt: monthEnd } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } },
+      ]),
+      Contract.countDocuments({ ...cF, status: 'active' }),
+      Contract.find({ ...cF, status: { $in: ['active', 'ended'] }, startDate: { $gte: monthStart, $lt: monthEnd } })
+        .populate('customer', 'fullName').populate('unit', 'unitNumber').sort({ startDate: 1 }).lean(),
+      Contract.find({ ...cF, status: 'ended', endDate: { $gte: monthStart, $lt: monthEnd } })
+        .populate('customer', 'fullName').populate('unit', 'unitNumber').sort({ endDate: 1 }).lean(),
+      Contract.countDocuments({ ...cF, status: { $in: ['active', 'ended'] }, startDate: { $gte: lastMonthStart, $lt: monthStart } }),
+      Contract.countDocuments({ ...cF, status: 'ended', endDate: { $gte: lastMonthStart, $lt: monthStart } }),
+      Contract.countDocuments({ ...cF, status: 'active', endDate: { $gte: monthStart, $lt: monthEnd } }),
+    ]);
+
+  const byStatus = { available: 0, occupied: 0, reserved: 0, maintenance: 0 };
+  let totalUnits = 0;
+  for (const r of unitStats) { byStatus[r._id] = r.count; totalUnits += r.count; }
+
+  const sizeMap = new Map();
+  for (const r of unitsBySize) {
+    const s = r._id.sizeSqf;
+    if (!sizeMap.has(s)) sizeMap.set(s, { sizeSqf: `${s} sq ft`, total: 0, available: 0, occupied: 0, maintenance: 0 });
+    const b = sizeMap.get(s);
+    b.total += r.count;
+    if (r._id.status === 'available') b.available += r.count;
+    else if (r._id.status === 'occupied') b.occupied += r.count;
+    else if (r._id.status === 'maintenance') b.maintenance += r.count;
+  }
+  const bySize = SIZE_BUCKETS.filter(s => sizeMap.has(s)).map(s => sizeMap.get(s));
+
+  const allMoveIds = [...moveInsThisMonthList, ...moveOutsThisMonthList].map(c => c._id);
+  if (allMoveIds.length > 0) {
+    const paymentsByContract = await Payment.aggregate([
+      { $match: { contract: { $in: allMoveIds } } },
+      { $group: { _id: '$contract', total: { $sum: '$amount' }, paid: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } } } },
+    ]);
+    const payMap = new Map(paymentsByContract.map(p => [String(p._id), p]));
+    for (const c of [...moveInsThisMonthList, ...moveOutsThisMonthList]) {
+      const pay = payMap.get(String(c._id));
+      c.paymentStatus = pay ? (pay.paid >= pay.total ? 'paid' : 'pending') : 'no_invoice';
+    }
+  }
+
+  const rentable = byStatus.available + byStatus.occupied + byStatus.reserved;
+  res.json({
+    totalUnits,
+    byStatus,
+    bySize,
+    occupancyPct: rentable ? Math.round(((byStatus.occupied + byStatus.reserved) / rentable) * 100) : 0,
+    activeContracts,
+    revenueThisMonth: revenueAgg[0]?.total || 0,
+    expectedThisMonth: (revenueAgg[0]?.total || 0) + (dueAgg[0]?.total || 0),
+    moveInsThisMonth: moveInsThisMonthList.length,
+    moveInsLastMonth,
+    moveOutsThisMonth: moveOutsThisMonthList.length,
+    movingOutThisMonth,
+    monthLabel: monthStart.toLocaleString('en-GB', { month: 'long', timeZone: 'Asia/Dubai' }),
+    moveOutsLastMonth,
+    moveInsList: moveInsThisMonthList,
+    moveOutsList: moveOutsThisMonthList,
+    availableUnitsList: availableUnits.map(u => ({ _id: u._id, unitNumber: u.unitNumber, floor: u.floor, sizeSqf: u.sizeSqf, monthlyRent: u.price || 0 })),
+  });
+});
+
+/** Floor-by-floor occupancy, on its own so it renders independently of the
+ *  KPI row and the expiring-contracts list. */
+router.get('/floor-occupancy', async (req, res) => {
+  const scope = await siteScope(req.query.site);
+  const uF = scope ? scope.unitFilter : {};
+  const unitsByFloor = await Unit.aggregate([
+    { $match: uF },
+    { $group: { _id: { floor: '$floor', status: '$status' }, count: { $sum: 1 } } },
+  ]);
+  const floorMap = new Map();
+  for (const r of unitsByFloor) {
+    const f = r._id.floor;
+    if (!floorMap.has(f)) floorMap.set(f, { floor: f, total: 0, available: 0, occupied: 0, maintenance: 0 });
+    const b = floorMap.get(f);
+    b.total += r.count;
+    if (r._id.status === 'available') b.available += r.count;
+    else if (r._id.status === 'occupied') b.occupied += r.count;
+    else if (r._id.status === 'maintenance') b.maintenance += r.count;
+  }
+  const byFloor = ['F1', 'F2'].filter(f => floorMap.has(f)).map(f => floorMap.get(f));
+  res.json({ byFloor });
+});
+
 // Revenue by month for the last N months (paid payments).
 router.get('/revenue', async (req, res) => {
   const scope = await siteScope(req.query.site);

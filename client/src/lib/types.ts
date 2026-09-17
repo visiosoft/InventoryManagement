@@ -122,7 +122,42 @@ export interface IntegrationStatus {
   openai?: { configured: boolean; model: string; keyHint: string }
   whatsapp: { configured: boolean; missing?: string[] }
   googleContacts: { configured: boolean; missing?: string[] }
-  stripe: { configured: boolean; webhookConfigured: boolean }
+  /** publishableKey is returned in full — it is designed to be public and the
+   *  tenant renewal page needs it to render Stripe's own card form.
+   *  embeddedConfigured means both keys are present, so that form can load. */
+  stripe: {
+    configured: boolean
+    webhookConfigured: boolean
+    publishableKey?: string
+    embeddedConfigured?: boolean
+  }
+}
+
+/** A renewal a tenant started themselves from the expiry message. */
+export interface ContractRenewal {
+  _id: string
+  contract: string
+  currentEndDate: string
+  newEndDate: string
+  weeks: number
+  monthlyRate: number
+  weeklyRate: number
+  rateSource: 'list' | 'contract'
+  subTotal: number
+  vatPct: number
+  vatAmount: number
+  total: number
+  cardFeePct: number
+  cardFeeAmount: number
+  method: 'card' | 'bank_transfer'
+  status: 'pending' | 'awaiting_transfer' | 'paid' | 'applied' | 'cancelled'
+  stripePaidAt?: string | null
+  invoice?: { _id: string; invoiceNo: string; total: number; paymentMade?: number; status: string } | string | null
+  appliedAt?: string | null
+  appliedByName?: string
+  /** Anything that needed a person — a moved end date, a closed contract. */
+  reviewNote?: string
+  createdAt?: string
 }
 
 export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired'
@@ -184,6 +219,13 @@ export interface Quote {
   deposit?: number
   subTotal: number
   adjustment: number
+  vatEnabled?: boolean
+  vatRate?: number
+  vatAmount?: number
+  /** Card-processing surcharge if paid by Stripe — decided on this quote,
+   *  same as vatEnabled, not from a site-wide switch. Excluded from `total`. */
+  cardFeeEnabled?: boolean
+  cardFeePct?: number
   total: number
   notes?: string
   /** One clause per line; the server fills the standard set on a new quote. */
@@ -240,6 +282,10 @@ export interface Invoice {
   vatEnabled?: boolean
   vatPct?: number
   vatAmount?: number
+  /** Card-processing surcharge if paid by Stripe — decided on this invoice,
+   *  same as vatEnabled, not from a site-wide switch. Excluded from `total`. */
+  cardFeeEnabled?: boolean
+  cardFeePct?: number
   total: number
   paymentMade?: number
   paymentHistory?: InvoicePaymentEntry[]
@@ -556,6 +602,16 @@ export interface Summary {
   availableUnitsList: { _id: string; unitNumber: string; floor: string; sizeSqf: number; monthlyRent: number }[]
 }
 
+/** GET /reports/stats — the dashboard's KPI row and units-by-size chart,
+ *  split out of Summary so they can load independently of floor occupancy
+ *  and the expiring-contracts list. */
+export type DashboardStats = Omit<Summary, 'byFloor' | 'expiringContracts' | 'overduePayments'>
+
+/** GET /reports/floor-occupancy */
+export interface FloorOccupancy {
+  byFloor: Summary['byFloor']
+}
+
 // ── Moving Business Types ────────────────────────────────────────────────────
 
 export type WorkerRole = 'driver' | 'helper' | 'supervisor' | 'packer'
@@ -812,7 +868,10 @@ export interface ReminderLog {
 export interface MovingInvoice {
   _id: string
   invoiceNo: string
-  job?: { _id: string; jobNo: string; status: string; pickupAddress?: string; deliveryAddress?: string; scheduledDate?: string }
+  job?: {
+    _id: string; jobNo: string; status: string; pickupAddress?: string; deliveryAddress?: string; scheduledDate?: string
+    clientPackage?: { packageType?: string; label?: string; agreedPrice?: number; additionalCharges?: Array<{ description: string; amount: number }>; notes?: string }
+  }
   customer: { _id: string; fullName: string; email?: string; phone?: string; address?: string }
   status: MovingInvoiceStatus
   invoiceDate: string

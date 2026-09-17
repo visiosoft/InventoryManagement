@@ -48,11 +48,19 @@ export function fillPlaceholders(value, customer = {}, contract = null) {
         ? Math.max(0, Math.ceil((new Date(contract.endDate) - Date.now()) / 86_400_000))
         : '';
 
+    // What the end date would become on a 4-week renewal — wording only, this
+    // writes nothing to the contract. Used by the "renewed automatically"
+    // notice, which states a real date rather than leaving it vague.
+    const newEndDate = contract.endDate
+        ? new Date(new Date(contract.endDate).getTime() + 28 * 86_400_000)
+        : null;
+
     return out
         .replace(/@contractNo/g, contract.contractNo || '')
         .replace(/@unit/g, units)
         .replace(/@startDate/g, fmtDate(contract.startDate))
         .replace(/@endDate/g, fmtDate(contract.endDate))
+        .replace(/@newEndDate/g, fmtDate(newEndDate))
         .replace(/@dueDate/g, fmtDate(contract.endDate))
         .replace(/@daysLeft/g, String(daysLeft))
         .replace(/@rate/g, contract.rate != null ? Number(contract.rate).toFixed(2) : '')

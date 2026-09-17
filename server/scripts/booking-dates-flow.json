@@ -1,0 +1,49 @@
+{
+  "version": "5.0",
+  "screens": [
+    {
+      "id": "DATES",
+      "title": "Choose your dates",
+      "terminal": true,
+      "success": true,
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "dates_form",
+            "children": [
+              {
+                "type": "DatePicker",
+                "name": "from_date",
+                "label": "Start date",
+                "required": true,
+                "helper-text": "When you'd like the rental to begin"
+              },
+              {
+                "type": "DatePicker",
+                "name": "to_date",
+                "label": "End date",
+                "required": true,
+                "min-date": "${form.from_date}",
+                "helper-text": "When you'll be moving out"
+              },
+              {
+                "type": "Footer",
+                "label": "Submit",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "from_date": "${form.from_date}",
+                    "to_date": "${form.to_date}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

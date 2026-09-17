@@ -7,6 +7,8 @@ import multer from 'multer';
 import { google } from 'googleapis';
 import { isValidObjectId } from 'mongoose';
 import { MovingJob, MovingItem, MovingStockTxn, Customer, MovingInvoice, MovingDocument, AgreementTemplate, nextMovingJobNo } from '../models/index.js';
+import { softDelete } from '../utils/softDelete.js';
+import { syncInvoiceFromJob } from '../services/movingInvoiceSync.js';
 import { notifyJobConfirmed, notifyCrewOnTheWay, notifyJobCompleted } from '../services/movingNotifications.js';
 import { uploadPublicImage, driveConfigured } from '../services/drive.js';
 import {
@@ -74,10 +76,17 @@ router.get('/schedule', async (req, res) => {
 // List jobs
 router.get('/', async (req, res) => {
   try {
-    const { status, q, customer, limit = 100, skip = 0 } = req.query;
+    const { status, q, customer, from, to, limit = 100, skip = 0 } = req.query;
     const filter = {};
-    if (status) filter.status = status;
+    // The dashboard's "Active Jobs" KPI links here with a comma-separated
+    // pair (confirmed,in_progress) — everywhere else passes a single value.
+    if (status) filter.status = status.includes(',') ? { $in: status.split(',') } : status;
     if (customer) filter.customer = customer;
+    if (from || to) {
+      filter.scheduledDate = {};
+      if (from) filter.scheduledDate.$gte = new Date(from);
+      if (to) filter.scheduledDate.$lte = new Date(to);
+    }
     if (q) {
       // Customer name isn't on the job document itself — resolve matching
       // customers first so a search like "Wael" finds their jobs too, not
@@ -226,6 +235,10 @@ router.put('/:id', async (req, res) => {
     Object.assign(job, update);
     if (update.crew || update.trucks || update.extraCharges) recalcCosts(job);
     await job.save();
+    // The agreed package price is what a linked invoice's amount is derived
+    // from — see services/movingInvoiceSync.js. Keeps the invoice honest the
+    // moment the price changes here, rather than only at invoice-creation time.
+    if ('clientPackage' in update) await syncInvoiceFromJob(job);
     const populated = await MovingJob.findById(job._id).populate(POPULATE_JOB);
     res.json(populated);
   } catch (err) {
@@ -553,7 +566,7 @@ router.delete('/:id', async (req, res) => {
     if (['in_progress', 'invoiced'].includes(job.status)) {
       return res.status(409).json({ error: 'Cannot delete a job that is in progress or invoiced' });
     }
-    await job.deleteOne();
+    await softDelete(job, req.user.id);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -767,7 +780,9 @@ router.delete('/:id/visits/:visitId', async (req, res) => {
     if (!job) return res.status(404).json({ error: 'Job not found' });
     const visit = job.clientVisits.id(req.params.visitId);
     if (!visit) return res.status(404).json({ error: 'Visit not found' });
-    visit.deleteOne();
+    visit.deleted = true;
+    visit.deletedAt = new Date();
+    visit.deletedBy = req.user.id;
     await job.save();
     res.json({ ok: true });
   } catch (err) {

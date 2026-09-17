@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Bold, Italic, Underline, List, Link2, Check, Search } from 'lucide-react'
 import { api, apiError } from '../../lib/api'
@@ -43,22 +43,31 @@ function textToHtml(text: string) {
 export default function EmailCustomersModal({
   onClose,
   defaultSegment = 'has_email',
+  preselectIds,
+  preselectTemplateKey,
+  defaultPersonalise = false,
 }: {
   onClose: () => void
   defaultSegment?: Segment
+  /** Customers to arrive already ticked — used when the assistant opens this
+   *  with an audience it worked out server-side. */
+  preselectIds?: string[]
+  /** Template key (not id) to arrive already chosen, e.g. contract_expiring. */
+  preselectTemplateKey?: string
+  defaultPersonalise?: boolean
 }) {
   const [query, setQuery] = useState('')
   const [segment, setSegment] = useState<Segment>(defaultSegment)
-  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(preselectIds ?? []))
   const [subject, setSubject] = useState('')
   // Personalised sending is one message each, which is the only way @name can
   // be filled in — a BCC send shares one body between everybody.
-  const [personalise, setPersonalise] = useState(false)
+  const [personalise, setPersonalise] = useState(defaultPersonalise)
   const [templateId, setTemplateId] = useState('')
 
   // The email templates from Settings → Message Templates. Quick replies are
   // WhatsApp-only, so they are not offered here.
-  type EmailTemplate = { _id: string; label: string; subject: string; emailBody: string; emailHtml?: string }
+  type EmailTemplate = { _id: string; key?: string; label: string; subject: string; emailBody: string; emailHtml?: string }
   const { data: templates = [] } = useQuery<EmailTemplate[]>({
     queryKey: ['message-templates', 'automation'],
     queryFn: () => api.get('/message-templates', { params: { kind: 'automation' } }).then((r) => r.data ?? []),
@@ -124,6 +133,35 @@ export default function EmailCustomersModal({
   function toggleOne(id: string) {
     setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
   }
+
+  /** Choosing a template fills the subject and the editor. One function so the
+   *  dropdown and a preselected template cannot fill them differently. */
+  function applyTemplate(id: string) {
+    setTemplateId(id)
+    const t = templates.find((x) => x._id === id)
+    if (!t) return
+    setSubject(t.subject || '')
+    // The designed version if the template has one, otherwise the plain text
+    // turned into paragraphs so the editor has markup to work with rather than
+    // one run-on block.
+    if (bodyRef.current) {
+      bodyRef.current.innerHTML = t.emailHtml || textToHtml(t.emailBody || '')
+    }
+  }
+
+  /* Apply a template asked for by key rather than id — the assistant names
+     `contract_expiring`, not a Mongo id it has no way to know. Runs once the
+     templates have loaded, and only while nothing has been typed, so it can
+     never overwrite something the user has already written. */
+  const templateApplied = useRef(false)
+  useEffect(() => {
+    if (templateApplied.current || !preselectTemplateKey || templates.length === 0) return
+    const t = templates.find((x) => x.key === preselectTemplateKey)
+    if (!t) return
+    templateApplied.current = true
+    applyTemplate(t._id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templates, preselectTemplateKey])
 
   // execCommand is deprecated but universally supported, and it's already the
   // idiom used by the agreement editor in this codebase.
@@ -337,18 +375,7 @@ export default function EmailCustomersModal({
               <span style={{ fontSize: 12.5, color: MUTED, width: 52 }}>Template</span>
               <select
                 value={templateId}
-                onChange={(e) => {
-                  const t = templates.find((x) => x._id === e.target.value)
-                  setTemplateId(e.target.value)
-                  if (!t) return
-                  setSubject(t.subject || '')
-                  // The designed version if the template has one, otherwise the
-                  // plain text turned into paragraphs so the editor has markup
-                  // to work with rather than one run-on block.
-                  if (bodyRef.current) {
-                    bodyRef.current.innerHTML = t.emailHtml || textToHtml(t.emailBody || '')
-                  }
-                }}
+                onChange={(e) => applyTemplate(e.target.value)}
                 style={{ flex: 1, border: 'none', outline: 'none', fontSize: 13.5, color: templateId ? INK : MUTED, background: 'transparent', cursor: 'pointer' }}
               >
                 <option value="">Start from blank, or pick a template…</option>

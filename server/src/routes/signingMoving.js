@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { MovingJob, MovingDocument } from '../models/index.js';
 import { uploadFile } from '../services/drive.js';
 import { buildMovingJobPdf, buildSignedMovingJobPdf } from '../services/movingJobDocument.js';
+import { recordSignature } from '../services/documentSigning.js';
 
 const router = Router();
 
@@ -51,14 +52,19 @@ router.post('/:token', async (req, res) => {
     const { signerName, signatureDataUrl, signMode, initialsText, initialsDataUrl, initialsMode } = req.body;
     if (!signerName?.trim()) return res.status(400).json({ error: 'Signer name is required' });
 
-    const now = new Date();
-    const pdfBuffer = await buildSignedMovingJobPdf(job, now, {
-      signerName, signatureDataUrl, signMode,
-      initialsText, initialsDataUrl, initialsMode,
+    const { finalPdf } = await recordSignature({
+      doc: job,
+      entityType: 'MovingJob',
+      documentLabel: `Moving job ${job.jobNo}`,
+      timelineText: `Moving agreement signed remotely by ${signerName}`,
+      req,
+      signerName, signatureDataUrl, signMode, initialsText, initialsDataUrl, initialsMode,
+      buildUnsignedPdf: () => buildMovingJobPdf(job),
+      buildSignedPdf: (signedAt, sig) => buildSignedMovingJobPdf(job, signedAt, sig),
     });
 
     const stored = await uploadFile({
-      buffer: pdfBuffer,
+      buffer: finalPdf,
       filename: `${job.jobNo}-signed.pdf`,
       mimeType: 'application/pdf',
       customerName: job.customer?.fullName,
@@ -75,7 +81,6 @@ router.post('/:token', async (req, res) => {
     job.signedDocUrl = stored.url;
     job.signingToken = null;
     job.signingTokenExpiry = null;
-    job.timeline.push({ at: now, text: `Moving agreement signed remotely by ${signerName}`, author: 'Customer' });
     await job.save();
 
     res.json({ ok: true, jobNo: job.jobNo, signedDocUrl: stored.url });

@@ -1,0 +1,8 @@
+node_modules/
+.git/
+dist/
+server/uploads/
+whatsapplead/.wa-profile/
+*.log
+*.zip
+.DS_Store

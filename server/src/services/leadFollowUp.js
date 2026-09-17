@@ -1,0 +1,361 @@
+import { Types } from 'mongoose';
+import { Lead, LeadFollowUp, LeadRoutingConfig, WhatsAppMessage } from '../models/index.js';
+import { QUIET_DAYS, wentQuiet, quietDays } from './chatFollowUp.js';
+import { resolvePlaceholderNames, PLACEHOLDER_NAME } from './leadNames.js';
+
+/**
+ * The name that fills {{1}}. A lead still called "WhatsApp Contact 2003"
+ * has no real name on file, and "Hello WhatsApp," is worse than "Hello
+ * there," — so a placeholder is skipped, the profile name is tried, and
+ * "there" is the floor. Never empty: "Hello ," reads as broken.
+ */
+export function greetingNameFor(lead = {}) {
+    const real = [lead.fullName, lead.whatsappProfileName]
+        .map((n) => String(n || '').trim())
+        .find((n) => n && !PLACEHOLDER_NAME.test(n));
+    return real ? real.split(/\s+/)[0] : 'there';
+}
+import { cachedSummaries, refreshSummariesInBackground } from './conversationSummary.js';
+import { sendWhatsAppTemplate, whatsappSendConfigured } from './whatsapp.js';
+
+/**
+ * Leads a rep or admin already spoke to, who then went quiet — surfaced as a
+ * count and a reviewable list, not a task. 200+ tasks already sit unactioned
+ * on the board; this exists because that mechanism was tried and did not
+ * work, not because it was missing.
+ *
+ * Three things happen here that the inbox's own "quiet" tab does not do:
+ *
+ *   the threshold is configurable   admin's judgement call, not a constant
+ *   each one carries a reason       the AI's read of the conversation, so a
+ *                                    rep is not reconstructing context from
+ *                                    scratch before deciding what to send
+ *   a send is logged                so "already messaged 5 hours ago" is a
+ *                                    fact, not a guess, and so admin can see
+ *                                    sent / replied / still quiet over time
+ *
+ * The message itself is never generated. Outside WhatsApp's 24-hour window it
+ * has to be an approved template — free text is refused by Meta regardless of
+ * how well the AI understands the conversation — so the only real choices are
+ * who gets one and which of the existing approved templates fits. Both stay
+ * with a person.
+ */
+
+export async function quietThreshold() {
+    const config = await LeadRoutingConfig.findOne().select('quietFollowUpDays').lean();
+    return config?.quietFollowUpDays || QUIET_DAYS;
+}
+
+export async function setQuietThreshold(days) {
+    const n = Math.max(1, Math.min(30, Number(days) || QUIET_DAYS));
+    await LeadRoutingConfig.findOneAndUpdate({}, { $set: { quietFollowUpDays: n } }, { upsert: true });
+    summaryCache = { at: 0, data: null }; // the threshold just changed under it
+    return n;
+}
+
+/**
+ * The company-wide rollup (ownerId null) is the one every admin's dashboard
+ * loads on every visit, and it is also the expensive one: no owner to narrow
+ * it, so it reads every open lead's phone number and asks WhatsApp's whole
+ * history who spoke to whom last. A per-rep call stays a few dozen phones and
+ * is cheap enough to just run.
+ *
+ * Same shape as listWhatsAppTemplates' own cache — a short TTL, not
+ * correctness-sensitive: a quiet-lead count nine minutes stale is still the
+ * right number to act on. */
+let summaryCache = { at: 0, data: null };
+const SUMMARY_CACHE_MS = 10 * 60_000;
+
+/**
+ * The quiet leads themselves — scoped to one owner, or every open lead when
+ * ownerId is null (admin's rollup). Reasons and last-nudge times are not
+ * attached here; callers ask for those separately, since a summary/count
+ * view often does not need either.
+ */
+export async function quietLeads({ ownerId = null, days = null } = {}) {
+    const threshold = days || await quietThreshold();
+    const now = new Date();
+
+    const leadFilter = { status: { $nin: ['won', 'lost', 'already_customer'] } };
+    if (ownerId) leadFilter.owner = ownerId;
+
+    const leads = await Lead.find(leadFilter)
+        .select('fullName phone phoneNormalized whatsappProfileName status owner followUpAt quietNudgedAt')
+        .populate('owner', 'name')
+        .lean();
+    if (!leads.length) return [];
+
+    const phones = [...new Set(leads.map((l) => l.phoneNormalized).filter(Boolean))];
+    const convos = phones.length
+        ? await WhatsAppMessage.aggregate([
+            { $match: { phoneNormalized: { $in: phones } } },
+            {
+                $group: {
+                    _id: '$phoneNormalized',
+                    lastInboundAt: { $max: { $cond: [{ $eq: ['$direction', 'inbound'] }, '$occurredAt', null] } },
+                    lastOutboundAt: { $max: { $cond: [{ $eq: ['$direction', 'outbound'] }, '$occurredAt', null] } },
+                },
+            },
+        ])
+        : [];
+    const byPhone = new Map(convos.map((c) => [c._id, c]));
+
+    const out = [];
+    for (const lead of leads) {
+        const c = byPhone.get(lead.phoneNormalized);
+        if (!c) continue;
+        if (!wentQuiet({
+            lastInboundAt: c.lastInboundAt,
+            lastOutboundAt: c.lastOutboundAt,
+            leadStatus: lead.status,
+            followUpAt: lead.followUpAt,
+            now,
+            days: threshold,
+        })) continue;
+
+        out.push({
+            leadId: String(lead._id),
+            name: lead.fullName || lead.whatsappProfileName || 'Unknown',
+            phone: lead.phone || lead.phoneNormalized,
+            phoneNormalized: lead.phoneNormalized,
+            ownerId: lead.owner?._id ? String(lead.owner._id) : null,
+            ownerName: lead.owner?.name || 'Unassigned',
+            since: c.lastOutboundAt,
+            daysQuiet: quietDays(c.lastOutboundAt, now),
+            // When the owner was last told THIS silence had gone on too long —
+            // see services/quietNudge.js. Not meaningful on its own; a caller
+            // compares it against `since` to tell an old nudge from a fresh one.
+            quietNudgedAt: lead.quietNudgedAt || null,
+        });
+    }
+
+    await resolvePlaceholderNames(out, 'name');
+
+    out.sort((a, b) => new Date(a.since) - new Date(b.since));
+    return out;
+}
+
+/**
+ * The AI's read of why each one went quiet, one short sentence.
+ *
+ * Reuses conversationSummary's own cache (keyed on the newest message id), so
+ * a thread already summarised — from the inbox's own summary button, or an
+ * earlier call here — costs nothing to read again. Only a conversation that
+ * has genuinely moved since it was last read costs a model call. A summary
+ * that fails or is unconfigured is left null rather than guessed at.
+ */
+export async function attachReasons(leads) {
+    // From the cache, in two reads for the batch; out-of-date threads are
+    // regenerated in the background rather than read one by one here.
+    let fresh = new Map();
+    try {
+        const r = await cachedSummaries(leads.map((l) => l.phoneNormalized));
+        fresh = r.fresh;
+        if (r.stale.length) refreshSummariesInBackground(r.stale);
+    } catch { /* the reason is a bonus, never a gate */ }
+    return leads.map((l) => {
+        const s = fresh.get(l.phoneNormalized);
+        return s ? { ...l, reason: s.headline || null, temperature: s.temperature || null } : { ...l, reason: null, temperature: null };
+    });
+}
+
+/**
+ * Their own last few messages, newest first — the AI's one-sentence reason
+ * read faster, but a rep who wants the actual words should not have to open
+ * the chat first to get them.
+ *
+ * Inbound only: what THEY said, not our side of it — this is "why did the
+ * customer go quiet", and our own messages do not answer that. One query for
+ * the whole batch, not one per lead: a $group after a $sort keeps each
+ * phone's messages in newest-first order, and $slice takes the 3 most recent
+ * without a second round trip.
+ */
+export async function attachRecentMessages(leads, limit = 3) {
+    const phones = [...new Set(leads.map((l) => l.phoneNormalized).filter(Boolean))];
+    if (!phones.length) return leads;
+
+    const rows = await WhatsAppMessage.aggregate([
+        { $match: { phoneNormalized: { $in: phones }, direction: 'inbound' } },
+        { $sort: { occurredAt: -1 } },
+        {
+            $group: {
+                _id: '$phoneNormalized',
+                messages: { $push: { text: '$text', transcript: '$transcript', type: '$type', at: '$occurredAt' } },
+            },
+        },
+        { $project: { messages: { $slice: ['$messages', limit] } } },
+    ]);
+    const byPhone = new Map(rows.map((r) => [r._id, r.messages]));
+
+    return leads.map((l) => ({
+        ...l,
+        recentMessages: (byPhone.get(l.phoneNormalized) || []).map((m) => ({
+            // A voice note has no text until the assistant has transcribed it;
+            // any other non-text type (image, document, location) has neither —
+            // named by its kind rather than shown as a blank line.
+            text: m.text || m.transcript || (m.type && m.type !== 'text' ? `[${m.type}]` : ''),
+            at: m.at,
+        })).filter((m) => m.text),
+    }));
+}
+
+/**
+ * When each one was last sent a quiet-follow-up, and by whom — the fact
+ * behind the "already messaged 5 hours ago" warning. Only the most recent
+ * send matters for the warning, found with one grouped query rather than one
+ * round trip per lead.
+ */
+export async function attachLastNudge(leads) {
+    const leadIds = leads.map((l) => l.leadId);
+    if (!leadIds.length) return leads;
+
+    const rows = await LeadFollowUp.aggregate([
+        { $match: { lead: { $in: leadIds.map((id) => new Types.ObjectId(id)) }, status: 'sent' } },
+        { $sort: { sentAt: -1 } },
+        { $group: { _id: '$lead', sentAt: { $first: '$sentAt' }, sentByName: { $first: '$sentByName' } } },
+    ]);
+    const byLead = new Map(rows.map((r) => [String(r._id), r]));
+    return leads.map((l) => {
+        const r = byLead.get(l.leadId);
+        return { ...l, lastNudgedAt: r?.sentAt || null, lastNudgedBy: r?.sentByName || '' };
+    });
+}
+
+/** Which chart bucket a days-quiet count falls into. Pure, so the boundaries
+ *  (4/6, matching the 3-day default threshold) can be tested without a
+ *  database standing behind them. */
+export function bucketOf(daysQuiet) {
+    const d = Number(daysQuiet) || 0;
+    return d <= 4 ? '3-4 days' : d <= 6 ? '5-6 days' : '7+ days';
+}
+
+/** Counts by how-long-quiet bucket, for the dashboard chart — and per owner,
+ *  so admin can see it is not evenly spread.
+ *
+ *  The admin-wide call (no ownerId) is cached: it is the one every admin's
+ *  dashboard loads on every visit, and the one with no owner to narrow the
+ *  underlying scan — every open lead in the company, not one rep's few dozen.
+ *  A per-rep call is cheap enough on its own and always runs fresh. */
+export async function quietSummary({ ownerId = null } = {}) {
+    if (!ownerId && summaryCache.data && Date.now() - summaryCache.at < SUMMARY_CACHE_MS) {
+        return summaryCache.data;
+    }
+
+    const leads = await quietLeads({ ownerId });
+    const buckets = new Map();
+    const byOwner = new Map();
+    for (const l of leads) {
+        const b = bucketOf(l.daysQuiet);
+        buckets.set(b, (buckets.get(b) || 0) + 1);
+        const key = l.ownerId || 'unassigned';
+        const row = byOwner.get(key) || { ownerId: l.ownerId, ownerName: l.ownerName, count: 0 };
+        row.count += 1;
+        byOwner.set(key, row);
+    }
+    const result = {
+        total: leads.length,
+        buckets: [...buckets.entries()].map(([bucket, count]) => ({ bucket, count })),
+        byOwner: [...byOwner.values()].sort((a, b) => b.count - a.count),
+    };
+
+    if (!ownerId) summaryCache = { at: Date.now(), data: result };
+    return result;
+}
+
+/**
+ * Send an approved template to a batch of quiet leads.
+ *
+ * Uses Meta's own approved-template list — the same one the chat composer's
+ * Templates tab offers — rather than the small separately-maintained set of
+ * MessageTemplate rows somebody has explicitly mapped for automation. A
+ * business with thirty approved templates and one automation mapping should
+ * not be offered only that one.
+ *
+ * {{1}} is always the lead's own first name, filled per person the same way
+ * the chat composer prefills it — never left blank, never guessed at from a
+ * placeholder profile name. Any variable beyond that (2, 3, …) is one value
+ * typed once and sent identically to everyone in the batch, because a
+ * genuinely different value per person, per slot, is a form the size of the
+ * recipient list — at that point the right answer is a template with a
+ * single variable.
+ *
+ * Each send is independent — one bad number does not stop the other five —
+ * and every attempt is logged, sent or failed, which is what lets the warning
+ * and the report both work off the same record rather than two that can
+ * drift.
+ */
+export async function sendQuietFollowUp({ leadIds, template, extraVars = [], byUser, reasons = new Map() }) {
+    if (!whatsappSendConfigured()) return { sent: [], failed: leadIds.map((id) => ({ leadId: id, reason: 'WhatsApp is not configured' })) };
+    const name = String(template?.name || '').trim();
+    if (!name) return { sent: [], failed: leadIds.map((id) => ({ leadId: id, reason: 'Choose a template' })) };
+
+    const needed = Math.max(0, (Number(template.variableCount) || 0) - 1);
+    if (extraVars.length < needed) {
+        const msg = `"${template.label}" needs ${needed} more detail${needed === 1 ? '' : 's'} filled in before sending`;
+        return { sent: [], failed: leadIds.map((id) => ({ leadId: id, reason: msg })) };
+    }
+
+    const leads = await Lead.find({ _id: { $in: leadIds } }).select('fullName phone phoneNormalized whatsappProfileName').lean();
+    // A placeholder-named lead greets by the name on their Customer record,
+    // exactly as the queue showed them - never "Hello WhatsApp".
+    await resolvePlaceholderNames(leads, 'fullName');
+    const byId = new Map(leads.map((l) => [String(l._id), l]));
+    const lang = String(template.language || 'en').trim() || 'en';
+    const sentBy = byUser?.id || null;
+    const sentByName = byUser?.name || byUser?.email || '';
+
+    const sent = [];
+    const failed = [];
+    for (const leadId of leadIds) {
+        const lead = byId.get(leadId);
+        try {
+            if (!lead) throw new Error('Lead not found');
+            const phone = lead.phone || lead.phoneNormalized;
+            if (!phone) throw new Error('No phone number on file');
+            const reasonRow = reasons.get(leadId);
+            const variables = [greetingNameFor(lead), ...extraVars.map((v) => String(v ?? ''))];
+
+            await sendWhatsAppTemplate({ to: phone, name, language: lang, variables });
+
+            await LeadFollowUp.create({
+                lead: leadId, phoneNormalized: lead.phoneNormalized, sentBy, sentByName,
+                templateName: name, templateLabel: template.label,
+                reason: reasonRow?.reason || '', daysQuietAtSend: reasonRow?.daysQuiet ?? 0,
+                status: 'sent',
+            });
+            await Lead.updateOne({ _id: leadId }, {
+                $push: { timeline: { type: 'whatsapp_message', text: `Follow-up "${template.label}" sent after going quiet`, at: new Date() } },
+            });
+            sent.push({ leadId, name: lead.fullName, to: phone });
+        } catch (e) {
+            await LeadFollowUp.create({
+                lead: leadId, phoneNormalized: lead?.phoneNormalized || '', sentBy, sentByName,
+                templateName: name, templateLabel: template.label,
+                daysQuietAtSend: reasons.get(leadId)?.daysQuiet ?? 0,
+                status: 'failed', error: e.message,
+            }).catch(() => { });
+            failed.push({ leadId, name: lead?.fullName || '', reason: e.message });
+        }
+    }
+
+    return { sent, failed, template: name };
+}
+
+/**
+ * They wrote back after a nudge, so it is no longer "still quiet".
+ *
+ * Marks the most recent un-replied send for this number, matching the same
+ * "only the latest matters" rule the warning itself uses. Never throws — a
+ * message must be delivered whatever bookkeeping does with it.
+ */
+export async function markQuietFollowUpReplied(phoneNormalized, at = new Date()) {
+    try {
+        await LeadFollowUp.findOneAndUpdate(
+            { phoneNormalized, status: 'sent', repliedAt: null, sentAt: { $lte: at } },
+            { $set: { repliedAt: at } },
+            { sort: { sentAt: -1 } },
+        );
+    } catch (e) {
+        console.error('[LeadFollowUp] could not record a reply:', e.message);
+    }
+}

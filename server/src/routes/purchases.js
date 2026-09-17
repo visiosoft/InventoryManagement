@@ -3,6 +3,7 @@ import multer from 'multer';
 import { Purchase, Vendor, nextPurchaseNo } from '../models/index.js';
 import { uploadToVendorFolder } from '../services/drive.js';
 import { parseCsv } from '../services/csv.js';
+import { softDelete } from '../utils/softDelete.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -122,8 +123,9 @@ router.patch('/:id/status', async (req, res) => {
 });
 
 router.delete('/:id', async (req, res) => {
-    const purchase = await Purchase.findByIdAndDelete(req.params.id);
+    const purchase = await Purchase.findById(req.params.id);
     if (!purchase) return res.status(404).json({ error: 'Purchase not found' });
+    await softDelete(purchase, req.user.id);
     res.json({ ok: true });
 });
 

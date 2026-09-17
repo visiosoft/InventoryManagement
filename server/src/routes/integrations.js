@@ -7,15 +7,15 @@ import { mailConfigured, mailFromAddress } from '../services/mail.js';
 import { zohoConfigured } from '../services/zoho.js';
 import { zohoBooksConfigured, listAllZohoContacts } from '../services/zohoBooks.js';
 import { Customer, Contract, WhatsAppWebhookHit } from '../models/index.js';
-import { whatsappConfigured, whatsappMissing, verifyWebhookChallenge, verifyWhatsAppSignature, verifyWhatsAppCredentials, inspectWhatsAppToken } from '../services/whatsapp.js';
+import { whatsappConfigured, whatsappMissing, verifyWebhookChallenge, verifyWhatsAppSignature, verifyWhatsAppCredentials, inspectWhatsAppToken, forgetWabaId } from '../services/whatsapp.js';
 import { getWhatsAppLabelSyncStatus, processWhatsAppWebhookPayload, runWhatsAppLabelReconciliation } from '../services/whatsappLeadSync.js';
-import { stripeConfigured, stripeWebhookConfigured, verifyStripeKey } from '../services/stripe.js';
+import { stripeConfigured, stripeWebhookConfigured, verifyStripeKey, stripePublishableKey, stripeEmbeddedConfigured } from '../services/stripe.js';
 import { updateEnvFile } from '../utils/env.js';
 import { openaiConfigured, openaiModel, openaiKeyHint, verifyOpenAIKey, parseAvailabilityQuery } from '../services/openai.js';
 
 const router = Router();
 
-router.get('/status', (_req, res) => {
+router.get('/status', async (_req, res) => {
     res.json({
         zoho: { configured: zohoConfigured() },
         drive: {
@@ -42,7 +42,15 @@ router.get('/status', (_req, res) => {
         email: { configured: mailConfigured(), from: mailFromAddress() },
         whatsapp: { configured: whatsappConfigured(), missing: whatsappMissing() },
         whatsappLabelSync: getWhatsAppLabelSyncStatus(),
-        stripe: { configured: stripeConfigured(), webhookConfigured: stripeWebhookConfigured() },
+        /* The publishable key is returned in full on purpose — it is designed
+         * to be public and the tenant renewal page needs it to render Stripe's
+         * own card form. The secret key never appears here. */
+        stripe: {
+            configured: stripeConfigured(),
+            webhookConfigured: stripeWebhookConfigured(),
+            publishableKey: stripePublishableKey(),
+            embeddedConfigured: stripeEmbeddedConfigured(),
+        },
     });
 });
 
@@ -50,11 +58,21 @@ router.get('/status', (_req, res) => {
 // secretKey is optional on repeat calls — e.g. adding just the webhook secret
 // after the fact doesn't need to re-send (and re-validate) the secret key.
 router.post('/stripe/connect', requireAdmin, async (req, res) => {
-    const { secretKey, webhookSecret } = req.body || {};
-    if (!secretKey && !webhookSecret) {
+    const { secretKey, webhookSecret, publishableKey } = req.body || {};
+    if (!secretKey && !webhookSecret && !publishableKey) {
         return res.status(400).json({ error: 'Nothing to save' });
     }
     const updates = {};
+    if (publishableKey) {
+        /* Only a shape check. Unlike the secret key there is no call that can
+         * verify a publishable key on its own, and rejecting a valid one over a
+         * failed guess would be worse than storing a typo the card form then
+         * reports plainly. */
+        if (!/^pk_(test|live)_/.test(publishableKey)) {
+            return res.status(400).json({ error: 'That doesn\'t look like a Stripe publishable key (should start with pk_test_ or pk_live_)' });
+        }
+        updates.STRIPE_PUBLISHABLE_KEY = publishableKey;
+    }
     if (secretKey) {
         if (!/^sk_(test|live)_/.test(secretKey)) {
             return res.status(400).json({ error: 'That doesn\'t look like a Stripe secret key (should start with sk_test_ or sk_live_)' });
@@ -69,14 +87,20 @@ router.post('/stripe/connect', requireAdmin, async (req, res) => {
     if (webhookSecret) updates.STRIPE_WEBHOOK_SECRET = webhookSecret;
     updateEnvFile(updates);
     Object.assign(process.env, updates);
-    res.json({ ok: true, configured: stripeConfigured(), webhookConfigured: stripeWebhookConfigured() });
+    res.json({
+        ok: true,
+        configured: stripeConfigured(),
+        webhookConfigured: stripeWebhookConfigured(),
+        embeddedConfigured: stripeEmbeddedConfigured(),
+    });
 });
 
 // Clears the stored Stripe keys.
 router.post('/stripe/disconnect', requireAdmin, async (_req, res) => {
-    updateEnvFile({ STRIPE_SECRET_KEY: '', STRIPE_WEBHOOK_SECRET: '' });
+    updateEnvFile({ STRIPE_SECRET_KEY: '', STRIPE_WEBHOOK_SECRET: '', STRIPE_PUBLISHABLE_KEY: '' });
     process.env.STRIPE_SECRET_KEY = '';
     process.env.STRIPE_WEBHOOK_SECRET = '';
+    process.env.STRIPE_PUBLISHABLE_KEY = '';
     res.json({ ok: true });
 });
 
@@ -140,7 +164,7 @@ router.post('/ai/parse-availability', async (req, res) => {
 });
 
 router.post('/whatsapp/connect', requireAdmin, async (req, res) => {
-    const { phoneNumberId, accessToken, verifyToken, appSecret } = req.body || {};
+    const { phoneNumberId, accessToken, verifyToken, appSecret, wabaId } = req.body || {};
     const updates = {};
     if (phoneNumberId) {
         const raw = String(phoneNumberId).trim();
@@ -157,6 +181,16 @@ router.post('/whatsapp/connect', requireAdmin, async (req, res) => {
             return res.status(400).json({ error: 'The Phone number ID should be digits only.' });
         }
         updates.WHATSAPP_PHONE_NUMBER_ID = raw;
+    }
+    if (wabaId) {
+        // Digits only, like the phone number id, and confused with it just as
+        // often — so the shape is checked rather than left to fail later on a
+        // call nobody makes until they open the templates panel.
+        const raw = String(wabaId).trim();
+        if (!/^\d+$/.test(raw)) {
+            return res.status(400).json({ error: 'The WhatsApp Business Account ID should be digits only. It is shown in Meta → WhatsApp → API Setup, above the phone number.' });
+        }
+        updates.WHATSAPP_WABA_ID = raw;
     }
     if (accessToken) updates.WHATSAPP_ACCESS_TOKEN = String(accessToken).trim();
     if (verifyToken) updates.WHATSAPP_VERIFY_TOKEN = String(verifyToken).trim();
@@ -190,6 +224,8 @@ router.post('/whatsapp/connect', requireAdmin, async (req, res) => {
 
     updateEnvFile(updates);
     Object.assign(process.env, updates);
+    // A different number may belong to a different business account.
+    forgetWabaId();
     res.json({
         ok: true,
         configured: whatsappConfigured(),
@@ -212,9 +248,11 @@ router.post('/whatsapp/disconnect', requireAdmin, async (_req, res) => {
         WHATSAPP_ACCESS_TOKEN: '',
         WHATSAPP_VERIFY_TOKEN: '',
         WHATSAPP_APP_SECRET: '',
+        WHATSAPP_WABA_ID: '',
     };
     updateEnvFile(blanks);
     Object.assign(process.env, blanks);
+    forgetWabaId();
     res.json({ ok: true });
 });
 

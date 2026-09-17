@@ -29,6 +29,8 @@ const SITE_SCOPED_PATHS = [
   '/payments',
   '/reports',
   '/floor-plans',
+  // The assistant answers for the facility that is selected, like the reports do.
+  '/assistant',
 ]
 
 const isSiteScoped = (url = '') => {
@@ -94,6 +96,17 @@ export const unitTypeApi = {
 
 export const leadApi = {
   list: (params: LeadQuery) => api.get<LeadPage>('/leads', { params }).then((r) => r.data),
+  /** Every lead id matching the given filter (the same ones GET /leads
+   *  itself takes — status/source/owner/search/from/to/chase/attemptBy),
+   *  in that list's own order. Called with the filter actually on screen,
+   *  this is what Leads.tsx hands Previous/Next so it walks the whole
+   *  filtered view rather than just the current page of 25. Called with
+   *  no filter, it's also the fallback a lead's own page reaches for when
+   *  it wasn't opened by clicking through the list at all (a bookmark, a
+   *  shared link, a fresh load) — sessionStorage has nothing to read then,
+   *  and unfiltered is the only order left to fall back on. */
+  navOrder: (params?: Omit<LeadQuery, 'page' | 'limit'> & { chase?: string; attemptBy?: string }) =>
+    api.get<{ ids: string[] }>('/leads/nav-order', { params }).then((r) => r.data.ids),
   create: (body: Partial<Lead>) => api.post<Lead>('/leads', body).then((r) => r.data),
   update: (id: string, body: Partial<Lead>) => api.put<Lead>(`/leads/${id}`, body).then((r) => r.data),
   updateStatus: (id: string, status: string, comment?: string) => api.patch<Lead>(`/leads/${id}/status`, { status, comment }).then((r) => r.data),
@@ -102,6 +115,121 @@ export const leadApi = {
       .post<{ ok: true; created: boolean; customer: Customer; lead: Lead }>(`/leads/${id}/convert`)
       .then((r) => r.data),
   remove: (id: string) => api.delete<{ ok: true }>(`/leads/${id}`).then((r) => r.data),
+  /** The pipeline as a funnel: how many leads sit at each stage right now,
+   *  and how long they've been there. Server: routes/leads.js's GET /funnel,
+   *  logic in services/leadFunnel.js. */
+  funnel: () => api.get<LeadFunnel>('/leads/funnel').then((r) => r.data),
+  /** How good a lead this is — see services/leadScore.js. Read-only. */
+  score: (id: string) => api.get<LeadScore>(`/leads/${id}/score`).then((r) => r.data),
+  /** A rep's own confirmation or correction of the score. `decision: ''`
+   *  clears it and hands the lead back to the computed score. */
+  scoreConfirm: (id: string, decision: 'qualifying' | 'not_interested' | '') =>
+    api.post<LeadScore>(`/leads/${id}/score-confirm`, { decision }).then((r) => r.data),
+  /** When they actually said they'd need it — a call the AI never heard,
+   *  or a correction to what it read from the chat. `date` a plain
+   *  'YYYY-MM-DD', or '' to clear it. Not the same thing as when we should
+   *  next contact them. */
+  setIntendedDate: (id: string, date: string) =>
+    api.post<LeadScore>(`/leads/${id}/intended-date`, { intendedStartDate: date || null }).then((r) => r.data),
+  /** A rep's own yes/no on whether they can actually afford this. `value`
+   *  empty clears it. */
+  setFinanciallyQualified: (id: string, value: '' | 'yes' | 'no') =>
+    api.post<LeadScore>(`/leads/${id}/financially-qualified`, { value }).then((r) => r.data),
+  /** Which of the two facilities they want. `value` empty clears it. */
+  setLocationPreference: (id: string, value: '' | 'Al Quoz' | 'DIP') =>
+    api.post<LeadScore>(`/leads/${id}/location-preference`, { value }).then((r) => r.data),
+  /** How long they're actually planning to stay, confirmed with the lead
+   *  directly — not the same as merely having a default duration. */
+  setLengthOfStay: (id: string, durationValue: number, durationUnit: 'week' | 'month') =>
+    api.post<LeadScore>(`/leads/${id}/length-of-stay`, { durationValue, durationUnit }).then((r) => r.data),
+  /** How much storage they actually need, confirmed with the lead directly. */
+  setUnitSize: (id: string, storageSizeValue: number) =>
+    api.post<LeadScore>(`/leads/${id}/unit-size`, { storageSizeValue }).then((r) => r.data),
+  /** When to come back to them, and why. `followUpAt` an ISO datetime or
+   *  '' to clear it. */
+  setFollowUpReminder: (id: string, followUpAt: string, followUpNote: string) =>
+    api.post<LeadScore>(`/leads/${id}/follow-up-reminder`, { followUpAt: followUpAt || null, followUpNote }).then((r) => r.data),
+  /** High-scoring leads from today or yesterday — services/leadScore.js's
+   *  highIntentToday(). A rep's own; admin's, everyone's. */
+  /** `mine: true` forces "my own leads only", even for an admin — what My
+   *  Day wants, since every card there is personal. Omitted (or false),
+   *  the Dashboard's own behaviour applies: a rep's own, an admin's
+   *  everyone's. */
+  highIntentToday: (opts?: { mine?: boolean }) =>
+    api.get<{ items: HighIntentLead[] }>('/leads/high-intent', { params: opts?.mine ? { mine: '1' } : undefined }).then((r) => r.data),
+}
+
+export interface HighIntentLead {
+  leadId: string
+  name: string
+  phone: string
+  ownerId: string | null
+  ownerName: string
+  createdAt: string
+  score: number
+  reason: string
+  nextAction: string | null
+}
+
+export type LeadScoreBand = 'high' | 'medium' | 'low'
+export interface LeadScoreSignals {
+  leadType?: string
+  temperature?: string | null
+  specific?: boolean
+  turnCount?: number
+  medianReplyMinutes?: number | null
+  override?: string
+  intendedStartDate?: string | null
+  daysUntilNeeded?: number | null
+}
+export interface LeadScore {
+  score: number | null
+  band: LeadScoreBand | null
+  reason: string
+  signals: LeadScoreSignals
+  needsConfirmation: boolean
+  staleOverride?: boolean
+  override: '' | 'qualifying' | 'not_interested'
+  overrideByName: string
+  overrideAt: string | null
+  aiSummary: {
+    headline?: string
+    nextAction?: string
+    temperature?: string
+    leadType?: string
+    reason?: string
+  } | null
+  intake: LeadIntake
+}
+
+/** Facts a rep is expected to have actually asked the lead directly —
+ *  distinct from `signals`, which is the AI's own read of the chat. */
+export type LeadIntakeField = 'moveInDate' | 'lengthOfStay' | 'unitSize' | 'financiallyQualified' | 'locationPreference' | 'followUpReminder'
+export interface LeadIntake {
+  leadInitiatedAt: string | null
+  moveInDate: string | null
+  lengthOfStay: { value: number; unit: 'week' | 'month' } | null
+  unitSize: { value: number; unit: 'sqft' } | null
+  financiallyQualified: '' | 'yes' | 'no'
+  locationPreference: '' | 'Al Quoz' | 'DIP'
+  followUpReminder: { at: string; note: string } | null
+  missing: LeadIntakeField[]
+  suggestedMessages: string[]
+}
+
+export interface LeadFunnelStage {
+  key: string
+  label: string
+  count: number
+  medianDays: number | null
+  atOrPastPct: number
+}
+export interface LeadFunnel {
+  total: number
+  lost: number
+  alreadyCustomer: number
+  since: string
+  stages: LeadFunnelStage[]
 }
 
 export const integrationApi = {
@@ -110,8 +238,8 @@ export const integrationApi = {
     api.get<{ url: string }>('/integrations/drive/connect').then((r) => r.data),
   connectGmail: () =>
     api.get<{ url: string }>('/integrations/gmail/connect').then((r) => r.data),
-  connectStripe: (body: { secretKey?: string; webhookSecret?: string }) =>
-    api.post<{ ok: true; configured: boolean; webhookConfigured: boolean }>('/integrations/stripe/connect', body).then((r) => r.data),
+  connectStripe: (body: { secretKey?: string; webhookSecret?: string; publishableKey?: string }) =>
+    api.post<{ ok: true; configured: boolean; webhookConfigured: boolean; embeddedConfigured: boolean }>('/integrations/stripe/connect', body).then((r) => r.data),
   disconnectStripe: () =>
     api.post<{ ok: true }>('/integrations/stripe/disconnect').then((r) => r.data),
 }
@@ -370,6 +498,9 @@ export type WhatsAppConversation = {
      anybody who has been quoted, so its presence alone is not a tenancy. */
   customer: { _id: string; fullName: string; stage?: 'prospect' | 'customer' } | null
   labels: WhatsAppLabel[]
+  // Whether this number is on the block list — see routes/whatsapp.js's
+  // block/unblock endpoints and whatsappLeadSync.js's persistMessages.
+  blocked?: boolean
   // AI assistant state for this thread: '' when it has never looked at it.
   botStatus?: '' | 'bot' | 'escalated' | 'paused'
   botDraft?: string
@@ -381,9 +512,39 @@ export type WhatsAppCredentials = {
   accessToken?: string
   verifyToken?: string
   appSecret?: string
+  /* The Business Account the number sits under. Only approved templates need
+   * it — sending and receiving do not — which is why it can be left blank and
+   * worked out from the number instead. */
+  wabaId?: string
+}
+
+export interface ApprovedTemplate {
+  name: string
+  label: string
+  language: string
+  category: string
+  bodyText: string
+  /** How many {{1}}, {{2}} … the body expects. Meta rejects the send
+   *  outright if the count sent does not match. */
+  variableCount: number
 }
 
 export const whatsappApi = {
+  /** Send an already-uploaded video into a chat — its poster frame plus a
+   *  watch link, never the raw file (WhatsApp's own 16 MB video cap is well
+   *  under most sales videos). Call after the file has been uploaded via
+   *  POST /message-templates/quick-reply-video, which returns the URLs
+   *  this expects. */
+  sendHostedVideo: (body: { to: string; videoUrl: string; thumbnailUrl: string; caption?: string }) =>
+    api.post<{ ok: true; sent: string[] }>('/whatsapp/send-hosted-video', body).then((r) => r.data),
+
+  /** Meta's own approved template list — the same source the chat
+   *  composer's Templates tab reads, so anywhere that offers "pick a
+   *  template" offers the templates that actually exist, not a small
+   *  separately-maintained subset of them. */
+  approvedTemplates: () =>
+    api.get<{ configured: boolean; error: string; templates: ApprovedTemplate[] }>('/whatsapp/templates').then((r) => r.data),
+
   /**
    * The conversation list.
    *
@@ -461,6 +622,12 @@ export const whatsappApi = {
     api.post<{ action: 'created' | 'updated' | 'exists'; lead: WhatsAppLeadRef }>(
       `/whatsapp/conversations/${phoneNormalized}/lead`, body,
     ).then((r) => r.data),
+  deleteConversation: (phoneNormalized: string) =>
+    api.delete<{ ok: boolean; deletedMessages: number }>(`/whatsapp/conversations/${phoneNormalized}`).then((r) => r.data),
+  blockNumber: (phoneNormalized: string, reason?: string) =>
+    api.post<{ ok: boolean; blocked: boolean }>(`/whatsapp/conversations/${phoneNormalized}/block`, { reason }).then((r) => r.data),
+  unblockNumber: (phoneNormalized: string) =>
+    api.post<{ ok: boolean; blocked: boolean }>(`/whatsapp/conversations/${phoneNormalized}/unblock`).then((r) => r.data),
   connect: (body: WhatsAppCredentials) =>
     api.post<{ ok: boolean; configured: boolean; missing: string[]; displayPhoneNumber: string; verifiedName: string }>(
       '/integrations/whatsapp/connect', body
@@ -478,4 +645,174 @@ export const reminderConfigApi = {
       `/reminder-config/test/${paymentId}`, {}
     ).then((r) => r.data),
   runNow: () => api.post<{ ok: boolean; sent: number; skipped: number; errors: number }>('/reminder-config/run', {}).then((r) => r.data),
+}
+
+export interface QuietLead {
+  leadId: string
+  name: string
+  phone: string
+  phoneNormalized: string
+  ownerId: string | null
+  ownerName: string
+  since: string
+  daysQuiet: number
+  reason: string | null
+  temperature: 'hot' | 'warm' | 'cold' | null
+  lastNudgedAt: string | null
+  lastNudgedBy: string
+  /** Their own last few messages, newest first — inbound only. */
+  recentMessages: { text: string; at: string }[]
+}
+
+export const leadFollowUpApi = {
+  config: () => api.get<{ quietFollowUpDays: number }>('/lead-follow-up/config').then((r) => r.data),
+  setConfig: (quietFollowUpDays: number) =>
+    api.put<{ quietFollowUpDays: number }>('/lead-follow-up/config', { quietFollowUpDays }).then((r) => r.data),
+  /** The earlier, hours-scale reminder to the rep themselves — a separate
+   *  setting from the days-scale backlog threshold above. */
+  nudgeConfig: () => api.get<{ enabled: boolean; hours: number }>('/lead-follow-up/nudge-config').then((r) => r.data),
+  setNudgeConfig: (body: { enabled?: boolean; hours?: number }) =>
+    api.put<{ enabled: boolean; hours: number }>('/lead-follow-up/nudge-config', body).then((r) => r.data),
+  quiet: (params?: { days?: number; owner?: string }) =>
+    api.get<{ leads: QuietLead[]; threshold: number }>('/lead-follow-up/quiet', { params }).then((r) => r.data),
+  summary: (params?: { owner?: string }) =>
+    api.get<{ total: number; buckets: { bucket: string; count: number }[]; byOwner: { ownerId: string | null; ownerName: string; count: number }[] }>(
+      '/lead-follow-up/summary', { params },
+    ).then((r) => r.data),
+  send: (body: { leadIds: string[]; templateName: string; extraVars: string[]; reasons: { leadId: string; reason: string; daysQuiet: number }[] }) =>
+    api.post<{ sent: { leadId: string; name: string; to: string }[]; failed: { leadId: string; name: string; reason: string }[]; template: string }>(
+      '/lead-follow-up/send', body,
+    ).then((r) => r.data),
+  log: (params?: { owner?: string }) =>
+    api.get<{
+      counts: { sent: number; replied: number; stillQuiet: number; failed: number }
+      rows: { id: string; leadId: string | null; leadName: string; phone: string; sentByName: string; templateLabel: string; reason: string; daysQuietAtSend: number; status: string; error: string; sentAt: string; repliedAt: string | null; aiNext: string | null; aiSummary: string | null }[]
+    }>('/lead-follow-up/log', { params }).then((r) => r.data),
+}
+
+/* ── The follow-up queue ─────────────────────────────────────────────────────
+   One ranked list of who to contact and why. Three reasons, kept strictly
+   apart on every row — see server/src/services/followUpQueue.js. */
+
+export type FollowUpReason = 'sales_response_overdue' | 'customer_quiet' | 'manual_followup_due'
+export type FollowUpPriority = 'high' | 'medium' | 'low'
+/** Which day a lead is due — the cards. 'now' is a customer waiting on us;
+ *  'exhausted' is a cadence fully sent, waiting on a decision. */
+export type FollowUpWindow = 'now' | 'today' | 'tomorrow' | 'in_3_days' | 'in_7_days' | 'later' | 'exhausted'
+/** Who this phone number is in Customers, if anyone. */
+export interface FollowUpCustomer {
+  id: string
+  name: string
+  status: 'active' | 'former'
+  contracts: { contractNo: string; status: string; endDate: string | null; unit: string }[]
+}
+
+export interface FollowUpQueueItem {
+  leadId: string
+  name: string
+  phone: string
+  phoneNormalized: string
+  ownerId: string | null
+  ownerName: string
+  leadStatus: string
+  source: string
+  temperature: 'hot' | 'warm' | 'cold' | null
+  customer: FollowUpCustomer | null
+  lastInboundAt: string | null
+  lastOutboundAt: string | null
+  followUpAt: string | null
+  /** The rep's manual chase, when any attempt has been logged. */
+  sequence: { made: number; total: number; label: string; exhausted: boolean; nextChannel: string } | null
+  reason: FollowUpReason
+  reasonDetail: 'exhausted' | 'overdue_date' | 'scheduled' | null
+  /** What the wait is measured from. */
+  since: string
+  daysWaiting: number
+  /** When this lead is next due, from the cadence or a set date; null once
+   *  the cadence is spent. */
+  nextContactAt: string | null
+  window: FollowUpWindow
+  lastSentAt: string | null
+  priorityScore: number
+  priority: FollowUpPriority
+  /** Inside Meta's 24-hour window — a plain reply is still allowed. */
+  windowOpen: boolean
+  aiSummary: string | null
+  aiReason: string | null
+  nextAction: string | null
+  openQuestions: string[]
+  lastNudgedAt: string | null
+  lastNudgedBy: string
+  recentMessages: { text: string; at: string }[]
+  /** Which numbered template send comes next. */
+  quietStage: { next: number; total: number; label: string; exhausted: boolean }
+  sentSinceReply: number
+}
+
+export interface FollowUpQueueSummary {
+  total: number
+  /** now + today + exhausted — the work in front of you. */
+  due: number
+  needsReply: number
+  customerQuiet: number
+  manualDue: number
+  hot: number
+  aiSuggested: number
+  overdue: number
+  windows: Record<FollowUpWindow, number>
+}
+
+export type FollowUpTimelineEntry =
+  | { kind: 'send'; at: string; status: string; error: string; label: string; by: string; repliedAt: string | null }
+  | { kind: 'attempt'; at: string; channel: string; outcome: string; note: string; no: number }
+  | { kind: 'message'; at: string; direction: 'inbound' | 'outbound'; status: string; text: string }
+
+export interface FollowUpDetail {
+  item: FollowUpQueueItem | null
+  lead: {
+    leadId: string; name: string; phone: string; phoneNormalized: string; status: string
+    temperature: 'hot' | 'warm' | 'cold' | null; ownerName: string; source: string; followUpAt: string | null
+    customer: FollowUpCustomer | null
+  }
+  windowOpen: boolean
+  lastInboundAt: string | null
+  timeline: FollowUpTimelineEntry[]
+}
+
+export interface FollowUpEligibilityRow {
+  leadId: string
+  name: string
+  phone: string
+  ok: boolean
+  reason: string | null
+  explanation: string
+  lastSentAt: string | null
+  customer?: FollowUpCustomer | null
+  preview: string
+}
+
+export const followUpQueueApi = {
+  list: (params?: { owner?: string }) =>
+    api.get<{ items: FollowUpQueueItem[]; summary: FollowUpQueueSummary; threshold: number; stages: { afterDays: number }[]; snapshotAt: string; aiPending?: number }>(
+      '/follow-up-queue', { params },
+    ).then((r) => r.data),
+  detail: (leadId: string) => api.get<FollowUpDetail>(`/follow-up-queue/${leadId}`).then((r) => r.data),
+  send: (leadId: string, body: { templateName: string; extraVars: string[]; snapshotAt?: string; confirmResend?: boolean; allowCustomers?: boolean; reason?: string; daysWaiting?: number }) =>
+    api.post<{ sent: { leadId: string; name: string; to: string }[]; failed: { leadId: string; name: string; reason: string }[]; template: string }>(
+      `/follow-up-queue/${leadId}/send`, body,
+    ).then((r) => r.data),
+  bulkValidate: (body: { leadIds: string[]; templateName: string; extraVars: string[]; snapshotAt?: string; confirmResend?: boolean; allowCustomers?: boolean }) =>
+    api.post<{ rows: FollowUpEligibilityRow[]; eligible: number; excluded: number; templateApproved: boolean }>(
+      '/follow-up-queue/bulk/validate', body,
+    ).then((r) => r.data),
+  bulkSend: (body: { leadIds: string[]; templateName: string; extraVars: string[]; snapshotAt?: string; confirmResend?: boolean; allowCustomers?: boolean; reasons: { leadId: string; reason: string; daysWaiting: number }[] }) =>
+    api.post<{
+      sent: { leadId: string; name: string; to: string }[]
+      failed: { leadId: string; name: string; reason: string }[]
+      excluded: { leadId: string; name: string; reason: string; explanation: string }[]
+      template?: string
+    }>('/follow-up-queue/bulk/send', body).then((r) => r.data),
+  config: () => api.get<{ quietFollowUpDays: number; stages: { afterDays: number }[] }>('/follow-up-queue/config').then((r) => r.data),
+  setConfig: (stages: number[]) =>
+    api.put<{ quietFollowUpDays: number; stages: { afterDays: number }[] }>('/follow-up-queue/config', { stages }).then((r) => r.data),
 }

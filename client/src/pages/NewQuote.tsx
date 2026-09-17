@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Plus, ChevronRight, ChevronLeft, Check, User, Box, FileText, Briefcase, Search, Trash2, CalendarRange, Loader2, CheckCircle2, Send, Mail, Download,
-  Upload, X, Eye, } from 'lucide-react'
+  Upload, X, Eye, CreditCard, Copy, } from 'lucide-react'
 import { api, apiError, quoteApi, type AvailableUnit } from '../lib/api'
 import type { AccessPerson, Customer, Invoice, Lead, Quote } from '../lib/types'
 import { useAuth } from '../lib/auth'
@@ -200,6 +200,11 @@ export default function NewQuote() {
   const [holdAdvance, setHoldAdvance] = useState(true)
   // On for every quote; a rare zero-rated one can turn it off.
   const [vatEnabled, setVatEnabled] = useState(true)
+  // Off by default — only applies if the customer chooses to pay by Stripe
+  // card, so it stays out of the quoted total. Same on/off-per-document idea
+  // as VAT above, not a site-wide switch.
+  const [cardFeeEnabled, setCardFeeEnabled] = useState(false)
+  const [cardFeePct, setCardFeePct] = useState(3)
   const [notes, setNotes] = useState('')
   /* Empty until a quote is loaded or saved: the server fills in the standard
      terms, so sending '' from here would blank them. */
@@ -320,6 +325,9 @@ export default function NewQuote() {
     setHoldAdvance((q as { holdAdvance?: boolean }).holdAdvance !== false)
     // Quotes made before VAT existed have no flag; they are taxed too.
     setVatEnabled((q as { vatEnabled?: boolean }).vatEnabled !== false)
+    // Off unless the quote itself says otherwise — no site-wide default to fall back to.
+    setCardFeeEnabled(Boolean((q as { cardFeeEnabled?: boolean }).cardFeeEnabled))
+    setCardFeePct((q as { cardFeePct?: number }).cardFeePct ?? 3)
     setNotes(q.notes || '')
     setTerms(q.termsAndConditions || '')
     setAdjustment(q.adjustment || 0)
@@ -603,6 +611,9 @@ export default function NewQuote() {
   // Grand total = rent + add-ons + VAT + held advance (short terms) + security
   // deposit — identical to what the server stores for the quote.
   const total = subTotal + adjustment + vatAmount + (holdAdvance ? advanceExtra : 0) + (Number(deposit) || 0)
+  // Informational only — never added to `total`. It only applies if the
+  // customer chooses to pay this quote by Stripe card.
+  const cardFeeAmount = cardFeeEnabled ? Number((total * (cardFeePct / 100)).toFixed(2)) : 0
 
   useEffect(() => { setErr(''); setSentMsg('') }, [step])
 
@@ -620,6 +631,8 @@ export default function NewQuote() {
       deposit: Number(deposit) || 0,
       holdAdvance,
       vatEnabled,
+      cardFeeEnabled,
+      cardFeePct,
       adjustment,
       // No total sent — the server computes it from units/add-ons/deposit
       units: unitRows.map((u) => ({
@@ -757,6 +770,35 @@ export default function NewQuote() {
       qc.invalidateQueries({ queryKey: ['quotes'] })
       qc.invalidateQueries({ queryKey: ['flow-resume'] })
       setErr('')
+    },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  // A real Stripe card-payment link for this quotation's total. Fee is
+  // decided by the global Settings switch, never chosen here. Saves the
+  // quote first if it hasn't been (same pattern sendQuote/downloadQuote use)
+  // — a payment link needs a real, priced quote to point at.
+  const [payLinkResult, setPayLinkResult] = useState<{ payUrl: string; total: number; feePct: number; feeAmount: number; totalCharged: number } | null>(null)
+  const [payLinkCopied, setPayLinkCopied] = useState(false)
+  const paymentLinkQuote = useMutation({
+    mutationFn: async () => {
+      let qId = quoteId
+      if (!(quoteLocked && qId)) {
+        const body = buildQuoteBody()
+        const q = qId ? await quoteApi.update(qId, body) : await quoteApi.create(body)
+        qId = q._id
+        setQuoteId(q._id)
+      }
+      const res = await api.post(`/quotes/${qId}/payment-link`, { channel: 'link' })
+      return res.data as { payUrl: string; total: number; feePct: number; feeAmount: number; totalCharged: number }
+    },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['quotes'] })
+      qc.invalidateQueries({ queryKey: ['flow-resume'] })
+      setErr('')
+      setPayLinkResult(data)
+      setPayLinkCopied(false)
+      navigator.clipboard?.writeText(data.payUrl).then(() => setPayLinkCopied(true)).catch(() => {})
     },
     onError: (e) => setErr(apiError(e)),
   })
@@ -1432,10 +1474,52 @@ export default function NewQuote() {
                         >
                           <Download size={13} /> PDF
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => paymentLinkQuote.mutate()}
+                          disabled={paymentLinkQuote.isPending}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold hover:bg-gray-50 transition-colors disabled:opacity-60"
+                          style={{ color: PURPLE }}
+                        >
+                          <CreditCard size={13} /> {paymentLinkQuote.isPending ? 'Creating…' : 'Pay Link'}
+                        </button>
                       </div>
                     </div>
                     {sentMsg && <DoneBanner text={sentMsg} />}
                     {quoteEmailSent && <DoneBanner text={quoteEmailSent} />}
+                    {payLinkResult && (
+                      <div className="p-3 rounded-xl space-y-2" style={{ background: CHIP_BG }}>
+                        <p className="text-xs" style={{ color: MUTED }}>
+                          {payLinkCopied ? 'Payment link copied to clipboard.' : 'Payment link ready — copy below.'} Total: <strong style={{ color: INK }}>{formatMoney(payLinkResult.total)} AED</strong>
+                          {payLinkResult.feePct > 0 && (
+                            <> · card fee <strong style={{ color: INK }}>{formatMoney(payLinkResult.feeAmount)} AED</strong> ({payLinkResult.feePct}%) · customer pays <strong style={{ color: INK }}>{formatMoney(payLinkResult.totalCharged)} AED</strong></>
+                          )}
+                        </p>
+                        <p className="text-xs break-all" style={{ color: INK }}>{payLinkResult.payUrl}</p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => navigator.clipboard?.writeText(payLinkResult.payUrl).then(() => setPayLinkCopied(true))}
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium border hover:bg-gray-50 inline-flex items-center gap-1.5"
+                            style={{ color: INK, borderColor: 'rgba(20,8,31,0.15)' }}
+                          >
+                            <Copy size={12} /> {payLinkCopied ? 'Copied!' : 'Copy'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const phone = customerPhone.replace(/\D/g, '').replace(/^00/, '')
+                              const msg = `Hello ${customerName},\n\nYour storage quotation is ready — ${formatMoney(payLinkResult.total)} AED${payLinkResult.feePct > 0 ? ` (+ ${payLinkResult.feePct}% card fee, ${formatMoney(payLinkResult.totalCharged)} AED total)` : ''}.\n\nPay online: ${payLinkResult.payUrl}\n\nThank you — PurpleBox`
+                              window.open(phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
+                            }}
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium text-white"
+                            style={{ background: '#25D366' }}
+                          >
+                            Send via WhatsApp
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <>
@@ -1632,6 +1716,29 @@ export default function NewQuote() {
                           <button type="button" disabled={patchQuote.isPending}
                             onClick={() => { setVatEnabled(true); if (quoteId) patchQuote.mutate({ vatEnabled: true }) }}
                             className="font-bold cursor-pointer disabled:opacity-50" style={{ color: PURPLE }}>+ Add back</button>
+                        </div>
+                      )}
+                      {/* Informational only — never folded into Total below.
+                          It only applies if the customer chooses to pay this
+                          quote by Stripe card. */}
+                      {cardFeeEnabled ? (
+                        <InfoRow
+                          label={`Card fee if paid online (${cardFeePct}%)`}
+                          value={
+                            <span className="inline-flex items-center gap-2">
+                              +{formatMoney(cardFeeAmount)} AED
+                              <button type="button" title="Turn off the card fee for this quote" disabled={patchQuote.isPending}
+                                onClick={() => { setCardFeeEnabled(false); if (quoteId) patchQuote.mutate({ cardFeeEnabled: false }) }}
+                                className="text-destructive font-bold cursor-pointer leading-none disabled:opacity-50">×</button>
+                            </span>
+                          }
+                        />
+                      ) : (
+                        <div className="flex items-center justify-between text-[12px] py-1" style={{ color: MUTED }}>
+                          <span>Card fee off — no surcharge if paid online</span>
+                          <button type="button" disabled={patchQuote.isPending}
+                            onClick={() => { setCardFeeEnabled(true); if (quoteId) patchQuote.mutate({ cardFeeEnabled: true, cardFeePct }) }}
+                            className="font-bold cursor-pointer disabled:opacity-50" style={{ color: PURPLE }}>+ Turn on (3%)</button>
                         </div>
                       )}
                       <div style={{ borderTop: `1px solid ${PURPLE}20` }} className="mt-1 pt-1">

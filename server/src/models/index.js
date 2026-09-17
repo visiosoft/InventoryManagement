@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { currentConnection } from '../tenancy/context.js';
+import { softDeletePlugin } from '../utils/softDelete.js';
 
 const { Schema } = mongoose;
 
@@ -68,7 +69,7 @@ const ALL_MODULES = [
 const userSchema = new Schema(
   {
     name: { type: String, required: true },
-    email: { type: String, required: true, unique: true, lowercase: true },
+    email: { type: String, required: true, lowercase: true },
     passwordHash: { type: String, required: true },
     // 'accounts' is a second sales-rep-equivalent role: identical access and
     // data scope, kept separate only so the two teams can be told apart.
@@ -89,15 +90,23 @@ const userSchema = new Schema(
       enabled: { type: Boolean, default: true },
       completed: { type: [String], default: [] },
     },
+    /* Expo push tokens for the mobile app — one per device this person is
+       logged into, since a rep can carry both a work and a personal phone.
+       services/expoPush.js is the only writer: it adds a token on
+       registration and drops it the moment Expo reports the device gone,
+       so this never grows stale. */
+    pushTokens: { type: [String], default: [] },
   },
   { timestamps: true }
 );
+userSchema.index({ email: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+userSchema.plugin(softDeletePlugin);
 
 export { ALL_MODULES };
 
 const unitTypeSchema = new Schema(
   {
-    sizeSqf: { type: Number, required: true, unique: true },
+    sizeSqf: { type: Number, required: true },
     label: { type: String },
     weeklyRate: { type: Number, required: true, default: 0 },
     monthlyRate: { type: Number, required: true, default: 0 },
@@ -105,10 +114,12 @@ const unitTypeSchema = new Schema(
   },
   { timestamps: true }
 );
+unitTypeSchema.index({ sizeSqf: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+unitTypeSchema.plugin(softDeletePlugin);
 
 const unitSchema = new Schema(
   {
-    unitNumber: { type: String, required: true, unique: true },
+    unitNumber: { type: String, required: true },
     site: { type: Schema.Types.ObjectId, ref: 'Site', default: null }, // null = default site
     floor: { type: String, default: '' },
     sizeSqf: { type: Number, default: null },
@@ -126,6 +137,8 @@ const unitSchema = new Schema(
   },
   { timestamps: true }
 );
+unitSchema.index({ unitNumber: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+unitSchema.plugin(softDeletePlugin);
 
 const accessPersonSchema = new Schema(
   {
@@ -137,6 +150,26 @@ const accessPersonSchema = new Schema(
   },
   { _id: false }
 );
+
+/* What a Contract or MovingJob's e-signature actually proves — see
+ * services/documentSigning.js. Structured so Contract's in-house token flow,
+ * MovingJob's in-house token flow, and the Zoho Sign / offline-paper path all
+ * report through the same shape, rather than each recording something
+ * different (or nothing) for the same kind of event. */
+const signingRecordSchema = new Schema({
+  method: { type: String, enum: ['in_house_token', 'zoho_sign', 'offline_paper'], required: true },
+  signerName: { type: String, required: true },
+  signedAt: { type: Date, required: true },
+  ipAddress: { type: String, default: '' },
+  userAgent: { type: String, default: '' },
+  consentTextVersion: { type: String, default: '' },
+  consentText: { type: String, default: '' },
+  signatureMode: { type: String, enum: ['drawn', 'typed'], default: 'typed' },
+  // sha256, hex — of the exact PDF shown to the signer, and of the final
+  // signed PDF (before the certificate-of-completion page is appended).
+  documentHash: { type: String, required: true },
+  signedPdfHash: { type: String, required: true },
+}, { _id: false });
 
 const customerSchema = new Schema(
   {
@@ -193,6 +226,7 @@ const customerSchema = new Schema(
   },
   { timestamps: true }
 );
+customerSchema.plugin(softDeletePlugin);
 
 const leadCommentSchema = new Schema({
   user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
@@ -237,7 +271,7 @@ const leadSchema = new Schema(
     email: { type: String, default: '' },
     phone: { type: String, required: true },
     whatsappNo: { type: String, default: '' },
-    phoneNormalized: { type: String, required: true, unique: true },
+    phoneNormalized: { type: String, required: true },
     preferredContact: { type: String, enum: ['email', 'whatsapp'], default: 'whatsapp' },
     // Excluded from marketing campaigns; sales follow-up is unaffected.
     unsubscribed: { type: Boolean, default: false },
@@ -252,8 +286,11 @@ const leadSchema = new Schema(
       type: String,
       /* One primary status at a time — the CRM buckets.
          'won' and 'lost' keep their keys because the sales targets count them
-         and renaming would silently zero everyone's figures. */
-      enum: ['new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost'],
+         and renaming would silently zero everyone's figures.
+         'already_customer' is a third closed state, for a lead that turns
+         out to already be an existing customer — closed like won/lost, but
+         not a new deal, so it must never be counted as 'won'. */
+      enum: ['new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost', 'already_customer'],
       default: 'new',
     },
     /* How warm they are, kept apart from the status.
@@ -311,6 +348,21 @@ const leadSchema = new Schema(
        answered. What the "close this or give it one more" prompt reads off;
        cleared when somebody decides either way. */
     sequenceExhaustedAt: { type: Date, default: null },
+    /* A rep's own read on the lead score — services/leadScore.js's number is
+       arithmetic on an AI read that is not going to be right every time, so
+       this is where a person overrides it after actually talking to them.
+       Takes precedence over the computed score outright, never blended with
+       it: a rep who has spoken to this person knows something the model
+       cannot. Cleared automatically the next time the AI's own read of the
+       conversation changes (services/leadScore.js), so a stale confirmation
+       from before their last few messages never quietly outlives them. */
+    leadScoreOverride: { type: String, enum: ['', 'qualifying', 'not_interested'], default: '' },
+    leadScoreOverrideBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    leadScoreOverrideAt: { type: Date, default: null },
+    // The AI-read lead type (services/conversationSummary.js's leadType) the
+    // override above was set against — how the "cleared when it changes"
+    // rule above knows whether the conversation has actually moved since.
+    leadScoreOverrideForLeadType: { type: String, default: '' },
     source: {
       type: String,
       enum: ['manual', 'whatsapp', 'referral', 'walk_in', 'other'],
@@ -327,6 +379,35 @@ const leadSchema = new Schema(
        itself — see services/leadSla.js. */
     slaNudgedAt: { type: Date, default: null },
     slaReassignedAt: { type: Date, default: null },
+    /* When the owner was last told this particular silence had gone on too
+       long — see services/quietNudge.js. Compared against the conversation's
+       own last-outbound time, not just "is it set": once the rep speaks again
+       and it goes quiet a second time, that is a new silence and earns a new
+       nudge, so this is never explicitly cleared on reply. */
+    quietNudgedAt: { type: Date, default: null },
+
+    /* The mobile "you've been given a lead" push, and its lifecycle.
+     *
+     * Stamped the moment services/leadNotify.js actually sends the push —
+     * not the moment the lead is assigned, because an owner with no
+     * registered device gets no push and should not be treated as reminded.
+     * Cleared (via $unset) on every fresh hand-off so a lead moved a second
+     * time gets its own notification rather than reusing the last one's
+     * state. */
+    assignmentNotifiedAt: { type: Date, default: null },
+    /* Set the moment the rep actually replies to this lead on WhatsApp — see
+       services/aiBot.js's markFirstResponse, the one place every outbound
+       send already passes through. Read by the mobile app to decide the push
+       is stale and by services/leadAssignReminder.js to leave a lead alone
+       once it has genuinely been answered, even before firstResponseAt (a
+       slower-moving, more official field elsewhere) catches up. */
+    assignmentNotificationDismissedAt: { type: Date, default: null },
+    /* When the owner was last reminded that this one is still sitting
+       unanswered — see services/leadAssignReminder.js. Same idea as
+       quietNudgedAt: compared against assignedAt so a lead reassigned since
+       the last reminder starts a fresh window rather than being skipped
+       forever. At most one reminder per lead per day. */
+    assignmentReminderSentAt: { type: Date, default: null },
 
     /* When somebody was put on this lead.
      *
@@ -366,6 +447,35 @@ const leadSchema = new Schema(
     storageSizeUnit: { type: String, enum: ['sqft'], default: 'sqft' },
     durationValue: { type: Number, default: 1, min: 1 },
     durationUnit: { type: String, enum: ['week', 'month'], default: 'month' },
+    /* When they actually said they'd need it — not when we should next
+       contact them (followUpAt), a different question with a different
+       answer: someone ready to book next month is not overdue for a reply
+       today. Set by a rep from a call the AI never saw, or corrected when
+       the AI's own free-text reading of "timing" missed it. Read by
+       services/leadScore.js so "not ready right now" scores as a real,
+       future-dated lead rather than as a cold, vague one. */
+    intendedStartDate: { type: Date, default: null },
+    /* The other end of intendedStartDate — set only by the WhatsApp
+       moving/storage booking flow once a customer gives both ends of a
+       date range, alongside selectedUnit below. Nothing else writes this. */
+    bookingEndDate: { type: Date, default: null },
+    /* The specific unit a customer picked in that same flow — a live
+       availability check found it free for their dates at the moment they
+       asked, not a hold; whoever converts this to a quote re-checks. */
+    selectedUnit: { type: Schema.Types.ObjectId, ref: 'Unit', default: null },
+    /* A rep's own yes/no read on whether they can actually afford this —
+       asked on a call or in person, never inferred from anything the AI
+       read. '' means nobody has asked yet. */
+    financiallyQualified: { type: String, enum: ['', 'yes', 'no'], default: '' },
+    /* Which of the two facilities they actually want. A plain enum rather
+       than a Site reference: reps talk about "Al Quoz" or "DIP" as places,
+       not as the longer Site records those names resolve to. */
+    locationPreference: { type: String, enum: ['', 'Al Quoz', 'DIP'], default: '' },
+    /* Stamped the moment a rep actually confirms durationValue/durationUnit
+       with the lead. Both fields carry a real-looking default from creation
+       (1 month), so their presence alone can never mean "documented" — this
+       is the only honest signal that somebody has actually asked. */
+    lengthOfStayConfirmedAt: { type: Date, default: null },
     owner: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     unitsNeeded: { type: Number, required: true, min: 1 },
     notes: { type: String, default: '' },
@@ -386,6 +496,8 @@ const leadSchema = new Schema(
 leadSchema.index({ leadDateTime: -1, createdAt: -1 });
 leadSchema.index({ status: 1, owner: 1, leadDateTime: -1 });
 leadSchema.index({ source: 1, createdAt: -1 });
+leadSchema.index({ phoneNormalized: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+leadSchema.plugin(softDeletePlugin);
 
 const whatsappWebhookEventSchema = new Schema(
   {
@@ -409,11 +521,11 @@ whatsappWebhookEventSchema.index({ phoneNormalized: 1, createdAt: -1 });
 const whatsappLabelStateSchema = new Schema(
   {
     phone: { type: String, default: '' },
-    phoneNormalized: { type: String, required: true, unique: true },
+    phoneNormalized: { type: String, required: true },
     labels: { type: [String], default: [] },
     mappedStatus: {
       type: String,
-      enum: ['', 'new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost'],
+      enum: ['', 'new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost', 'already_customer'],
       default: '',
     },
     lastEventKey: { type: String, default: '' },
@@ -424,6 +536,8 @@ const whatsappLabelStateSchema = new Schema(
 );
 
 whatsappLabelStateSchema.index({ mappedStatus: 1, updatedAt: -1 });
+whatsappLabelStateSchema.index({ phoneNormalized: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+whatsappLabelStateSchema.plugin(softDeletePlugin);
 
 const whatsappMessageSchema = new Schema(
   {
@@ -482,10 +596,15 @@ whatsappMessageSchema.index({ messageId: 1 }, { unique: true, sparse: true });
    lean on and so sorted in memory. Cheap at four thousand messages, and the
    thing that quietly stops scaling as the archive grows. */
 whatsappMessageSchema.index({ occurredAt: -1 });
+// Named removedAt/removedBy (not deletedAt/deletedBy): this schema's own
+// `deletedAt` already means "WhatsApp reported this message deleted by the
+// sender" (see above) — an unrelated concept from an admin soft-deleting a
+// whole conversation, so the two must not collide.
+whatsappMessageSchema.plugin(softDeletePlugin, { deletedAtField: 'removedAt', deletedByField: 'removedBy' });
 
 const contractSchema = new Schema(
   {
-    contractNo: { type: String, required: true, unique: true },
+    contractNo: { type: String, required: true },
     customer: { type: Schema.Types.ObjectId, ref: 'Customer', required: true },
     unit: { type: Schema.Types.ObjectId, ref: 'Unit', required: true },
     units: [{ type: Schema.Types.ObjectId, ref: 'Unit' }],
@@ -517,6 +636,7 @@ const contractSchema = new Schema(
     },
     zohoRequestId: { type: String, default: '' },
     signedDocUrl: { type: String, default: '' },
+    signingRecord: { type: signingRecordSchema, default: null },
     // The agreement wording for this contract, editable per contract. Empty
     // means "use the saved agreement template". Stored with placeholders
     // already resolved so what you read is exactly what the PDF prints.
@@ -609,12 +729,17 @@ contractSchema.index(
   { externalId: 1 },
   { unique: true, partialFilterExpression: { externalId: { $type: 'string', $gt: '' } } }
 );
+contractSchema.index({ contractNo: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+contractSchema.plugin(softDeletePlugin);
 // Hot lookups: contract lists, unit-conflict checks and customer history
 contractSchema.index({ archived: 1, createdAt: -1 });
 contractSchema.index({ unit: 1, status: 1 });
 contractSchema.index({ units: 1, status: 1 });
 contractSchema.index({ customer: 1, createdAt: -1 });
 contractSchema.index({ status: 1, endDate: 1 });
+// Backs /reports/summary's move-in / move-out-this-month queries, which
+// filter on status + startDate — the endDate index above doesn't cover it.
+contractSchema.index({ status: 1, startDate: 1 });
 contractSchema.index({ approvalStatus: 1, updatedAt: -1 });
 
 const quoteItemSchema = new Schema(
@@ -675,7 +800,7 @@ export const DEFAULT_QUOTE_TERMS = [
 
 const quoteSchema = new Schema(
   {
-    quoteNo: { type: String, required: true, unique: true },
+    quoteNo: { type: String, required: true },
     quoteDate: { type: Date, required: true, default: Date.now },
     creationDate: { type: Date, required: true, default: Date.now },
     salesperson: { type: String, default: '' },
@@ -711,6 +836,19 @@ const quoteSchema = new Schema(
     notes: { type: String, default: '' },
     status: { type: String, enum: ['draft', 'sent', 'accepted', 'rejected', 'expired'], default: 'draft' },
     shareToken: { type: String, default: null },
+    // A Stripe Checkout session for paying this quote online, and when it
+    // actually cleared — the webhook sets stripePaidAt, nothing else does.
+    stripeCheckoutSessionId: { type: String, default: null },
+    stripePaymentLinkUrl: { type: String, default: null },
+    stripePaidAt: { type: Date, default: null },
+    /* Whether a card-processing surcharge applies if this is paid by Stripe —
+     * decided on the quote itself, the same way vatEnabled is, not from a
+     * site-wide switch. Off by default. Deliberately kept out of `total`:
+     * VAT is owed however the customer pays, but this fee only exists if
+     * they choose to pay by card, so it must never inflate the quoted price
+     * itself — only what the Stripe Checkout session actually charges. */
+    cardFeeEnabled: { type: Boolean, default: false },
+    cardFeePct: { type: Number, default: 3, min: 0, max: 15 },
     contract: { type: Schema.Types.ObjectId, ref: 'Contract' },
     flowStep: { type: Number, default: 0, min: 0, max: 5 },
     /* The terms as they stood when this quote was made. A copy, not a
@@ -730,6 +868,8 @@ const quoteSchema = new Schema(
   },
   { timestamps: true }
 );
+quoteSchema.index({ quoteNo: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+quoteSchema.plugin(softDeletePlugin);
 
 const invoiceItemSchema = new Schema(
   {
@@ -768,7 +908,7 @@ const invoiceAttachmentSchema = new Schema(
 
 const invoiceSchema = new Schema(
   {
-    invoiceNo: { type: String, required: true, unique: true },
+    invoiceNo: { type: String, required: true },
     orderNumber: { type: String, default: '' },
     invoiceDate: { type: Date, required: true, default: Date.now },
     terms: { type: String, default: '' },
@@ -788,6 +928,17 @@ const invoiceSchema = new Schema(
     attachments: { type: [invoiceAttachmentSchema], default: [] },
     status: { type: String, enum: ['draft', 'sent', 'paid', 'partial', 'overdue', 'cancelled'], default: 'draft' },
     shareToken: { type: String, default: null },
+    // The current Stripe Checkout link for the outstanding balance — kept
+    // rather than regenerated on every request, so a link already sent stays
+    // valid (the short /pay/link/:id redirect always points at whatever is
+    // stored here).
+    stripeCheckoutSessionId: { type: String, default: null },
+    stripePaymentLinkUrl: { type: String, default: null },
+    // Same on/off-on-the-document idea as the quote's — set while editing
+    // this invoice, not from a site-wide switch. Kept out of `total` for the
+    // same reason: it only applies if they actually pay by card.
+    cardFeeEnabled: { type: Boolean, default: false },
+    cardFeePct: { type: Number, default: 3, min: 0, max: 15 },
     source: { type: String, enum: ['manual', 'import_csv'], default: 'manual' },
     importBatch: { type: String, default: null },
     // Zoho Books sync
@@ -797,11 +948,13 @@ const invoiceSchema = new Schema(
   },
   { timestamps: true }
 );
+invoiceSchema.index({ invoiceNo: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+invoiceSchema.plugin(softDeletePlugin);
 
 const vendorSchema = new Schema(
   {
     vendorCode: { type: String, default: '' },
-    contactId: { type: String, required: true, unique: true },
+    contactId: { type: String, required: true },
     contactName: { type: String, required: true },
     companyName: { type: String, default: '' },
     displayName: { type: String, default: '' },
@@ -848,6 +1001,8 @@ const vendorSchema = new Schema(
 
 vendorSchema.index({ contactName: 1 });
 vendorSchema.index({ companyName: 1 });
+vendorSchema.index({ contactId: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+vendorSchema.plugin(softDeletePlugin);
 
 const purchaseItemSchema = new Schema(
   {
@@ -883,7 +1038,7 @@ const purchaseAttachmentSchema = new Schema(
 
 const purchaseSchema = new Schema(
   {
-    purchaseNo: { type: String, required: true, unique: true },
+    purchaseNo: { type: String, required: true },
     vendor: { type: Schema.Types.ObjectId, ref: 'Vendor' },
     vendorName: { type: String, default: '' },
     billId: { type: String, default: '' },
@@ -929,6 +1084,8 @@ const purchaseSchema = new Schema(
   },
   { timestamps: true }
 );
+purchaseSchema.index({ purchaseNo: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+purchaseSchema.plugin(softDeletePlugin);
 
 const expenseSchema = new Schema(
   {
@@ -989,7 +1146,11 @@ expenseSchema.index({ expenseDate: -1, createdAt: -1 });
 expenseSchema.index({ vendor: 1, expenseDate: -1 });
 expenseSchema.index({ expenseAccount: 1, expenseDate: -1 });
 expenseSchema.index({ status: 1, expenseDate: -1 });
-expenseSchema.index({ expenseReferenceId: 1 }, { unique: true, sparse: true });
+expenseSchema.index(
+  { expenseReferenceId: 1 },
+  { unique: true, partialFilterExpression: { expenseReferenceId: { $exists: true }, deletedAt: null } }
+);
+expenseSchema.plugin(softDeletePlugin);
 
 const paymentSchema = new Schema(
   {
@@ -1005,10 +1166,11 @@ const paymentSchema = new Schema(
   },
   { timestamps: true }
 );
+paymentSchema.plugin(softDeletePlugin);
 
 const movingItemSchema = new Schema(
   {
-    sku: { type: String, required: true, unique: true },
+    sku: { type: String, required: true },
     name: { type: String, required: true },
     category: { type: String, default: 'box' },
     sizeLabel: { type: String, default: '' },
@@ -1047,10 +1209,13 @@ const movingStockTxnSchema = new Schema(
 
 movingItemSchema.index({ name: 1, sizeLabel: 1 });
 movingItemSchema.index({ active: 1, onHand: 1 });
+movingItemSchema.index({ sku: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+movingItemSchema.plugin(softDeletePlugin);
 movingStockTxnSchema.index({ item: 1, txnDate: -1 });
 movingStockTxnSchema.index({ contract: 1, txnDate: -1 });
 movingStockTxnSchema.index({ customer: 1, txnDate: -1 });
 movingStockTxnSchema.index({ movingJob: 1, txnDate: -1 });
+movingStockTxnSchema.plugin(softDeletePlugin);
 
 // ── Moving Business Schemas ──────────────────────────────────────────────────
 
@@ -1072,6 +1237,7 @@ const workerSchema = new Schema(
   { timestamps: true }
 );
 workerSchema.index({ status: 1, name: 1 });
+workerSchema.plugin(softDeletePlugin);
 
 const truckSchema = new Schema(
   {
@@ -1088,6 +1254,7 @@ const truckSchema = new Schema(
   { timestamps: true }
 );
 truckSchema.index({ status: 1 });
+truckSchema.plugin(softDeletePlugin);
 
 const movingTimelineEntrySchema = new Schema(
   { at: { type: Date, default: Date.now }, text: { type: String, default: '' }, author: { type: String, default: '' } },
@@ -1143,6 +1310,7 @@ const movingLeadSchema = new Schema(
 movingLeadSchema.index({ status: 1, createdAt: -1 });
 movingLeadSchema.index({ customer: 1 });
 movingLeadSchema.index({ status: 1, owner: 1 });
+movingLeadSchema.plugin(softDeletePlugin);
 
 const movingJobCrewSchema = new Schema(
   {
@@ -1201,7 +1369,7 @@ const movingMaterialUsageSchema = new Schema(
 
 const movingJobSchema = new Schema(
   {
-    jobNo: { type: String, required: true, unique: true },
+    jobNo: { type: String, required: true },
     // Free-text job name shown alongside the job number
     title: { type: String, default: '' },
     customer: { type: Schema.Types.ObjectId, ref: 'Customer', required: true },
@@ -1282,6 +1450,13 @@ const movingJobSchema = new Schema(
       createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
       createdByName: { type: String, default: '' },
       createdAt: { type: Date, default: Date.now },
+      // A visit is a subdocument, not its own collection, so the
+      // softDeletePlugin's query filtering doesn't reach it — these three
+      // fields are the same idea applied by hand. Routes filter `deleted`
+      // out of what they return instead of a query excluding it.
+      deleted: { type: Boolean, default: false },
+      deletedAt: { type: Date, default: null },
+      deletedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     }],
     uploadToken: { type: String, default: null },
     shareToken: { type: String, default: null },
@@ -1289,12 +1464,27 @@ const movingJobSchema = new Schema(
     signingToken: { type: String, default: null },
     signingTokenExpiry: { type: Date, default: null },
     signedDocUrl: { type: String, default: '' },
+    signingRecord: { type: signingRecordSchema, default: null },
   },
   { timestamps: true }
 );
 movingJobSchema.index({ status: 1, scheduledDate: -1 });
 movingJobSchema.index({ customer: 1, scheduledDate: -1 });
 movingJobSchema.index({ scheduledDate: 1 });
+movingJobSchema.index({ jobNo: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+movingJobSchema.plugin(softDeletePlugin);
+// clientVisits is a subdocument array, not its own collection, so the
+// softDeletePlugin's query-level filtering never sees it — a soft-deleted
+// visit has to be stripped here instead, on every read, rather than trusting
+// each route that returns a job to remember to filter it by hand.
+movingJobSchema.set('toJSON', {
+  transform(doc, ret) {
+    if (Array.isArray(ret.clientVisits)) {
+      ret.clientVisits = ret.clientVisits.filter((v) => !v.deleted);
+    }
+    return ret;
+  },
+});
 
 const movingQuoteItemSchema = new Schema(
   {
@@ -1309,7 +1499,7 @@ const movingQuoteItemSchema = new Schema(
 
 const movingQuoteSchema = new Schema(
   {
-    quoteNo: { type: String, required: true, unique: true },
+    quoteNo: { type: String, required: true },
     job: { type: Schema.Types.ObjectId, ref: 'MovingJob' },
     customer: { type: Schema.Types.ObjectId, ref: 'Customer', required: true },
     status: { type: String, enum: ['draft', 'sent', 'accepted', 'rejected', 'expired'], default: 'draft' },
@@ -1337,11 +1527,16 @@ const movingQuoteSchema = new Schema(
     termsAndConditions: { type: String, default: '' },
     salesperson: { type: String, default: '' },
     shareToken: { type: String, default: null },
+    stripeCheckoutSessionId: { type: String, default: null },
+    stripePaymentLinkUrl: { type: String, default: null },
+    stripePaidAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
 movingQuoteSchema.index({ customer: 1, createdAt: -1 });
 movingQuoteSchema.index({ status: 1 });
+movingQuoteSchema.index({ quoteNo: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+movingQuoteSchema.plugin(softDeletePlugin);
 
 const movingInvoicePaymentSchema = new Schema(
   {
@@ -1368,7 +1563,7 @@ const movingInvoiceAttachmentSchema = new Schema(
 
 const movingInvoiceSchema = new Schema(
   {
-    invoiceNo: { type: String, required: true, unique: true },
+    invoiceNo: { type: String, required: true },
     job: { type: Schema.Types.ObjectId, ref: 'MovingJob' },
     customer: { type: Schema.Types.ObjectId, ref: 'Customer', required: true },
     status: { type: String, enum: ['draft', 'sent', 'paid', 'partial', 'cancelled'], default: 'draft' },
@@ -1401,6 +1596,8 @@ const movingInvoiceSchema = new Schema(
 movingInvoiceSchema.index({ customer: 1, createdAt: -1 });
 movingInvoiceSchema.index({ status: 1 });
 movingInvoiceSchema.index({ job: 1 });
+movingInvoiceSchema.index({ invoiceNo: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+movingInvoiceSchema.plugin(softDeletePlugin);
 
 const movingSurveyItemSchema = new Schema(
   {
@@ -1475,19 +1672,29 @@ const documentSchema = new Schema(
 
 const auditLogSchema = new Schema(
   {
-    user: { type: Schema.Types.ObjectId, ref: 'User' },
+    user: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    // Denormalized so a row still reads sensibly if the user is later renamed
+    // or removed — a log is a record of what happened, not a live join.
+    userName: { type: String, default: '' },
+    userEmail: { type: String, default: '' },
     action: { type: String, required: true },
     entity: { type: String, required: true },
     entityId: { type: String, default: '' },
+    method: { type: String, default: '' },
+    path: { type: String, default: '' },
+    ipAddress: { type: String, default: '' },
     detail: { type: String, default: '' },
   },
   { timestamps: true }
 );
+auditLogSchema.index({ createdAt: -1 });
+auditLogSchema.index({ entity: 1, createdAt: -1 });
+auditLogSchema.index({ user: 1, createdAt: -1 });
 
 // ── Damage Claims ────────────────────────────────────────────────────────────
 const movingClaimSchema = new Schema(
   {
-    claimNo: { type: String, required: true, unique: true },
+    claimNo: { type: String, required: true },
     job: { type: Schema.Types.ObjectId, ref: 'MovingJob', required: true },
     customer: { type: Schema.Types.ObjectId, ref: 'Customer', required: true },
     status: { type: String, enum: ['reported', 'under_review', 'approved', 'rejected', 'settled'], default: 'reported' },
@@ -1510,9 +1717,11 @@ const movingClaimSchema = new Schema(
 movingClaimSchema.index({ job: 1 });
 movingClaimSchema.index({ customer: 1 });
 movingClaimSchema.index({ status: 1, createdAt: -1 });
+movingClaimSchema.index({ claimNo: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+movingClaimSchema.plugin(softDeletePlugin);
 
 const siteVisitSchema = new Schema({
-  visitNo: { type: String, required: true, unique: true },
+  visitNo: { type: String, required: true },
   visitDate: { type: Date, required: true },
   visitTime: { type: String, default: '' },
   customerName: { type: String, default: '' },
@@ -1525,6 +1734,8 @@ const siteVisitSchema = new Schema({
   createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
   createdByName: { type: String, default: '' },
 }, { timestamps: true });
+siteVisitSchema.index({ visitNo: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+siteVisitSchema.plugin(softDeletePlugin);
 
 const reminderStageSchema = new Schema({
   name: { type: String, default: '' },
@@ -1688,7 +1899,12 @@ const campaignRecipientSchema = new Schema({
 campaignRecipientSchema.index({ campaign: 1, status: 1 });
 // The same person must not appear twice on one campaign and one channel, even
 // if they arrived from both the tenant list and the lead list.
-campaignRecipientSchema.index({ campaign: 1, channel: 1, kind: 1, refId: 1 }, { unique: true });
+campaignRecipientSchema.index(
+  { campaign: 1, channel: 1, kind: 1, refId: 1 },
+  { unique: true, partialFilterExpression: { deletedAt: null } }
+);
+campaignSchema.plugin(softDeletePlugin);
+campaignRecipientSchema.plugin(softDeletePlugin);
 
 export const Campaign = tenantModel('Campaign');
 export const CampaignRecipient = tenantModel('CampaignRecipient');
@@ -1703,17 +1919,34 @@ const whatsappLabelSchema = new Schema({
   color: { type: String, default: '#5B2BC9' },
   sortOrder: { type: Number, default: 0 },
 }, { timestamps: true });
-whatsappLabelSchema.index({ name: 1 }, { unique: true });
+whatsappLabelSchema.index({ name: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+whatsappLabelSchema.plugin(softDeletePlugin);
 
 // Which labels are on a conversation. Keyed by number rather than by lead or
 // customer, because a chat has a number long before it has either.
 const whatsappChatLabelSchema = new Schema({
-  phoneNormalized: { type: String, required: true, unique: true },
+  phoneNormalized: { type: String, required: true },
   labels: [{ type: Schema.Types.ObjectId, ref: 'WhatsAppLabel' }],
 }, { timestamps: true });
+whatsappChatLabelSchema.index({ phoneNormalized: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+whatsappChatLabelSchema.plugin(softDeletePlugin);
 
 export const WhatsAppLabel = tenantModel('WhatsAppLabel');
 export const WhatsAppChatLabel = tenantModel('WhatsAppChatLabel');
+
+/* A number the team never wants to hear from again. Checked at the very
+ * top of whatsappLeadSync.js's persistMessages — a blocked number's
+ * inbound traffic is dropped before a message is saved, before a Lead is
+ * touched, before any bot or flow handling runs. Deliberately its own tiny
+ * collection rather than a field on Lead: a number can be blocked whether
+ * or not a Lead exists for it yet, and blocking must survive that Lead
+ * being deleted later. */
+const whatsappBlockedNumberSchema = new Schema({
+  phoneNormalized: { type: String, required: true, unique: true },
+  blockedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+  reason: { type: String, default: '' },
+}, { timestamps: true });
+export const WhatsAppBlockedNumber = tenantModel('WhatsAppBlockedNumber');
 
 // ── WhatsApp AI assistant ────────────────────────────────────────────────────
 // One config document for the whole account, the same shape reminderConfig uses.
@@ -1833,8 +2066,121 @@ const dailyDigestSchema = new Schema({
 
 export const DailyDigest = tenantModel('DailyDigest');
 
+/* ── The assistant ─────────────────────────────────────────────────────────
+ *
+ * The chat in the corner of every page. It answers only from tools the
+ * server runs against this database; the prompt here steers tone and
+ * priorities, not facts. Same singleton shape as the WhatsApp assistant. */
+const assistantConfigSchema = new Schema({
+  enabled: { type: Boolean, default: true },
+  systemPrompt: { type: String, default: '' },
+  // '' follows the server's model. Tool calling needs a model that supports it.
+  model: { type: String, default: '' },
+  // How many tool rounds one question may take before it has to answer.
+  maxToolRounds: { type: Number, default: 4 },
+  // Who may use it. Reports are admin and accounts; this sees the same data.
+  roles: { type: [String], default: ['admin', 'accounts'] },
+  /* Whether it may do things — create a quotation, send it — as well as
+   * answer. Every action is proposed first and runs only when a person
+   * confirms it in the widget; this switch decides whether it may even
+   * propose. Admin only by default: an action here reserves a unit and
+   * messages a customer. */
+  actionsEnabled: { type: Boolean, default: true },
+  actionRoles: { type: [String], default: ['admin'] },
+}, { timestamps: true });
+export const AssistantConfig = tenantModel('AssistantConfig');
+
 export const AiBotConfig = tenantModel('AiBotConfig');
 export const AiBotThread = tenantModel('AiBotThread');
+
+/* A step in a WhatsAppFlowTemplate — see services/movingStorageFlow.js for
+ * how each `kind` is actually run. `_id: false`: steps are addressed by
+ * their position in the array, the same convention automationStepSchema
+ * (above) uses for AutomationRule's own steps. */
+const flowStepSchema = new Schema({
+  kind: {
+    type: String,
+    enum: ['buttons', 'size_list', 'date_range', 'text_question', 'handoff'],
+    required: true,
+  },
+  prompt: { type: String, default: '' },
+  // buttons: 2-3 of these. 'handoff' ends the conversation there and then;
+  // 'next' moves on to the following step. Matched back by array index
+  // when a reply arrives (see movingStorageFlow.js) — never by label text,
+  // which an admin can reword at any time.
+  options: [{
+    label: { type: String, default: '' },
+    action: { type: String, enum: ['next', 'handoff'], default: 'next' },
+  }],
+  // size_list only:
+  listButtonLabel: { type: String, default: 'Choose' },
+  helpOptionLabel: { type: String, default: '' }, // '' = no trailing help row
+  // text_question only — the only two fields this flow collects this way.
+  saveField: { type: String, enum: ['fullName', 'contactPhone'], default: 'fullName' },
+  // date_range only. Both support {unitNumber} {size} {price} {from} {to}.
+  noAvailabilityText: { type: String, default: '' },
+  confirmationText: { type: String, default: '' },
+}, { _id: false });
+
+/* A named, editable WhatsApp conversation — what used to be the single
+ * hardcoded Moving/Storage flow (services/movingStorageFlow.js) is now the
+ * seeded default row here. At most one template is `active` at a time;
+ * none active means the feature is off, same as movingStorageFlowEnabled
+ * used to. `custom` distinguishes an admin-created template from the
+ * seeded one, mirroring AutomationRule's own convention. */
+const whatsAppFlowTemplateSchema = new Schema({
+  name: { type: String, required: true },
+  active: { type: Boolean, default: false },
+  custom: { type: Boolean, default: false },
+  order: { type: Number, default: 0 },
+  // Sent whenever a buttons option or size_list's help row hands off, and
+  // whenever a deleted/missing template forces an early exit.
+  handoffText: { type: String, default: '' },
+  // Sent once the last step finishes and the Lead has been updated.
+  // Supports {name} {unitNumber} {size} {price} {from} {to}.
+  completionText: { type: String, default: '' },
+  steps: { type: [flowStepSchema], default: [] },
+}, { timestamps: true });
+whatsAppFlowTemplateSchema.plugin(softDeletePlugin);
+export const WhatsAppFlowTemplate = tenantModel('WhatsAppFlowTemplate');
+
+/* One per conversation, holding a flow template's own place in it — see
+ * services/movingStorageFlow.js. Deliberately separate from AiBotThread
+ * above: that state machine is the assistant's claim/draft/escalate
+ * lifecycle, this one just walks a template's steps in order, and
+ * conflating the two would mean either could clobber the other's idea of
+ * what's happening on this number. */
+const movingStorageFlowSchema = new Schema({
+  phoneNormalized: { type: String, required: true, unique: true },
+  // Snapshotted when the thread is created, not re-read from "whichever
+  // template is active" on every message — an admin editing the live
+  // template mid-conversation should not yank someone out from under it.
+  templateId: { type: Schema.Types.ObjectId, ref: 'WhatsAppFlowTemplate', default: null },
+  stepIndex: { type: Number, default: 0 },
+  // Only meaningful while the current step is a date_range kind — it's a
+  // small multi-turn exchange of its own (a calendar Flow round trip, or
+  // two plain-text questions), which a single stepIndex can't distinguish
+  // from "waiting on the next step entirely". '' the rest of the time.
+  dateSubStep: { type: String, enum: ['', 'awaiting_flow', 'awaiting_from', 'awaiting_to'], default: '' },
+  done: { type: Boolean, default: false },
+  // The sqft size mid-flow, e.g. '25' — kept as a string since it's only
+  // ever read back into a message or an id, never added or compared.
+  size: { type: String, default: '' },
+  // The specific unit a live availability check found free for the given
+  // dates — picked once a date_range step completes, so the questions
+  // that follow confirm a real unit rather than a size.
+  unit: { type: Schema.Types.ObjectId, ref: 'Unit', default: null },
+  unitNumber: { type: String, default: '' },
+  monthlyPrice: { type: Number, default: null },
+  reservation: {
+    name: { type: String, default: '' },
+    contactPhone: { type: String, default: '' },
+    startDate: { type: Date, default: null },
+    endDate: { type: Date, default: null },
+  },
+  completedAt: { type: Date, default: null },
+}, { timestamps: true });
+export const MovingStorageFlowThread = tenantModel('MovingStorageFlowThread');
 
 const counterSchema = new Schema({
   key: { type: String, required: true, unique: true },
@@ -1885,6 +2231,7 @@ const siteSchema = new Schema({
     updatedAt: { type: Date, default: null },
   },
 }, { timestamps: true });
+siteSchema.plugin(softDeletePlugin);
 
 // ── Indexes for the hottest queries ───────────────────────────────────────────
 // Without these, payments/invoices/documents lookups scan the whole collection
@@ -1901,6 +2248,7 @@ invoiceSchema.index({ status: 1, dueDate: 1 });
 documentSchema.index({ contract: 1, createdAt: -1 });
 documentSchema.index({ customer: 1 });
 documentSchema.index({ name: 1 });
+documentSchema.plugin(softDeletePlugin);
 
 unitSchema.index({ status: 1 });
 unitSchema.index({ site: 1, status: 1 });
@@ -1945,7 +2293,7 @@ export const WhatsAppMessage = tenantModel('WhatsAppMessage');
  * its own — nothing here decides anything.
  */
 const leadRoutingRuleSchema = new Schema({
-  user: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+  user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   /* A share, not a promise of a percentage. They need not sum to 100: two reps
      on 2 and 1 split the day two to one, which is the same thing as 67 and 33
      and easier to type. */
@@ -1970,6 +2318,8 @@ const leadRoutingRuleSchema = new Schema({
   fallbackUser: { type: Schema.Types.ObjectId, ref: 'User', default: null },
   notes: { type: String, default: '' },
 }, { timestamps: true });
+leadRoutingRuleSchema.index({ user: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+leadRoutingRuleSchema.plugin(softDeletePlugin);
 
 /** The settings that are not about one person. A single document. */
 const leadRoutingConfigSchema = new Schema({
@@ -1989,7 +2339,102 @@ const leadRoutingConfigSchema = new Schema({
      to being taken back and given to somebody else. 0 turns either off. */
   slaNudgeMinutes: { type: Number, default: 15, min: 0 },
   slaReassignMinutes: { type: Number, default: 30, min: 0 },
+  /* How many days silent, with us having spoken last, before a lead counts as
+     "gone quiet" — see services/chatFollowUp.js's QUIET_DAYS for the reasoning
+     behind the default. Admin-configurable because the right number is a
+     judgement about how big a backlog is still clearable, not a fact. */
+  quietFollowUpDays: { type: Number, default: 3, min: 1, max: 30 },
+  /* The escalating cadence for the automated WhatsApp quiet-lead path —
+     "Follow-up 1 / 2 / 3", each so many days after we last spoke. Distinct
+     from FollowUpPlan.steps, which is the rep's manual chase (call, voice
+     note) before first contact; this only labels and recommends the
+     template sends. Read by services/followUpQueue.js. */
+  quietFollowUpStages: {
+    type: [{ afterDays: { type: Number, min: 1, max: 90 } }],
+    default: () => [{ afterDays: 3 }, { afterDays: 7 }, { afterDays: 14 }],
+  },
+  /* A much earlier, much smaller warning than the one above: not a backlog to
+     batch-review in a few days, a nudge to the rep themselves within hours,
+     while there is still a good chance of catching the conversation warm.
+     Off by default — a fresh deploy should not start pushing notifications
+     nobody asked for onto everyone's phone. */
+  quietNudgeEnabled: { type: Boolean, default: false },
+  quietNudgeHours: { type: Number, default: 6, min: 1, max: 72 },
 }, { timestamps: true });
+
+/* ── Contract renewals ──────────────────────────────────────────────────────
+ *
+ * A tenant renewing from the expiry link chooses a date on Monday and may pay
+ * on Thursday. This is what is agreed in between: without it the Stripe webhook
+ * arrives holding a session id and nothing that says what it was for.
+ *
+ * It also freezes the price. Renewals are quoted at the unit's current list
+ * price, so a price rise between choosing and paying would otherwise change
+ * what the tenant is charged after they agreed it. Every figure is stored, not
+ * recomputed on the way out.
+ *
+ * The contract is NOT extended when this is created. It is extended when the
+ * money is real — the webhook for a card, a colleague confirming receipt for a
+ * bank transfer — because a tenant who opens the page and wanders off must not
+ * end up with six free months.
+ */
+const contractRenewalSchema = new Schema({
+  contract: { type: Schema.Types.ObjectId, ref: 'Contract', required: true },
+  customer: { type: Schema.Types.ObjectId, ref: 'Customer', required: true },
+
+  /* What the contract's end date was when this was quoted. If it has moved
+     since — somebody extended by hand, or an earlier renewal landed — applying
+     this one would extend from the wrong place, so it is checked before use
+     rather than trusted. */
+  currentEndDate: { type: Date, required: true },
+  newEndDate: { type: Date, required: true },
+
+  weeks: { type: Number, required: true },
+  monthlyRate: { type: Number, required: true },
+  weeklyRate: { type: Number, required: true },
+  // 'list' — today's unit price; 'contract' — fell back to the signed rate
+  // because a unit carries no price. Kept so a surprising figure can be
+  // explained without re-deriving it.
+  rateSource: { type: String, enum: ['list', 'contract'], default: 'list' },
+
+  subTotal: { type: Number, required: true },
+  vatPct: { type: Number, default: 5 },
+  vatAmount: { type: Number, default: 0 },
+  // Rent plus VAT. The card fee is deliberately not in here: what is owed does
+  // not depend on how it is paid.
+  total: { type: Number, required: true },
+  cardFeePct: { type: Number, default: 0 },
+  cardFeeAmount: { type: Number, default: 0 },
+
+  method: { type: String, enum: ['card', 'bank_transfer'], required: true },
+  /* pending        — card session opened, not yet paid
+     awaiting_transfer — bank details shown, waiting on the money
+     paid           — money confirmed, not yet applied to the contract
+     applied        — contract extended and the tenant told
+     cancelled      — abandoned or superseded */
+  status: {
+    type: String,
+    enum: ['pending', 'awaiting_transfer', 'paid', 'applied', 'cancelled'],
+    default: 'pending',
+  },
+
+  stripeCheckoutSessionId: { type: String, default: '' },
+  stripePaidAt: { type: Date, default: null },
+
+  invoice: { type: Schema.Types.ObjectId, ref: 'Invoice', default: null },
+  appliedAt: { type: Date, default: null },
+  // '' when the Stripe webhook applied it rather than a person.
+  appliedByName: { type: String, default: '' },
+  // Anything that needed a human afterwards — a moved end date, a unit held by
+  // someone else's quote. Surfaced on the contract rather than only logged.
+  reviewNote: { type: String, default: '' },
+
+  error: { type: String, default: '' },
+}, { timestamps: true });
+// The renewal panel on a contract, newest first.
+contractRenewalSchema.index({ contract: 1, createdAt: -1 });
+contractRenewalSchema.index({ stripeCheckoutSessionId: 1 });
+export const ContractRenewal = tenantModel('ContractRenewal');
 
 export const LeadRoutingRule = tenantModel('LeadRoutingRule');
 export const LeadRoutingConfig = tenantModel('LeadRoutingConfig');
@@ -2072,7 +2517,17 @@ const automationRuleSchema = new Schema({
   },
   custom: { type: Boolean, default: false },
   order: { type: Number, default: 0 },
+  /* A 'sent' AutomationLog row older than this no longer counts against a
+   * step — set when an admin deliberately resets this rule's history (see
+   * services/automationEngine.js), so a contract already messaged before a
+   * step was retimed becomes eligible again under its new schedule. Steps
+   * are tracked by position, not by day count, so retiming alone never
+   * clears this on its own — an admin has to choose to. Never cleared
+   * automatically, and the old log rows themselves are left alone: this
+   * only changes what counts as "already sent" from this moment forward. */
+  remindersResetAt: { type: Date, default: null },
 }, { timestamps: true });
+automationRuleSchema.plugin(softDeletePlugin);
 
 const automationLogSchema = new Schema({
   rule: { type: Schema.Types.ObjectId, ref: 'AutomationRule' },
@@ -2089,12 +2544,61 @@ const automationLogSchema = new Schema({
 }, { timestamps: true });
 automationLogSchema.index({ sentAt: -1 });
 automationLogSchema.index({ customer: 1, sentAt: -1 });
+// alreadySent() in services/automationEngine.js — "has this exact rule +
+// step + channel already gone out". Without this, that findOne was a full
+// collection scan, run once per channel per candidate contract; this is
+// most of why /automation-rules/pending was slow.
+automationLogSchema.index({ rule: 1, event: 1, channel: 1, status: 1 });
+// alreadySentToday() — the same-day guard rail, matched on contract rather
+// than the per-step event key.
+automationLogSchema.index({ rule: 1, contract: 1, channel: 1, status: 1, sentAt: 1 });
 
 export const AutomationRule = tenantModel('AutomationRule');
 export const AutomationLog = tenantModel('AutomationLog');
 
+/* ── Quiet-lead follow-ups ────────────────────────────────────────────────
+ *
+ * One row per approved-template message sent to a lead that had gone quiet.
+ * Exists for two things a single "last contacted" field on Lead cannot give:
+ *
+ *   the warning     "already messaged 5 hours ago" needs the most recent
+ *                   send, found by querying this rather than trusting a
+ *                   field that could drift out of sync with what actually
+ *                   went out
+ *   the report      sent / replied / still quiet, per rep, over time — a
+ *                   single timestamp only ever answers "when was the last
+ *                   one", never "how many, and how many came back"
+ *
+ * `reason` is the AI's read of the conversation, frozen at send time. The
+ * conversation moves on after this; the record of why somebody judged this
+ * lead worth a nudge should not silently change under them.
+ */
+const leadFollowUpSchema = new Schema({
+  lead: { type: Schema.Types.ObjectId, ref: 'Lead', required: true },
+  phoneNormalized: { type: String, default: '' },
+  sentBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+  sentByName: { type: String, default: '' },
+  // Meta's own template name (e.g. contract_expiry_notification) — the real
+  // approved-template list, not the smaller set anyone has separately mapped
+  // into a MessageTemplate row. That mapping is not required for this to work.
+  templateName: { type: String, default: '' },
+  templateLabel: { type: String, default: '' },
+  reason: { type: String, default: '' },
+  daysQuietAtSend: { type: Number, default: 0 },
+  status: { type: String, enum: ['sent', 'failed'], default: 'sent' },
+  error: { type: String, default: '' },
+  sentAt: { type: Date, default: Date.now },
+  // Filled in the first time an inbound message arrives on this number after
+  // sentAt — see whatsappLeadSync.js. Null means still quiet.
+  repliedAt: { type: Date, default: null },
+}, { timestamps: true });
+leadFollowUpSchema.index({ lead: 1, sentAt: -1 });
+leadFollowUpSchema.index({ phoneNormalized: 1, sentAt: -1 });
+leadFollowUpSchema.index({ sentBy: 1, sentAt: -1 });
+export const LeadFollowUp = tenantModel('LeadFollowUp');
+
 const messageTemplateSchema = new Schema({
-  key: { type: String, required: true, unique: true },
+  key: { type: String, required: true },
   label: { type: String, required: true },
   subject: { type: String, default: '' },
   emailBody: { type: String, default: '' },
@@ -2132,6 +2636,21 @@ const messageTemplateSchema = new Schema({
   mediaUrl: { type: String, default: '' },
   mediaKind: { type: String, enum: ['', 'image', 'video', 'audio', 'document', 'location'], default: '' },
   mediaFilename: { type: String, default: '' },
+  // A poster frame, only meaningful for a video: WhatsApp's own attachment
+  // caps at 16 MB, well under a real sales video, so a video quick reply is
+  // hosted on our own server and sent as this image instead, with a link to
+  // watch the rest (see routes/messageTemplates.js's upload endpoint and
+  // routes/whatsapp.js's /send-quick-reply). Auto-generated at upload time,
+  // not editable by hand.
+  mediaThumbnailUrl: { type: String, default: '' },
+  // The uploaded video's real size, set once at upload time — what decides,
+  // at send time, whether it fits Meta's own 16 MB video cap and can go out
+  // as a native WhatsApp video (plays inline, no extra tap) or needs the
+  // hosted poster-frame-plus-link treatment. 0 for anything that isn't an
+  // uploaded video, and for a video quick reply saved before this field
+  // existed — routes/whatsapp.js treats that as "unknown, so host it"
+  // rather than risk a native send Meta rejects.
+  mediaSizeBytes: { type: Number, default: 0 },
   // A 'location' quick reply sends WhatsApp's native pin instead of a file —
   // tapping it opens directly on these coordinates, rather than a Google Maps
   // search that surfaces every storage place nearby.
@@ -2140,6 +2659,8 @@ const messageTemplateSchema = new Schema({
   locationName: { type: String, default: '' },
   locationAddress: { type: String, default: '' },
 }, { timestamps: true });
+messageTemplateSchema.index({ key: 1 }, { unique: true, partialFilterExpression: { deletedAt: null } });
+messageTemplateSchema.plugin(softDeletePlugin);
 export const MessageTemplate = tenantModel('MessageTemplate');
 
 // Document templates designed in the app — the storage agreement, notices
@@ -2154,6 +2675,7 @@ const agreementTemplateSchema = new Schema({
   updatedBy: { type: String, default: '' },
   key: { type: String }, // legacy singleton key, kept for old documents
 }, { timestamps: true });
+agreementTemplateSchema.plugin(softDeletePlugin);
 export const AgreementTemplate = tenantModel('AgreementTemplate');
 
 // Asana-style task, assignable by admins to sales reps or created by a rep
@@ -2165,6 +2687,13 @@ const taskCommentSchema = new Schema({
   userName: { type: String, default: '' },
   text: { type: String, required: true },
   createdAt: { type: Date, default: Date.now },
+  // A comment is a subdocument, not its own collection, so the
+  // softDeletePlugin's query filtering doesn't reach it — these are the
+  // same idea applied by hand; the route filters `deleted` out of what it
+  // returns instead of a query excluding it.
+  deleted: { type: Boolean, default: false },
+  deletedAt: { type: Date, default: null },
+  deletedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
 });
 
 const taskAssignmentHistorySchema = new Schema({
@@ -2218,6 +2747,21 @@ const taskSchema = new Schema(
   { timestamps: true }
 );
 taskSchema.index({ assignedTo: 1, status: 1, dueDate: 1 });
+// Backs GET /tasks?sort=createdAt — the dashboard's "latest 5" card, sorted
+// newest-first rather than by the assignedTo-scoped index above.
+taskSchema.index({ createdAt: -1 });
+taskSchema.plugin(softDeletePlugin);
+// comments is a subdocument array — same reasoning as movingJobSchema's
+// clientVisits transform above: filter a soft-deleted comment out on every
+// read instead of relying on each route to remember to.
+taskSchema.set('toJSON', {
+  transform(doc, ret) {
+    if (Array.isArray(ret.comments)) {
+      ret.comments = ret.comments.filter((c) => !c.deleted);
+    }
+    return ret;
+  },
+});
 export const Task = tenantModel('Task');
 
 /* One browser that has agreed to be interrupted.
@@ -2402,6 +2946,10 @@ export const SCHEMAS = {
    DailyDigest: dailyDigestSchema,
    AiBotConfig: aiBotConfigSchema,
    AiBotThread: aiBotThreadSchema,
+   AssistantConfig: assistantConfigSchema,
+   WhatsAppFlowTemplate: whatsAppFlowTemplateSchema,
+   MovingStorageFlowThread: movingStorageFlowSchema,
+   WhatsAppBlockedNumber: whatsappBlockedNumberSchema,
    User: userSchema,
    UnitType: unitTypeSchema,
    Unit: unitSchema,
@@ -2413,6 +2961,8 @@ export const SCHEMAS = {
    WhatsAppMessage: whatsappMessageSchema,
    LeadRoutingRule: leadRoutingRuleSchema,
    LeadRoutingConfig: leadRoutingConfigSchema,
+   ContractRenewal: contractRenewalSchema,
+   LeadFollowUp: leadFollowUpSchema,
    Contract: contractSchema,
    Quote: quoteSchema,
    Invoice: invoiceSchema,

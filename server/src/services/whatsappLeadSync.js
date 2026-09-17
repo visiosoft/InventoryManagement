@@ -1,11 +1,14 @@
-import { Lead, User, WhatsAppLabelState, WhatsAppWebhookEvent, WhatsAppMessage } from '../models/index.js';
+import { Lead, User, WhatsAppLabelState, WhatsAppWebhookEvent, WhatsAppMessage, WhatsAppBlockedNumber } from '../models/index.js';
 import { routeInboundLead } from './leadRouting.js';
-import { notifyLeadAssigned } from './leadNotify.js';
+import { notifyLeadAssigned, notifyInboundWhatsAppMessage } from './leadNotify.js';
 import { normalizeLeadPhone } from '../routes/leads.js';
 import { getAiBotConfig, noteInboundForBot, pauseBotForHuman } from './aiBot.js';
 import { sendFirstContactVideo } from './firstContact.js';
 import { mediaFromRaw } from '../routes/whatsappMedia.js';
 import { cancelFollowUpOnReply } from './chatFollowUp.js';
+import { markQuietFollowUpReplied } from './leadFollowUp.js';
+import { buttonReplyText, handleRenewalButtonReply } from './renewalReply.js';
+import { handleMovingStorageFlow } from './movingStorageFlow.js';
 
 const DEFAULT_STATUS_BY_LABEL = {
     lead: 'new',
@@ -29,7 +32,7 @@ const LABEL_ALIASES = {
 
 const LABEL_PRIORITY = ['lost', 'won', 'followup', 'new customer', 'lead'];
 
-const ALLOWED_LEAD_STATUS = new Set(['new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost']);
+const ALLOWED_LEAD_STATUS = new Set(['new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost', 'already_customer']);
 
 function readStatusMapFromEnv() {
     const raw = process.env.WHATSAPP_LABEL_STATUS_MAP;
@@ -211,7 +214,12 @@ export function extractMessagesFromPayload(payload) {
             }
 
             for (const msg of [...messages, ...echoes]) {
-                const text = msg?.text?.body || '';
+                /* A button tap carries no text.body — a template's quick reply
+                   arrives under `button`, an interactive one under
+                   `interactive.button_reply`. Without this every tap was stored
+                   as a blank message, so the chat showed nothing and nobody
+                   could tell what the customer had answered. */
+                const text = msg?.text?.body || buttonReplyText(msg) || '';
                 const messageId = msg?.id || '';
                 const type = msg?.type || 'text';
                 const ts = msg?.timestamp ? new Date(Number(msg.timestamp) * 1000) : new Date();
@@ -364,7 +372,18 @@ export async function createLeadFromWhatsAppPhone({ phone, phoneNormalized, stat
 async function persistMessages(messages) {
     let saved = 0;
 
+    // Numbers on the block list are dropped before anything else touches
+    // them — no message saved, no lead created, no bot/renewal/moving-flow
+    // handling. Queried once for every number in this batch (almost always
+    // one) rather than per message.
+    const numbers = [...new Set(messages.map((m) => m.phoneNormalized).filter(Boolean))];
+    const blocked = numbers.length
+        ? new Set((await WhatsAppBlockedNumber.find({ phoneNormalized: { $in: numbers } }).select('phoneNormalized').lean()).map((b) => b.phoneNormalized))
+        : new Set();
+
     for (const msg of messages) {
+        if (blocked.has(msg.phoneNormalized)) continue;
+
         // A delivery receipt carries the same id as the message it refers to.
         // It updates that message's status — it is never a message of its own,
         // and storing it as one produced empty "[status]" bubbles in the chat.
@@ -404,6 +423,10 @@ async function persistMessages(messages) {
         if (existing) continue;
 
         let lead = await Lead.findOne({ phoneNormalized: msg.phoneNormalized });
+        // Whether this message is the one that creates the lead — if so it
+        // already gets the "you were given a lead" push below, and the
+        // per-message push further down must skip it to avoid a duplicate.
+        const isNewLead = !lead;
         if (!lead && msg.direction === 'inbound') {
             lead = await createLeadFromWhatsAppPhone({
                 phone: msg.phone,
@@ -437,6 +460,18 @@ async function persistMessages(messages) {
             await lead.save();
         }
 
+        /* A push for the reply itself — every inbound message on a chat
+           somebody already owns, not just the first one that creates and
+           assigns the lead (that already got its own push above). Not
+           awaited into the webhook's response path, same reason as
+           notifyLeadAssigned: Meta needs this endpoint back quickly, and a
+           slow push service must never be the reason a message fails to
+           save. */
+        if (lead && msg.direction === 'inbound' && lead.owner && !isNewLead) {
+            notifyInboundWhatsAppMessage({ lead, text: msg.text, msgType: msg.type })
+                .catch((e) => console.error('[WhatsAppLeadSync] message notify failed:', e.message));
+        }
+
         /* They wrote back, so any reminder to chase them is off.
          *
          * Being told to chase somebody you are in the middle of talking to is
@@ -447,28 +482,82 @@ async function persistMessages(messages) {
             await cancelFollowUpOnReply(lead, { at: msg.occurredAt || new Date() });
         }
 
+        /* Same idea, for a quiet-lead nudge rather than a manually-set
+         * reminder: they wrote back, so it is no longer "still quiet" on the
+         * follow-up report. Keyed on the phone number alone — a lead record
+         * is not required for this to mean something. */
+        if (msg.direction === 'inbound') {
+            await markQuietFollowUpReplied(msg.phoneNormalized, msg.occurredAt || new Date());
+        }
+
         // Hand the message to the AI assistant's queue. Inbound only — noting
         // our own outbound messages would have it answering itself. The worker
         // decides whether to reply; this only records that something arrived,
         // so the webhook still returns to Meta immediately.
         if (msg.direction === 'inbound') {
+            const aiBotConfig = await getAiBotConfig();
+
             /* Their first message gets the tour, before anything else is
                said about the place. Not awaited into the delivery path — a
                webhook must not fail because a video did not go out. */
-            sendFirstContactVideo({ phoneNormalized: msg.phoneNormalized, config: await getAiBotConfig() })
+            sendFirstContactVideo({ phoneNormalized: msg.phoneNormalized, config: aiBotConfig })
                 .catch((e) => console.error('[FirstContact]', e.message));
 
+            /* Yes/No on the contract-expiry template.
+             *
+             * Handled before the assistant is told anything, and when it is
+             * handled the assistant is not told at all — otherwise a tenant who
+             * taps "Yes" gets the renewal link and a chatbot reply about the
+             * word "yes", which reads as two different people answering. Only
+             * an actual button tap on a number with an active contract is taken
+             * this way; everything else falls through untouched. */
+            let handledAsRenewal = false;
             try {
-                await noteInboundForBot({
+                const out = await handleRenewalButtonReply({
                     phoneNormalized: msg.phoneNormalized,
-                    messageId: msg.messageId,
                     text: msg.text,
                     type: msg.type,
-                    occurredAt: msg.occurredAt,
-                    // So the assistant can fetch and read it.
-                    mediaId: mediaFromRaw(msg.raw)?.id || '',
+                    raw: msg.raw,
                 });
-            } catch { /* the assistant must never break message delivery */ }
+                handledAsRenewal = out.handled;
+            } catch (e) {
+                console.error('[RenewalReply]', e.message);
+            }
+
+            /* The moving/storage button menu — same idea as the renewal
+             * check just above: claimed here, before the assistant sees
+             * anything, or not at all. Off by default (movingStorageFlowEnabled
+             * on AiBotConfig), so a number gets this rigid menu or the
+             * assistant's own first reply, never a race between both. */
+            let handledAsMovingStorageFlow = false;
+            if (!handledAsRenewal) {
+                try {
+                    const out = await handleMovingStorageFlow({
+                        phoneNormalized: msg.phoneNormalized,
+                        phone: msg.phone,
+                        text: msg.text,
+                        type: msg.type,
+                        raw: msg.raw,
+                    });
+                    handledAsMovingStorageFlow = out.handled;
+                } catch (e) {
+                    console.error('[MovingStorageFlow]', e.message);
+                }
+            }
+
+            if (!handledAsRenewal && !handledAsMovingStorageFlow) {
+                try {
+                    await noteInboundForBot({
+                        phoneNormalized: msg.phoneNormalized,
+                        messageId: msg.messageId,
+                        text: msg.text,
+                        type: msg.type,
+                        occurredAt: msg.occurredAt,
+                        // So the assistant can fetch and read it.
+                        mediaId: mediaFromRaw(msg.raw)?.id || '',
+                    });
+                } catch { /* the assistant must never break message delivery */ }
+            }
         } else {
             // A new outbound message we did not send ourselves is a colleague
             // replying from the WhatsApp Business app, so the assistant stands

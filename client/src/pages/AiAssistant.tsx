@@ -392,6 +392,12 @@ export default function AiAssistant() {
             </span>
           </label>
 
+          <p className="text-sm text-muted-foreground pt-1">
+            Looking for the Moving/Storage button menu (or to build a new WhatsApp flow)? That
+            moved to its own page —{' '}
+            <Link to="/settings/flow-templates" className="font-semibold underline">WhatsApp Flow Templates</Link>.
+          </p>
+
           <label className="flex items-start gap-3 cursor-pointer pt-1">
             <input type="checkbox" className="mt-1" checked={draft.autoSummarise !== false}
               onChange={(e) => set({ autoSummarise: e.target.checked })} />

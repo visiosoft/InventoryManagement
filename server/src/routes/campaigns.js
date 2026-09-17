@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAdmin } from '../middleware/auth.js';
 import { Campaign, CampaignRecipient, Customer, Lead, WhatsAppMessage } from '../models/index.js';
+import { softDelete, softDeleteMany } from '../utils/softDelete.js';
 import { buildAudience } from '../services/campaignAudience.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
 import { listWhatsAppTemplates, sendWhatsAppTemplate, whatsappSendConfigured } from '../services/whatsapp.js';
@@ -134,8 +135,8 @@ router.delete('/:id', async (req, res) => {
     const campaign = await Campaign.findById(req.params.id);
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
     if (campaign.status === 'sending') return res.status(409).json({ error: 'This campaign is sending; cancel it first' });
-    await CampaignRecipient.deleteMany({ campaign: campaign._id });
-    await campaign.deleteOne();
+    await softDeleteMany(CampaignRecipient, { campaign: campaign._id }, req.user.id);
+    await softDelete(campaign, req.user.id);
     res.json({ ok: true });
 });
 

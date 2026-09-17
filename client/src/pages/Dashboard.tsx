@@ -3,10 +3,13 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { GripVertical, X } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
-import { api, apiError } from '../lib/api'
-import type { Summary } from '../lib/types'
-import { Spinner, EmptyState, Table, Th, Td, Button, Badge } from '../components/ui'
+import { api, apiError, leadApi, leadFollowUpApi, type HighIntentLead } from '../lib/api'
+import type { Contract, DashboardStats, FloorOccupancy } from '../lib/types'
+import { EmptyState, Skeleton, Table, Th, Td, Button, Badge } from '../components/ui'
 import { formatDate } from '../lib/utils'
+import DashboardAsk from '../components/DashboardAsk'
+import QuietLeadsModal from '../components/QuietLeadsModal'
+import { useAuth } from '../lib/auth'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
 const INK = '#14081F'
@@ -15,23 +18,23 @@ const PURPLE_LIGHT = '#F7F3FF'
 
 type WidgetId =
   | 'stats'
+  | 'high-intent-leads'
   | 'units-by-size'
   | 'floor-occupancy'
-  | 'overdue-aging'
+  | 'quiet-leads'
   | 'expiring-contracts'
   | 'team-tasks'
-  | 'latest-notes'
 
 const DASHBOARD_LAYOUT_KEY = 'pb_dashboard_layout_v2'
 
 const DEFAULT_LAYOUT: WidgetId[] = [
   'stats',
+  'high-intent-leads',
   'units-by-size',
   'floor-occupancy',
-  'overdue-aging',
+  'quiet-leads',
   'expiring-contracts',
   'team-tasks',
-  'latest-notes',
 ]
 
 function safeLoadLayout() {
@@ -40,9 +43,35 @@ function safeLoadLayout() {
     if (!raw) return DEFAULT_LAYOUT
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return DEFAULT_LAYOUT
-    const filtered = parsed.filter((x): x is WidgetId => DEFAULT_LAYOUT.includes(x as WidgetId))
-    const missing = DEFAULT_LAYOUT.filter((x) => !filtered.includes(x))
-    return [...filtered, ...missing]
+    const result = parsed.filter((x): x is WidgetId => DEFAULT_LAYOUT.includes(x as WidgetId))
+
+    /* A widget added to DEFAULT_LAYOUT after somebody already saved a custom
+       order is placed right after whichever of its default-order neighbours
+       the person still has, so it lands near where it was designed to sit
+       rather than always at the tail. That still has one gap: if none of
+       its earlier neighbours survive in the saved order either — every one
+       of them since removed or renamed — the search finds nothing and used
+       to fall back to appending at the very end, past everything else on
+       a long dashboard. That is exactly how the last widget added this way
+       (quiet-leads) went unnoticed for a while, and precisely what
+       happened again with the one added right after it (high-intent-leads)
+       reusing the same fallback. The front of the list is the safer
+       default for a fallback nobody chose: a widget arriving one row later
+       than expected is a shrug, arriving at the bottom of a page people
+       stop scrolling before reaching is invisible. */
+    for (const id of DEFAULT_LAYOUT) {
+      if (result.includes(id)) continue
+      const defaultIdx = DEFAULT_LAYOUT.indexOf(id)
+      let insertAt = 0
+      let foundNeighbour = false
+      for (let i = defaultIdx - 1; i >= 0; i--) {
+        const afterIdx = result.indexOf(DEFAULT_LAYOUT[i])
+        if (afterIdx !== -1) { insertAt = afterIdx + 1; foundNeighbour = true; break }
+      }
+      if (!foundNeighbour) insertAt = 0
+      result.splice(insertAt, 0, id)
+    }
+    return result
   } catch {
     return DEFAULT_LAYOUT
   }
@@ -88,24 +117,68 @@ function WidgetShell({
 }
 
 export default function Dashboard() {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+
   // Tasks is an admin/sales-rep tool and the server blocks staff outright, so
   // don't offer a tab that would only 403.
   const [layout, setLayout] = useState<WidgetId[]>(() => safeLoadLayout())
   const [dragged, setDragged] = useState<WidgetId | null>(null)
   const [movePanel, setMovePanel] = useState<'in' | 'out' | 'available' | null>(null)
   const [sizeFilter, setSizeFilter] = useState<number | null>(null)
+  const [showQuiet, setShowQuiet] = useState(false)
+  const [quietOwner, setQuietOwner] = useState<string | undefined>(undefined)
 
-  const { data, isLoading, isError, error, refetch } = useQuery<Summary>({
-    queryKey: ['summary'],
-    queryFn: () => api.get('/reports/summary').then((r) => r.data),
+  // Every card below fetches its own slice, independently, so whichever
+  // answers first shows first instead of the whole page waiting on the
+  // slowest one. That used to be a single /reports/summary call; split into
+  // /stats, /floor-occupancy and the existing /expiring so a card is never
+  // blocked on data another card needs.
+  const { data: stats, isLoading: statsLoading, isError: statsIsError, error: statsError, refetch: refetchStats } = useQuery<DashboardStats>({
+    queryKey: ['dashboard-stats'],
+    queryFn: () => api.get('/reports/stats').then((r) => r.data),
     staleTime: 5 * 60_000,
   })
 
-  type LatestNote = { contractId: string; contractNo: string; customerName: string; at: string; text: string; author: string }
-  const { data: latestNotes = [] } = useQuery<LatestNote[]>({
-    queryKey: ['latest-notes'],
-    queryFn: () => api.get('/contracts/latest-notes?limit=30').then((r) => r.data),
+  const { data: floor, isLoading: floorLoading, isError: floorIsError, refetch: refetchFloor } = useQuery<FloorOccupancy>({
+    queryKey: ['dashboard-floor-occupancy'],
+    queryFn: () => api.get('/reports/floor-occupancy').then((r) => r.data),
     staleTime: 5 * 60_000,
+  })
+
+  const { data: expiringContracts, isLoading: expiringLoading, isError: expiringIsError, refetch: refetchExpiring } = useQuery<Contract[]>({
+    queryKey: ['dashboard-expiring'],
+    queryFn: () => api.get('/reports/expiring', { params: { days: 15 } }).then((r) => r.data),
+    staleTime: 5 * 60_000,
+  })
+
+  /* Every rep's quiet-lead backlog, rolled up — the count and the chart. It
+   * is the heaviest thing this page asks for (every open lead in the
+   * company, not one rep's few dozen). Its own card, its own load — no
+   * reason left to hold it back behind anything else on the page. */
+  const { data: quiet, isLoading: quietLoading } = useQuery({
+    queryKey: ['lead-follow-up-summary'],
+    queryFn: () => leadFollowUpApi.summary(),
+    staleTime: 60_000,
+  })
+
+  // Who to actually follow up with — every other lead widget on this page
+  // is about volume or backlog; this is the one that says who's worth the
+  // time, today or yesterday only. Own card, own load, same as quiet-leads
+  // beside it — the heaviest reads on this page never block the rest of it.
+  const { data: highIntent, isLoading: highIntentLoading } = useQuery({
+    queryKey: ['high-intent-leads'],
+    queryFn: () => leadApi.highIntentToday(),
+    staleTime: 60_000,
+  })
+
+  // Contract-expiry reminders waiting on approval — admin-only.
+  type PendingExpiryGroup = { step: number; stepLabel: string; rows: unknown[] }
+  const { data: pendingExpiry } = useQuery<{ groups: PendingExpiryGroup[]; total: number }>({
+    queryKey: ['automation-rules-pending'],
+    queryFn: () => api.get('/automation-rules/pending').then((r) => r.data),
+    enabled: isAdmin,
+    staleTime: 60_000,
   })
 
   // Latest tasks across everyone. Admins get the whole team from this
@@ -117,40 +190,15 @@ export default function Dashboard() {
     assignedTo?: { name?: string; email?: string } | null
     createdAt?: string
   }
-  const { data: allTeamTasks = [] } = useQuery<TeamTask[]>({
+  // Newest-first, capped server-side — this used to fetch every task in the
+  // system (no limit) just to re-sort and keep 6 of them client-side, which
+  // was most of a 4s dashboard load on its own.
+  const { data: teamTasks, isLoading: tasksLoading } = useQuery<TeamTask[]>({
     queryKey: ['team-tasks-latest'],
-    queryFn: () => api.get('/tasks').then((r) => r.data),
+    queryFn: () => api.get('/tasks', { params: { limit: 5, sort: 'createdAt' } }).then((r) => r.data),
     staleTime: 60_000,
   })
-  // The endpoint sorts by due date; this card is about what was raised most
-  // recently, so re-sort on createdAt.
-  const teamTasks = [...allTeamTasks]
-    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
-    .slice(0, 6)
 
-  // ── All derived values must be computed before any early return so hooks
-  //    (useMemo below) are always called in the same order every render. ──────
-
-  const totalUnits = data
-    ? data.byStatus.available + data.byStatus.occupied + data.byStatus.reserved + data.byStatus.maintenance
-    : 0
-
-  const now = Date.now()
-  const overdueAging = [
-    { bucket: '1-7d', count: 0, amount: 0 },
-    { bucket: '8-30d', count: 0, amount: 0 },
-    { bucket: '30+d', count: 0, amount: 0 },
-  ]
-  for (const p of data?.overduePayments ?? []) {
-    const days = Math.max(1, Math.floor((now - new Date(p.dueDate).getTime()) / 86400000))
-    if (days <= 7) {
-      overdueAging[0].count += 1; overdueAging[0].amount += p.amount || 0
-    } else if (days <= 30) {
-      overdueAging[1].count += 1; overdueAging[1].amount += p.amount || 0
-    } else {
-      overdueAging[2].count += 1; overdueAging[2].amount += p.amount || 0
-    }
-  }
 
 
   const onDragStart = (id: WidgetId) => setDragged(id)
@@ -168,16 +216,29 @@ export default function Dashboard() {
     localStorage.setItem(DASHBOARD_LAYOUT_KEY, JSON.stringify(next))
   }
 
+  const kpiSkeleton = (
+    <div className="grid grid-cols-2 lg:grid-cols-6 gap-[18px]">
+      {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-[150px] rounded-[22px]" />)}
+    </div>
+  )
+
   const widgets = useMemo<Record<WidgetId, React.ReactNode>>(
     () => {
-      if (!data) return {} as Record<WidgetId, React.ReactNode>
       return ({
-        stats: (
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-[18px]">
+        stats: statsLoading ? kpiSkeleton : statsIsError || !stats ? (
+          <div className="rounded-[22px] border p-6 flex items-center justify-between gap-3 flex-wrap" style={{ borderColor: 'rgba(20,8,31,.10)' }}>
+            <div>
+              <div style={{ color: INK, fontWeight: 600, fontSize: 14 }}>Couldn&rsquo;t load the KPI numbers</div>
+              <div style={{ color: MUTED_CLR, fontSize: 12, marginTop: 2 }}>{apiError(statsError)}</div>
+            </div>
+            <Button onClick={() => refetchStats()}>Retry</Button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 lg:grid-cols-6 gap-[18px]">
             {/* Occupancy - dark card */}
             <div style={{ padding: 24, borderRadius: 22, background: '#1A0B33', color: '#FFF', display: 'flex', flexDirection: 'column', gap: 16, boxShadow: '0 8px 24px rgba(20,8,31,.10)' }}>
               <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#A78BFA' }}>Occupancy</div>
-              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.04em' }}>{data.occupancyPct}%</div>
+              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.04em' }}>{stats.occupancyPct}%</div>
               {/* Spell out what is being counted.
                   It read "145 of 304 units", which looks wrong against a
                   facility of 305: the 145 quietly includes reserved units as
@@ -185,28 +246,28 @@ export default function Dashboard() {
                   anything under maintenance, which cannot be let. Both are the
                   right way to measure occupancy — they just were not said. */}
               <div style={{ fontSize: 11, color: '#DDD0FF' }}>
-                {data.byStatus.occupied + data.byStatus.reserved} taken
-                {data.byStatus.reserved > 0 && ` (${data.byStatus.occupied} in, ${data.byStatus.reserved} reserved)`}
+                {stats.byStatus.occupied + stats.byStatus.reserved} taken
+                {stats.byStatus.reserved > 0 && ` (${stats.byStatus.occupied} in, ${stats.byStatus.reserved} reserved)`}
                 {' of '}
-                {data.byStatus.available + data.byStatus.occupied + data.byStatus.reserved} lettable
-                {data.byStatus.maintenance > 0 && ` · ${data.byStatus.maintenance} under maintenance`}
+                {stats.byStatus.available + stats.byStatus.occupied + stats.byStatus.reserved} lettable
+                {stats.byStatus.maintenance > 0 && ` · ${stats.byStatus.maintenance} under maintenance`}
               </div>
               <div style={{ height: 6, borderRadius: 999, background: 'rgba(255,255,255,.14)', overflow: 'hidden', display: 'flex' }}>
-                <div style={{ width: `${data.occupancyPct}%`, background: 'linear-gradient(90deg, #7C4DFF, #A78BFA)' }} />
+                <div style={{ width: `${stats.occupancyPct}%`, background: 'linear-gradient(90deg, #7C4DFF, #A78BFA)' }} />
               </div>
             </div>
 
             {/* Booked — units with somebody in them. */}
             <div style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 1px 2px rgba(20,8,31,.05)' }}>
               <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Booked</div>
-              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{data.byStatus.occupied}</div>
-              <div style={{ fontSize: 11, color: '#4A4357', marginTop: 'auto' }}>{data.activeContracts} active contracts</div>
+              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{stats.byStatus.occupied}</div>
+              <div style={{ fontSize: 11, color: '#4A4357', marginTop: 'auto' }}>{stats.activeContracts} active contracts</div>
             </div>
 
             {/* Reserved — held, not yet moved in. */}
             <div style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 1px 2px rgba(20,8,31,.05)' }}>
               <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Reserved</div>
-              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{data.byStatus.reserved}</div>
+              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{stats.byStatus.reserved}</div>
               <div style={{ fontSize: 11, color: '#4A4357', marginTop: 'auto' }}>held, not moved in yet</div>
             </div>
 
@@ -214,9 +275,9 @@ export default function Dashboard() {
                 the way the team asks for them. */}
             <div onClick={() => { setSizeFilter(null); setMovePanel('available') }} style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 1px 2px rgba(20,8,31,.05)', cursor: 'pointer' }} className="hover:shadow-md transition-shadow">
               <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Vacant</div>
-              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{data.byStatus.available}</div>
+              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{stats.byStatus.available}</div>
               <div className="flex flex-wrap gap-1 mt-auto" onClick={e => e.stopPropagation()}>
-                {data.bySize.filter(s => s.available > 0).slice(0, 3).map(s => (
+                {stats.bySize.filter(s => s.available > 0).slice(0, 3).map(s => (
                   <button key={s.sizeSqf} onClick={() => { setSizeFilter(parseInt(s.sizeSqf)); setMovePanel('available') }} style={{ fontSize: 10, fontWeight: 600, padding: '3px 6px', borderRadius: 6, background: PURPLE_LIGHT, color: '#4A1FA0', cursor: 'pointer', border: 'none' }} className="hover:opacity-80">{s.available}×{s.sizeSqf.replace(' sq ft', '')}</button>
                 ))}
               </div>
@@ -230,13 +291,79 @@ export default function Dashboard() {
                 worth acting on. */}
             <div onClick={() => setMovePanel('out')} style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 1px 2px rgba(20,8,31,.05)', cursor: 'pointer' }} className="hover:shadow-md transition-shadow">
               <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Moving out</div>
-              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{data.movingOutThisMonth ?? 0}</div>
+              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{stats.movingOutThisMonth ?? 0}</div>
               <div style={{ fontSize: 11, color: '#4A4357', marginTop: 'auto' }}>
-                still in, leaving in {data.monthLabel ?? 'this month'}
-                {data.moveOutsThisMonth > 0 && ` · ${data.moveOutsThisMonth} already out`}
+                still in, leaving in {stats.monthLabel ?? 'this month'}
+                {stats.moveOutsThisMonth > 0 && ` · ${stats.moveOutsThisMonth} already out`}
+              </div>
+            </div>
+
+            {/* Leads gone quiet — pinned here rather than left as a
+                draggable/removable widget. That system reads its order from
+                a layout array saved in each browser's own localStorage, and
+                for an admin who already had a saved dashboard layout before
+                this existed, a widget added later could end up anywhere in
+                it, or effectively invisible without scrolling past
+                everything else. A KPI tile in this fixed row has no such
+                array to be missing from — it is exactly as visible as
+                Occupancy or Vacant, every time, for every admin. */}
+            <div
+              onClick={() => { setQuietOwner(undefined); setShowQuiet(true) }}
+              style={{ padding: 24, borderRadius: 22, background: '#FFF', border: '1px solid rgba(20,8,31,0.10)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 1px 2px rgba(20,8,31,.05)', cursor: 'pointer' }}
+              className="hover:shadow-md transition-shadow"
+            >
+              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: MUTED_CLR }}>Dormant leads</div>
+              <div style={{ ...HEADING, fontWeight: 700, fontSize: 48, lineHeight: 0.9, letterSpacing: '-0.03em' }}>{quiet?.total ?? '—'}</div>
+              <div style={{ fontSize: 11, color: '#4A4357', marginTop: 'auto' }}>
+                {quiet === undefined ? 'loading…' : quiet.total > 0 ? 'we spoke last, nothing came back — review & send →' : 'nobody, good sign'}
               </div>
             </div>
           </div>
+        ),
+        'high-intent-leads': (
+          <WidgetShell
+            id="high-intent-leads"
+            title="High intent — today & yesterday"
+            subtitle="Scored by the AI's read of the conversation — these are the ones to follow up"
+            onDragStart={onDragStart}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+          >
+            {highIntentLoading ? <Skeleton className="h-[160px]" /> : !highIntent || highIntent.items.length === 0 ? (
+              <p style={{ fontSize: 12.5, color: MUTED_CLR, padding: '8px 0' }}>
+                Nobody's scored high yet today or yesterday. Open a chat in WhatsApp to have one read.
+              </p>
+            ) : (
+              <div style={{ display: 'grid', gap: 6 }}>
+                {highIntent.items.slice(0, 8).map((l: HighIntentLead) => (
+                  <Link
+                    key={l.leadId}
+                    to={`/whatsapp?phone=${l.phone}`}
+                    className="flex items-start gap-3 hover:opacity-80 transition-opacity"
+                    style={{ padding: '8px 10px', borderRadius: 10, background: '#FAF8F5', textDecoration: 'none' }}
+                  >
+                    <span
+                      className="shrink-0 rounded-full flex items-center justify-center"
+                      style={{ width: 34, height: 34, background: '#DCFCE7', color: '#15803D', fontSize: 12, fontWeight: 800 }}
+                    >
+                      {l.score}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate" style={{ fontSize: 13, fontWeight: 700, color: INK }}>{l.name}</span>
+                        <span style={{ fontSize: 10.5, color: MUTED_CLR, whiteSpace: 'nowrap' }}>{l.ownerName}</span>
+                      </div>
+                      <div className="truncate" style={{ fontSize: 11.5, color: MUTED_CLR }}>{l.reason}</div>
+                      {l.nextAction && <div className="truncate" style={{ fontSize: 11, color: '#4A1FA0', marginTop: 1 }}>Next: {l.nextAction}</div>}
+                    </div>
+                  </Link>
+                ))}
+                {highIntent.items.length > 8 && (
+                  <div style={{ fontSize: 11.5, color: MUTED_CLR, padding: '2px 10px' }}>and {highIntent.items.length - 8} more</div>
+                )}
+              </div>
+            )}
+          </WidgetShell>
         ),
         'units-by-size': (
           <WidgetShell
@@ -247,16 +374,20 @@ export default function Dashboard() {
             onDragOver={onDragOver}
             onDrop={onDrop}
           >
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={data.bySize} barGap={2}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="sizeSqf" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={28} />
-                <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
-                <Bar dataKey="available" name="Available" fill="#10b981" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="occupied" name="Occupied" fill="#4C8CE4" radius={[3, 3, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            {statsLoading ? <Skeleton className="h-[240px]" /> : statsIsError || !stats ? (
+              <EmptyState message="Couldn't load this chart." />
+            ) : (
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={stats.bySize} barGap={2}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="sizeSqf" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={28} />
+                  <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
+                  <Bar dataKey="available" name="Available" fill="#10b981" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="occupied" name="Occupied" fill="#4C8CE4" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </WidgetShell>
         ),
         'floor-occupancy': (
@@ -268,40 +399,77 @@ export default function Dashboard() {
             onDragOver={onDragOver}
             onDrop={onDrop}
           >
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={data.byFloor} barGap={2}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="floor" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={28} />
-                <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
-                <Bar dataKey="available" name="Available" fill="#10b981" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="occupied" name="Occupied" fill="#4C8CE4" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="maintenance" name="Maintenance" fill="#94a3b8" radius={[3, 3, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            {floorLoading ? <Skeleton className="h-[240px]" /> : floorIsError || !floor ? (
+              <div className="flex items-center justify-between gap-3 flex-wrap py-4">
+                <span className="text-sm text-muted-foreground">Couldn&rsquo;t load this chart.</span>
+                <Button onClick={() => refetchFloor()}>Retry</Button>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={floor.byFloor} barGap={2}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="floor" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={28} />
+                  <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
+                  <Bar dataKey="available" name="Available" fill="#10b981" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="occupied" name="Occupied" fill="#4C8CE4" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="maintenance" name="Maintenance" fill="#94a3b8" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </WidgetShell>
         ),
-        'overdue-aging': (
+        'quiet-leads': (
           <WidgetShell
-            id="overdue-aging"
-            title="Overdue aging"
-            subtitle="How old current overdues are"
+            id="quiet-leads"
+            title="Dormant leads"
+            subtitle="We spoke last, nothing came back"
             onDragStart={onDragStart}
             onDragOver={onDragOver}
             onDrop={onDrop}
           >
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={overdueAging} barGap={6}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="bucket" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={28} />
-                <Tooltip
-                  contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
-                />
-                <Bar dataKey="count" name="count" fill="#ef4444" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="amount" name="amount" fill="#f59e0b" radius={[3, 3, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            {quietLoading ? <Skeleton className="h-[160px]" /> : !quiet || quiet.total === 0 ? (
+              <p style={{ fontSize: 12.5, color: MUTED_CLR, padding: '8px 0' }}>Nobody&rsquo;s been quiet. Good sign.</p>
+            ) : (
+              <>
+                <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+                  <div style={{ ...HEADING, fontWeight: 700, fontSize: 28, letterSpacing: '-0.02em' }}>{quiet.total}</div>
+                  <button
+                    type="button"
+                    onClick={() => { setQuietOwner(undefined); setShowQuiet(true) }}
+                    className="cursor-pointer"
+                    style={{ fontSize: 12, fontWeight: 600, color: '#4A1FA0', background: PURPLE_LIGHT, border: 'none', borderRadius: 8, padding: '6px 12px' }}
+                  >
+                    Review & send
+                  </button>
+                </div>
+                <ResponsiveContainer width="100%" height={160}>
+                  <BarChart data={quiet.buckets} barGap={6}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="bucket" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={28} />
+                    <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
+                    <Bar dataKey="count" name="quiet leads" fill="#A78BFA" radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+                {/* Per rep, so it is visible when the backlog is really one
+                    person's — the number that started this whole feature. */}
+                <div style={{ marginTop: 10, display: 'grid', gap: 4 }}>
+                  {quiet.byOwner.slice(0, 5).map((o) => (
+                    <button
+                      key={o.ownerId ?? 'unassigned'}
+                      type="button"
+                      onClick={() => { setQuietOwner(o.ownerId ?? undefined); setShowQuiet(true) }}
+                      className="flex items-center justify-between cursor-pointer hover:opacity-80"
+                      style={{ fontSize: 12, padding: '3px 0', background: 'none', border: 'none', textAlign: 'left' }}
+                    >
+                      <span style={{ color: INK }}>{o.ownerName}</span>
+                      <span style={{ color: MUTED_CLR, fontWeight: 600 }}>{o.count}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </WidgetShell>
         ),
         'expiring-contracts': (
@@ -313,11 +481,16 @@ export default function Dashboard() {
             onDragOver={onDragOver}
             onDrop={onDrop}
           >
-            {data.expiringContracts.length === 0 ? (
+            {expiringLoading ? <Skeleton className="h-[240px]" /> : expiringIsError ? (
+              <div className="flex items-center justify-between gap-3 flex-wrap py-4">
+                <span className="text-sm text-muted-foreground">Couldn&rsquo;t load this list.</span>
+                <Button onClick={() => refetchExpiring()}>Retry</Button>
+              </div>
+            ) : !expiringContracts || expiringContracts.length === 0 ? (
               <EmptyState message="No contracts expiring in the next 15 days." />
             ) : (
               <ul className="divide-y divide-border">
-                {data.expiringContracts.slice(0, 10).map((c) => {
+                {expiringContracts.slice(0, 10).map((c) => {
                   const daysLeft = Math.ceil((new Date(c.endDate).getTime() - Date.now()) / 86400000)
                   const endFmt = new Date(c.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
                   const urgency = daysLeft <= 3 ? 'text-destructive' : daysLeft <= 7 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'
@@ -358,7 +531,7 @@ export default function Dashboard() {
             onDragOver={onDragOver}
             onDrop={onDrop}
           >
-            {teamTasks.length === 0 ? (
+            {tasksLoading ? <Skeleton className="h-[240px]" /> : !teamTasks || teamTasks.length === 0 ? (
               <EmptyState message="No tasks yet." />
             ) : (
               <Table>
@@ -400,84 +573,42 @@ export default function Dashboard() {
             )}
           </WidgetShell>
         ),
-        'latest-notes': (
-          <WidgetShell
-            id="latest-notes"
-            title="Latest notes & follow-ups"
-            subtitle="30 most recent notes across all contracts"
-            onDragStart={onDragStart}
-            onDragOver={onDragOver}
-            onDrop={onDrop}
-          >
-            {latestNotes.length === 0 ? (
-              <EmptyState message="No notes yet. Add follow-up notes from any contract page." />
-            ) : (
-              <div className="divide-y divide-border">
-                {latestNotes.map((n, i) => {
-                  const fmtAt = (d: string) => {
-                    const dt = new Date(d)
-                    return dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-                      + ' · ' + dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-                  }
-                  return (
-                    <div key={i} className="flex gap-3 py-3 hover:bg-muted/40 px-1">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                          <Link to={`/contracts/${n.contractId}`} className="text-xs font-semibold text-primary hover:underline shrink-0">
-                            {n.contractNo}
-                          </Link>
-                          {n.customerName && (
-                            <span className="text-xs text-muted-foreground truncate">{n.customerName}</span>
-                          )}
-                          {n.author && (
-                            <span className="text-[10px] text-muted-foreground/70">· {n.author}</span>
-                          )}
-                        </div>
-                        <p className="text-sm leading-snug line-clamp-2">{n.text}</p>
-                      </div>
-                      <time className="text-[10px] text-muted-foreground whitespace-nowrap shrink-0 pt-0.5">{fmtAt(n.at)}</time>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </WidgetShell>
-        ),
       })
     },
-    [data, latestNotes, overdueAging, onDrop, teamTasks, totalUnits]
+    [statsLoading, statsIsError, stats, statsError, refetchStats, floorLoading, floorIsError, floor, refetchFloor,
+      expiringLoading, expiringIsError, expiringContracts, refetchExpiring, tasksLoading, teamTasks, quietLoading, quiet,
+      highIntentLoading, highIntent,
+      onDrop, onDragStart, onDragOver]
   )
 
-  // Early returns come AFTER all hooks so hook call order is always stable
-
-  // Tasks lives above the data guards: a failing /reports/summary shouldn't
-  // take the task board down with it.
-  if (isLoading) return <Spinner />
-  if (isError || !data) {
-    return (
-      <div style={{ background: '#fff', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
-        <div className="mb-7">
-          <div style={{ ...HEADING, fontSize: 26, fontWeight: 700, color: INK }}>Dashboard</div>
-          <div style={{ fontSize: 14, color: MUTED_CLR, marginTop: 4 }}>Facility overview at a glance</div>
-        </div>
-        <div style={{ background: 'white', border: '1px solid rgba(20,8,31,0.08)', borderRadius: 16, overflow: 'hidden' }}>
-          <div style={{ padding: '16px 20px 0' }}>
-            <span style={{ color: INK, fontWeight: 600, fontSize: 14 }}>Unable to load dashboard</span>
-            <div style={{ color: MUTED_CLR, fontSize: 12, marginTop: 2 }}>{apiError(error)}</div>
-          </div>
-          <div style={{ padding: '12px 20px 20px' }} className="flex flex-wrap items-center gap-3">
-            <Button onClick={() => refetch()}>Retry</Button>
-            <span className="text-xs" style={{ color: MUTED_CLR }}>If this keeps happening, verify the backend API and login session.</span>
-          </div>
-          <EmptyState message="Dashboard data is temporarily unavailable." />
-        </div>
-      </div>
-    )
-  }
+  // No page-level loading/error gate any more — each card above already
+  // shows its own skeleton or its own retry button from its own query, so
+  // the page frame renders immediately and cards fill in independently as
+  // their own data arrives, instead of every card waiting on the slowest
+  // one (or one failing request taking the whole page down with it).
 
   return (
     <div style={{ background: '#fff', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
 
+      <div className="mb-5"><DashboardAsk /></div>
+
+      {isAdmin && Boolean(pendingExpiry?.total) && (
+        <Link
+          to="/settings/automation?tab=pending"
+          className="mb-5 flex items-center gap-3 flex-wrap rounded-2xl border px-5 py-3.5 hover:bg-amber-100/60 transition-colors"
+          style={{ background: '#FFF7E6', borderColor: '#F5D896' }}
+        >
+          <span style={{ fontSize: 20 }}>⚠️</span>
+          <div className="flex-1 min-w-[220px]">
+            <div style={{ ...HEADING, fontWeight: 700, fontSize: 14.5, color: '#8A5A00' }}>Contracts Expiring Soon</div>
+            <div className="text-xs mt-0.5" style={{ color: '#8A5A00', opacity: 0.85 }}>
+              {pendingExpiry!.groups.map((g) => `${g.rows.length} · ${g.stepLabel}`).join('  ·  ')}
+              {' — reminders waiting on your approval'}
+            </div>
+          </div>
+          <span className="text-xs font-bold shrink-0" style={{ color: '#8A5A00' }}>Review &amp; Approve →</span>
+        </Link>
+      )}
 
       <div className="space-y-5">
         {layout.map((id) => {
@@ -490,12 +621,12 @@ export default function Dashboard() {
             )
           }
 
-          if (id === 'units-by-size' || id === 'floor-occupancy' || id === 'overdue-aging') {
-            const peerIds: WidgetId[] = ['units-by-size', 'floor-occupancy', 'overdue-aging']
+          if (id === 'units-by-size' || id === 'floor-occupancy') {
+            const peerIds: WidgetId[] = ['units-by-size', 'floor-occupancy']
             const first = peerIds.find((x) => layout.includes(x))
             if (id !== first) return null
             return (
-              <div key="charts-grid" className="grid gap-4 lg:grid-cols-3">
+              <div key="charts-grid" className="grid gap-4 lg:grid-cols-2">
                 {peerIds.filter((x) => layout.includes(x)).map((x) => (
                   <div key={x}>{widgets[x]}</div>
                 ))}
@@ -516,16 +647,34 @@ export default function Dashboard() {
             )
           }
 
-          if (id === 'latest-notes') {
-            return <div key={id}>{widgets[id]}</div>
-          }
+          /* quiet-leads is retired, on purpose ("Pin Leads gone quiet into
+             the fixed KPI row, not the draggable widgets") — its number
+             lives in the stats card above now, via the same `quiet` query.
+             The DEFAULT_LAYOUT/widgets entries are what's left behind from
+             before that move; kept out of the generic fallback below so
+             this loop does not quietly bring back a duplicate "Dormant
+             leads" card the day it stops being special-cased. */
+          if (id === 'quiet-leads') return null
 
-          return null
+          /* Everything else — its own full-width row, nothing to pair it
+             with. This used to be a bare `return null` covering every id
+             above, which is exactly how high-intent-leads went missing:
+             its entry in `widgets` was real, nothing in this loop ever
+             rendered it — the whole layout-order investigation before this
+             was chasing a symptom this line actually caused. Falling
+             through to render `widgets[id]` here means a future widget
+             added to DEFAULT_LAYOUT never needs its own branch wired in
+             just to appear. */
+          return (
+            <div key={id} draggable onDragStart={() => onDragStart(id)} onDragOver={onDragOver} onDrop={() => onDrop(id)}>
+              {widgets[id]}
+            </div>
+          )
         })}
       </div>
 
       {/* Detail panel */}
-      {movePanel && data && (
+      {movePanel && stats && (
         <div className="fixed inset-0 z-50 flex justify-end">
           <div className="absolute inset-0 bg-black/20" onClick={() => setMovePanel(null)} />
           <div className="relative w-full max-w-md bg-white dark:bg-gray-900 shadow-xl overflow-y-auto animate-in slide-in-from-right">
@@ -537,7 +686,7 @@ export default function Dashboard() {
             </div>
             <div className="p-5 space-y-2">
               {movePanel === 'available' ? (() => {
-                const filtered = (data.availableUnitsList ?? []).filter((u: any) => sizeFilter ? u.sizeSqf === sizeFilter : true)
+                const filtered = (stats.availableUnitsList ?? []).filter((u: any) => sizeFilter ? u.sizeSqf === sizeFilter : true)
                 return filtered.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-8">No available units{sizeFilter ? ` for ${sizeFilter} sq ft` : ''}.</p>
                 ) : filtered.map((u: any) => (
@@ -562,7 +711,7 @@ export default function Dashboard() {
                   </Link>
                 ))
               })() : (() => {
-                const list = (movePanel === 'in' ? data.moveInsList : data.moveOutsList) ?? []
+                const list = (movePanel === 'in' ? stats.moveInsList : stats.moveOutsList) ?? []
                 return list.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-8">No {movePanel === 'in' ? 'move-ins' : 'move-outs'} this month.</p>
                 ) : list.map((c: any) => (
@@ -592,6 +741,8 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {showQuiet && <QuietLeadsModal onClose={() => setShowQuiet(false)} scope="all" ownerId={quietOwner} />}
     </div>
   )
 }

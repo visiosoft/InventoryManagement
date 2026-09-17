@@ -117,6 +117,20 @@ export function quietDays(lastOutboundAt, now = new Date()) {
 }
 
 /**
+ * Are they waiting on us? They wrote last, and nobody has answered.
+ *
+ * The exact opposite of wentQuiet(), and deliberately its own function: the
+ * two must never be confused. A customer who asked a question and heard
+ * nothing is owed a reply — that is our delay, not theirs, and it is the more
+ * urgent queue. The inbox, My Day and the follow-up queue all read this one
+ * predicate so they cannot drift apart on what "waiting on us" means.
+ */
+export function isWaitingOnUs({ lastInboundAt = null, lastOutboundAt = null } = {}) {
+   if (!lastInboundAt) return false;
+   return !lastOutboundAt || new Date(lastInboundAt) > new Date(lastOutboundAt);
+}
+
+/**
  * They wrote back, so the reminder is not needed.
  *
  * Only a reminder still in the future is cleared: one that has already fallen

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { MovingLead, MovingJob, Customer, nextMovingJobNo } from '../models/index.js';
+import { softDelete } from '../utils/softDelete.js';
 
 const router = Router();
 
@@ -253,7 +254,9 @@ router.post('/:id/convert', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     if (isSalesRep(req)) return res.status(403).json({ error: 'Sales reps cannot delete leads' });
-    await MovingLead.findByIdAndDelete(req.params.id);
+    const lead = await MovingLead.findById(req.params.id);
+    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    await softDelete(lead, req.user.id);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

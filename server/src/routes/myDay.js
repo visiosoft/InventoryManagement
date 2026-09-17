@@ -23,11 +23,11 @@
 import { Router } from 'express';
 import { Types } from 'mongoose';
 import { Contract, Lead, SalesGoal, Task, Unit, WhatsAppMessage } from '../models/index.js';
-import { QUIET_DAYS, wentQuiet, quietDays } from '../services/chatFollowUp.js';
+import { QUIET_DAYS, wentQuiet, quietDays, isWaitingOnUs } from '../services/chatFollowUp.js';
 
 const router = Router();
 
-/* The eight buckets, in the order the pipeline is worked, with the wording the
+/* The nine buckets, in the order the pipeline is worked, with the wording the
    stage picker uses. Kept here rather than derived from the enum so the labels
    and the order are a deliberate choice rather than whatever Mongo returns. */
 export const STAGES = [
@@ -39,6 +39,7 @@ export const STAGES = [
    { key: 'quotation_sent', label: 'Quotation Sent' },
    { key: 'won', label: 'Customer / Won' },
    { key: 'lost', label: 'Dead Lead / Lost' },
+   { key: 'already_customer', label: 'Already Customer / Close' },
 ];
 
 /** Local midnight tonight, Dubai, so "today" means the day the rep is having. */
@@ -94,7 +95,7 @@ router.get('/', async (req, res) => {
          Lead.find({
             owner: me,
             followUpAt: { $ne: null, $lte: endToday },
-            status: { $nin: ['won', 'lost'] },
+            status: { $nin: ['won', 'lost', 'already_customer'] },
          }).select('fullName phone phoneNormalized whatsappProfileName followUpAt status').sort({ followUpAt: 1 }).lean(),
 
          Task.find({
@@ -104,7 +105,7 @@ router.get('/', async (req, res) => {
          }).select('taskNo title dueDate priority leadName leadId leadType').sort({ dueDate: 1 }).lean(),
 
          // Everything they own, for the chat-shaped questions below.
-         Lead.find({ owner: me, status: { $nin: ['won', 'lost'] } })
+         Lead.find({ owner: me, status: { $nin: ['won', 'lost', 'already_customer'] } })
             .select('fullName phone phoneNormalized whatsappProfileName status assignedAt ownerSeenAt followUpAt')
             .lean(),
       ]);
@@ -135,7 +136,7 @@ router.get('/', async (req, res) => {
          const c = byPhone.get(lead.phoneNormalized);
          if (!c) continue;
 
-         const owed = Boolean(c.lastInboundAt) && (!c.lastOutboundAt || c.lastInboundAt > c.lastOutboundAt);
+         const owed = isWaitingOnUs(c);
          if (owed) {
             waiting.push({
                leadId: String(lead._id),
@@ -185,6 +186,13 @@ router.get('/', async (req, res) => {
          }));
 
       const overdue = (d) => new Date(d) < startOfLocalDay(now);
+
+      /* Only reminders whose lead has also actually gone quiet — the same
+       * quiet computed just above, not a second definition of it. A reminder
+       * set from a chat that is still being answered normally is not the
+       * "needs follow-up because they went silent" case this card is for. */
+      const quietPhones = new Set(quiet.map((q) => q.phoneNormalized));
+      const dueReminders = reminders.filter((l) => quietPhones.has(l.phoneNormalized));
 
       /* The pipeline, counted for every temperature at once.
        *
@@ -280,7 +288,7 @@ router.get('/', async (req, res) => {
             // Days left in the month, so the pace line can be written honestly.
             daysLeft: daysLeftInMonth(now),
          },
-         reminders: reminders.map((l) => ({
+         reminders: dueReminders.map((l) => ({
             leadId: String(l._id),
             name: leadName(l),
             phone: l.phone || l.phoneNormalized,

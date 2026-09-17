@@ -5,6 +5,7 @@ import { Payment, Contract, Customer, Unit, Invoice, nextInvoiceNo } from '../mo
 import { renderReceiptPdf } from '../services/receiptPdf.js';
 import { sendWhatsAppText, whatsappSendConfigured, whatsappSendMissing } from '../services/whatsapp.js';
 import { siteScope } from '../utils/siteScope.js';
+import { softDelete, softDeleteMany } from '../utils/softDelete.js';
 
 const router = Router();
 
@@ -405,16 +406,18 @@ router.delete('/bulk', requireAdmin, async (req, res) => {
   const { paymentIds, deleteInvoice, invoiceId } = req.body;
   if (!Array.isArray(paymentIds) || paymentIds.length === 0)
     return res.status(400).json({ error: 'paymentIds array is required' });
-  await Payment.deleteMany({ _id: { $in: paymentIds } });
+  await softDeleteMany(Payment, { _id: { $in: paymentIds } }, req.user.id);
   if (deleteInvoice && invoiceId) {
-    await Invoice.findByIdAndDelete(invoiceId);
+    const invoice = await Invoice.findById(invoiceId);
+    if (invoice) await softDelete(invoice, req.user.id);
   }
   res.json({ ok: true, deleted: paymentIds.length });
 });
 
 router.delete('/:id', requireAdmin, async (req, res) => {
-  const payment = await Payment.findByIdAndDelete(req.params.id);
+  const payment = await Payment.findById(req.params.id);
   if (!payment) return res.status(404).json({ error: 'Payment not found' });
+  await softDelete(payment, req.user.id);
   res.json({ ok: true });
 });
 

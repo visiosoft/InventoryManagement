@@ -15,6 +15,7 @@
 import { Lead, Task } from '../models/index.js';
 import { pushConfigured, pushToUser } from './push.js';
 import { dayKeyFor, dayRange } from './dailyDigest.js';
+import { softDelete } from '../utils/softDelete.js';
 
 export const FOLLOW_UP_KINDS = ['date', 'week', 'month'];
 
@@ -152,7 +153,7 @@ export async function syncSiteVisitTask(lead) {
   const existing = lead.siteVisitTaskId ? await Task.findById(lead.siteVisitTaskId) : null;
 
   if (!lead.siteVisitAt || !lead.owner || lead.status === 'won' || lead.status === 'lost') {
-    if (existing && existing.status === 'todo') await existing.deleteOne();
+    if (existing && existing.status === 'todo') await softDelete(existing, null);
     lead.siteVisitTaskId = null;
     return null;
   }
@@ -206,7 +207,7 @@ export async function syncFollowUpTask(lead) {
 
   // Nothing to remind anybody about any more.
   if ((!lead.followUpAt && !lead.sequenceExhaustedAt) || !lead.owner || closed) {
-    if (existing && existing.status === 'todo') await existing.deleteOne();
+    if (existing && existing.status === 'todo') await softDelete(existing, null);
     lead.followUpTaskId = null;
     return null;
   }
@@ -253,7 +254,7 @@ export async function runFollowUps({ now = new Date() } = {}) {
     followUpAt: { $ne: null },
     followUpNotifiedAt: null,
     followUpTaskId: null,
-    status: { $nin: ['won', 'lost'] },
+    status: { $nin: ['won', 'lost', 'already_customer'] },
     owner: { $ne: null },
   }).select('fullName phone owner status temperature notes followUpAt followUpKind');
 
@@ -301,7 +302,7 @@ export async function pushDueFollowUps({ now = new Date() } = {}) {
     followUpAt: { $ne: null, $lte: now },
     followUpPushedAt: null,
     owner: { $ne: null },
-    status: { $nin: ['won', 'lost'] },
+    status: { $nin: ['won', 'lost', 'already_customer'] },
   }).select('fullName phone owner followUpAt followUpNote').limit(200);
 
   let pushed = 0;

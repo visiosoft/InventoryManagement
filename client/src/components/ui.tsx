@@ -1,5 +1,7 @@
 import {
   forwardRef,
+  useEffect,
+  useState,
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
   type ReactNode,
@@ -10,6 +12,41 @@ import {
 } from 'react'
 import { X } from 'lucide-react'
 import { cn } from '../lib/utils'
+
+/** Keeps a conditionally-shown panel mounted for `exitMs` after `open`
+ *  turns false, so its own CSS transition can actually play instead of
+ *  the panel vanishing the instant state changes — a bare `if (!open)
+ *  return null` gives a transition nothing to animate on the way out.
+ *  Entry needs no such delay: React paints the "not entered" state on
+ *  first render, and the rAF below flips it to "entered" one frame
+ *  later, which is what gives the transition two distinct states to
+ *  move between instead of both landing in the same paint. */
+function usePresence(open: boolean, exitMs: number) {
+  const [rendered, setRendered] = useState(open)
+  const [entered, setEntered] = useState(false)
+
+  useEffect(() => {
+    if (open) {
+      setRendered(true)
+      const raf = requestAnimationFrame(() => setEntered(true))
+      return () => cancelAnimationFrame(raf)
+    }
+    setEntered(false)
+    const t = setTimeout(() => setRendered(false), exitMs)
+    return () => clearTimeout(t)
+  }, [open, exitMs])
+
+  return { rendered, entered }
+}
+
+/** Fewer and gentler, not zero — reduced motion keeps the fade (it still
+ *  explains the state change) and drops the scale, per this repo's own
+ *  design-skill guidance. Read live rather than cached: nobody reloads
+ *  the app after flipping the OS setting, but a fresh modal open should
+ *  still respect it. */
+function prefersReducedMotion(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+}
 
 /* ---------- Button ---------- */
 type ButtonVariant = 'default' | 'outline' | 'ghost' | 'destructive' | 'success'
@@ -83,7 +120,16 @@ export function Field({ label, children, className }: { label: string; children:
 
 /* ---------- Card ---------- */
 export function Card({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn('rounded-xl border bg-card text-card-foreground shadow-sm', className)}>{children}</div>
+  return (
+    <div
+      className={cn(
+        'rounded-xl border bg-card text-card-foreground shadow-sm transition-[box-shadow,border-color] hover:border-primary/40 hover:shadow-md',
+        className,
+      )}
+    >
+      {children}
+    </div>
+  )
 }
 
 export function CardHeader({ title, subtitle, action }: { title: ReactNode; subtitle?: ReactNode; action?: ReactNode }) {
@@ -150,6 +196,7 @@ export const leadStatusTone: Record<string, string> = {
   quotation_sent: 'gray',
   won: 'green',
   lost: 'red',
+  already_customer: 'gray',
 }
 
 /* The CRM buckets, in the order a lead moves through them. One primary status
@@ -163,6 +210,7 @@ export const LEAD_STATUS_FLOW = [
   { value: 'quotation_sent', label: 'Quotation Sent', meaning: 'Formal quotation issued', next: 'Follow up on the quotation' },
   { value: 'won', label: 'Customer / Won', meaning: 'Quotation accepted', next: 'Create the customer and begin onboarding' },
   { value: 'lost', label: 'Dead Lead / Lost', meaning: 'Not moving forward', next: 'Record a reason and close it' },
+  { value: 'already_customer', label: 'Already Customer / Close', meaning: 'Turned out to already be an existing customer', next: 'Close it — no new deal to credit' },
 ] as const
 
 export const LEAD_TEMPERATURES = [
@@ -193,6 +241,7 @@ const NAMED_STATUSES: Record<string, string> = {
   quotation_sent: 'Quotation Sent',
   won: 'Customer / Won',
   lost: 'Dead Lead / Lost',
+  already_customer: 'Already Customer / Close',
 }
 
 export function statusLabel(s: string) {
@@ -221,15 +270,28 @@ export function Modal({
   wide?: boolean
   className?: string
 }) {
-  if (!open) return null
+  const reduced = prefersReducedMotion()
+  const { rendered, entered } = usePresence(open, 200)
+  if (!rendered) return null
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className={cn(
-        'relative w-full bg-card shadow-2xl max-h-[92vh] overflow-y-auto',
-        'rounded-t-2xl sm:rounded-xl border',
-        className || (wide ? 'sm:max-w-2xl' : 'sm:max-w-md')
-      )}>
+      <div
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        style={{ opacity: entered ? 1 : 0, transition: 'opacity 200ms cubic-bezier(0.23,1,0.32,1)' }}
+        onClick={onClose}
+      />
+      <div
+        className={cn(
+          'relative w-full bg-card shadow-2xl max-h-[92vh] overflow-y-auto',
+          'rounded-t-2xl sm:rounded-xl border',
+          className || (wide ? 'sm:max-w-2xl' : 'sm:max-w-md')
+        )}
+        style={{
+          opacity: entered ? 1 : 0,
+          transform: reduced ? 'none' : `scale(${entered ? 1 : 0.97})`,
+          transition: 'transform 200ms cubic-bezier(0.23,1,0.32,1), opacity 200ms cubic-bezier(0.23,1,0.32,1)',
+        }}
+      >
         <div className="flex items-center justify-between border-b px-5 py-3.5 sticky top-0 bg-card z-10">
           <h2 className="font-semibold text-sm">{title}</h2>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground cursor-pointer p-1 rounded-lg hover:bg-muted transition-colors">
@@ -262,15 +324,31 @@ export function SlideOver({
   width?: string
   side?: 'left' | 'right'
 }) {
-  if (!open) return null
+  const reduced = prefersReducedMotion()
+  const { rendered, entered } = usePresence(open, 220)
+  if (!rendered) return null
+  // Enters and exits along the same edge it's anchored to — a panel that
+  // slides in from the right has to leave the same way, or the two
+  // motions read as unrelated rather than one panel opening and closing.
+  const offscreen = side === 'left' ? '-100%' : '100%'
   return (
     <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0" style={{ background: 'rgba(20,8,31,.28)' }} onClick={onClose} />
-      <div className={cn(
-        'absolute top-0 h-full w-full bg-card shadow-xl overflow-y-auto flex flex-col',
-        side === 'left' ? 'left-0 animate-in slide-in-from-left' : 'right-0 animate-in slide-in-from-right',
-        width
-      )}>
+      <div
+        className="absolute inset-0"
+        style={{ background: 'rgba(20,8,31,.28)', opacity: entered ? 1 : 0, transition: 'opacity 220ms cubic-bezier(0.23,1,0.32,1)' }}
+        onClick={onClose}
+      />
+      <div
+        className={cn(
+          'absolute top-0 h-full w-full bg-card shadow-xl overflow-y-auto flex flex-col',
+          side === 'left' ? 'left-0' : 'right-0',
+          width
+        )}
+        style={{
+          transform: reduced ? 'none' : `translateX(${entered ? '0' : offscreen})`,
+          transition: 'transform 220ms cubic-bezier(0.32,0.72,0,1)',
+        }}
+      >
         <div className="sticky top-0 bg-card border-b px-5 py-4 flex items-start justify-between gap-3 z-10">
           <div className="min-w-0">
             <div className="text-base font-bold" style={{ fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' }}>
@@ -368,6 +446,14 @@ export function Spinner() {
       <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
     </div>
   )
+}
+
+/** A shimmering placeholder the size and shape of the content still loading
+ *  — for a page shell that should appear instantly, with individual pieces
+ *  filling in as their own data arrives, instead of one blocking spinner
+ *  hiding the whole page until every request is back. */
+export function Skeleton({ className }: { className?: string }) {
+  return <div className={cn('animate-pulse rounded-lg bg-muted', className)} />
 }
 
 export function Pagination({

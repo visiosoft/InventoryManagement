@@ -159,6 +159,10 @@ export default function Settings() {
   const [stripeMsg, setStripeMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [stripeSecretKey, setStripeSecretKey] = useState('')
   const [stripeWebhookSecret, setStripeWebhookSecret] = useState('')
+  // Needed only by the tenant renewal page, which renders Stripe's own card
+  // form rather than redirecting. Public by design — it is the one Stripe
+  // credential the server will hand to a browser.
+  const [stripePublishableKey, setStripePublishableKey] = useState('')
   const [stripeBusy, setStripeBusy] = useState(false)
   const [waMsg, setWaMsg] = useState<{ ok: boolean; text: string } | null>(null)
   // OpenAI — only used to read plain-English availability requests.
@@ -170,6 +174,7 @@ export default function Settings() {
   const [waAccessToken, setWaAccessToken] = useState('')
   const [waVerifyToken, setWaVerifyToken] = useState('')
   const [waAppSecret, setWaAppSecret] = useState('')
+  const [waWabaId, setWaWabaId] = useState('')
   const [waProfile, setWaProfile] = useState('')
 
   // Asked for separately from /integrations/status so a call out to Meta never
@@ -211,6 +216,7 @@ export default function Settings() {
     queryKey: ['integrations-status'],
     queryFn: () => integrationApi.status(),
   })
+
 
   return (
     <div className={activeTab !== 'general' ? 'max-w-6xl space-y-4' : 'max-w-3xl space-y-4'}>
@@ -355,9 +361,13 @@ export default function Settings() {
                 </div>
               </div>
               <span className={integrations?.stripe?.configured ? 'text-xs text-emerald-600 font-medium' : 'text-xs text-amber-600 font-medium'}>
-                {integrations?.stripe?.configured
-                  ? (integrations.stripe.webhookConfigured ? 'Connected' : 'Connected — webhook secret missing')
-                  : 'Not connected'}
+                {!integrations?.stripe?.configured
+                  ? 'Not connected'
+                  : !integrations.stripe.webhookConfigured
+                    ? 'Connected — webhook secret missing'
+                    : !integrations.stripe.publishableKey
+                      ? 'Connected — publishable key missing'
+                      : 'Connected'}
               </span>
             </div>
 
@@ -372,6 +382,10 @@ export default function Settings() {
                     <Input type="password" placeholder="whsec_…" value={stripeWebhookSecret}
                       onChange={(e) => setStripeWebhookSecret(e.target.value)} />
                   </Field>
+                  <Field label="Publishable key (needed for the tenant renewal page)">
+                    <Input placeholder="pk_live_… or pk_test_…" value={stripePublishableKey}
+                      onChange={(e) => setStripePublishableKey(e.target.value)} />
+                  </Field>
                 </div>
                 <Button
                   size="sm"
@@ -380,10 +394,15 @@ export default function Settings() {
                     setStripeBusy(true)
                     setStripeMsg(null)
                     try {
-                      await integrationApi.connectStripe({ secretKey: stripeSecretKey, webhookSecret: stripeWebhookSecret || undefined })
+                      await integrationApi.connectStripe({
+                        secretKey: stripeSecretKey,
+                        webhookSecret: stripeWebhookSecret || undefined,
+                        publishableKey: stripePublishableKey || undefined,
+                      })
                       setStripeMsg({ ok: true, text: 'Stripe connected.' })
                       setStripeSecretKey('')
                       setStripeWebhookSecret('')
+                      setStripePublishableKey('')
                       qc.invalidateQueries({ queryKey: ['integrations-status'] })
                     } catch (e) {
                       setStripeMsg({ ok: false, text: apiError(e) })
@@ -402,7 +421,35 @@ export default function Settings() {
                 </p>
               </>
             ) : (
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                {!integrations.stripe.publishableKey && (
+                  <>
+                    <Field label="Publishable key — tenant renewal page needs it" className="flex-1 max-w-sm">
+                      <Input placeholder="pk_live_… or pk_test_…" value={stripePublishableKey}
+                        onChange={(e) => setStripePublishableKey(e.target.value)} />
+                    </Field>
+                    <Button
+                      size="sm"
+                      disabled={stripeBusy || !stripePublishableKey}
+                      onClick={async () => {
+                        setStripeBusy(true)
+                        setStripeMsg(null)
+                        try {
+                          await integrationApi.connectStripe({ publishableKey: stripePublishableKey })
+                          setStripeMsg({ ok: true, text: 'Publishable key saved — tenants can now pay by card when renewing.' })
+                          setStripePublishableKey('')
+                          qc.invalidateQueries({ queryKey: ['integrations-status'] })
+                        } catch (e) {
+                          setStripeMsg({ ok: false, text: apiError(e) })
+                        } finally {
+                          setStripeBusy(false)
+                        }
+                      }}
+                    >
+                      {stripeBusy ? 'Saving…' : 'Save publishable key'}
+                    </Button>
+                  </>
+                )}
                 {!integrations.stripe.webhookConfigured && (
                   <Field label="Webhook signing secret" className="flex-1 max-w-sm">
                     <Input type="password" placeholder="whsec_…" value={stripeWebhookSecret}
@@ -598,12 +645,20 @@ export default function Settings() {
                 <Input type="password" placeholder="From Meta App → Settings → Basic" value={waAppSecret}
                   onChange={(e) => setWaAppSecret(e.target.value)} />
               </Field>
+              <Field label="Business Account ID (optional)">
+                <Input placeholder="Worked out from the number if left blank" value={waWabaId}
+                  onChange={(e) => setWaWabaId(e.target.value)} />
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Only the approved templates panel needs this. It is normally read from your
+                  number automatically — set it by hand if that panel says it could not be found.
+                </p>
+              </Field>
             </div>
 
             <div className="flex items-center gap-3 flex-wrap">
               <Button
                 size="sm"
-                disabled={waBusy || (!waPhoneNumberId && !waAccessToken && !waVerifyToken && !waAppSecret)}
+                disabled={waBusy || (!waPhoneNumberId && !waAccessToken && !waVerifyToken && !waAppSecret && !waWabaId)}
                 onClick={async () => {
                   setWaBusy(true); setWaMsg(null)
                   try {
@@ -612,10 +667,11 @@ export default function Settings() {
                       accessToken: waAccessToken || undefined,
                       verifyToken: waVerifyToken || undefined,
                       appSecret: waAppSecret || undefined,
+                      wabaId: waWabaId || undefined,
                     })
                     setWaProfile([r.verifiedName, r.displayPhoneNumber].filter(Boolean).join(' · '))
                     setWaMsg({ ok: true, text: r.configured ? 'WhatsApp connected.' : `Saved. Still missing: ${r.missing.join(', ')}` })
-                    setWaPhoneNumberId(''); setWaAccessToken(''); setWaVerifyToken(''); setWaAppSecret('')
+                    setWaPhoneNumberId(''); setWaAccessToken(''); setWaVerifyToken(''); setWaAppSecret(''); setWaWabaId('')
                     qc.invalidateQueries({ queryKey: ['integrations-status'] })
                   } catch (e) {
                     setWaMsg({ ok: false, text: apiError(e) })

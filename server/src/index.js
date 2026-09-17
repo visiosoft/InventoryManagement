@@ -15,6 +15,9 @@ import 'dotenv/config';
 process.env.TZ = process.env.TZ || 'Asia/Dubai';
 
 import express from 'express';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import { execSync } from 'node:child_process';
 import cors from 'cors';
 
 import mongoose from 'mongoose';
@@ -31,6 +34,7 @@ const dbReady = () => {
 };
 
 import { requireAuth, readOnlyFor } from './middleware/auth.js';
+import { auditLogMiddleware } from './middleware/auditLog.js';
 import { UPLOADS_DIR } from './services/drive.js';
 import authRoutes from './routes/auth.js';
 import unitRoutes from './routes/units.js';
@@ -42,6 +46,7 @@ import paymentRoutes from './routes/payments.js';
 import documentRoutes from './routes/documents.js';
 import reportRoutes from './routes/reports.js';
 import aiReportRoutes from './routes/aiReports.js';
+import assistantRoutes from './routes/assistant.js';
 import leadRoutes from './routes/leads.js';
 import integrationRoutes from './routes/integrations.js';
 import whatsappDiagnosticsRoutes from './routes/whatsappDiagnostics.js';
@@ -58,6 +63,7 @@ import stripeWebhookRoutes from './routes/stripeWebhook.js';
 import userRoutes from './routes/users.js';
 import whatsappRoutes from './routes/whatsapp.js';
 import aiBotRoutes from './routes/aiBot.js';
+import whatsappFlowTemplateRoutes from './routes/whatsappFlowTemplates.js';
 import campaignRoutes from './routes/campaigns.js';
 import sentEmailRoutes from './routes/sentEmails.js';
 import walkthroughRoutes from './routes/walkthroughs.js';
@@ -86,10 +92,13 @@ import salesTeamRoutes from './routes/salesTeam.js';
 import leaderboardRoutes from './routes/leaderboard.js';
 import platformRoutes from './routes/platform.js';
 import myDayRoutes from './routes/myDay.js';
+import leadFollowUpRoutes from './routes/leadFollowUp.js';
+import followUpQueueRoutes from './routes/followUpQueue.js';
 import accountsDashboardRoutes from './routes/accountsDashboard.js';
 import exportRoutes from './routes/exports.js';
 import leadRoutingRoutes from './routes/leadRouting.js';
 import activityRoutes from './routes/activity.js';
+import auditLogRoutes from './routes/auditLog.js';
 import signingMovingRoutes from './routes/signingMoving.js';
 import customerAuthRoutes from './routes/customerAuth.js';
 import customerPortalRoutes from './routes/customerPortal.js';
@@ -105,12 +114,20 @@ import { summariseRecent } from './services/conversationSummary.js';
 import { ensureDigest, dayKeyFor, previousDay, localHour } from './services/dailyDigest.js';
 import { runDayBriefs } from './services/dayBrief.js';
 import { runLeadSla } from './services/leadSla.js';
+import { runQuietNudge } from './services/quietNudge.js';
+import { runLeadAssignReminder } from './services/leadAssignReminder.js';
 import { releaseLapsedHolds } from './utils/unitStatus.js';
 import { runCampaignTick } from './services/campaignSender.js';
 import { inspectWhatsAppToken } from './services/whatsapp.js';
 import { runAutomationRules, getAutoSend } from './services/automationEngine.js';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 const app = express();
+// Trusts the first hop (nginx, in production — see the CORS note just below)
+// so req.ip reads the real client address from X-Forwarded-For instead of
+// nginx's own. Harmless in local dev, where there's no proxy in front at all.
+app.set('trust proxy', 1);
 // In production this server sits behind an nginx layer that already injects
 // Access-Control-Allow-Origin (and related headers) on every response, so Express
 // must not add its own or the browser sees duplicate values ("*, *") and blocks it.
@@ -150,6 +167,11 @@ app.use(
 );
 app.use('/uploads', express.static(UPLOADS_DIR));
 
+// Sees every mutating request across every router mounted below — who did
+// it, from what IP, on what record — without any of those routers needing
+// to know it exists. See middleware/auditLog.js.
+app.use(auditLogMiddleware);
+
 
 // Public signing routes — no JWT required
 app.use('/api/sign', signingRoutes);
@@ -159,6 +181,60 @@ app.use('/api/stripe/webhook', stripeWebhookRoutes);
 
 // Public liveness probe — also proves which build is running after a deploy
 const STARTED_AT = new Date().toISOString();
+
+/* Which commit this process is running.
+ *
+ * The API host deploys with `git reset --hard origin/main` (server/deploy.sh),
+ * so the checkout two directories up knows. Read once at boot: it cannot
+ * change while the process lives, and asking git on every request would be
+ * silly. The footer compares this with the commit baked into the page, which
+ * is how "I pushed — is it live?" gets answered without opening two
+ * dashboards. */
+const VERSION = (() => {
+  const run = (args) => {
+    try {
+      return execSync(`git ${args}`, { cwd: path.resolve(__dirname, '../..'), stdio: ['ignore', 'pipe', 'ignore'] })
+        .toString().trim();
+    } catch { return ''; }
+  };
+  const sha = process.env.COMMIT_REF || process.env.GIT_SHA || run('rev-parse HEAD') || 'unknown';
+  return {
+    sha,
+    short: sha.slice(0, 7),
+    message: run(`show -s --format=%s ${sha}`),
+    committedAt: run(`show -s --format=%cI ${sha}`),
+    startedAt: STARTED_AT,
+  };
+})();
+/* The API only redeploys when server/ changes (see .github/workflows), so a
+ * client-only push leaves it on an older commit on purpose. "In sync" is
+ * therefore not "same commit" but "my server code is the server code at the
+ * commit this page was built from" — which git can answer exactly, from the
+ * checkout this process runs in. Commits it has not seen yet are fetched, at
+ * most once every few minutes, and if that is not possible the answer is
+ * null rather than a guess. */
+const REPO = path.resolve(__dirname, '../..');
+const gitq = (args) => {
+  try { return execSync(`git ${args}`, { cwd: REPO, stdio: ['ignore', 'pipe', 'ignore'], timeout: 8000 }).toString().trim(); }
+  catch { return null; }
+};
+let lastFetch = 0;
+function serverSync(clientSha) {
+  if (!clientSha || !/^[0-9a-f]{7,40}$/i.test(clientSha) || VERSION.sha === 'unknown') return { serverInSync: null };
+  if (clientSha === VERSION.sha || VERSION.sha.startsWith(clientSha)) return { serverInSync: true };
+  const known = () => gitq(`cat-file -e ${clientSha}^{commit}`) !== null;
+  if (!known() && Date.now() - lastFetch > 5 * 60_000) {
+    lastFetch = Date.now();
+    gitq('fetch --quiet origin main');
+  }
+  if (!known()) return { serverInSync: null };
+  // Exit 0 = no difference under server/ between the two commits.
+  const same = gitq(`diff --quiet ${VERSION.sha} ${clientSha} -- server`) !== null;
+  return { serverInSync: same };
+}
+app.get('/api/version', (req, res) => {
+  res.json({ ...VERSION, ...serverSync(String(req.query.client || '')) });
+});
 app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
@@ -200,16 +276,19 @@ app.use('/api/documents', requireAuth, documentRoutes);
 app.use('/api/reports', requireAuth, reportRoutes);
 // Asking for a report in plain English. Admin-only inside the router itself.
 app.use('/api/ai-reports', requireAuth, aiReportRoutes);
+app.use('/api/assistant', requireAuth, assistantRoutes);
 // A lead is client information too, and accounts have no leads screen at all.
 app.use('/api/leads', requireAuth, accountsReadOnly, leadRoutes);
 app.use(
   '/api/quotes',
-  (req, res, next) => req.path.startsWith('/public/') ? next() : requireAuth(req, res, next),
+  // /pay/link/:id is the short Stripe-payment redirect — a customer reaches
+  // it from WhatsApp or email with no login, same as /public/ already was.
+  (req, res, next) => (req.path.startsWith('/public/') || req.path.startsWith('/pay/')) ? next() : requireAuth(req, res, next),
   quoteRoutes
 );
 app.use(
   '/api/invoices',
-  (req, res, next) => req.path.startsWith('/public/') ? next() : requireAuth(req, res, next),
+  (req, res, next) => (req.path.startsWith('/public/') || req.path.startsWith('/pay/')) ? next() : requireAuth(req, res, next),
   invoiceRoutes
 );
 app.use('/api/vendors', vendorRoutes);
@@ -222,7 +301,7 @@ app.use('/api/moving-jobs', requireAuth, movingJobRoutes);
 app.use('/api/moving-leads', requireAuth, movingLeadRoutes);
 app.use(
   '/api/moving-quotes',
-  (req, res, next) => (req.path.endsWith('/pdf') && req.query.token) ? next() : requireAuth(req, res, next),
+  (req, res, next) => (req.path.startsWith('/pay/') || (req.path.endsWith('/pdf') && req.query.token)) ? next() : requireAuth(req, res, next),
   movingQuoteRoutes
 );
 app.use(
@@ -260,6 +339,7 @@ app.use('/api/backup', requireAuth, backupRoutes);
 // would be "something went wrong" on a customer's phone.
 app.use('/api/whatsapp', (req, res, next) => (req.path.startsWith('/flow') ? next() : requireAuth(req, res, next)), whatsappRoutes);
 app.use('/api/ai-bot', requireAuth, aiBotRoutes);
+app.use('/api/whatsapp-flow-templates', requireAuth, whatsappFlowTemplateRoutes);
 app.use('/api/marketing', marketingPublicRoutes);
 app.use('/api/campaigns', requireAuth, campaignRoutes);
 app.use('/api/sent-emails', requireAuth, sentEmailRoutes);
@@ -279,6 +359,10 @@ app.use('/api/leaderboard', requireAuth, leaderboardRoutes);
    theirs must never reach this. */
 app.use('/api/platform', requireAuth, platformRoutes);
 app.use('/api/my-day', requireAuth, myDayRoutes);
+app.use('/api/lead-follow-up', requireAuth, leadFollowUpRoutes);
+// The unified follow-up queue: waiting-on-us, gone-quiet and scheduled
+// follow-ups in one ranked list — services/followUpQueue.js.
+app.use('/api/follow-up-queue', requireAuth, followUpQueueRoutes);
 // The invoicing day, on one page. Admin and accounts only, inside the router.
 app.use('/api/accounts-dashboard', requireAuth, accountsDashboardRoutes);
 // Downloading the table you are looking at, in any format, from any page.
@@ -286,6 +370,7 @@ app.use('/api/exports', requireAuth, exportRoutes);
 // Who gets the next WhatsApp lead. Admin only, inside the router.
 app.use('/api/lead-routing', requireAuth, leadRoutingRoutes);
 app.use('/api/activity', requireAuth, activityRoutes);
+app.use('/api/audit-log', requireAuth, auditLogRoutes);
 
 // Central error handler
 app.use((err, _req, res, _next) => {
@@ -476,6 +561,35 @@ async function start() {
       console.log(`[LeadSLA] reminded ${out.nudged}, moved ${out.reassigned}`);
     }
   }, { every: 60_000, delay: 60_000 });
+
+  /* The other direction: a lead the rep spoke to last, gone quiet on THEM,
+     for as little as a few hours — the moment before it becomes next week's
+     quiet-lead backlog (services/leadFollowUp.js). Off until admin turns it
+     on; every 15 minutes is plenty for an hours-scale threshold. */
+  setTimeout(() => setInterval(async () => {
+    try {
+      const out = await runQuietNudge({ appUrl: process.env.CLIENT_ORIGIN || 'https://office.purplebox.ae' });
+      if (out.nudged) console.log(`[QuietNudge] reminded ${out.nudged}`);
+    } catch (e) {
+      console.error('[QuietNudge]', e.message);
+    }
+  }, 15 * 60_000), 90_000);
+
+  /* A lead handed to somebody who never actually did anything about it —
+     no attempt logged, no stage moved, no WhatsApp reply sent — gets one
+     mobile reminder a day until one of those happens. Not the same clock as
+     LeadSLA above: that one moves the lead to somebody else inside half an
+     hour; this one leaves it exactly where it is and just says it again,
+     for the much slower case of a rep who meant to get to it and did not.
+     Every 20 minutes is plenty against a reminder measured in hours. */
+  setTimeout(() => setInterval(async () => {
+    try {
+      const out = await runLeadAssignReminder();
+      if (out.reminded) console.log(`[LeadAssignReminder] reminded on ${out.reminded} lead(s)`);
+    } catch (e) {
+      console.error('[LeadAssignReminder]', e.message);
+    }
+  }, 20 * 60_000), 100_000);
 
   /* Units held by a quotation that has since expired.
      A quote holds its unit until its expiry date, and nothing else sweeps

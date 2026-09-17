@@ -1,15 +1,18 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import WhatsAppBell from './WhatsAppBell'
 import {
-  Shuffle, Bot, Compass, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Target, Calculator, ListTodo, NotebookPen, MessageCircle, Sparkles, Trophy } from 'lucide-react'
+  Shuffle, Bot, Compass, Megaphone, LayoutDashboard, Search, Box, Users, FileText, BarChart3, Building2, Briefcase, AlertTriangle, ChevronDown, FolderOpen, Settings, LogOut, Moon, Sun, UserPlus, ReceiptText, Truck, Wallet, TrendingUp, UserCog, X, Package, CalendarDays, ClipboardList, Users2, Menu, DatabaseBackup, ScrollText, CalendarCheck, RefreshCw, Mail, Filter, PieChart, ShieldAlert, CreditCard, Target, Calculator, ListTodo, NotebookPen, MessageCircle, Sparkles, Trophy, Workflow, ShieldCheck } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import GlobalSearch from './GlobalSearch'
 import LeadAlerts from './LeadAlerts'
 import { SiteSwitcher } from './SiteSwitcher'
 import { SiteGate } from './SiteGate'
+import AssistantWidget from './AssistantWidget'
+import AppFooter from './AppFooter'
 import { cn } from '../lib/utils'
 import { isSalesRepRole } from '../lib/roles'
+import { WalkthroughProvider } from '../walkthroughs/WalkthroughProvider'
 
 const navTop = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard' as string | undefined },
@@ -29,6 +32,9 @@ const navGroups = [
     title: 'Sales',
     items: [
       { to: '/my-leads', label: 'My Leads', icon: UserPlus, perm: 'sales_board' },
+      /* Either permission: an admin whose list has 'leads' but not
+         'sales_board' works leads too, and this is where that work is. */
+      { to: '/follow-ups', label: 'Follow-Ups', icon: CalendarCheck, perm: ['sales_board', 'leads'] },
       { to: '/moving-estimator', label: 'Moving Estimator', icon: Calculator, perm: 'sales_board' },
       { to: '/my-performance', label: 'Reports', icon: BarChart3, perm: 'sales_board' },
       { to: '/leaderboard', label: 'Leaderboard', icon: Trophy, perm: 'sales_board' },
@@ -67,6 +73,8 @@ const profileMenuGroups = [
       { to: '/settings/agreement', label: 'Agreement Template', icon: FileText, perm: 'settings', adminOnly: false },
       { to: '/settings/automation', label: 'Automation Rules', icon: RefreshCw, perm: 'settings', adminOnly: false },
       { to: '/settings/ai', label: 'AI Assistant', icon: Bot, perm: 'settings', adminOnly: false },
+      { to: '/settings/flow-templates', label: 'WhatsApp Flow Templates', icon: Workflow, perm: 'settings', adminOnly: false },
+      { to: '/settings/assistant', label: 'Ask the system', icon: Sparkles, perm: 'settings', adminOnly: true },
       { to: '/settings/lead-distribution', label: 'Lead Distribution', icon: Shuffle, perm: 'settings', adminOnly: true },
       { to: '/settings/sent-emails', label: 'Sent Emails', icon: Mail, perm: 'settings', adminOnly: true },
       { to: '/marketing', label: 'Marketing', icon: Megaphone, perm: 'settings', adminOnly: true },
@@ -82,6 +90,7 @@ const profileMenuGroups = [
       { to: '/users', label: 'Users', icon: UserCog, perm: undefined, adminOnly: true },
       { to: '/sales-team', label: 'Sales Team', icon: Target, perm: undefined, adminOnly: true },
       { to: '/backup', label: 'Backup', icon: DatabaseBackup, perm: undefined, adminOnly: true },
+      { to: '/audit-log', label: 'Audit Log', icon: ShieldCheck, perm: undefined, adminOnly: true },
     ],
   },
 ]
@@ -126,6 +135,9 @@ const salesRepNavGroups = [
        * Leads stays: the full board is still where you go to search, filter by
        * temperature and work the whole pipeline. */
       { key: 'my-day', to: '/my-day', label: 'My Day', icon: Sun, perm: 'sales_board', notFor: 'accounts' },
+      /* The queue itself: who to contact today and why, ranked. My Day is
+         the morning glance; this is where the work gets done. */
+      { key: 'follow-ups', to: '/follow-ups', label: 'Follow-Ups', icon: CalendarCheck, perm: 'sales_board', notFor: 'accounts' },
       { key: 'leads', to: '/my-leads', label: 'Leads', icon: UserPlus, perm: 'sales_board', notFor: 'accounts' },
       { key: 'tasks', to: '/tasks', label: 'Tasks', icon: ListTodo, perm: 'sales_board' },
       { key: 'whatsapp', to: '/whatsapp', label: 'WhatsApp', icon: MessageCircle, perm: 'sales_board' },
@@ -330,7 +342,10 @@ export default function Layout() {
   const hasMovingAccess = movingNavItems.some(({ perm }) => hasPermission(perm)) || hasPermission('moving_leads')
     || movingReportItems.some(({ perm }) => hasPermission(perm))
   const hasStorageAccess = navTop.some(({ perm }) => !perm || hasPermission(perm))
-    || navGroups.some(g => g.items.some(({ perm }) => !perm || hasPermission(perm)))
+    // An admin-only group must not hand a rep access to the storage nav: its
+    // items carry no permission key, so without this every role passes.
+    || navGroups.some(g => (!(g as { adminOnly?: boolean }).adminOnly || isAdmin)
+      && g.items.some(({ perm }) => !perm || hasPermission(perm)))
     || reportItems.some(({ perm, roles }) => (roles ? roles.includes(user?.role ?? '') : hasPermission(perm)))
     || navBottom.some(({ perm }) => !perm || hasPermission(perm))
   // Nothing to switch to → no switcher (moving-only users, storage-only users,
@@ -513,6 +528,10 @@ export default function Layout() {
           // 'units' permission also gated the editable unit list. It no longer
           // does — units are created and priced on Settings → Unit Pricing —
           // and a rep who cannot look up what is free cannot do their job.
+          /* Admin by role, not by a permission module: a module key can be
+             granted to a rep, and these lists carry every lead's estimated
+             value — and, before long, an assessment of the reps themselves. */
+          if ((group as { adminOnly?: boolean }).adminOnly && !isAdmin) return null
           const visibleItems = group.items
             .filter(({ perm }) => !perm || hasPermission(perm))
           if (visibleItems.length === 0) return null
@@ -715,6 +734,15 @@ export default function Layout() {
   )
 
   return (
+    // Only the signed-in app reads walkthrough progress — moved here from
+    // wrapping every <Routes> in App.tsx, where it also sat around the public
+    // share-link pages (renewal, contract signing, moving job sharing) that
+    // never mount Layout. `useQuery` fired GET /walkthroughs/me the instant
+    // any of those pages mounted with a stale token still in localStorage —
+    // which a signed-in admin's own browser is exactly the case for — and the
+    // 401 interceptor wiped the session and bounced a tenant clicking their
+    // renewal link straight to the login screen, no login needed or wanted.
+    <WalkthroughProvider>
     <div className="flex min-h-screen bg-background">
 
       {/* ── Desktop sidebar ─────────────────────────────────────── */}
@@ -814,9 +842,14 @@ export default function Layout() {
 
             {profileOpen && (
               <div
-                className="absolute right-0 top-full mt-3 z-50 overflow-hidden"
+                className="absolute right-0 top-full mt-3 z-50 overflow-hidden flex flex-col"
                 style={{
                   width: 640,
+                  // Capped so the footer row (Settings/Dark mode/Clear cache/Logout)
+                  // never ends up below the viewport — it used to, for any admin
+                  // whose permission groups made the nav grid tall enough to push
+                  // Logout off-screen with no obvious way to reach it.
+                  maxHeight: 'calc(100vh - 88px)',
                   background: '#fff',
                   borderRadius: 18,
                   border: '1px solid rgba(20,8,31,.10)',
@@ -825,7 +858,7 @@ export default function Layout() {
               >
                 {/* Who you are signed in as */}
                 <div
-                  className="flex items-center gap-3.5"
+                  className="flex items-center gap-3.5 shrink-0"
                   style={{ padding: '20px 24px', borderBottom: '1px solid rgba(20,8,31,.10)' }}
                 >
                   <div
@@ -840,8 +873,10 @@ export default function Layout() {
                   </div>
                 </div>
 
-                {/* Two columns of grouped links */}
-                <div className="grid grid-cols-2" style={{ columnGap: 28, rowGap: 22, padding: '20px 24px' }}>
+                {/* Two columns of grouped links — scrolls on its own so a long
+                    list (admins see every group) can never push the footer's
+                    Settings/Dark mode/Clear cache/Logout row out of reach. */}
+                <div className="grid grid-cols-2 overflow-y-auto" style={{ columnGap: 28, rowGap: 22, padding: '20px 24px', minHeight: 0, flex: '1 1 auto' }}>
                   {profileMenuGroups.map((group) => {
                     const items = group.items.filter(
                       (i) => (!i.perm || hasPermission(i.perm)) && (!i.adminOnly || isAdmin)
@@ -878,7 +913,7 @@ export default function Layout() {
 
                 {/* Settings, dark mode, cache, sign out */}
                 <div
-                  className="flex items-center gap-2"
+                  className="flex items-center gap-2 shrink-0"
                   style={{ padding: '14px 24px', borderTop: '1px solid rgba(20,8,31,.10)', background: '#F7F3FF' }}
                 >
                   {hasPermission('settings') && (
@@ -950,11 +985,16 @@ export default function Layout() {
             <Outlet />
           </SiteGate>
         </div>
+        <AppFooter />
       </main>
 
       {/* Outside the page, so a rep is told about a new lead whichever screen
           they happen to be on. */}
       <LeadAlerts />
+      {/* The corner assistant. A sibling of the alerts, not inside the page,
+          so it is on every screen and above every overlay. */}
+      <AssistantWidget />
     </div>
+    </WalkthroughProvider>
   )
 }

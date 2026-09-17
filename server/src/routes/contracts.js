@@ -2,7 +2,8 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { isValidObjectId, Types } from 'mongoose';
 import { stampSignature } from '../services/stampSignature.js';
-import { Contract, Customer, Unit, Payment, Document, Invoice, Quote, AgreementTemplate, nextContractNo, nextInvoiceNo, MessageTemplate } from '../models/index.js';
+import { Contract, Customer, Unit, Payment, Document, Invoice, Quote, AgreementTemplate, nextContractNo, nextInvoiceNo, MessageTemplate, ContractRenewal, AuditLog } from '../models/index.js';
+import { applyRenewal } from '../services/renewalApply.js';
 import { creditFor, markLeadWon } from '../services/dealCredit.js';
 import { contractExportRows } from '../services/contractExportRows.js';
 import { promoteToCustomer } from '../services/customerStage.js';
@@ -10,13 +11,16 @@ import { zohoBooksConfigured, zohoOutstandingByCustomer } from '../services/zoho
 import { requireAdmin } from '../middleware/auth.js';
 import { renewLink, moveOutLink } from '../services/renewalLink.js';
 import { syncUnitStatus } from '../utils/unitStatus.js';
+import { softDelete, softDeleteMany } from '../utils/softDelete.js';
 import { sendForSignature, downloadSignedPdf, zohoConfigured } from '../services/zoho.js';
 import { uploadFile } from '../services/drive.js';
 import { mergeAgreementText, renderAgreementTextPdf, renderAgreementHtmlPdf, looksLikeHtml } from '../services/agreementText.js';
 import { sendWhatsAppTemplate, whatsappSendConfigured } from '../services/whatsapp.js';
 import { AutomationLog } from '../models/index.js';
 import { buildContractPdf } from '../services/contractDocument.js';
+import { sha256Hex, buildSigningRecord, appendSigningCertificate } from '../services/documentSigning.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
+import { brandedEmailHtml } from '../services/emailLayout.js';
 import { siteScope } from '../utils/siteScope.js';
 import { phoneClauses } from '../utils/phoneSearch.js';
 
@@ -32,6 +36,10 @@ router.param('id', (req, res, next, id) => {
 const populateAll = (q) => q.populate('customer').populate('unit').populate('units').populate('quote', 'quoteNo status');
 
 const OPEN_STATUSES = ['draft', 'pending_signature', 'active'];
+
+function isSalesRep(req) {
+  return req.user?.role === 'sales_rep' || req.user?.role === 'accounts';
+}
 
 function hasDateOverlap(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && aEnd > bStart;
@@ -50,16 +58,16 @@ async function findOverlappingUnitContract({ unit, startDate, endDate, excludeId
 }
 
 
-async function deleteContractRecord(contract) {
+export async function deleteContractRecord(contract, userId) {
   if (contract.status === 'active') {
     throw new Error('Cannot delete an active contract. End or cancel it first.');
   }
 
   const allUnitIds = contract.units?.length ? contract.units : [contract.unit];
-  await Payment.deleteMany({ contract: contract._id });
-  await Document.deleteMany({ contract: contract._id });
-  await Invoice.deleteMany({ orderNumber: contract.contractNo });
-  await contract.deleteOne();
+  await softDeleteMany(Payment, { contract: contract._id }, userId);
+  await softDeleteMany(Document, { contract: contract._id }, userId);
+  await softDeleteMany(Invoice, { orderNumber: contract.contractNo }, userId);
+  await softDelete(contract, userId);
   await Promise.all(allUnitIds.map((uid) => syncUnitStatus(uid)));
 }
 
@@ -768,8 +776,10 @@ async function markSigned(contractId, recordedBy = '') {
 
   // Archive the signed PDF (real Zoho download, or regenerate locally in mock mode).
   let pdfBuffer = null;
+  let signingMethod = 'offline_paper';
   if (zohoConfigured() && contract.zohoRequestId && !contract.zohoRequestId.startsWith('MOCK-')) {
     pdfBuffer = await downloadSignedPdf(contract.zohoRequestId);
+    signingMethod = 'zoho_sign';
   }
   const signedAt = new Date();
   if (!pdfBuffer) {
@@ -782,6 +792,21 @@ async function markSigned(contractId, recordedBy = '') {
       offlineNote: `Signed outside the system${recordedBy ? `, recorded by ${recordedBy}` : ''} on ${on}`,
     });
   }
+
+  // Neither path keeps the exact buffer that was originally sent/printed, so
+  // this re-render of today's wording is the closest available proxy for
+  // "what was presented" — see the same tamper-evidence idea the in-house
+  // token flow uses in services/documentSigning.js.
+  const presentedPdf = await buildContractPdf(contract);
+  const signingRecord = buildSigningRecord({
+    method: signingMethod,
+    signerName: contract.customer?.fullName || 'Unknown',
+    signedAt,
+    documentHash: sha256Hex(presentedPdf),
+    signedPdfHash: sha256Hex(pdfBuffer),
+  });
+  pdfBuffer = await appendSigningCertificate(pdfBuffer, signingRecord, `Contract ${contract.contractNo}`);
+
   const stored = await uploadFile({
     buffer: pdfBuffer,
     filename: `${contract.contractNo}-signed.pdf`,
@@ -798,15 +823,23 @@ async function markSigned(contractId, recordedBy = '') {
 
   contract.status = 'active';
   contract.signedDocUrl = stored.url;
-  // Recorded here too: the contract said signedDocUrl was set while signedAt
-  // stayed empty, so nothing in the data said when it had been signed.
-  if (!contract.signedAt) contract.signedAt = signedAt;
+  contract.signingRecord = signingRecord;
   contract.timeline.push({
     type: 'signed',
     text: `Marked signed${recordedBy ? ` by ${recordedBy}` : ''}`,
     author: recordedBy || 'system',
   });
   await contract.save();
+  try {
+    await AuditLog.create({
+      action: 'document_signed',
+      entity: 'Contract',
+      entityId: String(contract._id),
+      detail: `${signingRecord.signerName} signed via ${signingMethod}${recordedBy ? `, recorded by ${recordedBy}` : ''}`,
+    });
+  } catch (err) {
+    console.error('AuditLog write failed for signing event:', err);
+  }
   const signedUnitIds = contract.units?.length ? contract.units.map((u) => u._id ?? u) : [contract.unit._id];
   await Promise.all(signedUnitIds.map((uid) => syncUnitStatus(uid)));
   return contract;
@@ -1052,12 +1085,12 @@ router.put('/:id', async (req, res) => {
     const contract = await Contract.findById(req.params.id);
     if (!contract) return res.status(404).json({ error: 'Contract not found' });
 
-    // Once booked (active), only an admin may edit the contract terms — except
-    // renewalIntent alone, which sales reps update from the renewal-calling
-    // queue on contracts that are, by definition, always active.
+    // Once booked (active), only an admin or sales rep may edit the contract
+    // terms — except renewalIntent alone, which sales reps update from the
+    // renewal-calling queue on contracts that are, by definition, always active.
     const isRenewalIntentOnly = Object.keys(req.body).length > 0 && Object.keys(req.body).every((k) => k === 'renewalIntent');
-    if (contract.status === 'active' && req.user.role !== 'admin' && !isRenewalIntentOnly) {
-      return res.status(403).json({ error: 'Only an admin can edit a booked contract' });
+    if (contract.status === 'active' && req.user.role !== 'admin' && !isSalesRep(req) && !isRenewalIntentOnly) {
+      return res.status(403).json({ error: 'Only an admin or sales rep can edit a booked contract' });
     }
 
     // Use $set to avoid VersionError from concurrent background writes on this document
@@ -1276,6 +1309,76 @@ router.post('/:id/extend', async (req, res) => {
   }
 });
 
+/* ── Renewals the tenant started themselves ─────────────────────────────────
+ *
+ * What the contract page shows in its renewal panel. A card renewal is usually
+ * already 'applied' by the time anyone looks; a bank transfer sits at
+ * 'awaiting_transfer' until somebody confirms the money landed.
+ */
+router.get('/:id/renewals', async (req, res) => {
+  if (!isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Bad contract id' });
+  const renewals = await ContractRenewal.find({ contract: req.params.id })
+    .populate('invoice', 'invoiceNo total paymentMade status')
+    .sort({ createdAt: -1 })
+    .limit(20)
+    .lean();
+  res.json(renewals);
+});
+
+/**
+ * The money for a bank-transfer renewal has arrived.
+ *
+ * This is the one manual step in the whole flow, and it exists because nothing
+ * tells us a transfer landed — a card tells us through the webhook, a bank does
+ * not. Pressing this does exactly what the webhook does, through the same
+ * function, so the two cannot drift into meaning different things.
+ */
+router.post('/:id/renewals/:renewalId/confirm-transfer', async (req, res) => {
+  const { id, renewalId } = req.params;
+  if (!isValidObjectId(id) || !isValidObjectId(renewalId)) {
+    return res.status(400).json({ error: 'Bad id' });
+  }
+  const renewal = await ContractRenewal.findOne({ _id: renewalId, contract: id });
+  if (!renewal) return res.status(404).json({ error: 'Renewal not found' });
+  if (renewal.method !== 'bank_transfer') {
+    return res.status(409).json({ error: 'This renewal was paid by card — it applies itself' });
+  }
+  if (renewal.status === 'applied') {
+    return res.status(409).json({ error: 'This renewal has already been applied' });
+  }
+  if (renewal.status === 'cancelled') {
+    return res.status(409).json({ error: 'This renewal was cancelled' });
+  }
+
+  const byName = req.user?.name || req.user?.email || 'staff';
+  const out = await applyRenewal(renewal._id, { byName, paid: true });
+  if (!out.ok) return res.status(out.needsReview ? 409 : 500).json({ error: out.error });
+
+  res.json({
+    applied: true,
+    extended: out.extended,
+    invoiceId: out.invoiceId,
+    notified: out.notified,
+    reviewNote: out.reviewNote || '',
+  });
+});
+
+/** Drop a renewal the tenant started and never paid for. */
+router.post('/:id/renewals/:renewalId/cancel', async (req, res) => {
+  const { id, renewalId } = req.params;
+  if (!isValidObjectId(id) || !isValidObjectId(renewalId)) {
+    return res.status(400).json({ error: 'Bad id' });
+  }
+  const renewal = await ContractRenewal.findOne({ _id: renewalId, contract: id });
+  if (!renewal) return res.status(404).json({ error: 'Renewal not found' });
+  if (renewal.status === 'applied') {
+    return res.status(409).json({ error: 'This renewal has already been applied' });
+  }
+  renewal.status = 'cancelled';
+  await renewal.save();
+  res.json({ cancelled: true });
+});
+
 router.post('/bulk-delete', requireAdmin, async (req, res) => {
   const ids = Array.isArray(req.body?.ids)
     ? req.body.ids.map((id) => String(id || '').trim()).filter(Boolean)
@@ -1298,7 +1401,7 @@ router.post('/bulk-delete', requireAdmin, async (req, res) => {
   }
 
   for (const contract of contracts) {
-    await deleteContractRecord(contract);
+    await deleteContractRecord(contract, req.user.id);
   }
 
   res.json({ ok: true, deleted: contracts.length, requested: uniqueIds.length });
@@ -1311,7 +1414,7 @@ router.delete('/:id', requireAdmin, async (req, res) => {
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
 
   try {
-    await deleteContractRecord(contract);
+    await deleteContractRecord(contract, req.user.id);
   } catch (err) {
     return res.status(409).json({ error: err.message });
   }
@@ -1683,20 +1786,21 @@ router.get('/:id/message-template/:templateId', async (req, res) => {
     if (!template) return res.status(404).json({ error: 'Template not found' });
 
     const vars = await contractTemplateVars(contract);
+    const bodyText = interpolateVars(template.emailBody, vars);
     res.json({
       to: contract.customer?.email || '',
       label: template.label || '',
       subject: interpolateVars(template.subject, vars),
-      // The designed version when the template has one. This was reading
-      // emailBody — the plain-text alternative — so a template with a full
-      // HTML design went out as a wall of unformatted text.
-      html: interpolateVars(template.emailHtml || template.emailBody, vars),
+      // Always the standard branded shell — logo header, the template's own
+      // Subject/Body, footer — built from what the admin actually edited,
+      // not a separate design nobody can see. See services/emailLayout.js.
+      html: brandedEmailHtml({ bodyText }),
       whatsapp: interpolateVars(template.whatsappBody, vars),
       // Named so the composer can flag placeholders this contract cannot fill.
-      unfilled: findUnfilled([template.subject, template.emailHtml || template.emailBody].join(' '), vars),
-      // So the composer can tell a designed email from a plain one, and not
-      // present raw HTML in a plain-text box.
-      isHtml: Boolean(template.emailHtml),
+      unfilled: findUnfilled([template.subject, template.emailBody].join(' '), vars),
+      // The composer always gets designed HTML now, so it always shows the
+      // rendered preview rather than a plain-text box.
+      isHtml: true,
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1752,15 +1856,12 @@ router.post('/:id/notice-email', async (req, res) => {
       ? await renderAgreementHtmlPdf({ html, contract, title: title.toUpperCase(), header: false, signature: false })
       : await renderAgreementTextPdf({ text: html, contract, header: false, signature: false });
 
+    const noticeText = `Dear ${contract.customer?.fullName || ''},\n\nPlease find the attached ${title.toLowerCase()} regarding your storage contract ${contract.contractNo}.\n\nPurpleBox Storage`;
     await sendMail({
       to,
       subject: `${title} — ${contract.contractNo} · PurpleBox Storage`,
-      text: `Dear ${contract.customer?.fullName || ''},
-
-Please find the attached ${title.toLowerCase()} regarding your storage contract ${contract.contractNo}.
-
-PurpleBox Storage`,
-      html: `Dear ${contract.customer?.fullName || ''},<br/><br/>Please find the attached ${title.toLowerCase()} regarding your storage contract ${contract.contractNo}.<br/><br/>PurpleBox Storage`,
+      text: noticeText,
+      html: brandedEmailHtml({ bodyText: noticeText }),
       attachments: [{ filename: `${title}-${contract.contractNo}.pdf`, content: pdf, contentType: 'application/pdf' }],
     });
 
@@ -1875,6 +1976,84 @@ router.post('/:id/whatsapp-template', async (req, res) => {
   }
 });
 
+/**
+ * The same approved WhatsApp template, sent to several tenants at once —
+ * everyone whose contract expires in the next few days, say.
+ *
+ * There is no bulk send on WhatsApp itself: this is that one-contract route
+ * above, called once per contract, not a single broadcast API call. It exists
+ * as its own endpoint (rather than the client just looping the single route)
+ * so one slow evening's six sends are one request the page can show progress
+ * for, and so a phone number missing on tenant three cannot silently abort
+ * tenants four through six — every contract gets its own attempt and its own
+ * place in the result, sent or failed with why.
+ */
+router.post('/bulk-whatsapp-template', async (req, res) => {
+  if (!whatsappSendConfigured()) return res.status(400).json({ error: 'WhatsApp is not configured' });
+
+  const contractIds = (Array.isArray(req.body?.contractIds) ? req.body.contractIds : [])
+    .filter((id) => isValidObjectId(id));
+  if (!contractIds.length) return res.status(400).json({ error: 'No contracts selected' });
+
+  const tpl = await MessageTemplate.findById(req.body?.templateId).lean();
+  if (!tpl) return res.status(404).json({ error: 'Template not found' });
+  if (!String(tpl.whatsappTemplate || '').trim()) {
+    return res.status(400).json({ error: `"${tpl.label}" has no approved WhatsApp template. Add one in Settings → Message Templates.` });
+  }
+
+  const contracts = await populateAll(Contract.find({ _id: { $in: contractIds } }));
+  const actor = req.user?.name || req.user?.email || '';
+  const fmt = (d) => (d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '');
+  // Same names the reminder engine and the single-contract route use, so a
+  // template written for either works unchanged here.
+  const name = String(tpl.whatsappTemplate).trim();
+  const lang = String(tpl.whatsappTemplateLang || 'en').trim() || 'en';
+
+  const sent = [];
+  const failed = [];
+  for (const contract of contracts) {
+    try {
+      const phone = contract.customer?.phone || contract.customer?.phones?.[0];
+      if (!phone) throw new Error('No phone number on file');
+      const units = (contract.units?.length ? contract.units : contract.unit ? [contract.unit] : [])
+        .map((u) => u?.unitNumber).filter(Boolean);
+      const vars = {
+        name: contract.customer?.fullName || '',
+        contractNo: contract.contractNo || '',
+        unit: units.join(', '),
+        endDate: fmt(contract.endDate),
+        startDate: fmt(contract.startDate),
+        dueDate: fmt(contract.endDate),
+        rate: contract.rate != null ? Number(contract.rate).toFixed(2) : '',
+        renewLink: renewLink(contract._id),
+        moveOutLink: moveOutLink(contract._id),
+      };
+      const variables = (tpl.whatsappTemplateVars || []).map((k) => String(vars[k] ?? ''));
+
+      await sendWhatsAppTemplate({ to: phone, name, language: lang, variables });
+
+      await Contract.findByIdAndUpdate(contract._id, {
+        $push: { timeline: { at: new Date(), text: `WhatsApp "${tpl.label}" sent to ${phone}`, author: actor } },
+      });
+      await AutomationLog.create({
+        ruleName: 'Sent by hand', channel: 'whatsapp', contract: contract._id,
+        customer: contract.customer?._id, event: `manual:${name}:${contract._id}:${Date.now()}`,
+        message: `${name}(${variables.join(', ')})`, status: 'sent',
+      });
+      sent.push({ contractId: String(contract._id), contractNo: contract.contractNo, to: phone });
+    } catch (e) {
+      failed.push({
+        contractId: String(contract._id),
+        contractNo: contract.contractNo,
+        customerName: contract.customer?.fullName || '',
+        reason: e.message,
+      });
+    }
+  }
+
+  res.json({ sent, failed, template: name });
+});
+
 router.post('/:id/send-email', async (req, res) => {
   const contract = await populateAll(Contract.findById(req.params.id));
   if (!contract) return res.status(404).json({ error: 'Contract not found' });
@@ -1882,11 +2061,12 @@ router.post('/:id/send-email', async (req, res) => {
   const email = contract.customer?.email;
   if (!email) return res.status(400).json({ error: 'Customer has no email address' });
   const pdf = await buildContractPdf(contract);
+  const text = `Dear ${contract.customer.fullName},\n\nPlease find your storage contract ${contract.contractNo} attached.\n\nThank you,\nPurpleBox`;
   await sendMail({
     to: email,
     subject: `Your Storage Contract ${contract.contractNo} — PurpleBox`,
-    text: `Dear ${contract.customer.fullName},\n\nPlease find your storage contract ${contract.contractNo} attached.\n\nThank you,\nPurpleBox`,
-    html: `<p>Dear ${contract.customer.fullName},</p><p>Please find your storage contract <strong>${contract.contractNo}</strong> attached.</p><p>Thank you,<br/>PurpleBox</p>`,
+    text,
+    html: brandedEmailHtml({ bodyText: text }),
     attachments: [{ filename: `${contract.contractNo}.pdf`, content: pdf, contentType: 'application/pdf' }],
   });
 

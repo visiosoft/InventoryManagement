@@ -647,7 +647,6 @@ export default function SalesBoard() {
   const navigate = useNavigate()
   const [showAllLeads, setShowAllLeads] = useState(false)
   const [leadSearch, setLeadSearch] = useState('')
-  const [tempFilter, setTempFilter] = useState('')
 
   const { data: storagePage, isLoading: storageLoading } = useQuery({
     queryKey: ['my-leads-storage'],
@@ -737,17 +736,39 @@ export default function SalesBoard() {
 
   const statuses = useMemo(() => [...new Set(rows.map((r) => r.status))].sort(), [rows])
 
-  // The three narrow together rather than replacing one another: a rep looking
-  // for a hot lead called Ahmed in Quotation Sent is asking one question.
+  // The two narrow together rather than replacing one another: a rep
+  // searching for Ahmed in Quotation Sent is asking one question.
   const filtered = useMemo(() => {
     const q = leadSearch.trim().toLowerCase()
+    // A number pasted out of WhatsApp brings "+971 56 798 4387" — matched
+    // against `r.phone` raw, that found nothing, because the stored number
+    // has none of those spaces or the +. `digits` was already computed per
+    // row for exactly this and never used. Compared digit-to-digit instead,
+    // the same way the server's own search already does.
+    const qDigits = q.replace(/\D/g, '')
     return rows.filter((r) => {
       if (statusFilter && r.status !== statusFilter) return false
-      if (tempFilter && r.temperature !== tempFilter) return false
-      if (q && !r.name.toLowerCase().includes(q) && !r.phone.includes(q)) return false
+      if (q) {
+        const nameMatch = r.name.toLowerCase().includes(q)
+        const phoneMatch = qDigits.length >= 4 && r.digits.includes(qDigits)
+        if (!nameMatch && !phoneMatch) return false
+      }
       return true
     })
-  }, [rows, statusFilter, tempFilter, leadSearch])
+  }, [rows, statusFilter, leadSearch])
+
+  /* So Previous/Next on a lead's own page walks this exact filtered view —
+   * "Your leads" filtered to Contacted should move between Contacted leads,
+   * not the rest of the board. Moving leads are left out: they open at
+   * /moving/leads/:id, a page Previous/Next has nothing to do with. Every
+   * matching id, not a visible slice — "Show more" only limits what's
+   * rendered, not what Next should be allowed to reach. */
+  useEffect(() => {
+    const ids = filtered
+      .filter((r) => r.type === 'Storage Only' && r.href)
+      .map((r) => r.href!.replace('/leads/', ''))
+    sessionStorage.setItem('leadNavOrder', JSON.stringify(ids))
+  }, [filtered])
 
   // Twenty is about a screen's worth to scroll — enough that a rep can see the
   // whole of a normal day without the page running on for ever once the list
@@ -821,29 +842,6 @@ export default function SalesBoard() {
             placeholder="Search by name or phone"
             style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 14, width: '100%', fontFamily: 'inherit', color: INK }}
           />
-        </div>
-
-        <div className="flex" style={{ gap: 6 }}>
-          {[{ v: '', label: 'All' }, { v: 'hot', label: 'Hot' }, { v: 'warm', label: 'Warm' }, { v: 'cold', label: 'Cold' }].map((o) => {
-            const on = tempFilter === o.v
-            const tone = o.v ? TEMP_TONE[o.v] : null
-            return (
-              <button
-                key={o.v || 'all'}
-                type="button"
-                onClick={() => setTempFilter(o.v)}
-                className="cursor-pointer whitespace-nowrap"
-                style={{
-                  height: 38, padding: '0 16px', borderRadius: 999, fontSize: 13, fontWeight: 600, fontFamily: 'inherit',
-                  background: on && tone ? tone.bg : 'white',
-                  color: on ? (tone ? tone.fg : INK) : MUTED,
-                  border: `1px solid ${on && tone ? tone.fg : 'rgba(20,8,31,.16)'}`,
-                }}
-              >
-                {o.label}
-              </button>
-            )
-          })}
         </div>
 
         <select

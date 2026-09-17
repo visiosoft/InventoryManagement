@@ -4,6 +4,7 @@ import { Task, User, nextTaskNo } from '../models/index.js';
 import { uploadFile } from '../services/drive.js';
 import { notifyTaskAssigned } from '../services/taskNotify.js';
 import { runDayBriefs } from '../services/dayBrief.js';
+import { softDelete } from '../utils/softDelete.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
@@ -61,10 +62,20 @@ router.get('/', async (req, res) => {
     if (statuses.length) filter.status = { $in: statuses };
   }
 
-  const tasks = await Task.find(filter)
+  // Newest-first, capped — the dashboard's "latest activity" card wants the
+  // 5 most recently created tasks across the whole team, not every task
+  // ever raised sorted by due date; without a limit that was ~4s and every
+  // row the app would never show. Opt-in via ?sort=createdAt so every other
+  // caller (the board, a lead's own task list) keeps its existing order.
+  const latest = req.query.sort === 'createdAt';
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 0)) || null;
+
+  let query = Task.find(filter)
     .populate('assignedTo', 'name email')
-    .sort({ dueDate: 1, createdAt: -1 })
-    .lean();
+    .sort(latest ? { createdAt: -1 } : { dueDate: 1, createdAt: -1 });
+  if (limit) query = query.limit(limit);
+
+  const tasks = await query.lean();
   res.json(tasks);
 });
 
@@ -185,7 +196,9 @@ router.delete('/:id/comments/:commentId', async (req, res) => {
   if (!comment) return res.status(404).json({ error: 'Comment not found' });
   const isAuthor = String(comment.user) === String(req.user.id);
   if (!isPrivileged(req) && !isAuthor) return res.status(403).json({ error: 'Not your comment' });
-  comment.deleteOne();
+  comment.deleted = true;
+  comment.deletedAt = new Date();
+  comment.deletedBy = req.user.id;
   await task.save();
   res.json(await task.populate([{ path: 'assignedTo', select: 'name email' }, { path: 'comments.user', select: 'name' }]));
 });
@@ -229,7 +242,7 @@ router.delete('/:id', async (req, res) => {
   if (!task) return res.status(404).json({ error: 'Task not found' });
   const isCreator = String(task.createdBy) === String(req.user.id);
   if (!isPrivileged(req) && !isCreator) return res.status(403).json({ error: 'Only the creator or an admin can delete this task' });
-  await task.deleteOne();
+  await softDelete(task, req.user.id);
   res.json({ ok: true });
 });
 

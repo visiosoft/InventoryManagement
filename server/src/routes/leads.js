@@ -1,16 +1,22 @@
 import { Router } from 'express';
 import mongoose from 'mongoose';
 import { Customer, Contract, Document, Lead, Task, User, WhatsAppMessage } from '../models/index.js';
-import { notifyLeadAssigned } from '../services/leadNotify.js';
+import { notifyLeadAssigned, pendingAssignmentBadge } from '../services/leadNotify.js';
+import { resolvePlaceholderNames } from '../services/leadNames.js';
 import { FOLLOW_UP_KINDS, runFollowUps, syncFollowUpTask, syncSiteVisitTask } from '../services/followUps.js';
 import { applyOutcome, getFollowUpPlan, nextDateFor, sequenceState } from '../services/followUpSequence.js';
 import { summarise } from '../services/speedToLead.js';
 import { ATTEMPT_CHANNELS, ATTEMPT_OUTCOMES } from '../models/index.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
+import { QUEUE_SINCE } from '../services/followUpQueue.js';
+import { buildFunnel } from '../services/leadFunnel.js';
+import { scoreForLead, highIntentToday, intakeChecklist } from '../services/leadScore.js';
+import { summariseConversation } from '../services/conversationSummary.js';
+import { softDelete, softDeleteMany } from '../utils/softDelete.js';
 
 const router = Router();
 
-const ALLOWED_STATUS = new Set(['new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost']);
+const ALLOWED_STATUS = new Set(['new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost', 'already_customer']);
 const ALLOWED_TEMPERATURE = new Set(['', 'hot', 'warm', 'cold']);
 
 /* Tags add detail without replacing the status. Fixed rather than free text so
@@ -114,7 +120,14 @@ function applyChaseFilter(filter, { chase, attemptBy }) {
     return filter;
 }
 
-router.get('/', async (req, res) => {
+/**
+ * Every filter the Leads list itself accepts (status, source, owner,
+ * search, date range, chase, includeUnsaved), built the same way for
+ * whoever asks — the list endpoint and GET /nav-order (below), so that a
+ * rep's own filtered view and what Previous/Next walks through can never
+ * quietly disagree.
+ */
+function buildLeadListFilter(req) {
     const filter = {};
     applyChaseFilter(filter, { chase: String(req.query.chase || ''), attemptBy: req.query.attemptBy ? String(req.query.attemptBy) : '' });
     if (req.query.status && ALLOWED_STATUS.has(String(req.query.status))) {
@@ -203,6 +216,11 @@ router.get('/', async (req, res) => {
         filter.$or = or;
     }
 
+    return filter;
+}
+
+router.get('/', async (req, res) => {
+    const filter = buildLeadListFilter(req);
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.min(Math.max(1, Number(req.query.limit) || 25), 500);
     const skip = (page - 1) * limit;
@@ -221,7 +239,38 @@ router.get('/', async (req, res) => {
             .allowDiskUse(true),
         Lead.countDocuments(filter),
     ]);
+
+    await resolvePlaceholderNames(leads);
+
     res.json({ data: leads, total, page, pages: Math.ceil(total / limit), limit });
+});
+
+/**
+ * Every lead id matching the same filters the Leads list itself accepts
+ * (status, source, owner, search, date range, chase, includeUnsaved — see
+ * buildLeadListFilter), in that list's own sort order — id only, so this
+ * is cheap even over hundreds of leads, and with no filter given at all it
+ * is exactly the default view's order and scope.
+ *
+ * What Previous/Next on a lead's own page walks: Leads.tsx asks for this
+ * with whatever filter is actually on screen and writes the full answer
+ * to sessionStorage, so paging through a filtered view of hundreds never
+ * runs out at 25 (one page) or drifts onto some other rep's leads a filter
+ * had deliberately excluded. Also what a lead's own page falls back to
+ * when it wasn't reached by clicking through that list at all (a
+ * bookmark, a shared link, a fresh page load) — sessionStorage is empty
+ * for a browser that never visited the list, and unfiltered is the only
+ * order left to fall back on then.
+ */
+router.get('/nav-order', async (req, res) => {
+    const filter = buildLeadListFilter(req);
+
+    const leads = await Lead.find(filter)
+        .select('_id')
+        .sort({ leadDateTime: -1, createdAt: -1 })
+        .lean();
+
+    res.json({ ids: leads.map((l) => String(l._id)) });
 });
 
 /**
@@ -255,7 +304,7 @@ router.get('/stats', async (req, res) => {
 
         // Where the chasing has got to, over everybody rather than the page in
         // view. "Nobody has tried" is the number worth knowing first.
-        const open = { ...filter, status: { $nin: ['won', 'lost'] } };
+        const open = { ...filter, status: { $nin: ['won', 'lost', 'already_customer'] } };
 
         const [byStatus, byOwner, total, chaseNone, chaseActive, chaseExhausted, byChaser] = await Promise.all([
             Lead.aggregate([{ $match: filter }, { $group: { _id: '$status', n: { $sum: 1 } } }]),
@@ -358,7 +407,7 @@ router.get('/waiting', async (req, res) => {
             assignedAt: { $ne: null },
             firstResponseAt: null,
             owner: { $ne: null },
-            status: { $nin: ['won', 'lost'] },
+            status: { $nin: ['won', 'lost', 'already_customer'] },
         };
         if (isSalesRep(req)) filter.owner = req.user.id;
 
@@ -368,6 +417,300 @@ router.get('/waiting', async (req, res) => {
         ]);
 
         res.json(summarise(leads, new Date(), plan?.responseSlaMinutes));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * The pipeline, as a funnel — see services/leadFunnel.js for how it counts.
+ *
+ * Bounded to leads created since QUEUE_SINCE, the same cutoff the Follow-Ups
+ * queue uses — older leads predate reliable tracking and would only put
+ * noise in a view whose whole point is telling you where things actually
+ * stand. Lives on the Follow-Ups page rather than a page of its own — leads
+ * already have one home, and this is a different lens on the same data, not
+ * a different feature.
+ */
+router.get('/funnel', async (req, res) => {
+    try {
+        const filter = { createdAt: { $gte: QUEUE_SINCE } };
+        if (isSalesRep(req)) filter.owner = req.user.id;
+
+        const leads = await Lead.find(filter)
+            .select('status createdAt timeline.type timeline.at')
+            .lean();
+
+        res.json({ ...buildFunnel(leads), since: QUEUE_SINCE });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * High-scoring leads from today or yesterday — the dashboard's "these are
+ * the ones to work" list. See services/leadScore.js's highIntentToday()
+ * for how it's built; the usual rep/admin scope applies.
+ */
+router.get('/high-intent', async (req, res) => {
+    try {
+        // A rep only ever has their own to scope to; an admin normally sees
+        // the whole team's here, the company-wide read the Dashboard widget
+        // wants. `?mine=1` forces it to the requesting person's own leads
+        // regardless of role — what My Day asks for, since every card on
+        // that page is "my own", admin included, and an admin's My Day
+        // showing the whole team's leads would say something the rest of
+        // the page does not.
+        const ownerId = isSalesRep(req) || req.query.mine === '1' ? req.user.id : null;
+        res.json({ items: await highIntentToday({ ownerId }) });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+const SCORE_LEAD_FIELDS = 'phoneNormalized owner firstName fullName intendedStartDate leadScoreOverride leadScoreOverrideBy leadScoreOverrideAt leadScoreOverrideForLeadType '
+  + 'leadDateTime durationValue durationUnit lengthOfStayConfirmedAt storageSizeValue storageSizeUnit financiallyQualified locationPreference followUpAt followUpNote followUpNotifiedAt followUpPushedAt status';
+
+/**
+ * A score, plus who confirmed or corrected it and when — the same shape
+ * every score-related route below hands back, whether it just read the
+ * lead or just changed something about it. One place builds this so the
+ * three routes' responses can never quietly drift apart from each other.
+ */
+async function withOverrideInfo(lead) {
+    const result = await scoreForLead(lead);
+    let overrideByName = '';
+    if (lead.leadScoreOverride && lead.leadScoreOverrideBy) {
+        const u = await User.findById(lead.leadScoreOverrideBy).select('name email').lean();
+        overrideByName = u?.name || u?.email || '';
+    }
+    return {
+        ...result,
+        override: lead.leadScoreOverride || '',
+        overrideByName,
+        overrideAt: lead.leadScoreOverrideAt || null,
+        intake: intakeChecklist(lead),
+    };
+}
+
+/**
+ * One lead's score — see services/leadScore.js for how it's worked out.
+ * Read-only; nothing here writes anything.
+ */
+router.get('/:id/score', async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Bad lead id' });
+        const lead = await Lead.findById(req.params.id).select(SCORE_LEAD_FIELDS);
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+
+        res.json(await withOverrideInfo(lead));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * A rep's own read on the score — confirming it, or saying the AI got it
+ * wrong. Stamped against the AI's current leadType (services/leadScore.js's
+ * scoreForLead reads leadScoreOverrideForLeadType to tell whether a later
+ * conversation has since moved past this confirmation).
+ *
+ * `decision` empty clears the override, handing the lead back to the
+ * computed score — the "actually, let me look again" case.
+ */
+router.post('/:id/score-confirm', async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Bad lead id' });
+        const decision = String(req.body?.decision || '');
+        if (decision && !['qualifying', 'not_interested'].includes(decision)) {
+            return res.status(400).json({ error: 'decision must be qualifying, not_interested, or empty to clear' });
+        }
+        const lead = await Lead.findById(req.params.id).select(SCORE_LEAD_FIELDS);
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+
+        const summary = await summariseConversation(lead.phoneNormalized).catch(() => null);
+        lead.leadScoreOverride = decision;
+        lead.leadScoreOverrideBy = decision ? req.user.id : null;
+        lead.leadScoreOverrideAt = decision ? new Date() : null;
+        lead.leadScoreOverrideForLeadType = decision ? (summary?.leadType || '') : '';
+        await lead.save();
+
+        res.json(await withOverrideInfo(lead));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * When they actually said they'd need it — a call the AI never heard, or a
+ * correction to what it read from the chat. See the model comment on
+ * Lead.intendedStartDate for why this is not the same thing as followUpAt.
+ * The override above, if any, is untouched by this — a rep's "not
+ * interested" does not need revisiting just because a date was corrected.
+ *
+ * `intendedStartDate` a plain 'YYYY-MM-DD' or null to clear it.
+ */
+router.post('/:id/intended-date', async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Bad lead id' });
+        const raw = req.body?.intendedStartDate;
+        let value = null;
+        if (raw) {
+            const d = new Date(raw);
+            if (Number.isNaN(d.getTime())) return res.status(400).json({ error: 'Not a valid date' });
+            value = d;
+        }
+        const lead = await Lead.findById(req.params.id).select(SCORE_LEAD_FIELDS);
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+
+        lead.intendedStartDate = value;
+        await lead.save();
+
+        res.json(await withOverrideInfo(lead));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/** A rep's own yes/no on whether they can actually afford this — see the
+ *  model comment on Lead.financiallyQualified. `value` empty clears it. */
+router.post('/:id/financially-qualified', async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Bad lead id' });
+        const value = String(req.body?.value ?? '');
+        if (!['', 'yes', 'no'].includes(value)) return res.status(400).json({ error: 'value must be yes, no, or empty to clear' });
+
+        const lead = await Lead.findById(req.params.id).select(SCORE_LEAD_FIELDS);
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+
+        lead.financiallyQualified = value;
+        await lead.save();
+
+        res.json(await withOverrideInfo(lead));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/** Which of the two facilities they want — see the model comment on
+ *  Lead.locationPreference. `value` empty clears it. */
+router.post('/:id/location-preference', async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Bad lead id' });
+        const value = String(req.body?.value ?? '');
+        if (!['', 'Al Quoz', 'DIP'].includes(value)) return res.status(400).json({ error: 'value must be Al Quoz, DIP, or empty to clear' });
+
+        const lead = await Lead.findById(req.params.id).select(SCORE_LEAD_FIELDS);
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+
+        lead.locationPreference = value;
+        await lead.save();
+
+        res.json(await withOverrideInfo(lead));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * How long they're actually planning to stay, confirmed with the lead
+ * directly — see the model comment on Lead.lengthOfStayConfirmedAt for why
+ * durationValue/durationUnit alone can never mean "documented".
+ */
+router.post('/:id/length-of-stay', async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Bad lead id' });
+        const durationValue = Number(req.body?.durationValue);
+        const durationUnit = String(req.body?.durationUnit || '');
+        if (!Number.isFinite(durationValue) || durationValue < 1) return res.status(400).json({ error: 'Invalid duration value' });
+        if (!ALLOWED_DURATION_UNIT.has(durationUnit)) return res.status(400).json({ error: 'Invalid duration unit' });
+
+        const lead = await Lead.findById(req.params.id).select(SCORE_LEAD_FIELDS);
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+
+        lead.durationValue = durationValue;
+        lead.durationUnit = durationUnit;
+        lead.lengthOfStayConfirmedAt = new Date();
+        await lead.save();
+
+        res.json(await withOverrideInfo(lead));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * How much storage they actually need, confirmed with the lead directly.
+ * Unlike length of stay, storageSizeValue has no meaningful default (it's
+ * 0 until somebody sets it — see the model), so there's no separate
+ * "confirmed at" stamp to disambiguate a default from a real answer.
+ */
+router.post('/:id/unit-size', async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Bad lead id' });
+        const storageSizeValue = Number(req.body?.storageSizeValue);
+        if (!Number.isFinite(storageSizeValue) || storageSizeValue <= 0) return res.status(400).json({ error: 'Invalid storage size' });
+
+        const lead = await Lead.findById(req.params.id).select(SCORE_LEAD_FIELDS);
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+
+        lead.storageSizeValue = storageSizeValue;
+        await lead.save();
+
+        res.json(await withOverrideInfo(lead));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * When to come back to them, and why — the same fields the full edit form
+ * writes (followUpAt/followUpNote), reachable from the score panel without
+ * the rest of that form. Mirrors routes/whatsapp.js's own POST /:phone/remind:
+ * reset the notified/pushed stamps so a moved reminder fires again, and
+ * nudge the status forward only from a stage that is genuinely behind it.
+ */
+router.post('/:id/follow-up-reminder', async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Bad lead id' });
+        const raw = req.body?.followUpAt;
+        let at = null;
+        if (raw) {
+            const d = new Date(raw);
+            if (Number.isNaN(d.getTime())) return res.status(400).json({ error: 'Not a valid date' });
+            at = d;
+        }
+        const note = String(req.body?.followUpNote || '').slice(0, 500);
+
+        const lead = await Lead.findById(req.params.id).select(SCORE_LEAD_FIELDS);
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+
+        lead.followUpAt = at;
+        lead.followUpNote = note;
+        lead.followUpNotifiedAt = null;
+        lead.followUpPushedAt = null;
+        if (at && ['new', 'contacted', 'contact_attempted'].includes(lead.status)) {
+            lead.status = 'follow_up_scheduled';
+        }
+        const userName = req.user.name || req.user.email || 'a colleague';
+        lead.timeline.push({
+            type: 'note',
+            text: at
+                ? `Follow-up set for ${at.toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })} by ${userName}${note ? ` — ${note}` : ''}`
+                : `Follow-up cleared by ${userName}`,
+            user: req.user.id,
+        });
+        await lead.save();
+
+        res.json(await withOverrideInfo(lead));
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -396,13 +739,13 @@ router.get('/follow-ups', async (req, res) => {
         const filter = {
             followUpAt: { $ne: null, $lt: horizon },
             // A closed lead's follow-up date is history, not a task.
-            status: { $nin: ['won', 'lost'] },
+            status: { $nin: ['won', 'lost', 'already_customer'] },
         };
         if (isSalesRep(req)) filter.owner = req.user.id;
         else if (req.query.owner) filter.owner = String(req.query.owner);
 
         const leads = await Lead.find(filter)
-            .select('fullName phone status temperature tags followUpAt owner ownerSeenAt')
+            .select('fullName phone status temperature tags followUpAt owner ownerSeenAt whatsappProfileName')
             .populate('owner', 'name email')
             .sort({ followUpAt: 1 })
             .lean();
@@ -444,7 +787,7 @@ router.get('/newly-assigned', async (req, res) => {
             owner: req.user.id,
             ownerSeenAt: null,
             assignedAt: { $ne: null, $gte: since },
-            status: { $nin: ['won', 'lost'] },
+            status: { $nin: ['won', 'lost', 'already_customer'] },
         })
             .select('fullName phone status assignedAt autoAssigned assignedBy source')
             .populate('assignedBy', 'name')
@@ -461,6 +804,23 @@ router.get('/newly-assigned', async (req, res) => {
             // How it came to be theirs, so the alert can say.
             by: l.autoAssigned ? 'the rota' : (l.assignedBy?.name || ''),
         })));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+/**
+ * How many "you were given a lead" pushes are still live for the caller —
+ * what PurpleBoxMobile sets its app-icon badge to on every foreground,
+ * independently of whatever a push itself managed to deliver. A push can be
+ * missed (the phone was off, a silent dismiss push was dropped by the OS);
+ * this endpoint cannot be, so it is the one thing the badge is allowed to
+ * fully trust. See services/leadNotify.js's pendingAssignmentBadge for the
+ * same cap ("four or five, not more") the count itself already enforces.
+ */
+router.get('/assignment-badge', async (req, res) => {
+    try {
+        res.json({ count: await pendingAssignmentBadge(req.user.id) });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -1054,14 +1414,15 @@ router.get('/:id/messages', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
     if (isSalesRep(req)) return res.status(403).json({ error: 'Sales reps cannot delete leads' });
-    const lead = await Lead.findByIdAndDelete(req.params.id);
+    const lead = await Lead.findById(req.params.id);
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    await softDelete(lead, req.user.id);
 
     // Its reminders go with it. A follow-up or site-visit task outliving the
     // lead is somebody being told to chase a record that no longer exists —
     // and there is nothing left to open from the task. Work already picked up
     // is left alone: somebody is part-way through it and should say so.
-    await Task.deleteMany({ leadId: lead._id, leadType: 'storage', status: 'todo' });
+    await softDeleteMany(Task, { leadId: lead._id, leadType: 'storage', status: 'todo' }, req.user.id);
 
     // The conversation stays; its pointer to this lead does not. Left behind,
     // it names a record that no longer resolves, and the next lead made for

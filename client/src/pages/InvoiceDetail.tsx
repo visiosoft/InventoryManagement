@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Download, AlertCircle, CheckCircle2, Clock, Pencil, MessageCircle, RefreshCw, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Download, AlertCircle, CheckCircle2, Clock, Pencil, MessageCircle, RefreshCw, Trash2, X, CreditCard, Copy } from 'lucide-react'
 import { api, apiError, invoiceApi } from '../lib/api'
 import type { Invoice, InvoicePaymentEntry, InvoiceStatus } from '../lib/types'
 import {
@@ -337,6 +337,11 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
     const [items, setItems] = useState(() =>
         consolidateItems(invoice.items).map((it, i) => ({ ...it, sortOrder: it.sortOrder ?? i, discountPct: it.discountPct ?? 0 }))
     )
+    // Off by default — only applies if the customer chooses to pay this
+    // invoice by Stripe card, so it stays out of the invoiced total. Same
+    // on/off-per-document idea as vatEnabled on a quote, not a site switch.
+    const [cardFeeEnabled, setCardFeeEnabled] = useState(Boolean(invoice.cardFeeEnabled))
+    const [cardFeePct, setCardFeePct] = useState(invoice.cardFeePct ?? 3)
     const [err, setErr] = useState('')
 
     function updateDiscount(idx: number, pct: number) {
@@ -384,6 +389,8 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
             paymentMade: invoice.paymentMade ?? 0,
             status: invoice.status,
             total: items.reduce((s, it) => s + Number(it.amount || 0), 0),
+            cardFeeEnabled,
+            cardFeePct,
         }),
         onSuccess: () => onSaved(),
         onError: (e) => setErr(apiError(e)),
@@ -453,6 +460,38 @@ function EditInvoiceModal({ invoice, onClose, onSaved }: { invoice: Invoice; onC
                             </div>
                         </div>
 
+                        {/* Card-processing fee — decided on this invoice, like VAT on a
+                            quote, not a site-wide switch. Never added to the total above:
+                            it only applies if the customer pays by Stripe card. */}
+                        <div className="rounded-xl border bg-muted/30 p-4 space-y-2">
+                            <div className="flex items-center justify-between gap-3">
+                                <label className="flex items-center gap-2 text-sm font-medium cursor-pointer select-none">
+                                    <input
+                                        type="checkbox"
+                                        className="h-4 w-4 rounded"
+                                        checked={cardFeeEnabled}
+                                        onChange={e => setCardFeeEnabled(e.target.checked)}
+                                    />
+                                    Card fee if paid online
+                                </label>
+                                <div className="flex items-center gap-1">
+                                    <Input
+                                        type="number" min={0} max={15} step="0.1"
+                                        value={cardFeePct}
+                                        disabled={!cardFeeEnabled}
+                                        onChange={e => setCardFeePct(Number(e.target.value))}
+                                        className="w-16 text-sm text-right"
+                                    />
+                                    <span className="text-sm text-muted-foreground">%</span>
+                                </div>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                                {cardFeeEnabled
+                                    ? `Adds ${cardFeePct}% on top of the balance, but only if paid via the Stripe payment link — never part of the invoiced total.`
+                                    : 'No surcharge is added if this invoice is paid by card.'}
+                            </p>
+                        </div>
+
                         {err && <p className="text-xs text-destructive">{err}</p>}
 
                         <div className="flex justify-end gap-2 pt-2 border-t">
@@ -476,6 +515,8 @@ export default function InvoiceDetail() {
     const [editing, setEditing] = useState(false)
     const [editingPayment, setEditingPayment] = useState<{ idx: number; amount: string; method: string; date: string; notes: string } | null>(null)
     const [deletingPaymentIdx, setDeletingPaymentIdx] = useState<number | null>(null)
+    const [payLinkResult, setPayLinkResult] = useState<{ payUrl: string; balanceDue: number; feePct: number; feeAmount: number; totalCharged: number } | null>(null)
+    const [payLinkCopied, setPayLinkCopied] = useState(false)
 
     const { data: invoice, isLoading } = useQuery<Invoice>({
         queryKey: ['invoice', id],
@@ -517,6 +558,21 @@ export default function InvoiceDetail() {
                 ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
                 : `https://wa.me/?text=${encodeURIComponent(text)}`
             window.open(waUrl, '_blank', 'noopener,noreferrer')
+        },
+    })
+
+    // A real Stripe card-payment link for the outstanding balance. The link
+    // itself is generated server-side (fee decided by the global Settings
+    // switch, never by this page); delivering it is client-side, the same
+    // wa.me deep-link convention the button above already uses for the PDF.
+    const paymentLink = useMutation({
+        mutationFn: () => api.post(`/invoices/${id}/payment-link`, { channel: 'link' }).then((r) => r.data as {
+            payUrl: string; balanceDue: number; feePct: number; feeAmount: number; totalCharged: number
+        }),
+        onSuccess: (data) => {
+            setPayLinkResult(data)
+            setPayLinkCopied(false)
+            navigator.clipboard?.writeText(data.payUrl).then(() => setPayLinkCopied(true)).catch(() => {})
         },
     })
 
@@ -630,7 +686,21 @@ export default function InvoiceDetail() {
                         Record Payment
                     </Button>
                 )}
+                {canPay && Math.max(0, invoice.total - (invoice.paymentMade ?? 0)) > 0 && (
+                    <Button
+                        size="sm" variant="outline"
+                        onClick={() => paymentLink.mutate()}
+                        disabled={paymentLink.isPending}
+                        className="text-purple-600 border-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/30"
+                    >
+                        <CreditCard size={13} />
+                        {paymentLink.isPending ? 'Creating…' : 'Payment Link'}
+                    </Button>
+                )}
             </div>
+            {paymentLink.error && (
+                <p className="text-xs text-destructive mb-4">{apiError(paymentLink.error)}</p>
+            )}
 
             {/* Zoho sync error */}
             {(syncZoho.error || (invoice.zohoBooksSyncError && !invoice.zohoBooksSyncId)) && (
@@ -727,6 +797,12 @@ export default function InvoiceDetail() {
                             <span style={{ fontSize: 14, fontWeight: 700, color: INK }}>Balance Due</span>
                             <span style={{ fontSize: 14, fontWeight: 700, color: balance > 0 ? '#EF4444' : '#059669' }}>AED {formatMoney(balance)}</span>
                         </div>
+                    </div>
+                    {/* Read-only — the toggle itself lives in Edit. */}
+                    <div className="mt-2" style={{ fontSize: 11, color: MUTED }}>
+                        {invoice.cardFeeEnabled
+                            ? `Card fee: ${invoice.cardFeePct ?? 3}% added if paid via the Stripe payment link`
+                            : 'Card fee: off'}
                     </div>
                     {canPay && (
                         <Button variant="success" className="w-full mt-4" size="sm" onClick={() => setPaying(true)}>
@@ -922,6 +998,43 @@ export default function InvoiceDetail() {
                         {deletePayment.isPending ? 'Deleting…' : 'Delete'}
                     </Button>
                 </div>
+            </Modal>
+
+            {/* Stripe Payment Link result */}
+            <Modal open={!!payLinkResult} onClose={() => setPayLinkResult(null)} title="Payment link created">
+                {payLinkResult && (
+                    <div className="space-y-4">
+                        <p className="text-sm text-muted-foreground">
+                            {payLinkCopied ? 'Copied to clipboard.' : 'Copy it below to share it.'} Balance: <strong>AED {payLinkResult.balanceDue.toLocaleString()}</strong>
+                            {payLinkResult.feePct > 0 && (
+                                <> · card fee <strong>AED {payLinkResult.feeAmount.toLocaleString()}</strong> ({payLinkResult.feePct}%) · customer pays <strong>AED {payLinkResult.totalCharged.toLocaleString()}</strong> total</>
+                            )}
+                        </p>
+                        <div className="flex items-center gap-2">
+                            <Input readOnly value={payLinkResult.payUrl} onFocus={(e) => e.currentTarget.select()} />
+                            <Button
+                                variant="outline"
+                                onClick={() => navigator.clipboard?.writeText(payLinkResult.payUrl).then(() => setPayLinkCopied(true))}
+                            >
+                                <Copy size={13} className="mr-1" />{payLinkCopied ? 'Copied ✓' : 'Copy'}
+                            </Button>
+                        </div>
+                        <div className="flex justify-end gap-2 pt-2 border-t">
+                            <Button
+                                variant="outline"
+                                onClick={() => {
+                                    const phone = (invoice.customer as any)?.phone?.replace(/\D/g, '') || ''
+                                    const text = `Hi ${(invoice.customer as any)?.fullName ?? 'there'},\n\nYour invoice ${invoice.invoiceNo} is ready — AED ${payLinkResult.balanceDue.toLocaleString()}${payLinkResult.feePct > 0 ? ` (+ ${payLinkResult.feePct}% card fee, AED ${payLinkResult.totalCharged.toLocaleString()} total)` : ''}.\n\nPay online: ${payLinkResult.payUrl}\n\nThank you — PurpleBox`
+                                    const url = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}` : `https://wa.me/?text=${encodeURIComponent(text)}`
+                                    window.open(url, '_blank', 'noopener,noreferrer')
+                                }}
+                            >
+                                Share via WhatsApp
+                            </Button>
+                            <Button onClick={() => setPayLinkResult(null)}>Done</Button>
+                        </div>
+                    </div>
+                )}
             </Modal>
 
             {/* Record Payment modal */}

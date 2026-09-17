@@ -2,7 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './lib/auth'
 
 /** Renders children only if the user has the given module permission (or is admin). Otherwise redirects home. */
-function PermGuard({ module, orSalesRep, children }: { module: string; orSalesRep?: boolean; children: React.ReactNode }) {
+function PermGuard({ module, orSalesRep, children }: { module: string | string[]; orSalesRep?: boolean; children: React.ReactNode }) {
   const { hasPermission, user } = useAuth()
   // Booking a unit is a rep's core job, but 'quotes' is not one of the
   // permissions reps are created with, so the role opens the door instead.
@@ -68,6 +68,7 @@ import SignMovingJob from './pages/SignMovingJob'
 import Dashboard from './pages/Dashboard'
 import MyDay from './pages/MyDay'
 import Platform from './pages/Platform'
+import FollowUps from './pages/FollowUps'
 import Units from './pages/Units'
 import FloorMap from './pages/FloorMap'
 import Sites from './pages/Sites'
@@ -86,12 +87,14 @@ import MessageTemplates from './pages/MessageTemplates'
 import WhatsAppDebug from './pages/WhatsAppDebug'
 import AgreementTemplate from './pages/AgreementTemplate'
 import AiAssistant from './pages/AiAssistant'
+import WhatsAppFlowTemplates from './pages/WhatsAppFlowTemplates'
+import AssistantSettings from './pages/AssistantSettings'
 import Marketing from './pages/Marketing'
 import SentEmails from './pages/SentEmails'
 import Walkthroughs from './pages/Walkthroughs'
-import { WalkthroughProvider } from './walkthroughs/WalkthroughProvider'
 import ZohoComparison from './pages/ZohoComparison'
 import Backup from './pages/Backup'
+import AuditLogReport from './pages/AuditLogReport'
 import Leads from './pages/Leads'
 import SalesBoard from './pages/SalesBoard'
 import MovingEstimator from './pages/MovingEstimator'
@@ -147,6 +150,8 @@ import SiteVisits from './pages/moving/SiteVisits'
 import MovingSurveyDetail from './pages/moving/MovingSurveyDetail'
 import ClientUpload from './pages/moving/ClientUpload'
 import PaySuccess from './pages/PaySuccess'
+import RenewContract from './pages/RenewContract'
+import WatchVideo from './pages/WatchVideo'
 import SharedJobView from './pages/moving/SharedJobView'
 import FieldLogin from './pages/field/FieldLogin'
 import FieldApp from './pages/field/FieldApp'
@@ -185,6 +190,14 @@ export default function App() {
         <Route path="/upload/moving/:token" element={<ClientUpload />} />
         <Route path="/share/job/:token" element={<SharedJobView />} />
         <Route path="/pay/success" element={<PaySuccess />} />
+        {/* Tenant renewal, reached from the expiry email or WhatsApp. Public:
+            the HMAC token in the URL is the authorisation, and it is listed in
+            both trees so a colleague already signed in can open it too. */}
+        <Route path="/renew/:contractId/:token" element={<RenewContract />} />
+        {/* Where a video quick reply's "▶️ Watch" link opens — see
+            services/renewalLink.js's quickReplyWatchLink(). Public for the
+            same reason: whoever opens it has no PurpleBox account. */}
+        <Route path="/watch" element={<WatchVideo />} />
         <Route path="/field/login" element={<FieldLogin />} />
         <Route path="/field/*" element={<FieldApp />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
@@ -193,7 +206,6 @@ export default function App() {
   }
 
   return (
-    <WalkthroughProvider>
     <Routes>
       <Route path="/login" element={<Navigate to="/" replace />} />
       <Route path="/sign/:token" element={<SignContract />} />
@@ -201,6 +213,8 @@ export default function App() {
       <Route path="/upload/moving/:token" element={<ClientUpload />} />
       <Route path="/share/job/:token" element={<SharedJobView />} />
       <Route path="/pay/success" element={<PaySuccess />} />
+      <Route path="/renew/:contractId/:token" element={<RenewContract />} />
+      <Route path="/watch" element={<WatchVideo />} />
       <Route path="/field/login" element={<Navigate to="/field" replace />} />
       <Route path="/field/*" element={<FieldApp />} />
       <Route element={<Layout />}>
@@ -228,6 +242,9 @@ export default function App() {
             because a customer's own admin is an admin too. The page shows
             whatever the server allows and nothing otherwise. */}
         <Route path="/platform" element={<Platform />} />
+        {/* The follow-up queue. Same gate as My Day: reps and admins; the
+            server scopes a rep to their own leads regardless. */}
+        <Route path="/follow-ups" element={<PermGuard module={['sales_board', 'leads']} orSalesRep><FollowUps /></PermGuard>} />
         <Route path="/accounts" element={<RoleGuard roles={['admin', 'accounts']}><AccountsDashboard /></RoleGuard>} />
         <Route path="/settings/lead-distribution" element={<AdminGuard><LeadDistribution /></AdminGuard>} />
         <Route path="/account" element={<MyAccount />} />
@@ -258,6 +275,7 @@ export default function App() {
         <Route path="/tasks" element={<TasksGuard><Tasks /></TasksGuard>} />
         <Route path="/diary" element={<Diary />} />
         <Route path="/backup" element={<AdminGuard><Backup /></AdminGuard>} />
+        <Route path="/audit-log" element={<AdminGuard><AuditLogReport /></AdminGuard>} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/settings/templates" element={<AdminGuard><MessageTemplates /></AdminGuard>} />
         <Route path="/settings/whatsapp-debug" element={<AdminGuard><WhatsAppDebug /></AdminGuard>} />
@@ -266,6 +284,8 @@ export default function App() {
         <Route path="/settings/reminders" element={<AdminGuard><ReminderSettings /></AdminGuard>} />
         <Route path="/settings/automation" element={<AdminGuard><AutomationRules /></AdminGuard>} />
         <Route path="/settings/ai" element={<AdminGuard><AiAssistant /></AdminGuard>} />
+        <Route path="/settings/flow-templates" element={<AdminGuard><WhatsAppFlowTemplates /></AdminGuard>} />
+        <Route path="/settings/assistant" element={<AdminGuard><AssistantSettings /></AdminGuard>} />
         <Route path="/marketing" element={<AdminGuard><Marketing /></AdminGuard>} />
         <Route path="/settings/sent-emails" element={<AdminGuard><SentEmails /></AdminGuard>} />
         <Route path="/walkthroughs" element={<Walkthroughs />} />
@@ -304,6 +324,5 @@ export default function App() {
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
-    </WalkthroughProvider>
   )
 }

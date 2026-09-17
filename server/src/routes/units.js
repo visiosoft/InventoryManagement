@@ -4,6 +4,7 @@ import { contractLeased } from '../services/rateRealisation.js';
 import { Unit, Contract, Site } from '../models/index.js';
 import { siteScope } from '../utils/siteScope.js';
 import { syncAllUnitStatuses, statusForUnit } from '../utils/unitStatus.js';
+import { softDelete } from '../utils/softDelete.js';
 
 const router = Router();
 
@@ -260,9 +261,11 @@ router.post('/resync-status', requireAdmin, async (req, res) => {
 });
 
 router.delete('/:id', requireAdmin, async (req, res) => {
+  const unit = await Unit.findById(req.params.id);
+  if (!unit) return res.status(404).json({ error: 'Unit not found' });
   const hasContracts = await Contract.exists({ unit: req.params.id, status: { $in: ['active', 'pending_signature', 'draft'] } });
   if (hasContracts) return res.status(409).json({ error: 'Unit has open contracts' });
-  await Unit.findByIdAndDelete(req.params.id);
+  await softDelete(unit, req.user.id);
   res.json({ ok: true });
 });
 

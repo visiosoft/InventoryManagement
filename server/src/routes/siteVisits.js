@@ -5,6 +5,7 @@ import os from 'os';
 import path from 'path';
 import { SiteVisit, nextSiteVisitNo, MovingJob, nextMovingJobNo, Customer } from '../models/index.js';
 import { uploadPublicImage, driveClient, driveConfigured } from '../services/drive.js';
+import { softDelete } from '../utils/softDelete.js';
 
 const upload = multer({
   storage: multer.diskStorage({ destination: os.tmpdir() }),
@@ -292,7 +293,7 @@ router.delete('/:id', async (req, res) => {
   try {
     const visit = await SiteVisit.findById(req.params.id);
     if (!visit) return res.status(404).json({ error: 'Site visit not found' });
-    await visit.deleteOne();
+    await softDelete(visit, req.user.id);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

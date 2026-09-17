@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pickChannels, templateFor } from './automationEngine.js';
+import { pickChannels, templateFor, dubaiDayRange, sentCutoff, unreachableReason, needsApprovalHold } from './automationEngine.js';
 
 // The rule as the built-in Contract Expiry rule actually ships: WhatsApp on,
 // email off. Turning this rule on to get its email is what once put messages
@@ -140,4 +140,92 @@ test('a step may override the template it was built from', () => {
 
 test('with neither, it stays free text — the behaviour every other trigger keeps', () => {
   assert.deepEqual(templateFor({}, { key: 'welcome' }, VARS), {});
+});
+
+/* ── the same-day guard's day boundary ──────────────────────────────────────
+   alreadySentToday() (services/automationEngine.js) reuses this range to
+   decide "did this contract already get this rule, on this channel, today" —
+   this is the part of that decision that can be tested without a database:
+   does "today" actually mean the Dubai day, not a UTC one. */
+
+test('a run just after Dubai midnight is inside today\'s range, not still in yesterday\'s', () => {
+  // 2026-03-05 00:05 Dubai time = 2026-03-04 20:05 UTC.
+  const justAfterMidnight = new Date('2026-03-04T20:05:00.000Z');
+  const { start, end } = dubaiDayRange(justAfterMidnight);
+  assert.ok(justAfterMidnight >= start && justAfterMidnight < end);
+  // Dubai midnight itself is 20:00 UTC the day before.
+  assert.equal(start.toISOString(), '2026-03-04T20:00:00.000Z');
+});
+
+test('a run just before Dubai midnight is inside today\'s range, not already tomorrow\'s', () => {
+  // 2026-03-05 23:55 Dubai time = 2026-03-05 19:55 UTC.
+  const justBeforeMidnight = new Date('2026-03-05T19:55:00.000Z');
+  const { start, end } = dubaiDayRange(justBeforeMidnight);
+  assert.ok(justBeforeMidnight >= start && justBeforeMidnight < end);
+  assert.equal(end.toISOString(), '2026-03-05T20:00:00.000Z');
+});
+
+test('the range is exactly one day wide, so a second run 6 hours later is still caught', () => {
+  const { start, end } = dubaiDayRange(new Date('2026-03-05T08:00:00.000Z'));
+  assert.equal(end.getTime() - start.getTime(), 24 * 60 * 60 * 1000);
+});
+
+/* ── sentCutoff: "start fresh" resets vs. a recurring window ────────────────
+   alreadySent() uses this to decide how far back a log still blocks a step.
+   Getting "both must hold" wrong in either direction either lets a reset
+   silently un-block a send nobody asked to reset, or leaves a reset unable
+   to do anything at all — both are the kind of bug that only shows up as an
+   unexplained double-send or a permanently stuck queue. */
+
+test('neither recurring nor reset: no bound, so any past send blocks forever', () => {
+  assert.equal(sentCutoff({ recurring: { enabled: false, everyDays: 3 }, remindersResetAt: null }), null);
+});
+
+test('a reset with no recurring window: the cutoff is exactly the reset moment', () => {
+  const resetAt = new Date('2026-03-01T00:00:00.000Z');
+  const cutoff = sentCutoff({ recurring: { enabled: false, everyDays: 3 }, remindersResetAt: resetAt });
+  assert.equal(cutoff.getTime(), resetAt.getTime());
+});
+
+test('recurring with no reset: the cutoff is everyDays back from now', () => {
+  const now = new Date('2026-03-10T00:00:00.000Z');
+  const cutoff = sentCutoff({ recurring: { enabled: true, everyDays: 5 }, remindersResetAt: null, now });
+  assert.equal(cutoff.getTime(), now.getTime() - 5 * 24 * 60 * 60 * 1000);
+});
+
+test('a reset older than the recurring window changes nothing — the window still wins', () => {
+  const now = new Date('2026-03-10T00:00:00.000Z');
+  const oldReset = new Date('2026-01-01T00:00:00.000Z');
+  const cutoff = sentCutoff({ recurring: { enabled: true, everyDays: 5 }, remindersResetAt: oldReset, now });
+  assert.equal(cutoff.getTime(), now.getTime() - 5 * 24 * 60 * 60 * 1000);
+});
+
+test('a reset newer than the recurring window wins — the whole point of resetting', () => {
+  const now = new Date('2026-03-10T00:00:00.000Z');
+  const freshReset = new Date('2026-03-09T00:00:00.000Z');
+  const cutoff = sentCutoff({ recurring: { enabled: true, everyDays: 5 }, remindersResetAt: freshReset, now });
+  assert.equal(cutoff.getTime(), freshReset.getTime());
+});
+
+test('an approved contract that gets no message says why, in words an admin can act on', () => {
+    const rule = { emailEnabled: true, whatsappEnabled: false };
+    assert.equal(unreachableReason({ rule, waAllowed: true, waConfigured: true, mailReady: true, phone: '', email: '' }), 'no email address on the customer');
+    assert.equal(unreachableReason({ rule, waAllowed: true, waConfigured: true, mailReady: false, phone: '', email: 'a@b.ae' }), 'email is not configured — connect Gmail in Settings');
+    assert.equal(unreachableReason({ rule: { emailEnabled: true, whatsappEnabled: true }, waAllowed: false, waConfigured: true, mailReady: true, phone: '9715', email: '' }),
+        'no email address on the customer; WhatsApp automation is switched off');
+    assert.equal(unreachableReason({ rule: { emailEnabled: false, whatsappEnabled: false }, waAllowed: true, waConfigured: true, mailReady: true, phone: '9715', email: 'a@b.ae' }),
+        'both channels are switched off on this rule');
+});
+
+test('WhatsApp is held for approval only on a real, automatic send — never a preview, never an approved one', () => {
+    // The cron / "Run now", live, with the switch on: held.
+    assert.equal(needsApprovalHold({ auto: true, dryRun: false, channel: 'whatsapp', whatsappApprovalRequired: true }), true);
+    // A preview never sends anything, so it still shows WhatsApp as planned.
+    assert.equal(needsApprovalHold({ auto: true, dryRun: true, channel: 'whatsapp', whatsappApprovalRequired: true }), false);
+    // A person switched the requirement off: automatic WhatsApp goes through.
+    assert.equal(needsApprovalHold({ auto: true, dryRun: false, channel: 'whatsapp', whatsappApprovalRequired: false }), false);
+    // sendApprovedReminders() never sets `auto` — an approved send is never held.
+    assert.equal(needsApprovalHold({ auto: false, dryRun: false, channel: 'whatsapp', whatsappApprovalRequired: true }), false);
+    // Email is never held by this switch, automatic or not.
+    assert.equal(needsApprovalHold({ auto: true, dryRun: false, channel: 'email', whatsappApprovalRequired: true }), false);
 });

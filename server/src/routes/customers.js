@@ -8,24 +8,24 @@ import { phoneClauses } from '../utils/phoneSearch.js';
 import { mailConfigured, mailFromAddress, sendMail } from '../services/mail.js';
 import { fillPlaceholders, leftoverPlaceholders } from '../services/emailPlaceholders.js';
 import { zohoBooksConfigured, findZohoContactsFor, fetchZohoInvoicesForContacts, fetchZohoInvoicePdf, zohoOutstandingByCustomer } from '../services/zohoBooks.js';
+import { softDelete, softDeleteMany } from '../utils/softDelete.js';
+import { deleteContractRecord } from './contracts.js';
 
 const router = Router();
 
 
-async function deleteCustomerCascade(customerId) {
+async function deleteCustomerCascade(customerId, userId) {
+  const customer = await Customer.findById(customerId);
   const contracts = await Contract.find({ customer: customerId });
   for (const contract of contracts) {
-    const allUnitIds = contract.units?.length ? contract.units : [contract.unit];
-    await Payment.deleteMany({ contract: contract._id });
-    await Document.deleteMany({ contract: contract._id });
-    await Invoice.deleteMany({ orderNumber: contract.contractNo });
-    await contract.deleteOne();
-    await Promise.all(allUnitIds.map((uid) => syncUnitStatus(uid)));
+    // Reuses contracts.js's own cascade (incl. its "refuse if active" guard)
+    // instead of duplicating it here, so the two never drift apart.
+    await deleteContractRecord(contract, userId);
   }
-  await Invoice.deleteMany({ customer: customerId });
-  await Document.deleteMany({ customer: customerId });
-  await Quote.deleteMany({ customer: customerId });
-  await Customer.findByIdAndDelete(customerId);
+  await softDeleteMany(Invoice, { customer: customerId }, userId);
+  await softDeleteMany(Document, { customer: customerId }, userId);
+  await softDeleteMany(Quote, { customer: customerId }, userId);
+  if (customer) await softDelete(customer, userId);
 }
 
 function escRegex(value) {
@@ -268,7 +268,11 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', requireAdmin, async (req, res) => {
   const customer = await Customer.findById(req.params.id);
   if (!customer) return res.status(404).json({ error: 'Customer not found' });
-  await deleteCustomerCascade(req.params.id);
+  try {
+    await deleteCustomerCascade(req.params.id, req.user.id);
+  } catch (err) {
+    return res.status(409).json({ error: err.message });
+  }
   res.json({ ok: true });
 });
 
@@ -284,7 +288,7 @@ router.post('/:id/merge-into/:targetId', async (req, res) => {
   if (!target) return res.status(404).json({ error: 'Target customer not found' });
 
   const result = await Invoice.updateMany({ customer: id }, { $set: { customer: targetId } });
-  await Customer.findByIdAndDelete(id);
+  await softDelete(source, req.user.id);
   res.json({ ok: true, invoicesMoved: result.modifiedCount, deletedCustomer: source.fullName, intoCustomer: target.fullName });
 });
 
@@ -481,8 +485,12 @@ router.post('/send-email', requireAdmin, async (req, res) => {
 router.post('/bulk-delete', requireAdmin, async (req, res) => {
   const ids = Array.isArray(req.body.ids) ? req.body.ids : [];
   if (!ids.length) return res.status(400).json({ error: 'No ids provided' });
-  for (const id of ids) {
-    await deleteCustomerCascade(id);
+  try {
+    for (const id of ids) {
+      await deleteCustomerCascade(id, req.user.id);
+    }
+  } catch (err) {
+    return res.status(409).json({ error: err.message });
   }
   res.json({ ok: true, deleted: ids.length, skipped: 0 });
 });
