@@ -76,6 +76,12 @@ export function actorFrom(req) {
 export function auditLogMiddleware(req, res, next) {
   if (!MUTATING_METHODS.has(req.method)) return next();
 
+  // Meta calls this every time a message/status update arrives — dozens of
+  // times a day, from Meta's own servers, not a person. It's noise that
+  // buries the actions a staff member actually took, so it's excluded
+  // entirely rather than just filtered out of the report view.
+  if ((req.originalUrl || req.path || '').includes('/whatsapp/webhook')) return next();
+
   // A create's own id never appears in the URL that created it — peek at
   // what the route actually returned instead.
   const originalJson = res.json.bind(res);
