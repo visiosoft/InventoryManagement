@@ -3164,12 +3164,26 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
     onError: (e) => setSendErr(apiError(e)),
   })
 
-  // Clearing a suggestion is a server-side change: the draft lives on the
-  // thread, so dismissing it locally would only have it reappear on the next
-  // poll.
+  // The draft lives on the thread, not just in this component, so dismissing
+  // it needs a server round-trip. But waiting for onSent's invalidateQueries
+  // to refetch before the card disappears reads as the button not working —
+  // patched into every cached wa-conversations query immediately instead
+  // (same reasoning as the owner-assign patch above), and invalidated after
+  // for consistency with the poll.
   const dismissDraft = useMutation({
     mutationFn: (phone: string) => api.post(`/ai-bot/threads/${phone}/dismiss-draft`).then((r) => r.data),
-    onSuccess: () => onSent(),
+    onSuccess: (_data, phone) => {
+      setSendErr('')
+      qc.setQueriesData<{ list: WhatsAppConversation[] } | undefined>({ queryKey: ['wa-conversations'] }, (old) => {
+        if (!old) return old
+        return {
+          ...old,
+          list: old.list.map((c) => (c.phoneNormalized !== phone ? c : { ...c, botDraft: '' })),
+        }
+      })
+      onSent()
+    },
+    onError: (e) => setSendErr(apiError(e)),
   })
 
   // Handing a thread over mutes the assistant on it. Without a way back the
