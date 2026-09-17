@@ -32,10 +32,7 @@ type Answer = {
   contractId?: string
 }
 
-/* What a tool is, in words a person recognises — never the tool's name.
-   Kept in step with the same table in AssistantWidget.tsx by hand: the two
-   surfaces answer through the same server tools, so the same name should
-   read the same way wherever it shows up. */
+/* What a tool is, in words a person recognises — never the tool's name. */
 const TOOL_LABEL: Record<string, string> = {
   units_available: 'checked unit availability',
   price_booking: 'priced it with the quote maths',
