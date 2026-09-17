@@ -3169,7 +3169,8 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
   // poll.
   const dismissDraft = useMutation({
     mutationFn: (phone: string) => api.post(`/ai-bot/threads/${phone}/dismiss-draft`).then((r) => r.data),
-    onSuccess: () => onSent(),
+    onSuccess: () => { setSendErr(''); onSent() },
+    onError: (e) => setSendErr(apiError(e)),
   })
 
   // Handing a thread over mutes the assistant on it. Without a way back the
@@ -4294,9 +4295,10 @@ export default function WhatsApp({ embeddedPhone }: { embeddedPhone?: string } =
                 </button>
                 <button type="button"
                   onClick={() => dismissDraft.mutate(selectedConvo.phoneNormalized)}
-                  className="h-7 px-2.5 rounded-full cursor-pointer"
+                  disabled={dismissDraft.isPending}
+                  className="h-7 px-2.5 rounded-full cursor-pointer disabled:opacity-50"
                   style={{ fontSize: 12, fontWeight: 600, color: FAINT_INK }}>
-                  Dismiss
+                  {dismissDraft.isPending ? 'Dismissing…' : 'Dismiss'}
                 </button>
               </div>
             </div>
