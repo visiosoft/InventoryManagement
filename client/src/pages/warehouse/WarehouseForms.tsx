@@ -1,11 +1,106 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api, apiError } from '../../lib/api'
-import { Button, Field, Input, Select, Textarea } from '../../components/ui'
+import { Button, Field, Input, Modal, Select, Textarea } from '../../components/ui'
 import { locationTypes, numeric, readable, types } from '../../lib/warehouse'
 import type { Booking, Container, CustomerRef, Location } from '../../lib/warehouse'
 
 const field = '!h-12 !text-base'
+
+/** A finger/mouse-drawn signature, captured as a PNG data URL. Purely a
+ *  local canvas — nothing is uploaded until the surrounding form submits. */
+function SignaturePad({ onChange }: { onChange: (dataUrl: string | null) => void }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const drawing = useRef(false)
+  const drawn = useRef(false)
+
+  function point(e: ReactPointerEvent<HTMLCanvasElement>) {
+    const rect = canvasRef.current!.getBoundingClientRect()
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top }
+  }
+  function start(e: ReactPointerEvent<HTMLCanvasElement>) {
+    canvasRef.current!.setPointerCapture(e.pointerId)
+    drawing.current = true
+    const ctx = canvasRef.current!.getContext('2d')!
+    const { x, y } = point(e)
+    ctx.beginPath(); ctx.moveTo(x, y)
+  }
+  function move(e: ReactPointerEvent<HTMLCanvasElement>) {
+    if (!drawing.current) return
+    const ctx = canvasRef.current!.getContext('2d')!
+    ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.strokeStyle = '#111'
+    const { x, y } = point(e)
+    ctx.lineTo(x, y); ctx.stroke()
+    drawn.current = true
+  }
+  function end() {
+    if (drawing.current && drawn.current) onChange(canvasRef.current!.toDataURL('image/png'))
+    drawing.current = false
+  }
+  function clear() {
+    const canvas = canvasRef.current!
+    canvas.getContext('2d')!.clearRect(0, 0, canvas.width, canvas.height)
+    drawn.current = false
+    onChange(null)
+  }
+
+  return <div>
+    <canvas ref={canvasRef} width={400} height={140} className="w-full touch-none rounded-lg border bg-white"
+      onPointerDown={start} onPointerMove={move} onPointerUp={end} onPointerLeave={end} />
+    <button type="button" onClick={clear} className="mt-1 cursor-pointer text-xs text-zinc-500 underline">Clear signature</button>
+  </div>
+}
+
+export function DispatchConfirmModal({ open, item, onClose, onConfirm, busy }: {
+  open: boolean
+  item: Container | undefined
+  onClose: () => void
+  onConfirm: (notes: string, signatureDataUrl: string | null) => void
+  busy: boolean
+}) {
+  const [pickupType, setPickupType] = useState<'customer' | 'other'>('customer')
+  const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [signature, setSignature] = useState<string | null>(null)
+  useEffect(() => { if (open) { setPickupType('customer'); setName(''); setPhone(''); setSignature(null) } }, [open])
+  if (!item) return null
+  const customer = typeof item.customer === 'object' ? item.customer : null
+
+  function submit(e: FormEvent) {
+    e.preventDefault()
+    if (pickupType === 'other' && !name.trim()) return
+    const notes = pickupType === 'customer'
+      ? `Picked up by the account holder, ${customer?.fullName || 'the customer'}${customer?.phone ? ` (${customer.phone})` : ''}.`
+      : `Picked up by ${name.trim()}${phone.trim() ? ` (${phone.trim()})` : ''} — not the account holder.`
+    onConfirm(notes, signature)
+  }
+
+  return <Modal open={open} onClose={onClose} title="Confirm handover">
+    <form className="space-y-4" onSubmit={submit}>
+      <div className="rounded-lg border p-3 text-sm">
+        <p className="font-semibold">{item.displayCode}</p>
+        <p className="text-zinc-500">{item.description || readable(item.type)}</p>
+        {customer && <p className="mt-2 text-zinc-500">Account holder: {customer.fullName}{customer.phone ? ` · ${customer.phone}` : ''}</p>}
+      </div>
+      <div className="space-y-2">
+        <label className="flex items-center gap-2 text-sm"><input type="radio" checked={pickupType === 'customer'} onChange={() => setPickupType('customer')} />{customer?.fullName || 'The account holder'} is collecting it</label>
+        <label className="flex items-center gap-2 text-sm"><input type="radio" checked={pickupType === 'other'} onChange={() => setPickupType('other')} />Someone else is collecting it</label>
+      </div>
+      {pickupType === 'other' && <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Their name *"><Input value={name} onChange={e => setName(e.target.value)} required className={field} /></Field>
+        <Field label="Their phone"><Input value={phone} onChange={e => setPhone(e.target.value)} className={field} /></Field>
+      </div>}
+      <div>
+        <label className="mb-1 block text-xs font-semibold text-zinc-600">Signature (optional)</label>
+        <SignaturePad onChange={setSignature} />
+      </div>
+      <div className="flex gap-2">
+        <Button disabled={busy || (pickupType === 'other' && !name.trim())} className="!h-12">{busy ? 'Confirming…' : 'Confirm handover'}</Button>
+        <Button type="button" variant="outline" className="!h-12" onClick={onClose}>Cancel</Button>
+      </div>
+    </form>
+  </Modal>
+}
 
 export function ReceiveForm({ site, locations, onCreated, lockQuantity, submitLabel }: { site: string; locations: Location[]; onCreated: (items: Container[]) => void; lockQuantity?: boolean; submitLabel?: string }) {
   const [search, setSearch] = useState('')

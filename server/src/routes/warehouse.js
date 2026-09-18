@@ -81,7 +81,7 @@ router.post('/containers', asyncRoute(async (req, res) => res.status(201).json(a
 router.patch('/containers/:id', asyncRoute(async (req, res) => res.json(await command(req.warehouseUser, req.body, 'EDIT_CONTAINER', ctx => editContainer(ctx, req.params.id, req.body)))));
 router.delete('/containers/:id', asyncRoute(async (req, res) => res.json(await command(req.warehouseUser, req.body, 'DELETE_CONTAINER', ctx => deleteContainer(ctx, req.params.id, req.body)))));
 router.get('/containers/:id', asyncRoute(async (req, res) => {
-  const item = await StoredContainer.findById(req.params.id).populate('customer', 'fullName clientId').populate('booking', 'contractNo').populate('unit', 'unitNumber').populate('currentLocation', 'name displayCode').lean();
+  const item = await StoredContainer.findById(req.params.id).populate('customer', 'fullName clientId phone').populate('booking', 'contractNo').populate('unit', 'unitNumber').populate('currentLocation', 'name displayCode').lean();
   if (!item) fail('Item not found.', 404);
   const photos = await ItemPhoto.find({ container: item._id }).select('_id createdAt').sort({ createdAt: 1 }).lean();
   res.json({ ...item, photos, nextAction: nextAction(item) });

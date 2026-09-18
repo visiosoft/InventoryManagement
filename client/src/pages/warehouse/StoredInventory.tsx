@@ -6,7 +6,7 @@ import { useAuth } from '../../lib/auth'
 import { useSite } from '../../lib/site'
 import { Button, Input, Select } from '../../components/ui'
 import WarehouseScanner from '../../components/WarehouseScanner'
-import { LocationForm, ReceiveForm, EditLocationForm, EditContainerForm } from './WarehouseForms'
+import { LocationForm, ReceiveForm, EditLocationForm, EditContainerForm, DispatchConfirmModal } from './WarehouseForms'
 import { readable } from '../../lib/warehouse'
 import type { Container, Location, PendingScan, ScanCommand, ScanResult } from '../../lib/warehouse'
 
@@ -41,6 +41,7 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
   const [tab, setTab] = useState<Tab>('Guided')
   const [wizard, setWizard] = useState<'menu' | 'receive' | 'dispatch'>('menu')
   const [wizardLabelConfirmed, setWizardLabelConfirmed] = useState(false)
+  const [dispatchModalOpen, setDispatchModalOpen] = useState(false)
   function startWizard(mode: 'receive' | 'dispatch') {
     setWizard(mode); setWizardLabelConfirmed(false); setSelected(''); setScannedItem(''); setScannedLocation(null)
   }
@@ -102,15 +103,15 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
     localStorage.setItem(queueKey, JSON.stringify(queue))
     pendingRef.current = queue; setPending(queue)
   }
-  async function submitScan(command: ScanCommand, retry = false) {
-    if (lock.current) return
+  async function submitScan(command: ScanCommand, retry = false): Promise<boolean> {
+    if (lock.current) return false
     lock.current = true; setBusy(true)
     try {
       if (!retry) saveQueue([...pendingRef.current, { command }])
-      if (!navigator.onLine) { feedback('warning', 'Offline. Scan saved on this device; reconnect and retry before moving any item.'); return }
+      if (!navigator.onLine) { feedback('warning', 'Offline. Scan saved on this device; reconnect and retry before moving any item.'); return false }
       const { data } = await api.post<ScanResult>('/warehouse/scans', command)
       saveQueue(pendingRef.current.filter(p => p.command.requestId !== command.requestId))
-      if (!data.recognized) { setScannedItem(''); setScannedLocation(null); feedback('error', data.message || 'Unknown barcode.'); return }
+      if (!data.recognized) { setScannedItem(''); setScannedLocation(null); feedback('error', data.message || 'Unknown barcode.'); return false }
       if (data.location) { setScannedLocation(data.location); feedback('success', `Location verified: ${data.location.name}. Scan the item next.`) }
       if (data.container) {
         choose(data.container._id)
@@ -119,6 +120,7 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
         if (command.action !== 'INSPECT') { setScannedLocation(null); setScannedItem('') }
       }
       refresh()
+      return true
     } catch (err) {
       const message = apiError(err)
       // "Already scanned" means the goal was already reached by an earlier
@@ -134,11 +136,27 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
         try { saveQueue(pendingRef.current.map(p => p.command.requestId === command.requestId ? { ...p, error: message } : p)) } catch { /* Existing persisted command remains available. */ }
       }
       feedback(message.includes('ALREADY SCANNED') ? 'warning' : 'error', message)
+      return false
     } finally { lock.current = false; setBusy(false) }
   }
   const inspect = (barcode: string) => {
     if (pendingRef.current.length) { feedback('warning', 'Resolve pending scans before starting a new scan.'); return }
     void submitScan({ requestId: crypto.randomUUID(), barcode, action: 'INSPECT', deviceId: device })
+  }
+  // The signature (if any) is only ever uploaded once the dispatch itself is
+  // confirmed — no point keeping a photo of a handover that didn't happen.
+  async function confirmDispatch(notes: string, signatureDataUrl: string | null) {
+    if (!scannedLocation || !item) return
+    const ok = await submitScan({ requestId: crypto.randomUUID(), barcode: scannedItem, locationBarcode: scannedLocation.displayCode, action: 'DISPATCH', notes, deviceId: device })
+    if (!ok) return
+    setDispatchModalOpen(false)
+    if (signatureDataUrl) {
+      try {
+        const blob = await (await fetch(signatureDataUrl)).blob()
+        const data = new FormData(); data.append('photo', blob, 'signature.png'); data.append('requestId', crypto.randomUUID())
+        await api.post(`/warehouse/containers/${item._id}/photos`, data)
+      } catch { /* Dispatch already succeeded; a lost signature photo isn't worth blocking on. */ }
+    }
   }
   async function print(codes: string[]) {
     if (printBusy || !codes.length) return
@@ -333,12 +351,7 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
               : scannedLocation ? <span className="font-semibold text-emerald-700">✓ {scannedLocation.name}</span> : 'not yet scanned'}</p>
           </Step>
           <Step n={3} title="Confirm the handover" state={dispatching ? 'active' : 'waiting'}>
-            <Button className="w-full !h-12 sm:w-auto" disabled={busy || !online || pending.length > 0 || scannedItem !== item.displayCode || !dispatching} onClick={() => {
-              if (!scannedLocation) return
-              const notes = window.prompt('Who is picking this up, or how was it confirmed? (required)')
-              if (!notes?.trim()) return
-              void submitScan({ requestId: crypto.randomUUID(), barcode: scannedItem, locationBarcode: scannedLocation.displayCode, action: 'DISPATCH', notes, deviceId: device })
-            }}>Confirm dispatch</Button>
+            <Button className="w-full !h-12 sm:w-auto" disabled={busy || !online || pending.length > 0 || scannedItem !== item.displayCode || !dispatching} onClick={() => setDispatchModalOpen(true)}>Confirm dispatch</Button>
           </Step>
         </>}
       </section>
@@ -380,7 +393,8 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
               {item.currentStatus === 'IN_STORAGE' && !supervisor && !dispatching && <p className="mt-4 font-semibold text-amber-800">NO ACTIVE MOVEMENT AUTHORIZATION</p>}
               {(item.currentStatus !== 'IN_STORAGE' || supervisor || dispatching) && <Button className="mt-6 !h-14 w-full" disabled={busy || !online || pending.length > 0 || scannedItem !== item.displayCode || !scannedLocation || locationMismatch || (!dispatching && item.currentStatus !== 'CREATED' && !item.photoCount)} onClick={() => {
                 if (!scannedLocation) return
-                const notes = needsReason ? window.prompt(dispatching ? 'Who is picking this up, or how was it confirmed? (required)' : 'Reason for supervisor relocation') : ''
+                if (dispatching) { setDispatchModalOpen(true); return }
+                const notes = needsReason ? window.prompt('Reason for supervisor relocation') : ''
                 if (needsReason && !notes?.trim()) return
                 void submitScan({ requestId: crypto.randomUUID(), barcode: scannedItem, locationBarcode: scannedLocation.displayCode, action, notes: notes || '', deviceId: device })
               }}>{actionLabel}</Button>}
@@ -435,5 +449,6 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
       {editingItem && <EditContainerForm item={item} onCancel={() => setEditingItem(false)} onSaved={() => { setEditingItem(false); refresh(); feedback('success', 'Item updated.') }} />}
       <div className="mt-8 border-t pt-5"><h3 className="text-lg font-semibold">Chain of custody</h3><p className="mt-1 text-sm text-zinc-500">Permanent event history · {history.data?.total ?? 0} events</p>{history.isError && <p role="alert" className="mt-3 text-red-700">{apiError(history.error)}</p>}<ol className="mt-4 space-y-4">{history.data?.data.map(event => <li key={event._id} className="border-l-2 border-violet-200 pl-4"><p className="font-medium">{readable(event.eventType)}</p><p className="text-sm text-zinc-500">{new Date(event.timestamp).toLocaleString()} · {event.employee?.name || 'Employee'}</p>{event.newStatus && <p className="text-sm">{event.previousStatus ? `${readable(event.previousStatus)} → ` : ''}{readable(event.newStatus)}</p>}{event.currentLocation && <p className="text-sm text-zinc-500">{event.previousLocation && event.previousLocation !== event.currentLocation ? `${locationName(event.previousLocation)} → ` : ''}{locationName(event.currentLocation)}</p>}{event.notes && <p className="text-sm">{event.notes}</p>}</li>)}</ol><div className="mt-4 flex gap-2"><Button variant="outline" disabled={historyPage === 1} onClick={() => setHistoryPage(historyPage - 1)}>Newer</Button><Button variant="outline" disabled={historyPage * 30 >= (history.data?.total || 0)} onClick={() => setHistoryPage(historyPage + 1)}>Older</Button></div></div>
     </>}</section>}
+    <DispatchConfirmModal open={dispatchModalOpen} item={item} busy={busy} onClose={() => setDispatchModalOpen(false)} onConfirm={(notes, signature) => void confirmDispatch(notes, signature)} />
   </div>
 }
