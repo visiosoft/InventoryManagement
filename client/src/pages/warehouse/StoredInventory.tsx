@@ -145,11 +145,19 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
     const key = JSON.stringify({ codes, format })
     if (printRequest.current?.key !== key) printRequest.current = { key, id: crypto.randomUUID() }
     setPrintBusy(true)
+    // Opened synchronously, right here in the click, so the browser still
+    // treats it as user-initiated — a tab opened after the await below is
+    // liable to be blocked as a popup. We just point this blank tab at the
+    // PDF once it's ready, instead of making anyone scroll up to a link.
+    const tab = window.open('', '_blank')
     try {
       const response = await api.post('/warehouse/labels', { codes, format, requestId: printRequest.current.id }, { responseType: 'blob' })
-      setPrintUrl(URL.createObjectURL(response.data)); printRequest.current = null; refresh()
-      feedback('success', 'Labels ready. Open the PDF and print at actual size.')
+      const url = URL.createObjectURL(response.data)
+      setPrintUrl(url); printRequest.current = null; refresh()
+      if (tab) tab.location.href = url
+      else feedback('warning', 'Your browser blocked the new tab — use the link below to open the label.')
     } catch (err) {
+      tab?.close()
       const blob = (err as { response?: { data?: Blob } }).response?.data
       let message = apiError(err)
       if (blob instanceof Blob) { try { message = JSON.parse(await blob.text()).error || message } catch { /* Non-JSON error response. */ } }
@@ -389,17 +397,21 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
       {supervisor && <LocationForm site={site} locations={locations.data || []} onCreated={() => { refresh(); feedback('success', 'Location created. Print its label before scanning.') }} />}
       <div className="divide-y rounded-xl border">
         {locations.data?.map(l => <div key={l._id} className="p-4">
-          <div className="flex flex-wrap items-center gap-4">
-            <MapPin size={22} className="text-zinc-400" />
-            <div className="flex-1">
-              <p className="font-semibold">{l.name}</p>
-              <p className="text-sm text-zinc-500">{l.warehouse} · {readable(l.kind)}{l.parent ? ` · ${locationName(l.parent)}` : ''}</p>
-              <p className="font-mono text-xs text-zinc-500">{l.displayCode}</p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3 min-w-0">
+              <MapPin size={22} className="shrink-0 text-zinc-400" />
+              <div className="min-w-0">
+                <p className="font-semibold">{l.name}</p>
+                <p className="text-sm text-zinc-500">{l.warehouse} · {readable(l.kind)}{l.parent ? ` · ${locationName(l.parent)}` : ''}</p>
+                <p className="font-mono text-xs text-zinc-500">{l.displayCode}</p>
+              </div>
             </div>
-            <p className="text-sm">{l.usedContainers}{l.maxContainers != null ? ` / ${l.maxContainers}` : ''} stored{l.maxWeight != null && <span className="block text-zinc-500">{l.usedWeight.toFixed(1)} / {l.maxWeight} kg</span>}{l.maxVolume != null && <span className="block text-zinc-500">{l.usedVolume.toFixed(3)} / {l.maxVolume} m³</span>}</p>
-            <Button variant="outline" disabled={printBusy} onClick={() => void print([l.displayCode])}><Printer size={16} />Label</Button>
-            {supervisor && <Button variant="outline" onClick={() => setEditingLocation(editingLocation === l._id ? '' : l._id)}>Edit</Button>}
-            {supervisor && <Button variant="outline" disabled={deleteBusy} onClick={() => void deleteLocationNow(l._id)}>Delete</Button>}
+            <div className="flex flex-wrap items-center gap-3 sm:justify-end">
+              <p className="text-sm">{l.usedContainers}{l.maxContainers != null ? ` / ${l.maxContainers}` : ''} stored{l.maxWeight != null && <span className="block text-zinc-500">{l.usedWeight.toFixed(1)} / {l.maxWeight} kg</span>}{l.maxVolume != null && <span className="block text-zinc-500">{l.usedVolume.toFixed(3)} / {l.maxVolume} m³</span>}</p>
+              <Button variant="outline" disabled={printBusy} onClick={() => void print([l.displayCode])}><Printer size={16} />Label</Button>
+              {supervisor && <Button variant="outline" onClick={() => setEditingLocation(editingLocation === l._id ? '' : l._id)}>Edit</Button>}
+              {supervisor && <Button variant="outline" disabled={deleteBusy} onClick={() => void deleteLocationNow(l._id)}>Delete</Button>}
+            </div>
           </div>
           {editingLocation === l._id && <EditLocationForm location={l} onCancel={() => setEditingLocation('')} onSaved={() => { setEditingLocation(''); refresh(); feedback('success', 'Location updated.') }} />}
         </div>)}
