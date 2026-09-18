@@ -329,13 +329,21 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
       const action = dispatching ? 'DISPATCH' : item?.currentStatus === 'CREATED' ? 'RECEIVE' : item?.currentStatus === 'IN_STORAGE' ? 'RELOCATE' : 'PUTAWAY'
       const actionLabel = dispatching ? 'Confirm dispatch' : item?.currentStatus === 'CREATED' ? 'Confirm receipt' : item?.currentStatus === 'IN_STORAGE' ? 'Authorize relocation' : 'Confirm putaway'
       const needsReason = action === 'RELOCATE' || action === 'DISPATCH'
+      // What this action actually needs scanned — a location of the wrong
+      // kind used to be accepted silently, show a green checkmark, then only
+      // fail once Confirm was clicked, leaving a stuck pending scan with no
+      // clue why. Checked as soon as something is scanned instead.
+      const expectedKinds = action === 'RECEIVE' ? ['RECEIVING'] : action === 'DISPATCH' ? ['DISPATCH'] : ['SHELF', 'BIN', 'RACK']
+      const locationMismatch = !!scannedLocation && item && !expectedKinds.includes(scannedLocation.kind)
       return <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-4">
           <WarehouseScanner onScan={inspect} disabled={busy || pending.length > 0} />
           <div className="rounded-xl border p-5">
             <h3 className="font-semibold">Verified location</h3>
-            <p className="mt-2 text-lg">{scannedLocation ? scannedLocation.name : 'Scan a receiving, storage or dispatch location'}</p>
-            {scannedLocation && <p className="mt-1 font-mono text-sm text-zinc-500">{scannedLocation.displayCode} · {scannedLocation.warehouse}</p>}
+            {locationMismatch
+              ? <p className="mt-2 text-lg font-semibold text-red-700">✕ {scannedLocation!.name} is a {readable(scannedLocation!.kind)} — scan a {expectedKinds.map(readable).join(' or ')} location instead.</p>
+              : <p className="mt-2 text-lg">{scannedLocation ? scannedLocation.name : 'Scan a receiving, storage or dispatch location'}</p>}
+            {scannedLocation && !locationMismatch && <p className="mt-1 font-mono text-sm text-zinc-500">{scannedLocation.displayCode} · {scannedLocation.warehouse}</p>}
           </div>
           {item && !dispatching && suggestions.data && suggestions.data.length > 0 && <div className="rounded-xl border p-5">
             <h3 className="font-semibold">Compatible storage locations</h3>
@@ -351,7 +359,7 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
             <p className="mt-2 text-sm">{scannedItem === item.displayCode ? 'Item label verified' : 'Scan this item’s physical label to authorize the next step.'}</p>
             {item.currentStatus === 'DISPATCHED' ? <p className="mt-4 font-semibold text-zinc-500">Already returned to the customer.</p> : <>
               {item.currentStatus === 'IN_STORAGE' && !supervisor && !dispatching && <p className="mt-4 font-semibold text-amber-800">NO ACTIVE MOVEMENT AUTHORIZATION</p>}
-              {(item.currentStatus !== 'IN_STORAGE' || supervisor || dispatching) && <Button className="mt-6 !h-14 w-full" disabled={busy || !online || pending.length > 0 || scannedItem !== item.displayCode || !scannedLocation || (!dispatching && item.currentStatus !== 'CREATED' && !item.photoCount)} onClick={() => {
+              {(item.currentStatus !== 'IN_STORAGE' || supervisor || dispatching) && <Button className="mt-6 !h-14 w-full" disabled={busy || !online || pending.length > 0 || scannedItem !== item.displayCode || !scannedLocation || locationMismatch || (!dispatching && item.currentStatus !== 'CREATED' && !item.photoCount)} onClick={() => {
                 if (!scannedLocation) return
                 const notes = needsReason ? window.prompt(dispatching ? 'Who is picking this up, or how was it confirmed? (required)' : 'Reason for supervisor relocation') : ''
                 if (needsReason && !notes?.trim()) return
