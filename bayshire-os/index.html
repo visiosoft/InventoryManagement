@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Bayshire OS — Run your entire storage operation from one system</title>
+<meta name="description" content="Units, customers, leads, contracts, payments and reporting, connected in one operating system built for self-storage.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<script>(function(){try{var t=localStorage.getItem('bayshire-theme');if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=t;}catch(e){}})();</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Manrope:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<a class="skip-link" href="#top">Skip to content</a>
+
+<header class="nav" id="nav">
+  <div class="wrap nav__row">
+    <a href="#top" class="nav__brand" aria-label="Bayshire OS home">Bayshire OS</a>
+    <nav class="nav__links" aria-label="Primary">
+      <div class="nav__item">
+        <button type="button" class="nav__link nav__link--trigger" id="productMenuBtn" aria-haspopup="true" aria-expanded="false">
+          Product <span class="nav__chevron" aria-hidden="true"></span>
+        </button>
+        <div class="nav__dropdown" id="productDropdown" role="menu" aria-label="Product" hidden>
+          <a href="#units" role="menuitem" class="nav__dropdown-item">
+            <span class="nav__dropdown-mark">IM</span>
+            <span>
+              <span class="nav__dropdown-title">Inventory Management System</span>
+              <span class="nav__dropdown-desc">Live floor plan, 3D unit picker and per-unit pricing</span>
+            </span>
+          </a>
+          <a href="#pipeline" role="menuitem" class="nav__dropdown-item">
+            <span class="nav__dropdown-mark">CR</span>
+            <span>
+              <span class="nav__dropdown-title">CRM</span>
+              <span class="nav__dropdown-desc">Leads, quotes and contracts in one pipeline</span>
+            </span>
+          </a>
+          <a href="#assist" role="menuitem" class="nav__dropdown-item">
+            <span class="nav__dropdown-mark">WA</span>
+            <span>
+              <span class="nav__dropdown-title">WhatsApp Lead Management</span>
+              <span class="nav__dropdown-desc">Draft and send replies from the lead record</span>
+            </span>
+          </a>
+          <a href="#integrations" role="menuitem" class="nav__dropdown-item">
+            <span class="nav__dropdown-mark">ES</span>
+            <span>
+              <span class="nav__dropdown-title">E-Signature</span>
+              <span class="nav__dropdown-desc">Route contracts for e-signature automatically</span>
+            </span>
+          </a>
+          <a href="#finance" role="menuitem" class="nav__dropdown-item">
+            <span class="nav__dropdown-mark">FS</span>
+            <span>
+              <span class="nav__dropdown-title">Financial System</span>
+              <span class="nav__dropdown-desc">Invoices, payments, vendors and expenses</span>
+            </span>
+          </a>
+          <a href="#modules" role="menuitem" class="nav__dropdown-item">
+            <span class="nav__dropdown-mark">MS</span>
+            <span>
+              <span class="nav__dropdown-title">Moving System</span>
+              <span class="nav__dropdown-desc">Schedule move-ins and move-outs and track unit turnover</span>
+            </span>
+          </a>
+        </div>
+      </div>
+      <a href="#modules">Modules</a>
+      <a href="#integrations">Integrations</a>
+      <a href="#reporting">Resources</a>
+      <a href="#about">About Us</a>
+      <a href="#contact">Contact</a>
+    </nav>
+    <div class="nav__actions">
+      <button type="button" class="theme-toggle" id="themeToggle" aria-label="Toggle theme" aria-pressed="false">
+        <span class="theme-toggle__dot" aria-hidden="true"></span>
+      </button>
+      <a href="https://demo.purplebox.ae/signup" class="btn btn--solid">Free Trial</a>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<section id="top" class="hero" aria-label="Hero">
+  <div class="hero__canvas" id="heroCanvas" aria-hidden="true"></div>
+  <div class="hero__text" id="heroText">
+    <div class="announce" id="announce">
+      <span class="announce__text">New: pricing suggestions and reply drafting are here</span>
+      <a href="#assist" class="announce__cta">Try it</a>
+      <button type="button" class="announce__dismiss" id="announceDismiss" aria-label="Dismiss">&times;</button>
+    </div>
+    <h1 class="hero__h1">Run your entire storage operation from <span class="grad-text">one system.</span></h1>
+    <p class="hero__sub">Units, customers, leads, contracts, payments and reporting, connected in one operating system built for self-storage.</p>
+    <div class="hero__ctas">
+      <a href="https://demo.purplebox.ae/signup" class="btn btn--solid btn--lg">Free Trial <span class="arrow" aria-hidden="true">&rarr;</span></a>
+      <a href="#product" class="btn btn--outline btn--lg">Explore the platform</a>
+    </div>
+  </div>
+
+  <div class="hero__frame-wrap">
+    <div class="hero__frame" id="videoFrame">
+      <video id="demoVideo" class="hero__video" src="assets/demo.mp4" poster="assets/poster.jpg" preload="metadata" playsinline aria-label="Bayshire OS product demo"></video>
+      <div class="hero__frame-inner" id="videoOverlay">
+        <button type="button" class="play-btn" id="playBtn" aria-label="Play demo video">
+          <span class="play-btn__triangle" aria-hidden="true"></span>
+        </button>
+        <div class="hero__frame-label">Meet Bayshire OS</div>
+        <div class="hero__frame-meta">7 min product walkthrough</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="hero__metrics" id="heroMetrics">
+    <div class="wrap hero__metrics-row">
+      <div class="metric"><div class="metric__v">240</div><div class="metric__l">Units</div></div>
+      <div class="metric"><div class="metric__v">8</div><div class="metric__l">Unit sizes</div></div>
+      <div class="metric"><div class="metric__v">AED 237.50</div><div class="metric__l">Example weekly rate</div></div>
+      <div class="metric"><div class="metric__v">30 days</div><div class="metric__l">Expiry alert</div></div>
+      <div class="metric__note">Illustrative operational data</div>
+    </div>
+  </div>
+</section>
+
+<section id="product" class="section">
+  <div class="wrap">
+    <div class="section-head" data-reveal>
+      <h2>See the operation clearly.</h2>
+      <p>Inventory, occupancy, revenue, contracts and payments stay connected so operators can see what is happening without moving between spreadsheets and disconnected systems.</p>
+    </div>
+  </div>
+
+  <div class="dash" id="dashBlock">
+    <div class="dash__topbar">
+      <div class="wrap dash__topbar-row">
+        <span class="dash__logo"><span class="dash__logo-mark" aria-hidden="true"></span>Bayshire OS</span>
+        <div class="dash__tabs">
+          <span class="dash__tab dash__tab--active">Dashboard</span>
+          <span class="dash__tab">Units</span>
+          <span class="dash__tab">Leads</span>
+          <span class="dash__tab">Contracts</span>
+          <span class="dash__tab">Payments</span>
+          <span class="dash__tab">Reports</span>
+        </div>
+        <span class="dash__date">Sep 2026 &middot; Al Quoz Facility</span>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <div class="kpi-row">
+        <div class="kpi"><div class="kpi__l">Occupancy</div><div class="kpi__v kpi__v--accent" data-kpi="occ">0%</div></div>
+        <div class="kpi"><div class="kpi__l">Available units</div><div class="kpi__v" data-kpi="avail">0</div></div>
+        <div class="kpi"><div class="kpi__l">Revenue this month</div><div class="kpi__v kpi__v--blue" data-kpi="rev">AED 0</div></div>
+        <div class="kpi"><div class="kpi__l">Contracts expiring</div><div class="kpi__v" data-kpi="exp">0</div></div>
+        <div class="kpi"><div class="kpi__l">Overdue payments</div><div class="kpi__v kpi__v--oxide" data-kpi="over">0</div></div>
+      </div>
+
+      <div class="chart-row">
+        <div class="chart-col">
+          <div class="chart-head"><span>Revenue by month</span><span class="mono muted">AED &middot; trailing 12 months</span></div>
+          <div class="bars" id="revenueBars"></div>
+          <div class="bars-labels" id="revenueLabels"></div>
+        </div>
+        <div class="chart-col chart-col--narrow">
+          <div class="chart-head"><span>Occupancy by size</span><span class="mono muted">8 sizes</span></div>
+          <div class="occ-list" id="occBySize"></div>
+        </div>
+      </div>
+
+      <div class="three-col">
+        <div>
+          <div class="col-head">Recent activity</div>
+          <div class="rows" id="activityRows"></div>
+        </div>
+        <div>
+          <div class="col-head">Upcoming expiries</div>
+          <div class="rows" id="expiryRows"></div>
+        </div>
+        <div>
+          <div class="col-head">Payment status</div>
+          <div class="rows" id="paymentRows"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="units" class="section">
+  <div class="wrap">
+    <div class="section-head section-head--split" data-reveal>
+      <h2 class="max-14ch">Every unit. One live inventory.</h2>
+      <div class="segmented" role="tablist" aria-label="Inventory view">
+        <button type="button" class="segmented__btn segmented__btn--active" id="floorTabBtn" role="tab" aria-selected="true">Floor view</button>
+        <button type="button" class="segmented__btn" id="threeDTabBtn" role="tab" aria-selected="false">3D view</button>
+        <button type="button" class="segmented__btn" id="tableTabBtn" role="tab" aria-selected="false">Table view</button>
+      </div>
+    </div>
+
+    <div id="floorView" class="units-floor" data-reveal>
+      <div class="units-floor__plan-wrap">
+        <div class="units-floor__plan" id="floorPlan"></div>
+        <div class="units-floor__plan3d" id="unitsCanvas3d" hidden></div>
+        <div class="legend">
+          <span class="legend__item"><span class="legend__swatch legend__swatch--available"></span>Available</span>
+          <span class="legend__item"><span class="legend__swatch legend__swatch--occupied"></span>Occupied</span>
+          <span class="legend__item"><span class="legend__swatch legend__swatch--reserved"></span>Reserved</span>
+          <span class="legend__item"><span class="legend__swatch legend__swatch--maintenance"></span>Maintenance</span>
+          <span class="legend__count mono" id="unitCountLabel"></span>
+        </div>
+        <div class="plan3d-hint" id="plan3dHint">Drag to rotate &middot; click a unit to select it</div>
+      </div>
+      <div class="unit-detail" id="unitDetail" aria-live="polite"></div>
+    </div>
+
+    <div id="tableView" class="units-table" hidden>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Unit</th><th>Floor</th><th>Size</th><th>Dimensions</th><th>Status</th><th class="ta-r">4-week price</th><th class="ta-r">Weekly equivalent</th></tr></thead>
+          <tbody id="unitsTableBody"></tbody>
+        </table>
+        <div class="table-foot">
+          <span class="mono" id="tableFootCount"></span>
+          <span>Weekly equivalent = 4-week contract rate &divide; 4 &middot; Create, read, update, delete</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="pipeline" class="section">
+  <div class="wrap">
+    <div class="section-head" data-reveal>
+      <h2>From inquiry to active contract.</h2>
+      <p>A lead becomes a quote, a quote becomes a contract, and a contract creates its own payment schedule. Customer and unit details are entered once.</p>
+    </div>
+
+    <div class="flow-track" data-reveal id="flowTrack"></div>
+  </div>
+
+  <div class="wrap">
+    <div class="row-head" data-reveal>
+      <h3>Leads</h3>
+      <span class="hint">Select a card to carry it into the quote</span>
+    </div>
+    <div class="kanban" data-reveal id="kanban"></div>
+  </div>
+
+  <div class="wrap">
+    <div class="split split--2" data-reveal>
+      <div>
+        <div class="row-head"><h3>Quote</h3><span class="mono muted" id="quoteId"></span></div>
+        <div class="kv-list kv-list--top" id="quoteRows"></div>
+        <div class="btn-row">
+          <button type="button" class="btn btn--solid">Generate PDF</button>
+          <button type="button" class="btn btn--outline" id="toContractBtn">Convert to contract <span class="arrow" aria-hidden="true">&rarr;</span></button>
+        </div>
+        <p class="fine">Customer, unit and pricing carry into the contract. Nothing is re-entered.</p>
+      </div>
+      <div>
+        <div class="row-head"><h3>Contract</h3><span class="mono muted">CT-0197</span></div>
+        <div class="wizard-tabs" id="wizardTabs" role="tablist" aria-label="Contract steps"></div>
+        <div class="kv-list" id="wizardRows"></div>
+        <div class="btn-row btn-row--center">
+          <button type="button" class="btn btn--solid" id="activateBtn">Activate contract</button>
+          <button type="button" class="btn btn--outline" id="docusignBtn">Send via E-Signature</button>
+        </div>
+        <p class="fine" id="docusignStatus">Activation creates the payment schedule automatically.</p>
+      </div>
+    </div>
+
+    <div class="split split--2" data-reveal style="margin-top:72px">
+      <div>
+        <h3>Lifecycle</h3>
+        <div class="lifecycle" id="lifecycle"></div>
+        <p class="fine">Contracts move from draft to pending to active. Ended and cancelled contracts release their unit back to inventory. Missed payments are flagged overdue without manual review.</p>
+      </div>
+      <div>
+        <div class="row-head"><h3>Payment schedule</h3><span class="mono muted" id="scheduleUnit"></span></div>
+        <div class="kv-list" id="scheduleRows"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="finance" class="section">
+  <div class="wrap">
+    <div class="section-head" data-reveal>
+      <h2>Operations and finance stay connected.</h2>
+      <p>Invoices, payments, vendors, purchases and expenses reference each other. Every record knows where it came from.</p>
+    </div>
+
+    <div class="split split--2" data-reveal>
+      <div class="chain-stack">
+        <div>
+          <div class="chain-label chain-label--green">Customer side</div>
+          <div class="chain" id="chainA"></div>
+        </div>
+        <div>
+          <div class="chain-label chain-label--blue">Vendor side</div>
+          <div class="chain" id="chainB"></div>
+        </div>
+        <p class="fine">Expenses and purchases accept attachments, receipts, delivery notes, warranty documents, <span class="mono ink">up to 10 files / 10 MB</span> per record.</p>
+      </div>
+      <div>
+        <div class="row-head"><h3>CSV import</h3><span class="mono muted">expenses_sep.csv &middot; 3 rows</span></div>
+        <div class="dropzone">Drop a CSV of expenses or purchases. Columns map automatically.</div>
+        <div class="table-scroll" style="margin-top:20px">
+          <table>
+            <thead><tr><th>Vendor</th><th>Category</th><th class="ta-r">Amount</th><th>Auto-link</th></tr></thead>
+            <tbody id="csvRows"></tbody>
+          </table>
+        </div>
+        <p class="fine">Vendors are matched by name during import. Unmatched names create a vendor record so nothing is imported without a link.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="reporting" class="section">
+  <div class="wrap">
+    <div class="section-head" data-reveal>
+      <h2>Your operational record, organized.</h2>
+      <p>Signed contracts, invoices and supporting documents are filed against the records they belong to, then reported on without exporting to a spreadsheet first.</p>
+    </div>
+
+    <div class="split split--report" data-reveal>
+      <div>
+        <h3>Documents</h3>
+        <div class="kv-list kv-list--docs" id="docsRows"></div>
+      </div>
+      <div>
+        <div class="row-head"><h3>Reports</h3><button type="button" class="btn btn--ghost">Export CSV</button></div>
+        <div class="report-grid">
+          <div>
+            <div class="muted small">Revenue by month</div>
+            <div class="bars bars--short" id="reportBars"></div>
+          </div>
+          <div>
+            <div class="muted small">Payment status</div>
+            <div class="pay-status" id="payStatus"></div>
+          </div>
+        </div>
+        <div class="report-grid" style="margin-top:28px">
+          <div>
+            <div class="muted small">Occupancy by size</div>
+            <div class="occ-list occ-list--short" id="occBySizeShort"></div>
+          </div>
+          <div>
+            <div class="muted small">Availability search</div>
+            <div class="avail-search"><span>size &ge; 100 sq ft &middot; F2 &middot; available</span><span class="muted" id="availCount"></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="assist" class="section">
+  <div class="wrap">
+    <div class="section-head" data-reveal>
+      <h2>Assistance, grounded in your data.</h2>
+      <p>Bayshire Assist drafts replies, suggests rates and flags anomalies using the records already in the system. Every output is reviewed by an operator before it is used.</p>
+    </div>
+
+    <div class="split split--2" data-reveal>
+      <div>
+        <div class="row-head"><h3>Reply drafting</h3><span class="mono muted">WhatsApp &middot; <span id="leadName"></span></span></div>
+        <div class="assist-block">
+          <div class="assist-field">
+            <div class="muted small">Inbound message</div>
+            <textarea id="inboundMessage" rows="3"></textarea>
+          </div>
+          <div class="assist-field">
+            <div class="assist-field__head"><span class="muted small">Draft reply</span><span class="mono muted micro" id="draftMeta"></span></div>
+            <div class="draft-panel" id="draftPanel" aria-live="polite">Select a lead, edit the inbound message if needed, then draft a reply.</div>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button type="button" class="btn btn--solid" id="draftBtn">Draft reply</button>
+          <button type="button" class="btn btn--outline">Send via WhatsApp</button>
+          <span class="hint">Uses the lead record, unit availability and pricing. Nothing is sent without review.</span>
+        </div>
+      </div>
+      <div class="assist-side">
+        <div>
+          <h3>Pricing suggestions</h3>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>Size</th><th class="ta-r">Current</th><th class="ta-r">Suggested</th><th>Basis</th></tr></thead>
+              <tbody id="pricingRows"></tbody>
+            </table>
+          </div>
+          <p class="fine">Suggestions follow the pricing rules in Settings. Rates change only when an operator applies them.</p>
+        </div>
+        <div>
+          <h3>Anomaly alerts</h3>
+          <div class="kv-list" id="alertRows"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="modules" class="section">
+  <div class="wrap">
+    <h2 data-reveal>Everything required to operate.</h2>
+    <div class="module-grid" data-reveal id="moduleGrid"></div>
+  </div>
+</section>
+
+<section id="integrations" class="section">
+  <div class="wrap">
+    <div class="split split--integrations" data-reveal>
+      <h2>Integrations</h2>
+      <div class="integration-list" id="integrationList"></div>
+    </div>
+  </div>
+</section>
+
+<section id="about" class="section">
+  <div class="wrap">
+    <div class="section-head" data-reveal>
+      <h2>Built by people who ran the floor.</h2>
+      <p>Bayshire OS is built by a small team who spent years operating and servicing self-storage facilities before writing a line of it.</p>
+    </div>
+    <div class="team-grid" data-reveal id="teamGrid"></div>
+  </div>
+</section>
+
+<section id="contact" class="section">
+  <div class="wrap">
+    <div class="section-head" data-reveal>
+      <h2>Get in touch.</h2>
+      <p>Questions about a facility rollout, pricing, or the platform itself. Reach us directly or send a message below.</p>
+    </div>
+
+    <div class="split split--2" data-reveal>
+      <div>
+        <h3>Contact information</h3>
+        <div class="kv-list kv-list--contact">
+          <div class="kv-row"><span>Address</span><span>Bayshire OS FZE<br>Building A1, Dubai Digital Park<br>Dubai Silicon Oasis, Dubai, UAE</span></div>
+          <div class="kv-row"><span>Phone</span><span class="mono"><a href="tel:+97141234567">+971 4 123 4567</a></span></div>
+          <div class="kv-row"><span>WhatsApp</span><span class="mono"><a href="https://wa.me/971501234567" target="_blank" rel="noopener">+971 50 123 4567</a></span></div>
+          <div class="kv-row"><span>Email</span><span><a href="mailto:xulfi.dev@gmail.com">xulfi.dev@gmail.com</a></span></div>
+          <div class="kv-row"><span>Hours</span><span>Sun-Thu, 9:00-18:00 GST</span></div>
+        </div>
+
+        <div class="chat-card">
+          <div class="chat-card__mark">WA</div>
+          <div class="chat-card__body">
+            <div class="chat-card__title">Prefer to chat now?</div>
+            <div class="chat-card__desc">Message our team on WhatsApp for a live reply during business hours.</div>
+          </div>
+          <a href="https://wa.me/971501234567" target="_blank" rel="noopener" class="btn btn--outline">Start chat</a>
+        </div>
+      </div>
+
+      <div>
+        <h3>Send a message</h3>
+        <div id="contactFormView">
+          <form id="contactForm" novalidate>
+            <div class="field">
+              <label for="contactName">Full name</label>
+              <input type="text" id="contactName" name="name" required autocomplete="name">
+            </div>
+            <div class="field">
+              <label for="contactEmail">Email</label>
+              <input type="email" id="contactEmail" name="email" required autocomplete="email">
+            </div>
+            <div class="field">
+              <label for="contactSubject">Subject</label>
+              <input type="text" id="contactSubject" name="subject" placeholder="e.g. Pricing for a 3-facility rollout">
+            </div>
+            <div class="field">
+              <label for="contactMessage">Message</label>
+              <textarea id="contactMessage" name="message" rows="4" required></textarea>
+            </div>
+            <div class="field field--error" id="contactFormError" hidden>Please add your name, a valid email, and a message.</div>
+            <div class="modal-actions" style="justify-content:flex-start">
+              <button type="submit" class="btn btn--solid">Send message</button>
+            </div>
+          </form>
+        </div>
+        <div id="contactSuccessView" hidden>
+          <p class="modal-sub">Thanks. Your email client should now be open with the message addressed to our team. If nothing opened, email us directly at <a href="mailto:xulfi.dev@gmail.com">xulfi.dev@gmail.com</a>.</p>
+          <button type="button" class="btn btn--outline" id="contactResetBtn">Send another message</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="demo" class="closing">
+  <div class="closing__canvas" id="closingCanvas" aria-hidden="true"></div>
+  <div class="wrap" data-reveal>
+    <h2 class="closing__h2">Run the facility.<br><span class="grad-text">Not the spreadsheet.</span></h2>
+    <p class="closing__sub">See how Bayshire OS connects your units, customers, contracts and financial operations in one system.</p>
+    <a href="https://demo.purplebox.ae/signup" class="btn btn--solid btn--lg">Free Trial <span class="arrow" aria-hidden="true">&rarr;</span></a>
+    <div class="closing__foot">For self-storage owners and operators.</div>
+  </div>
+</section>
+
+</main>
+
+<footer class="footer">
+  <div class="wrap footer__row">
+    <span class="footer__brand">Bayshire OS</span>
+    <span>All figures, units and customers shown are illustrative sample data.</span>
+    <nav class="footer__legal" aria-label="Legal">
+      <a href="legal/terms-of-service.html">Terms of Service</a>
+      <a href="legal/privacy-policy.html">Privacy Policy</a>
+      <a href="legal/dpa.html">DPA</a>
+      <a href="legal/msa.html">MSA</a>
+    </nav>
+  </div>
+</footer>
+
+<div class="quick-chat">
+  <div class="quick-chat__panel" id="quickChatPanel" hidden role="menu" aria-label="Contact options">
+    <div class="quick-chat__panel-title">Need a hand?</div>
+    <a href="https://wa.me/971501234567" target="_blank" rel="noopener" class="quick-chat__option">
+      <span class="quick-chat__option-mark">WA</span>
+      <span><span class="quick-chat__option-title">Chat on WhatsApp</span><span class="quick-chat__option-desc">Usually replies within minutes</span></span>
+    </a>
+    <a href="mailto:xulfi.dev@gmail.com" class="quick-chat__option">
+      <span class="quick-chat__option-mark">@</span>
+      <span><span class="quick-chat__option-title">Email us</span><span class="quick-chat__option-desc">xulfi.dev@gmail.com</span></span>
+    </a>
+    <a href="#contact" class="quick-chat__option" id="quickChatContactLink">
+      <span class="quick-chat__option-mark">FM</span>
+      <span><span class="quick-chat__option-title">Send a message</span><span class="quick-chat__option-desc">Full contact form</span></span>
+    </a>
+  </div>
+  <button type="button" class="quick-chat__btn" id="quickChatBtn" aria-haspopup="true" aria-expanded="false" aria-label="Contact us">
+    <span class="quick-chat__btn-mark">WA</span>
+  </button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
+<script src="data.js"></script>
+<script src="scene3d.js"></script>
+<script src="unitsScene3d.js"></script>
+<script src="ambientScene3d.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
