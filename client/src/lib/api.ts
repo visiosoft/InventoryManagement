@@ -816,3 +816,23 @@ export const followUpQueueApi = {
   setConfig: (stages: number[]) =>
     api.put<{ quietFollowUpDays: number; stages: { afterDays: number }[] }>('/follow-up-queue/config', { stages }).then((r) => r.data),
 }
+
+export type OrgStatus =
+  | { multiTenant: false }
+  | {
+      multiTenant: true
+      plan: string
+      status: string
+      name: string
+      limits: { units: number; contracts: number }
+      usage: { units: number; contracts: number }
+    }
+
+// The signed-in tenant's own plan/usage and billing actions — see
+// server/src/routes/org.js. `status()` is safe to call on the single-tenant
+// deployment too: it just answers { multiTenant: false }.
+export const orgApi = {
+  status: () => api.get<OrgStatus>('/org/status').then((r) => r.data),
+  upgrade: () => api.post<{ url: string }>('/org/upgrade').then((r) => r.data),
+  billingPortal: () => api.post<{ url: string }>('/org/billing-portal').then((r) => r.data),
+}

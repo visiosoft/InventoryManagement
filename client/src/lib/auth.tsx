@@ -13,6 +13,7 @@ export interface AuthUser {
 interface AuthContextValue {
   user: AuthUser | null
   login: (email: string, password: string) => Promise<void>
+  signup: (body: { businessName: string; adminName: string; email: string; password: string }) => Promise<void>
   logout: () => void
   /** Returns true if the current user can access the given module key. */
   hasPermission: (module: string | string[]) => boolean
@@ -51,6 +52,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(data.user)
   }
 
+  async function signup(body: { businessName: string; adminName: string; email: string; password: string }) {
+    const { data } = await api.post('/signup', body)
+    localStorage.setItem('pb_token', data.token)
+    localStorage.setItem('pb_user', JSON.stringify(data.user))
+    setUser(data.user)
+  }
+
   function logout() {
     localStorage.removeItem('pb_token')
     localStorage.removeItem('pb_user')
@@ -80,7 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, hasPermission }}>
+    <AuthContext.Provider value={{ user, login, signup, logout, hasPermission }}>
       {children}
     </AuthContext.Provider>
   )

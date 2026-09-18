@@ -5,6 +5,7 @@ import { Unit, Contract, Site } from '../models/index.js';
 import { siteScope } from '../utils/siteScope.js';
 import { syncAllUnitStatuses, statusForUnit } from '../utils/unitStatus.js';
 import { softDelete } from '../utils/softDelete.js';
+import { enforceTrialCap } from '../middleware/planLimits.js';
 
 const router = Router();
 
@@ -148,7 +149,7 @@ router.get('/:id', async (req, res) => {
   res.json({ unit, contracts });
 });
 
-router.post('/', async (req, res) => {
+router.post('/', enforceTrialCap(Unit, 50, 'storage units'), async (req, res) => {
   const { unitNumber, floor, sizeSqf, price, lengthFt, widthFt, status, discountPct, notes, site } = req.body;
   const exists = await Unit.exists({ unitNumber });
   if (exists) return res.status(409).json({ error: `Unit ${unitNumber} already exists` });

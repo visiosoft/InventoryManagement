@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useLocation, useSearchParams } from 'react-router-dom'
-import { api, apiError, integrationApi, productApi, whatsappApi } from '../lib/api'
+import { api, apiError, integrationApi, orgApi, productApi, whatsappApi } from '../lib/api'
 import type { IntegrationStatus, Product } from '../lib/types'
 import { Button, Card, CardBody, CardHeader, Field, Input, Modal, PageHeader, Select, Table, Td, Th } from '../components/ui'
 import { formatMoney } from '../lib/utils'
@@ -145,6 +145,56 @@ function ProductsCard() {
   )
 }
 
+// ---- Billing (multi-tenant only — renders nothing for the single-tenant deployment) ----
+function BillingCard() {
+  const [err, setErr] = useState('')
+  const { data } = useQuery({
+    queryKey: ['org-status'],
+    queryFn: () => orgApi.status(),
+  })
+
+  const upgrade = useMutation({
+    mutationFn: () => orgApi.upgrade(),
+    onSuccess: ({ url }) => { window.location.href = url },
+    onError: (e) => setErr(apiError(e)),
+  })
+  const openPortal = useMutation({
+    mutationFn: () => orgApi.billingPortal(),
+    onSuccess: ({ url }) => { window.location.href = url },
+    onError: (e) => setErr(apiError(e)),
+  })
+
+  if (!data?.multiTenant) return null
+
+  return (
+    <Card>
+      <CardHeader title="Billing" />
+      <CardBody className="space-y-3 text-sm">
+        <div className="flex items-center justify-between rounded-lg border px-4 py-3 flex-wrap gap-3">
+          <div>
+            <div className="font-medium">{data.plan === 'paid' ? 'Full plan' : 'Free trial'}</div>
+            {data.plan === 'trial' && (
+              <div className="text-xs text-muted-foreground">
+                {data.usage.units}/{data.limits.units} units · {data.usage.contracts}/{data.limits.contracts} contracts used
+              </div>
+            )}
+          </div>
+          {data.plan === 'paid' ? (
+            <Button size="sm" variant="outline" disabled={openPortal.isPending} onClick={() => openPortal.mutate()}>
+              {openPortal.isPending ? 'Opening…' : 'Manage billing'}
+            </Button>
+          ) : (
+            <Button size="sm" disabled={upgrade.isPending} onClick={() => upgrade.mutate()}>
+              {upgrade.isPending ? 'Redirecting…' : 'Upgrade — unlimited units & contracts'}
+            </Button>
+          )}
+        </div>
+        {err && <div className="text-xs text-red-600">{err}</div>}
+      </CardBody>
+    </Card>
+  )
+}
+
 // ---- Main Settings Page ----
 export default function Settings() {
   const qc = useQueryClient()
@@ -254,6 +304,7 @@ export default function Settings() {
         <BulkUnitPricing embedded />
       ) : (
     <>
+      <BillingCard />
       <ProductsCard />
 
       <Card>

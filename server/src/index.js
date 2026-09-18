@@ -37,6 +37,9 @@ import { requireAuth, readOnlyFor } from './middleware/auth.js';
 import { auditLogMiddleware } from './middleware/auditLog.js';
 import { UPLOADS_DIR } from './services/drive.js';
 import authRoutes from './routes/auth.js';
+import signupRoutes from './routes/signup.js';
+import orgRoutes from './routes/org.js';
+import platformBillingWebhookRoutes from './routes/platformBillingWebhook.js';
 import unitRoutes from './routes/units.js';
 import floorPlanRoutes from './routes/floorPlans.js';
 import siteRoutes from './routes/sites.js';
@@ -159,7 +162,7 @@ app.use(
   express.json({
     limit: '2mb',
     verify: (req, _res, buf) => {
-      if (req.originalUrl?.includes('/api/integrations/whatsapp/webhook') || req.originalUrl?.includes('/api/stripe/webhook')) {
+      if (req.originalUrl?.includes('/api/integrations/whatsapp/webhook') || req.originalUrl?.includes('/api/stripe/webhook') || req.originalUrl?.includes('/api/platform-billing/webhook')) {
         req.rawBody = Buffer.from(buf);
       }
     },
@@ -178,6 +181,9 @@ app.use('/api/sign', signingRoutes);
 app.use('/api/sign-moving', signingMovingRoutes);
 // Stripe webhook — no JWT, verified via Stripe-Signature instead
 app.use('/api/stripe/webhook', stripeWebhookRoutes);
+// The platform's own subscription billing — separate Stripe account/secret
+// from the tenant-facing one above. See services/platformBilling.js.
+app.use('/api/platform-billing/webhook', platformBillingWebhookRoutes);
 
 // Public liveness probe — also proves which build is running after a deploy
 const STARTED_AT = new Date().toISOString();
@@ -245,6 +251,8 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+// Self-service trial signup — no JWT yet, this is how one gets issued.
+app.use('/api/signup', signupRoutes);
 app.use('/api/customer-auth', customerAuthRoutes);
 app.use('/api/customer-portal', customerPortalRoutes);
 app.use('/api/crew-auth', crewAuthRoutes);
@@ -358,6 +366,9 @@ app.use('/api/leaderboard', requireAuth, leaderboardRoutes);
    explicit list of owner addresses, because every customer has admins and
    theirs must never reach this. */
 app.use('/api/platform', requireAuth, platformRoutes);
+// The signed-in tenant's own plan/usage and billing actions — not the
+// owner-only console above.
+app.use('/api/org', requireAuth, orgRoutes);
 app.use('/api/my-day', requireAuth, myDayRoutes);
 app.use('/api/lead-follow-up', requireAuth, leadFollowUpRoutes);
 // The unified follow-up queue: waiting-on-us, gone-quiet and scheduled

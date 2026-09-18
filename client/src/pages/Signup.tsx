@@ -3,20 +3,22 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { apiError } from '../lib/api'
 
-export default function Login() {
-  const { login } = useAuth()
+export default function Signup() {
+  const { signup } = useAuth()
   const navigate = useNavigate()
-  const [email, setEmail]       = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError]       = useState('')
-  const [busy, setBusy]         = useState(false)
+  const [businessName, setBusinessName] = useState('')
+  const [adminName, setAdminName]       = useState('')
+  const [email, setEmail]               = useState('')
+  const [password, setPassword]         = useState('')
+  const [error, setError]               = useState('')
+  const [busy, setBusy]                 = useState(false)
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setBusy(true)
     setError('')
     try {
-      await login(email, password)
+      await signup({ businessName, adminName, email, password })
       navigate('/')
     } catch (err) {
       setError(apiError(err))
@@ -49,10 +51,10 @@ export default function Login() {
         {/* Hero text */}
         <div className="relative z-10">
           <h2 className="text-4xl font-bold text-white leading-tight mb-4">
-            Manage your<br />storage units<br />with ease.
+            Start your<br />free trial<br />in minutes.
           </h2>
           <p className="text-base leading-relaxed" style={{ color: '#b8d0f0' }}>
-            Track contracts, payments, and customers — all in one place.
+            Up to 50 units and 50 contracts, free — upgrade any time for unlimited.
           </p>
         </div>
 
@@ -77,34 +79,54 @@ export default function Login() {
 
         <div className="w-full max-w-sm">
           <div className="mb-7">
-            <h1 className="text-2xl font-bold text-foreground">Welcome back</h1>
-            <p className="text-sm text-muted-foreground mt-1">Sign in to your account to continue</p>
+            <h1 className="text-2xl font-bold text-foreground">Create your account</h1>
+            <p className="text-sm text-muted-foreground mt-1">Free trial — no card required</p>
           </div>
 
           <form onSubmit={onSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">Business name</label>
+              <input
+                type="text"
+                value={businessName}
+                onChange={(e) => setBusinessName(e.target.value)}
+                placeholder="Acme Storage"
+                required
+                className="w-full h-11 rounded-xl border-2 border-border bg-card px-4 text-sm placeholder:text-muted-foreground focus:outline-none focus:border-[#FFF799] transition-colors"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">Your name</label>
+              <input
+                type="text"
+                value={adminName}
+                onChange={(e) => setAdminName(e.target.value)}
+                placeholder="Jane Doe"
+                required
+                className="w-full h-11 rounded-xl border-2 border-border bg-card px-4 text-sm placeholder:text-muted-foreground focus:outline-none focus:border-[#FFF799] transition-colors"
+              />
+            </div>
             <div>
               <label className="block text-xs font-semibold text-foreground mb-1.5">Email address</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@purplebox.ae"
+                placeholder="you@company.com"
                 required
                 className="w-full h-11 rounded-xl border-2 border-border bg-card px-4 text-sm placeholder:text-muted-foreground focus:outline-none focus:border-[#FFF799] transition-colors"
               />
             </div>
             <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-semibold text-foreground">Password</label>
-                <Link to="/forgot-password" className="text-xs font-medium" style={{ color: '#4C8CE4' }}>Forgot password?</Link>
-              </div>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">Password</label>
               <input
                 type="password"
-                autoComplete="current-password"
+                autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
+                placeholder="At least 6 characters"
                 required
+                minLength={6}
                 className="w-full h-11 rounded-xl border-2 border-border bg-card px-4 text-sm placeholder:text-muted-foreground focus:outline-none focus:border-[#FFF799] transition-colors"
               />
             </div>
@@ -121,11 +143,11 @@ export default function Login() {
               className="w-full h-11 rounded-xl font-semibold text-sm transition-all duration-150 disabled:opacity-60 disabled:cursor-not-allowed mt-2"
               style={{ background: '#FFF799', color: '#111218' }}
             >
-              {busy ? 'Signing in…' : 'Sign in'}
+              {busy ? 'Creating your account…' : 'Start free trial'}
             </button>
 
             <p className="text-center text-xs text-muted-foreground pt-1">
-              New here? <Link to="/signup" className="font-medium" style={{ color: '#4C8CE4' }}>Start a free trial</Link>
+              Already have an account? <Link to="/login" className="font-medium" style={{ color: '#4C8CE4' }}>Sign in</Link>
             </p>
           </form>
         </div>

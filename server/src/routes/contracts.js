@@ -13,6 +13,7 @@ import { renewLink, moveOutLink } from '../services/renewalLink.js';
 import { syncUnitStatus } from '../utils/unitStatus.js';
 import { softDelete, softDeleteMany } from '../utils/softDelete.js';
 import { sendForSignature, downloadSignedPdf, zohoConfigured } from '../services/zoho.js';
+import { enforceTrialCap } from '../middleware/planLimits.js';
 import { uploadFile } from '../services/drive.js';
 import { mergeAgreementText, renderAgreementTextPdf, renderAgreementHtmlPdf, looksLikeHtml } from '../services/agreementText.js';
 import { sendWhatsAppTemplate, whatsappSendConfigured } from '../services/whatsapp.js';
@@ -584,7 +585,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // Create a contract (draft). Generates the payment schedule and reserves the unit(s).
-router.post('/', async (req, res) => {
+router.post('/', enforceTrialCap(Contract, 50, 'contracts'), async (req, res) => {
   const { customer, unit, units: extraUnits, billingPeriod, rate, deposit, startDate, endDate, notes, firstMonthDiscountPct } = req.body;
 
   // Determine all unit IDs covered by this contract.

@@ -45,6 +45,10 @@ const organisationSchema = new Schema({
       default: 'provisioning',
    },
    plan: { type: String, default: 'trial' },
+   // Set once a subscription checkout completes; used to open the Stripe
+   // billing portal and to match subscription webhooks back to this org.
+   stripeCustomerId: { type: String, default: null },
+   stripeSubscriptionId: { type: String, default: null },
    ownerEmail: { type: String, required: true, lowercase: true, trim: true },
    timezone: { type: String, default: 'Asia/Dubai' },
 

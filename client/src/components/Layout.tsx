@@ -13,6 +13,7 @@ import { cn } from '../lib/utils'
 import { isSalesRepRole } from '../lib/roles'
 import { WalkthroughProvider } from '../walkthroughs/WalkthroughProvider'
 import { isDemoEnv } from '../lib/env'
+import TrialBanner from './TrialBanner'
 
 // Which deployment you're looking at — main and SAASModel are each deployed
 // separately with no other visible difference in the UI.
@@ -835,6 +836,7 @@ export default function Layout() {
 
       {/* ── Main content ────────────────────────────────────────── */}
       <main className={cn("flex-1 pt-14 md:pt-0 min-w-0 transition-all duration-200", collapsed ? 'md:ml-[60px]' : 'md:ml-56')} style={{ background: '#FBF8F2' }}>
+        <TrialBanner />
         {/* Desktop top bar with profile dropdown */}
         <div className="hidden md:flex items-center justify-between h-14 px-6 border-b border-border/40">
           <h1 className="text-lg font-semibold shrink-0" style={{ color: '#14081F' }}>{getPageTitle(location.pathname)}</h1>
