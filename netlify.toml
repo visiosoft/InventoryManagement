@@ -20,6 +20,13 @@
   # without this it falls through to the SPA catch-all below (which is
   # `force`d, so it wins over the real files even though they exist) and
   # every /bayshire-os/* request serves the React app's index.html instead.
+  # The bare path (no trailing slash) doesn't match the "/*" wildcard below,
+  # so it needs its own exact rule pointing at the actual file.
+  from = "/bayshire-os"
+  to = "/bayshire-os/index.html"
+  status = 200
+
+[[redirects]]
   from = "/bayshire-os/*"
   to = "/bayshire-os/:splat"
   status = 200
