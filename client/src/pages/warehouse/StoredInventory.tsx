@@ -241,9 +241,11 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
             <div className="mt-3 grid gap-4 lg:grid-cols-2">
               <WarehouseScanner onScan={inspect} disabled={busy || pending.length > 0} />
               <div className="space-y-2 text-sm">
-                <p>Location: {scannedLocation ? <span className="font-semibold text-emerald-700">✓ {scannedLocation.name}</span> : 'not yet scanned'}</p>
+                {scannedLocation && scannedLocation.kind !== 'RECEIVING'
+                  ? <p className="font-semibold text-red-700">✕ {scannedLocation.name} is a {readable(scannedLocation.kind)}, not your Receiving area — scan the Receiving tag instead.</p>
+                  : <p>Location: {scannedLocation ? <span className="font-semibold text-emerald-700">✓ {scannedLocation.name}</span> : 'not yet scanned'}</p>}
                 <p>Item: {scannedItem === item?.displayCode ? <span className="font-semibold text-emerald-700">✓ verified</span> : 'not yet scanned'}</p>
-                <Button className="w-full !h-12" disabled={busy || !online || pending.length > 0 || !item || scannedItem !== item.displayCode || !scannedLocation} onClick={() => {
+                <Button className="w-full !h-12" disabled={busy || !online || pending.length > 0 || !item || scannedItem !== item.displayCode || scannedLocation?.kind !== 'RECEIVING'} onClick={() => {
                   if (!scannedLocation || !item) return
                   void submitScan({ requestId: crypto.randomUUID(), barcode: scannedItem, locationBarcode: scannedLocation.displayCode, action: 'RECEIVE', deviceId: device })
                 }}>Confirm receipt</Button>
@@ -270,9 +272,11 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
             <div className="mt-3 grid gap-4 lg:grid-cols-2">
               <WarehouseScanner onScan={inspect} disabled={busy || pending.length > 0} />
               <div className="space-y-2 text-sm">
-                <p>Shelf: {scannedLocation ? <span className="font-semibold text-emerald-700">✓ {scannedLocation.name}</span> : 'not yet scanned'}</p>
+                {scannedLocation && !['SHELF', 'BIN', 'RACK'].includes(scannedLocation.kind)
+                  ? <p className="font-semibold text-red-700">✕ {scannedLocation.name} is a {readable(scannedLocation.kind)} — scan a shelf, bin or rack instead.</p>
+                  : <p>Shelf: {scannedLocation ? <span className="font-semibold text-emerald-700">✓ {scannedLocation.name}</span> : 'not yet scanned'}</p>}
                 <p>Item: {scannedItem === item?.displayCode ? <span className="font-semibold text-emerald-700">✓ verified</span> : 'not yet scanned'}</p>
-                <Button className="w-full !h-12" disabled={busy || !online || pending.length > 0 || !item || scannedItem !== item.displayCode || !scannedLocation || !item.photoCount} onClick={() => {
+                <Button className="w-full !h-12" disabled={busy || !online || pending.length > 0 || !item || scannedItem !== item.displayCode || !scannedLocation || !['SHELF', 'BIN', 'RACK'].includes(scannedLocation.kind) || !item.photoCount} onClick={() => {
                   if (!scannedLocation || !item) return
                   void submitScan({ requestId: crypto.randomUUID(), barcode: scannedItem, locationBarcode: scannedLocation.displayCode, action: 'PUTAWAY', deviceId: device })
                 }}>Confirm putaway</Button>
@@ -305,7 +309,9 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
         {item && item.currentStatus !== 'DISPATCHED' && <>
           <Step n={2} title="Scan your Dispatch/pickup counter tag" state={dispatching ? 'done' : 'active'}>
             <WarehouseScanner onScan={inspect} disabled={busy || pending.length > 0} />
-            <p className="mt-2 text-sm">{scannedLocation ? <span className="font-semibold text-emerald-700">✓ {scannedLocation.name}</span> : 'not yet scanned'}</p>
+            <p className="mt-2 text-sm">{scannedLocation && scannedLocation.kind !== 'DISPATCH'
+              ? <span className="font-semibold text-red-700">✕ {scannedLocation.name} is a {readable(scannedLocation.kind)} — scan your Dispatch counter's tag instead.</span>
+              : scannedLocation ? <span className="font-semibold text-emerald-700">✓ {scannedLocation.name}</span> : 'not yet scanned'}</p>
           </Step>
           <Step n={3} title="Confirm the handover" state={dispatching ? 'active' : 'waiting'}>
             <Button className="w-full !h-12 sm:w-auto" disabled={busy || !online || pending.length > 0 || scannedItem !== item.displayCode || !dispatching} onClick={() => {
