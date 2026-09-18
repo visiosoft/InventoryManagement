@@ -53,6 +53,9 @@ function SmartHome() {
   if (isSalesRepRole(user?.role)) {
     return <MyDay />
   }
+  if (hasPermission(['warehouse', 'warehouse_supervisor']) && !hasPermission('dashboard') && !hasPermission('units')) {
+    return <Navigate to="/warehouse" replace />
+  }
   const hasMoving = hasPermission('moving_dashboard')
   const hasStorage = hasPermission('units') || hasPermission('dashboard')
   const isMovingOnly = hasMoving && !hasStorage
@@ -69,6 +72,7 @@ import Dashboard from './pages/Dashboard'
 import MyDay from './pages/MyDay'
 import FollowUps from './pages/FollowUps'
 import Units from './pages/Units'
+import StoredInventory from './pages/warehouse/StoredInventory'
 import FloorMap from './pages/FloorMap'
 import Sites from './pages/Sites'
 import Customers from './pages/Customers'
@@ -219,6 +223,7 @@ export default function App() {
       <Route element={<Layout />}>
         <Route path="/" element={<SmartHome />} />
         <Route path="/units" element={<Units />} />
+        <Route path="/warehouse" element={<PermGuard module={['warehouse', 'warehouse_supervisor']}><StoredInventory /></PermGuard>} />
         <Route path="/floor-map" element={<PermGuard module="units"><FloorMap /></PermGuard>} />
         <Route path="/sites" element={<PermGuard module="units"><Sites /></PermGuard>} />
         <Route path="/customers" element={<Customers />} />

@@ -14,6 +14,7 @@ import { isSalesRepRole } from '../lib/roles'
 import { WalkthroughProvider } from '../walkthroughs/WalkthroughProvider'
 
 const navTop = [
+  { to: '/warehouse', label: 'Stored Inventory', icon: Package, perm: ['warehouse', 'warehouse_supervisor'] },
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard' as string | undefined },
   { to: '/tasks', label: 'Tasks', icon: ListTodo, perm: 'dashboard' },
 ]
@@ -331,7 +332,7 @@ export default function Layout() {
   const profileRef = useRef<HTMLDivElement>(null)
   const isAdmin = user?.role === 'admin'
   const isSalesRepUser = isSalesRepRole(user?.role)
-  const isMovingOnly = hasPermission('moving_dashboard') && !hasPermission('units') && !hasPermission('dashboard')
+  const isMovingOnly = hasPermission('moving_dashboard') && !hasPermission('units') && !hasPermission('dashboard') && !hasPermission(['warehouse', 'warehouse_supervisor'])
 
   // ── Business switcher ──────────────────────────────────────────
   // Storage and Moving are two businesses in one app; the sidebar shows one

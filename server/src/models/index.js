@@ -4,6 +4,7 @@ import { softDeletePlugin } from '../utils/softDelete.js';
 const { Schema, model } = mongoose;
 
 const ALL_MODULES = [
+  'warehouse', 'warehouse_supervisor',
   'dashboard', 'units', 'moving_inventory', 'contracts', 'documents',
   'customers', 'quotes', 'invoices', 'vendors', 'expenses',
   'leads', 'purchases', 'payments',

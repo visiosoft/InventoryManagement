@@ -28,6 +28,7 @@ import { auditLogMiddleware } from './middleware/auditLog.js';
 import { UPLOADS_DIR } from './services/drive.js';
 import authRoutes from './routes/auth.js';
 import unitRoutes from './routes/units.js';
+import warehouseRoutes from './routes/warehouse.js';
 import floorPlanRoutes from './routes/floorPlans.js';
 import siteRoutes from './routes/sites.js';
 import customerRoutes from './routes/customers.js';
@@ -238,6 +239,7 @@ app.use('/api/contracts/zoho-webhook', (req, _res, next) => next());
 // WhatsApp webhook verification and events must be reachable without a JWT.
 app.use('/api/integrations/whatsapp/webhook', (req, _res, next) => next());
 app.use('/api/units', requireAuth, unitRoutes);
+app.use('/api/warehouse', requireAuth, warehouseRoutes);
 /* Accounts read tenants and contracts to invoice against them; they do not
    agree terms or correct somebody's details. See readOnlyFor. */
 const accountsReadOnly = readOnlyFor('accounts');
@@ -386,6 +388,13 @@ async function start() {
   await seedUnitTypes();
   console.log(`Connected to MongoDB (db: ${process.env.DB_NAME})`);
   app.listen(PORT, () => console.log(`PurpleBox API listening on http://localhost:${PORT}`));
+
+  // Local interactive sessions can run the API without duplicating production
+  // schedulers or sending customer communications in the background.
+  if (process.env.DISABLE_BACKGROUND_JOBS === 'true') {
+    console.log('Background jobs disabled for this session.');
+    return;
+  }
 
   // Reconcile WhatsApp label-driven lead state every 15 minutes.
   const WHATSAPP_RECONCILE_INTERVAL = 15 * 60 * 1000;

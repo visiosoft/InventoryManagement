@@ -18,6 +18,8 @@ const MODULE_GROUPS = [
     modules: [
       { key: 'dashboard',        label: 'Dashboard' },
       { key: 'units',            label: 'Units' },
+      { key: 'warehouse',        label: 'Warehouse staff' },
+      { key: 'warehouse_supervisor', label: 'Warehouse supervisor' },
       { key: 'moving_inventory', label: 'Moving Ops' },
       { key: 'contracts',        label: 'Contracts' },
       { key: 'documents',        label: 'Documents' },
