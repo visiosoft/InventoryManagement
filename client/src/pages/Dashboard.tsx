@@ -11,10 +11,16 @@ import DashboardAsk from '../components/DashboardAsk'
 import QuietLeadsModal from '../components/QuietLeadsModal'
 import { useAuth } from '../lib/auth'
 
-const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
+// No longer Bricolage Grotesque — this page now follows the app's plain
+// body font (Manrope) to match a cleaner, quieter reference look, rather
+// than the display font Moving pages use.
+const HEADING = { letterSpacing: '-0.02em' } as const
 const INK = '#14081F'
 const MUTED_CLR = '#756E80'
 const PURPLE_LIGHT = '#F7F3FF'
+// A soft, cool backdrop behind the page's own cream card — Dashboard-only;
+// every other page keeps the plain #FBF8F2 background from Layout.tsx.
+const DASHBOARD_BACKDROP = 'linear-gradient(135deg, #5B8DEF 0%, #7EC9C4 35%, #C3EAD7 58%, #E4F2E7 75%, #86C6E8 100%)'
 
 type WidgetId =
   | 'stats'
@@ -588,7 +594,8 @@ export default function Dashboard() {
   // one (or one failing request taking the whole page down with it).
 
   return (
-    <div style={{ background: '#fff', borderRadius: 20, border: '1px solid rgba(20,8,31,0.06)' }} className="p-5 sm:p-7">
+    <div className="-m-3 sm:-m-4 p-3 sm:p-5" style={{ background: DASHBOARD_BACKDROP, borderRadius: 28 }}>
+    <div style={{ background: '#FBF8F2', borderRadius: 24, border: '1px solid rgba(20,8,31,0.06)', boxShadow: '0 20px 50px rgba(20,8,31,.10)' }} className="p-5 sm:p-7">
 
       <div className="mb-5"><DashboardAsk /></div>
 
@@ -743,6 +750,7 @@ export default function Dashboard() {
       )}
 
       {showQuiet && <QuietLeadsModal onClose={() => setShowQuiet(false)} scope="all" ownerId={quietOwner} />}
+    </div>
     </div>
   )
 }
