@@ -210,7 +210,13 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Navigate to="/" replace />} />
-      <Route path="/signup" element={<Navigate to="/" replace />} />
+      {/* Deliberately NOT redirected to "/" like /login above: a browser can
+          already be signed in to an existing customer (a shared demo/sales
+          machine is the common case) and someone visiting this link still
+          means to create a brand new, separate one — not get bounced back
+          into whatever account happens to be signed in here. Submitting the
+          form fully replaces the stored session with the new customer's. */}
+      <Route path="/signup" element={<Signup />} />
       <Route path="/sign/:token" element={<SignContract />} />
       <Route path="/sign-moving/:token" element={<SignMovingJob />} />
       <Route path="/upload/moving/:token" element={<ClientUpload />} />
