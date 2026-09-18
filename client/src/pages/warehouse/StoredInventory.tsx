@@ -121,7 +121,18 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
       refresh()
     } catch (err) {
       const message = apiError(err)
-      try { saveQueue(pendingRef.current.map(p => p.command.requestId === command.requestId ? { ...p, error: message } : p)) } catch { /* Existing persisted command remains available. */ }
+      // "Already scanned" means the goal was already reached by an earlier
+      // attempt (e.g. the first click actually went through before the UI
+      // updated, and this was a duplicate). Retrying can never succeed here,
+      // so it doesn't belong in the pending queue waiting on a Discard —
+      // clear it and reset for the next scan, same as a real success would.
+      if (message.includes('ALREADY SCANNED')) {
+        saveQueue(pendingRef.current.filter(p => p.command.requestId !== command.requestId))
+        if (command.action !== 'INSPECT') { setScannedLocation(null); setScannedItem('') }
+        refresh()
+      } else {
+        try { saveQueue(pendingRef.current.map(p => p.command.requestId === command.requestId ? { ...p, error: message } : p)) } catch { /* Existing persisted command remains available. */ }
+      }
       feedback(message.includes('ALREADY SCANNED') ? 'warning' : 'error', message)
     } finally { lock.current = false; setBusy(false) }
   }
