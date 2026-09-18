@@ -16,6 +16,15 @@
   force = true
 
 [[redirects]]
+  # A static site of its own, served as-is from client/public/bayshire-os —
+  # without this it falls through to the SPA catch-all below (which is
+  # `force`d, so it wins over the real files even though they exist) and
+  # every /bayshire-os/* request serves the React app's index.html instead.
+  from = "/bayshire-os/*"
+  to = "/bayshire-os/:splat"
+  status = 200
+
+[[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
