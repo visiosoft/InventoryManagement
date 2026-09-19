@@ -158,6 +158,13 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
       } catch { /* Dispatch already succeeded; a lost signature photo isn't worth blocking on. */ }
     }
   }
+  // The common case — the account holder collecting their own item — needs
+  // no form at all, same as every other scan action: scan, scan, one click.
+  // The modal (someone else picking up, or a signature) is opt-in from here.
+  function quickDispatchNote() {
+    const customer = item && typeof item.customer === 'object' ? item.customer : null
+    return `Picked up by the account holder, ${customer?.fullName || 'the customer'}${customer?.phone ? ` (${customer.phone})` : ''}.`
+  }
   async function print(codes: string[]) {
     if (printBusy || !codes.length) return
     const key = JSON.stringify({ codes, format })
@@ -351,7 +358,10 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
               : scannedLocation ? <span className="font-semibold text-emerald-700">✓ {scannedLocation.name}</span> : 'not yet scanned'}</p>
           </Step>
           <Step n={3} title="Confirm the handover" state={dispatching ? 'active' : 'waiting'}>
-            <Button className="w-full !h-12 sm:w-auto" disabled={busy || !online || pending.length > 0 || scannedItem !== item.displayCode || !dispatching} onClick={() => setDispatchModalOpen(true)}>Confirm dispatch</Button>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button className="!h-12" disabled={busy || !online || pending.length > 0 || scannedItem !== item.displayCode || !dispatching} onClick={() => void confirmDispatch(quickDispatchNote(), null)}>Confirm dispatch</Button>
+              <button type="button" className="text-sm text-zinc-500 underline disabled:opacity-50" disabled={scannedItem !== item.displayCode || !dispatching} onClick={() => setDispatchModalOpen(true)}>Someone else picking it up, or add a signature?</button>
+            </div>
           </Step>
         </>}
       </section>
@@ -393,11 +403,12 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
               {item.currentStatus === 'IN_STORAGE' && !supervisor && !dispatching && <p className="mt-4 font-semibold text-amber-800">NO ACTIVE MOVEMENT AUTHORIZATION</p>}
               {(item.currentStatus !== 'IN_STORAGE' || supervisor || dispatching) && <Button className="mt-6 !h-14 w-full" disabled={busy || !online || pending.length > 0 || scannedItem !== item.displayCode || !scannedLocation || locationMismatch || (!dispatching && item.currentStatus !== 'CREATED' && !item.photoCount)} onClick={() => {
                 if (!scannedLocation) return
-                if (dispatching) { setDispatchModalOpen(true); return }
+                if (dispatching) { void confirmDispatch(quickDispatchNote(), null); return }
                 const notes = needsReason ? window.prompt('Reason for supervisor relocation') : ''
                 if (needsReason && !notes?.trim()) return
                 void submitScan({ requestId: crypto.randomUUID(), barcode: scannedItem, locationBarcode: scannedLocation.displayCode, action, notes: notes || '', deviceId: device })
               }}>{actionLabel}</Button>}
+              {dispatching && <button type="button" className="mt-3 text-sm text-zinc-500 underline" onClick={() => setDispatchModalOpen(true)}>Someone else picking it up, or add a signature?</button>}
               <p className="mt-3 text-sm text-zinc-500">{!dispatching && !item.photoCount ? 'Add a photo in the item details below before putaway.' : 'Confirm only after scanning both physical labels.'}</p>
             </>}
           </> : <p className="mt-3 text-zinc-500">The scanner recognizes item and location labels automatically.</p>}
