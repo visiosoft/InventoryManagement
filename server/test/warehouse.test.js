@@ -333,6 +333,15 @@ test('HTTP permissions, safe lookup, private photos, and revoked access', async 
   await User.updateOne({ _id: staff._id }, { $set: { permissions: ['warehouse'] } });
 });
 
+test('containers can be looked up by a specific list of ids, for a job’s linked items', async () => {
+  const [a, b] = await containers({ quantity: 2 });
+  const [other] = await containers();
+  const result = await request(app).get('/warehouse/containers').query({ site: String(site._id), ids: `${a._id},${b._id}` }).set('x-test-user', String(staff._id)).expect(200);
+  const ids = result.body.data.map(c => c._id).sort();
+  assert.deepEqual(ids, [a._id, b._id].sort());
+  assert.ok(!ids.includes(other._id));
+});
+
 test('unknown barcode is recorded without silently creating inventory', async () => {
   const beforeCount = await StoredContainer.countDocuments();
   const result = await run(staff, 'SCAN', { barcode: 'PBX-BX-999999999', action: 'INSPECT' }, scan);

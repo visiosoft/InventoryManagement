@@ -65,6 +65,11 @@ router.get('/containers', asyncRoute(async (req, res) => {
     if (!/^[a-f0-9]{24}$/i.test(String(req.query.customer))) fail('Invalid customer.');
     filter.customer = req.query.customer;
   }
+  if (req.query.ids) {
+    const ids = String(req.query.ids).split(',').map(s => s.trim()).filter(Boolean).slice(0, 100);
+    if (!ids.length) fail('Invalid ids.');
+    filter._id = { $in: ids };
+  }
   const search = String(req.query.search || '').trim().slice(0, 100);
   if (search) {
     const re = new RegExp(escapeRegex(search), 'i');

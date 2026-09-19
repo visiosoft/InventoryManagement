@@ -14,6 +14,63 @@ type Tab = 'Guided' | 'Today' | 'Scan' | 'Receive' | 'Inventory' | 'Jobs' | 'Loc
 type Event = { _id: string; eventType: string; timestamp: string; employee?: { name: string }; previousStatus?: string; newStatus?: string; previousLocation?: string; currentLocation?: string; notes?: string }
 const statusClass = (status: string) => status === 'IN_STORAGE' ? 'bg-emerald-50 text-emerald-800' : status === 'DISPATCHED' ? 'bg-zinc-100 text-zinc-600' : 'bg-amber-50 text-amber-800'
 
+function JobRow({ job, site, assigning, linking, jobBusy, dispatchBusy, onToggleAssign, onToggleLink, onSetStatus, onCreateLink, onCopyLink, onRevokeLink, onDispatchItem, onSaved }: {
+  job: WarehouseJob
+  site: string
+  assigning: boolean
+  linking: boolean
+  jobBusy: boolean
+  dispatchBusy: boolean
+  onToggleAssign: () => void
+  onToggleLink: () => void
+  onSetStatus: (status: 'COMPLETED' | 'CANCELLED') => void
+  onCreateLink: () => void
+  onCopyLink: (token: string) => void
+  onRevokeLink: () => void
+  onDispatchItem: (item: Container) => void
+  onSaved: (message: string) => void
+}) {
+  const closed = job.status === 'COMPLETED' || job.status === 'CANCELLED'
+  const customerName = typeof job.customer === 'object' ? job.customer.fullName : ''
+  // Only delivery jobs have a physical dispatch step left to do — pickup
+  // items leave the field already tagged and just need receiving/linking.
+  const items = useQuery<{ data: Container[] }>({
+    queryKey: ['warehouse', site, 'job-items', job._id, job.containers.join(',')],
+    queryFn: () => api.get('/warehouse/containers', { params: { site, ids: job.containers.join(','), limit: job.containers.length || 1 } }).then(r => r.data),
+    enabled: job.type === 'DELIVERY' && job.containers.length > 0,
+  })
+  return <div className="p-4">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0">
+        <p className="font-semibold">{job.type === 'PICKUP' ? 'Pick up from' : 'Deliver to'} {customerName}</p>
+        <p className="text-sm text-zinc-500">{job.address}</p>
+        {job.partnerName && <p className="text-sm text-zinc-500">Partner: {job.partnerName}{job.partnerPhone ? ` · ${job.partnerPhone}` : ''}</p>}
+        {job.notes && <p className="mt-1 text-sm text-zinc-600">{job.notes}</p>}
+        <p className="mt-1 text-xs text-zinc-500">{job.containers.length} item{job.containers.length === 1 ? '' : 's'} linked · {new Date(job.createdAt).toLocaleString()}</p>
+      </div>
+      <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${job.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-800' : job.status === 'CANCELLED' ? 'bg-zinc-100 text-zinc-600' : job.status === 'ASSIGNED' ? 'bg-sky-50 text-sky-800' : 'bg-amber-50 text-amber-800'}`}>{readable(job.status)}</span>
+    </div>
+    {job.type === 'DELIVERY' && !!items.data?.data.length && <div className="mt-3 space-y-2">
+      {items.data.data.map(c => <div key={c._id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-2 text-sm">
+        <span>{c.displayCode} · {c.description || readable(c.type)}</span>
+        {c.currentStatus === 'DISPATCHED' ? <span className="text-xs font-semibold text-emerald-700">✓ Dispatched</span> : !closed && <Button variant="outline" disabled={dispatchBusy} onClick={() => onDispatchItem(c)}>Dispatch to partner</Button>}
+      </div>)}
+    </div>}
+    {!closed && <div className="mt-3 flex flex-wrap gap-2">
+      <Button variant="outline" onClick={onToggleAssign}>{job.partnerName ? 'Change partner' : 'Assign partner'}</Button>
+      <Button variant="outline" onClick={onToggleLink}>Link items</Button>
+      {job.confirmToken
+        ? <Button variant="outline" disabled={jobBusy} onClick={() => onCopyLink(job.confirmToken!)}>Copy partner link</Button>
+        : <Button variant="outline" disabled={jobBusy} onClick={onCreateLink}>Get partner link (optional)</Button>}
+      <Button variant="outline" disabled={jobBusy} onClick={() => onSetStatus('COMPLETED')}>Mark complete</Button>
+      <Button variant="outline" disabled={jobBusy} onClick={() => onSetStatus('CANCELLED')}>Cancel</Button>
+    </div>}
+    {!closed && job.confirmToken && <p className="mt-2 text-xs text-zinc-500">Partner can confirm this {job.type.toLowerCase()} themselves at this link, or you can still mark it complete yourself above. <button type="button" className="underline" disabled={jobBusy} onClick={onRevokeLink}>Revoke link</button></p>}
+    {assigning && <AssignJobForm job={job} onCancel={onToggleAssign} onSaved={() => { onToggleAssign(); onSaved('Partner assigned.') }} />}
+    {linking && <LinkContainersForm job={job} onCancel={onToggleLink} onSaved={() => { onToggleLink(); onSaved('Items linked.') }} />}
+  </div>
+}
+
 function PrivatePhoto({ id }: { id: string }) {
   const [url, setUrl] = useState('')
   const [error, setError] = useState(false)
@@ -121,6 +178,12 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
     setJobBusy(true)
     try { await api.delete(`/warehouse/jobs/${jobId}/link`, { data: { requestId: crypto.randomUUID() } }); refresh(); feedback('success', 'Partner link revoked.') }
     catch (err) { feedback('error', apiError(err)) } finally { setJobBusy(false) }
+  }
+  async function dispatchJobItem(item: Container) {
+    const dispatchLocations = (locations.data || []).filter(l => l.kind === 'DISPATCH')
+    if (!dispatchLocations.length) { feedback('error', 'Create a Dispatch location first (Locations tab).'); return }
+    if (dispatchLocations.length > 1) { feedback('warning', 'More than one Dispatch location exists — scan the right one instead (Scan tab).'); return }
+    await submitScan({ requestId: crypto.randomUUID(), barcode: item.displayCode, locationBarcode: dispatchLocations[0].displayCode, action: 'DISPATCH', notes: 'Handed to delivery partner.', deviceId: device })
   }
   const item = detail.data
   const refresh = () => { void qc.invalidateQueries({ queryKey: ['warehouse'] }) }
@@ -465,34 +528,17 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
       <div><h2 className="text-2xl font-semibold">Pickups & deliveries</h2><p className="mt-2 text-zinc-500">When a customer calls to have items picked up from their address, or wants stored items sent back — log it here and track it through the partner who handles it.</p></div>
       <JobForm site={site} locations={locations.data || []} onCreated={() => { refresh(); feedback('success', 'Job logged.') }} />
       <div className="flex gap-2"><Select aria-label="Filter jobs by status" className="!h-12 !w-auto" value={jobFilter} onChange={e => setJobFilter(e.target.value)}><option value="">All open & closed</option><option value="REQUESTED">Requested</option><option value="ASSIGNED">Assigned</option><option value="COMPLETED">Completed</option><option value="CANCELLED">Cancelled</option></Select></div>
-      {jobs.isLoading ? <p role="status">Loading jobs…</p> : jobs.data?.length ? <div className="divide-y rounded-xl border">{jobs.data.map(j => {
-        const customerName = typeof j.customer === 'object' ? j.customer.fullName : ''
-        const closed = j.status === 'COMPLETED' || j.status === 'CANCELLED'
-        return <div key={j._id} className="p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="font-semibold">{j.type === 'PICKUP' ? 'Pick up from' : 'Deliver to'} {customerName}</p>
-              <p className="text-sm text-zinc-500">{j.address}</p>
-              {j.partnerName && <p className="text-sm text-zinc-500">Partner: {j.partnerName}{j.partnerPhone ? ` · ${j.partnerPhone}` : ''}</p>}
-              {j.notes && <p className="mt-1 text-sm text-zinc-600">{j.notes}</p>}
-              <p className="mt-1 text-xs text-zinc-500">{j.containers.length} item{j.containers.length === 1 ? '' : 's'} linked · {new Date(j.createdAt).toLocaleString()}</p>
-            </div>
-            <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${j.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-800' : j.status === 'CANCELLED' ? 'bg-zinc-100 text-zinc-600' : j.status === 'ASSIGNED' ? 'bg-sky-50 text-sky-800' : 'bg-amber-50 text-amber-800'}`}>{readable(j.status)}</span>
-          </div>
-          {!closed && <div className="mt-3 flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => setAssigningJob(assigningJob === j._id ? '' : j._id)}>{j.partnerName ? 'Change partner' : 'Assign partner'}</Button>
-            <Button variant="outline" onClick={() => setLinkingJob(linkingJob === j._id ? '' : j._id)}>Link items</Button>
-            {j.confirmToken
-              ? <Button variant="outline" disabled={jobBusy} onClick={() => void copyJobLink(j.confirmToken!)}>Copy partner link</Button>
-              : <Button variant="outline" disabled={jobBusy} onClick={() => void createJobLink(j._id)}>Get partner link (optional)</Button>}
-            <Button variant="outline" disabled={jobBusy} onClick={() => void setJobStatus(j._id, 'COMPLETED')}>Mark complete</Button>
-            <Button variant="outline" disabled={jobBusy} onClick={() => void setJobStatus(j._id, 'CANCELLED')}>Cancel</Button>
-          </div>}
-          {!closed && j.confirmToken && <p className="mt-2 text-xs text-zinc-500">Partner can confirm this {j.type.toLowerCase()} themselves at this link, or you can still mark it complete yourself above. <button type="button" className="underline" disabled={jobBusy} onClick={() => void revokeJobLinkNow(j._id)}>Revoke link</button></p>}
-          {assigningJob === j._id && <AssignJobForm job={j} onCancel={() => setAssigningJob('')} onSaved={() => { setAssigningJob(''); refresh(); feedback('success', 'Partner assigned.') }} />}
-          {linkingJob === j._id && <LinkContainersForm job={j} onCancel={() => setLinkingJob('')} onSaved={() => { setLinkingJob(''); refresh(); feedback('success', 'Items linked.') }} />}
-        </div>
-      })}</div> : <p className="rounded-xl border border-dashed p-6 text-center text-zinc-500">No pickups or deliveries logged yet.</p>}
+      {jobs.isLoading ? <p role="status">Loading jobs…</p> : jobs.data?.length ? <div className="divide-y rounded-xl border">{jobs.data.map(j => <JobRow key={j._id} job={j} site={site}
+        assigning={assigningJob === j._id} linking={linkingJob === j._id} jobBusy={jobBusy} dispatchBusy={busy}
+        onToggleAssign={() => setAssigningJob(assigningJob === j._id ? '' : j._id)}
+        onToggleLink={() => setLinkingJob(linkingJob === j._id ? '' : j._id)}
+        onSetStatus={status => void setJobStatus(j._id, status)}
+        onCreateLink={() => void createJobLink(j._id)}
+        onCopyLink={token => void copyJobLink(token)}
+        onRevokeLink={() => void revokeJobLinkNow(j._id)}
+        onDispatchItem={item => void dispatchJobItem(item)}
+        onSaved={message => { refresh(); feedback('success', message) }}
+      />)}</div> : <p className="rounded-xl border border-dashed p-6 text-center text-zinc-500">No pickups or deliveries logged yet.</p>}
     </section>}
     {tab === 'Locations' && <section className="space-y-5">
       {supervisor && <LocationForm site={site} locations={locations.data || []} onCreated={() => { refresh(); feedback('success', 'Location created. Print its label before scanning.') }} />}
