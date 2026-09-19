@@ -6,8 +6,8 @@ import express from 'express';
 import request from 'supertest';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { Customer, Contract, Site, Unit, User } from '../src/models/index.js';
-import { StoredContainer, WarehouseLocation, ScanEvent, ItemPhoto, WarehouseCounter } from '../src/models/warehouse.js';
-import { command, createContainers, createLocation, editLocation, deleteLocation, editContainer, deleteContainer, scan, addPhoto, createWarehouseJob, updateWarehouseJob } from '../src/services/warehouse.js';
+import { StoredContainer, WarehouseLocation, ScanEvent, ItemPhoto, WarehouseCounter, WarehouseJob } from '../src/models/warehouse.js';
+import { command, createContainers, createLocation, editLocation, deleteLocation, editContainer, deleteContainer, scan, addPhoto, createWarehouseJob, updateWarehouseJob, getOrCreateJobLink, revokeJobLink, confirmJobPublicly } from '../src/services/warehouse.js';
 import { validateMovement } from '../src/services/warehouseRules.js';
 import warehouseRouter from '../src/routes/warehouse.js';
 
@@ -183,6 +183,33 @@ test('a delivery job only requires stored items and only completes once they are
   await scanItem(item, 'DISPATCH', dispatch, staff, 'Handed to delivery partner');
   const done = await updateJob(job._id, { status: 'COMPLETED' });
   assert.equal(done.status, 'COMPLETED');
+});
+
+test('a job link is optional, idempotent, revocable, and lets a partner confirm with no staff account', async () => {
+  const job = await createJob({ type: 'PICKUP' });
+  const { token: token1 } = await run(staff, 'CREATE_JOB_LINK', {}, ctx => getOrCreateJobLink(ctx, job._id));
+  const { token: token2 } = await run(staff, 'CREATE_JOB_LINK', {}, ctx => getOrCreateJobLink(ctx, job._id));
+  assert.equal(token1, token2);
+  const confirmAs = (input = {}) => run({ _id: job.createdBy }, 'PUBLIC_JOB_CONFIRM', input, (ctx, body) => confirmJobPublicly(ctx, job._id, body));
+  await assert.rejects(confirmAs(), /Link at least one item/);
+  const [item] = await containers();
+  await updateJob(job._id, { addContainers: [item._id] });
+  await assert.rejects(confirmAs(), /still need to be received/);
+  const receiving = await location({ kind: 'RECEIVING' });
+  await scanItem(item, 'RECEIVE', receiving);
+  const confirmed = await confirmAs({ notes: 'Left at reception' });
+  assert.equal(confirmed.job.status, 'COMPLETED');
+  const events = await ScanEvent.find({ objectId: job._id }).sort({ timestamp: 1 });
+  assert.match(events.at(-1).notes, /Confirmed by partner via link: Left at reception/);
+  await assert.rejects(confirmAs(), /already been confirmed/);
+});
+
+test('revoking a job link clears it so a later confirm attempt finds nothing', async () => {
+  const job = await createJob({ type: 'PICKUP' });
+  await run(staff, 'CREATE_JOB_LINK', {}, ctx => getOrCreateJobLink(ctx, job._id));
+  await run(staff, 'REVOKE_JOB_LINK', {}, ctx => revokeJobLink(ctx, job._id));
+  const reloaded = await WarehouseJob.findById(job._id).lean();
+  assert.equal(reloaded.confirmToken, null);
 });
 
 test('a job with no address and a customer with none on file is refused', async () => {

@@ -29,6 +29,7 @@ import { UPLOADS_DIR } from './services/drive.js';
 import authRoutes from './routes/auth.js';
 import unitRoutes from './routes/units.js';
 import warehouseRoutes from './routes/warehouse.js';
+import warehouseJobPublicRoutes from './routes/warehouseJobPublic.js';
 import floorPlanRoutes from './routes/floorPlans.js';
 import siteRoutes from './routes/sites.js';
 import customerRoutes from './routes/customers.js';
@@ -234,6 +235,7 @@ app.use('/api/crew-portal', crewPortalRoutes);
 app.use('/api/moving-jobs/public-upload', movingJobPublicUpload);
 app.use('/api/moving-jobs/share', movingJobPublicShare);
 app.use('/api/moving-leads/public', movingLeadPublic);
+app.use('/api/warehouse-jobs/public', warehouseJobPublicRoutes);
 // Zoho webhook must be reachable without a JWT.
 app.use('/api/contracts/zoho-webhook', (req, _res, next) => next());
 // WhatsApp webhook verification and events must be reachable without a JWT.

@@ -104,6 +104,24 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
     try { await api.patch(`/warehouse/jobs/${jobId}`, { status, requestId: crypto.randomUUID() }); refresh(); feedback('success', status === 'COMPLETED' ? 'Job marked complete.' : 'Job cancelled.') }
     catch (err) { feedback('error', apiError(err)) } finally { setJobBusy(false) }
   }
+  function jobConfirmUrl(token: string) { return `${window.location.origin}/confirm/warehouse-job/${token}` }
+  async function createJobLink(jobId: string) {
+    setJobBusy(true)
+    try {
+      const { data } = await api.post(`/warehouse/jobs/${jobId}/link`, { requestId: crypto.randomUUID() })
+      refresh()
+      try { await navigator.clipboard.writeText(jobConfirmUrl(data.token)); feedback('success', 'Partner link copied — share it however suits (WhatsApp, SMS).') }
+      catch { feedback('success', 'Partner link created.') }
+    } catch (err) { feedback('error', apiError(err)) } finally { setJobBusy(false) }
+  }
+  async function copyJobLink(token: string) {
+    try { await navigator.clipboard.writeText(jobConfirmUrl(token)); feedback('success', 'Link copied.') } catch { feedback('error', 'Could not copy — long-press the link to copy it manually.') }
+  }
+  async function revokeJobLinkNow(jobId: string) {
+    setJobBusy(true)
+    try { await api.delete(`/warehouse/jobs/${jobId}/link`, { data: { requestId: crypto.randomUUID() } }); refresh(); feedback('success', 'Partner link revoked.') }
+    catch (err) { feedback('error', apiError(err)) } finally { setJobBusy(false) }
+  }
   const item = detail.data
   const refresh = () => { void qc.invalidateQueries({ queryKey: ['warehouse'] }) }
   function choose(id: string) { setSelected(id); setHistoryPage(1); setEditingItem(false) }
@@ -464,9 +482,13 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
           {!closed && <div className="mt-3 flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => setAssigningJob(assigningJob === j._id ? '' : j._id)}>{j.partnerName ? 'Change partner' : 'Assign partner'}</Button>
             <Button variant="outline" onClick={() => setLinkingJob(linkingJob === j._id ? '' : j._id)}>Link items</Button>
+            {j.confirmToken
+              ? <Button variant="outline" disabled={jobBusy} onClick={() => void copyJobLink(j.confirmToken!)}>Copy partner link</Button>
+              : <Button variant="outline" disabled={jobBusy} onClick={() => void createJobLink(j._id)}>Get partner link (optional)</Button>}
             <Button variant="outline" disabled={jobBusy} onClick={() => void setJobStatus(j._id, 'COMPLETED')}>Mark complete</Button>
             <Button variant="outline" disabled={jobBusy} onClick={() => void setJobStatus(j._id, 'CANCELLED')}>Cancel</Button>
           </div>}
+          {!closed && j.confirmToken && <p className="mt-2 text-xs text-zinc-500">Partner can confirm this {j.type.toLowerCase()} themselves at this link, or you can still mark it complete yourself above. <button type="button" className="underline" disabled={jobBusy} onClick={() => void revokeJobLinkNow(j._id)}>Revoke link</button></p>}
           {assigningJob === j._id && <AssignJobForm job={j} onCancel={() => setAssigningJob('')} onSaved={() => { setAssigningJob(''); refresh(); feedback('success', 'Partner assigned.') }} />}
           {linkingJob === j._id && <LinkContainersForm job={j} onCancel={() => setLinkingJob('')} onSaved={() => { setLinkingJob(''); refresh(); feedback('success', 'Items linked.') }} />}
         </div>

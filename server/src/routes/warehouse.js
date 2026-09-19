@@ -6,7 +6,7 @@ import PDFDocument from 'pdfkit';
 import { drawCompanyLogo } from '../services/pdfLogo.js';
 import { User, Customer, Contract, Site } from '../models/index.js';
 import { StoredContainer, WarehouseLocation, ScanEvent, ItemPhoto, WarehouseJob, CONTAINER_STATES, WAREHOUSE_JOB_TYPES, WAREHOUSE_JOB_STATES } from '../models/warehouse.js';
-import { command, createContainers, createLocation, editLocation, deleteLocation, editContainer, deleteContainer, scan, addPhoto, logLabels, createWarehouseJob, updateWarehouseJob, operationalPermission, escapeRegex } from '../services/warehouse.js';
+import { command, createContainers, createLocation, editLocation, deleteLocation, editContainer, deleteContainer, scan, addPhoto, logLabels, createWarehouseJob, updateWarehouseJob, getOrCreateJobLink, revokeJobLink, operationalPermission, escapeRegex } from '../services/warehouse.js';
 import { fail, nextAction, validateMovement } from '../services/warehouseRules.js';
 
 const router = Router();
@@ -109,6 +109,8 @@ router.get('/jobs', asyncRoute(async (req, res) => {
 }));
 router.post('/jobs', asyncRoute(async (req, res) => res.status(201).json(await command(req.warehouseUser, req.body, 'CREATE_JOB', ctx => createWarehouseJob(ctx, req.body)))));
 router.patch('/jobs/:id', asyncRoute(async (req, res) => res.json(await command(req.warehouseUser, req.body, 'UPDATE_JOB', ctx => updateWarehouseJob(ctx, req.params.id, req.body)))));
+router.post('/jobs/:id/link', asyncRoute(async (req, res) => res.json(await command(req.warehouseUser, req.body, 'CREATE_JOB_LINK', ctx => getOrCreateJobLink(ctx, req.params.id)))));
+router.delete('/jobs/:id/link', asyncRoute(async (req, res) => res.json(await command(req.warehouseUser, req.body, 'REVOKE_JOB_LINK', ctx => revokeJobLink(ctx, req.params.id)))));
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: 1, fields: 3 } });
 router.post('/containers/:id/photos', upload.single('photo'), asyncRoute(async (req, res) => {

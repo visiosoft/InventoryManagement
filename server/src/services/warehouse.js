@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Customer, Contract, Unit, Site } from '../models/index.js';
 import { StoredContainer, WarehouseLocation, ScanEvent, WarehouseCounter, ItemPhoto, WarehouseJob, CONTAINER_TYPES, LOCATION_TYPES, WAREHOUSE_JOB_TYPES } from '../models/warehouse.js';
 import { fail, normalizeBarcode, nextAction, validateMovement, validateDispatch, photoMime } from './warehouseRules.js';
@@ -351,6 +351,16 @@ export async function createWarehouseJob(ctx, input) {
   return result;
 }
 
+// Shared by staff completing a job and a partner confirming it themselves
+// via a link — a job is only ever "done" once its items have actually moved
+// through the real scan/receive pipeline, not just because someone said so.
+async function assertJobCompletable(ctx, job) {
+  if (!job.containers.length) fail('Link at least one item before marking this job complete.', 409);
+  const linked = await StoredContainer.find({ _id: { $in: job.containers } }).session(ctx.session);
+  if (job.type === 'PICKUP' && linked.some(c => c.currentStatus === 'CREATED')) fail('These items still need to be received before this pickup can be marked complete.', 409);
+  if (job.type === 'DELIVERY' && linked.some(c => c.currentStatus !== 'DISPATCHED')) fail('These items still need to be dispatched before this delivery can be marked complete.', 409);
+}
+
 export async function updateWarehouseJob(ctx, jobId, input) {
   const job = await WarehouseJob.findById(jobId).session(ctx.session);
   if (!job) fail('Job not found.', 404);
@@ -372,10 +382,7 @@ export async function updateWarehouseJob(ctx, jobId, input) {
   if (input.status) {
     if (!['ASSIGNED', 'COMPLETED', 'CANCELLED'].includes(input.status)) fail('Invalid status.');
     if (input.status === 'COMPLETED') {
-      if (!job.containers.length) fail('Link at least one item before marking this job complete.', 409);
-      const linked = await StoredContainer.find({ _id: { $in: job.containers } }).session(ctx.session);
-      if (job.type === 'PICKUP' && linked.some(c => c.currentStatus === 'CREATED')) fail('These items still need to be received before this pickup can be marked complete.', 409);
-      if (job.type === 'DELIVERY' && linked.some(c => c.currentStatus !== 'DISPATCHED')) fail('These items still need to be dispatched before this delivery can be marked complete.', 409);
+      await assertJobCompletable(ctx, job);
       job.completedAt = new Date();
     }
     job.status = input.status;
@@ -385,6 +392,50 @@ export async function updateWarehouseJob(ctx, jobId, input) {
   await job.save({ session: ctx.session });
   const result = { job: job.toObject() };
   await event(ctx, { barcode: job._id, objectType: 'JOB', objectId: job._id, eventType: `JOB_${job.status}`, customer: job.customer, site: job.site, warehouse: job.warehouse, notes: text(input.notes, 2000), result });
+  return result;
+}
+
+// Generating a link is opt-in — staff can keep confirming jobs themselves
+// and never touch this. Idempotent: re-requesting returns the same token
+// rather than invalidating a link already sent to the partner.
+export async function getOrCreateJobLink(ctx, jobId) {
+  const job = await WarehouseJob.findById(jobId).session(ctx.session);
+  if (!job) fail('Job not found.', 404);
+  if (['COMPLETED', 'CANCELLED'].includes(job.status)) fail('This job is already closed.', 409);
+  if (!job.confirmToken) {
+    job.confirmToken = randomUUID();
+    await job.save({ session: ctx.session });
+  }
+  const result = { token: job.confirmToken };
+  await event(ctx, { barcode: job._id, objectType: 'JOB', objectId: job._id, eventType: 'JOB_LINK_CREATED', customer: job.customer, site: job.site, warehouse: job.warehouse, result });
+  return result;
+}
+
+export async function revokeJobLink(ctx, jobId) {
+  const job = await WarehouseJob.findById(jobId).session(ctx.session);
+  if (!job) fail('Job not found.', 404);
+  job.confirmToken = null;
+  await job.save({ session: ctx.session });
+  const result = { revoked: true };
+  await event(ctx, { barcode: job._id, objectType: 'JOB', objectId: job._id, eventType: 'JOB_LINK_REVOKED', customer: job.customer, site: job.site, warehouse: job.warehouse, result });
+  return result;
+}
+
+// The one action a partner can take with no account of their own. Attributed
+// in the audit trail to the staff member who created the job, since that's
+// the real accountable employee — the partner isn't a system user.
+export async function confirmJobPublicly(ctx, jobId, input) {
+  const job = await WarehouseJob.findById(jobId).session(ctx.session);
+  if (!job) fail('Invalid or expired link.', 404);
+  if (!job.confirmToken) fail('Invalid or expired link.', 404);
+  if (['COMPLETED', 'CANCELLED'].includes(job.status)) fail('This job has already been confirmed.', 409);
+  await assertJobCompletable(ctx, job);
+  job.status = 'COMPLETED';
+  job.completedAt = new Date();
+  await job.save({ session: ctx.session });
+  const result = { job: { type: job.type, status: job.status, address: job.address } };
+  const note = text(input.notes, 2000);
+  await event(ctx, { barcode: job._id, objectType: 'JOB', objectId: job._id, eventType: 'JOB_COMPLETED', customer: job.customer, site: job.site, warehouse: job.warehouse, notes: note ? `Confirmed by partner via link: ${note}` : 'Confirmed by partner via link.', result });
   return result;
 }
 

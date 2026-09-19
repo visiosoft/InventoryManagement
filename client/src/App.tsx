@@ -156,6 +156,7 @@ import PaySuccess from './pages/PaySuccess'
 import RenewContract from './pages/RenewContract'
 import WatchVideo from './pages/WatchVideo'
 import SharedJobView from './pages/moving/SharedJobView'
+import WarehouseJobConfirm from './pages/warehouse/WarehouseJobConfirm'
 import FieldLogin from './pages/field/FieldLogin'
 import FieldApp from './pages/field/FieldApp'
 import ReminderSettings from './pages/ReminderSettings'
@@ -192,6 +193,9 @@ export default function App() {
         <Route path="/sign-moving/:token" element={<SignMovingJob />} />
         <Route path="/upload/moving/:token" element={<ClientUpload />} />
         <Route path="/share/job/:token" element={<SharedJobView />} />
+        {/* A delivery/pickup partner confirming a warehouse job has no
+            PurpleBox account — see routes/warehouseJobPublic.js. */}
+        <Route path="/confirm/warehouse-job/:token" element={<WarehouseJobConfirm />} />
         <Route path="/pay/success" element={<PaySuccess />} />
         {/* Tenant renewal, reached from the expiry email or WhatsApp. Public:
             the HMAC token in the URL is the authorisation, and it is listed in
@@ -215,6 +219,7 @@ export default function App() {
       <Route path="/sign-moving/:token" element={<SignMovingJob />} />
       <Route path="/upload/moving/:token" element={<ClientUpload />} />
       <Route path="/share/job/:token" element={<SharedJobView />} />
+      <Route path="/confirm/warehouse-job/:token" element={<WarehouseJobConfirm />} />
       <Route path="/pay/success" element={<PaySuccess />} />
       <Route path="/renew/:contractId/:token" element={<RenewContract />} />
       <Route path="/watch" element={<WatchVideo />} />

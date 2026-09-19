@@ -102,9 +102,19 @@ const warehouseJobSchema = new Schema({
   containers: [{ type: String, ref: 'StoredContainer' }],
   createdBy: ref('User', true),
   completedAt: { type: Date, default: null },
+  // Optional: lets the partner confirm the job themselves from a link, with
+  // no account of their own — see routes/warehouseJobPublic.js. Null unless
+  // a staff member has generated one; cleared to revoke it.
+  confirmToken: { type: String, default: null },
 }, { timestamps: true });
 warehouseJobSchema.index({ site: 1, warehouse: 1, status: 1, createdAt: -1 });
 warehouseJobSchema.index({ customer: 1, createdAt: -1 });
+// Not `unique`: every job's confirmToken defaults to null, and a unique
+// index still enforces uniqueness across explicit nulls (sparse only
+// excludes documents where the field is missing entirely) — which would
+// reject the second job ever created. Tokens are random UUIDs; a collision
+// between two real tokens is not a realistic risk worth a DB constraint for.
+warehouseJobSchema.index({ confirmToken: 1 });
 
 export const StoredContainer = model('StoredContainer', containerSchema);
 export const WarehouseLocation = model('WarehouseLocation', locationSchema);
