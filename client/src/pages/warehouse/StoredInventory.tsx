@@ -42,6 +42,10 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
   const [wizard, setWizard] = useState<'menu' | 'receive' | 'dispatch'>('menu')
   const [wizardLabelConfirmed, setWizardLabelConfirmed] = useState(false)
   const [dispatchModalOpen, setDispatchModalOpen] = useState(false)
+  // Which Dispatch location this handover is against — set by scanning it
+  // (Scan tab / Guided steps) or, when dispatching straight from a searched
+  // item, resolved without a scan: the item was already found unambiguously.
+  const [dispatchTargetLocation, setDispatchTargetLocation] = useState<Location | null>(null)
   function startWizard(mode: 'receive' | 'dispatch') {
     setWizard(mode); setWizardLabelConfirmed(false); setSelected(''); setScannedItem(''); setScannedLocation(null)
   }
@@ -146,8 +150,8 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
   // The signature (if any) is only ever uploaded once the dispatch itself is
   // confirmed — no point keeping a photo of a handover that didn't happen.
   async function confirmDispatch(notes: string, signatureDataUrl: string | null) {
-    if (!scannedLocation || !item) return
-    const ok = await submitScan({ requestId: crypto.randomUUID(), barcode: scannedItem, locationBarcode: scannedLocation.displayCode, action: 'DISPATCH', notes, deviceId: device })
+    if (!dispatchTargetLocation || !item) return
+    const ok = await submitScan({ requestId: crypto.randomUUID(), barcode: item.displayCode, locationBarcode: dispatchTargetLocation.displayCode, action: 'DISPATCH', notes, deviceId: device })
     if (!ok) return
     setDispatchModalOpen(false)
     if (signatureDataUrl) {
@@ -359,8 +363,8 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
           </Step>
           <Step n={3} title="Confirm the handover" state={dispatching ? 'active' : 'waiting'}>
             <div className="flex flex-wrap items-center gap-3">
-              <Button className="!h-12" disabled={busy || !online || pending.length > 0 || scannedItem !== item.displayCode || !dispatching} onClick={() => void confirmDispatch(quickDispatchNote(), null)}>Confirm dispatch</Button>
-              <button type="button" className="text-sm text-zinc-500 underline disabled:opacity-50" disabled={scannedItem !== item.displayCode || !dispatching} onClick={() => setDispatchModalOpen(true)}>Someone else picking it up, or add a signature?</button>
+              <Button className="!h-12" disabled={busy || !online || pending.length > 0 || scannedItem !== item.displayCode || !dispatching} onClick={() => { setDispatchTargetLocation(scannedLocation); void confirmDispatch(quickDispatchNote(), null) }}>Confirm dispatch</Button>
+              <button type="button" className="text-sm text-zinc-500 underline disabled:opacity-50" disabled={scannedItem !== item.displayCode || !dispatching} onClick={() => { setDispatchTargetLocation(scannedLocation); setDispatchModalOpen(true) }}>Someone else picking it up, or add a signature?</button>
             </div>
           </Step>
         </>}
@@ -403,12 +407,12 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
               {item.currentStatus === 'IN_STORAGE' && !supervisor && !dispatching && <p className="mt-4 font-semibold text-amber-800">NO ACTIVE MOVEMENT AUTHORIZATION</p>}
               {(item.currentStatus !== 'IN_STORAGE' || supervisor || dispatching) && <Button className="mt-6 !h-14 w-full" disabled={busy || !online || pending.length > 0 || scannedItem !== item.displayCode || !scannedLocation || locationMismatch || (!dispatching && item.currentStatus !== 'CREATED' && !item.photoCount)} onClick={() => {
                 if (!scannedLocation) return
-                if (dispatching) { void confirmDispatch(quickDispatchNote(), null); return }
+                if (dispatching) { setDispatchTargetLocation(scannedLocation); void confirmDispatch(quickDispatchNote(), null); return }
                 const notes = needsReason ? window.prompt('Reason for supervisor relocation') : ''
                 if (needsReason && !notes?.trim()) return
                 void submitScan({ requestId: crypto.randomUUID(), barcode: scannedItem, locationBarcode: scannedLocation.displayCode, action, notes: notes || '', deviceId: device })
               }}>{actionLabel}</Button>}
-              {dispatching && <button type="button" className="mt-3 text-sm text-zinc-500 underline" onClick={() => setDispatchModalOpen(true)}>Someone else picking it up, or add a signature?</button>}
+              {dispatching && <button type="button" className="mt-3 text-sm text-zinc-500 underline" onClick={() => { setDispatchTargetLocation(scannedLocation); setDispatchModalOpen(true) }}>Someone else picking it up, or add a signature?</button>}
               <p className="mt-3 text-sm text-zinc-500">{!dispatching && !item.photoCount ? 'Add a photo in the item details below before putaway.' : 'Confirm only after scanning both physical labels.'}</p>
             </>}
           </> : <p className="mt-3 text-zinc-500">The scanner recognizes item and location labels automatically.</p>}
@@ -456,7 +460,17 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
         const data = new FormData(); data.append('photo', file); data.append('requestId', photoRequest.current.id)
         setBusy(true)
         try { await api.post(`/warehouse/containers/${item._id}/photos`, data); photoRequest.current = null; refresh(); feedback('success', 'Photo saved securely.') } catch (err) { feedback('error', apiError(err)) } finally { setBusy(false) }
-      }} /></label><Button variant="outline" className="!h-12" disabled={printBusy} onClick={() => void print([item.displayCode])}><Printer size={18} />Print label</Button><Button variant="outline" className="!h-12" onClick={() => setTab('Scan')}><ScanLine size={18} />Scan to move</Button><Button variant="outline" className="!h-12" onClick={() => setEditingItem(v => !v)}>Edit</Button>{supervisor && <Button variant="outline" className="!h-12" disabled={deleteBusy} onClick={() => void deleteContainerNow(item._id)}>Delete</Button>}</div>
+      }} /></label><Button variant="outline" className="!h-12" disabled={printBusy} onClick={() => void print([item.displayCode])}><Printer size={18} />Print label</Button><Button variant="outline" className="!h-12" onClick={() => setTab('Scan')}><ScanLine size={18} />Scan to move</Button>{item.currentStatus !== 'DISPATCHED' && <Button variant="outline" className="!h-12" onClick={() => {
+        const dispatchLocations = (locations.data || []).filter(l => l.kind === 'DISPATCH')
+        if (!dispatchLocations.length) { feedback('error', 'Create a Dispatch location first (Locations tab).'); return }
+        if (dispatchLocations.length > 1) { feedback('warning', 'More than one Dispatch location exists — scan the right one instead (Scan tab).'); return }
+        setDispatchTargetLocation(dispatchLocations[0])
+        void confirmDispatch(quickDispatchNote(), null)
+      }}>Dispatch to customer</Button>}<Button variant="outline" className="!h-12" onClick={() => setEditingItem(v => !v)}>Edit</Button>{supervisor && <Button variant="outline" className="!h-12" disabled={deleteBusy} onClick={() => void deleteContainerNow(item._id)}>Delete</Button>}</div>
+      {item.currentStatus !== 'DISPATCHED' && (locations.data || []).filter(l => l.kind === 'DISPATCH').length === 1 && <button type="button" className="mt-2 text-sm text-zinc-500 underline" onClick={() => {
+        setDispatchTargetLocation((locations.data || []).find(l => l.kind === 'DISPATCH') || null)
+        setDispatchModalOpen(true)
+      }}>Someone else picking it up, or add a signature?</button>}
       {editingItem && <EditContainerForm item={item} onCancel={() => setEditingItem(false)} onSaved={() => { setEditingItem(false); refresh(); feedback('success', 'Item updated.') }} />}
       <div className="mt-8 border-t pt-5"><h3 className="text-lg font-semibold">Chain of custody</h3><p className="mt-1 text-sm text-zinc-500">Permanent event history · {history.data?.total ?? 0} events</p>{history.isError && <p role="alert" className="mt-3 text-red-700">{apiError(history.error)}</p>}<ol className="mt-4 space-y-4">{history.data?.data.map(event => <li key={event._id} className="border-l-2 border-violet-200 pl-4"><p className="font-medium">{readable(event.eventType)}</p><p className="text-sm text-zinc-500">{new Date(event.timestamp).toLocaleString()} · {event.employee?.name || 'Employee'}</p>{event.newStatus && <p className="text-sm">{event.previousStatus ? `${readable(event.previousStatus)} → ` : ''}{readable(event.newStatus)}</p>}{event.currentLocation && <p className="text-sm text-zinc-500">{event.previousLocation && event.previousLocation !== event.currentLocation ? `${locationName(event.previousLocation)} → ` : ''}{locationName(event.currentLocation)}</p>}{event.notes && <p className="text-sm">{event.notes}</p>}</li>)}</ol><div className="mt-4 flex gap-2"><Button variant="outline" disabled={historyPage === 1} onClick={() => setHistoryPage(historyPage - 1)}>Newer</Button><Button variant="outline" disabled={historyPage * 30 >= (history.data?.total || 0)} onClick={() => setHistoryPage(historyPage + 1)}>Older</Button></div></div>
     </>}</section>}
