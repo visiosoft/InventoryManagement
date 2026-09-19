@@ -6,11 +6,11 @@ import { useAuth } from '../../lib/auth'
 import { useSite } from '../../lib/site'
 import { Button, Input, Select } from '../../components/ui'
 import WarehouseScanner from '../../components/WarehouseScanner'
-import { LocationForm, ReceiveForm, EditLocationForm, EditContainerForm, DispatchConfirmModal } from './WarehouseForms'
+import { LocationForm, ReceiveForm, EditLocationForm, EditContainerForm, DispatchConfirmModal, JobForm, AssignJobForm, LinkContainersForm } from './WarehouseForms'
 import { readable } from '../../lib/warehouse'
-import type { Container, Location, PendingScan, ScanCommand, ScanResult } from '../../lib/warehouse'
+import type { Container, Location, PendingScan, ScanCommand, ScanResult, WarehouseJob } from '../../lib/warehouse'
 
-type Tab = 'Guided' | 'Today' | 'Scan' | 'Receive' | 'Inventory' | 'Locations' | 'Labels'
+type Tab = 'Guided' | 'Today' | 'Scan' | 'Receive' | 'Inventory' | 'Jobs' | 'Locations' | 'Labels'
 type Event = { _id: string; eventType: string; timestamp: string; employee?: { name: string }; previousStatus?: string; newStatus?: string; previousLocation?: string; currentLocation?: string; notes?: string }
 const statusClass = (status: string) => status === 'IN_STORAGE' ? 'bg-emerald-50 text-emerald-800' : status === 'DISPATCHED' ? 'bg-zinc-100 text-zinc-600' : 'bg-amber-50 text-amber-800'
 
@@ -68,6 +68,10 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
   const [editingLocation, setEditingLocation] = useState('')
   const [editingItem, setEditingItem] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
+  const [jobFilter, setJobFilter] = useState('')
+  const [assigningJob, setAssigningJob] = useState('')
+  const [linkingJob, setLinkingJob] = useState('')
+  const [jobBusy, setJobBusy] = useState(false)
   const queueKey = `pb_warehouse_scans:${userId}`
   const [pending, setPending] = useState<PendingScan[]>(() => {
     try { const saved = JSON.parse(localStorage.getItem(queueKey) || '[]'); return Array.isArray(saved) ? saved : [] } catch { return [] }
@@ -94,6 +98,12 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
   const [historyPage, setHistoryPage] = useState(1)
   const history = useQuery<{ data: Event[]; total: number }>({ queryKey: ['warehouse', 'history', selected, historyPage], queryFn: () => api.get(`/warehouse/containers/${selected}/events`, { params: { page: historyPage } }).then(r => r.data), enabled: !!selected })
   const suggestions = useQuery<Location[]>({ queryKey: ['warehouse', 'suggestions', selected], queryFn: () => api.get(`/warehouse/containers/${selected}/suggestions`).then(r => r.data), enabled: !!selected && tab === 'Scan' })
+  const jobs = useQuery<WarehouseJob[]>({ queryKey: ['warehouse', site, 'jobs', jobFilter], queryFn: () => api.get('/warehouse/jobs', { params: { site, status: jobFilter || undefined } }).then(r => r.data), enabled: !!site && tab === 'Jobs' })
+  async function setJobStatus(jobId: string, status: 'COMPLETED' | 'CANCELLED') {
+    setJobBusy(true)
+    try { await api.patch(`/warehouse/jobs/${jobId}`, { status, requestId: crypto.randomUUID() }); refresh(); feedback('success', status === 'COMPLETED' ? 'Job marked complete.' : 'Job cancelled.') }
+    catch (err) { feedback('error', apiError(err)) } finally { setJobBusy(false) }
+  }
   const item = detail.data
   const refresh = () => { void qc.invalidateQueries({ queryKey: ['warehouse'] }) }
   function choose(id: string) { setSelected(id); setHistoryPage(1); setEditingItem(false) }
@@ -210,6 +220,15 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
     } catch (err) { feedback('error', apiError(err)) } finally { setDeleteBusy(false) }
   }
   const locationName = (id?: string) => locations.data?.find(l => l._id === id)?.name || id || '—'
+  const locationPath = (id?: string) => {
+    if (!id) return null
+    const byId = new Map((locations.data || []).map(l => [l._id, l]))
+    const parts: string[] = []
+    let current = byId.get(id)
+    let guard = 0
+    while (current && guard++ < 10) { parts.unshift(current.name); current = current.parent ? byId.get(current.parent) : undefined }
+    return parts.length ? parts.join(' › ') : null
+  }
   const allError = locations.error || summary.error || inventory.error
 
   if (!site) return <div className="p-6">Select a facility to open stored inventory.</div>
@@ -218,7 +237,7 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
       <div><p className="text-xs font-semibold uppercase tracking-[.18em] text-violet-700">PurpleBox · Warehouse</p><h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Stored inventory</h1><p className="mt-2 text-zinc-500">Every item accounted for. Every movement recorded.</p></div>
       <Button className="!h-14 !px-7 !text-base" onClick={() => setTab('Scan')}><ScanLine size={22} /> Scan</Button>
     </header>
-    <nav aria-label="Warehouse navigation" className="flex gap-1 overflow-x-auto border-b pb-2">{(['Guided', 'Today', 'Scan', 'Receive', 'Inventory', 'Locations', 'Labels'] as Tab[]).map(t => <button key={t} onClick={() => setTab(t)} aria-current={tab === t ? 'page' : undefined} className={`min-h-12 whitespace-nowrap rounded-lg px-4 text-sm font-semibold ${tab === t ? 'bg-zinc-950 text-white' : 'text-zinc-500 hover:bg-zinc-100'}`}>{t === 'Guided' ? 'Guided steps' : t}</button>)}</nav>
+    <nav aria-label="Warehouse navigation" className="flex gap-1 overflow-x-auto border-b pb-2">{(['Guided', 'Today', 'Scan', 'Receive', 'Inventory', 'Jobs', 'Locations', 'Labels'] as Tab[]).map(t => <button key={t} onClick={() => setTab(t)} aria-current={tab === t ? 'page' : undefined} className={`min-h-12 whitespace-nowrap rounded-lg px-4 text-sm font-semibold ${tab === t ? 'bg-zinc-950 text-white' : 'text-zinc-500 hover:bg-zinc-100'}`}>{t === 'Guided' ? 'Guided steps' : t === 'Jobs' ? 'Pickups & deliveries' : t}</button>)}</nav>
     {!online && <div role="status" className="rounded-xl bg-amber-100 p-4 font-medium text-amber-900">Offline mode · {pending.length} scans waiting. Keep items in place until movement is confirmed.</div>}
     {notice && <div role={notice.tone === 'error' ? 'alert' : 'status'} aria-live="polite" className={`flex items-start justify-between gap-4 rounded-xl border p-5 text-lg font-medium ${notice.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : notice.tone === 'error' ? 'border-red-300 bg-red-50 text-red-900' : 'border-amber-300 bg-amber-50 text-amber-900'}`}><span>{notice.text}</span><button aria-label="Dismiss message" onClick={() => setNotice(null)}><X size={20} /></button></div>}
     {pending.length > 0 && <section className="space-y-3 rounded-xl border border-amber-300 p-4"><h2 className="font-semibold">{pending.length} pending scan{pending.length !== 1 ? 's' : ''}</h2>{pending.map((p, i) => <div className="flex flex-wrap items-center gap-3 text-sm" key={p.command.requestId}><span className="flex-1">{p.command.barcode} · {readable(p.command.action)}{p.error && <span className="block text-red-700">{p.error}</span>}</span><Button disabled={!online || busy || i !== 0} variant="outline" onClick={() => void submitScan(p.command, true)}>Retry scan</Button><Button variant="ghost" disabled={busy} onClick={() => {
@@ -285,17 +304,14 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
           </Step>
 
           <Step n={3} title="Confirm receipt" state={step3Done ? 'done' : step2Done ? 'active' : 'waiting'}>
-            <p className="text-zinc-500">① Scan the tag at your <strong>Receiving</strong> area. ② Then scan the box's label you just attached.</p>
+            <p className="text-zinc-500">Scan the box's label you just attached — a receiving area isn't a real location the way a shelf is, so there's nothing else to scan yet.</p>
             <div className="mt-3 grid gap-4 lg:grid-cols-2">
               <WarehouseScanner onScan={inspect} disabled={busy || pending.length > 0} />
               <div className="space-y-2 text-sm">
-                {scannedLocation && scannedLocation.kind !== 'RECEIVING'
-                  ? <p className="font-semibold text-red-700">✕ {scannedLocation.name} is a {readable(scannedLocation.kind)}, not your Receiving area — scan the Receiving tag instead.</p>
-                  : <p>Location: {scannedLocation ? <span className="font-semibold text-emerald-700">✓ {scannedLocation.name}</span> : 'not yet scanned'}</p>}
                 <p>Item: {scannedItem === item?.displayCode ? <span className="font-semibold text-emerald-700">✓ verified</span> : 'not yet scanned'}</p>
-                <Button className="w-full !h-12" disabled={busy || !online || pending.length > 0 || !item || scannedItem !== item.displayCode || scannedLocation?.kind !== 'RECEIVING'} onClick={() => {
-                  if (!scannedLocation || !item) return
-                  void submitScan({ requestId: crypto.randomUUID(), barcode: scannedItem, locationBarcode: scannedLocation.displayCode, action: 'RECEIVE', deviceId: device })
+                <Button className="w-full !h-12" disabled={busy || !online || pending.length > 0 || !item || scannedItem !== item.displayCode} onClick={() => {
+                  if (!item) return
+                  void submitScan({ requestId: crypto.randomUUID(), barcode: scannedItem, action: 'RECEIVE', deviceId: device })
                 }}>Confirm receipt</Button>
               </div>
             </div>
@@ -375,12 +391,16 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
       const action = dispatching ? 'DISPATCH' : item?.currentStatus === 'CREATED' ? 'RECEIVE' : item?.currentStatus === 'IN_STORAGE' ? 'RELOCATE' : 'PUTAWAY'
       const actionLabel = dispatching ? 'Confirm dispatch' : item?.currentStatus === 'CREATED' ? 'Confirm receipt' : item?.currentStatus === 'IN_STORAGE' ? 'Authorize relocation' : 'Confirm putaway'
       const needsReason = action === 'RELOCATE' || action === 'DISPATCH'
+      // A receiving area isn't a meaningful location the way a shelf is, so
+      // Receive no longer needs one scanned — the warehouse's own receiving
+      // area is used automatically (server-side), as long as there's only one.
+      const isReceive = action === 'RECEIVE'
       // What this action actually needs scanned — a location of the wrong
       // kind used to be accepted silently, show a green checkmark, then only
       // fail once Confirm was clicked, leaving a stuck pending scan with no
       // clue why. Checked as soon as something is scanned instead.
-      const expectedKinds = action === 'RECEIVE' ? ['RECEIVING'] : action === 'DISPATCH' ? ['DISPATCH'] : ['SHELF', 'BIN', 'RACK']
-      const locationMismatch = !!scannedLocation && item && !expectedKinds.includes(scannedLocation.kind)
+      const expectedKinds = isReceive ? [] : action === 'DISPATCH' ? ['DISPATCH'] : ['SHELF', 'BIN', 'RACK']
+      const locationMismatch = !isReceive && !!scannedLocation && item && !expectedKinds.includes(scannedLocation.kind)
       return <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-4">
           <WarehouseScanner onScan={inspect} disabled={busy || pending.length > 0} />
@@ -405,15 +425,16 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
             <p className="mt-2 text-sm">{scannedItem === item.displayCode ? 'Item label verified' : 'Scan this item’s physical label to authorize the next step.'}</p>
             {item.currentStatus === 'DISPATCHED' ? <p className="mt-4 font-semibold text-zinc-500">Already returned to the customer.</p> : <>
               {item.currentStatus === 'IN_STORAGE' && !supervisor && !dispatching && <p className="mt-4 font-semibold text-amber-800">NO ACTIVE MOVEMENT AUTHORIZATION</p>}
-              {(item.currentStatus !== 'IN_STORAGE' || supervisor || dispatching) && <Button className="mt-6 !h-14 w-full" disabled={busy || !online || pending.length > 0 || scannedItem !== item.displayCode || !scannedLocation || locationMismatch || (!dispatching && item.currentStatus !== 'CREATED' && !item.photoCount)} onClick={() => {
-                if (!scannedLocation) return
+              {(item.currentStatus !== 'IN_STORAGE' || supervisor || dispatching) && <Button className="mt-6 !h-14 w-full" disabled={busy || !online || pending.length > 0 || scannedItem !== item.displayCode || (!isReceive && (!scannedLocation || locationMismatch)) || (!dispatching && item.currentStatus !== 'CREATED' && !item.photoCount)} onClick={() => {
                 if (dispatching) { setDispatchTargetLocation(scannedLocation); void confirmDispatch(quickDispatchNote(), null); return }
+                if (isReceive) { void submitScan({ requestId: crypto.randomUUID(), barcode: scannedItem, action: 'RECEIVE', deviceId: device }); return }
+                if (!scannedLocation) return
                 const notes = needsReason ? window.prompt('Reason for supervisor relocation') : ''
                 if (needsReason && !notes?.trim()) return
                 void submitScan({ requestId: crypto.randomUUID(), barcode: scannedItem, locationBarcode: scannedLocation.displayCode, action, notes: notes || '', deviceId: device })
               }}>{actionLabel}</Button>}
               {dispatching && <button type="button" className="mt-3 text-sm text-zinc-500 underline" onClick={() => { setDispatchTargetLocation(scannedLocation); setDispatchModalOpen(true) }}>Someone else picking it up, or add a signature?</button>}
-              <p className="mt-3 text-sm text-zinc-500">{!dispatching && !item.photoCount ? 'Add a photo in the item details below before putaway.' : 'Confirm only after scanning both physical labels.'}</p>
+              <p className="mt-3 text-sm text-zinc-500">{isReceive ? 'Confirm as soon as the item’s label is verified.' : !dispatching && !item.photoCount ? 'Add a photo in the item details below before putaway.' : 'Confirm only after scanning both physical labels.'}</p>
             </>}
           </> : <p className="mt-3 text-zinc-500">The scanner recognizes item and location labels automatically.</p>}
         </div>
@@ -422,6 +443,35 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
     {tab === 'Inventory' && <section className="space-y-4"><div className="flex flex-wrap gap-3"><div className="relative min-w-60 flex-1"><Search className="absolute left-3 top-4 text-zinc-400" size={18} /><Input aria-label="Search inventory" className="!h-12 !pl-10" placeholder="Code, customer, phone, booking, contents or location" value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} /></div><Select aria-label="Filter status" className="!h-12 !w-auto" value={status} onChange={e => { setStatus(e.target.value); setPage(1) }}><option value="">All statuses</option>{['CREATED', 'RECEIVED', 'AWAITING_PUTAWAY', 'IN_STORAGE', 'DISPATCHED'].map(s => <option key={s} value={s}>{readable(s)}</option>)}</Select></div>
       {inventory.isLoading ? <p role="status">Loading inventory…</p> : inventory.data?.data.length ? <div className="divide-y rounded-xl border">{inventory.data.data.map(c => <button key={c._id} onClick={() => choose(c._id)} className="flex min-h-24 w-full flex-wrap items-center gap-4 p-4 text-left hover:bg-zinc-50"><Package className="text-zinc-400" size={24} /><span className="min-w-40 flex-1"><span className="block font-semibold">{c.displayCode}</span><span className="block text-sm text-zinc-500">{c.description || readable(c.type)} · {typeof c.customer === 'object' ? c.customer?.fullName : ''}</span></span><span className="text-sm text-zinc-500">{c.currentStatus === 'DISPATCHED' ? 'Returned to customer' : typeof c.currentLocation === 'object' ? c.currentLocation?.name : 'Not located'}</span><span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusClass(c.currentStatus)}`}>{readable(c.currentStatus)}</span></button>)}</div> : <div className="rounded-xl border border-dashed p-10 text-center"><Package className="mx-auto text-zinc-400" size={32} /><h3 className="mt-3 font-semibold">No items found</h3><p className="mt-2 text-sm text-zinc-500">Adjust your search or receive your first customer items.</p><Button className="mt-4 !h-12" onClick={() => setTab('Receive')}>Receive inventory</Button></div>}
       <div className="flex items-center justify-between gap-2 text-sm"><span>{inventory.data?.total ?? 0} items · Page {page}</span><div className="flex gap-2"><Button variant="outline" disabled={page === 1} onClick={() => setPage(page - 1)}>Previous</Button><Button variant="outline" disabled={page >= (inventory.data?.pages || 1)} onClick={() => setPage(page + 1)}>Next</Button></div></div></section>}
+    {tab === 'Jobs' && <section className="space-y-5">
+      <div><h2 className="text-2xl font-semibold">Pickups & deliveries</h2><p className="mt-2 text-zinc-500">When a customer calls to have items picked up from their address, or wants stored items sent back — log it here and track it through the partner who handles it.</p></div>
+      <JobForm site={site} locations={locations.data || []} onCreated={() => { refresh(); feedback('success', 'Job logged.') }} />
+      <div className="flex gap-2"><Select aria-label="Filter jobs by status" className="!h-12 !w-auto" value={jobFilter} onChange={e => setJobFilter(e.target.value)}><option value="">All open & closed</option><option value="REQUESTED">Requested</option><option value="ASSIGNED">Assigned</option><option value="COMPLETED">Completed</option><option value="CANCELLED">Cancelled</option></Select></div>
+      {jobs.isLoading ? <p role="status">Loading jobs…</p> : jobs.data?.length ? <div className="divide-y rounded-xl border">{jobs.data.map(j => {
+        const customerName = typeof j.customer === 'object' ? j.customer.fullName : ''
+        const closed = j.status === 'COMPLETED' || j.status === 'CANCELLED'
+        return <div key={j._id} className="p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="font-semibold">{j.type === 'PICKUP' ? 'Pick up from' : 'Deliver to'} {customerName}</p>
+              <p className="text-sm text-zinc-500">{j.address}</p>
+              {j.partnerName && <p className="text-sm text-zinc-500">Partner: {j.partnerName}{j.partnerPhone ? ` · ${j.partnerPhone}` : ''}</p>}
+              {j.notes && <p className="mt-1 text-sm text-zinc-600">{j.notes}</p>}
+              <p className="mt-1 text-xs text-zinc-500">{j.containers.length} item{j.containers.length === 1 ? '' : 's'} linked · {new Date(j.createdAt).toLocaleString()}</p>
+            </div>
+            <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${j.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-800' : j.status === 'CANCELLED' ? 'bg-zinc-100 text-zinc-600' : j.status === 'ASSIGNED' ? 'bg-sky-50 text-sky-800' : 'bg-amber-50 text-amber-800'}`}>{readable(j.status)}</span>
+          </div>
+          {!closed && <div className="mt-3 flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => setAssigningJob(assigningJob === j._id ? '' : j._id)}>{j.partnerName ? 'Change partner' : 'Assign partner'}</Button>
+            <Button variant="outline" onClick={() => setLinkingJob(linkingJob === j._id ? '' : j._id)}>Link items</Button>
+            <Button variant="outline" disabled={jobBusy} onClick={() => void setJobStatus(j._id, 'COMPLETED')}>Mark complete</Button>
+            <Button variant="outline" disabled={jobBusy} onClick={() => void setJobStatus(j._id, 'CANCELLED')}>Cancel</Button>
+          </div>}
+          {assigningJob === j._id && <AssignJobForm job={j} onCancel={() => setAssigningJob('')} onSaved={() => { setAssigningJob(''); refresh(); feedback('success', 'Partner assigned.') }} />}
+          {linkingJob === j._id && <LinkContainersForm job={j} onCancel={() => setLinkingJob('')} onSaved={() => { setLinkingJob(''); refresh(); feedback('success', 'Items linked.') }} />}
+        </div>
+      })}</div> : <p className="rounded-xl border border-dashed p-6 text-center text-zinc-500">No pickups or deliveries logged yet.</p>}
+    </section>}
     {tab === 'Locations' && <section className="space-y-5">
       {supervisor && <LocationForm site={site} locations={locations.data || []} onCreated={() => { refresh(); feedback('success', 'Location created. Print its label before scanning.') }} />}
       <div className="divide-y rounded-xl border">
@@ -450,7 +500,8 @@ function WarehouseWorkspace({ site, userId }: { site: string; userId: string }) 
     {tab === 'Labels' && <section className="space-y-5"><div><h2 className="text-2xl font-semibold">Label center</h2><p className="mt-2 text-zinc-500">Code 128 and QR on every label. Codes contain no customer details.</p></div><Select aria-label="Label paper size" className="!h-12 sm:!w-72" value={format} onChange={e => setFormat(e.target.value)}><option value="4x6">4 × 6 inch thermal label</option><option value="A4">A4 paper</option></Select><textarea aria-label="Label codes, one per line" className="min-h-48 w-full rounded-xl border p-4 font-mono text-sm" value={labelCodes.join('\n')} onChange={e => setLabelCodes(e.target.value.split('\n'))} placeholder="PBX-BX-000001" /><p className="text-sm text-zinc-500">One existing code per line, up to 50 labels. Reprints require supervisor permission.</p><Button className="!h-14" disabled={printBusy || !labelCodes.some(c => c.trim())} onClick={() => void print(labelCodes.map(c => c.trim()).filter(Boolean))}><Printer size={18} />{printBusy ? 'Preparing labels…' : 'Prepare printable PDF'}</Button></section>}
     {selected && <section className="rounded-2xl border p-5 sm:p-6"><div className="flex items-center justify-between"><h2 className="text-xl font-semibold">Item details</h2><button className="p-3" aria-label="Close item details" onClick={() => { setSelected(''); setScannedItem('') }}><X size={20} /></button></div>{detail.isLoading ? <p role="status">Loading item…</p> : detail.isError ? <p role="alert" className="text-red-700">{apiError(detail.error)}</p> : item && <>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-mono text-xl font-semibold">{item.displayCode}</h3><p className="mt-2">{item.description || readable(item.type)}</p><p className="text-sm text-zinc-500">{typeof item.customer === 'object' ? item.customer?.fullName : ''}{typeof item.booking === 'object' ? ` · ${item.booking?.contractNo}` : ''}</p></div><span className={`rounded-full px-3 py-1 text-sm ${statusClass(item.currentStatus)}`}>{readable(item.currentStatus)}</span></div>
-      <div className="mt-5 grid gap-3 text-sm sm:grid-cols-3"><p><span className="block text-zinc-500">Location</span>{item.currentStatus === 'DISPATCHED' ? 'Returned to customer' : typeof item.currentLocation === 'object' ? item.currentLocation?.name || 'Not yet located' : locationName(item.currentLocation || undefined)}</p><p><span className="block text-zinc-500">Condition</span>{readable(item.condition)}</p><p><span className="block text-zinc-500">Weight / dimensions</span>{item.weight ?? '—'} kg · {item.length ?? '—'} × {item.width ?? '—'} × {item.height ?? '—'} cm</p></div>
+      <div className="mt-5 grid gap-3 text-sm sm:grid-cols-3"><p><span className="block text-zinc-500">Location</span>{item.currentStatus === 'DISPATCHED' ? 'Returned to customer' : locationPath(typeof item.currentLocation === 'object' ? item.currentLocation?._id : item.currentLocation || undefined) || 'Not yet located'}</p><p><span className="block text-zinc-500">Condition</span>{readable(item.condition)}</p><p><span className="block text-zinc-500">Weight / dimensions</span>{item.weight ?? '—'} kg · {item.length ?? '—'} × {item.width ?? '—'} × {item.height ?? '—'} cm</p></div>
+      {item.currentStatus !== 'DISPATCHED' && item.currentStatus !== 'CREATED' && <p className="mt-3 rounded-lg bg-violet-50 px-4 py-3 text-sm font-medium text-violet-900">📍 Go get it: {locationPath(typeof item.currentLocation === 'object' ? item.currentLocation?._id : item.currentLocation || undefined) || 'Not yet located'}</p>}
       {item.contents && <p className="mt-4 whitespace-pre-wrap text-sm text-zinc-600">{item.contents}</p>}
       <div className="mt-5 flex flex-wrap gap-3">{item.photos?.map(p => <PrivatePhoto key={p._id} id={p._id} />)}</div>
       <div className="mt-5 flex flex-wrap gap-3"><label className={`inline-flex min-h-12 cursor-pointer items-center gap-2 rounded-lg border px-4 text-sm font-semibold ${busy ? 'pointer-events-none opacity-50' : ''}`}><Camera size={18} />{busy ? 'Saving…' : 'Add condition photo'}<input className="sr-only" aria-label="Add condition photo" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" disabled={busy} onChange={async e => {

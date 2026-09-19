@@ -3,7 +3,9 @@ import { useQuery } from '@tanstack/react-query'
 import { api, apiError } from '../../lib/api'
 import { Button, Field, Input, Modal, Select, Textarea } from '../../components/ui'
 import { locationTypes, numeric, readable, types } from '../../lib/warehouse'
-import type { Booking, Container, CustomerRef, Location } from '../../lib/warehouse'
+import type { Booking, Container, CustomerRef, Location, WarehouseJob } from '../../lib/warehouse'
+
+type ContainerList = { data: Container[] }
 
 const field = '!h-12 !text-base'
 
@@ -140,8 +142,8 @@ export function ReceiveForm({ site, locations, onCreated, lockQuantity, submitLa
       if (!fullName) { setNewCustomerError('Name is required.'); return }
       setNewCustomerBusy(true); setNewCustomerError('')
       try {
-        const { data: created } = await api.post('/customers', { fullName, phone: data.get('phone'), email: data.get('email') })
-        setCustomer({ _id: created._id, fullName: created.fullName, clientId: created.clientId || '' })
+        const { data: created } = await api.post('/customers', { fullName, phone: data.get('phone'), email: data.get('email'), address: data.get('address') })
+        setCustomer({ _id: created._id, fullName: created.fullName, clientId: created.clientId || '', phone: created.phone || '', address: created.address || '' })
         setBooking(''); setAddingCustomer(false); setSearch('')
       } catch (err) { setNewCustomerError(apiError(err)) } finally { setNewCustomerBusy(false) }
     }}>
@@ -151,6 +153,7 @@ export function ReceiveForm({ site, locations, onCreated, lockQuantity, submitLa
         <Field label="Phone"><Input name="phone" aria-label="Phone" className={field} /></Field>
         <Field label="Email"><Input name="email" aria-label="Email" type="email" className={field} /></Field>
       </div>
+      <Field label="Address"><Input name="address" aria-label="Address" placeholder="For pickup/delivery — optional" className={field} /></Field>
       {newCustomerError && <p role="alert" className="text-red-700">{newCustomerError}</p>}
       <div className="flex gap-2">
         <Button disabled={newCustomerBusy} className="!h-12">{newCustomerBusy ? 'Creating…' : 'Create customer'}</Button>
@@ -226,6 +229,106 @@ export function EditContainerForm({ item, onSaved, onCancel }: { item: Container
       <Button type="button" variant="outline" className="!h-12" onClick={onCancel}>Cancel</Button>
     </div>
   </form>
+}
+
+export function JobForm({ site, locations, onCreated }: { site: string; locations: Location[]; onCreated: () => void }) {
+  const [type, setType] = useState<'PICKUP' | 'DELIVERY'>('PICKUP')
+  const [search, setSearch] = useState('')
+  const [customer, setCustomer] = useState<CustomerRef | null>(null)
+  const [address, setAddress] = useState('')
+  const [selected, setSelected] = useState<string[]>([])
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const receipt = useRef<{ key: string; id: string } | null>(null)
+  const warehouses = [...new Set(locations.map(l => l.warehouse))]
+  const customers = useQuery<CustomerRef[]>({ queryKey: ['warehouse-customers', search], queryFn: () => api.get('/warehouse/customers', { params: { search } }).then(r => r.data), enabled: search.trim().length >= 2 && !customer })
+  const stored = useQuery<ContainerList>({ queryKey: ['warehouse-stored-for-job', site, customer?._id], queryFn: () => api.get('/warehouse/containers', { params: { site, customer: customer!._id, status: 'IN_STORAGE', limit: 100 } }).then(r => r.data), enabled: type === 'DELIVERY' && !!customer })
+
+  function choose(c: CustomerRef) {
+    setCustomer(c); setSearch(''); setSelected([])
+    if (!address) setAddress(c.address || '')
+  }
+
+  return <form className="space-y-4 rounded-xl border p-5" onSubmit={async e => {
+    e.preventDefault(); if (busy || !customer) return
+    const data = new FormData(e.currentTarget)
+    const payload = { site, warehouse: data.get('warehouse'), type, customer: customer._id, address, notes: data.get('notes'), partnerName: data.get('partnerName'), partnerPhone: data.get('partnerPhone'), containers: type === 'DELIVERY' ? selected : undefined }
+    const key = JSON.stringify(payload)
+    if (receipt.current?.key !== key) receipt.current = { key, id: crypto.randomUUID() }
+    setBusy(true); setError('')
+    try {
+      await api.post('/warehouse/jobs', { ...payload, requestId: receipt.current.id })
+      receipt.current = null
+      const form = e.currentTarget; form.reset()
+      setCustomer(null); setAddress(''); setSelected([])
+      onCreated()
+    } catch (err) { setError(apiError(err)) } finally { setBusy(false) }
+  }}>
+    <h3 className="text-xl font-semibold">Log a pickup or delivery</h3>
+    <div className="flex gap-4">
+      <label className="flex items-center gap-2 text-sm"><input type="radio" checked={type === 'PICKUP'} onChange={() => { setType('PICKUP'); setSelected([]) }} />Pick up from customer</label>
+      <label className="flex items-center gap-2 text-sm"><input type="radio" checked={type === 'DELIVERY'} onChange={() => { setType('DELIVERY'); setSelected([]) }} />Deliver to customer</label>
+    </div>
+    <Field label="Customer"><Input className={field} aria-label="Find customer" placeholder="Search name, phone or customer reference" value={customer ? `${customer.fullName} · ${customer.clientId}` : search} onChange={e => { setCustomer(null); setSearch(e.target.value) }} /></Field>
+    {!customer && search.length >= 2 && <div className="divide-y rounded-xl border">{customers.isFetching ? <p className="p-3">Searching…</p> : customers.data?.length ? customers.data.map(c => <button type="button" key={c._id} className="block min-h-12 w-full px-4 py-3 text-left hover:bg-zinc-50" onClick={() => choose(c)}>{c.fullName} <span className="text-zinc-500">{c.clientId}</span></button>) : <p className="p-3 text-zinc-500">No matching customers.</p>}</div>}
+    <Field label="Warehouse"><Select name="warehouse" aria-label="Warehouse" required className={field}><option value="">Choose warehouse</option>{warehouses.map(w => <option key={w}>{w}</option>)}</Select></Field>
+    <Field label={type === 'PICKUP' ? 'Pickup address' : 'Delivery address'}><Textarea aria-label="Address" value={address} onChange={e => setAddress(e.target.value)} placeholder="Where the partner should go" /></Field>
+    {type === 'DELIVERY' && customer && <div>
+      <p className="mb-2 text-sm font-semibold">Items to deliver</p>
+      {stored.isFetching ? <p className="text-sm text-zinc-500">Loading stored items…</p> : stored.data?.data.length ? <div className="divide-y rounded-xl border">{stored.data.data.map(c => <label key={c._id} className="flex min-h-12 items-center gap-3 px-4 py-2 text-sm"><input type="checkbox" checked={selected.includes(c._id)} onChange={e => setSelected(s => e.target.checked ? [...s, c._id] : s.filter(id => id !== c._id))} />{c.displayCode} · {c.description || readable(c.type)}</label>)}</div> : <p className="text-sm text-zinc-500">This customer has no stored items.</p>}
+    </div>}
+    <div className="grid gap-3 sm:grid-cols-2">
+      <Field label="Partner name (if known)"><Input name="partnerName" aria-label="Partner name" className={field} /></Field>
+      <Field label="Partner phone"><Input name="partnerPhone" aria-label="Partner phone" className={field} /></Field>
+    </div>
+    <Field label="Notes"><Textarea name="notes" aria-label="Notes" placeholder="What to expect / special instructions" /></Field>
+    {error && <p role="alert" className="text-red-700">{error}</p>}
+    <Button disabled={busy || !customer || !address.trim() || (type === 'DELIVERY' && !selected.length)} className="!h-12">{busy ? 'Logging…' : 'Log job'}</Button>
+  </form>
+}
+
+export function AssignJobForm({ job, onSaved, onCancel }: { job: WarehouseJob; onSaved: () => void; onCancel: () => void }) {
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const receipt = useRef<{ key: string; id: string } | null>(null)
+  return <form className="mt-3 grid gap-3 rounded-xl border border-violet-200 bg-violet-50/40 p-4 sm:grid-cols-2" onSubmit={async e => {
+    e.preventDefault()
+    const data = new FormData(e.currentTarget)
+    const payload = { partnerName: data.get('partnerName'), partnerPhone: data.get('partnerPhone') }
+    const key = JSON.stringify(payload)
+    if (receipt.current?.key !== key) receipt.current = { key, id: crypto.randomUUID() }
+    setBusy(true); setError('')
+    try { await api.patch(`/warehouse/jobs/${job._id}`, { ...payload, requestId: receipt.current.id }); receipt.current = null; onSaved() } catch (err) { setError(apiError(err)) } finally { setBusy(false) }
+  }}>
+    <Field label="Partner name"><Input name="partnerName" aria-label="Partner name" required defaultValue={job.partnerName} className={field} /></Field>
+    <Field label="Partner phone"><Input name="partnerPhone" aria-label="Partner phone" defaultValue={job.partnerPhone} className={field} /></Field>
+    {error && <p role="alert" className="sm:col-span-2 text-red-700">{error}</p>}
+    <div className="flex gap-2 sm:col-span-2">
+      <Button disabled={busy} className="!h-12">{busy ? 'Saving…' : 'Assign partner'}</Button>
+      <Button type="button" variant="outline" className="!h-12" onClick={onCancel}>Cancel</Button>
+    </div>
+  </form>
+}
+
+export function LinkContainersForm({ job, onSaved, onCancel }: { job: WarehouseJob; onSaved: () => void; onCancel: () => void }) {
+  const [search, setSearch] = useState('')
+  const [selected, setSelected] = useState<string[]>([])
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const customerId = typeof job.customer === 'object' ? job.customer._id : job.customer
+  const results = useQuery<ContainerList>({ queryKey: ['warehouse-job-link-search', job.site, customerId, search], queryFn: () => api.get('/warehouse/containers', { params: { site: job.site, customer: customerId, search: search || undefined, limit: 30 } }).then(r => r.data), enabled: search.trim().length >= 1 })
+  return <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50/40 p-4">
+    <Field label="Find items to link"><Input className={field} aria-label="Search items" placeholder="Item code or description" value={search} onChange={e => setSearch(e.target.value)} /></Field>
+    {search.length >= 1 && <div className="mt-2 divide-y rounded-xl border bg-white">{results.isFetching ? <p className="p-3 text-sm">Searching…</p> : results.data?.data.length ? results.data.data.filter(c => !job.containers.includes(c._id)).map(c => <label key={c._id} className="flex min-h-12 items-center gap-3 px-4 py-2 text-sm"><input type="checkbox" checked={selected.includes(c._id)} onChange={e => setSelected(s => e.target.checked ? [...s, c._id] : s.filter(id => id !== c._id))} />{c.displayCode} · {c.description || readable(c.type)} · <span className="text-zinc-500">{readable(c.currentStatus)}</span></label>) : <p className="p-3 text-sm text-zinc-500">No matching items for this customer.</p>}</div>}
+    {error && <p role="alert" className="mt-2 text-red-700">{error}</p>}
+    <div className="mt-3 flex gap-2">
+      <Button disabled={busy || !selected.length} className="!h-12" onClick={async () => {
+        setBusy(true); setError('')
+        try { await api.patch(`/warehouse/jobs/${job._id}`, { addContainers: selected, requestId: crypto.randomUUID() }); onSaved() } catch (err) { setError(apiError(err)) } finally { setBusy(false) }
+      }}>{busy ? 'Linking…' : `Link ${selected.length || ''} item${selected.length === 1 ? '' : 's'}`}</Button>
+      <Button type="button" variant="outline" className="!h-12" onClick={onCancel}>Cancel</Button>
+    </div>
+  </div>
 }
 
 export function LocationForm({ site, locations, onCreated }: { site: string; locations: Location[]; onCreated: () => void }) {

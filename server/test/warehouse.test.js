@@ -7,7 +7,7 @@ import request from 'supertest';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { Customer, Contract, Site, Unit, User } from '../src/models/index.js';
 import { StoredContainer, WarehouseLocation, ScanEvent, ItemPhoto, WarehouseCounter } from '../src/models/warehouse.js';
-import { command, createContainers, createLocation, editLocation, deleteLocation, editContainer, deleteContainer, scan, addPhoto } from '../src/services/warehouse.js';
+import { command, createContainers, createLocation, editLocation, deleteLocation, editContainer, deleteContainer, scan, addPhoto, createWarehouseJob, updateWarehouseJob } from '../src/services/warehouse.js';
 import { validateMovement } from '../src/services/warehouseRules.js';
 import warehouseRouter from '../src/routes/warehouse.js';
 
@@ -18,6 +18,8 @@ const location = (input = {}) => run(admin, 'CREATE_LOCATION', { site: String(si
 const containers = (input = {}) => run(staff, 'CREATE_CONTAINERS', { customer: String(customer._id), site: String(site._id), warehouse: 'WH1', type: 'BOX', quantity: 1, ...input }, createContainers).then(r => r.containers);
 const scanItem = (item, action, destination, actor = staff, notes) => run(actor, 'SCAN', { barcode: item.displayCode, action, locationBarcode: destination?.displayCode, notes }, scan);
 const photograph = item => run(staff, 'ADD_PHOTO', { container: item._id }, ctx => addPhoto(ctx, item._id, png));
+const createJob = (input = {}) => run(staff, 'CREATE_JOB', { site: String(site._id), warehouse: 'WH1', customer: String(customer._id), address: '123 Main St', ...input }, createWarehouseJob).then(r => r.job);
+const updateJob = (jobId, input = {}) => run(staff, 'UPDATE_JOB', input, (ctx, body) => updateWarehouseJob(ctx, jobId, body)).then(r => r.job);
 async function readyItem(input = {}) {
   const [item] = await containers(input);
   const receiving = await location({ name: 'Receiving', kind: 'RECEIVING' });
@@ -137,6 +139,54 @@ test('an item can be dispatched straight from receiving, before ever reaching a 
   const dispatch = await location({ kind: 'DISPATCH' });
   await scanItem(item, 'DISPATCH', dispatch, staff, 'Customer changed their mind, took it back immediately');
   assert.equal((await StoredContainer.findById(item._id)).currentStatus, 'DISPATCHED');
+});
+
+test('receiving with no location scan auto-resolves the warehouse’s one receiving area', async () => {
+  const [item] = await containers({ warehouse: 'WH-AUTO' });
+  await assert.rejects(run(staff, 'SCAN', { barcode: item.displayCode, action: 'RECEIVE' }, scan), /No receiving area/);
+  const receiving = await location({ warehouse: 'WH-AUTO', kind: 'RECEIVING' });
+  await run(staff, 'SCAN', { barcode: item.displayCode, action: 'RECEIVE' }, scan);
+  const saved = await StoredContainer.findById(item._id);
+  assert.equal(saved.currentStatus, 'RECEIVED');
+  assert.equal(String(saved.currentLocation), String(receiving._id));
+  await location({ warehouse: 'WH-AUTO', kind: 'RECEIVING', name: 'Second dock' });
+  const [other] = await containers({ warehouse: 'WH-AUTO' });
+  await assert.rejects(run(staff, 'SCAN', { barcode: other.displayCode, action: 'RECEIVE' }, scan), /More than one receiving area/);
+});
+
+test('a pickup job tracks items from creation through receiving to completion', async () => {
+  const job = await createJob({ type: 'PICKUP', partnerName: 'Fast Movers', partnerPhone: '+971500000099' });
+  assert.equal(job.status, 'ASSIGNED');
+  await assert.rejects(updateJob(job._id, { status: 'COMPLETED' }), /Link at least one item/);
+  const [item] = await containers();
+  await updateJob(job._id, { addContainers: [item._id] });
+  await assert.rejects(updateJob(job._id, { status: 'COMPLETED' }), /still need to be received/);
+  const receiving = await location({ kind: 'RECEIVING' });
+  await scanItem(item, 'RECEIVE', receiving);
+  const done = await updateJob(job._id, { status: 'COMPLETED' });
+  assert.equal(done.status, 'COMPLETED');
+  assert.ok(done.completedAt);
+  await assert.rejects(updateJob(job._id, { partnerName: 'Someone else' }), /already closed/);
+});
+
+test('a delivery job only requires stored items and only completes once they are dispatched', async () => {
+  const item = await readyItem();
+  const shelf = await location({ maxContainers: 5 });
+  await scanItem(item, 'PUTAWAY', shelf);
+  const [notStored] = await containers();
+  await assert.rejects(createJob({ type: 'DELIVERY', containers: [notStored._id] }), /not currently in storage/);
+  const job = await createJob({ type: 'DELIVERY', containers: [item._id] });
+  assert.equal(job.status, 'REQUESTED');
+  assert.deepEqual(job.containers, [item._id]);
+  await assert.rejects(updateJob(job._id, { status: 'COMPLETED' }), /still need to be dispatched/);
+  const dispatch = await location({ kind: 'DISPATCH' });
+  await scanItem(item, 'DISPATCH', dispatch, staff, 'Handed to delivery partner');
+  const done = await updateJob(job._id, { status: 'COMPLETED' });
+  assert.equal(done.status, 'COMPLETED');
+});
+
+test('a job with no address and a customer with none on file is refused', async () => {
+  await assert.rejects(createJob({ type: 'PICKUP', address: undefined, customer: String(otherCustomer._id) }), /Enter the pickup or delivery address/);
 });
 
 test('concurrent putaway never overfills the last free slot', async () => {

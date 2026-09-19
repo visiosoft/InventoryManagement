@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Customer, Contract, Unit, Site } from '../models/index.js';
-import { StoredContainer, WarehouseLocation, ScanEvent, WarehouseCounter, ItemPhoto, CONTAINER_TYPES, LOCATION_TYPES } from '../models/warehouse.js';
+import { StoredContainer, WarehouseLocation, ScanEvent, WarehouseCounter, ItemPhoto, WarehouseJob, CONTAINER_TYPES, LOCATION_TYPES, WAREHOUSE_JOB_TYPES } from '../models/warehouse.js';
 import { fail, normalizeBarcode, nextAction, validateMovement, validateDispatch, photoMime } from './warehouseRules.js';
 import { softDelete } from '../utils/softDelete.js';
 
@@ -236,8 +236,22 @@ export async function scan(ctx, input) {
   const previous = item.toObject();
   if (action === 'RECEIVE') {
     if (item.currentStatus !== 'CREATED') fail('ALREADY SCANNED: this item has already been received.', 409);
-    const receiving = await WarehouseLocation.findOne({ displayCode: normalizeBarcode(input.locationBarcode) }).session(ctx.session);
-    if (!receiving || receiving.kind !== 'RECEIVING' || String(receiving.site) !== String(item.site) || receiving.warehouse !== item.warehouse) fail('Scan a receiving area in this item’s warehouse.', 409);
+    // A receiving area isn't a meaningful location the way a shelf is — it's
+    // just "logged in", and requiring a scan of it on top of the item itself
+    // was a second scan for no real proof-of-location value. If one is
+    // scanned anyway (older client, or a real reason to be specific) it's
+    // still validated; otherwise the warehouse's own receiving area is used
+    // automatically, as long as there's exactly one.
+    let receiving;
+    if (input.locationBarcode) {
+      receiving = await WarehouseLocation.findOne({ displayCode: normalizeBarcode(input.locationBarcode) }).session(ctx.session);
+      if (!receiving || receiving.kind !== 'RECEIVING' || String(receiving.site) !== String(item.site) || receiving.warehouse !== item.warehouse) fail('Scan a receiving area in this item’s warehouse.', 409);
+    } else {
+      const candidates = await WarehouseLocation.find({ site: item.site, warehouse: item.warehouse, kind: 'RECEIVING' }).session(ctx.session);
+      if (!candidates.length) fail('No receiving area set up for this warehouse yet.', 409);
+      if (candidates.length > 1) fail('More than one receiving area exists for this warehouse — scan the correct one.', 409);
+      [receiving] = candidates;
+    }
     item.currentStatus = item.photoCount ? 'AWAITING_PUTAWAY' : 'RECEIVED';
     item.currentLocation = receiving._id;
   }
@@ -307,6 +321,70 @@ export async function addPhoto(ctx, containerId, buffer) {
   await item.save({ session: ctx.session });
   const result = { photoId: photo._id, container: item.toObject() };
   await event(ctx, itemEvent(item, previous, { eventType: 'PHOTO_ADDED', result }));
+  return result;
+}
+
+export async function createWarehouseJob(ctx, input) {
+  if (!WAREHOUSE_JOB_TYPES.includes(input.type)) fail('Invalid job type.');
+  const site = await Site.findById(objectId(input.site)).session(ctx.session);
+  if (!site) fail('Facility not found.', 404);
+  const warehouse = warehouseCode(input.warehouse);
+  const customer = await Customer.findById(objectId(input.customer)).session(ctx.session);
+  if (!customer) fail('Customer not found.', 404);
+  const address = text(input.address || customer.address, 500);
+  if (!address) fail('Enter the pickup or delivery address.');
+  const partnerName = text(input.partnerName, 200);
+  const partnerPhone = text(input.partnerPhone, 40);
+  let containers = [];
+  if (input.type === 'DELIVERY') {
+    if (!Array.isArray(input.containers) || !input.containers.length) fail('Select at least one stored item to deliver.');
+    containers = await StoredContainer.find({ _id: { $in: input.containers }, customer: customer._id, currentStatus: 'IN_STORAGE' }).session(ctx.session);
+    if (containers.length !== input.containers.length) fail('One or more selected items are not currently in storage for this customer.');
+  }
+  const [job] = await WarehouseJob.create([{
+    type: input.type, site: site._id, warehouse, customer: customer._id, address, notes: text(input.notes, 2000),
+    partnerName, partnerPhone, status: partnerName ? 'ASSIGNED' : 'REQUESTED',
+    containers: containers.map(c => c._id), createdBy: ctx.user._id,
+  }], { session: ctx.session });
+  const result = { job: job.toObject() };
+  await event(ctx, { barcode: job._id, objectType: 'JOB', objectId: job._id, eventType: 'JOB_CREATED', customer: customer._id, site: site._id, warehouse, result });
+  return result;
+}
+
+export async function updateWarehouseJob(ctx, jobId, input) {
+  const job = await WarehouseJob.findById(jobId).session(ctx.session);
+  if (!job) fail('Job not found.', 404);
+  if (['COMPLETED', 'CANCELLED'].includes(job.status)) fail('This job is already closed.', 409);
+  if (input.partnerName !== undefined) job.partnerName = text(input.partnerName, 200);
+  if (input.partnerPhone !== undefined) job.partnerPhone = text(input.partnerPhone, 40);
+  if (input.notes !== undefined) job.notes = text(input.notes, 2000);
+  if (input.address !== undefined) {
+    const address = text(input.address, 500);
+    if (!address) fail('Enter the pickup or delivery address.');
+    job.address = address;
+  }
+  if (input.addContainers !== undefined) {
+    if (!Array.isArray(input.addContainers) || !input.addContainers.length) fail('Select at least one item.');
+    const found = await StoredContainer.find({ _id: { $in: input.addContainers }, customer: job.customer }).session(ctx.session);
+    if (found.length !== input.addContainers.length) fail('One or more items were not found for this customer.', 404);
+    job.containers = [...new Set([...job.containers.map(String), ...found.map(c => String(c._id))])];
+  }
+  if (input.status) {
+    if (!['ASSIGNED', 'COMPLETED', 'CANCELLED'].includes(input.status)) fail('Invalid status.');
+    if (input.status === 'COMPLETED') {
+      if (!job.containers.length) fail('Link at least one item before marking this job complete.', 409);
+      const linked = await StoredContainer.find({ _id: { $in: job.containers } }).session(ctx.session);
+      if (job.type === 'PICKUP' && linked.some(c => c.currentStatus === 'CREATED')) fail('These items still need to be received before this pickup can be marked complete.', 409);
+      if (job.type === 'DELIVERY' && linked.some(c => c.currentStatus !== 'DISPATCHED')) fail('These items still need to be dispatched before this delivery can be marked complete.', 409);
+      job.completedAt = new Date();
+    }
+    job.status = input.status;
+  } else if (job.status === 'REQUESTED' && job.partnerName) {
+    job.status = 'ASSIGNED';
+  }
+  await job.save({ session: ctx.session });
+  const result = { job: job.toObject() };
+  await event(ctx, { barcode: job._id, objectType: 'JOB', objectId: job._id, eventType: `JOB_${job.status}`, customer: job.customer, site: job.site, warehouse: job.warehouse, notes: text(input.notes, 2000), result });
   return result;
 }
 

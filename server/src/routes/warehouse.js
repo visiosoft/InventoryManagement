@@ -5,8 +5,8 @@ import bwipjs from 'bwip-js';
 import PDFDocument from 'pdfkit';
 import { drawCompanyLogo } from '../services/pdfLogo.js';
 import { User, Customer, Contract, Site } from '../models/index.js';
-import { StoredContainer, WarehouseLocation, ScanEvent, ItemPhoto, CONTAINER_STATES } from '../models/warehouse.js';
-import { command, createContainers, createLocation, editLocation, deleteLocation, editContainer, deleteContainer, scan, addPhoto, logLabels, operationalPermission, escapeRegex } from '../services/warehouse.js';
+import { StoredContainer, WarehouseLocation, ScanEvent, ItemPhoto, WarehouseJob, CONTAINER_STATES, WAREHOUSE_JOB_TYPES, WAREHOUSE_JOB_STATES } from '../models/warehouse.js';
+import { command, createContainers, createLocation, editLocation, deleteLocation, editContainer, deleteContainer, scan, addPhoto, logLabels, createWarehouseJob, updateWarehouseJob, operationalPermission, escapeRegex } from '../services/warehouse.js';
 import { fail, nextAction, validateMovement } from '../services/warehouseRules.js';
 
 const router = Router();
@@ -34,7 +34,7 @@ router.get('/customers', asyncRoute(async (req, res) => {
   const search = String(req.query.search || '').trim().slice(0, 100);
   if (search.length < 2) return res.json([]);
   const re = new RegExp(escapeRegex(search), 'i');
-  res.json(await Customer.find({ $or: [{ fullName: re }, { phone: re }, { clientId: re }] }).select('fullName clientId').limit(30).lean());
+  res.json(await Customer.find({ $or: [{ fullName: re }, { phone: re }, { clientId: re }] }).select('fullName clientId phone address').limit(30).lean());
 }));
 router.get('/customers/:id/bookings', asyncRoute(async (req, res) => {
   if (!/^[a-f0-9]{24}$/i.test(req.params.id)) fail('Invalid customer.');
@@ -100,6 +100,15 @@ router.get('/containers/:id/suggestions', asyncRoute(async (req, res) => {
   }).slice(0, 5));
 }));
 router.post('/scans', asyncRoute(async (req, res) => res.json(await command(req.warehouseUser, req.body, 'SCAN', ctx => scan(ctx, req.body)))));
+
+router.get('/jobs', asyncRoute(async (req, res) => {
+  const filter = scope(req);
+  if (req.query.status) { if (!WAREHOUSE_JOB_STATES.includes(req.query.status)) fail('Invalid status.'); filter.status = req.query.status; }
+  if (req.query.type) { if (!WAREHOUSE_JOB_TYPES.includes(req.query.type)) fail('Invalid type.'); filter.type = req.query.type; }
+  res.json(await WarehouseJob.find(filter).populate('customer', 'fullName clientId phone').sort({ createdAt: -1 }).limit(200).lean());
+}));
+router.post('/jobs', asyncRoute(async (req, res) => res.status(201).json(await command(req.warehouseUser, req.body, 'CREATE_JOB', ctx => createWarehouseJob(ctx, req.body)))));
+router.patch('/jobs/:id', asyncRoute(async (req, res) => res.json(await command(req.warehouseUser, req.body, 'UPDATE_JOB', ctx => updateWarehouseJob(ctx, req.params.id, req.body)))));
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: 1, fields: 3 } });
 router.post('/containers/:id/photos', upload.single('photo'), asyncRoute(async (req, res) => {

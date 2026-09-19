@@ -8,6 +8,8 @@ const ref = (name, required = false) => ({ type: Schema.Types.ObjectId, ref: nam
 export const CONTAINER_TYPES = ['BOX', 'SUITCASE', 'BAG', 'FURNITURE', 'LOOSE_ITEM', 'PALLET', 'TOTE', 'DOCUMENT_BOX', 'OTHER'];
 export const CONTAINER_STATES = ['CREATED', 'RECEIVED', 'AWAITING_PUTAWAY', 'IN_STORAGE', 'DISPATCHED'];
 export const LOCATION_TYPES = ['WAREHOUSE', 'ZONE', 'AISLE', 'RACK', 'SHELF', 'BIN', 'RECEIVING', 'PACKING', 'DISPATCH'];
+export const WAREHOUSE_JOB_TYPES = ['PICKUP', 'DELIVERY'];
+export const WAREHOUSE_JOB_STATES = ['REQUESTED', 'ASSIGNED', 'COMPLETED', 'CANCELLED'];
 
 const locationSchema = new Schema({
   _id: uuid(), displayCode: { type: String, required: true, unique: true },
@@ -81,8 +83,32 @@ const photoSchema = new Schema({
 });
 const counterSchema = new Schema({ _id: String, value: { type: Number, default: 0 } });
 
+// A coordination overlay for items a partner collects from or delivers to a
+// customer's own address — it never mutates container/location state itself.
+// PICKUP items don't exist as containers yet at job creation (they're tagged
+// in the field), so they're linked once received; DELIVERY items are chosen
+// from what's already IN_STORAGE. Physical custody still only ever changes
+// through the existing scan()/createContainers() paths.
+const warehouseJobSchema = new Schema({
+  _id: uuid(),
+  type: { type: String, enum: WAREHOUSE_JOB_TYPES, required: true },
+  site: ref('Site', true), warehouse: { type: String, required: true },
+  customer: ref('Customer', true),
+  address: { type: String, required: true, maxlength: 500 },
+  notes: { type: String, maxlength: 2000, default: '' },
+  partnerName: { type: String, maxlength: 200, default: '' },
+  partnerPhone: { type: String, maxlength: 40, default: '' },
+  status: { type: String, enum: WAREHOUSE_JOB_STATES, default: 'REQUESTED' },
+  containers: [{ type: String, ref: 'StoredContainer' }],
+  createdBy: ref('User', true),
+  completedAt: { type: Date, default: null },
+}, { timestamps: true });
+warehouseJobSchema.index({ site: 1, warehouse: 1, status: 1, createdAt: -1 });
+warehouseJobSchema.index({ customer: 1, createdAt: -1 });
+
 export const StoredContainer = model('StoredContainer', containerSchema);
 export const WarehouseLocation = model('WarehouseLocation', locationSchema);
 export const ScanEvent = model('WarehouseScanEvent', eventSchema, 'warehouse_scan_events');
 export const ItemPhoto = model('WarehouseItemPhoto', photoSchema);
 export const WarehouseCounter = model('WarehouseCounter', counterSchema);
+export const WarehouseJob = model('WarehouseJob', warehouseJobSchema);
