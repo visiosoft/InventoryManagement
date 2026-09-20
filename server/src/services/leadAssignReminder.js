@@ -36,7 +36,7 @@ export const REMINDER_DEFAULTS = { thresholdHours: 3 };
 export function isMissed(lead = {}, now = new Date(), thresholdHours = REMINDER_DEFAULTS.thresholdHours) {
    if (!lead.owner || !lead.assignedAt) return false;   // nobody chose them
    if (lead.firstResponseAt) return false;              // genuinely answered
-   if (lead.status === 'won' || lead.status === 'lost') return false;
+   if (['won', 'lost', 'already_customer'].includes(lead.status)) return false;
    const waitedMs = new Date(now) - new Date(lead.assignedAt);
    return waitedMs >= thresholdHours * HOUR_MS;
 }
@@ -97,7 +97,7 @@ export async function runLeadAssignReminder({ now = new Date(), dry = false, thr
       owner: { $ne: null },
       assignedAt: { $ne: null },
       firstResponseAt: null,
-      status: { $nin: ['won', 'lost'] },
+      status: { $nin: ['won', 'lost', 'already_customer'] },
    })
       .select('_id fullName phone phoneNormalized whatsappProfileName owner assignedAt assignmentReminderSentAt status')
       .lean();

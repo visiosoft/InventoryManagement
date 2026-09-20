@@ -1,3 +1,4 @@
+import { recordLeadTransition } from './leadTransitions.js';
 import { Lead, User, WhatsAppLabelState, WhatsAppWebhookEvent, WhatsAppMessage, WhatsAppBlockedNumber } from '../models/index.js';
 import { routeInboundLead } from './leadRouting.js';
 import { notifyLeadAssigned, notifyInboundWhatsAppMessage } from './leadNotify.js';
@@ -714,7 +715,7 @@ export async function processWhatsAppWebhookPayload(payload) {
     const before = lead.status;
     lead.source = lead.source === 'manual' ? 'whatsapp' : lead.source;
     if (before !== mappedStatus) {
-        lead.status = mappedStatus;
+        recordLeadTransition(lead, mappedStatus);
         pushTimeline(
             lead,
             'whatsapp_label_status',
@@ -809,7 +810,7 @@ export async function runWhatsAppLabelReconciliation() {
 
             if (lead.status !== state.mappedStatus) {
                 const before = lead.status;
-                lead.status = state.mappedStatus;
+                recordLeadTransition(lead, state.mappedStatus);
                 pushTimeline(
                     lead,
                     'whatsapp_reconcile_status',

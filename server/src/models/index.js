@@ -293,6 +293,10 @@ const leadSchema = new Schema(
       enum: ['new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost', 'already_customer'],
       default: 'new',
     },
+    lossReason: { type: String, enum: ['', 'price', 'timing', 'competitor', 'no_response', 'not_a_fit', 'other'], default: '' },
+    lossCompetitor: { type: String, default: '' },
+    reopenAt: { type: Date, default: null },
+    expectedCloseAt: { type: Date, default: null },
     /* How warm they are, kept apart from the status.
        A lead can be Follow-Up Scheduled and hot, or Contacted and cold — one
        says where they are in the process, the other how likely they are to
@@ -427,9 +431,8 @@ const leadSchema = new Schema(
        and it deserves an answer on the record rather than in a timeline note
        somebody has to go and read. */
     assignedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
-    /* The first thing the rep did about it: an attempt logged, or the stage
-       moved. Written once and never moved, so a later action cannot make the
-       response look slower than it was. */
+    /* The first recorded contact attempt or successful outbound contact.
+       Written once per assignment so later contact cannot shift the clock. */
     firstResponseAt: { type: Date, default: null },
     /* 0 means "not asked yet" rather than a unit of no size. It is set when
        somebody actually speaks to the lead, at the Contacted stage — before
@@ -485,6 +488,11 @@ const leadSchema = new Schema(
       {
         at: { type: Date, default: Date.now },
         type: { type: String, default: 'note' },
+        fromStatus: String,
+        toStatus: String,
+        lossReason: String,
+        lossCompetitor: String,
+        reopenAt: Date,
         text: { type: String, default: '' },
         user: { type: Schema.Types.ObjectId, ref: 'User' },
       },

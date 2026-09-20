@@ -42,7 +42,7 @@ export function isWaiting(lead = {}, now = new Date(), slaMs = DEFAULT_SLA_MINUT
   if (!lead.assignedAt) return false;
   if (lead.firstResponseAt) return false;
   if (!lead.owner) return false;
-  if (lead.status === 'won' || lead.status === 'lost') return false;
+  if (['won', 'lost', 'already_customer'].includes(lead.status)) return false;
   return waitingFor(lead, now) >= slaMs;
 }
 

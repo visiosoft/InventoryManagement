@@ -15,8 +15,8 @@ test('a lead only qualifies once it has genuinely sat untouched past the window'
    assert.equal(isMissed(lead({ assignedAt: hoursAgo(1) }), NOW, REMINDER_DEFAULTS.thresholdHours), false, 'not long enough yet');
 });
 
-test('an attempt logged, a stage moved, or a WhatsApp reply — any of them counts as touched', () => {
-   // firstResponseAt is the one field all three of those already write to
+test('a recorded contact attempt or outbound reply counts as touched', () => {
+   // firstResponseAt is the field recorded contact events write to
    // (see services/leadSla.js and services/aiBot.js's markFirstResponse).
    assert.equal(isMissed(lead({ firstResponseAt: hoursAgo(1) }), NOW), false);
 });
@@ -26,6 +26,7 @@ test('nobody chosen yet, or the deal is already closed, is not a missed lead', (
    assert.equal(isMissed(lead({ assignedAt: null }), NOW), false);
    assert.equal(isMissed(lead({ status: 'won' }), NOW), false);
    assert.equal(isMissed(lead({ status: 'lost' }), NOW), false);
+   assert.equal(isMissed(lead({ status: 'already_customer' }), NOW), false);
 });
 
 test('the threshold is configurable, not hard-coded to the default', () => {

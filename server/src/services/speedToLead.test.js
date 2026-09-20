@@ -56,6 +56,7 @@ test('a lead nobody owns is nobody to chase', () => {
 test('a finished lead is not somebody to call', () => {
   assert.equal(isWaiting(lead({ status: 'won' }), NOW, SLA), false);
   assert.equal(isWaiting(lead({ status: 'lost' }), NOW, SLA), false);
+  assert.equal(isWaiting(lead({ status: 'already_customer' }), NOW, SLA), false);
 });
 
 test('a lead mid-pipeline still counts — being assigned is what starts it', () => {

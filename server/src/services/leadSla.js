@@ -15,7 +15,7 @@
  *                             who is told it is theirs the ordinary way
  *
  * What stops the clock is doing something about the lead, not looking at it.
- * `firstResponseAt` is set when a rep logs an attempt or moves the stage —
+ * `firstResponseAt` is set when a rep logs a contact attempt or sends an outbound reply —
  * opening the lead does not count, because a measure you can satisfy by
  * reading a screen measures nothing. That is the same rule the speed-to-lead
  * panel uses (services/speedToLead.js); this is the half that acts on it.

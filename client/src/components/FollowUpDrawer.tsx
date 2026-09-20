@@ -1,3 +1,4 @@
+import LeadStageDialog from './LeadStageDialog'
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
@@ -46,6 +47,7 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
   const [historyOpen, setHistoryOpen] = useState(false)
   const [error, setError] = useState('')
   const [sentTo, setSentTo] = useState('')
+  const [closingStage, setClosingStage] = useState('')
 
   useEffect(() => { setError(''); setSentTo(''); setConfirmResend(false); setAllowCustomers(false); setShowTemplate(false); setPickerOpen(false); setHistoryOpen(false) }, [leadId])
 
@@ -101,19 +103,6 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
     onSuccess: () => { onChanged(); nextLeadId ? onAdvance(nextLeadId) : onClose() },
     onError: (e) => setError(apiError(e)),
   })
-  const markLost = useMutation({
-    mutationFn: () => api.patch(`/leads/${leadId}/status`, { status: 'lost' }),
-    onSuccess: () => { onChanged(); nextLeadId ? onAdvance(nextLeadId) : onClose() },
-    onError: (e) => setError(apiError(e)),
-  })
-  // The existing closed status for exactly this case — takes the lead out
-  // of every queue without pretending it was won or lost.
-  const markCustomer = useMutation({
-    mutationFn: () => api.patch(`/leads/${leadId}/status`, { status: 'already_customer' }),
-    onSuccess: () => { onChanged(); nextLeadId ? onAdvance(nextLeadId) : onClose() },
-    onError: (e) => setError(apiError(e)),
-  })
-
   const preview = template && lead
     ? [firstNameOf(lead.name), ...extraVars.map((v) => v || '{{?}}')]
       .reduce((text, v, i) => text.replaceAll(`{{${i + 1}}}`, v), template.bodyText)
@@ -151,7 +140,7 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
                     </div>
                   ))}
                   <div className="mt-1.5" style={{ color: '#166534' }}>A new-enquiry or promo template would be wrong here. Reply in the chat, or if this lead record is just a duplicate of the tenant, close it:</div>
-                  <button type="button" disabled={markCustomer.isPending} onClick={() => { if (confirm(`Mark ${lead.name} as already a customer? It leaves the lead queue for good.`)) markCustomer.mutate() }}
+                  <button type="button" onClick={() => setClosingStage('already_customer')}
                     className="mt-2 cursor-pointer font-semibold px-3 py-1.5 rounded-lg" style={{ background: '#15803D', color: '#fff' }}>Mark as already customer</button>
                 </div>
               )}
@@ -320,7 +309,7 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
                   className="cursor-pointer font-semibold px-3 py-1.5 rounded-full" style={{ background: PURPLE_TINT, color: PURPLE_DEEP }}>{label}</button>
               ))}
               <a href={`tel:${lead.phone}`} className="ml-auto inline-flex items-center gap-1 font-semibold px-3 py-1.5 rounded-full border" style={{ borderColor: HAIRLINE, color: INK }}><Phone size={12} /> Call</a>
-              <button type="button" disabled={markLost.isPending} onClick={() => { if (confirm(`Mark ${lead.name} as lost? Pending follow-ups stop.`)) markLost.mutate() }}
+              <button type="button" onClick={() => setClosingStage('lost')}
                 className="cursor-pointer font-semibold px-3 py-1.5 rounded-full" style={{ background: '#FEE2E2', color: '#B91C1C' }}>Mark lost</button>
             </div>
           )}
@@ -340,6 +329,7 @@ export default function FollowUpDrawer({ leadId, nextLeadId, snapshotAt, onClose
           )}
         </div>
       )}
+      {closingStage && <LeadStageDialog leadId={leadId} nextStatus={closingStage} onClose={() => setClosingStage('')} onSaved={() => { onChanged(); nextLeadId ? onAdvance(nextLeadId) : onClose() }} />}
     </SlideOver>
   )
 }

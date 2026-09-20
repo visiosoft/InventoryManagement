@@ -1,3 +1,4 @@
+import { recordLeadTransition } from '../services/leadTransitions.js';
 import { Router } from 'express';
 import { mediaFromRaw } from './whatsappMedia.js';
 import { wentQuiet, remindAt, PRESETS, isWaitingOnUs } from '../services/chatFollowUp.js';
@@ -787,7 +788,7 @@ router.post('/:phone/remind', async (req, res) => {
         // Only from a stage that is behind it: somebody at "quotation sent"
         // has got further than "following up" and must not be walked back.
         if (['new', 'contacted', 'contact_attempted'].includes(lead.status)) {
-            lead.status = 'follow_up_scheduled';
+            recordLeadTransition(lead, 'follow_up_scheduled', req.user.id);
         }
         const when = at.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Dubai' });
         lead.timeline.push({

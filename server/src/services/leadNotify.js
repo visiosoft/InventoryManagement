@@ -40,7 +40,7 @@ export async function pendingAssignmentBadge(ownerId) {
       owner: ownerId,
       assignmentNotifiedAt: { $ne: null },
       assignmentNotificationDismissedAt: null,
-      status: { $nin: ['won', 'lost'] },
+      status: { $nin: ['won', 'lost', 'already_customer'] },
    });
    return Math.min(count, MAX_ASSIGNMENT_BADGE);
 }

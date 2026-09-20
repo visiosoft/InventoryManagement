@@ -1,6 +1,7 @@
+import { transitionError, recordLeadTransition, applyTransitionDetails } from '../services/leadTransitions.js';
 import { Router } from 'express';
 import mongoose from 'mongoose';
-import { Customer, Contract, Document, Lead, Task, User, WhatsAppMessage } from '../models/index.js';
+import { Customer, Contract, Document, Lead, Quote, Task, User, WhatsAppMessage } from '../models/index.js';
 import { notifyLeadAssigned, pendingAssignmentBadge } from '../services/leadNotify.js';
 import { resolvePlaceholderNames } from '../services/leadNames.js';
 import { FOLLOW_UP_KINDS, runFollowUps, syncFollowUpTask, syncSiteVisitTask } from '../services/followUps.js';
@@ -8,8 +9,7 @@ import { applyOutcome, getFollowUpPlan, nextDateFor, sequenceState } from '../se
 import { summarise } from '../services/speedToLead.js';
 import { ATTEMPT_CHANNELS, ATTEMPT_OUTCOMES } from '../models/index.js';
 import { mailConfigured, sendMail } from '../services/mail.js';
-import { QUEUE_SINCE } from '../services/followUpQueue.js';
-import { buildFunnel } from '../services/leadFunnel.js';
+import { buildFunnel, buildForecast } from '../services/leadFunnel.js';
 import { scoreForLead, highIntentToday, intakeChecklist } from '../services/leadScore.js';
 import { summariseConversation } from '../services/conversationSummary.js';
 import { softDelete, softDeleteMany } from '../utils/softDelete.js';
@@ -80,6 +80,10 @@ function cleanBody(body) {
         followUpKind: FOLLOW_UP_KINDS.includes(body.followUpKind) ? body.followUpKind : 'date',
         followUpNote: String(body.followUpNote || '').slice(0, 500),
         siteVisitAt: body.siteVisitAt ? parseDate(body.siteVisitAt) : null,
+        expectedCloseAt: body.expectedCloseAt ? parseDate(body.expectedCloseAt) : null,
+        lossReason: String(body.lossReason || ''),
+        lossCompetitor: String(body.lossCompetitor || '').slice(0, 200),
+        reopenAt: body.reopenAt ? parseDate(body.reopenAt) : null,
     };
 }
 
@@ -174,8 +178,14 @@ function buildLeadListFilter(req) {
         }];
     }
 
-    const from = parseDate(req.query.from);
-    const to = parseDate(req.query.to);
+    if (req.query.nextAction === 'missing') filter.$and = [...(filter.$and || []), {
+        status: { $nin: ['won', 'lost', 'already_customer'] }, followUpAt: null, siteVisitAt: null,
+    }];
+    if (req.query.nextAction === 'revisit') filter.$and = [...(filter.$and || []), {
+        status: 'lost', reopenAt: { $ne: null, $lte: new Date() },
+    }];
+    const from = parseDate(/^\d{4}-\d{2}-\d{2}$/.test(String(req.query.from || '')) ? `${req.query.from}T00:00:00+04:00` : req.query.from);
+    const to = parseDate(/^\d{4}-\d{2}-\d{2}$/.test(String(req.query.to || '')) ? `${req.query.to}T23:59:59.999+04:00` : req.query.to);
     if (from || to) {
         filter.leadDateTime = {};
         if (from) filter.leadDateTime.$gte = from;
@@ -219,6 +229,14 @@ function buildLeadListFilter(req) {
     return filter;
 }
 
+async function latestLeadQuotes(leads) {
+    return leads.length ? Quote.aggregate([
+        { $match: { lead: { $in: leads.map(lead => lead._id) }, status: { $ne: 'rejected' }, deletedAt: null } },
+        { $sort: { createdAt: -1, _id: -1 } },
+        { $group: { _id: '$lead', lead: { $first: '$lead' }, total: { $first: '$total' }, quoteNo: { $first: '$quoteNo' }, status: { $first: '$status' } } },
+    ]) : [];
+}
+
 router.get('/', async (req, res) => {
     const filter = buildLeadListFilter(req);
     const page = Math.max(1, Number(req.query.page) || 1);
@@ -241,6 +259,13 @@ router.get('/', async (req, res) => {
     ]);
 
     await resolvePlaceholderNames(leads);
+    const quotes = new Map((await latestLeadQuotes(leads)).map(quote => [String(quote.lead), quote]));
+    for (const lead of leads) {
+        const quote = quotes.get(String(lead._id));
+        lead.quoteValue = quote?.total ?? null;
+        lead.quoteNo = quote?.quoteNo || null;
+        lead.quoteStatus = quote?.status || null;
+    }
 
     res.json({ data: leads, total, page, pages: Math.ceil(total / limit), limit });
 });
@@ -422,26 +447,19 @@ router.get('/waiting', async (req, res) => {
     }
 });
 
-/**
- * The pipeline, as a funnel — see services/leadFunnel.js for how it counts.
- *
- * Bounded to leads created since QUEUE_SINCE, the same cutoff the Follow-Ups
- * queue uses — older leads predate reliable tracking and would only put
- * noise in a view whose whole point is telling you where things actually
- * stand. Lives on the Follow-Ups page rather than a page of its own — leads
- * already have one home, and this is a different lens on the same data, not
- * a different feature.
- */
+/** Snapshot, observed transition history and quote value for the list's exact scope. */
 router.get('/funnel', async (req, res) => {
     try {
-        const filter = { createdAt: { $gte: QUEUE_SINCE } };
-        if (isSalesRep(req)) filter.owner = req.user.id;
+        const filter = buildLeadListFilter(req);
 
         const leads = await Lead.find(filter)
-            .select('status createdAt timeline.type timeline.at')
+            .select('status source owner lossReason lossCompetitor reopenAt expectedCloseAt createdAt leadDateTime timeline')
+            .populate('owner', 'name')
             .lean();
 
-        res.json({ ...buildFunnel(leads), since: QUEUE_SINCE });
+        const funnel = buildFunnel(leads);
+        const quotes = await latestLeadQuotes(leads);
+        res.json({ ...funnel, forecast: buildForecast(leads, quotes, funnel.history), since: req.query.from || null });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -469,7 +487,7 @@ router.get('/high-intent', async (req, res) => {
 });
 
 const SCORE_LEAD_FIELDS = 'phoneNormalized owner firstName fullName intendedStartDate leadScoreOverride leadScoreOverrideBy leadScoreOverrideAt leadScoreOverrideForLeadType '
-  + 'leadDateTime durationValue durationUnit lengthOfStayConfirmedAt storageSizeValue storageSizeUnit financiallyQualified locationPreference followUpAt followUpNote followUpNotifiedAt followUpPushedAt status';
+  + 'leadDateTime durationValue durationUnit lengthOfStayConfirmedAt storageSizeValue storageSizeUnit financiallyQualified locationPreference followUpAt followUpNote followUpNotifiedAt followUpPushedAt status timeline';
 
 /**
  * A score, plus who confirmed or corrected it and when — the same shape
@@ -698,7 +716,7 @@ router.post('/:id/follow-up-reminder', async (req, res) => {
         lead.followUpNotifiedAt = null;
         lead.followUpPushedAt = null;
         if (at && ['new', 'contacted', 'contact_attempted'].includes(lead.status)) {
-            lead.status = 'follow_up_scheduled';
+            recordLeadTransition(lead, 'follow_up_scheduled', req.user.id);
         }
         const userName = req.user.name || req.user.email || 'a colleague';
         lead.timeline.push({
@@ -956,214 +974,229 @@ router.post('/', async (req, res) => {
     if (existing) return res.status(409).json({ error: 'Lead already exists for this phone number' });
 
     const userName = req.user.name || req.user.email || 'user';
+    const stageError = transitionError({ owner: ownerId }, body.status, body);
+    if (stageError) return res.status(400).json({ error: stageError });
     const lead = await Lead.create({
         ...body,
         owner: ownerId,
         leadDateTime,
         phoneNormalized,
-        timeline: [{ type: 'created', text: `Lead created by ${userName}`, user: req.user.id }],
+        timeline: [{ type: 'created', toStatus: body.status, text: `Lead created by ${userName}`, user: req.user.id }],
     });
 
     res.status(201).json(await lead.populate('owner', 'name email'));
 });
 
 router.put('/:id', async (req, res) => {
-    const lead = await Lead.findById(req.params.id);
-    if (!lead) return res.status(404).json({ error: 'Lead not found' });
-    if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+    try {
+        const lead = await Lead.findById(req.params.id);
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
 
-    /* The standing note is the admin's, not the rep's.
-     *
-     * Checked against what was actually sent rather than the merged body,
-     * because the merge fills `notes` in from the stored lead — so every
-     * ordinary edit a rep makes carries the existing note along with it and
-     * would be refused if this looked at the merge. Only an attempt to change
-     * it counts. Reps have the timeline for their own running commentary. */
-    if (req.user?.role !== 'admin'
-        && req.body.notes !== undefined
-        && String(req.body.notes) !== String(lead.notes || '')) {
-        return res.status(403).json({ error: 'Only an admin can change the notes on a lead' });
+        /* The standing note is the admin's, not the rep's.
+         *
+         * Checked against what was actually sent rather than the merged body,
+         * because the merge fills `notes` in from the stored lead — so every
+         * ordinary edit a rep makes carries the existing note along with it and
+         * would be refused if this looked at the merge. Only an attempt to change
+         * it counts. Reps have the timeline for their own running commentary. */
+        if (req.user?.role !== 'admin'
+            && req.body.notes !== undefined
+            && String(req.body.notes) !== String(lead.notes || '')) {
+            return res.status(403).json({ error: 'Only an admin can change the notes on a lead' });
+        }
+
+        if ((req.body.expectedStatus !== undefined && req.body.expectedStatus !== lead.status)
+            || (req.body.expectedUpdatedAt && new Date(req.body.expectedUpdatedAt).getTime() !== lead.updatedAt?.getTime())) {
+            return res.status(409).json({ error: 'This lead changed since you opened it. Refresh and try again.' });
+        }
+        if (req.body.expectedCloseAt && !parseDate(req.body.expectedCloseAt)) return res.status(400).json({ error: 'Invalid expected close date' });
+        lead.$where = { status: lead.status, updatedAt: lead.updatedAt };
+        const body = cleanBody({ ...lead.toObject(), ...req.body });
+        if (!body.firstName && !body.fullName) return res.status(400).json({ error: 'First name is required' });
+        if (!body.phone) return res.status(400).json({ error: 'Phone is required' });
+        if (!ALLOWED_STATUS.has(body.status)) return res.status(400).json({ error: 'Invalid lead status' });
+        if (!ALLOWED_SOURCE.has(body.source)) return res.status(400).json({ error: 'Invalid lead source' });
+        if (!ALLOWED_DURATION_UNIT.has(body.durationUnit)) return res.status(400).json({ error: 'Invalid duration unit' });
+        if (!ALLOWED_TEMPERATURE.has(body.temperature)) return res.status(400).json({ error: 'Invalid temperature' });
+        if (!Number.isFinite(body.storageSizeValue) || body.storageSizeValue < -1) return res.status(400).json({ error: 'Invalid storage size' });
+        if (!Number.isFinite(body.durationValue) || body.durationValue < 1) return res.status(400).json({ error: 'Invalid duration value' });
+        if (!Number.isFinite(body.unitsNeeded) || body.unitsNeeded < 1) return res.status(400).json({ error: 'Invalid units needed' });
+
+        // A rep only ever owns their own. For anybody else an empty owner is a
+        // choice — "Unassigned" — not a missing value to fill in with the caller,
+        // which is what it used to become: toggling a tag on a lead nobody owned
+        // quietly handed it to the admin doing the toggling.
+        /* Only an edit that actually mentions the owner may change it.
+         *
+         * This read the merged body, which folds the stored lead in underneath —
+         * so it usually kept the owner, but anything that sent an explicit empty
+         * owner, or lost it in the merge, silently unassigned the lead. A chat
+         * assigned to Sales came back owned by nobody, and the only trace was
+         * "Lead updated" in the timeline. Leaving somebody unassigned is still
+         * possible; it just has to be said, which is what the menu's "Leave
+         * unassigned" sends. */
+        const ownerId = isSalesRep(req)
+            ? req.user.id
+            : (req.body.owner === undefined
+                ? (lead.owner ? String(lead.owner) : null)
+                : (body.owner || null));
+        if (ownerId && !(await validateOwner(ownerId))) return res.status(400).json({ error: 'Lead owner not found' });
+
+        // Handing a lead to somebody makes it new to them, whatever its age, so
+        // the highlight on their board comes back — and starts their clock. A lead
+        // moved to a second person gets a fresh two minutes: it is their window,
+        // not a continuation of somebody else's.
+        const handedOver = String(lead.owner || '') !== String(ownerId || '');
+        if (handedOver) {
+            lead.ownerSeenAt = null;
+            lead.assignedAt = ownerId ? new Date() : null;
+            lead.firstResponseAt = null;
+            // A person chose this one, and the record says who.
+            lead.assignedBy = ownerId ? req.user?.id ?? null : null;
+            lead.autoAssigned = false;
+        }
+
+        const phoneNormalized = normalizePhone(body.phone);
+        if (!phoneNormalized) return res.status(400).json({ error: 'Phone must contain at least one digit' });
+
+        const duplicate = await Lead.findOne({ phoneNormalized, _id: { $ne: lead._id } }).select('_id');
+        if (duplicate) return res.status(409).json({ error: 'Another lead already uses this phone number' });
+
+        lead.firstName = body.firstName;
+        lead.lastName = body.lastName;
+        lead.fullName = body.fullName;
+        lead.email = body.email;
+        lead.phone = body.phone;
+        lead.whatsappNo = body.whatsappNo;
+        lead.phoneNormalized = phoneNormalized;
+        lead.preferredContact = body.preferredContact;
+        if (lead.status !== body.status) {
+            const error = transitionError({ ...lead.toObject(), owner: ownerId }, body.status, req.body);
+            if (error) return res.status(400).json({ error });
+            recordLeadTransition(lead, body.status, req.user.id);
+            applyTransitionDetails(lead, body.status, req.body);
+            if (body.status === 'lost') Object.assign(lead.timeline[lead.timeline.length - 1], { lossReason: lead.lossReason, lossCompetitor: lead.lossCompetitor, reopenAt: lead.reopenAt });
+        }
+        if (body.status === 'lost' && req.body.lossReason !== undefined) {
+            const lossError = transitionError(lead, 'lost', req.body);
+            if (lossError) return res.status(400).json({ error: lossError });
+            applyTransitionDetails(lead, 'lost', req.body);
+        }
+        lead.expectedCloseAt = body.expectedCloseAt;
+        lead.source = body.source;
+        lead.leadDateTime = parseDate(body.leadDateTime) || lead.leadDateTime;
+        lead.storageSizeValue = body.storageSizeValue;
+        lead.storageSizeUnit = body.storageSizeUnit;
+        lead.durationValue = body.durationValue;
+        lead.durationUnit = body.durationUnit;
+        lead.owner = ownerId;
+        lead.unitsNeeded = body.unitsNeeded;
+        lead.notes = body.notes;
+        lead.temperature = body.temperature;
+        lead.tags = body.tags;
+        const before = { followUpAt: lead.followUpAt };
+
+        // Moving a follow-up re-arms it. Without this a lead reminded once in
+        // August could be rescheduled for September and never chased again,
+        // because followUpNotifiedAt would still be stamped.
+        const sameDay = (a, b) => {
+            const x = a ? new Date(a).getTime() : 0;
+            const y = b ? new Date(b).getTime() : 0;
+            return x === y;
+        };
+        if (!sameDay(lead.followUpAt, body.followUpAt) || lead.followUpKind !== body.followUpKind) {
+            lead.followUpNotifiedAt = null;
+            lead.followUpPushedAt = null;
+        }
+        lead.followUpAt = body.followUpAt;
+        lead.followUpKind = body.followUpKind;
+        lead.followUpNote = body.followUpNote;
+
+        /* A copy on the profile.
+         *
+         * The date itself moves whenever it is rescheduled, so on its own it can
+         * never answer "what did we agree, and when did we agree it". A timeline
+         * entry is the record that stays put. */
+        if (body.followUpAt && !sameDay(before.followUpAt, body.followUpAt)) {
+            const when = new Date(body.followUpAt).toLocaleString('en-GB', {
+                day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+            });
+            lead.timeline.push({
+                type: 'note',
+                text: `Follow-up set for ${when}${body.followUpNote ? ` — ${body.followUpNote}` : ''}`,
+                user: req.user.id,
+            });
+        }
+        lead.siteVisitAt = body.siteVisitAt;
+        const userName = req.user.name || req.user.email || 'user';
+        lead.timeline.push({ type: 'updated', text: `Lead updated by ${userName}`, user: req.user.id });
+
+        // Both tasks stand for their dates from the moment they are set, so the
+        // rep can see what is coming rather than being told on the day.
+        await lead.save();
+        lead.$where = undefined;
+        await syncFollowUpTask(lead);
+        await syncSiteVisitTask(lead);
+        if (lead.isModified()) await lead.save();
+
+        /* Tell the person who has just been given it.
+         *
+         * Only on an actual hand-off, and never to somebody handing a lead to
+         * themselves — a notification about your own click is noise. Not awaited:
+         * the answer to this request should not wait on a mail server. */
+        if (handedOver && ownerId && String(ownerId) !== String(req.user?.id || '')) {
+            notifyLeadAssigned({
+                lead,
+                ownerId,
+                assignedByName: req.user?.name || req.user?.email || '',
+            }).catch((e) => console.error('[Leads] notify failed:', e.message));
+        }
+
+        res.json(await lead.populate('owner', 'name email'));
+    } catch (e) {
+        const conflict = ['DocumentNotFoundError', 'VersionError'].includes(e.name);
+        res.status(conflict ? 409 : 500).json({ error: conflict ? 'This lead changed while saving. Refresh and try again.' : e.message });
     }
-
-    const body = cleanBody({ ...lead.toObject(), ...req.body });
-    if (!body.firstName && !body.fullName) return res.status(400).json({ error: 'First name is required' });
-    if (!body.phone) return res.status(400).json({ error: 'Phone is required' });
-    if (!ALLOWED_STATUS.has(body.status)) return res.status(400).json({ error: 'Invalid lead status' });
-    if (!ALLOWED_SOURCE.has(body.source)) return res.status(400).json({ error: 'Invalid lead source' });
-    if (!ALLOWED_DURATION_UNIT.has(body.durationUnit)) return res.status(400).json({ error: 'Invalid duration unit' });
-    if (!ALLOWED_TEMPERATURE.has(body.temperature)) return res.status(400).json({ error: 'Invalid temperature' });
-    if (!Number.isFinite(body.storageSizeValue) || body.storageSizeValue < -1) return res.status(400).json({ error: 'Invalid storage size' });
-    if (!Number.isFinite(body.durationValue) || body.durationValue < 1) return res.status(400).json({ error: 'Invalid duration value' });
-    if (!Number.isFinite(body.unitsNeeded) || body.unitsNeeded < 1) return res.status(400).json({ error: 'Invalid units needed' });
-
-    // A rep only ever owns their own. For anybody else an empty owner is a
-    // choice — "Unassigned" — not a missing value to fill in with the caller,
-    // which is what it used to become: toggling a tag on a lead nobody owned
-    // quietly handed it to the admin doing the toggling.
-    /* Only an edit that actually mentions the owner may change it.
-     *
-     * This read the merged body, which folds the stored lead in underneath —
-     * so it usually kept the owner, but anything that sent an explicit empty
-     * owner, or lost it in the merge, silently unassigned the lead. A chat
-     * assigned to Sales came back owned by nobody, and the only trace was
-     * "Lead updated" in the timeline. Leaving somebody unassigned is still
-     * possible; it just has to be said, which is what the menu's "Leave
-     * unassigned" sends. */
-    const ownerId = isSalesRep(req)
-        ? req.user.id
-        : (req.body.owner === undefined
-            ? (lead.owner ? String(lead.owner) : null)
-            : (body.owner || null));
-    if (ownerId && !(await validateOwner(ownerId))) return res.status(400).json({ error: 'Lead owner not found' });
-
-    // Handing a lead to somebody makes it new to them, whatever its age, so
-    // the highlight on their board comes back — and starts their clock. A lead
-    // moved to a second person gets a fresh two minutes: it is their window,
-    // not a continuation of somebody else's.
-    const handedOver = String(lead.owner || '') !== String(ownerId || '');
-    if (handedOver) {
-        lead.ownerSeenAt = null;
-        lead.assignedAt = ownerId ? new Date() : null;
-        lead.firstResponseAt = null;
-        // A person chose this one, and the record says who.
-        lead.assignedBy = ownerId ? req.user?.id ?? null : null;
-        lead.autoAssigned = false;
-    }
-
-    const phoneNormalized = normalizePhone(body.phone);
-    if (!phoneNormalized) return res.status(400).json({ error: 'Phone must contain at least one digit' });
-
-    const duplicate = await Lead.findOne({ phoneNormalized, _id: { $ne: lead._id } }).select('_id');
-    if (duplicate) return res.status(409).json({ error: 'Another lead already uses this phone number' });
-
-    lead.firstName = body.firstName;
-    lead.lastName = body.lastName;
-    lead.fullName = body.fullName;
-    lead.email = body.email;
-    lead.phone = body.phone;
-    lead.whatsappNo = body.whatsappNo;
-    lead.phoneNormalized = phoneNormalized;
-    lead.preferredContact = body.preferredContact;
-    lead.status = body.status;
-    lead.source = body.source;
-    lead.leadDateTime = parseDate(body.leadDateTime) || lead.leadDateTime;
-    lead.storageSizeValue = body.storageSizeValue;
-    lead.storageSizeUnit = body.storageSizeUnit;
-    lead.durationValue = body.durationValue;
-    lead.durationUnit = body.durationUnit;
-    lead.owner = ownerId;
-    lead.unitsNeeded = body.unitsNeeded;
-    lead.notes = body.notes;
-    lead.temperature = body.temperature;
-    lead.tags = body.tags;
-    const before = { followUpAt: lead.followUpAt };
-
-    // Moving a follow-up re-arms it. Without this a lead reminded once in
-    // August could be rescheduled for September and never chased again,
-    // because followUpNotifiedAt would still be stamped.
-    const sameDay = (a, b) => {
-        const x = a ? new Date(a).getTime() : 0;
-        const y = b ? new Date(b).getTime() : 0;
-        return x === y;
-    };
-    if (!sameDay(lead.followUpAt, body.followUpAt) || lead.followUpKind !== body.followUpKind) {
-        lead.followUpNotifiedAt = null;
-        lead.followUpPushedAt = null;
-    }
-    lead.followUpAt = body.followUpAt;
-    lead.followUpKind = body.followUpKind;
-    lead.followUpNote = body.followUpNote;
-
-    /* A copy on the profile.
-     *
-     * The date itself moves whenever it is rescheduled, so on its own it can
-     * never answer "what did we agree, and when did we agree it". A timeline
-     * entry is the record that stays put. */
-    if (body.followUpAt && !sameDay(before.followUpAt, body.followUpAt)) {
-        const when = new Date(body.followUpAt).toLocaleString('en-GB', {
-            day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
-        });
-        lead.timeline.push({
-            type: 'note',
-            text: `Follow-up set for ${when}${body.followUpNote ? ` — ${body.followUpNote}` : ''}`,
-            user: req.user.id,
-        });
-    }
-    lead.siteVisitAt = body.siteVisitAt;
-    const userName = req.user.name || req.user.email || 'user';
-    lead.timeline.push({ type: 'updated', text: `Lead updated by ${userName}`, user: req.user.id });
-
-    // Both tasks stand for their dates from the moment they are set, so the
-    // rep can see what is coming rather than being told on the day.
-    await syncFollowUpTask(lead);
-    await syncSiteVisitTask(lead);
-
-    await lead.save();
-
-    /* Tell the person who has just been given it.
-     *
-     * Only on an actual hand-off, and never to somebody handing a lead to
-     * themselves — a notification about your own click is noise. Not awaited:
-     * the answer to this request should not wait on a mail server. */
-    if (handedOver && ownerId && String(ownerId) !== String(req.user?.id || '')) {
-        notifyLeadAssigned({
-            lead,
-            ownerId,
-            assignedByName: req.user?.name || req.user?.email || '',
-        }).catch((e) => console.error('[Leads] notify failed:', e.message));
-    }
-
-    res.json(await lead.populate('owner', 'name email'));
 });
 
 router.patch('/:id/status', async (req, res) => {
-    const status = String(req.body?.status || '');
-    if (!ALLOWED_STATUS.has(status)) return res.status(400).json({ error: 'Invalid lead status' });
-
-    const lead = await Lead.findById(req.params.id);
-    if (!lead) return res.status(404).json({ error: 'Lead not found' });
-    if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
-
-    lead.status = status;
-
-    // The note belongs to the change, not beside it. Two timeline rows for one
-    // action read as two things happening, and their order was decided by
-    // insertion rather than by what actually came first.
-    // Moving the stage is what somebody does after trying to reach them, so
-    // it answers the clock. Written once and never moved: a later action must
-    // not make the first response look slower than it was.
-    if (!lead.firstResponseAt) lead.firstResponseAt = new Date();
-
-    const comment = String(req.body?.comment || '').trim();
-    lead.timeline.push({
-        type: 'status_changed',
-        text: comment
-            ? `Status changed to ${status} — ${comment.slice(0, 2000)}`
-            : `Status changed to ${status}`,
-        user: req.user.id,
-    });
-
-    // Moving to Contact Attempted by hand raises the first chase, but only
-    // when nothing is already scheduled and no attempt has been logged —
-    // otherwise the sequence owns this and would be duplicated here.
-    if (status === 'contact_attempted' && lead.owner && !lead.followUpAt && !(lead.attempts || []).length) {
-        const plan = await getFollowUpPlan();
-        const day = nextDateFor(plan, 0);
-        if (day) {
-            lead.followUpAt = new Date(`${day}T00:00:00.000Z`);
-            lead.followUpKind = 'date';
-            lead.followUpNotifiedAt = null;
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Bad lead id' });
+        const status = String(req.body?.status || '');
+        if (!ALLOWED_STATUS.has(status)) return res.status(400).json({ error: 'Invalid lead status' });
+        const lead = await Lead.findById(req.params.id);
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        if (isSalesRep(req) && !ownsLead(req, lead)) return res.status(403).json({ error: 'Not your lead' });
+        if ((req.body.expectedStatus !== undefined && req.body.expectedStatus !== lead.status)
+            || (req.body.expectedUpdatedAt && new Date(req.body.expectedUpdatedAt).getTime() !== lead.updatedAt?.getTime())) {
+            return res.status(409).json({ error: 'This lead changed since you opened it. Refresh and try again.' });
         }
+        if (lead.status === status) return res.json(await lead.populate('owner', 'name email'));
+        const error = transitionError(lead, status, req.body);
+        if (error) return res.status(400).json({ error });
+        // Guard the database write too: a second request may race this one.
+        lead.$where = { status: lead.status, updatedAt: lead.updatedAt };
+        recordLeadTransition(lead, status, req.user.id, req.body.comment);
+        applyTransitionDetails(lead, status, req.body);
+        if (status === 'lost') Object.assign(lead.timeline[lead.timeline.length - 1], {
+            lossReason: lead.lossReason, lossCompetitor: lead.lossCompetitor, reopenAt: lead.reopenAt,
+        });
+        if (status === 'contact_attempted' && lead.owner && !lead.followUpAt && !(lead.attempts || []).length) {
+            const plan = await getFollowUpPlan();
+            const day = nextDateFor(plan, 0);
+            if (day) { lead.followUpAt = new Date(`${day}T00:00:00.000Z`); lead.followUpKind = 'date'; lead.followUpNotifiedAt = null; }
+        }
+        await lead.save();
+        lead.$where = undefined;
+        await syncFollowUpTask(lead);
+        await syncSiteVisitTask(lead);
+        if (lead.isModified()) await lead.save();
+        res.json(await lead.populate('owner', 'name email'));
+    } catch (e) {
+        const conflict = ['DocumentNotFoundError', 'VersionError'].includes(e.name);
+        res.status(conflict ? 409 : 500).json({ error: conflict ? 'This lead changed while saving. Refresh and try again.' : e.message });
     }
-
-    // Won or lost ends the chasing, so the standing tasks go with it rather
-    // than sitting on somebody's board for a closed lead.
-    await syncFollowUpTask(lead);
-    await syncSiteVisitTask(lead);
-
-    await lead.save();
-
-    res.json(await lead.populate('owner', 'name email'));
 });
 
 /**
@@ -1222,7 +1255,7 @@ router.post('/:id/attempts', async (req, res) => {
 
         // A lead being chased is a lead somebody has tried to reach, so the
         // stage catches up by itself rather than waiting to be set by hand.
-        if (lead.status === 'new') lead.status = 'contact_attempted';
+        if (lead.status === 'new') recordLeadTransition(lead, 'contact_attempted', req.user.id);
         if (!lead.firstResponseAt) lead.firstResponseAt = new Date();
 
         await syncFollowUpTask(lead);
@@ -1374,6 +1407,7 @@ router.post('/:id/send-email', async (req, res) => {
         return res.status(500).json({ error: err.message || 'Failed to send email' });
     }
 
+    if (!lead.firstResponseAt) lead.firstResponseAt = new Date();
     const userName = req.user.name || req.user.email || 'user';
     lead.timeline.push({ type: 'email', text: `Emailed: "${subject}" by ${userName}`, user: req.user.id });
     await lead.save();

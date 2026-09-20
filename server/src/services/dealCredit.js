@@ -1,3 +1,4 @@
+import { recordLeadTransition } from './leadTransitions.js';
 /**
  * Who closed a deal, and which lead it came from.
  *
@@ -109,7 +110,7 @@ export async function markLeadWon({ leadId, contractNo, userId }) {
       if (!lead) return { changed: false, reason: 'lead not found' };
       if (lead.status === 'won') return { changed: false, reason: 'already won' };
 
-      lead.status = 'won';
+      recordLeadTransition(lead, 'won', userId);
       lead.timeline = lead.timeline || [];
       lead.timeline.push({
          type: 'updated',

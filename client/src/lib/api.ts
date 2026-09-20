@@ -66,7 +66,21 @@ export function apiError(err: unknown): string {
   return err instanceof Error ? err.message : 'Something went wrong'
 }
 
+export type LeadTransitionDetails = {
+  expectedStatus?: string
+  expectedUpdatedAt?: string
+  lossReason?: string
+  lossCompetitor?: string
+  reopenAt?: string | null
+  followUpAt?: string | null
+  siteVisitAt?: string | null
+  followUpNote?: string
+}
+
 export type LeadQuery = {
+  nextAction?: string
+  chase?: string
+  attemptBy?: string
   search?: string
   status?: string
   source?: string
@@ -95,6 +109,7 @@ export const unitTypeApi = {
 }
 
 export const leadApi = {
+  get: (id: string) => api.get<Lead>(`/leads/${id}`).then(r => r.data),
   list: (params: LeadQuery) => api.get<LeadPage>('/leads', { params }).then((r) => r.data),
   /** Every lead id matching the given filter (the same ones GET /leads
    *  itself takes — status/source/owner/search/from/to/chase/attemptBy),
@@ -109,7 +124,7 @@ export const leadApi = {
     api.get<{ ids: string[] }>('/leads/nav-order', { params }).then((r) => r.data.ids),
   create: (body: Partial<Lead>) => api.post<Lead>('/leads', body).then((r) => r.data),
   update: (id: string, body: Partial<Lead>) => api.put<Lead>(`/leads/${id}`, body).then((r) => r.data),
-  updateStatus: (id: string, status: string, comment?: string) => api.patch<Lead>(`/leads/${id}/status`, { status, comment }).then((r) => r.data),
+  updateStatus: (id: string, status: string, comment?: string, details: LeadTransitionDetails = {}) => api.patch<Lead>(`/leads/${id}/status`, { ...details, status, comment }).then((r) => r.data),
   convertToCustomer: (id: string) =>
     api
       .post<{ ok: true; created: boolean; customer: Customer; lead: Lead }>(`/leads/${id}/convert`)
@@ -118,7 +133,7 @@ export const leadApi = {
   /** The pipeline as a funnel: how many leads sit at each stage right now,
    *  and how long they've been there. Server: routes/leads.js's GET /funnel,
    *  logic in services/leadFunnel.js. */
-  funnel: () => api.get<LeadFunnel>('/leads/funnel').then((r) => r.data),
+  funnel: (params?: LeadQuery) => api.get<LeadFunnel>('/leads/funnel', { params }).then((r) => r.data),
   /** How good a lead this is — see services/leadScore.js. Read-only. */
   score: (id: string) => api.get<LeadScore>(`/leads/${id}/score`).then((r) => r.data),
   /** A rep's own confirmation or correction of the score. `decision: ''`
@@ -228,7 +243,10 @@ export interface LeadFunnel {
   total: number
   lost: number
   alreadyCustomer: number
-  since: string
+  since: string | null
+  history: { tracked: number; untracked: number; medianDaysToWin: number | null; stages: { key: string; reached: number; closed: number; wins: number; winRate: number | null }[] }
+  losses: { reason: string; source: string; owner: string; ownerId: string; count: number }[]
+  forecast: { quotedValue: number; weightedValue: number; unweightedValue: number; quotedLeads: number; withoutQuote: number; missingCloseDate: number; minimumSample: number }
   stages: LeadFunnelStage[]
 }
 

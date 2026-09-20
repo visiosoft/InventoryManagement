@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildFunnel, median, FUNNEL_STAGES } from './leadFunnel.js';
+import { buildFunnel, buildHistory, buildForecast, median, FUNNEL_STAGES } from './leadFunnel.js';
 
 const NOW = new Date('2026-09-10T10:00:00.000Z');
 const daysAgo = (d) => new Date(NOW.getTime() - d * 864e5);
@@ -76,4 +76,51 @@ test('the stages are declared in the pipeline\'s actual order', () => {
         'new', 'contact_attempted', 'contacted', 'site_visit_scheduled',
         'follow_up_scheduled', 'quotation_sent', 'won',
     ]);
+});
+
+test('history counts observed entries once and does not invent skipped stages or old wins', () => {
+    const leads = [{ status: 'won', createdAt: daysAgo(10), timeline: [
+        { type: 'status_changed', toStatus: 'contacted', at: daysAgo(5) },
+        { type: 'status_changed', toStatus: 'contacted', at: daysAgo(4) },
+        { type: 'status_changed', toStatus: 'won', at: daysAgo(2) },
+    ] }, { status: 'won', timeline: [{ type: 'status_changed', at: daysAgo(2) }] }];
+    const history = buildHistory(leads);
+    assert.equal(history.tracked, 1);
+    assert.equal(history.untracked, 1);
+    assert.equal(history.stages.find(s => s.key === 'contacted').reached, 1);
+    assert.equal(history.stages.find(s => s.key === 'quotation_sent').reached, 0);
+    assert.equal(history.stages.find(s => s.key === 'contacted').winRate, 100);
+    assert.equal(history.medianDaysToWin, 8);
+});
+
+test('reopened and existing-customer leads are excluded from closed win-rate denominators', () => {
+    const history = buildHistory(['contacted', 'already_customer'].map(status => ({ status, timeline: [
+        { type: 'status_changed', toStatus: 'contacted', at: NOW },
+        { type: 'status_changed', toStatus: 'lost', at: NOW },
+    ] })));
+    assert.equal(history.stages.find(s => s.key === 'contacted').closed, 0);
+    assert.equal(history.stages.find(s => s.key === 'contacted').winRate, null);
+});
+
+test('losses retain separate owner/source dimensions and label missing legacy reasons', () => {
+    const funnel = buildFunnel([
+        { status: 'lost', source: 'whatsapp', owner: { _id: 'a', name: 'Rep' }, lossReason: 'price' },
+        { status: 'lost', source: 'manual', owner: { _id: 'a', name: 'Rep' } },
+    ]);
+    assert.equal(funnel.losses.length, 2);
+    assert.equal(funnel.losses[1].reason, 'not_recorded');
+});
+
+test('forecast never invents probabilities or counts closed deal values', () => {
+    const forecast = buildForecast([
+        { _id: 'a', status: 'contacted', expectedCloseAt: NOW },
+        { _id: 'b', status: 'new' }, { _id: 'c', status: 'won' }, { _id: 'd', status: 'new' },
+    ], [{ lead: 'a', total: 1000 }, { lead: 'b', total: 500 }, { lead: 'c', total: 9000 }], {
+        stages: [{ key: 'contacted', closed: 5, wins: 2 }, { key: 'new', closed: 4, wins: 4 }],
+    });
+    assert.equal(forecast.quotedValue, 1500);
+    assert.equal(forecast.weightedValue, 400);
+    assert.equal(forecast.unweightedValue, 500);
+    assert.equal(forecast.withoutQuote, 1);
+    assert.equal(forecast.missingCloseDate, 2);
 });

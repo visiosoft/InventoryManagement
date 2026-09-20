@@ -57,7 +57,7 @@ export interface Customer {
   createdAt?: string
 }
 
-export type LeadStatus = 'new' | 'contact_attempted' | 'contacted' | 'site_visit_scheduled' | 'follow_up_scheduled' | 'quotation_sent' | 'won' | 'lost'
+export type LeadStatus = 'new' | 'contact_attempted' | 'contacted' | 'site_visit_scheduled' | 'follow_up_scheduled' | 'quotation_sent' | 'won' | 'lost' | 'already_customer'
 export type LeadTemperature = '' | 'hot' | 'warm' | 'cold'
 export type LeadSource = 'manual' | 'whatsapp' | 'referral' | 'walk_in' | 'other'
 export type DurationUnit = 'week' | 'month'
@@ -71,6 +71,11 @@ export interface LeadComment {
 }
 
 export interface LeadTimelineEntry {
+  fromStatus?: LeadStatus
+  toStatus?: LeadStatus
+  lossReason?: string
+  lossCompetitor?: string
+  reopenAt?: string | null
   _id?: string
   at: string
   type: string
@@ -79,6 +84,16 @@ export interface LeadTimelineEntry {
 }
 
 export interface Lead {
+  quoteValue?: number | null
+  quoteNo?: string | null
+  quoteStatus?: string | null
+  updatedAt?: string
+  lossReason?: string
+  lossCompetitor?: string
+  reopenAt?: string | null
+  expectedCloseAt?: string | null
+  followUpNote?: string
+
   /** When the owner first opened it. Null means it has not been looked at yet. */
   ownerSeenAt?: string | null
   /** How warm they are — kept apart from the status, which says where they are. */

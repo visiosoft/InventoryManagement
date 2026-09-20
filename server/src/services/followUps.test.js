@@ -171,3 +171,7 @@ test('the decision task counts one attempt in the singular', () => {
 test('a hot lead is still worth deciding on first', () => {
   assert.equal(exhaustedTaskFor(lead({ temperature: 'hot', attempts: [] })).priority, 'high');
 });
+
+test('existing customers do not receive follow-up reminders', () => {
+  assert.equal(isDue({ status: 'already_customer', owner: 'rep', followUpAt: '2026-01-01T10:00:00Z' }, '2026-09-20'), false);
+});

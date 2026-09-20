@@ -59,7 +59,7 @@ export function notifyDayFor(followUpAt, kind = 'date') {
 export function isDue(lead = {}, todayKey = dayKeyFor()) {
   if (!lead.followUpAt) return false;
   if (lead.followUpNotifiedAt) return false;
-  if (lead.status === 'won' || lead.status === 'lost') return false;
+  if (['won', 'lost', 'already_customer'].includes(lead.status)) return false;
   if (!lead.owner) return false;
   const day = notifyDayFor(lead.followUpAt, lead.followUpKind);
   return Boolean(day) && day <= todayKey;
@@ -152,7 +152,7 @@ function maxDay(a, b) {
 export async function syncSiteVisitTask(lead) {
   const existing = lead.siteVisitTaskId ? await Task.findById(lead.siteVisitTaskId) : null;
 
-  if (!lead.siteVisitAt || !lead.owner || lead.status === 'won' || lead.status === 'lost') {
+  if (!lead.siteVisitAt || !lead.owner || ['won', 'lost', 'already_customer'].includes(lead.status)) {
     if (existing && existing.status === 'todo') await softDelete(existing, null);
     lead.siteVisitTaskId = null;
     return null;
@@ -203,7 +203,7 @@ export async function syncSiteVisitTask(lead) {
 export async function syncFollowUpTask(lead) {
   const existing = lead.followUpTaskId ? await Task.findById(lead.followUpTaskId) : null;
 
-  const closed = lead.status === 'won' || lead.status === 'lost';
+  const closed = ['won', 'lost', 'already_customer'].includes(lead.status);
 
   // Nothing to remind anybody about any more.
   if ((!lead.followUpAt && !lead.sequenceExhaustedAt) || !lead.owner || closed) {

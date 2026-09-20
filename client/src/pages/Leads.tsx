@@ -1,3 +1,5 @@
+import { stageDetails } from '../lib/leadTransitions'
+import LeadStageDialog, { LeadStageFields } from '../components/LeadStageDialog'
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
@@ -6,8 +8,10 @@ import { api, apiError, leadApi, type LeadPage } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { fromDubaiDatetimeLocal, toDubaiDatetimeLocal } from '../lib/timezone'
 import WaitingStrip from '../components/WaitingStrip'
+import LeadPipeline from '../components/LeadPipeline'
+import PipelineFunnel from '../components/PipelineFunnel'
 import type { Lead, LeadSource, LeadStatus } from '../lib/types'
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Textarea, leadStatusTone, statusLabel } from '../components/ui'
+import { Button, Card, EmptyState, Field, Input, Modal, Select, Spinner, Textarea, statusLabel } from '../components/ui'
 import { formatDate, formatDateTime } from '../lib/utils'
 
 const HEADING = { fontFamily: "'Bricolage Grotesque', sans-serif", letterSpacing: '-0.02em' } as const
@@ -82,7 +86,7 @@ const LEADS_CSS = `
 }
 `
 
-const LEAD_STATUSES: LeadStatus[] = ['new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost']
+const LEAD_STATUSES: LeadStatus[] = ['new', 'contact_attempted', 'contacted', 'site_visit_scheduled', 'follow_up_scheduled', 'quotation_sent', 'won', 'lost', 'already_customer']
 const LEAD_SOURCES: LeadSource[] = ['manual', 'whatsapp', 'referral', 'walk_in', 'other']
 
 type WorkloadRow = { _id: string; name: string; count: number }
@@ -121,12 +125,17 @@ function LeadForm({
     users: { _id: string; name: string; email: string }[]
     onSubmit: (body: Record<string, unknown>) => void
 }) {
+    const [formStatus, setFormStatus] = useState(initial?.status || 'new')
     function submit(e: FormEvent<HTMLFormElement>) {
         e.preventDefault()
         const f = new FormData(e.currentTarget)
         const firstName = String(f.get('firstName') || '')
         const lastName = String(f.get('lastName') || '')
         onSubmit({
+            ...stageDetails(f),
+            expectedStatus: initial?.status,
+            expectedUpdatedAt: initial?.updatedAt,
+            expectedCloseAt: fromDatetimeLocal(f.get('expectedCloseAt')) || null,
             firstName,
             lastName,
             fullName: [firstName, lastName].filter(Boolean).join(' '),
@@ -199,9 +208,11 @@ function LeadForm({
                 </Field>
             </div>
 
+            <Field label="Expected close date (Dubai)"><Input name="expectedCloseAt" type="datetime-local" defaultValue={toDatetimeLocal(initial?.expectedCloseAt || undefined)} /></Field>
+            <LeadStageFields status={formStatus} lead={initial} />
             <div className="grid grid-cols-2 gap-3">
                 <Field label="Status">
-                    <Select name="status" defaultValue={initial?.status || 'new'}>
+                    <Select name="status" value={formStatus} onChange={e => setFormStatus(e.target.value as LeadStatus)}>
                         {LEAD_STATUSES.map((s) => (
                             <option key={s} value={s}>
                                 {statusLabel(s)}
@@ -592,13 +603,16 @@ function ContactDetailPanel({ row, onUpdateLead }: { row: WhatsAppLeadRow; onUpd
 
 export default function Leads() {
     const qc = useQueryClient()
+    const invalidateLeadViews = () => Promise.all(['leads', 'lead-stats', 'lead-funnel', 'leads-nav-order', 'person', 'lead-stage'].map(key => qc.invalidateQueries({ queryKey: [key] })))
     const navigate = useNavigate()
 
+    const [view, setView] = useState<'board' | 'list'>('board')
     const [search, setSearch] = useState('')
     const [status, setStatus] = useState('')
     const [source, setSource] = useState('')
     const [owner, setOwner] = useState('')
     // Where the chase has got to, and who did it.
+    const [nextAction, setNextAction] = useState('')
     const [chase, setChase] = useState('')
     const [attemptBy, setAttemptBy] = useState('')
     const [from, setFrom] = useState('')
@@ -611,7 +625,6 @@ export default function Leads() {
     const [error, setError] = useState('')
     const [importResult, setImportResult] = useState<ImportResult | null>(null)
     const [pendingChange, setPendingChange] = useState<{ lead: Lead; newStatus: LeadStatus } | null>(null)
-    const [changeComment, setChangeComment] = useState('')
     const fileInputRef = useRef<HTMLInputElement>(null)
     const [waSearch, setWaSearch] = useState('')
     const [waLabel, setWaLabel] = useState('')
@@ -714,6 +727,7 @@ export default function Leads() {
             status: status || undefined,
             source: source || undefined,
             owner: owner || undefined,
+            nextAction: nextAction || undefined,
             chase: chase || undefined,
             attemptBy: attemptBy || undefined,
             from: from || undefined,
@@ -721,11 +735,11 @@ export default function Leads() {
             page,
             limit,
         }),
-        [search, status, source, owner, chase, attemptBy, from, to, page, limit]
+        [search, status, source, owner, nextAction, chase, attemptBy, from, to, page, limit]
     )
 
     // Back to page 1 whenever a filter changes
-    useEffect(() => { setPage(1) }, [search, status, source, owner, chase, attemptBy, from, to, limit])
+    useEffect(() => { setPage(1) }, [search, status, source, owner, nextAction, chase, attemptBy, from, to, limit])
 
     const { data: leadsPage, isLoading } = useQuery<LeadPage>({
         queryKey: ['leads', queryParams],
@@ -742,12 +756,13 @@ export default function Leads() {
             status: status || undefined,
             source: source || undefined,
             owner: owner || undefined,
+            nextAction: nextAction || undefined,
             chase: chase || undefined,
             attemptBy: attemptBy || undefined,
             from: from || undefined,
             to: to || undefined,
         }),
-        [search, status, source, owner, chase, attemptBy, from, to]
+        [search, status, source, owner, nextAction, chase, attemptBy, from, to]
     )
     const { data: navOrderIds } = useQuery({
         queryKey: ['leads-nav-order', navFilterParams],
@@ -784,8 +799,7 @@ export default function Leads() {
             for (const id of selected) await leadApi.update(id, { owner: ownerId } as unknown as Partial<Lead>)
         },
         onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['leads'] })
-            qc.invalidateQueries({ queryKey: ['lead-stats'] })
+            void invalidateLeadViews()
             setSelected([])
             setError('')
         },
@@ -799,8 +813,7 @@ export default function Leads() {
             for (const id of selected) await leadApi.remove(id)
         },
         onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['leads'] })
-            qc.invalidateQueries({ queryKey: ['lead-stats'] })
+            void invalidateLeadViews()
             setSelected([])
             setError('')
         },
@@ -810,7 +823,7 @@ export default function Leads() {
     const createLead = useMutation({
         mutationFn: (body: Record<string, unknown>) => leadApi.create(body as Partial<Lead>),
         onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['leads'] })
+            void invalidateLeadViews()
             setAdding(false)
             setError('')
         },
@@ -820,30 +833,17 @@ export default function Leads() {
     const updateLead = useMutation({
         mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) => leadApi.update(id, body as Partial<Lead>),
         onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['leads'] })
-            qc.invalidateQueries({ queryKey: ['lead-stats'] })
+            void invalidateLeadViews()
             setEditing(null)
             setError('')
         },
         onError: (e) => setError(apiError(e)),
     })
 
-    const updateStatus = useMutation({
-        mutationFn: ({ id, nextStatus, comment }: { id: string; nextStatus: LeadStatus; comment?: string }) =>
-            leadApi.updateStatus(id, nextStatus, comment),
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['leads'] })
-            qc.invalidateQueries({ queryKey: ['lead-stats'] })
-            setPendingChange(null)
-            setChangeComment('')
-        },
-    })
-
     const removeLead = useMutation({
         mutationFn: (id: string) => leadApi.remove(id),
         onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['leads'] })
-            qc.invalidateQueries({ queryKey: ['lead-stats'] })
+            void invalidateLeadViews()
             setDrawerId(null)
         },
     })
@@ -852,7 +852,7 @@ export default function Leads() {
         mutationFn: (contacts: ContactRow[]) =>
             api.post<ImportResult>('/leads/import/bulk', { contacts }).then(r => r.data),
         onSuccess: (data) => {
-            qc.invalidateQueries({ queryKey: ['leads'] })
+            void invalidateLeadViews()
             setImportResult(data)
         },
         onError: (e) => setError(apiError(e)),
@@ -987,6 +987,7 @@ export default function Leads() {
         quotation_sent: { bg: '#F3E8FF', fg: '#7C3AED' },
         won: { bg: '#D1FAE5', fg: '#065F46' },
         lost: { bg: '#FEE2E2', fg: '#991B1B' },
+        already_customer: { bg: '#F1F0F4', fg: '#5C5568' },
     }
 
     function getInitials(name: string) {
@@ -1005,7 +1006,7 @@ export default function Leads() {
         return `${Math.floor(days / 30)}mo ago`
     }
 
-    const isFiltered = !!(search.trim() || status || source || owner || chase || attemptBy || from || to)
+    const isFiltered = !!(search.trim() || status || source || owner || nextAction || chase || attemptBy || from || to)
 
     const totalLeads = stats?.total ?? leadsPage?.total ?? 0
     const newCount = stats?.byStatus?.new ?? 0
@@ -1055,7 +1056,7 @@ export default function Leads() {
     return (
         <div className="lead-shell" style={{ display: 'flex', alignItems: 'flex-start', gap: 20, minHeight: '100vh', paddingBottom: 24, background: '#FBF8F2', fontFamily: "'Manrope', system-ui, sans-serif" }}>
             <style>{LEADS_CSS}</style>
-            <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="lead-content" style={{ flex: 1, minWidth: 0, width: '100%' }}>
 
                 <div>
 
@@ -1102,7 +1103,13 @@ export default function Leads() {
                 </div>
 
                 {/* ── Status tabs ── */}
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
+                <div className="mb-5 flex gap-2" role="group" aria-label="Lead view">
+                    {(['board', 'list'] as const).map(mode => <Button key={mode} variant={view === mode ? 'default' : 'outline'} aria-pressed={view === mode} onClick={() => { setView(mode); setSelected([]); if (mode === 'board') setStatus('') }}>{mode === 'board' ? 'Pipeline board' : 'List view'}</Button>)}
+                </div>
+                <PipelineFunnel filters={navFilterParams} />
+                <label className="mt-4 flex items-center gap-2 text-sm">Next action<Select aria-label="Next action" value={nextAction} onChange={e => setNextAction(e.target.value)} className="max-w-xs"><option value="">All leads</option><option value="missing">Missing next action</option><option value="revisit">Revisit due</option></Select></label>
+                <div className="mb-5" />
+                <div style={{ display: view === 'list' ? 'flex' : 'none', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
                     <button
                         onClick={() => setStatus('')}
                         style={{
@@ -1188,7 +1195,7 @@ export default function Leads() {
                         style={{ height: 44, padding: '0 14px', borderRadius: 999, border: '1px solid rgba(20,8,31,.12)', background: '#fff', fontSize: 14, color: INK }} />
                     {isFiltered && (
                         <button
-                            onClick={() => { setSearch(''); setStatus(''); setSource(''); setOwner(''); setChase(''); setAttemptBy(''); setFrom(''); setTo('') }}
+                            onClick={() => { setSearch(''); setStatus(''); setSource(''); setOwner(''); setChase(''); setNextAction(''); setAttemptBy(''); setFrom(''); setTo('') }}
                             style={{ height: 44, padding: '0 16px', borderRadius: 999, border: '1px dashed rgba(20,8,31,.20)', background: 'transparent', fontSize: 13, fontWeight: 600, color: MUTED_COLOR, cursor: 'pointer' }}
                         >
                             Clear
@@ -1247,7 +1254,7 @@ export default function Leads() {
                 )}
 
                 {/* ── Table ── */}
-                {isLoading ? (
+                {view === 'board' ? <LeadPipeline key={JSON.stringify(navFilterParams)} filters={navFilterParams} onOpen={id => navigate(`/leads/${id}`)} /> : isLoading ? (
                     <Spinner />
                 ) : (
                     <div className="lead-table" style={{ background: '#fff', border: '1px solid rgba(20,8,31,.10)', borderRadius: 18, overflow: 'auto' }}>
@@ -1601,44 +1608,7 @@ export default function Leads() {
                 )}
             </Modal>
 
-            <Modal
-                open={!!pendingChange}
-                onClose={() => { setPendingChange(null); setChangeComment('') }}
-                title="Update status"
-            >
-                {pendingChange && (
-                    <div className="space-y-4">
-                        <p className="text-sm text-muted-foreground">
-                            Moving <strong className="text-foreground">{pendingChange.lead.fullName}</strong> to{' '}
-                            <Badge tone={leadStatusTone[pendingChange.newStatus]}>{statusLabel(pendingChange.newStatus)}</Badge>
-                        </p>
-                        <div>
-                            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Comment (optional)</label>
-                            <Textarea
-                                value={changeComment}
-                                onChange={(e) => setChangeComment(e.target.value)}
-                                placeholder="Add a note about this change…"
-                                rows={3}
-                            />
-                        </div>
-                        <div className="flex gap-2 justify-end">
-                            <Button variant="outline" onClick={() => { setPendingChange(null); setChangeComment('') }}>
-                                Cancel
-                            </Button>
-                            <Button
-                                disabled={updateStatus.isPending}
-                                onClick={() => updateStatus.mutate({
-                                    id: pendingChange.lead._id,
-                                    nextStatus: pendingChange.newStatus,
-                                    comment: changeComment.trim() || undefined,
-                                })}
-                            >
-                                {updateStatus.isPending ? 'Saving…' : 'Update status'}
-                            </Button>
-                        </div>
-                    </div>
-                )}
-            </Modal>
+            {pendingChange && <LeadStageDialog leadId={pendingChange.lead._id} expectedStatus={pendingChange.lead.status} nextStatus={pendingChange.newStatus} onClose={() => setPendingChange(null)} />}
 
             <Modal open={!!importResult} onClose={() => setImportResult(null)} title="Import complete">
                 {importResult && (

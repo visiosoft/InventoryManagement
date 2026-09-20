@@ -1,3 +1,4 @@
+import LeadStageDialog from '../components/LeadStageDialog'
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
@@ -12,7 +13,7 @@ import { useAuth } from '../lib/auth'
 import { Spinner, statusLabel, LEAD_STATUS_FLOW, LEAD_TEMPERATURES } from '../components/ui'
 import { formatDate, formatDateTime } from '../lib/utils'
 import { FOLLOW_UP_TONE, followUpState, reminderDay } from '../lib/followUp'
-import { dubaiToday } from '../lib/timezone'
+import { dubaiToday, toDubaiDatetimeLocal, fromDubaiDatetimeLocal } from '../lib/timezone'
 import {
   CHANNELS, OUTCOMES, channelOf, outcomeOf, sequenceState, suggestedNextDate,
   type Attempt, type AttemptChannel, type AttemptOutcome, type FollowUpPlan,
@@ -76,6 +77,11 @@ const EVENT_STYLE: Record<string, { icon: typeof Pencil; bg: string; color: stri
 
 type Owner = { _id: string; name: string; email: string }
 type Lead = {
+  updatedAt?: string
+  expectedCloseAt?: string | null
+  lossReason?: string
+  lossCompetitor?: string
+  reopenAt?: string | null
   _id: string; fullName: string; email: string; phone: string; whatsappNo: string
   phoneNormalized: string; status: string; owner: Owner | null; notes: string
   leadDateTime: string; source: string
@@ -125,6 +131,7 @@ const STATUS_TONE: Record<string, { bg: string; fg: string }> = {
   quotation_sent: { bg: CREAM_2, fg: INK_2 },
   won: { bg: 'rgba(22,163,74,.09)', fg: '#16A34A' },
   lost: { bg: 'rgba(117,110,128,.09)', fg: FAINT },
+  already_customer: { bg: 'rgba(117,110,128,.09)', fg: FAINT },
 }
 
 function Card({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
@@ -224,7 +231,6 @@ export default function PersonProfile() {
   // The standing note on the lead — what this person is about, not a dated
   // entry in the timeline below.
   const [notes, setNotes] = useState('')
-  const [stageNote, setStageNote] = useState('')
   // The attempt being logged, if one is.
   const [logging, setLogging] = useState(false)
   const [attempt, setAttempt] = useState<{ channel: AttemptChannel; outcome: AttemptOutcome; note: string; nextAt: string }>(
@@ -302,21 +308,10 @@ export default function PersonProfile() {
     setErr(apiError(e))
   }
 
-  const setStatus = useMutation({
-    mutationFn: ({ status, comment }: { status: string; comment?: string }) =>
-      api.patch(`/leads/${data!.lead!._id}/status`, { status, comment }),
-    onMutate: async (vars) => {
-      setErr(''); setPendingStage(''); setStageNote('')
-      return showNow({ status: vars.status })
-    },
-    onError: (e, _vars, ctx) => putBack(e, ctx),
-    onSettled: () => refresh(),
-  })
-
   // Temperature, tags and the follow-up date all go through the same update,
   // so one edit cannot half-apply.
   const patchLead = useMutation({
-    mutationFn: (body: Record<string, unknown>) => api.put(`/leads/${data!.lead!._id}`, body),
+    mutationFn: (body: Record<string, unknown>) => api.put(`/leads/${data!.lead!._id}`, { ...body, expectedUpdatedAt: data!.lead!.updatedAt }),
     onMutate: async (body: Record<string, unknown>) => {
       setErr('')
       // owner arrives as an id but is rendered as a record, so it is swapped
@@ -699,10 +694,10 @@ export default function PersonProfile() {
           {/* When we next deal with this person, kept beside who they are
               rather than buried among the pipeline controls. Only ever shows
               the date the stage in play is actually about. */}
-          {lead && (attempts.length > 0 || (shownStage !== 'won' && shownStage !== 'lost')) && (
+          {lead && (attempts.length > 0 || (!['won', 'lost', 'already_customer'].includes(shownStage))) && (
             <Card
               title="Follow-up"
-              action={!logging && shownStage !== 'won' && shownStage !== 'lost' ? (
+              action={!logging && !['won', 'lost', 'already_customer'].includes(shownStage) ? (
                 <button
                   type="button"
                   onClick={() => {
@@ -726,7 +721,7 @@ export default function PersonProfile() {
 
                 {/* Where the chase has got to, in one line. The number is
                     counted from the attempts, so it cannot disagree with them. */}
-                {shownStage !== 'won' && shownStage !== 'lost' && (
+                {!['won', 'lost', 'already_customer'].includes(shownStage) && (
                   <div className="flex items-baseline justify-between" style={{ gap: 8 }}>
                     <span style={{ fontSize: 14, fontWeight: 700 }}>
                       {seq.exhausted ? `All ${seq.total} attempts made` : seq.label}
@@ -915,7 +910,7 @@ export default function PersonProfile() {
 
                 {/* What is still planned, so the rest of the chase is not a
                     surprise. Greyed — these have not happened. */}
-                {!seq.exhausted && seq.nextStep && shownStage !== 'won' && shownStage !== 'lost'
+                {!seq.exhausted && seq.nextStep && !['won', 'lost', 'already_customer'].includes(shownStage)
                   && (plan?.steps ?? []).slice(attempts.length).map((st, i) => (
                   <div key={`${st.label}-${i}`} className="flex items-center" style={{ gap: 12, opacity: 0.55 }}>
                     <div style={{ width: 26, height: 26, borderRadius: 999, border: `1px dashed ${LINE_STRONG}`, color: FAINT, display: 'grid', placeItems: 'center', fontSize: 11.5, fontWeight: 700, flex: '0 0 auto' }}>
@@ -935,7 +930,7 @@ export default function PersonProfile() {
                       after it moves on, because the reminder is still live and
                       hiding it outright left a task on somebody's board that
                       could not be reached from here. */}
-                  {shownStage !== 'follow_up_scheduled' && lead.followUpAt && shownStage !== 'won' && shownStage !== 'lost' && (
+                  {shownStage !== 'follow_up_scheduled' && lead.followUpAt && !['won', 'lost', 'already_customer'].includes(shownStage) && (
                     <div style={{ minWidth: 0 }}>
                       <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Follow-up</span>
                       <div className="flex items-center justify-between" style={{ gap: 8, padding: '9px 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff' }}>
@@ -978,7 +973,7 @@ export default function PersonProfile() {
                   {/* Still shown once the stage moves on, because the visit is
                       booked and its task is live — the same reason the follow-up
                       keeps a line of its own. */}
-                  {shownStage !== 'site_visit_scheduled' && lead.siteVisitAt && shownStage !== 'won' && shownStage !== 'lost' && (
+                  {shownStage !== 'site_visit_scheduled' && lead.siteVisitAt && !['won', 'lost', 'already_customer'].includes(shownStage) && (
                     <div style={{ minWidth: 0 }}>
                       <span style={{ fontSize: 13, color: FAINT, display: 'block', marginBottom: 6 }}>Site visit</span>
                       <div className="flex items-center justify-between" style={{ gap: 8, padding: '9px 12px', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff' }}>
@@ -1183,7 +1178,7 @@ export default function PersonProfile() {
                     onChange={(e) => {
                       const next = e.target.value
                       // Same stage again is not a change worth recording.
-                      if (next === lead.status) { setPendingStage(''); setStageNote(''); return }
+                      if (next === lead.status) { setPendingStage(''); return }
                       setPendingStage(next)
                     }}
                     className="cursor-pointer"
@@ -1247,45 +1242,26 @@ export default function PersonProfile() {
 
                     Full width rather than inside the Stage cell: squeezed into
                     a quarter of the card it was a textarea three words wide. */}
-                {pendingStage && (
-                  <div style={{ gridColumn: '1 / -1', borderRadius: 12, border: `1px solid ${PURPLE_200}`, background: PURPLE_50, padding: 14 }}>
-                    <p style={{ fontSize: 13, color: INK_2, marginBottom: 8 }}>
-                      Moving to <b style={{ color: INK }}>{LEAD_STATUS_FLOW.find((s) => s.value === pendingStage)?.label}</b> — what happened?
-                    </p>
-                    <textarea
-                      value={stageNote}
-                      onChange={(e) => setStageNote(e.target.value)}
-                      rows={2}
-                      autoFocus
-                      placeholder={pendingStage === 'lost' ? 'Why did this one go? (worth recording)' : 'Optional — called, no answer…'}
-                      style={{ width: '100%', borderRadius: 10, border: `1px solid ${LINE_STRONG}`, background: '#fff', padding: '10px 12px', fontSize: 14, fontFamily: 'inherit', color: INK, resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
-                    />
-                    <div className="flex flex-wrap" style={{ gap: 8, marginTop: 10 }}>
-                      <button
-                        type="button"
-                        disabled={setStatus.isPending}
-                        onClick={() => setStatus.mutate({ status: pendingStage, comment: stageNote.trim() || undefined })}
-                        className="cursor-pointer disabled:opacity-50"
-                        style={{ height: 38, padding: '0 18px', borderRadius: 999, border: 'none', background: PURPLE, color: '#fff', fontSize: 13, fontWeight: 700, fontFamily: 'inherit' }}
-                      >
-                        {setStatus.isPending ? 'Saving…' : 'Save stage'}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={setStatus.isPending}
-                        onClick={() => { setPendingStage(''); setStageNote('') }}
-                        className="cursor-pointer disabled:opacity-50"
-                        style={{ height: 38, padding: '0 18px', borderRadius: 999, border: `1px solid ${LINE_STRONG}`, background: '#fff', color: FAINT, fontSize: 13, fontWeight: 600, fontFamily: 'inherit' }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
+                {pendingStage && <LeadStageDialog leadId={lead._id} expectedStatus={lead.status} nextStatus={pendingStage} onClose={() => setPendingStage('')} onSaved={refresh} />}
+
 
               </div>
             </Card>
           )}
+
+          {lead && <Card title="Opportunity planning">
+            <form key={`${lead._id}:${lead.expectedCloseAt || ''}`} className="space-y-3" onSubmit={event => {
+              event.preventDefault()
+              const form = new FormData(event.currentTarget)
+              patchLead.mutate({ expectedCloseAt: fromDubaiDatetimeLocal(String(form.get('expectedCloseAt') || '')) || null })
+            }}>
+              <label className="block text-sm">Expected close date (Dubai time)
+                <input name="expectedCloseAt" type="datetime-local" defaultValue={toDubaiDatetimeLocal(lead.expectedCloseAt || undefined)} className="mt-2 block w-full rounded-lg border border-gray-300 p-2" />
+              </label>
+              <button type="submit" disabled={patchLead.isPending} className="rounded-lg bg-[#5B2BC9] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{patchLead.isPending ? 'Saving?' : 'Save close date'}</button>
+              {lead.status === 'lost' && <p className="text-sm text-gray-600">Loss reason: {statusLabel(lead.lossReason || 'not_recorded')}{lead.lossCompetitor ? ` ? ${lead.lossCompetitor}` : ''}{lead.reopenAt ? ` ? Revisit ${formatDateTime(lead.reopenAt)}` : ''}</p>}
+            </form>
+          </Card>}
 
           {lead && (
             <div style={{ background: '#fff', border: `1px solid ${LINE}`, borderRadius: 22, boxShadow: SHADOW_SM, padding: '22px 26px' }}>
