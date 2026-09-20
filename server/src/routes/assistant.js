@@ -4,6 +4,7 @@ import { requireAdmin } from '../middleware/auth.js';
 import { askAssistant, getAssistantConfig, DEFAULT_PROMPT } from '../services/assistant/index.js';
 import { toolNames } from '../services/assistant/tools.js';
 import { takeProposal, dropProposal, runAction } from '../services/assistant/actions.js';
+import { getAdminInsight } from '../services/assistant/adminInsight.js';
 import { openaiConfigured, openaiModel, transcribeAudio } from '../services/openai.js';
 
 const router = Router();
@@ -95,6 +96,20 @@ router.post('/confirm', async (req, res) => {
 router.post('/cancel', async (req, res) => {
    dropProposal(String(req.body?.id || ''));
    res.json({ ok: true, message: 'Cancelled — nothing was created or sent.' });
+});
+
+/**
+ * The AI insight card under admin Overview's stat tiles — see
+ * services/assistant/adminInsight.js for the grounding rule (every number
+ * it may mention is computed here first, never invented by the model).
+ */
+router.get('/admin-insight', async (req, res) => {
+   try {
+      if (!['admin', 'accounts'].includes(req.user?.role)) return res.status(403).json({ error: 'Admins only' });
+      res.json(await getAdminInsight());
+   } catch (e) {
+      res.status(500).json({ error: e.message });
+   }
 });
 
 /** What it can ask the database, so the widget can say so honestly. */
